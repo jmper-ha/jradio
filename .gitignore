@@ -23,5 +23,6 @@ __pycache__/
 SESSION_CONTEXT.md
 .superpowers/
 docs/
+.worktrees/
 *.md
 !README.md

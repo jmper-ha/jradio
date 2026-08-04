@@ -1,0 +1,7 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; }
+body { margin: 0; background: #101827; color: #edf2ff; }
+main { max-width: 36rem; margin: 0 auto; padding: 1.5rem; }
+label { display: block; margin: 0.8rem 0; }
+input, button { box-sizing: border-box; display: block; width: 100%; margin-top: 0.3rem; padding: 0.65rem; font: inherit; }
+button { background: #2563eb; border: 0; border-radius: 0.35rem; color: white; font-weight: 600; }
+#message { min-height: 1.5rem; }

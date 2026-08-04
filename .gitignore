@@ -1,0 +1,27 @@
+# ESP-IDF generated output
+build/
+managed_components/
+
+# Local ESP-IDF configuration and generated files
+sdkconfig
+sdkconfig.old
+sdkconfig.*.old
+
+# Runtime/user data in LittleFS
+components/web_server/web_assets/config/wifi.json
+components/web_server/web_assets/config/wifi.tmp
+components/web_server/web_assets/config/*.tmp
+
+# Python, editor and OS files
+__pycache__/
+*.py[cod]
+.vscode/.ropeproject/
+.vscode/.history/
+.DS_Store
+
+# Internal session notes and agent planning
+SESSION_CONTEXT.md
+.superpowers/
+docs/
+*.md
+!README.md

@@ -1,0 +1,18 @@
+#include <assert.h>
+#include <stdio.h>
+
+#include "ui_station_list.h"
+
+int main(void)
+{
+    station_list_state_t state;
+    station_list_init(&state, 3);
+    assert(station_list_selected_index(&state) == 0);
+    assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_LEFT));
+    assert(station_list_selected_index(&state) == 2);
+    assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT));
+    assert(station_list_selected_index(&state) == 0);
+    assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_BUTTON));
+    puts("ui_station_list tests passed");
+    return 0;
+}

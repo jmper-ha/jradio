@@ -1,0 +1,2 @@
+dependencies:
+  usb_host_msc: "^1.1.1"

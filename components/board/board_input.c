@@ -1,0 +1,284 @@
+#include <stddef.h>
+
+#include "board_input.h"
+
+#ifdef ESP_PLATFORM
+#include "driver/gpio.h"
+#include "esp_log.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+
+#define BOARD_INPUT_POLL_MS 5
+#define BOARD_INPUT_DEBOUNCE_MS 25
+#define BOARD_INPUT_DEBOUNCE_SAMPLES (BOARD_INPUT_DEBOUNCE_MS / BOARD_INPUT_POLL_MS)
+#define BOARD_INPUT_F1_HOLD_MS 5000
+#define BOARD_INPUT_QUEUE_LENGTH 16
+
+typedef struct {
+    int gpio_num;
+    board_input_action_t action;
+    board_input_debouncer_t debouncer;
+} board_input_channel_t;
+
+static const char *TAG = "input";
+static QueueHandle_t s_event_queue;
+static board_input_channel_t s_channels[] = {
+    {.gpio_num = BOARD_ENCODER_BUTTON_GPIO, .action = BOARD_INPUT_ACTION_ENCODER_BUTTON},
+    {.gpio_num = BOARD_BUTTON_F1_GPIO, .action = BOARD_INPUT_ACTION_F1},
+    {.gpio_num = BOARD_BUTTON_F2_GPIO, .action = BOARD_INPUT_ACTION_F2},
+    {.gpio_num = BOARD_BUTTON_F3_GPIO, .action = BOARD_INPUT_ACTION_F3},
+    {.gpio_num = BOARD_BUTTON_F4_GPIO, .action = BOARD_INPUT_ACTION_F4},
+};
+static board_encoder_decoder_t s_encoder_decoder;
+static board_input_hold_t s_f1_hold;
+
+static void board_input_task(void *arg)
+{
+    (void)arg;
+    TickType_t last_wake = xTaskGetTickCount();
+
+    while (true) {
+        const board_input_action_t encoder_action =
+            board_encoder_decoder_update(&s_encoder_decoder, gpio_get_level(BOARD_ENCODER_LEFT_GPIO),
+                                         gpio_get_level(BOARD_ENCODER_RIGHT_GPIO));
+        if (encoder_action != BOARD_INPUT_ACTION_NONE &&
+            xQueueSend(s_event_queue, &encoder_action, 0) != pdTRUE) {
+            ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)encoder_action);
+        }
+        for (size_t index = 0; index < sizeof(s_channels) / sizeof(s_channels[0]); ++index) {
+            board_input_channel_t *channel = &s_channels[index];
+            const int raw_level = gpio_get_level(channel->gpio_num);
+            const bool pressed = raw_level == 0;
+            if (channel->action == BOARD_INPUT_ACTION_F1 &&
+                board_input_hold_update(&s_f1_hold, pressed)) {
+                const board_input_action_t long_action = BOARD_INPUT_ACTION_F1_LONG;
+                if (xQueueSend(s_event_queue, &long_action, 0) != pdTRUE) {
+                    ESP_LOGW(TAG, "input queue full; F1 long action dropped");
+                }
+            }
+            if (board_input_debouncer_update(&channel->debouncer, pressed)) {
+                if (xQueueSend(s_event_queue, &channel->action, 0) != pdTRUE) {
+                    ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)channel->action);
+                }
+            }
+        }
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(BOARD_INPUT_POLL_MS));
+    }
+}
+#endif
+
+board_input_action_t board_input_action_from_gpio(int gpio_num, int level)
+{
+    if (level != 0) {
+        return BOARD_INPUT_ACTION_NONE;
+    }
+
+    switch (gpio_num) {
+    case BOARD_ENCODER_LEFT_GPIO:
+        return BOARD_INPUT_ACTION_ENCODER_LEFT;
+    case BOARD_ENCODER_RIGHT_GPIO:
+        return BOARD_INPUT_ACTION_ENCODER_RIGHT;
+    case BOARD_ENCODER_BUTTON_GPIO:
+        return BOARD_INPUT_ACTION_ENCODER_BUTTON;
+    case BOARD_BUTTON_F1_GPIO:
+        return BOARD_INPUT_ACTION_F1;
+    case BOARD_BUTTON_F2_GPIO:
+        return BOARD_INPUT_ACTION_F2;
+    case BOARD_BUTTON_F3_GPIO:
+        return BOARD_INPUT_ACTION_F3;
+    case BOARD_BUTTON_F4_GPIO:
+        return BOARD_INPUT_ACTION_F4;
+    default:
+        return BOARD_INPUT_ACTION_NONE;
+    }
+}
+
+void board_input_debouncer_init(board_input_debouncer_t *debouncer, uint8_t required_samples)
+{
+    if (debouncer == NULL) {
+        return;
+    }
+
+    debouncer->stable_pressed = false;
+    debouncer->candidate_pressed = false;
+    debouncer->candidate_samples = 0;
+    debouncer->required_samples = required_samples == 0 ? 1 : required_samples;
+}
+
+void board_input_debouncer_init_from_level(board_input_debouncer_t *debouncer, int level,
+                                           uint8_t required_samples)
+{
+    board_input_debouncer_init(debouncer, required_samples);
+    if (debouncer != NULL) {
+        debouncer->stable_pressed = level == 0;
+        debouncer->candidate_pressed = debouncer->stable_pressed;
+    }
+}
+
+bool board_input_debouncer_update(board_input_debouncer_t *debouncer, bool sampled_pressed)
+{
+    if (debouncer == NULL || sampled_pressed == debouncer->stable_pressed) {
+        if (debouncer != NULL) {
+            debouncer->candidate_samples = 0;
+            debouncer->candidate_pressed = sampled_pressed;
+        }
+        return false;
+    }
+
+    if (sampled_pressed != debouncer->candidate_pressed) {
+        debouncer->candidate_pressed = sampled_pressed;
+        debouncer->candidate_samples = 1;
+    } else if (debouncer->candidate_samples < debouncer->required_samples) {
+        ++debouncer->candidate_samples;
+    }
+
+    if (debouncer->candidate_samples < debouncer->required_samples) {
+        return false;
+    }
+
+    debouncer->stable_pressed = sampled_pressed;
+    debouncer->candidate_samples = 0;
+    return sampled_pressed;
+}
+
+void board_input_hold_init(board_input_hold_t *hold, uint16_t hold_ms, uint16_t poll_ms)
+{
+    if (hold == NULL) {
+        return;
+    }
+    const uint16_t interval = poll_ms == 0 ? 1 : poll_ms;
+    hold->required_samples = (uint16_t)((hold_ms + interval - 1) / interval);
+    if (hold->required_samples == 0) {
+        hold->required_samples = 1;
+    }
+    hold->held_samples = 0;
+    hold->emitted = false;
+}
+
+bool board_input_hold_update(board_input_hold_t *hold, bool sampled_pressed)
+{
+    if (hold == NULL) {
+        return false;
+    }
+    if (!sampled_pressed) {
+        hold->held_samples = 0;
+        hold->emitted = false;
+        return false;
+    }
+    if (hold->emitted) {
+        return false;
+    }
+    if (hold->held_samples < hold->required_samples) {
+        ++hold->held_samples;
+    }
+    if (hold->held_samples < hold->required_samples) {
+        return false;
+    }
+    hold->emitted = true;
+    return true;
+}
+
+static uint8_t board_encoder_state_from_levels(int left_level, int right_level)
+{
+    return (uint8_t)(((left_level != 0) << 1) | (right_level != 0));
+}
+
+void board_encoder_decoder_init(board_encoder_decoder_t *decoder, int left_level, int right_level)
+{
+    if (decoder == NULL) {
+        return;
+    }
+    decoder->last_state = board_encoder_state_from_levels(left_level, right_level);
+    decoder->transition_sum = 0;
+}
+
+board_input_action_t board_encoder_decoder_update(board_encoder_decoder_t *decoder, int left_level,
+                                                  int right_level)
+{
+    static const int8_t transition_delta[16] = {
+        0, 1, -1, 0, -1, 0, 0, 1, 1, 0, 0, -1, 0, -1, 1, 0,
+    };
+
+    if (decoder == NULL) {
+        return BOARD_INPUT_ACTION_NONE;
+    }
+
+    const uint8_t current_state = board_encoder_state_from_levels(left_level, right_level);
+    const uint8_t transition = (uint8_t)((decoder->last_state << 2) | current_state);
+    const int8_t delta = transition_delta[transition];
+    decoder->last_state = current_state;
+
+    if (delta == 0) {
+        if ((transition & 0x03U) != (transition >> 2)) {
+            decoder->transition_sum = 0;
+        }
+        return BOARD_INPUT_ACTION_NONE;
+    }
+
+    decoder->transition_sum += delta;
+    if (decoder->transition_sum >= 4) {
+        decoder->transition_sum = 0;
+        return BOARD_INPUT_ACTION_ENCODER_RIGHT;
+    }
+    if (decoder->transition_sum <= -4) {
+        decoder->transition_sum = 0;
+        return BOARD_INPUT_ACTION_ENCODER_LEFT;
+    }
+    return BOARD_INPUT_ACTION_NONE;
+}
+
+#ifdef ESP_PLATFORM
+esp_err_t board_input_init(void)
+{
+    const uint64_t pin_mask = (1ULL << BOARD_ENCODER_RIGHT_GPIO) |
+                              (1ULL << BOARD_ENCODER_LEFT_GPIO) |
+                              (1ULL << BOARD_ENCODER_BUTTON_GPIO) |
+                              (1ULL << BOARD_BUTTON_F1_GPIO) |
+                              (1ULL << BOARD_BUTTON_F2_GPIO) |
+                              (1ULL << BOARD_BUTTON_F3_GPIO) |
+                              (1ULL << BOARD_BUTTON_F4_GPIO);
+    const gpio_config_t config = {
+        .pin_bit_mask = pin_mask,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = BOARD_INPUT_USE_INTERNAL_PULLUPS ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+
+    esp_err_t result = gpio_config(&config);
+    if (result != ESP_OK) {
+        return result;
+    }
+    if (s_event_queue != NULL) {
+        return ESP_OK;
+    }
+
+    s_event_queue = xQueueCreate(BOARD_INPUT_QUEUE_LENGTH, sizeof(board_input_action_t));
+    if (s_event_queue == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    for (size_t index = 0; index < sizeof(s_channels) / sizeof(s_channels[0]); ++index) {
+        const int level = gpio_get_level(s_channels[index].gpio_num);
+        board_input_debouncer_init_from_level(&s_channels[index].debouncer, level,
+                                              BOARD_INPUT_DEBOUNCE_SAMPLES);
+    }
+    board_encoder_decoder_init(&s_encoder_decoder, gpio_get_level(BOARD_ENCODER_LEFT_GPIO),
+                               gpio_get_level(BOARD_ENCODER_RIGHT_GPIO));
+    board_input_hold_init(&s_f1_hold, BOARD_INPUT_F1_HOLD_MS, BOARD_INPUT_POLL_MS);
+    if (xTaskCreate(board_input_task, "board_input", 3072, NULL, 5, NULL) != pdPASS) {
+        vQueueDelete(s_event_queue);
+        s_event_queue = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "input task started; poll=%d ms debounce=%d ms", BOARD_INPUT_POLL_MS,
+             BOARD_INPUT_DEBOUNCE_MS);
+    return ESP_OK;
+}
+
+bool board_input_read(board_input_action_t *action, TickType_t timeout)
+{
+    return s_event_queue != NULL && action != NULL &&
+           xQueueReceive(s_event_queue, action, timeout) == pdTRUE;
+}
+#endif

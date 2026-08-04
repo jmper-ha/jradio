@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jradio Wi-Fi</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <h1>jradio — Wi-Fi</h1>
+    <p id="connection-status">Загрузка статуса…</p>
+    <h2>Сохранённые сети</h2>
+    <ul id="saved-networks"></ul>
+    <h2>Добавить или обновить сеть</h2>
+    <form id="wifi-form">
+      <label>SSID<input id="ssid" name="ssid" maxlength="32" required autocomplete="off"></label>
+      <label>Пароль<input id="password" name="password" type="password" maxlength="64" autocomplete="current-password"></label>
+      <button type="submit">Сохранить и перезапустить</button>
+    </form>
+    <p id="message" role="status"></p>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

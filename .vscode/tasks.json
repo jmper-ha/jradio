@@ -1,0 +1,95 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ESP-IDF: Build",
+      "type": "shell",
+      "command": "idf.py build",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "/bin/bash",
+          "args": [
+            "-lc"
+          ]
+        }
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "ESP-IDF: Flash",
+      "type": "shell",
+      "command": "idf.py -p ${input:serialPort} flash",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "/bin/bash",
+          "args": [
+            "-lc"
+          ]
+        }
+      },
+      "dependsOn": "ESP-IDF: Build",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "ESP-IDF: Flash LittleFS Web",
+      "type": "shell",
+      "command": "idf.py -p ${input:serialPort} littlefs-flash",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "/bin/bash",
+          "args": [
+            "-lc"
+          ]
+        }
+      },
+      "dependsOn": "ESP-IDF: Build",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "ESP-IDF: Build, Flash & Monitor",
+      "type": "shell",
+      "command": "idf.py -p ${input:serialPort} flash monitor",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "/bin/bash",
+          "args": [
+            "-lc"
+          ]
+        }
+      },
+      "dependsOn": "ESP-IDF: Build",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "ESP-IDF: Monitor",
+      "type": "shell",
+      "command": "idf.py -p ${input:serialPort} monitor",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "/bin/bash",
+          "args": [
+            "-lc"
+          ]
+        }
+      },
+      "problemMatcher": "$gcc"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "serialPort",
+      "type": "promptString",
+      "description": "Последовательный порт ESP32-S3, например /dev/ttyACM0",
+      "default": "/dev/ttyACM0"
+    }
+  ]
+}

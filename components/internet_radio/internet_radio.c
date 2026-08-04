@@ -12,6 +12,7 @@
 #include "esp_audio_simple_player.h"
 #include "esp_check.h"
 #include "esp_crt_bundle.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 
@@ -233,6 +234,10 @@ static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *ur
     esp_err_t err = esp_http_client_set_header(radio->http, "Icy-MetaData", "1");
     unsigned int redirects = 0U;
     while (err == ESP_OK) {
+        const uint32_t internal_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+        ESP_LOGI(TAG, "HTTP open heap: internal_free=%u largest_block=%u",
+                 (unsigned int)heap_caps_get_free_size(internal_caps),
+                 (unsigned int)heap_caps_get_largest_free_block(internal_caps));
         err = esp_http_client_open(radio->http, 0);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "HTTP open failed after %u redirects: %s", redirects,

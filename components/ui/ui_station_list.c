@@ -1,10 +1,10 @@
 #include "ui_station_list.h"
 
-void station_list_init(station_list_state_t *state, size_t count)
+void station_list_init(station_list_state_t *state, size_t count, size_t initial_index)
 {
     if (state == NULL) return;
     state->count = count;
-    state->selected_index = 0;
+    state->selected_index = count > 0U && initial_index < count ? initial_index : 0U;
 }
 
 bool station_list_handle_input(station_list_state_t *state, board_input_action_t action)

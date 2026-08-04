@@ -15,6 +15,7 @@
 #include "board.h"
 #include "board_config.h"
 #include "internet_radio.h"
+#include "ui_font_cyrillic_14.h"
 #include "ui_menu.h"
 #include "ui_station_list.h"
 #include "wifi_provisioning.h"
@@ -205,6 +206,7 @@ static void ui_create_station_list_screen(void)
         lv_obj_set_style_pad_left(s_station_list_rows[row], 6, 0);
         lv_obj_set_style_pad_top(s_station_list_rows[row], 2, 0);
         lv_obj_set_style_radius(s_station_list_rows[row], 3, 0);
+        lv_obj_set_style_text_font(s_station_list_rows[row], &ui_font_cyrillic_14, 0);
         lv_obj_set_style_text_color(s_station_list_rows[row], lv_color_hex(0xFFFFFF), 0);
     }
     lv_obj_t *footer = lv_label_create(s_station_list_screen);
@@ -224,6 +226,7 @@ static void ui_create_source_screen(void)
 
     s_source_title = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_title, 14, 32);
+    lv_obj_set_style_text_font(s_source_title, &ui_font_cyrillic_14, 0);
     lv_obj_set_style_text_color(s_source_title, lv_color_hex(0xFFFFFF), 0);
 
     s_source_status = lv_label_create(s_source_screen);
@@ -236,6 +239,7 @@ static void ui_create_source_screen(void)
     lv_obj_set_width(s_source_detail, 290);
     lv_obj_set_height(s_source_detail, 52);
     lv_label_set_long_mode(s_source_detail, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(s_source_detail, &ui_font_cyrillic_14, 0);
     lv_obj_set_style_text_color(s_source_detail, lv_color_hex(0xFFFFFF), 0);
 
     s_source_stream = lv_label_create(s_source_screen);
@@ -308,8 +312,11 @@ static void ui_show_menu(void)
 static void ui_show_station_list(void)
 {
     if (!s_showing_radio) return;
+    const size_t station_count = internet_radio_station_count();
+    const size_t active_station_index = internet_radio_current_station_index();
+    const size_t initial_index = active_station_index < station_count ? active_station_index : 0U;
     (void)internet_radio_stop();
-    station_list_init(&s_station_list, internet_radio_station_count());
+    station_list_init(&s_station_list, station_count, initial_index);
     ui_update_station_list();
     lv_screen_load(s_station_list_screen);
     s_showing_station_list = true;
@@ -325,13 +332,14 @@ static void ui_handle_input(board_input_action_t action)
             if (station_list_handle_input(&s_station_list, action)) ui_update_station_list();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             const size_t index = station_list_selected_index(&s_station_list);
-            if (internet_radio_start_station_index(index)) {
-                const station_catalog_entry_t *entry = internet_radio_station_at(index);
-                if (entry != NULL) lv_label_set_text(s_source_title, entry->name);
-                s_showing_station_list = false;
-                lv_screen_load(s_source_screen);
-                ui_update_radio_status();
+            const station_catalog_entry_t *entry = internet_radio_station_at(index);
+            if (!internet_radio_start_station_index(index)) {
+                ESP_LOGW(TAG, "station start failed; index=%u", (unsigned int)index);
             }
+            if (entry != NULL) lv_label_set_text(s_source_title, entry->name);
+            s_showing_station_list = false;
+            lv_screen_load(s_source_screen);
+            ui_update_radio_status();
         }
         return;
     }

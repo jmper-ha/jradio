@@ -11,6 +11,7 @@
 
 #include "esp_audio_simple_player.h"
 #include "esp_check.h"
+#include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 
@@ -18,11 +19,13 @@
 #include "icy_metadata.h"
 #include "mp3_stream_info.h"
 #include "pcm_diagnostics.h"
+#include "radio_http_status.h"
 #include "station_resume.h"
 
 #define RADIO_RAW_URI "raw://radio/stream.mp3"
 #define RADIO_HTTP_BUFFER_SIZE 2048
 #define RADIO_CATALOG_BUFFER_SIZE 16384
+#define RADIO_HTTP_MAX_REDIRECTS 5U
 
 static const char *TAG = "internet_radio";
 
@@ -207,6 +210,8 @@ static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *ur
         .buffer_size = RADIO_HTTP_BUFFER_SIZE,
         .timeout_ms = 10000,
         .keep_alive_enable = true,
+        .disable_auto_redirect = true,
+        .crt_bundle_attach = esp_crt_bundle_attach,
         .event_handler = radio_http_event,
         .user_data = radio,
     };
@@ -225,30 +230,55 @@ static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *ur
         return ESP_ERR_NO_MEM;
     }
 
-    esp_err_t err = ESP_OK;
-    do {
-        err = esp_http_client_set_header(radio->http, "Icy-MetaData", "1");
-        if (err != ESP_OK) {
-            break;
-        }
+    esp_err_t err = esp_http_client_set_header(radio->http, "Icy-MetaData", "1");
+    unsigned int redirects = 0U;
+    while (err == ESP_OK) {
         err = esp_http_client_open(radio->http, 0);
         if (err != ESP_OK) {
+            ESP_LOGE(TAG, "HTTP open failed after %u redirects: %s", redirects,
+                     esp_err_to_name(err));
             break;
         }
-        if (esp_http_client_fetch_headers(radio->http) < 0 ||
-            esp_http_client_get_status_code(radio->http) != 200) {
+        if (esp_http_client_fetch_headers(radio->http) < 0) {
             err = ESP_FAIL;
+            ESP_LOGE(TAG, "HTTP header fetch failed after %u redirects", redirects);
             break;
         }
-    } while (0);
+
+        const int status_code = esp_http_client_get_status_code(radio->http);
+        if (!radio_http_status_is_redirect(status_code)) {
+            if (status_code != 200) {
+                err = ESP_FAIL;
+                ESP_LOGE(TAG, "HTTP status %d", status_code);
+            }
+            break;
+        }
+        if (redirects >= RADIO_HTTP_MAX_REDIRECTS) {
+            err = ESP_FAIL;
+            ESP_LOGE(TAG, "HTTP redirect limit reached; status=%d", status_code);
+            break;
+        }
+        ESP_LOGI(TAG, "HTTP redirect %u: status=%d", redirects + 1U, status_code);
+        err = esp_http_client_set_redirection(radio->http);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "HTTP redirect target unavailable: %s", esp_err_to_name(err));
+            break;
+        }
+        err = esp_http_client_close(radio->http);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "HTTP redirect close failed: %s", esp_err_to_name(err));
+            break;
+        }
+        ++redirects;
+    }
     if (err != ESP_OK) {
         radio_http_close(radio);
         return err;
     }
 
     icy_metadata_init(&radio->icy, radio->icy_interval, radio_set_title, radio);
-    ESP_LOGI(TAG, "HTTP connected: status=%d icy-metaint=%u", esp_http_client_get_status_code(radio->http),
-             (unsigned int)radio->icy_interval);
+    ESP_LOGI(TAG, "HTTP connected: status=%d icy-metaint=%u",
+             esp_http_client_get_status_code(radio->http), (unsigned int)radio->icy_interval);
     return ESP_OK;
 }
 
@@ -331,6 +361,7 @@ bool internet_radio_start_station_index(size_t index)
     if (!s_radio.initialized) return false;
     if (index >= s_radio.catalog.count) return false;
     if (!radio_status_apply(&s_radio, INTERNET_RADIO_EVENT_START)) return false;
+    s_radio.current_station_index = index;
     esp_err_t err = radio_http_open(&s_radio, s_radio.catalog.entries[index].url);
     if (err != ESP_OK) {
         (void)radio_status_apply(&s_radio, INTERNET_RADIO_EVENT_FATAL);
@@ -343,7 +374,6 @@ bool internet_radio_start_station_index(size_t index)
         radio_http_close(&s_radio);
         return false;
     }
-    s_radio.current_station_index = index;
     (void)station_resume_save_last_url(STATION_SETTINGS_PATH,
                                        s_radio.catalog.entries[index].url);
     return true;

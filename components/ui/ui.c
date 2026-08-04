@@ -15,6 +15,7 @@
 #include "board.h"
 #include "board_config.h"
 #include "internet_radio.h"
+#include "ui_deferred_start.h"
 #include "ui_font_cyrillic_14.h"
 #include "ui_menu.h"
 #include "ui_station_list.h"
@@ -27,6 +28,7 @@
 #define UI_TASK_PRIORITY 4
 #define UI_WIFI_RSSI_REFRESH_MS 1000U
 #define UI_STATION_LIST_MAX_ROWS 7U
+#define UI_STATION_START_SCREEN_DELAY_MS 100U
 
 static const char *TAG = "ui";
 static QueueHandle_t s_input_queue;
@@ -44,6 +46,7 @@ static lv_obj_t *s_source_wifi;
 static lv_obj_t *s_station_list_screen;
 static lv_obj_t *s_station_list_rows[UI_STATION_LIST_MAX_ROWS];
 static station_list_state_t s_station_list;
+static ui_deferred_start_t s_deferred_station_start;
 static bool s_showing_source;
 static bool s_showing_radio;
 static bool s_showing_station_list;
@@ -81,6 +84,7 @@ static const char *ui_radio_state_text(internet_radio_state_t state)
 static void ui_update_radio_status(void)
 {
     if (!s_showing_radio) return;
+    if (ui_deferred_start_is_pending(&s_deferred_station_start)) return;
     internet_radio_status_t status;
     internet_radio_get_status(&status);
     ui_set_label_text_if_changed(s_source_status, ui_radio_state_text(status.state));
@@ -295,6 +299,7 @@ static void ui_show_source(void)
 
 static void ui_show_menu(void)
 {
+    ui_deferred_start_cancel(&s_deferred_station_start);
     if (s_showing_radio) (void)internet_radio_stop();
     if (s_source_manager != NULL) {
         const audio_source_t active_source = audio_source_manager_active(s_source_manager);
@@ -312,6 +317,7 @@ static void ui_show_menu(void)
 static void ui_show_station_list(void)
 {
     if (!s_showing_radio) return;
+    ui_deferred_start_cancel(&s_deferred_station_start);
     const size_t station_count = internet_radio_station_count();
     const size_t active_station_index = internet_radio_current_station_index();
     const size_t initial_index = active_station_index < station_count ? active_station_index : 0U;
@@ -333,13 +339,15 @@ static void ui_handle_input(board_input_action_t action)
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             const size_t index = station_list_selected_index(&s_station_list);
             const station_catalog_entry_t *entry = internet_radio_station_at(index);
-            if (!internet_radio_start_station_index(index)) {
-                ESP_LOGW(TAG, "station start failed; index=%u", (unsigned int)index);
-            }
             if (entry != NULL) lv_label_set_text(s_source_title, entry->name);
+            ui_set_label_text_if_changed(s_source_status, "Connecting");
+            ui_set_label_text_if_changed(s_source_detail, entry == NULL ? "" : entry->name);
+            ui_set_label_text_if_changed(s_source_stream, "MP3  |  -- kbps");
+            ui_set_label_text_if_changed(s_source_wifi, "");
             s_showing_station_list = false;
             lv_screen_load(s_source_screen);
-            ui_update_radio_status();
+            ui_deferred_start_schedule(&s_deferred_station_start, index, ui_tick_get_ms(),
+                                       UI_STATION_START_SCREEN_DELAY_MS);
         }
         return;
     }
@@ -374,6 +382,14 @@ static void ui_task(void *arg)
         }
         ui_update_radio_status();
         lv_timer_handler();
+        size_t station_index;
+        if (ui_deferred_start_take_if_due(&s_deferred_station_start, ui_tick_get_ms(),
+                                          &station_index)) {
+            if (!internet_radio_start_station_index(station_index)) {
+                ESP_LOGW(TAG, "station start failed; index=%u", (unsigned int)station_index);
+            }
+            ui_update_radio_status();
+        }
     }
 }
 
@@ -389,6 +405,7 @@ esp_err_t ui_init(audio_source_manager_t *source_manager)
     }
     s_source_manager = source_manager;
     ui_menu_init(&s_menu);
+    ui_deferred_start_init(&s_deferred_station_start);
     lv_init();
     lv_tick_set_cb(ui_tick_get_ms);
 

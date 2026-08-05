@@ -186,8 +186,12 @@ static void ui_update_station_list(void)
         lv_obj_clear_flag(s_station_list_rows[row], LV_OBJ_FLAG_HIDDEN);
         const station_catalog_entry_t *entry = internet_radio_station_at(row);
         const bool selected = row == station_list_selected_index(&s_station_list);
+        const bool active = row == station_list_active_index(&s_station_list);
         lv_obj_set_style_bg_color(s_station_list_rows[row], lv_color_hex(selected ? 0x1769AA : 0x101820), 0);
         lv_obj_set_style_bg_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(s_station_list_rows[row], active ? 2 : 0, 0);
+        lv_obj_set_style_border_color(s_station_list_rows[row], lv_color_hex(0xFFD54F), 0);
+        lv_obj_set_style_border_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
         lv_label_set_text_fmt(s_station_list_rows[row], "%c %s", selected ? '>' : ' ',
                               entry == NULL ? "" : entry->name);
     }
@@ -321,8 +325,8 @@ static void ui_show_station_list(void)
     const size_t station_count = internet_radio_station_count();
     const size_t active_station_index = internet_radio_current_station_index();
     const size_t initial_index = active_station_index < station_count ? active_station_index : 0U;
-    (void)internet_radio_stop();
-    station_list_init(&s_station_list, station_count, initial_index);
+    station_list_init(&s_station_list, station_count, initial_index,
+                      active_station_index);
     ui_update_station_list();
     lv_screen_load(s_station_list_screen);
     s_showing_station_list = true;
@@ -338,8 +342,15 @@ static void ui_handle_input(board_input_action_t action)
             if (station_list_handle_input(&s_station_list, action)) ui_update_station_list();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             const size_t index = station_list_selected_index(&s_station_list);
+            const size_t active_index = station_list_active_index(&s_station_list);
             const station_catalog_entry_t *entry = internet_radio_station_at(index);
             if (entry != NULL) lv_label_set_text(s_source_title, entry->name);
+            if (index == active_index) {
+                s_showing_station_list = false;
+                lv_screen_load(s_source_screen);
+                ui_update_radio_status();
+                return;
+            }
             ui_set_label_text_if_changed(s_source_status, "Connecting");
             ui_set_label_text_if_changed(s_source_detail, entry == NULL ? "" : entry->name);
             ui_set_label_text_if_changed(s_source_stream, "MP3  |  -- kbps");

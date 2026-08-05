@@ -342,15 +342,15 @@ static void ui_handle_input(board_input_action_t action)
             if (station_list_handle_input(&s_station_list, action)) ui_update_station_list();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             const size_t index = station_list_selected_index(&s_station_list);
-            const size_t active_index = station_list_active_index(&s_station_list);
             const station_catalog_entry_t *entry = internet_radio_station_at(index);
             if (entry != NULL) lv_label_set_text(s_source_title, entry->name);
-            if (index == active_index) {
+            if (!station_list_selection_requires_switch(&s_station_list)) {
                 s_showing_station_list = false;
                 lv_screen_load(s_source_screen);
                 ui_update_radio_status();
                 return;
             }
+            (void)internet_radio_stop();
             ui_set_label_text_if_changed(s_source_status, "Connecting");
             ui_set_label_text_if_changed(s_source_detail, entry == NULL ? "" : entry->name);
             ui_set_label_text_if_changed(s_source_stream, "MP3  |  -- kbps");

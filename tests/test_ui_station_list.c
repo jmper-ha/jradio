@@ -21,6 +21,11 @@ int main(void)
     assert(station_list_selected_index(&state) == 3);
     assert(station_list_active_index(&state) == 1);
 
+    station_list_init(&state, 3, 1, 1);
+    assert(!station_list_selection_requires_switch(&state));
+    assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT));
+    assert(station_list_selection_requires_switch(&state));
+
     station_list_init(&state, 3, 5, 9);
     assert(station_list_selected_index(&state) == 0);
     assert(station_list_active_index(&state) == 3);

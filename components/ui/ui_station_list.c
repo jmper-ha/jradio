@@ -32,3 +32,8 @@ size_t station_list_active_index(const station_list_state_t *state)
 {
     return state == NULL ? 0 : state->active_index;
 }
+
+bool station_list_selection_requires_switch(const station_list_state_t *state)
+{
+    return state != NULL && state->selected_index != state->active_index;
+}

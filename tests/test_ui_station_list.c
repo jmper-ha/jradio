@@ -6,19 +6,24 @@
 int main(void)
 {
     station_list_state_t state;
-    station_list_init(&state, 3, 0);
+    station_list_init(&state, 3, 0, 1);
     assert(station_list_selected_index(&state) == 0);
+    assert(station_list_active_index(&state) == 1);
     assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_LEFT));
     assert(station_list_selected_index(&state) == 2);
+    assert(station_list_active_index(&state) == 1);
     assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT));
     assert(station_list_selected_index(&state) == 0);
+    assert(station_list_active_index(&state) == 1);
     assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_BUTTON));
 
-    station_list_init(&state, 5, 3);
+    station_list_init(&state, 5, 3, 1);
     assert(station_list_selected_index(&state) == 3);
+    assert(station_list_active_index(&state) == 1);
 
-    station_list_init(&state, 3, 5);
+    station_list_init(&state, 3, 5, 9);
     assert(station_list_selected_index(&state) == 0);
+    assert(station_list_active_index(&state) == 3);
 
     puts("ui_station_list tests passed");
     return 0;

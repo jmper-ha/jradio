@@ -23,3 +23,5 @@ bool station_catalog_parse_line(const char *line, station_catalog_entry_t *entry
 bool station_catalog_load_text(const char *text, station_catalog_t *catalog);
 bool station_catalog_find_by_url(const station_catalog_t *catalog, const char *url,
                                  size_t *index);
+bool station_catalog_append_if_missing(station_catalog_t *catalog,
+                                       const station_catalog_entry_t *entry);

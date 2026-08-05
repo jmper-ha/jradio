@@ -21,9 +21,9 @@
 #include "mp3_stream_info.h"
 #include "pcm_diagnostics.h"
 #include "radio_http_status.h"
+#include "radio_stream_format.h"
 #include "station_resume.h"
 
-#define RADIO_RAW_URI "raw://radio/stream.mp3"
 #define RADIO_HTTP_BUFFER_SIZE 2048
 #define RADIO_CATALOG_BUFFER_SIZE 16384
 #define RADIO_HTTP_MAX_REDIRECTS 5U
@@ -42,12 +42,19 @@ typedef struct {
     bool output_logged;
     bool output_started;
     bool initialized;
+    radio_stream_format_t stream_format;
     station_catalog_t catalog;
     size_t current_station_index;
 } internet_radio_context_t;
 
 static internet_radio_context_t s_radio;
 static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static const station_catalog_entry_t s_europa_plus_station = {
+    .name = "Европа плюс",
+    .url = "http://online-1.gkvr.ru:8000/europa_krd_128.aac",
+    .flag = 0,
+};
 
 static esp_err_t radio_sync_output(internet_radio_context_t *radio)
 {
@@ -118,7 +125,7 @@ static int radio_input(uint8_t *data, int data_size, void *context)
         taskENTER_CRITICAL(&s_status_lock);
         need_bitrate = radio->status.bitrate_kbps == 0U;
         taskEXIT_CRITICAL(&s_status_lock);
-        if (need_bitrate) {
+        if (need_bitrate && radio->stream_format == RADIO_STREAM_FORMAT_MP3) {
             const uint16_t bitrate = mp3_stream_bitrate_kbps(data + filled - audio_length,
                                                                audio_length);
             if (bitrate > 0U) {
@@ -313,6 +320,9 @@ static void radio_load_catalog(internet_radio_context_t *radio)
     }
     text[bytes_read] = '\0';
     (void)station_catalog_load_text(text, &radio->catalog);
+    if (station_catalog_append_if_missing(&radio->catalog, &s_europa_plus_station)) {
+        ESP_LOGI(TAG, "added built-in AAC station to catalog");
+    }
     free(text);
     ESP_LOGI(TAG, "loaded %u internet radio stations", (unsigned int)radio->catalog.count);
 }
@@ -365,15 +375,23 @@ bool internet_radio_start_station_index(size_t index)
 {
     if (!s_radio.initialized) return false;
     if (index >= s_radio.catalog.count) return false;
+    const radio_stream_format_t stream_format =
+        radio_stream_format_from_url(s_radio.catalog.entries[index].url);
     if (!radio_status_apply(&s_radio, INTERNET_RADIO_EVENT_START)) return false;
     s_radio.current_station_index = index;
+    s_radio.stream_format = stream_format;
     esp_err_t err = radio_http_open(&s_radio, s_radio.catalog.entries[index].url);
     if (err != ESP_OK) {
         (void)radio_status_apply(&s_radio, INTERNET_RADIO_EVENT_FATAL);
         (void)radio_sync_output(&s_radio);
         return false;
     }
-    if (esp_audio_simple_player_run(s_radio.player, RADIO_RAW_URI, NULL) != ESP_GMF_ERR_OK) {
+    taskENTER_CRITICAL(&s_status_lock);
+    snprintf(s_radio.status.codec, sizeof(s_radio.status.codec), "%s",
+             radio_stream_format_codec_name(stream_format));
+    taskEXIT_CRITICAL(&s_status_lock);
+    if (esp_audio_simple_player_run(s_radio.player, radio_stream_format_raw_uri(stream_format), NULL) !=
+        ESP_GMF_ERR_OK) {
         (void)radio_status_apply(&s_radio, INTERNET_RADIO_EVENT_FATAL);
         (void)radio_sync_output(&s_radio);
         radio_http_close(&s_radio);

@@ -95,3 +95,18 @@ bool station_catalog_find_by_url(const station_catalog_t *catalog, const char *u
     }
     return false;
 }
+
+bool station_catalog_append_if_missing(station_catalog_t *catalog,
+                                       const station_catalog_entry_t *entry)
+{
+    size_t existing_index;
+
+    if (catalog == NULL || entry == NULL || entry->url[0] == '\0' ||
+        station_catalog_find_by_url(catalog, entry->url, &existing_index)) {
+        return false;
+    }
+    if (catalog->count >= STATION_CATALOG_MAX_ENTRIES) return false;
+
+    catalog->entries[catalog->count++] = *entry;
+    return true;
+}

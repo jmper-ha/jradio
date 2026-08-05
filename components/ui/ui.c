@@ -18,6 +18,7 @@
 #include "ui_deferred_start.h"
 #include "ui_font_cyrillic_14.h"
 #include "ui_menu.h"
+#include "ui_radio_text.h"
 #include "ui_station_list.h"
 #include "wifi_provisioning.h"
 
@@ -94,12 +95,7 @@ static void ui_update_radio_status(void)
                                     : (status.title[0] == '\0' ? status.station : status.title);
     ui_set_label_text_if_changed(s_source_detail, display_title);
     char stream_text[64];
-    if (status.bitrate_kbps > 0U) {
-        snprintf(stream_text, sizeof(stream_text), "%s  |  %u kbps", status.codec,
-                 (unsigned int)status.bitrate_kbps);
-    } else {
-        snprintf(stream_text, sizeof(stream_text), "MP3  |  -- kbps");
-    }
+    ui_radio_stream_text(stream_text, sizeof(stream_text), status.codec, status.bitrate_kbps);
     ui_set_label_text_if_changed(s_source_stream, stream_text);
 
     const uint32_t now = ui_tick_get_ms();

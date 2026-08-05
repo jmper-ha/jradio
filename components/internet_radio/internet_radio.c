@@ -141,7 +141,8 @@ static int radio_input(uint8_t *data, int data_size, void *context)
     }
     radio->compressed_bytes += (size_t)filled;
     if (!radio->input_logged && filled >= 4) {
-        ESP_LOGI(TAG, "MP3 input started: bytes=%u first=%02x %02x %02x %02x",
+        ESP_LOGI(TAG, "%s input started: bytes=%u first=%02x %02x %02x %02x",
+                 radio_stream_format_codec_name(radio->stream_format),
                  (unsigned int)radio->compressed_bytes, data[0], data[1], data[2], data[3]);
         radio->input_logged = true;
     }
@@ -202,6 +203,13 @@ static esp_err_t radio_http_event(esp_http_client_event_t *event)
     }
     if (strcasecmp(event->header_key, "icy-metaint") == 0) {
         radio->icy_interval = (size_t)strtoul(event->header_value, NULL, 10);
+    } else if (strcasecmp(event->header_key, "icy-br") == 0) {
+        const uint16_t bitrate = radio_stream_bitrate_kbps_from_icy_header(event->header_value);
+        if (bitrate > 0U) {
+            taskENTER_CRITICAL(&s_status_lock);
+            radio->status.bitrate_kbps = bitrate;
+            taskEXIT_CRITICAL(&s_status_lock);
+        }
     } else if (strcasecmp(event->header_key, "icy-name") == 0) {
         taskENTER_CRITICAL(&s_status_lock);
         snprintf(radio->status.station, sizeof(radio->status.station), "%s", event->header_value);

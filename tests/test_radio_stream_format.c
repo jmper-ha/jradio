@@ -23,6 +23,13 @@ static void test_mp3_and_unknown_urls_keep_mp3_decoder(void)
            RADIO_STREAM_FORMAT_MP3);
 }
 
+static void test_icy_bitrate_header_is_parsed(void)
+{
+    assert(radio_stream_bitrate_kbps_from_icy_header("128") == 128);
+    assert(radio_stream_bitrate_kbps_from_icy_header("128 kbps") == 0);
+    assert(radio_stream_bitrate_kbps_from_icy_header("0") == 0);
+}
+
 static void test_catalog_appends_missing_builtin_station_once(void)
 {
     station_catalog_t catalog = {0};
@@ -42,6 +49,7 @@ int main(void)
 {
     test_aac_url_selects_aac_decoder();
     test_mp3_and_unknown_urls_keep_mp3_decoder();
+    test_icy_bitrate_header_is_parsed();
     test_catalog_appends_missing_builtin_station_once();
     puts("radio_stream_format tests passed");
     return 0;

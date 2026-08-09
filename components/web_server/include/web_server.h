@@ -13,4 +13,5 @@ web_server_parse_result_t web_server_parse_wifi_request(const char *request, wif
 #include "esp_err.h"
 
 esp_err_t web_server_start(void);
+esp_err_t web_server_stop(void);
 #endif

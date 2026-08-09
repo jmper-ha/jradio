@@ -1,8 +1,17 @@
 #include "web_server.h"
+#include "web_socket.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
+
+static void web_server_secure_zero(void *memory, size_t size)
+{
+    volatile unsigned char *bytes = memory;
+    while (size-- > 0U) {
+        *bytes++ = 0U;
+    }
+}
 
 #ifdef ESP_PLATFORM
 #include <stdio.h>
@@ -16,8 +25,6 @@
 
 #include "wifi_provisioning.h"
 #include "internet_radio.h"
-#include "settings_csv.h"
-#include "station_resume.h"
 
 #define WEB_SERVER_MOUNT_PATH "/littlefs"
 #define WEB_SERVER_WEB_ROOT "www"
@@ -25,6 +32,8 @@
 
 static const char *TAG = "web";
 static httpd_handle_t s_server;
+static bool s_websocket_started;
+static bool s_websocket_recovery_required;
 #endif
 
 static void json_skip_whitespace(const char **cursor)
@@ -141,9 +150,13 @@ web_server_parse_result_t web_server_parse_wifi_request(const char *request, wif
     }
 
     wifi_settings_t settings = {0};
-    return wifi_settings_upsert(&settings, network->ssid, network->password) == WIFI_SETTINGS_OK
-               ? WEB_SERVER_PARSE_OK
-               : WEB_SERVER_PARSE_INVALID;
+    const web_server_parse_result_t result =
+        wifi_settings_upsert(&settings, network->ssid, network->password) ==
+                WIFI_SETTINGS_OK
+            ? WEB_SERVER_PARSE_OK
+            : WEB_SERVER_PARSE_INVALID;
+    web_server_secure_zero(&settings, sizeof(settings));
+    return result;
 }
 
 #ifdef ESP_PLATFORM
@@ -224,10 +237,11 @@ static const char *web_server_mode_name(wifi_provisioning_mode_t mode)
 static esp_err_t web_server_status_get(httpd_req_t *request)
 {
     const wifi_provisioning_status_t status = wifi_provisioning_status();
-    const wifi_settings_t settings = wifi_provisioning_saved_networks();
+    wifi_settings_t settings = wifi_provisioning_saved_networks();
     cJSON *root = cJSON_CreateObject();
     cJSON *networks = root == NULL ? NULL : cJSON_AddArrayToObject(root, "saved_ssids");
     if (root == NULL || networks == NULL) {
+        web_server_secure_zero(&settings, sizeof(settings));
         cJSON_Delete(root);
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
         return ESP_FAIL;
@@ -241,6 +255,7 @@ static esp_err_t web_server_status_get(httpd_req_t *request)
     internet_radio_get_status(&radio);
     cJSON *radio_json = cJSON_AddObjectToObject(root, "internet_radio");
     if (radio_json == NULL) {
+        web_server_secure_zero(&settings, sizeof(settings));
         cJSON_Delete(root);
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
         return ESP_FAIL;
@@ -251,16 +266,10 @@ static esp_err_t web_server_status_get(httpd_req_t *request)
     cJSON_AddStringToObject(radio_json, "codec", radio.codec);
     cJSON_AddNumberToObject(radio_json, "bitrate_kbps", radio.bitrate_kbps);
     cJSON_AddNumberToObject(radio_json, "station_count", internet_radio_station_count());
-    char last_station_url[STATION_CATALOG_URL_MAX_LEN] = {0};
-    if (settings_csv_get(STATION_SETTINGS_PATH, STATION_SETTINGS_LAST_URL_KEY,
-                         last_station_url, sizeof(last_station_url))) {
-        cJSON_AddStringToObject(root, "last_station_url", last_station_url);
-    } else {
-        cJSON_AddStringToObject(root, "last_station_url", "");
-    }
     for (uint8_t index = 0; index < settings.count; ++index) {
         cJSON_AddItemToArray(networks, cJSON_CreateString(settings.networks[index].ssid));
     }
+    web_server_secure_zero(&settings, sizeof(settings));
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (json == NULL) {
@@ -273,57 +282,39 @@ static esp_err_t web_server_status_get(httpd_req_t *request)
     return err;
 }
 
-static void web_server_apply_wifi_work(void *context)
-{
-    wifi_network_t *network = context;
-    if (network == NULL) {
-        return;
-    }
-    const esp_err_t err = wifi_provisioning_save_network(network->ssid, network->password);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "apply Wi-Fi settings failed err=%s", esp_err_to_name(err));
-    }
-    memset(network, 0, sizeof(*network));
-    free(network);
-}
-
 static esp_err_t web_server_wifi_post(httpd_req_t *request)
 {
     if (request->content_len <= 0 || request->content_len >= WEB_SERVER_REQUEST_MAX_LEN) {
         httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Invalid request");
         return ESP_FAIL;
     }
-    char body[WEB_SERVER_REQUEST_MAX_LEN];
+    char body[WEB_SERVER_REQUEST_MAX_LEN] = {0};
     int received = 0;
     while (received < request->content_len) {
         const int read = httpd_req_recv(request, body + received, request->content_len - received);
         if (read <= 0) {
+            web_server_secure_zero(body, sizeof(body));
             httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Incomplete request");
             return ESP_FAIL;
         }
         received += read;
     }
     body[received] = '\0';
-    wifi_network_t network;
-    if (web_server_parse_wifi_request(body, &network) != WEB_SERVER_PARSE_OK) {
+    wifi_network_t network = {0};
+    const web_server_parse_result_t parse_result =
+        web_server_parse_wifi_request(body, &network);
+    web_server_secure_zero(body, sizeof(body));
+    if (parse_result != WEB_SERVER_PARSE_OK) {
+        web_server_secure_zero(&network, sizeof(network));
         httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "SSID or password is invalid");
         return ESP_FAIL;
     }
-    wifi_network_t *pending = malloc(sizeof(*pending));
-    if (pending == NULL) {
-        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
-        return ESP_ERR_NO_MEM;
-    }
-    *pending = network;
-    const esp_err_t queue_result = httpd_queue_work(s_server, web_server_apply_wifi_work,
-                                                    pending);
-    if (queue_result != ESP_OK) {
-        memset(pending, 0, sizeof(*pending));
-        free(pending);
-        ESP_LOGE(TAG, "queue Wi-Fi settings failed err=%s", esp_err_to_name(queue_result));
+    const bool queued = web_socket_queue_wifi(&network);
+    web_server_secure_zero(&network, sizeof(network));
+    if (!queued) {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
-                            "Could not apply settings");
-        return queue_result;
+                            "Device is busy");
+        return ESP_FAIL;
     }
     httpd_resp_set_status(request, "202 Accepted");
     return httpd_resp_send(request, NULL, 0);
@@ -332,10 +323,14 @@ static esp_err_t web_server_wifi_post(httpd_req_t *request)
 esp_err_t web_server_start(void)
 {
     if (s_server != NULL) {
-        return ESP_OK;
+        return s_websocket_started ? ESP_OK : ESP_ERR_INVALID_STATE;
     }
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 6144;
+    config.max_uri_handlers = 12;
+    config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
+    config.send_wait_timeout = 1;
+    config.lru_purge_enable = false;
     ESP_RETURN_ON_ERROR(httpd_start(&s_server, &config), TAG, "start HTTP server");
     const httpd_uri_t handlers[] = {
         {.uri = "/", .method = HTTP_GET, .handler = web_server_root_get},
@@ -352,7 +347,43 @@ esp_err_t web_server_start(void)
             return err;
         }
     }
+    const esp_err_t websocket_result = web_socket_start(s_server);
+    if (websocket_result != ESP_OK) {
+        if (websocket_result != ESP_ERR_TIMEOUT) {
+            httpd_stop(s_server);
+            s_server = NULL;
+        } else {
+            s_websocket_recovery_required = true;
+            ESP_LOGE(TAG, "WebSocket startup cleanup timed out; HTTP server retained");
+        }
+        return websocket_result;
+    }
+    s_websocket_started = true;
+    s_websocket_recovery_required = false;
     ESP_LOGI(TAG, "HTTP server started on port %u", (unsigned)config.server_port);
     return ESP_OK;
+}
+
+esp_err_t web_server_stop(void)
+{
+    if (s_server == NULL) {
+        s_websocket_started = false;
+        return ESP_OK;
+    }
+    if (s_websocket_started || s_websocket_recovery_required) {
+        const esp_err_t websocket_result = web_socket_stop();
+        if (websocket_result != ESP_OK) {
+            ESP_LOGE(TAG, "WebSocket stop failed; HTTP server retained err=%s",
+                     esp_err_to_name(websocket_result));
+            return websocket_result;
+        }
+        s_websocket_started = false;
+        s_websocket_recovery_required = false;
+    }
+    const esp_err_t result = httpd_stop(s_server);
+    if (result == ESP_OK) {
+        s_server = NULL;
+    }
+    return result;
 }
 #endif

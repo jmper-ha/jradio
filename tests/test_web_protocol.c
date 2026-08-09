@@ -9,6 +9,55 @@
 #include "web_protocol.h"
 
 static size_t s_cjson_allocations;
+static bool s_secret_reached_free;
+static size_t s_fault_allocation_count;
+static size_t s_fault_fail_at;
+
+typedef struct {
+    size_t size;
+} tracked_allocation_t;
+
+static bool contains_bytes(const unsigned char *memory, size_t size,
+                           const char *needle)
+{
+    const size_t needle_size = strlen(needle);
+    if (needle_size == 0U || needle_size > size) return false;
+    for (size_t offset = 0U; offset <= size - needle_size; ++offset) {
+        if (memcmp(memory + offset, needle, needle_size) == 0) return true;
+    }
+    return false;
+}
+
+static void *secret_tracking_malloc(size_t size)
+{
+    tracked_allocation_t *allocation = malloc(sizeof(*allocation) + size);
+    assert(allocation != NULL);
+    allocation->size = size;
+    memset(allocation + 1, 0, size);
+    return allocation + 1;
+}
+
+static void secret_tracking_free(void *memory)
+{
+    if (memory == NULL) return;
+    tracked_allocation_t *allocation =
+        ((tracked_allocation_t *)memory) - 1;
+    if (contains_bytes(memory, allocation->size, "topsecret42")) {
+        s_secret_reached_free = true;
+    }
+    free(allocation);
+}
+
+static void *fault_tracking_malloc(size_t size)
+{
+    ++s_fault_allocation_count;
+    if (s_fault_allocation_count == s_fault_fail_at) return NULL;
+    tracked_allocation_t *allocation = malloc(sizeof(*allocation) + size);
+    if (allocation == NULL) return NULL;
+    allocation->size = size;
+    memset(allocation + 1, 0, size);
+    return allocation + 1;
+}
 
 static void *counting_malloc(size_t size)
 {
@@ -61,6 +110,12 @@ static void test_accepts_exact_player_commands(void)
         "{\"id\":\"_pause\",\"type\":\"command\",\"action\":\"player.pause\"}";
     assert(parse(pause, &command) == WEB_PROTOCOL_OK);
     assert(command.player.kind == PLAYER_COMMAND_PAUSE);
+
+    const char *with_json_whitespace =
+        "{\"type\":\"command\",\"id\":\"space\","
+        "\"action\":\"player.play\"}\r\n\t ";
+    assert(parse(with_json_whitespace, &command) == WEB_PROTOCOL_OK);
+    assert(command.player.kind == PLAYER_COMMAND_PLAY);
 }
 
 static void test_accepts_source_and_station_selection(void)
@@ -99,6 +154,29 @@ static void test_accepts_bounded_wifi_credentials(void)
         "\"ssid\":\"open-network\",\"password\":\"\"}";
     assert(parse(open_wifi, &command) == WEB_PROTOCOL_OK);
     assert(strcmp(command.wifi.password, "") == 0);
+
+    const char *escaped =
+        "{\"type\":\"command\",\"id\":\"46\",\"action\":\"wifi.save\","
+        "\"ssid\":\"unicode\","
+        "\"password\":\"q\\\"\\\\\\/\\u2603\\uD83D\\uDE80\"}";
+    assert(parse(escaped, &command) == WEB_PROTOCOL_OK);
+    assert(strcmp(command.wifi.password, "q\"\\/☃🚀") == 0);
+    web_protocol_clear_command(&command);
+
+    const char *all_simple_escapes =
+        "{\"type\":\"command\",\"id\":\"47\",\"action\":\"wifi.save\","
+        "\"ssid\":\"simple\",\"password\":\"a\\\"b\\\\c\\/d\"}";
+    assert(parse(all_simple_escapes, &command) == WEB_PROTOCOL_OK);
+    assert(strcmp(command.wifi.password, "a\"b\\c/d") == 0);
+    web_protocol_clear_command(&command);
+
+    const char *semantic_key_and_cyrillic =
+        "{\"type\":\"command\",\"id\":\"48\",\"action\":\"wifi.save\","
+        "\"ssid\":\"unicode\",\"pass\\u0077ord\":"
+        "\"\\u041F\\u0430\\u0440\\u043E\\u043B\\u044C\\uD83D\\uDE00\"}";
+    assert(parse(semantic_key_and_cyrillic, &command) == WEB_PROTOCOL_OK);
+    assert(strcmp(command.wifi.password, "Пароль😀") == 0);
+    web_protocol_clear_command(&command);
 }
 
 static void test_rejects_bad_envelope_and_exact_schema_violations(void)
@@ -267,6 +345,36 @@ static void test_rejects_invalid_text_and_credential_lengths(void)
     assert(web_protocol_parse_command(invalid_utf8, sizeof(invalid_utf8) - 1U, &command) ==
            WEB_PROTOCOL_INVALID);
     assert_zeroed(&command);
+
+    char decoded_too_long[WEB_PROTOCOL_FRAME_MAX + 1U];
+    size_t length = (size_t)snprintf(
+        decoded_too_long, sizeof(decoded_too_long),
+        "{\"type\":\"command\",\"id\":\"long\",\"action\":\"wifi.save\","
+        "\"ssid\":\"home\",\"password\":\"");
+    for (size_t index = 0U; index < 65U; ++index) {
+        assert(length + 6U < sizeof(decoded_too_long));
+        memcpy(decoded_too_long + length, "\\u0061", 6U);
+        length += 6U;
+    }
+    memcpy(decoded_too_long + length, "\"}", 3U);
+    assert_invalid_and_zeroed(decoded_too_long);
+
+    assert_invalid_and_zeroed(
+        "{\"type\":\"command\",\"id\":\"duplicate-secret\","
+        "\"action\":\"wifi.save\",\"ssid\":\"home\","
+        "\"password\":\"one\",\"pass\\u0077ord\":\"two\"}");
+    assert_invalid_and_zeroed(
+        "{\"type\":\"command\",\"id\":\"lone-high\","
+        "\"action\":\"wifi.save\",\"ssid\":\"home\","
+        "\"password\":\"\\uD800\"}");
+    assert_invalid_and_zeroed(
+        "{\"type\":\"command\",\"id\":\"lone-low\","
+        "\"action\":\"wifi.save\",\"ssid\":\"home\","
+        "\"password\":\"\\uDC00\"}");
+    assert_invalid_and_zeroed(
+        "{\"type\":\"command\",\"id\":\"control\","
+        "\"action\":\"wifi.save\",\"ssid\":\"home\","
+        "\"password\":\"bad\\nsecret\"}");
 }
 
 static void test_enforces_frame_bound_and_zeroes_all_failures(void)
@@ -286,6 +394,85 @@ static void test_enforces_frame_bound_and_zeroes_all_failures(void)
     assert_zeroed(&command);
 }
 
+static void test_wipes_nested_passwords_on_all_parsed_error_paths(void)
+{
+    const cJSON_Hooks hooks = {
+        .malloc_fn = secret_tracking_malloc,
+        .free_fn = secret_tracking_free,
+    };
+    cJSON_InitHooks((cJSON_Hooks *)&hooks);
+
+    const char *invalid[] = {
+        "[{\"password\":\"topsecret42\"}]",
+        "{\"outer\":{\"password\":\"topsecret42\"}} trailing",
+        "{\"type\":\"command\",\"id\":\"1\",\"action\":\"unknown\","
+        "\"extra\":{\"password\":\"topsecret42\"}}",
+        "{\"type\":\"command\",\"id\":\"1\",\"action\":\"wifi.save\","
+        "\"ssid\":\"x\",\"password\":\"topsecret42\",}",
+        "{\"type\":\"command\",\"id\":\"1\",\"action\":\"wifi.save\","
+        "\"ssid\":\"x\",\"password\":\"topsecret42\",\"\\uD800\":0}",
+    };
+    for (size_t index = 0U; index < sizeof(invalid) / sizeof(invalid[0]);
+         ++index) {
+        s_secret_reached_free = false;
+        web_command_t command;
+        memset(&command, 0xA5, sizeof(command));
+        assert(parse(invalid[index], &command) == WEB_PROTOCOL_INVALID);
+        assert_zeroed(&command);
+        assert(!s_secret_reached_free);
+    }
+    cJSON_InitHooks(NULL);
+}
+
+static void test_cjson_oom_never_observes_real_password(void)
+{
+    const char *valid_json =
+        "{\"type\":\"command\",\"id\":\"oom-ok\",\"action\":\"wifi.save\","
+        "\"ssid\":\"home\",\"password\":\"topsecret42\"}";
+    const char *invalid_nested_json =
+        "{\"type\":\"command\",\"id\":\"oom\",\"action\":\"wifi.save\","
+        "\"ssid\":\"home\",\"password\":\"topsecret42\","
+        "\"extra\":{\"one\":\"1\",\"two\":\"2\",\"three\":\"3\"}}";
+    const char *invalid_nonstring_password =
+        "{\"type\":\"command\",\"id\":\"oom-object\","
+        "\"action\":\"wifi.save\",\"ssid\":\"home\","
+        "\"password\":{\"nested\":\"topsecret42\"}}";
+    const cJSON_Hooks hooks = {
+        .malloc_fn = fault_tracking_malloc,
+        .free_fn = secret_tracking_free,
+    };
+    cJSON_InitHooks((cJSON_Hooks *)&hooks);
+
+    const char *cases[] = {
+        valid_json, invalid_nested_json, invalid_nonstring_password,
+    };
+    for (size_t case_index = 0U; case_index < 3U; ++case_index) {
+        s_fault_allocation_count = 0U;
+        s_fault_fail_at = SIZE_MAX;
+        s_secret_reached_free = false;
+        web_command_t command;
+        const web_protocol_result_t baseline = parse(cases[case_index], &command);
+        assert(baseline == (case_index == 0U ? WEB_PROTOCOL_OK :
+                                                WEB_PROTOCOL_INVALID));
+        web_protocol_clear_command(&command);
+        const size_t successful_allocation_count = s_fault_allocation_count;
+        assert(successful_allocation_count > 0U);
+        assert(!s_secret_reached_free);
+
+        for (size_t fail_at = 1U; fail_at <= successful_allocation_count;
+             ++fail_at) {
+            s_fault_allocation_count = 0U;
+            s_fault_fail_at = fail_at;
+            s_secret_reached_free = false;
+            memset(&command, 0xA5, sizeof(command));
+            assert(parse(cases[case_index], &command) == WEB_PROTOCOL_INVALID);
+            assert_zeroed(&command);
+            assert(!s_secret_reached_free);
+        }
+    }
+    cJSON_InitHooks(NULL);
+}
+
 int main(void)
 {
     test_accepts_exact_player_commands();
@@ -300,6 +487,8 @@ int main(void)
     test_rejects_semantic_index_duplicates_and_bad_key_escapes();
     test_rejects_invalid_text_and_credential_lengths();
     test_enforces_frame_bound_and_zeroes_all_failures();
+    test_wipes_nested_passwords_on_all_parsed_error_paths();
+    test_cjson_oom_never_observes_real_password();
     puts("web_protocol tests passed");
     return 0;
 }

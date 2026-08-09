@@ -23,6 +23,7 @@ include_flags=(
     -I"${project_dir}/components/player_control/include"
     -I"${project_dir}/components/settings/include"
     -I"${project_dir}/components/ui/include"
+    -I"${project_dir}/components/web_server"
     -I"${project_dir}/components/web_server/include"
 )
 
@@ -113,11 +114,19 @@ run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_l
 run_test wifi_provisioning tests/test_wifi_provisioning.c \
     components/jradio_wifi_provisioning/wifi_provisioning.c
 run_test wifi_settings tests/test_wifi_settings.c components/settings/wifi_settings.c
-run_test web_server tests/test_web_server.c components/web_server/web_server.c \
-    components/settings/wifi_settings.c
+run_test web_server -I"${cjson_include}" tests/test_web_server.c \
+    components/web_server/web_server.c components/web_server/web_socket.c \
+    components/web_server/web_view_model.c components/settings/wifi_settings.c \
+    "${cjson_source}"
 run_test web_protocol -I"${cjson_include}" tests/test_web_protocol.c \
     components/web_server/web_protocol.c "${cjson_source}"
 run_test web_view_model tests/test_web_view_model.c \
     components/web_server/web_view_model.c
+
+if ! command -v node >/dev/null 2>&1; then
+    printf 'node is required for web player regression tests.\n' >&2
+    exit 127
+fi
+node tests/test_web_player.js
 
 printf 'All host tests passed.\n'

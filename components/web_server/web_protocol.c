@@ -185,6 +185,22 @@ static bool json_depth_safe(const char *frame, size_t length)
     return !in_string && !escaped && depth == 0U;
 }
 
+static bool json_whitespace(unsigned char value);
+
+static cJSON *parse_document(char *buffer, size_t length,
+                             const char **parse_end, bool *exact)
+{
+    cJSON *root = cJSON_ParseWithLengthOpts(buffer, length + 1U, parse_end,
+                                            false);
+    const char *document_end = *parse_end;
+    while (document_end != NULL && document_end < buffer + length &&
+           json_whitespace((unsigned char)*document_end)) {
+        ++document_end;
+    }
+    *exact = root != NULL && document_end == buffer + length;
+    return root;
+}
+
 static bool json_whitespace(unsigned char value)
 {
     return value == ' ' || value == '\t' || value == '\r' || value == '\n';
@@ -222,14 +238,14 @@ static bool json_hex4(const char *frame, size_t end, size_t start,
     return true;
 }
 
-static bool json_string_equals_index(const char *frame, size_t start,
-                                     size_t end)
+static bool json_string_equals_ascii(const char *frame, size_t start,
+                                     size_t end, const char *target)
 {
-    static const char target[] = "index";
+    const size_t target_length = strlen(target);
     size_t cursor = start;
     size_t target_offset = 0U;
     while (cursor < end) {
-        if (target_offset >= sizeof(target) - 1U) return false;
+        if (target_offset >= target_length) return false;
         uint32_t codepoint;
         const unsigned char value = (unsigned char)frame[cursor++];
         if (value != '\\') {
@@ -273,7 +289,201 @@ static bool json_string_equals_index(const char *frame, size_t start,
         }
         if (codepoint != (unsigned char)target[target_offset++]) return false;
     }
-    return target_offset == sizeof(target) - 1U;
+    return target_offset == target_length;
+}
+
+static bool append_utf8(uint32_t codepoint, char *output, size_t capacity,
+                        size_t *length)
+{
+    unsigned char encoded[4];
+    size_t encoded_length;
+    if (codepoint <= 0x7FU) {
+        encoded[0] = (unsigned char)codepoint;
+        encoded_length = 1U;
+    } else if (codepoint <= 0x7FFU) {
+        encoded[0] = (unsigned char)(0xC0U | (codepoint >> 6U));
+        encoded[1] = (unsigned char)(0x80U | (codepoint & 0x3FU));
+        encoded_length = 2U;
+    } else if (codepoint <= 0xFFFFU) {
+        encoded[0] = (unsigned char)(0xE0U | (codepoint >> 12U));
+        encoded[1] = (unsigned char)(0x80U | ((codepoint >> 6U) & 0x3FU));
+        encoded[2] = (unsigned char)(0x80U | (codepoint & 0x3FU));
+        encoded_length = 3U;
+    } else if (codepoint <= 0x10FFFFU) {
+        encoded[0] = (unsigned char)(0xF0U | (codepoint >> 18U));
+        encoded[1] = (unsigned char)(0x80U | ((codepoint >> 12U) & 0x3FU));
+        encoded[2] = (unsigned char)(0x80U | ((codepoint >> 6U) & 0x3FU));
+        encoded[3] = (unsigned char)(0x80U | (codepoint & 0x3FU));
+        encoded_length = 4U;
+    } else {
+        return false;
+    }
+    if (encoded_length >= capacity - *length) return false;
+    memcpy(output + *length, encoded, encoded_length);
+    *length += encoded_length;
+    return true;
+}
+
+static bool decode_json_string(const char *frame, size_t start, size_t end,
+                               char *output, size_t output_size)
+{
+    size_t cursor = start;
+    size_t output_length = 0U;
+    if (output_size == 0U) return false;
+    output[0] = '\0';
+    while (cursor < end) {
+        uint32_t codepoint;
+        const unsigned char value = (unsigned char)frame[cursor++];
+        if (value != '\\') {
+            if (value < 0x20U) return false;
+            if (value < 0x80U) {
+                codepoint = value;
+            } else {
+                --cursor;
+                if (!utf8_decode((const unsigned char *)frame, end, &cursor,
+                                 &codepoint)) {
+                    return false;
+                }
+            }
+        } else {
+            if (cursor >= end) return false;
+            const unsigned char escape = (unsigned char)frame[cursor++];
+            switch (escape) {
+            case '"': codepoint = '"'; break;
+            case '\\': codepoint = '\\'; break;
+            case '/': codepoint = '/'; break;
+            case 'b': codepoint = '\b'; break;
+            case 'f': codepoint = '\f'; break;
+            case 'n': codepoint = '\n'; break;
+            case 'r': codepoint = '\r'; break;
+            case 't': codepoint = '\t'; break;
+            case 'u': {
+                if (!json_hex4(frame, end, cursor, &codepoint)) return false;
+                cursor += 4U;
+                if (codepoint >= 0xD800U && codepoint <= 0xDBFFU) {
+                    uint32_t low;
+                    if (end - cursor < 6U || frame[cursor] != '\\' ||
+                        frame[cursor + 1U] != 'u' ||
+                        !json_hex4(frame, end, cursor + 2U, &low) ||
+                        low < 0xDC00U || low > 0xDFFFU) {
+                        return false;
+                    }
+                    cursor += 6U;
+                    codepoint = 0x10000U +
+                                ((codepoint - 0xD800U) << 10U) +
+                                (low - 0xDC00U);
+                } else if (codepoint >= 0xDC00U && codepoint <= 0xDFFFU) {
+                    return false;
+                }
+                break;
+            }
+            default: return false;
+            }
+        }
+        if (codepoint == 0U ||
+            !append_utf8(codepoint, output, output_size, &output_length)) {
+            return false;
+        }
+    }
+    output[output_length] = '\0';
+    return true;
+}
+
+static bool json_value_end(const char *frame, size_t length, size_t start,
+                           size_t *end)
+{
+    size_t nested = 0U;
+    for (size_t cursor = start; cursor < length; ++cursor) {
+        const unsigned char value = (unsigned char)frame[cursor];
+        if (value == '"') {
+            size_t string_end;
+            if (!json_string_end(frame, length, cursor, &string_end)) {
+                return false;
+            }
+            cursor = string_end;
+        } else if (value == '{' || value == '[') {
+            ++nested;
+        } else if (value == '}' || value == ']') {
+            if (nested == 0U) {
+                *end = cursor;
+                return true;
+            }
+            --nested;
+        } else if (value == ',' && nested == 0U) {
+            *end = cursor;
+            return true;
+        }
+    }
+    *end = length;
+    return true;
+}
+
+static bool redact_password_strings(const char *frame, size_t length,
+                                    char *redacted, size_t *password_start,
+                                    size_t *password_end,
+                                    bool *password_found)
+{
+    memcpy(redacted, frame, length);
+    redacted[length] = '\0';
+    *password_found = false;
+    size_t depth = 0U;
+    for (size_t index = 0U; index < length; ++index) {
+        const unsigned char value = (unsigned char)frame[index];
+        if (value == '"') {
+            size_t key_end;
+            if (!json_string_end(frame, length, index, &key_end)) return false;
+            size_t cursor = key_end + 1U;
+            while (cursor < length &&
+                   json_whitespace((unsigned char)frame[cursor])) {
+                ++cursor;
+            }
+            if (cursor < length && frame[cursor] == ':' &&
+                json_string_equals_ascii(frame, index + 1U, key_end,
+                                         "password")) {
+                ++cursor;
+                while (cursor < length &&
+                       json_whitespace((unsigned char)frame[cursor])) {
+                    ++cursor;
+                }
+                if (cursor < length && frame[cursor] == '"') {
+                    size_t value_end;
+                    if (!json_string_end(frame, length, cursor, &value_end)) {
+                        return false;
+                    }
+                    memset(redacted + cursor + 1U, 'x',
+                           value_end - cursor - 1U);
+                    if (depth == 1U) {
+                        if (*password_found) return false;
+                        *password_found = true;
+                        *password_start = cursor + 1U;
+                        *password_end = value_end;
+                    }
+                } else if (cursor < length) {
+                    size_t value_end;
+                    if (!json_value_end(frame, length, cursor, &value_end)) {
+                        return false;
+                    }
+                    while (value_end > cursor &&
+                           json_whitespace(
+                               (unsigned char)frame[value_end - 1U])) {
+                        --value_end;
+                    }
+                    if (value_end - cursor >= sizeof("null") - 1U) {
+                        memset(redacted + cursor, ' ', value_end - cursor);
+                        memcpy(redacted + cursor, "null",
+                               sizeof("null") - 1U);
+                    }
+                }
+            }
+            index = key_end;
+        } else if (value == '{' || value == '[') {
+            ++depth;
+        } else if (value == '}' || value == ']') {
+            if (depth == 0U) return false;
+            --depth;
+        }
+    }
+    return true;
 }
 
 static raw_index_result_t parse_raw_index_value(const char *frame,
@@ -329,7 +539,7 @@ static raw_index_result_t find_top_level_raw_index(const char *frame,
                 return RAW_INDEX_INVALID;
             }
             if (depth == 1U &&
-                json_string_equals_index(frame, index + 1U, end)) {
+                json_string_equals_ascii(frame, index + 1U, end, "index")) {
                 size_t cursor = end + 1U;
                 while (cursor < length &&
                        json_whitespace((unsigned char)frame[cursor])) {
@@ -411,15 +621,27 @@ static const cJSON *object_item(const cJSON *root, const char *name)
     return cJSON_GetObjectItemCaseSensitive(root, name);
 }
 
-static void wipe_password_values(cJSON *root)
+static void wipe_password_values_recursive(cJSON *item, size_t depth,
+                                           size_t *remaining)
 {
-    cJSON *item = NULL;
-    cJSON_ArrayForEach(item, root) {
+    for (; item != NULL && *remaining > 0U; item = item->next) {
+        --*remaining;
         if (item->string != NULL && strcmp(item->string, "password") == 0 &&
             cJSON_IsString(item) && item->valuestring != NULL) {
             secure_zero(item->valuestring, strlen(item->valuestring));
         }
+        if (item->child != NULL && depth < WEB_PROTOCOL_JSON_MAX_DEPTH) {
+            wipe_password_values_recursive(item->child, depth + 1U,
+                                           remaining);
+        }
     }
+}
+
+static void wipe_password_values(cJSON *root)
+{
+    /* A 512-byte accepted frame cannot contain more than 512 JSON nodes. */
+    size_t remaining = WEB_PROTOCOL_FRAME_MAX;
+    wipe_password_values_recursive(root, 0U, &remaining);
 }
 
 static bool json_string(const cJSON *item, size_t max_length, bool allow_empty)
@@ -502,13 +724,11 @@ static bool parse_wifi_action(const cJSON *root, uint32_t fields,
     const cJSON *ssid = object_item(root, "ssid");
     const cJSON *password = object_item(root, "password");
     if (!json_string(ssid, WIFI_SETTINGS_SSID_MAX_LEN, false) ||
-        !json_string(password, WIFI_SETTINGS_PASSWORD_MAX_LEN, true)) {
+        !cJSON_IsString(password)) {
         return false;
     }
     parsed->kind = WEB_COMMAND_WIFI_SAVE;
     memcpy(parsed->wifi.ssid, ssid->valuestring, strlen(ssid->valuestring) + 1U);
-    memcpy(parsed->wifi.password, password->valuestring,
-           strlen(password->valuestring) + 1U);
     return true;
 }
 
@@ -527,15 +747,32 @@ web_protocol_result_t web_protocol_parse_command(const char *frame,
         return WEB_PROTOCOL_INVALID;
     }
 
-    char buffer[WEB_PROTOCOL_FRAME_MAX + 1U];
-    memcpy(buffer, frame, frame_length);
-    buffer[frame_length] = '\0';
+    char raw[WEB_PROTOCOL_FRAME_MAX + 1U];
+    char redacted[WEB_PROTOCOL_FRAME_MAX + 1U];
+    char decoded_password[WIFI_SETTINGS_PASSWORD_MAX_LEN + 1U] = {0};
+    memcpy(raw, frame, frame_length);
+    raw[frame_length] = '\0';
+    size_t password_start = 0U;
+    size_t password_end = 0U;
+    bool password_found = false;
+    if (!redact_password_strings(raw, frame_length, redacted,
+                                 &password_start, &password_end,
+                                 &password_found)) {
+        secure_zero(raw, sizeof(raw));
+        secure_zero(redacted, sizeof(redacted));
+        secure_zero(decoded_password, sizeof(decoded_password));
+        return WEB_PROTOCOL_INVALID;
+    }
+
     const char *parse_end = NULL;
-    cJSON *root = cJSON_ParseWithLengthOpts(buffer, frame_length + 1U,
-                                            &parse_end, true);
-    if (!cJSON_IsObject(root) || parse_end != buffer + frame_length) {
+    bool exact = false;
+    cJSON *root = parse_document(redacted, frame_length, &parse_end, &exact);
+    if (!exact || !cJSON_IsObject(root)) {
+        wipe_password_values(root);
         cJSON_Delete(root);
-        secure_zero(buffer, sizeof(buffer));
+        secure_zero(raw, sizeof(raw));
+        secure_zero(redacted, sizeof(redacted));
+        secure_zero(decoded_password, sizeof(decoded_password));
         return WEB_PROTOCOL_INVALID;
     }
 
@@ -543,7 +780,7 @@ web_protocol_result_t web_protocol_parse_command(const char *frame,
     uint32_t fields = 0U;
     uint32_t raw_index = 0U;
     const raw_index_result_t raw_index_result =
-        find_top_level_raw_index(buffer, frame_length, &raw_index);
+        find_top_level_raw_index(raw, frame_length, &raw_index);
     const char *action = NULL;
     bool valid = collect_fields(root, &fields) &&
                  parse_common(root, fields, &parsed, &action);
@@ -552,10 +789,24 @@ web_protocol_result_t web_protocol_parse_command(const char *frame,
                                     raw_index, &parsed) ||
                 parse_wifi_action(root, fields, action, &parsed);
     }
+    if (valid && parsed.kind == WEB_COMMAND_WIFI_SAVE) {
+        valid = password_found &&
+                decode_json_string(raw, password_start, password_end,
+                                   decoded_password,
+                                   sizeof(decoded_password)) &&
+                text_valid(decoded_password, WIFI_SETTINGS_PASSWORD_MAX_LEN,
+                           true);
+        if (valid) {
+            memcpy(parsed.wifi.password, decoded_password,
+                   strlen(decoded_password) + 1U);
+        }
+    }
 
     wipe_password_values(root);
     cJSON_Delete(root);
-    secure_zero(buffer, sizeof(buffer));
+    secure_zero(raw, sizeof(raw));
+    secure_zero(redacted, sizeof(redacted));
+    secure_zero(decoded_password, sizeof(decoded_password));
     if (!valid) {
         web_protocol_clear_command(&parsed);
         return WEB_PROTOCOL_INVALID;

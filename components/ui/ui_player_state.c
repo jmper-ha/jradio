@@ -228,6 +228,19 @@ bool ui_player_state_show_station_list(ui_player_state_t *state)
     return true;
 }
 
+void ui_player_state_close_station_list(ui_player_state_t *state)
+{
+    if (state == NULL || state->view != UI_PLAYER_VIEW_STATION_LIST) return;
+    state->view = UI_PLAYER_VIEW_SOURCE;
+    if (state->pending) {
+        // Mirror ui_player_state_show_station_list: if a pending command times
+        // out later, it should revert to the source screen the idle timeout
+        // just returned to, not to whatever view was captured when the
+        // command was originally posted.
+        state->pending_origin_view = UI_PLAYER_VIEW_SOURCE;
+    }
+}
+
 ui_player_view_t ui_player_state_view(const ui_player_state_t *state)
 {
     return state == NULL ? UI_PLAYER_VIEW_MENU : state->view;

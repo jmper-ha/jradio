@@ -7,6 +7,7 @@ void station_list_init(station_list_state_t *state, size_t count, size_t initial
     state->count = count;
     state->selected_index = count > 0U && initial_index < count ? initial_index : 0U;
     state->active_index = active_index < count ? active_index : count;
+    state->last_activity_ms = 0U;
 }
 
 bool station_list_handle_input(station_list_state_t *state, board_input_action_t action)
@@ -58,4 +59,17 @@ size_t station_list_window_start(const station_list_state_t *state, size_t visib
 bool station_list_selection_requires_switch(const station_list_state_t *state)
 {
     return state != NULL && state->selected_index != state->active_index;
+}
+
+void station_list_note_activity(station_list_state_t *state, uint32_t now_ms)
+{
+    if (state == NULL) return;
+    state->last_activity_ms = now_ms;
+}
+
+bool station_list_idle_timeout_elapsed(const station_list_state_t *state, uint32_t now_ms,
+                                       uint32_t timeout_ms)
+{
+    if (state == NULL) return false;
+    return (uint32_t)(now_ms - state->last_activity_ms) >= timeout_ms;
 }

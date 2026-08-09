@@ -342,6 +342,51 @@ static void test_external_item_change_closes_station_list(void)
     assert(ui_player_state_active_item(&state) == 1);
 }
 
+static void test_close_station_list_returns_to_source(void)
+{
+    ui_player_state_t state;
+    ui_player_state_init(&state);
+    player_snapshot_t radio = snapshot(AUDIO_SOURCE_INTERNET_RADIO, 1, 3);
+    ui_player_state_apply_snapshot(&state, &radio, 0);
+
+    ui_player_state_close_station_list(&state);
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+
+    assert(ui_player_state_show_station_list(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
+    ui_player_state_close_station_list(&state);
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+}
+
+static void test_close_station_list_redirects_pending_timeout_to_source(void)
+{
+    ui_player_state_t state;
+    ui_player_state_init(&state);
+    player_snapshot_t radio = snapshot(AUDIO_SOURCE_INTERNET_RADIO, 1, 3);
+    ui_player_state_apply_snapshot(&state, &radio, 0);
+    assert(ui_player_state_show_station_list(&state));
+
+    player_command_t select_item =
+        command(PLAYER_COMMAND_SELECT_ITEM, AUDIO_SOURCE_INTERNET_RADIO, 2);
+    assert(ui_player_state_apply_post_result(&state, &select_item, true, 100));
+    assert(ui_player_state_is_pending(&state));
+
+    // Re-opening the station list while the switch is still pending (matches
+    // ui_show_station_list being reachable again from the source screen).
+    assert(ui_player_state_show_station_list(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
+
+    // Idle timeout fires: the list should close back to the source screen,
+    // and a later pending-command timeout must not silently reopen it.
+    ui_player_state_close_station_list(&state);
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+
+    ui_player_state_apply_snapshot(&state, &radio,
+                                   100 + UI_PLAYER_PENDING_TIMEOUT_MS);
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+    assert(!ui_player_state_is_pending(&state));
+}
+
 int main(void)
 {
     test_rejected_commands_preserve_current_view();
@@ -356,6 +401,8 @@ int main(void)
     test_queue_full_superseding_stop_preserves_first_pending();
     test_retry_same_failed_item_requires_playback_progress();
     test_external_item_change_closes_station_list();
+    test_close_station_list_returns_to_source();
+    test_close_station_list_redirects_pending_timeout_to_source();
     puts("ui_player_state tests passed");
     return 0;
 }

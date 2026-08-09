@@ -29,6 +29,7 @@
 #define UI_TASK_PRIORITY 4
 #define UI_STATION_LIST_MAX_ROWS 7U
 #define UI_RADIO_EMPTY_LIST_DELAY_MS 250U
+#define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
 
 static const char *TAG = "ui";
 static QueueHandle_t s_input_queue;
@@ -362,6 +363,7 @@ static void ui_load_station_list_screen(void)
     const size_t initial_index = active_station_index < station_count ? active_station_index : 0U;
     station_list_init(&s_station_list, station_count, initial_index,
                       active_station_index);
+    station_list_note_activity(&s_station_list, ui_tick_get_ms());
     ui_update_station_list();
     lv_screen_load(s_station_list_screen);
 }
@@ -371,6 +373,12 @@ static void ui_show_station_list(void)
     if (!ui_player_state_show_station_list(&s_player_ui)) return;
     s_waiting_for_radio_station = false;
     ui_load_station_list_screen();
+}
+
+static void ui_close_station_list_to_source(void)
+{
+    ui_player_state_close_station_list(&s_player_ui);
+    lv_screen_load(s_source_screen);
 }
 
 static void ui_render_player_state(void)
@@ -391,6 +399,7 @@ static void ui_render_player_state(void)
 static void ui_handle_input(board_input_action_t action)
 {
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
+        station_list_note_activity(&s_station_list, ui_tick_get_ms());
         if (action == BOARD_INPUT_ACTION_F2) {
             ui_show_menu();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
@@ -462,6 +471,12 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
         (uint32_t)(ui_tick_get_ms() - s_radio_station_wait_started_ms) >=
             UI_RADIO_EMPTY_LIST_DELAY_MS) {
         ui_show_station_list();
+    }
+
+    if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST &&
+        station_list_idle_timeout_elapsed(&s_station_list, ui_tick_get_ms(),
+                                          UI_STATION_LIST_IDLE_TIMEOUT_MS)) {
+        ui_close_station_list_to_source();
     }
     ui_update_radio_status(snapshot);
 }

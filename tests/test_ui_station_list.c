@@ -47,6 +47,13 @@ int main(void)
     assert(!station_list_get_selection(&state, &selected_index));
     assert(selected_index == 99);
 
+    station_list_init(&state, 3, 0, 1);
+    station_list_note_activity(&state, 1000);
+    assert(!station_list_idle_timeout_elapsed(&state, 1000 + 9999, 10000));
+    assert(station_list_idle_timeout_elapsed(&state, 1000 + 10000, 10000));
+    station_list_note_activity(&state, 1000 + 9999);
+    assert(!station_list_idle_timeout_elapsed(&state, 1000 + 9999 + 9999, 10000));
+
     puts("ui_station_list tests passed");
     return 0;
 }

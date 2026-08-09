@@ -44,6 +44,7 @@ void ui_player_state_apply_snapshot(ui_player_state_t *state,
                                     const player_snapshot_t *snapshot,
                                     uint32_t now_ms);
 bool ui_player_state_show_station_list(ui_player_state_t *state);
+void ui_player_state_close_station_list(ui_player_state_t *state);
 bool ui_player_state_can_select_item(const ui_player_state_t *state,
                                      size_t item_index);
 ui_player_view_t ui_player_state_view(const ui_player_state_t *state);

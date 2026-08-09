@@ -721,6 +721,7 @@ button:disabled {
 
 .playlist-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: .85rem;
   padding: 1rem 1.1rem;
@@ -752,6 +753,11 @@ button:disabled {
 }
 
 .playlist-row-fields input[type="text"] {
+  /* Form controls don't stretch to their grid track by default - without an
+     explicit width they keep the browser's intrinsic input width (~20ch),
+     which can be wider than the column and spill into the next field. */
+  width: 100%;
+  min-width: 0;
   min-height: 44px;
   padding: .55rem .7rem;
   border: 1px solid var(--line);
@@ -833,6 +839,11 @@ button:disabled {
 
   .playlist-row {
     flex-direction: column;
+    /* flex-wrap: wrap on a column-direction container wraps overflow into a
+       new column beside the first, not a new row below it - undoing that
+       here keeps the row-direction (desktop) wrap fix from misplacing the
+       error text sideways in this stacked layout. */
+    flex-wrap: nowrap;
   }
 
   .playlist-row-fields {

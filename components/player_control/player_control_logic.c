@@ -2,6 +2,15 @@
 
 #include <string.h>
 
+#define PLAYER_RSSI_REFRESH_MS 1000U
+
+bool player_rssi_refresh_due(bool seen, uint32_t last_update_ms,
+                             uint32_t now_ms)
+{
+    return !seen ||
+           (uint32_t)(now_ms - last_update_ms) >= PLAYER_RSSI_REFRESH_MS;
+}
+
 player_playback_state_t player_playback_from_radio(internet_radio_state_t state)
 {
     switch (state) {

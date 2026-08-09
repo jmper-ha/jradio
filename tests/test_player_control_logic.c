@@ -56,6 +56,15 @@ static void test_snapshot_equality_detects_bitrate_change(void)
     assert(!player_snapshot_equal(&left, &right));
 }
 
+static void test_rssi_refresh_is_limited_to_once_per_second(void)
+{
+    assert(player_rssi_refresh_due(false, 0, 5));
+    assert(!player_rssi_refresh_due(true, 100, 1099));
+    assert(player_rssi_refresh_due(true, 100, 1100));
+    assert(!player_rssi_refresh_due(true, UINT32_MAX - 499, 499));
+    assert(player_rssi_refresh_due(true, UINT32_MAX - 499, 500));
+}
+
 int main(void)
 {
     test_toggle_maps_playing_to_pause();
@@ -64,6 +73,7 @@ int main(void)
     test_unavailable_source_is_rejected();
     test_radio_state_maps_to_public_playback_state();
     test_snapshot_equality_detects_bitrate_change();
+    test_rssi_refresh_is_limited_to_once_per_second();
     puts("player_control_logic tests passed");
     return 0;
 }

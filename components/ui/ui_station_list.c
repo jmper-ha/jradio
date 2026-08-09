@@ -28,6 +28,17 @@ size_t station_list_selected_index(const station_list_state_t *state)
     return state == NULL ? 0 : state->selected_index;
 }
 
+bool station_list_get_selection(const station_list_state_t *state,
+                                size_t *selected_index)
+{
+    if (state == NULL || selected_index == NULL || state->count == 0U ||
+        state->selected_index >= state->count) {
+        return false;
+    }
+    *selected_index = state->selected_index;
+    return true;
+}
+
 size_t station_list_active_index(const station_list_state_t *state)
 {
     return state == NULL ? 0 : state->active_index;

@@ -42,6 +42,11 @@ int main(void)
     assert(station_list_window_start(&state, 7) == 5);
     assert(station_list_window_start(&state, 0) == 0);
 
+    size_t selected_index = 99;
+    station_list_init(&state, 0, 0, 0);
+    assert(!station_list_get_selection(&state, &selected_index));
+    assert(selected_index == 99);
+
     puts("ui_station_list tests passed");
     return 0;
 }

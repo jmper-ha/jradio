@@ -58,6 +58,7 @@ run_test station_resume tests/test_station_resume.c components/internet_radio/st
 run_test ui_deferred_start tests/test_ui_deferred_start.c components/ui/ui_deferred_start.c
 run_test ui_draw_buffer tests/test_ui_draw_buffer.c components/ui/ui_draw_buffer.c
 run_test ui_menu tests/test_ui_menu.c components/ui/ui_menu.c
+run_test ui_player_state tests/test_ui_player_state.c components/ui/ui_player_state.c
 run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c \
     components/internet_radio/radio_stream_format.c
 run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c

@@ -10,6 +10,8 @@ extern "C" {
 player_playback_state_t player_playback_from_radio(internet_radio_state_t state);
 bool player_snapshot_equal(const player_snapshot_t *left,
                            const player_snapshot_t *right);
+bool player_rssi_refresh_due(bool seen, uint32_t last_update_ms,
+                             uint32_t now_ms);
 
 #ifdef ESP_PLATFORM
 #include "esp_err.h"

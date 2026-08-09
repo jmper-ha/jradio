@@ -18,6 +18,7 @@
 #include "ui_draw_buffer.h"
 #include "ui_font_cyrillic_14.h"
 #include "ui_menu.h"
+#include "ui_player_state.h"
 #include "ui_radio_text.h"
 #include "ui_station_list.h"
 
@@ -44,11 +45,7 @@ static lv_obj_t *s_source_wifi;
 static lv_obj_t *s_station_list_screen;
 static lv_obj_t *s_station_list_rows[UI_STATION_LIST_MAX_ROWS];
 static station_list_state_t s_station_list;
-static bool s_showing_source;
-static bool s_showing_radio;
-static bool s_showing_station_list;
-static bool s_have_observed_snapshot;
-static player_snapshot_t s_observed_snapshot;
+static ui_player_state_t s_player_ui;
 static bool s_waiting_for_radio_station;
 static uint32_t s_radio_station_wait_started_ms;
 
@@ -80,7 +77,8 @@ static const char *ui_radio_state_text(player_playback_state_t state)
 
 static void ui_update_radio_status(const player_snapshot_t *snapshot)
 {
-    if (!s_showing_radio || snapshot == NULL) return;
+    if (ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_INTERNET_RADIO ||
+        snapshot == NULL) return;
     ui_set_label_text_if_changed(s_source_status,
                                  ui_radio_state_text(snapshot->playback_state));
     const station_catalog_entry_t *entry =
@@ -261,16 +259,21 @@ static void ui_create_source_screen(void)
     lv_obj_set_style_text_color(footer, lv_color_hex(0xB0BEC5), 0);
 }
 
-static bool ui_post_player_command(player_command_kind_t kind,
-                                   audio_source_t source, size_t item_index)
+static bool ui_submit_player_command(const player_command_t *command)
 {
-    const player_command_t command = {
-        .kind = kind,
-        .source = source,
-        .item_index = item_index,
-    };
-    if (!player_control_post(&command)) {
-        ESP_LOGW(TAG, "player command queue full; kind=%d", (int)kind);
+    if (!ui_player_state_can_post(&s_player_ui, command)) {
+        ESP_LOGW(TAG, "player command rejected: busy or invalid; kind=%d",
+                 command == NULL ? -1 : (int)command->kind);
+        return false;
+    }
+    if (!player_control_post(command)) {
+        ESP_LOGW(TAG, "player command queue full; kind=%d", (int)command->kind);
+        return false;
+    }
+    if (!ui_player_state_apply_post_result(&s_player_ui, command, true,
+                                           ui_tick_get_ms())) {
+        ESP_LOGW(TAG, "player command rejected after post; kind=%d",
+                 (int)command->kind);
         return false;
     }
     return true;
@@ -282,10 +285,7 @@ static void ui_load_source_screen(audio_source_t selected_source)
     const uint8_t index = ui_menu_selected_index(&s_menu);
     lv_label_set_text(s_source_title, ui_menu_item_label((ui_menu_item_t)index));
     lv_screen_load(s_source_screen);
-    s_showing_source = true;
-    s_showing_station_list = false;
-    s_showing_radio = selected_source == AUDIO_SOURCE_INTERNET_RADIO;
-    if (s_showing_radio) {
+    if (selected_source == AUDIO_SOURCE_INTERNET_RADIO) {
         ui_set_label_text_if_changed(s_source_status, "Connecting...");
         ui_set_label_text_if_changed(s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
@@ -304,11 +304,19 @@ static void ui_load_source_screen(audio_source_t selected_source)
 static void ui_show_source(void)
 {
     const audio_source_t selected_source = ui_menu_activate(&s_menu);
-    if (selected_source != AUDIO_SOURCE_NONE) {
-        (void)ui_post_player_command(PLAYER_COMMAND_SELECT_SOURCE,
-                                     selected_source, PLAYER_ITEM_NONE);
+    if (selected_source == AUDIO_SOURCE_NONE) return;
+    const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
+    const audio_source_t old_source = ui_player_state_source(&s_player_ui);
+    const player_command_t command = {
+        .kind = PLAYER_COMMAND_SELECT_SOURCE,
+        .source = selected_source,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    if (!ui_submit_player_command(&command)) return;
+    if (old_view != ui_player_state_view(&s_player_ui) ||
+        old_source != ui_player_state_source(&s_player_ui)) {
+        ui_load_source_screen(ui_player_state_source(&s_player_ui));
     }
-    ui_load_source_screen(selected_source);
 }
 
 static void ui_load_menu_screen(void)
@@ -316,21 +324,26 @@ static void ui_load_menu_screen(void)
     s_waiting_for_radio_station = false;
     ui_update_menu_highlight();
     lv_screen_load(s_menu_screen);
-    s_showing_source = false;
-    s_showing_radio = false;
-    s_showing_station_list = false;
 }
 
 static void ui_show_menu(void)
 {
-    (void)ui_post_player_command(PLAYER_COMMAND_STOP_SOURCE,
-                                 AUDIO_SOURCE_NONE, PLAYER_ITEM_NONE);
-    ui_load_menu_screen();
+    const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
+    const audio_source_t old_source = ui_player_state_source(&s_player_ui);
+    const player_command_t command = {
+        .kind = PLAYER_COMMAND_STOP_SOURCE,
+        .source = AUDIO_SOURCE_NONE,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    if (!ui_submit_player_command(&command)) return;
+    if (old_view != ui_player_state_view(&s_player_ui) ||
+        old_source != ui_player_state_source(&s_player_ui)) {
+        ui_load_menu_screen();
+    }
 }
 
-static void ui_show_station_list(void)
+static void ui_load_station_list_screen(void)
 {
-    if (!s_showing_radio) return;
     player_snapshot_t snapshot;
     player_control_get_snapshot(&snapshot);
     ESP_LOGI(TAG, "show station list: player_state=%d active_station=%u",
@@ -343,43 +356,76 @@ static void ui_show_station_list(void)
                       active_station_index);
     ui_update_station_list();
     lv_screen_load(s_station_list_screen);
-    s_showing_station_list = true;
+}
+
+static void ui_show_station_list(void)
+{
+    if (!ui_player_state_show_station_list(&s_player_ui)) return;
+    s_waiting_for_radio_station = false;
+    ui_load_station_list_screen();
+}
+
+static void ui_render_player_state(void)
+{
+    switch (ui_player_state_view(&s_player_ui)) {
+    case UI_PLAYER_VIEW_MENU:
+        ui_load_menu_screen();
+        break;
+    case UI_PLAYER_VIEW_SOURCE:
+        ui_load_source_screen(ui_player_state_source(&s_player_ui));
+        break;
+    case UI_PLAYER_VIEW_STATION_LIST:
+        ui_load_station_list_screen();
+        break;
+    }
 }
 
 static void ui_handle_input(board_input_action_t action)
 {
-    if (s_showing_station_list) {
+    if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
         if (action == BOARD_INPUT_ACTION_F2) {
             ui_show_menu();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
                    action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
             if (station_list_handle_input(&s_station_list, action)) ui_update_station_list();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
-            const size_t index = station_list_selected_index(&s_station_list);
+            size_t index;
+            if (!station_list_get_selection(&s_station_list, &index) ||
+                !ui_player_state_can_select_item(&s_player_ui, index)) return;
             const station_catalog_entry_t *entry = player_control_station_at(index);
+            const player_command_t command = {
+                .kind = PLAYER_COMMAND_SELECT_ITEM,
+                .source = AUDIO_SOURCE_INTERNET_RADIO,
+                .item_index = index,
+            };
+            if (!ui_submit_player_command(&command)) return;
+            ui_load_source_screen(AUDIO_SOURCE_INTERNET_RADIO);
             if (entry != NULL) lv_label_set_text(s_source_title, entry->name);
             ui_set_label_text_if_changed(s_source_status, "Connecting");
-            ui_set_label_text_if_changed(s_source_detail, entry == NULL ? "" : entry->name);
+            ui_set_label_text_if_changed(s_source_detail,
+                                         entry == NULL ? "" : entry->name);
             char stream_text[32];
             ui_radio_stream_text_for_url(stream_text, sizeof(stream_text),
                                          entry == NULL ? NULL : entry->url);
             ui_set_label_text_if_changed(s_source_stream, stream_text);
             ui_set_label_text_if_changed(s_source_wifi, "");
-            s_showing_station_list = false;
-            lv_screen_load(s_source_screen);
-            (void)ui_post_player_command(PLAYER_COMMAND_SELECT_ITEM,
-                                         AUDIO_SOURCE_INTERNET_RADIO, index);
         }
         return;
     }
-    if (s_showing_source) {
+    if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_SOURCE) {
         if (action == BOARD_INPUT_ACTION_F2) {
             ui_show_menu();
-        } else if (s_showing_radio && action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
+        } else if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_INTERNET_RADIO &&
+                   action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             ui_show_station_list();
-        } else if (s_showing_radio && action == BOARD_INPUT_ACTION_F3) {
-            (void)ui_post_player_command(PLAYER_COMMAND_TOGGLE,
-                                         AUDIO_SOURCE_NONE, PLAYER_ITEM_NONE);
+        } else if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_INTERNET_RADIO &&
+                   action == BOARD_INPUT_ACTION_F3) {
+            const player_command_t command = {
+                .kind = PLAYER_COMMAND_TOGGLE,
+                .source = AUDIO_SOURCE_NONE,
+                .item_index = PLAYER_ITEM_NONE,
+            };
+            (void)ui_submit_player_command(&command);
         }
         return;
     }
@@ -393,27 +439,12 @@ static void ui_handle_input(board_input_action_t action)
 static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
 {
     if (snapshot == NULL) return;
-    if (!s_have_observed_snapshot) {
-        s_observed_snapshot = *snapshot;
-        s_have_observed_snapshot = true;
-    } else {
-        const bool source_changed =
-            snapshot->active_source != s_observed_snapshot.active_source;
-        const bool item_changed =
-            snapshot->active_item_index != s_observed_snapshot.active_item_index;
-        if (source_changed) {
-            if (snapshot->active_source == AUDIO_SOURCE_NONE) {
-                ui_load_menu_screen();
-            } else {
-                ui_load_source_screen(snapshot->active_source);
-            }
-        }
-        if (snapshot->active_source == AUDIO_SOURCE_INTERNET_RADIO &&
-            item_changed && snapshot->active_item_index < snapshot->item_count &&
-            s_showing_station_list) {
-            ui_load_source_screen(AUDIO_SOURCE_INTERNET_RADIO);
-        }
-        s_observed_snapshot = *snapshot;
+    const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
+    const audio_source_t old_source = ui_player_state_source(&s_player_ui);
+    ui_player_state_apply_snapshot(&s_player_ui, snapshot, ui_tick_get_ms());
+    if (old_view != ui_player_state_view(&s_player_ui) ||
+        old_source != ui_player_state_source(&s_player_ui)) {
+        ui_render_player_state();
     }
 
     if (s_waiting_for_radio_station &&
@@ -459,7 +490,7 @@ esp_err_t ui_init(void)
         return ESP_ERR_NO_MEM;
     }
     ui_menu_init(&s_menu);
-    s_have_observed_snapshot = false;
+    ui_player_state_init(&s_player_ui);
     s_waiting_for_radio_station = false;
     lv_init();
     lv_tick_set_cb(ui_tick_get_ms);

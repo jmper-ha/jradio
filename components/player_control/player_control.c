@@ -9,6 +9,7 @@
 #include "freertos/task.h"
 
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include "audio_source.h"
 #include "internet_radio.h"
@@ -23,6 +24,36 @@ static const char *TAG = "player_control";
 static QueueHandle_t s_command_queue;
 static audio_source_manager_t s_manager;
 static atomic_int s_active_source = ATOMIC_VAR_INIT(AUDIO_SOURCE_NONE);
+static atomic_bool s_rssi_seen = ATOMIC_VAR_INIT(false);
+static atomic_uint s_rssi_updated_ms = ATOMIC_VAR_INIT(0U);
+static atomic_bool s_rssi_valid = ATOMIC_VAR_INIT(false);
+static atomic_int s_rssi_dbm = ATOMIC_VAR_INIT(0);
+static atomic_flag s_rssi_refreshing = ATOMIC_FLAG_INIT;
+
+static void player_refresh_rssi_if_due(void)
+{
+    const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    bool seen = atomic_load_explicit(&s_rssi_seen, memory_order_acquire);
+    uint32_t updated_ms = atomic_load_explicit(&s_rssi_updated_ms,
+                                               memory_order_relaxed);
+    if (!player_rssi_refresh_due(seen, updated_ms, now_ms) ||
+        atomic_flag_test_and_set_explicit(&s_rssi_refreshing,
+                                          memory_order_acquire)) {
+        return;
+    }
+
+    seen = atomic_load_explicit(&s_rssi_seen, memory_order_acquire);
+    updated_ms = atomic_load_explicit(&s_rssi_updated_ms, memory_order_relaxed);
+    if (player_rssi_refresh_due(seen, updated_ms, now_ms)) {
+        int8_t rssi_dbm = 0;
+        const bool valid = wifi_provisioning_get_rssi(&rssi_dbm);
+        atomic_store_explicit(&s_rssi_dbm, rssi_dbm, memory_order_relaxed);
+        atomic_store_explicit(&s_rssi_valid, valid, memory_order_release);
+        atomic_store_explicit(&s_rssi_updated_ms, now_ms, memory_order_relaxed);
+        atomic_store_explicit(&s_rssi_seen, true, memory_order_release);
+    }
+    atomic_flag_clear_explicit(&s_rssi_refreshing, memory_order_release);
+}
 
 static void player_stop_active_source(audio_source_t source)
 {
@@ -98,6 +129,11 @@ esp_err_t player_control_init(void)
     }
 
     atomic_store_explicit(&s_active_source, AUDIO_SOURCE_NONE, memory_order_release);
+    atomic_store_explicit(&s_rssi_seen, false, memory_order_release);
+    atomic_store_explicit(&s_rssi_updated_ms, 0U, memory_order_relaxed);
+    atomic_store_explicit(&s_rssi_valid, false, memory_order_release);
+    atomic_store_explicit(&s_rssi_dbm, 0, memory_order_relaxed);
+    atomic_flag_clear_explicit(&s_rssi_refreshing, memory_order_release);
     s_command_queue = xQueueCreate(PLAYER_COMMAND_QUEUE_LENGTH,
                                    sizeof(player_command_t));
     if (s_command_queue == NULL) {
@@ -140,7 +176,11 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
              radio_status.title);
     snprintf(snapshot->codec, sizeof(snapshot->codec), "%s", radio_status.codec);
     snapshot->bitrate_kbps = radio_status.bitrate_kbps;
-    snapshot->wifi_rssi_valid = wifi_provisioning_get_rssi(&snapshot->wifi_rssi_dbm);
+    player_refresh_rssi_if_due();
+    snapshot->wifi_rssi_valid =
+        atomic_load_explicit(&s_rssi_valid, memory_order_acquire);
+    snapshot->wifi_rssi_dbm =
+        (int8_t)atomic_load_explicit(&s_rssi_dbm, memory_order_relaxed);
     if (radio_status.state == INTERNET_RADIO_STATE_ERROR) {
         snprintf(snapshot->error, sizeof(snapshot->error),
                  "Не удалось подключиться к станции");

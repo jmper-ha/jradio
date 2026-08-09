@@ -207,6 +207,18 @@ static esp_err_t web_server_style_get(httpd_req_t *request)
                                 "text/css; charset=utf-8");
 }
 
+static esp_err_t web_server_settings_get(httpd_req_t *request)
+{
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/settings.html",
+                                "text/html; charset=utf-8");
+}
+
+static esp_err_t web_server_settings_js_get(httpd_req_t *request)
+{
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/settings.js",
+                                "application/javascript; charset=utf-8");
+}
+
 static const char *web_server_radio_state_name(internet_radio_state_t state)
 {
     switch (state) {
@@ -237,7 +249,8 @@ static const char *web_server_mode_name(wifi_provisioning_mode_t mode)
 static esp_err_t web_server_status_get(httpd_req_t *request)
 {
     const wifi_provisioning_status_t status = wifi_provisioning_status();
-    wifi_settings_t settings = wifi_provisioning_saved_networks();
+    wifi_provisioning_saved_ssids_t settings =
+        wifi_provisioning_committed_ssids();
     cJSON *root = cJSON_CreateObject();
     cJSON *networks = root == NULL ? NULL : cJSON_AddArrayToObject(root, "saved_ssids");
     if (root == NULL || networks == NULL) {
@@ -250,6 +263,7 @@ static esp_err_t web_server_status_get(httpd_req_t *request)
     cJSON_AddStringToObject(root, "active_ssid", status.active_ssid);
     cJSON_AddStringToObject(root, "ip", status.ipv4);
     cJSON_AddNumberToObject(root, "last_error", status.last_error);
+    cJSON_AddBoolToObject(root, "save_pending", status.save_pending);
 
     internet_radio_status_t radio = {0};
     internet_radio_get_status(&radio);
@@ -267,7 +281,7 @@ static esp_err_t web_server_status_get(httpd_req_t *request)
     cJSON_AddNumberToObject(radio_json, "bitrate_kbps", radio.bitrate_kbps);
     cJSON_AddNumberToObject(radio_json, "station_count", internet_radio_station_count());
     for (uint8_t index = 0; index < settings.count; ++index) {
-        cJSON_AddItemToArray(networks, cJSON_CreateString(settings.networks[index].ssid));
+        cJSON_AddItemToArray(networks, cJSON_CreateString(settings.ssids[index]));
     }
     web_server_secure_zero(&settings, sizeof(settings));
     char *json = cJSON_PrintUnformatted(root);
@@ -336,6 +350,8 @@ esp_err_t web_server_start(void)
         {.uri = "/", .method = HTTP_GET, .handler = web_server_root_get},
         {.uri = "/app.js", .method = HTTP_GET, .handler = web_server_app_js_get},
         {.uri = "/style.css", .method = HTTP_GET, .handler = web_server_style_get},
+        {.uri = "/settings", .method = HTTP_GET, .handler = web_server_settings_get},
+        {.uri = "/settings.js", .method = HTTP_GET, .handler = web_server_settings_js_get},
         {.uri = "/api/status", .method = HTTP_GET, .handler = web_server_status_get},
         {.uri = "/api/wifi", .method = HTTP_POST, .handler = web_server_wifi_post},
     };

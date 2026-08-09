@@ -55,6 +55,8 @@ static web_socket_wifi_state_t sample_wifi(void)
 {
     web_socket_wifi_state_t wifi = {
         .mode = WIFI_PROVISIONING_STA_CONNECTED,
+        .save_pending = true,
+        .last_error = 202,
         .saved_count = 1U,
     };
     strcpy(wifi.active_ssid, "home");
@@ -122,6 +124,10 @@ static void test_snapshot_has_exact_public_sections_and_no_secrets(void)
                   "sta_connected") == 0);
     assert(strcmp(cJSON_GetObjectItemCaseSensitive(wifi_json, "active_ssid")->valuestring,
                   "home") == 0);
+    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(wifi_json,
+                                                        "save_pending")));
+    assert(cJSON_GetObjectItemCaseSensitive(wifi_json, "last_error")->valueint ==
+           202);
     cJSON_Delete(root);
 
     char too_small[64];
@@ -168,6 +174,13 @@ static void test_section_diff_and_update_types_are_bounded(void)
     assert(web_socket_changed_sections(&previous_player, &previous_wifi,
                                        &current_player, &current_wifi) ==
            (WEB_SOCKET_SECTION_LIST | WEB_SOCKET_SECTION_WIFI));
+
+    previous_player = current_player;
+    previous_wifi = current_wifi;
+    current_wifi.save_pending = !current_wifi.save_pending;
+    assert(web_socket_changed_sections(&previous_player, &previous_wifi,
+                                       &current_player, &current_wifi) ==
+           WEB_SOCKET_SECTION_WIFI);
 
     const web_socket_event_kind_t kinds[] = {
         WEB_SOCKET_EVENT_CAPABILITIES_UPDATE,

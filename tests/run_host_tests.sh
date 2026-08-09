@@ -128,5 +128,6 @@ if ! command -v node >/dev/null 2>&1; then
     exit 127
 fi
 node tests/test_web_player.js
+node tests/test_web_settings.js
 
 printf 'All host tests passed.\n'

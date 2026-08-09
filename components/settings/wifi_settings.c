@@ -21,6 +21,42 @@
 
 static const char *TAG = "wifi_settings";
 static bool s_storage_mounted;
+
+static void wifi_settings_secure_zero(void *memory, size_t size)
+{
+    volatile unsigned char *bytes = memory;
+    while (size-- > 0U) {
+        *bytes++ = 0U;
+    }
+}
+
+static void wifi_settings_wipe_json(cJSON *item)
+{
+    for (cJSON *current = item; current != NULL; current = current->next) {
+        if (current->string != NULL && strcmp(current->string, "password") == 0 &&
+            current->valuestring != NULL) {
+            wifi_settings_secure_zero(current->valuestring,
+                                      strlen(current->valuestring));
+        }
+        if (current->child != NULL) {
+            wifi_settings_wipe_json(current->child);
+        }
+    }
+}
+
+static void wifi_settings_delete_json(cJSON *root)
+{
+    wifi_settings_wipe_json(root);
+    cJSON_Delete(root);
+}
+
+static void wifi_settings_free_text(char *text)
+{
+    if (text != NULL) {
+        wifi_settings_secure_zero(text, strlen(text));
+        cJSON_free(text);
+    }
+}
 #endif
 
 static bool wifi_settings_is_valid_string(const char *value, size_t max_length, bool allow_empty)
@@ -112,23 +148,29 @@ esp_err_t wifi_settings_load(wifi_settings_t *settings)
     const cJSON *networks = root == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(root, "networks");
     if (!cJSON_IsNumber(version) || version->valueint != 1 || !cJSON_IsArray(networks)) {
         ESP_LOGW(TAG, "invalid wifi.json; using empty settings");
-        cJSON_Delete(root);
+        wifi_settings_delete_json(root);
+        wifi_settings_secure_zero(buffer, sizeof(buffer));
         return ESP_OK;
     }
     const cJSON *network = NULL;
     cJSON_ArrayForEach(network, networks) {
         wifi_network_t parsed = {0};
-        if (!wifi_settings_json_read_string(network, "ssid", parsed.ssid, WIFI_SETTINGS_SSID_MAX_LEN,
-                                            false) ||
-            !wifi_settings_json_read_string(network, "password", parsed.password,
-                                            WIFI_SETTINGS_PASSWORD_MAX_LEN, true) ||
-            wifi_settings_upsert(settings, parsed.ssid, parsed.password) != WIFI_SETTINGS_OK) {
+        const bool valid =
+            wifi_settings_json_read_string(network, "ssid", parsed.ssid,
+                                           WIFI_SETTINGS_SSID_MAX_LEN, false) &&
+            wifi_settings_json_read_string(network, "password", parsed.password,
+                                           WIFI_SETTINGS_PASSWORD_MAX_LEN, true) &&
+            wifi_settings_upsert(settings, parsed.ssid, parsed.password) ==
+                WIFI_SETTINGS_OK;
+        wifi_settings_secure_zero(&parsed, sizeof(parsed));
+        if (!valid) {
             *settings = (wifi_settings_t){0};
             ESP_LOGW(TAG, "invalid wifi.json; using empty settings");
             break;
         }
     }
-    cJSON_Delete(root);
+    wifi_settings_delete_json(root);
+    wifi_settings_secure_zero(buffer, sizeof(buffer));
     return ESP_OK;
 }
 
@@ -154,37 +196,37 @@ esp_err_t wifi_settings_save_atomic(const wifi_settings_t *settings)
     }
     cJSON *networks = cJSON_AddArrayToObject(root, "networks");
     if (networks == NULL || cJSON_AddNumberToObject(root, "version", 1) == NULL) {
-        cJSON_Delete(root);
+        wifi_settings_delete_json(root);
         return ESP_ERR_NO_MEM;
     }
     for (uint8_t index = 0; index < settings->count; ++index) {
         cJSON *network = cJSON_CreateObject();
         if (network == NULL) {
-            cJSON_Delete(root);
+            wifi_settings_delete_json(root);
             return ESP_ERR_NO_MEM;
         }
         if (cJSON_AddStringToObject(network, "ssid", settings->networks[index].ssid) == NULL ||
             cJSON_AddStringToObject(network, "password",
                                     settings->networks[index].password) == NULL ||
             !cJSON_AddItemToArray(networks, network)) {
-            cJSON_Delete(network);
-            cJSON_Delete(root);
+            wifi_settings_delete_json(network);
+            wifi_settings_delete_json(root);
             return ESP_ERR_NO_MEM;
         }
     }
     char *json = root == NULL ? NULL : cJSON_PrintUnformatted(root);
-    cJSON_Delete(root);
+    wifi_settings_delete_json(root);
     if (json == NULL) {
         return ESP_ERR_NO_MEM;
     }
     FILE *file = fopen(WIFI_SETTINGS_TEMP_PATH, "w");
     if (file == NULL) {
-        cJSON_free(json);
+        wifi_settings_free_text(json);
         return ESP_FAIL;
     }
     const bool write_ok = fputs(json, file) != EOF;
     const bool close_ok = fclose(file) == 0;
-    cJSON_free(json);
+    wifi_settings_free_text(json);
     if (!write_ok || !close_ok) {
         (void)unlink(WIFI_SETTINGS_TEMP_PATH);
         return ESP_FAIL;

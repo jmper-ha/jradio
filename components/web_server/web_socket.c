@@ -340,6 +340,10 @@ static void write_wifi(json_writer_t *writer,
     writer_string(writer, wifi->active_ssid);
     writer_literal(writer, ",\"ip\":");
     writer_string(writer, wifi->ipv4);
+    writer_literal(writer, ",\"save_pending\":");
+    writer_literal(writer, wifi->save_pending ? "true" : "false");
+    writer_literal(writer, ",\"last_error\":");
+    writer_format(writer, "%ld", (long)wifi->last_error);
     writer_literal(writer, ",\"saved_ssids\":[");
     const uint8_t count = wifi->saved_count <= WIFI_SETTINGS_MAX_NETWORKS
                               ? wifi->saved_count
@@ -431,6 +435,8 @@ static bool wifi_state_equal(const web_socket_wifi_state_t *left,
         return true;
     }
     if (left == NULL || right == NULL || left->mode != right->mode ||
+        left->last_error != right->last_error ||
+        left->save_pending != right->save_pending ||
         left->saved_count != right->saved_count ||
         strcmp(left->active_ssid, right->active_ssid) != 0 ||
         strcmp(left->ipv4, right->ipv4) != 0) {
@@ -537,6 +543,7 @@ static atomic_uint s_wifi_posters = ATOMIC_VAR_INIT(0U);
 static portMUX_TYPE s_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static web_socket_send_job_t s_send_jobs[WEB_SOCKET_SEND_JOB_COUNT];
 static wifi_secret_slot_t s_wifi_secrets[WEB_SOCKET_WIFI_QUEUE_LENGTH];
+static bool s_wifi_command_busy;
 static int s_ready_clients[WEB_SOCKET_MAX_CLIENTS];
 static bool s_ready_client_used[WEB_SOCKET_MAX_CLIENTS];
 static player_snapshot_t s_published_player;
@@ -551,8 +558,10 @@ static void capture_wifi_state(web_socket_wifi_state_t *output)
 {
     memset(output, 0, sizeof(*output));
     const wifi_provisioning_status_t status = wifi_provisioning_status();
-    wifi_settings_t saved = wifi_provisioning_saved_networks();
+    wifi_provisioning_saved_ssids_t saved = wifi_provisioning_committed_ssids();
     output->mode = status.mode;
+    output->last_error = status.last_error;
+    output->save_pending = status.save_pending;
     snprintf(output->active_ssid, sizeof(output->active_ssid), "%s",
              status.active_ssid);
     snprintf(output->ipv4, sizeof(output->ipv4), "%s", status.ipv4);
@@ -561,7 +570,7 @@ static void capture_wifi_state(web_socket_wifi_state_t *output)
                               : WIFI_SETTINGS_MAX_NETWORKS;
     for (uint8_t index = 0U; index < output->saved_count; ++index) {
         snprintf(output->saved_ssids[index], sizeof(output->saved_ssids[index]),
-                 "%s", saved.networks[index].ssid);
+                 "%s", saved.ssids[index]);
     }
     secure_zero(&saved, sizeof(saved));
 }
@@ -570,16 +579,26 @@ static int wifi_secret_acquire(const wifi_network_t *network)
 {
     int slot = -1;
     taskENTER_CRITICAL(&s_state_lock);
-    for (size_t index = 0U; index < WEB_SOCKET_WIFI_QUEUE_LENGTH; ++index) {
-        if (!s_wifi_secrets[index].in_use) {
-            s_wifi_secrets[index].in_use = true;
-            s_wifi_secrets[index].network = *network;
-            slot = (int)index;
-            break;
+    if (!s_wifi_command_busy) {
+        for (size_t index = 0U; index < WEB_SOCKET_WIFI_QUEUE_LENGTH; ++index) {
+            if (!s_wifi_secrets[index].in_use) {
+                s_wifi_secrets[index].in_use = true;
+                s_wifi_secrets[index].network = *network;
+                s_wifi_command_busy = true;
+                slot = (int)index;
+                break;
+            }
         }
     }
     taskEXIT_CRITICAL(&s_state_lock);
     return slot;
+}
+
+static void wifi_command_finish(void)
+{
+    taskENTER_CRITICAL(&s_state_lock);
+    s_wifi_command_busy = false;
+    taskEXIT_CRITICAL(&s_state_lock);
 }
 
 static void wifi_secret_release(uint8_t slot)
@@ -841,6 +860,7 @@ static void wifi_worker_task(void *context)
         }
         if (slot >= WEB_SOCKET_WIFI_QUEUE_LENGTH ||
             !s_wifi_secrets[slot].in_use) {
+            wifi_command_finish();
             continue;
         }
         const esp_err_t err = wifi_provisioning_save_network(
@@ -851,6 +871,13 @@ static void wifi_worker_task(void *context)
                      esp_err_to_name(err));
         }
         wifi_secret_release(slot);
+        if (err == ESP_OK) {
+            while (atomic_load_explicit(&s_running, memory_order_acquire) &&
+                   wifi_provisioning_status().save_pending) {
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+        }
+        wifi_command_finish();
         slot = 0U;
     }
     slot = 0U;
@@ -937,6 +964,7 @@ bool web_socket_queue_wifi(const wifi_network_t *network)
         queued = xQueueSend(s_wifi_queue, &slot_index, 0) == pdTRUE;
         if (!queued) {
             wifi_secret_release(slot_index);
+            wifi_command_finish();
         }
     }
     atomic_fetch_sub_explicit(&s_wifi_posters, 1U, memory_order_acq_rel);
@@ -1132,6 +1160,7 @@ static void wipe_wifi_queue(void)
         wifi_secret_release(slot);
     }
     secure_zero(s_wifi_secrets, sizeof(s_wifi_secrets));
+    wifi_command_finish();
 }
 
 static esp_err_t wait_for_shutdown(uint32_t timeout_ms)

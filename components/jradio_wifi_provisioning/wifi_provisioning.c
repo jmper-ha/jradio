@@ -48,14 +48,36 @@ typedef struct {
     uint8_t reason;
 } wifi_disconnect_command_t;
 
-static void status_set(wifi_provisioning_mode_t mode, const char *ssid, const char *ipv4,
-                       int32_t last_error)
+static void secure_zero(void *memory, size_t size)
+{
+    volatile unsigned char *bytes = memory;
+    while (size-- > 0U) {
+        *bytes++ = 0U;
+    }
+}
+
+static void status_set_connection(wifi_provisioning_mode_t mode, const char *ssid,
+                                  const char *ipv4)
 {
     taskENTER_CRITICAL(&s_status_lock);
     s_status.mode = mode;
     snprintf(s_status.active_ssid, sizeof(s_status.active_ssid), "%s", ssid == NULL ? "" : ssid);
     snprintf(s_status.ipv4, sizeof(s_status.ipv4), "%s", ipv4 == NULL ? "" : ipv4);
-    s_status.last_error = last_error;
+    taskEXIT_CRITICAL(&s_status_lock);
+}
+
+static void status_set_save(bool pending, int32_t error)
+{
+    taskENTER_CRITICAL(&s_status_lock);
+    s_status.save_pending = pending;
+    s_status.last_error = error;
+    taskEXIT_CRITICAL(&s_status_lock);
+}
+
+static void status_set_error(int32_t error)
+{
+    taskENTER_CRITICAL(&s_status_lock);
+    s_status.last_error = error;
     taskEXIT_CRITICAL(&s_status_lock);
 }
 
@@ -104,7 +126,7 @@ static esp_err_t wifi_start_ap_setup(void)
 
     char ssid[WIFI_SETTINGS_SSID_MAX_LEN + 1];
     snprintf(ssid, sizeof(ssid), "jradio-%02X%02X", mac[4], mac[5]);
-    status_set(WIFI_PROVISIONING_AP_SETUP, ssid, "192.168.4.1", 0);
+    status_set_connection(WIFI_PROVISIONING_AP_SETUP, ssid, "192.168.4.1");
 
     ESP_RETURN_ON_ERROR(wifi_stop_if_running(), TAG, "stop Wi-Fi before AP");
     ESP_RETURN_ON_ERROR(wifi_configure_static_ap_ip(), TAG, "configure AP address");
@@ -128,13 +150,14 @@ static esp_err_t wifi_start_ap_setup(void)
 
 static esp_err_t wifi_configure_current_network(void)
 {
-    const wifi_settings_t settings = wifi_provisioning_saved_networks();
+    wifi_settings_t settings = wifi_provisioning_saved_networks();
     taskENTER_CRITICAL(&s_settings_lock);
     const uint8_t network_index = s_network_index;
     const uint8_t retry_count = s_retry_count;
     taskEXIT_CRITICAL(&s_settings_lock);
     const uint8_t index = wifi_provisioning_network_index(&settings, network_index);
     if (index == WIFI_SETTINGS_MAX_NETWORKS) {
+        secure_zero(&settings, sizeof(settings));
         return ESP_ERR_NOT_FOUND;
     }
 
@@ -144,11 +167,18 @@ static esp_err_t wifi_configure_current_network(void)
     const size_t password_length = bounded_length(network->password, WIFI_SETTINGS_PASSWORD_MAX_LEN);
     memcpy(config.sta.ssid, network->ssid, ssid_length);
     memcpy(config.sta.password, network->password, password_length);
-    status_set(WIFI_PROVISIONING_STA_CONNECTING, network->ssid, "", 0);
-    ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &config), TAG, "configure station");
+    char ssid[WIFI_SETTINGS_SSID_MAX_LEN + 1U];
+    snprintf(ssid, sizeof(ssid), "%s", network->ssid);
+    status_set_connection(WIFI_PROVISIONING_STA_CONNECTING, ssid, "");
+    const esp_err_t config_result = esp_wifi_set_config(WIFI_IF_STA, &config);
     ESP_LOGI(TAG, "connecting ssid=%s network=%u retry=%u password_len=%u", network->ssid,
              (unsigned)index, (unsigned)retry_count, (unsigned)password_length);
-    return ESP_OK;
+    secure_zero(&config, sizeof(config));
+    secure_zero(&settings, sizeof(settings));
+    if (config_result != ESP_OK) {
+        ESP_LOGE(TAG, "configure station failed err=%s", esp_err_to_name(config_result));
+    }
+    return config_result;
 }
 
 static esp_err_t wifi_connect_current_network(void)
@@ -171,6 +201,22 @@ static esp_err_t wifi_start_station(void)
     return esp_wifi_connect();
 }
 
+static bool restore_pending_settings(int32_t error)
+{
+    bool restored = false;
+    taskENTER_CRITICAL(&s_settings_lock);
+    if (s_pending_commit) {
+        s_settings = s_committed_settings;
+        s_pending_commit = false;
+        restored = true;
+    }
+    taskEXIT_CRITICAL(&s_settings_lock);
+    if (restored) {
+        status_set_save(false, error);
+    }
+    return restored;
+}
+
 static void wifi_reconnect_task(void *arg)
 {
     (void)arg;
@@ -186,21 +232,30 @@ static void wifi_reconnect_task(void *arg)
             taskEXIT_CRITICAL(&s_settings_lock);
             if (pending_commit) {
                 const esp_err_t err = wifi_settings_save_atomic(&committed);
-                if (err == ESP_OK) {
-                    taskENTER_CRITICAL(&s_settings_lock);
-                    if (memcmp(&s_settings, &committed, sizeof(committed)) == 0) {
+                bool completed = false;
+                taskENTER_CRITICAL(&s_settings_lock);
+                if (s_pending_commit &&
+                    memcmp(&s_settings, &committed, sizeof(committed)) == 0) {
+                    if (err == ESP_OK) {
                         s_committed_settings = committed;
-                        s_pending_commit = false;
+                    } else {
+                        s_settings = s_committed_settings;
                     }
-                    const bool committed_current = !s_pending_commit;
-                    taskEXIT_CRITICAL(&s_settings_lock);
-                    if (committed_current) {
+                    s_pending_commit = false;
+                    completed = true;
+                }
+                taskEXIT_CRITICAL(&s_settings_lock);
+                if (completed) {
+                    status_set_save(false, err == ESP_OK ? 0 : (int32_t)err);
+                    if (err == ESP_OK) {
                         ESP_LOGI(TAG, "Wi-Fi settings committed after successful connection");
+                    } else {
+                        ESP_LOGE(TAG, "failed to commit Wi-Fi settings err=%s",
+                                 esp_err_to_name(err));
                     }
-                } else {
-                    ESP_LOGE(TAG, "failed to commit Wi-Fi settings err=%s", esp_err_to_name(err));
                 }
             }
+            secure_zero(&committed, sizeof(committed));
             continue;
         }
         const wifi_provisioning_status_t status = wifi_provisioning_status();
@@ -208,7 +263,9 @@ static void wifi_reconnect_task(void *arg)
             continue;
         }
 
-        status_set(WIFI_PROVISIONING_STA_CONNECTING, status.active_ssid, "", command.reason);
+        status_set_connection(WIFI_PROVISIONING_STA_CONNECTING,
+                              status.active_ssid, "");
+        status_set_error(command.reason);
         wifi_ap_record_t ap_info = {0};
         const esp_err_t ap_info_err = esp_wifi_sta_get_ap_info(&ap_info);
         if (ap_info_err == ESP_OK) {
@@ -244,23 +301,29 @@ static void wifi_reconnect_task(void *arg)
         }
         taskEXIT_CRITICAL(&s_settings_lock);
         if (pending_commit) {
+            status_set_save(false, command.reason);
             ESP_LOGW(TAG, "pending Wi-Fi settings rejected; restoring committed settings");
             if (restored.count > 0) {
                 (void)wifi_start_station();
             } else {
                 (void)wifi_start_ap_setup();
             }
+            secure_zero(&restored, sizeof(restored));
             continue;
         }
+        secure_zero(&restored, sizeof(restored));
 
         taskENTER_CRITICAL(&s_settings_lock);
         ++s_network_index;
         s_retry_count = 0;
         const uint8_t network_index = s_network_index;
         taskEXIT_CRITICAL(&s_settings_lock);
-        const wifi_settings_t settings = wifi_provisioning_saved_networks();
-        if (wifi_provisioning_network_index(&settings, network_index) !=
-            WIFI_SETTINGS_MAX_NETWORKS) {
+        wifi_settings_t settings = wifi_provisioning_saved_networks();
+        const bool have_next =
+            wifi_provisioning_network_index(&settings, network_index) !=
+            WIFI_SETTINGS_MAX_NETWORKS;
+        secure_zero(&settings, sizeof(settings));
+        if (have_next) {
             ESP_LOGW(TAG, "moving to saved network=%u", (unsigned)network_index);
             const esp_err_t err = wifi_connect_current_network();
             if (err != ESP_OK) {
@@ -310,17 +373,20 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
     const wifi_provisioning_status_t previous = wifi_provisioning_status();
     char ip[16];
     snprintf(ip, sizeof(ip), IPSTR, IP2STR(&got_ip->ip_info.ip));
-    status_set(WIFI_PROVISIONING_STA_CONNECTED, previous.active_ssid, ip, 0);
+    status_set_connection(WIFI_PROVISIONING_STA_CONNECTED,
+                          previous.active_ssid, ip);
     taskENTER_CRITICAL(&s_settings_lock);
     s_retry_count = 0;
     const bool pending_commit = s_pending_commit;
     taskEXIT_CRITICAL(&s_settings_lock);
+    status_set_save(pending_commit, 0);
     ESP_LOGI(TAG, "connected ssid=%s ip=" IPSTR, previous.active_ssid,
              IP2STR(&got_ip->ip_info.ip));
     if (s_reconnect_queue != NULL && pending_commit) {
         const wifi_disconnect_command_t command = {.type = WIFI_COMMAND_GOT_IP};
         if (xQueueSend(s_reconnect_queue, &command, 0) != pdPASS) {
             ESP_LOGE(TAG, "failed to queue Wi-Fi settings commit");
+            (void)restore_pending_settings(ESP_ERR_TIMEOUT);
         }
     }
 }
@@ -396,10 +462,14 @@ esp_err_t wifi_provisioning_start(void)
     s_network_index = 0;
     s_retry_count = 0;
     taskEXIT_CRITICAL(&s_settings_lock);
+    status_set_save(false, 0);
     s_started = true;
-    return wifi_provisioning_initial_mode(&settings) == WIFI_PROVISIONING_AP_SETUP
-               ? wifi_start_ap_setup()
-               : wifi_start_station();
+    const esp_err_t result =
+        wifi_provisioning_initial_mode(&settings) == WIFI_PROVISIONING_AP_SETUP
+            ? wifi_start_ap_setup()
+            : wifi_start_station();
+    secure_zero(&settings, sizeof(settings));
+    return result;
 }
 
 wifi_provisioning_status_t wifi_provisioning_status(void)
@@ -433,42 +503,87 @@ wifi_settings_t wifi_provisioning_saved_networks(void)
     return settings;
 }
 
+wifi_provisioning_saved_ssids_t wifi_provisioning_committed_ssids(void)
+{
+    wifi_settings_t committed;
+    taskENTER_CRITICAL(&s_settings_lock);
+    committed = s_committed_settings;
+    taskEXIT_CRITICAL(&s_settings_lock);
+    wifi_provisioning_saved_ssids_t output;
+    wifi_provisioning_extract_ssids(&committed, &output);
+    secure_zero(&committed, sizeof(committed));
+    return output;
+}
+
 esp_err_t wifi_provisioning_save_network(const char *ssid, const char *password)
 {
     if (!s_initialized) {
         return ESP_ERR_INVALID_STATE;
     }
-    wifi_settings_t committed;
+    wifi_settings_t updated = {0};
+    wifi_settings_result_t result;
     taskENTER_CRITICAL(&s_settings_lock);
-    committed = s_committed_settings;
+    if (s_pending_commit) {
+        taskEXIT_CRITICAL(&s_settings_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    updated = s_committed_settings;
+    result = wifi_settings_upsert(&updated, ssid, password);
+    if (result == WIFI_SETTINGS_OK) {
+        s_settings = updated;
+        s_pending_commit = true;
+        s_network_index = 0;
+        for (uint8_t index = 0; index < updated.count; ++index) {
+            if (strcmp(updated.networks[index].ssid, ssid) == 0) {
+                s_network_index = index;
+                break;
+            }
+        }
+        s_retry_count = 0;
+    }
     taskEXIT_CRITICAL(&s_settings_lock);
-    wifi_settings_t updated = committed;
-    const wifi_settings_result_t result = wifi_settings_upsert(&updated, ssid, password);
     if (result == WIFI_SETTINGS_INVALID_ARG) {
+        secure_zero(&updated, sizeof(updated));
+        status_set_save(false, ESP_ERR_INVALID_ARG);
         return ESP_ERR_INVALID_ARG;
     }
     if (result == WIFI_SETTINGS_FULL) {
+        secure_zero(&updated, sizeof(updated));
+        status_set_save(false, ESP_ERR_NO_MEM);
         return ESP_ERR_NO_MEM;
     }
-    taskENTER_CRITICAL(&s_settings_lock);
-    s_settings = updated;
-    s_pending_commit = true;
-    s_network_index = 0;
-    for (uint8_t index = 0; index < updated.count; ++index) {
-        if (strcmp(updated.networks[index].ssid, ssid) == 0) {
-            s_network_index = index;
-            break;
-        }
-    }
-    s_retry_count = 0;
-    taskEXIT_CRITICAL(&s_settings_lock);
+    status_set_save(true, 0);
 
-    ESP_RETURN_ON_ERROR(wifi_stop_if_running(), TAG, "stop Wi-Fi before applying settings");
-    ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "set station mode");
-    ESP_RETURN_ON_ERROR(wifi_configure_current_network(), TAG, "configure pending station");
-    ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "start station");
-    s_wifi_started = true;
-    return esp_wifi_connect();
+    esp_err_t operation = wifi_stop_if_running();
+    const bool should_recover = operation == ESP_OK;
+    if (operation == ESP_OK) operation = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (operation == ESP_OK) operation = wifi_configure_current_network();
+    if (operation == ESP_OK) operation = esp_wifi_start();
+    if (operation == ESP_OK) {
+        s_wifi_started = true;
+        operation = esp_wifi_connect();
+    }
+    if (operation != ESP_OK) {
+        (void)restore_pending_settings((int32_t)operation);
+        if (should_recover) {
+            bool have_committed_networks;
+            taskENTER_CRITICAL(&s_settings_lock);
+            have_committed_networks = s_committed_settings.count > 0U;
+            taskEXIT_CRITICAL(&s_settings_lock);
+            const esp_err_t recovery = have_committed_networks
+                                           ? wifi_start_station()
+                                           : wifi_start_ap_setup();
+            if (recovery != ESP_OK) {
+                ESP_LOGE(TAG, "restore previous Wi-Fi mode failed err=%s",
+                         esp_err_to_name(recovery));
+            }
+            status_set_save(false, (int32_t)operation);
+        }
+        ESP_LOGE(TAG, "apply pending Wi-Fi network failed err=%s",
+                 esp_err_to_name(operation));
+    }
+    secure_zero(&updated, sizeof(updated));
+    return operation;
 }
 
 esp_err_t wifi_provisioning_reset(void)
@@ -483,6 +598,7 @@ esp_err_t wifi_provisioning_reset(void)
     s_network_index = 0;
     s_retry_count = 0;
     taskEXIT_CRITICAL(&s_settings_lock);
+    status_set_save(false, 0);
     s_started = true;
     ESP_LOGI(TAG, "Wi-Fi settings cleared; returning to setup AP");
     return wifi_start_ap_setup();
@@ -520,5 +636,30 @@ void wifi_provisioning_reset_saved_state(wifi_settings_t *current, wifi_settings
     }
     if (pending_commit != NULL) {
         *pending_commit = false;
+    }
+}
+
+void wifi_provisioning_extract_ssids(const wifi_settings_t *settings,
+                                     wifi_provisioning_saved_ssids_t *output)
+{
+    if (output == NULL) {
+        return;
+    }
+    *output = (wifi_provisioning_saved_ssids_t){0};
+    if (settings == NULL) {
+        return;
+    }
+    output->count = settings->count <= WIFI_SETTINGS_MAX_NETWORKS
+                        ? settings->count
+                        : WIFI_SETTINGS_MAX_NETWORKS;
+    for (uint8_t index = 0; index < output->count; ++index) {
+        size_t length = 0U;
+        while (length < WIFI_SETTINGS_SSID_MAX_LEN &&
+               settings->networks[index].ssid[length] != '\0') {
+            output->ssids[index][length] =
+                settings->networks[index].ssid[length];
+            ++length;
+        }
+        output->ssids[index][length] = '\0';
     }
 }

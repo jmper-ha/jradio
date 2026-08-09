@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f7fb">
+  <title>jradio — настройки</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="Вернуться к плееру">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M5 9.5h14v9H5zM8 6l8-3M8 13h5M8 16h3M16.5 13.5h.01M16.5 16.5h.01"/>
+          </svg>
+        </span>
+        <span>jradio</span>
+      </a>
+      <div class="header-actions">
+        <span id="socket-state" class="socket-state is-connecting" role="status" aria-live="polite">Подключение…</span>
+        <a class="icon-button" href="/" aria-label="Назад к плееру">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="m15 18-6-6 6-6"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-shell settings-page">
+    <div class="settings-heading">
+      <p class="eyebrow">Устройство</p>
+      <h1>Настройки</h1>
+      <p>Сетевые параметры и будущие разделы устройства.</p>
+    </div>
+
+    <section class="card settings-section" aria-labelledby="wifi-title">
+      <div class="settings-section-heading">
+        <div>
+          <p class="eyebrow">Подключение</p>
+          <h2 id="wifi-title">Wi‑Fi</h2>
+        </div>
+        <span id="wifi-status" class="settings-status" role="status" aria-live="polite">Ожидание данных</span>
+      </div>
+
+      <dl class="network-summary">
+        <div><dt>Текущая сеть</dt><dd id="wifi-active">—</dd></div>
+        <div><dt>IP‑адрес</dt><dd id="wifi-ip">—</dd></div>
+      </dl>
+
+      <div class="saved-networks-block">
+        <h3>Сохранённые сети</h3>
+        <ul id="saved-networks" class="saved-networks"></ul>
+        <p id="saved-networks-empty" class="empty-state">Сохранённых сетей пока нет</p>
+      </div>
+
+      <form id="wifi-form" class="settings-form">
+        <label for="wifi-ssid">Название сети</label>
+        <input id="wifi-ssid" name="ssid" type="text" maxlength="32" autocomplete="off" required>
+        <label for="wifi-password">Пароль</label>
+        <input id="wifi-password" name="password" type="password" maxlength="64" autocomplete="new-password">
+        <p class="field-note">Пароль отправляется устройству один раз и сразу удаляется из поля.</p>
+        <button id="wifi-submit" class="primary-button" type="submit" disabled>Проверить и сохранить</button>
+      </form>
+    </section>
+  </main>
+
+  <noscript><p class="noscript-message">Для настроек требуется JavaScript.</p></noscript>
+  <script src="/settings.js"></script>
+</body>
+</html>

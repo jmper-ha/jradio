@@ -28,10 +28,21 @@ static void test_activate_maps_current_source(void)
     assert(ui_menu_activate(&state) == AUDIO_SOURCE_NONE);
 }
 
+static void test_select_source_moves_menu_cursor(void)
+{
+    ui_menu_state_t state;
+
+    ui_menu_init(&state);
+    assert(ui_menu_select_source(&state, AUDIO_SOURCE_USB));
+    assert(ui_menu_activate(&state) == AUDIO_SOURCE_USB);
+    assert(!ui_menu_select_source(&state, AUDIO_SOURCE_NONE));
+}
+
 int main(void)
 {
     test_encoder_navigation_wraps();
     test_activate_maps_current_source();
+    test_select_source_moves_menu_cursor();
     puts("ui_menu tests passed");
     return 0;
 }

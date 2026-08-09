@@ -41,6 +41,20 @@ bool ui_menu_handle_input(ui_menu_state_t *state, board_input_action_t action)
     return false;
 }
 
+bool ui_menu_select_source(ui_menu_state_t *state, audio_source_t source)
+{
+    if (state == NULL || source == AUDIO_SOURCE_NONE) {
+        return false;
+    }
+    for (uint8_t index = 0; index < UI_MENU_ITEM_COUNT; ++index) {
+        if (s_items[index].source == source) {
+            state->selected_index = index;
+            return true;
+        }
+    }
+    return false;
+}
+
 uint8_t ui_menu_selected_index(const ui_menu_state_t *state)
 {
     return state == NULL ? 0 : state->selected_index;

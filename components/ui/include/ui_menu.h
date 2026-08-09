@@ -22,6 +22,7 @@ typedef struct {
 
 void ui_menu_init(ui_menu_state_t *state);
 bool ui_menu_handle_input(ui_menu_state_t *state, board_input_action_t action);
+bool ui_menu_select_source(ui_menu_state_t *state, audio_source_t source);
 uint8_t ui_menu_selected_index(const ui_menu_state_t *state);
 const char *ui_menu_item_label(ui_menu_item_t item);
 audio_source_t ui_menu_activate(const ui_menu_state_t *state);

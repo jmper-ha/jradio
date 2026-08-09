@@ -3,23 +3,93 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>jradio Wi-Fi</title>
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f7fb">
+  <title>jradio — плеер</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <main>
-    <h1>jradio — Wi-Fi</h1>
-    <p id="connection-status">Загрузка статуса…</p>
-    <h2>Сохранённые сети</h2>
-    <ul id="saved-networks"></ul>
-    <h2>Добавить или обновить сеть</h2>
-    <form id="wifi-form">
-      <label>SSID<input id="ssid" name="ssid" maxlength="32" required autocomplete="off"></label>
-      <label>Пароль<input id="password" name="password" type="password" maxlength="64" autocomplete="current-password"></label>
-      <button type="submit">Проверить и сохранить</button>
-    </form>
-    <p id="message" role="status"></p>
-  </main>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="jradio — главная">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M5 9.5h14v9H5zM8 6l8-3M8 13h5M8 16h3M16.5 13.5h.01M16.5 16.5h.01"/>
+          </svg>
+        </span>
+        <span>jradio</span>
+      </a>
+      <div class="header-actions">
+        <span id="socket-state" class="socket-state is-connecting" role="status" aria-live="polite">
+          Подключение…
+        </span>
+        <a class="icon-button settings-link" href="/settings" aria-label="Настройки">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/>
+            <path d="m19.4 15 .1-3-.1-3-2.2-.8a8 8 0 0 0-1-1.7l.4-2.3-2.7-1.5-1.7 1.5h-2L8.5 2.7 5.8 4.2l.4 2.3a8 8 0 0 0-1 1.7L3 9v6l2.2.8a8 8 0 0 0 1 1.7l-.4 2.3 2.7 1.5 1.7-1.5h2l1.7 1.5 2.7-1.5-.4-2.3a8 8 0 0 0 1-1.7Z"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <div class="page-shell">
+    <nav id="source-tabs" class="source-tabs" aria-label="Источники"></nav>
+
+    <main class="content-grid">
+      <section class="card player-card" aria-labelledby="track-title">
+        <div class="player-heading">
+          <div>
+            <p id="mode-label" class="eyebrow">Нет источника</p>
+            <p id="playback-state" class="playback-state" data-state="stopped">Остановлено</p>
+          </div>
+          <span class="signal-mark" aria-hidden="true">
+            <i></i><i></i><i></i><i></i>
+          </span>
+        </div>
+
+        <div class="track-copy">
+          <p id="track-artist" class="track-artist"></p>
+          <h1 id="track-title">Нет воспроизведения</h1>
+          <p id="track-context" class="track-context"></p>
+        </div>
+
+        <div class="player-controls">
+          <button id="play-toggle" class="play-toggle" type="button" data-command="player.toggle"
+                  disabled aria-label="Воспроизвести">
+            <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="m9 7 8 5-8 5Z"/>
+            </svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M8 7h3v10H8zM13 7h3v10h-3z"/>
+            </svg>
+          </button>
+          <div class="stream-details">
+            <p id="stream-meta">Параметры потока появятся после подключения</p>
+            <p id="player-error" class="player-error" role="alert" hidden></p>
+          </div>
+        </div>
+
+        <p id="command-status" class="command-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="media-list" class="card media-list" aria-labelledby="list-title" hidden>
+        <div class="list-heading">
+          <div>
+            <p class="eyebrow">Выбор</p>
+            <h2 id="list-title">Станции</h2>
+          </div>
+          <span id="list-count" class="list-count" aria-label="Количество элементов">0</span>
+        </div>
+        <ul id="list-items" class="list-items" aria-label="Список станций"></ul>
+        <p id="list-empty" class="empty-state">Список пока пуст</p>
+      </section>
+    </main>
+  </div>
+
+  <noscript>
+    <p class="noscript-message">Для управления плеером в браузере требуется JavaScript.</p>
+  </noscript>
   <script src="/app.js"></script>
 </body>
 </html>

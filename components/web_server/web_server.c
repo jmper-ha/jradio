@@ -337,30 +337,48 @@ static esp_err_t web_server_wifi_post(httpd_req_t *request)
 esp_err_t web_server_start(void)
 {
     if (s_server != NULL) {
-        return s_websocket_started ? ESP_OK : ESP_ERR_INVALID_STATE;
-    }
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.stack_size = 6144;
-    config.max_uri_handlers = 12;
-    config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
-    config.send_wait_timeout = 1;
-    config.lru_purge_enable = false;
-    ESP_RETURN_ON_ERROR(httpd_start(&s_server, &config), TAG, "start HTTP server");
-    const httpd_uri_t handlers[] = {
-        {.uri = "/", .method = HTTP_GET, .handler = web_server_root_get},
-        {.uri = "/app.js", .method = HTTP_GET, .handler = web_server_app_js_get},
-        {.uri = "/style.css", .method = HTTP_GET, .handler = web_server_style_get},
-        {.uri = "/settings", .method = HTTP_GET, .handler = web_server_settings_get},
-        {.uri = "/settings.js", .method = HTTP_GET, .handler = web_server_settings_js_get},
-        {.uri = "/api/status", .method = HTTP_GET, .handler = web_server_status_get},
-        {.uri = "/api/wifi", .method = HTTP_POST, .handler = web_server_wifi_post},
-    };
-    for (size_t index = 0; index < sizeof(handlers) / sizeof(handlers[0]); ++index) {
-        const esp_err_t err = httpd_register_uri_handler(s_server, &handlers[index]);
-        if (err != ESP_OK) {
-            httpd_stop(s_server);
-            s_server = NULL;
-            return err;
+        if (s_websocket_started) {
+            return ESP_OK;
+        }
+        if (!s_websocket_recovery_required) {
+            return ESP_ERR_INVALID_STATE;
+        }
+        // A previous start left the WebSocket subsystem in a stalled cleanup
+        // state (its shutdown-wait timed out) while the HTTP server was kept
+        // alive. Give the stalled cleanup another, longer chance to finish
+        // via web_socket_stop() before giving up again, so this call can
+        // actually recover instead of failing forever.
+        const esp_err_t recovery_result = web_socket_stop();
+        if (recovery_result != ESP_OK) {
+            ESP_LOGE(TAG, "WebSocket recovery still pending err=%s",
+                     esp_err_to_name(recovery_result));
+            return recovery_result;
+        }
+        s_websocket_recovery_required = false;
+    } else {
+        httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+        config.stack_size = 6144;
+        config.max_uri_handlers = 12;
+        config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
+        config.send_wait_timeout = 1;
+        config.lru_purge_enable = false;
+        ESP_RETURN_ON_ERROR(httpd_start(&s_server, &config), TAG, "start HTTP server");
+        const httpd_uri_t handlers[] = {
+            {.uri = "/", .method = HTTP_GET, .handler = web_server_root_get},
+            {.uri = "/app.js", .method = HTTP_GET, .handler = web_server_app_js_get},
+            {.uri = "/style.css", .method = HTTP_GET, .handler = web_server_style_get},
+            {.uri = "/settings", .method = HTTP_GET, .handler = web_server_settings_get},
+            {.uri = "/settings.js", .method = HTTP_GET, .handler = web_server_settings_js_get},
+            {.uri = "/api/status", .method = HTTP_GET, .handler = web_server_status_get},
+            {.uri = "/api/wifi", .method = HTTP_POST, .handler = web_server_wifi_post},
+        };
+        for (size_t index = 0; index < sizeof(handlers) / sizeof(handlers[0]); ++index) {
+            const esp_err_t err = httpd_register_uri_handler(s_server, &handlers[index]);
+            if (err != ESP_OK) {
+                httpd_stop(s_server);
+                s_server = NULL;
+                return err;
+            }
         }
     }
     const esp_err_t websocket_result = web_socket_start(s_server);
@@ -376,7 +394,7 @@ esp_err_t web_server_start(void)
     }
     s_websocket_started = true;
     s_websocket_recovery_required = false;
-    ESP_LOGI(TAG, "HTTP server started on port %u", (unsigned)config.server_port);
+    ESP_LOGI(TAG, "HTTP server started");
     return ESP_OK;
 }
 

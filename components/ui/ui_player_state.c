@@ -218,6 +218,13 @@ bool ui_player_state_show_station_list(ui_player_state_t *state)
 {
     if (state == NULL || state->source != AUDIO_SOURCE_INTERNET_RADIO) return false;
     state->view = UI_PLAYER_VIEW_STATION_LIST;
+    if (state->pending) {
+        // If a pending command times out later, it should revert to where the
+        // user actually navigated to, not to the view captured when the
+        // command was originally posted (which would silently discard this
+        // navigation into the station list).
+        state->pending_origin_view = UI_PLAYER_VIEW_STATION_LIST;
+    }
     return true;
 }
 
@@ -239,4 +246,14 @@ size_t ui_player_state_active_item(const ui_player_state_t *state)
 bool ui_player_state_is_pending(const ui_player_state_t *state)
 {
     return state != NULL && state->pending;
+}
+
+bool ui_player_state_pending_item(const ui_player_state_t *state, size_t *item_index)
+{
+    if (state == NULL || item_index == NULL || !state->pending ||
+        state->pending_command.kind != PLAYER_COMMAND_SELECT_ITEM) {
+        return false;
+    }
+    *item_index = state->pending_command.item_index;
+    return true;
 }

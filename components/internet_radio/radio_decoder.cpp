@@ -23,6 +23,8 @@ struct radio_decoder {
     int16_t *mp3_pcm = nullptr;
     int32_t *flac_pcm = nullptr;
     size_t flac_pcm_samples = 0;
+    uint8_t *simple_overflow_pcm = nullptr;
+    size_t simple_overflow_capacity = 0;
     radio_decoder_info_t info{};
 };
 
@@ -44,6 +46,40 @@ static bool allocate_mp3_buffer(radio_decoder_t *decoder)
             MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     }
     return decoder->mp3_pcm != nullptr;
+}
+
+static void free_simple_overflow_buffer(radio_decoder_t *decoder)
+{
+    if (decoder->simple_overflow_pcm != nullptr) {
+        heap_caps_free(decoder->simple_overflow_pcm);
+        decoder->simple_overflow_pcm = nullptr;
+        decoder->simple_overflow_capacity = 0U;
+    }
+}
+
+// esp_audio_simple_dec_process() signals ESP_AUDIO_ERR_BUFF_NOT_ENOUGH when the
+// caller's output buffer is too small for a decoded frame; the documented
+// recovery is to reallocate a bigger buffer and retry the same call. The
+// caller's PCM buffer (radio->pcm) has a fixed size, so a dedicated overflow
+// buffer sized to `needed` is grown on demand instead.
+static bool ensure_simple_overflow_buffer(radio_decoder_t *decoder, size_t needed)
+{
+    if (decoder->simple_overflow_capacity >= needed) {
+        return true;
+    }
+    free_simple_overflow_buffer(decoder);
+    uint8_t *buffer = static_cast<uint8_t *>(
+        heap_caps_malloc(needed, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (buffer == nullptr) {
+        buffer = static_cast<uint8_t *>(
+            heap_caps_malloc(needed, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    }
+    if (buffer == nullptr) {
+        return false;
+    }
+    decoder->simple_overflow_pcm = buffer;
+    decoder->simple_overflow_capacity = needed;
+    return true;
 }
 
 static void free_flac_buffer(radio_decoder_t *decoder)
@@ -185,6 +221,7 @@ extern "C" void radio_decoder_destroy(radio_decoder_t *decoder)
     }
     free_mp3_buffer(decoder);
     free_flac_buffer(decoder);
+    free_simple_overflow_buffer(decoder);
     if (decoder->simple != nullptr) {
         esp_audio_simple_dec_close(decoder->simple);
         decoder->simple = nullptr;
@@ -199,6 +236,7 @@ extern "C" void radio_decoder_reset(radio_decoder_t *decoder)
     }
     free_mp3_buffer(decoder);
     free_flac_buffer(decoder);
+    free_simple_overflow_buffer(decoder);
     decoder->mp3.reset();
     decoder->flac.reset();
     if (decoder->simple != nullptr) {
@@ -237,9 +275,37 @@ extern "C" radio_decoder_result_t radio_decoder_decode(
             .needed_size = 0U,
             .decoded_size = 0U,
         };
-        const esp_audio_err_t result = esp_audio_simple_dec_process(decoder->simple, &raw, &frame);
+        esp_audio_err_t result = esp_audio_simple_dec_process(decoder->simple, &raw, &frame);
+        uint8_t *decode_buffer = pcm_output;
+
+        if (result == ESP_AUDIO_ERR_BUFF_NOT_ENOUGH) {
+            // Caller's fixed-size PCM buffer was too small for this frame.
+            // Retry once into a dedicated overflow buffer sized to what the
+            // decoder reported it actually needs, per the SDK's documented
+            // "reallocate and try again" contract.
+            constexpr size_t kMaxOverflowPcmBytes = 128U * 1024U;
+            const size_t needed = frame.needed_size;
+            if (needed > 0U && needed <= kMaxOverflowPcmBytes &&
+                ensure_simple_overflow_buffer(decoder, needed)) {
+                raw = {
+                    .buffer = const_cast<uint8_t *>(input),
+                    .len = static_cast<uint32_t>(input_length),
+                    .eos = false,
+                    .consumed = 0U,
+                    .frame_recover = ESP_AUDIO_SIMPLE_DEC_RECOVERY_NONE,
+                };
+                frame = {
+                    .buffer = decoder->simple_overflow_pcm,
+                    .len = static_cast<uint32_t>(decoder->simple_overflow_capacity),
+                    .needed_size = 0U,
+                    .decoded_size = 0U,
+                };
+                decode_buffer = decoder->simple_overflow_pcm;
+                result = esp_audio_simple_dec_process(decoder->simple, &raw, &frame);
+            }
+        }
+
         *bytes_consumed = raw.consumed;
-        *pcm_bytes = frame.decoded_size;
 
         esp_audio_simple_dec_info_t simple_info = {};
         const bool have_info =
@@ -253,13 +319,17 @@ extern "C" radio_decoder_result_t radio_decoder_decode(
                 *info = decoder->info;
             }
         }
-        if (result == ESP_AUDIO_ERR_BUFF_NOT_ENOUGH) {
-            return RADIO_DECODER_ERROR;
-        }
         if (result != ESP_AUDIO_ERR_OK) {
             return RADIO_DECODER_ERROR;
         }
         if (frame.decoded_size > 0U) {
+            if (decode_buffer != pcm_output) {
+                if (frame.decoded_size > pcm_capacity || pcm_output == nullptr) {
+                    return RADIO_DECODER_ERROR;
+                }
+                memcpy(pcm_output, decode_buffer, frame.decoded_size);
+            }
+            *pcm_bytes = frame.decoded_size;
             decoder->simple_info_ready = decoder->simple_info_ready || have_info;
             return RADIO_DECODER_PCM_READY;
         }
@@ -296,8 +366,13 @@ extern "C" radio_decoder_result_t radio_decoder_decode(
         if (result == micro_mp3::MP3_DECODE_ERROR) {
             return RADIO_DECODER_NEED_MORE_DATA;
         }
-        if (result < 0 || mp3_samples == 0U) {
+        if (result < 0) {
             return RADIO_DECODER_ERROR;
+        }
+        if (mp3_samples == 0U) {
+            // MP3_OK with zero samples is a normal outcome (e.g. a Xing/LAME
+            // header frame carries no audio); not an error.
+            return RADIO_DECODER_NEED_MORE_DATA;
         }
         update_mp3_info(decoder);
         const size_t pcm_size = mp3_samples * sizeof(int16_t) * decoder->info.channels;

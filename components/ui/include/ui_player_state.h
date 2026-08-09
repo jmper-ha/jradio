@@ -50,3 +50,4 @@ ui_player_view_t ui_player_state_view(const ui_player_state_t *state);
 audio_source_t ui_player_state_source(const ui_player_state_t *state);
 size_t ui_player_state_active_item(const ui_player_state_t *state);
 bool ui_player_state_is_pending(const ui_player_state_t *state);
+bool ui_player_state_pending_item(const ui_player_state_t *state, size_t *item_index);

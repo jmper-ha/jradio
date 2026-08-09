@@ -253,6 +253,7 @@ static void radio_direct_task(void *arg)
                                MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
     size_t available = 0U;
+    size_t compressed_offset = 0U;
     unsigned int decode_error_retries = 0U;
     bool fatal = false;
     if (compressed == NULL || network == NULL || audio == NULL || pcm == NULL || radio->decoder == NULL) {
@@ -273,17 +274,20 @@ static void radio_direct_task(void *arg)
             size_t pcm_bytes = 0U;
             radio_decoder_info_t info = {0};
             const radio_decoder_result_t result = radio_decoder_decode(
-                radio->decoder, compressed, available, pcm, RADIO_DIRECT_PCM_SIZE, &consumed,
-                &pcm_bytes, &info);
+                radio->decoder, compressed + compressed_offset, available, pcm,
+                RADIO_DIRECT_PCM_SIZE, &consumed, &pcm_bytes, &info);
             if (consumed > available) {
                 fatal = true;
                 break;
             }
             if (consumed > 0U) {
                 available -= consumed;
-                if (available > 0U) {
-                    memmove(compressed, compressed + consumed, available);
-                }
+                // Just advance the read cursor instead of shifting the
+                // remaining backlog down on every decode call (a single MP3
+                // frame consumes ~100-400 bytes out of a 16 KB buffer); the
+                // buffer is only compacted lazily, when a network refill
+                // would otherwise run out of trailing room.
+                compressed_offset += consumed;
             }
             if (result == RADIO_DECODER_HEADER_READY) {
                 decode_error_retries = 0U;
@@ -354,6 +358,7 @@ static void radio_direct_task(void *arg)
                 }
                 if (radio_direct_reconnect(radio)) {
                     available = 0U;
+                    compressed_offset = 0U;
                     decode_error_retries = 0U;
                     continue;
                 }
@@ -381,7 +386,16 @@ static void radio_direct_task(void *arg)
                 break;
             }
             if (audio_length > 0U) {
-                memcpy(compressed + available, audio, audio_length);
+                if (compressed_offset + available + audio_length > RADIO_DIRECT_INPUT_SIZE) {
+                    // Trailing room ran out; reclaim the space already freed
+                    // by consumed frames with one compaction instead of
+                    // shifting on every decode call.
+                    if (available > 0U) {
+                        memmove(compressed, compressed + compressed_offset, available);
+                    }
+                    compressed_offset = 0U;
+                }
+                memcpy(compressed + compressed_offset + available, audio, audio_length);
                 available += audio_length;
             }
         } else if (internet_radio_input_buffer_stalled(need_input, available,
@@ -405,7 +419,9 @@ static void radio_direct_task(void *arg)
     heap_caps_free(network);
     heap_caps_free(audio);
     heap_caps_free(pcm);
+    taskENTER_CRITICAL(&s_status_lock);
     radio->direct_task = NULL;
+    taskEXIT_CRITICAL(&s_status_lock);
     if (radio->direct_done != NULL) {
         xSemaphoreGive(radio->direct_done);
     }
@@ -663,7 +679,10 @@ bool internet_radio_start_station_index(size_t index)
 {
     if (!s_radio.initialized) return false;
     if (index >= s_radio.catalog.count) return false;
-    if (s_radio.direct_task != NULL) {
+    taskENTER_CRITICAL(&s_status_lock);
+    const bool have_direct_task = s_radio.direct_task != NULL;
+    taskEXIT_CRITICAL(&s_status_lock);
+    if (have_direct_task) {
         const esp_err_t stop_result = internet_radio_stop();
         if (stop_result != ESP_OK) {
             ESP_LOGE(TAG, "cannot start station %u: previous decoder did not stop (%s)",
@@ -733,8 +752,9 @@ bool internet_radio_start_station_index(size_t index)
              (unsigned int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
              (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
                                                             MALLOC_CAP_8BIT));
+    TaskHandle_t direct_task_handle = NULL;
     if (xTaskCreatePinnedToCore(radio_direct_task, "radio_decode", 8192, &s_radio, 6,
-                                &s_radio.direct_task, 1) != pdPASS) {
+                                &direct_task_handle, 1) != pdPASS) {
         ESP_LOGE(TAG, "failed to create direct decoder task");
         radio_decoder_destroy(s_radio.decoder);
         s_radio.decoder = NULL;
@@ -743,6 +763,9 @@ bool internet_radio_start_station_index(size_t index)
         radio_http_close(&s_radio);
         return false;
     }
+    taskENTER_CRITICAL(&s_status_lock);
+    s_radio.direct_task = direct_task_handle;
+    taskEXIT_CRITICAL(&s_status_lock);
     (void)station_resume_save_last_url(STATION_SETTINGS_PATH,
                                        s_radio.catalog.entries[index].url);
     return true;
@@ -751,7 +774,10 @@ bool internet_radio_start_station_index(size_t index)
 esp_err_t internet_radio_stop(void)
 {
     if (!s_radio.initialized) return ESP_ERR_INVALID_STATE;
-    if (s_radio.direct_task != NULL) {
+    taskENTER_CRITICAL(&s_status_lock);
+    const bool have_direct_task = s_radio.direct_task != NULL;
+    taskEXIT_CRITICAL(&s_status_lock);
+    if (have_direct_task) {
         atomic_store_explicit(&s_radio.direct_stop_requested, true, memory_order_release);
         atomic_store_explicit(&s_radio.direct_paused, false, memory_order_release);
         if (s_radio.direct_done == NULL ||
@@ -776,7 +802,9 @@ esp_err_t internet_radio_pause(void)
     if (!s_radio.initialized || status.state != INTERNET_RADIO_STATE_PLAYING) {
         return ESP_ERR_INVALID_STATE;
     }
+    taskENTER_CRITICAL(&s_status_lock);
     const bool direct_path = s_radio.direct_task != NULL;
+    taskEXIT_CRITICAL(&s_status_lock);
     if (direct_path) {
         atomic_store_explicit(&s_radio.direct_paused, true, memory_order_release);
         xSemaphoreTake(s_radio.direct_io_mutex, portMAX_DELAY);
@@ -801,7 +829,9 @@ esp_err_t internet_radio_resume(void)
     if (!s_radio.initialized || status.state != INTERNET_RADIO_STATE_PAUSED) {
         return ESP_ERR_INVALID_STATE;
     }
+    taskENTER_CRITICAL(&s_status_lock);
     const bool direct_path = s_radio.direct_task != NULL;
+    taskEXIT_CRITICAL(&s_status_lock);
     if (direct_path) {
         xSemaphoreTake(s_radio.direct_io_mutex, portMAX_DELAY);
         s_radio.output_started = false;

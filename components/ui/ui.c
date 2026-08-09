@@ -81,8 +81,16 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
         snapshot == NULL) return;
     ui_set_label_text_if_changed(s_source_status,
                                  ui_radio_state_text(snapshot->playback_state));
+    // While a station switch is pending confirmation, snapshot->active_item_index
+    // still reflects the previous station; keep showing the one the user just
+    // picked instead of flipping back to the old one for the pending window.
+    size_t pending_item_index;
+    const size_t display_item_index =
+        ui_player_state_pending_item(&s_player_ui, &pending_item_index)
+            ? pending_item_index
+            : snapshot->active_item_index;
     const station_catalog_entry_t *entry =
-        player_control_station_at(snapshot->active_item_index);
+        player_control_station_at(display_item_index);
     const char *display_title = (entry != NULL && entry->flag == 0)
                                     ? entry->name
                                     : (snapshot->stream_title[0] == '\0'

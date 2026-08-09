@@ -37,8 +37,13 @@ static esp_netif_t *s_sta_netif;
 static esp_netif_t *s_ap_netif;
 static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_settings_lock = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE s_pending_lock = portMUX_INITIALIZER_UNLOCKED;
 static QueueHandle_t s_reconnect_queue;
 static TaskHandle_t s_reconnect_task;
+static bool s_disconnect_pending;
+static uint8_t s_disconnect_pending_reason;
+
+#define WIFI_RECONNECT_TASK_POLL_MS 1000
 
 typedef struct {
     enum {
@@ -54,6 +59,33 @@ static void secure_zero(void *memory, size_t size)
     while (size-- > 0U) {
         *bytes++ = 0U;
     }
+}
+
+// Fallback delivery path for WIFI_EVENT_STA_DISCONNECTED: the event handler
+// cannot block, so if s_reconnect_queue is momentarily full (the reconnect
+// task is busy, e.g. writing to LittleFS) the event would otherwise be lost
+// with nothing left to trigger a retry. This single-slot pending flag is
+// polled by wifi_reconnect_task so a dropped notification still gets acted
+// on, just with bounded extra latency instead of never.
+static void mark_disconnect_pending(uint8_t reason)
+{
+    taskENTER_CRITICAL(&s_pending_lock);
+    s_disconnect_pending = true;
+    s_disconnect_pending_reason = reason;
+    taskEXIT_CRITICAL(&s_pending_lock);
+}
+
+static bool take_pending_disconnect(uint8_t *reason)
+{
+    bool pending;
+    taskENTER_CRITICAL(&s_pending_lock);
+    pending = s_disconnect_pending;
+    if (pending) {
+        *reason = s_disconnect_pending_reason;
+        s_disconnect_pending = false;
+    }
+    taskEXIT_CRITICAL(&s_pending_lock);
+    return pending;
 }
 
 static void status_set_connection(wifi_provisioning_mode_t mode, const char *ssid,
@@ -208,6 +240,14 @@ static bool restore_pending_settings(int32_t error)
     if (s_pending_commit) {
         s_settings = s_committed_settings;
         s_pending_commit = false;
+        // The reverted list can be shorter than the one s_network_index was
+        // chosen against (e.g. it pointed at a newly-added network that no
+        // longer exists after the revert); an out-of-range index would make
+        // every future reconnect attempt fail lookup with no way to recover.
+        if (s_network_index >= s_settings.count) {
+            s_network_index = 0;
+            s_retry_count = 0;
+        }
         restored = true;
     }
     taskEXIT_CRITICAL(&s_settings_lock);
@@ -220,8 +260,17 @@ static bool restore_pending_settings(int32_t error)
 static void wifi_reconnect_task(void *arg)
 {
     (void)arg;
-    wifi_disconnect_command_t command;
-    while (xQueueReceive(s_reconnect_queue, &command, portMAX_DELAY) == pdTRUE) {
+    while (true) {
+        wifi_disconnect_command_t command;
+        if (xQueueReceive(s_reconnect_queue, &command,
+                          pdMS_TO_TICKS(WIFI_RECONNECT_TASK_POLL_MS)) != pdTRUE) {
+            uint8_t pending_reason = 0U;
+            if (!take_pending_disconnect(&pending_reason)) {
+                continue;
+            }
+            command.type = WIFI_COMMAND_DISCONNECTED;
+            command.reason = pending_reason;
+        }
         if (command.type == WIFI_COMMAND_GOT_IP) {
             wifi_settings_t committed = {0};
             taskENTER_CRITICAL(&s_settings_lock);
@@ -338,7 +387,6 @@ static void wifi_reconnect_task(void *arg)
             ESP_LOGE(TAG, "setup AP failed err=%s", esp_err_to_name(err));
         }
     }
-    vTaskDelete(NULL);
 }
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id,
@@ -358,7 +406,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         .reason = disconnected->reason,
     };
     if (xQueueSend(s_reconnect_queue, &command, 0) != pdPASS) {
-        ESP_LOGE(TAG, "failed to queue Wi-Fi reconnect event");
+        // Queue is momentarily full (reconnect task busy); leave a pending
+        // marker so the task's periodic poll still retries this reason
+        // instead of the disconnect going unhandled indefinitely.
+        mark_disconnect_pending(disconnected->reason);
+        ESP_LOGW(TAG, "Wi-Fi reconnect queue full; deferred to periodic poll");
     }
 }
 

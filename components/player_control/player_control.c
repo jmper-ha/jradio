@@ -55,23 +55,23 @@ static void player_refresh_rssi_if_due(void)
     atomic_flag_clear_explicit(&s_rssi_refreshing, memory_order_release);
 }
 
-static void player_stop_active_source(audio_source_t source)
+static bool player_stop_active_source(audio_source_t source)
 {
     if (source == AUDIO_SOURCE_INTERNET_RADIO) {
         const esp_err_t result = internet_radio_stop();
         if (result != ESP_OK) {
             ESP_LOGW(TAG, "internet radio stop failed: %s", esp_err_to_name(result));
-            return;
+            return false;
         }
     }
 
     const audio_source_result_t result = audio_source_manager_stop(&s_manager, source);
     if (result == AUDIO_SOURCE_OK) {
         atomic_store_explicit(&s_active_source, AUDIO_SOURCE_NONE, memory_order_release);
-    } else {
-        ESP_LOGW(TAG, "audio source stop failed: source=%d result=%d", (int)source,
-                 (int)result);
+        return true;
     }
+    ESP_LOGW(TAG, "audio source stop failed: source=%d result=%d", (int)source, (int)result);
+    return false;
 }
 
 static void player_control_task(void *arg)
@@ -88,16 +88,30 @@ static void player_control_task(void *arg)
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         switch (player_control_decide(&snapshot, &command)) {
-        case PLAYER_OPERATION_SELECT_SOURCE:
-            if (snapshot.active_source != AUDIO_SOURCE_NONE) {
-                player_stop_active_source(snapshot.active_source);
+        case PLAYER_OPERATION_SELECT_SOURCE: {
+            // Re-selecting the same source (retry after an error) also lands
+            // here, so the previous source must actually be stopped before
+            // the manager is told a new one is starting; otherwise the
+            // manager and s_active_source would disagree about what is
+            // active, wedging future start attempts.
+            bool ready_to_start = snapshot.active_source == AUDIO_SOURCE_NONE;
+            if (!ready_to_start) {
+                ready_to_start = player_stop_active_source(snapshot.active_source);
             }
-            (void)audio_source_manager_start(&s_manager, command.source);
+            if (!ready_to_start) {
+                ESP_LOGW(TAG, "select source deferred: previous source did not stop");
+                break;
+            }
+            if (audio_source_manager_start(&s_manager, command.source) != AUDIO_SOURCE_OK) {
+                ESP_LOGW(TAG, "audio source start failed: source=%d", (int)command.source);
+                break;
+            }
             atomic_store_explicit(&s_active_source, command.source, memory_order_release);
             if (command.source == AUDIO_SOURCE_INTERNET_RADIO) {
                 (void)internet_radio_start_saved_station();
             }
             break;
+        }
         case PLAYER_OPERATION_START_ITEM:
             (void)internet_radio_start_station_index(command.item_index);
             break;
@@ -111,7 +125,7 @@ static void player_control_task(void *arg)
             (void)internet_radio_resume();
             break;
         case PLAYER_OPERATION_STOP:
-            player_stop_active_source(snapshot.active_source);
+            (void)player_stop_active_source(snapshot.active_source);
             break;
         case PLAYER_OPERATION_NONE:
             break;

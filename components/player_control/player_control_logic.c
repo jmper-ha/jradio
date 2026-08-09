@@ -60,11 +60,16 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
 {
     if (state == NULL || command == NULL) return PLAYER_OPERATION_INVALID;
     switch (command->kind) {
-    case PLAYER_COMMAND_SELECT_SOURCE:
-        if (command->source == state->active_source) return PLAYER_OPERATION_NONE;
+    case PLAYER_COMMAND_SELECT_SOURCE: {
+        // Unlike a plain no-op re-select, a source stuck in ERROR must stay
+        // retryable: re-selecting it should restart it, not be swallowed.
+        const bool already_healthy = command->source == state->active_source &&
+            state->playback_state != PLAYER_PLAYBACK_ERROR;
+        if (already_healthy) return PLAYER_OPERATION_NONE;
         return command->source == AUDIO_SOURCE_INTERNET_RADIO &&
                        (state->capabilities & PLAYER_CAP_INTERNET_RADIO) != 0U
                    ? PLAYER_OPERATION_SELECT_SOURCE : PLAYER_OPERATION_INVALID;
+    }
     case PLAYER_COMMAND_STOP_SOURCE:
         return state->active_source == AUDIO_SOURCE_NONE ? PLAYER_OPERATION_NONE
                                                           : PLAYER_OPERATION_STOP;

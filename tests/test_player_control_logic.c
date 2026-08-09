@@ -29,6 +29,26 @@ static void test_failed_active_station_can_be_retried(void)
     assert(player_control_decide(&state, &command) == PLAYER_OPERATION_START_ITEM);
 }
 
+static void test_healthy_active_source_reselect_is_noop(void)
+{
+    player_snapshot_t state = {.capabilities = PLAYER_CAP_INTERNET_RADIO,
+                               .active_source = AUDIO_SOURCE_INTERNET_RADIO,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING};
+    player_command_t command = {.kind = PLAYER_COMMAND_SELECT_SOURCE,
+                                .source = AUDIO_SOURCE_INTERNET_RADIO};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_NONE);
+}
+
+static void test_failed_active_source_can_be_reselected(void)
+{
+    player_snapshot_t state = {.capabilities = PLAYER_CAP_INTERNET_RADIO,
+                               .active_source = AUDIO_SOURCE_INTERNET_RADIO,
+                               .playback_state = PLAYER_PLAYBACK_ERROR};
+    player_command_t command = {.kind = PLAYER_COMMAND_SELECT_SOURCE,
+                                .source = AUDIO_SOURCE_INTERNET_RADIO};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_SELECT_SOURCE);
+}
+
 static void test_unavailable_source_is_rejected(void)
 {
     player_snapshot_t state = {.capabilities = PLAYER_CAP_INTERNET_RADIO};
@@ -70,6 +90,8 @@ int main(void)
     test_toggle_maps_playing_to_pause();
     test_active_station_is_not_restarted();
     test_failed_active_station_can_be_retried();
+    test_healthy_active_source_reselect_is_noop();
+    test_failed_active_source_can_be_reselected();
     test_unavailable_source_is_rejected();
     test_radio_state_maps_to_public_playback_state();
     test_snapshot_equality_detects_bitrate_change();

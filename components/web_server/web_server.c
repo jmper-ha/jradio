@@ -29,6 +29,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #define WEB_SERVER_MOUNT_PATH "/littlefs"
 #define WEB_SERVER_WEB_ROOT "www"
 #define WEB_SERVER_REQUEST_MAX_LEN 256
+#define WEB_SERVER_PLAYLIST_MAX_LEN 16384
 
 static const char *TAG = "web";
 static httpd_handle_t s_server;
@@ -160,21 +161,54 @@ web_server_parse_result_t web_server_parse_wifi_request(const char *request, wif
 }
 
 #ifdef ESP_PLATFORM
+// esp_http_server (see osal.h: a single httpd_os_thread_create call) runs
+// exactly one worker task that services all connections sequentially, so
+// this buffer is never touched by two handlers at once. Sharing it here
+// avoids growing every handler's stack frame while still cutting chunk
+// count/syscalls ~8x versus the previous 512-byte on-stack buffers.
+#define WEB_SERVER_FILE_CHUNK_SIZE 4096
+static char s_file_chunk_buffer[WEB_SERVER_FILE_CHUNK_SIZE];
+
+static bool web_server_client_accepts_gzip(httpd_req_t *request)
+{
+    char header[128];
+    if (httpd_req_get_hdr_value_str(request, "Accept-Encoding", header, sizeof(header)) !=
+        ESP_OK) {
+        return false;
+    }
+    return strstr(header, "gzip") != NULL;
+}
+
 static esp_err_t web_server_send_file(httpd_req_t *request, const char *relative_path,
                                       const char *content_type)
 {
-    char path[80];
-    snprintf(path, sizeof(path), WEB_SERVER_MOUNT_PATH "/%s", relative_path);
-    FILE *file = fopen(path, "r");
+    char path[88];
+    FILE *file = NULL;
+    bool gzipped = false;
+    if (web_server_client_accepts_gzip(request)) {
+        snprintf(path, sizeof(path), WEB_SERVER_MOUNT_PATH "/%s.gz", relative_path);
+        file = fopen(path, "r");
+        gzipped = file != NULL;
+    }
+    if (file == NULL) {
+        snprintf(path, sizeof(path), WEB_SERVER_MOUNT_PATH "/%s", relative_path);
+        file = fopen(path, "r");
+    }
     if (file == NULL) {
         httpd_resp_send_err(request, HTTPD_404_NOT_FOUND, "Web file not installed");
         return ESP_FAIL;
     }
     httpd_resp_set_type(request, content_type);
-    char buffer[512];
+    if (gzipped) {
+        httpd_resp_set_hdr(request, "Content-Encoding", "gzip");
+    }
+    // These assets only change when the web UI is re-flashed via
+    // `idf.py littlefs-flash`, so caching them for an hour avoids
+    // re-downloading them on every normal page load/navigation.
+    httpd_resp_set_hdr(request, "Cache-Control", "public, max-age=3600");
     size_t bytes_read;
-    while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
-        const esp_err_t err = httpd_resp_send_chunk(request, buffer, bytes_read);
+    while ((bytes_read = fread(s_file_chunk_buffer, 1, sizeof(s_file_chunk_buffer), file)) > 0) {
+        const esp_err_t err = httpd_resp_send_chunk(request, s_file_chunk_buffer, bytes_read);
         if (err != ESP_OK) {
             fclose(file);
             return err;
@@ -216,6 +250,18 @@ static esp_err_t web_server_settings_get(httpd_req_t *request)
 static esp_err_t web_server_settings_js_get(httpd_req_t *request)
 {
     return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/settings.js",
+                                "application/javascript; charset=utf-8");
+}
+
+static esp_err_t web_server_playlist_page_get(httpd_req_t *request)
+{
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/playlist.html",
+                                "text/html; charset=utf-8");
+}
+
+static esp_err_t web_server_playlist_js_get(httpd_req_t *request)
+{
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/playlist.js",
                                 "application/javascript; charset=utf-8");
 }
 
@@ -334,6 +380,88 @@ static esp_err_t web_server_wifi_post(httpd_req_t *request)
     return httpd_resp_send(request, NULL, 0);
 }
 
+static esp_err_t web_server_playlist_get(httpd_req_t *request)
+{
+    FILE *file = fopen(STATION_CATALOG_PATH, "r");
+    if (file == NULL) {
+        httpd_resp_send_err(request, HTTPD_404_NOT_FOUND, "Playlist not found");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(request, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(request, "Content-Disposition", "attachment; filename=\"playlist.csv\"");
+    size_t bytes_read;
+    while ((bytes_read = fread(s_file_chunk_buffer, 1, sizeof(s_file_chunk_buffer), file)) > 0) {
+        const esp_err_t err = httpd_resp_send_chunk(request, s_file_chunk_buffer, bytes_read);
+        if (err != ESP_OK) {
+            fclose(file);
+            return err;
+        }
+    }
+    if (ferror(file)) {
+        fclose(file);
+        ESP_LOGE(TAG, "read playlist failed: %s", STATION_CATALOG_PATH);
+        return ESP_FAIL;
+    }
+    fclose(file);
+    return httpd_resp_send_chunk(request, NULL, 0);
+}
+
+static esp_err_t web_server_playlist_post(httpd_req_t *request)
+{
+    if (request->content_len <= 0 ||
+        (size_t)request->content_len >= WEB_SERVER_PLAYLIST_MAX_LEN) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Invalid playlist size");
+        return ESP_FAIL;
+    }
+    char *body = malloc((size_t)request->content_len + 1U);
+    if (body == NULL) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_FAIL;
+    }
+    size_t received = 0U;
+    while (received < (size_t)request->content_len) {
+        const int read = httpd_req_recv(request, body + received,
+                                        (size_t)request->content_len - received);
+        if (read <= 0) {
+            free(body);
+            httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Incomplete request");
+            return ESP_FAIL;
+        }
+        received += (size_t)read;
+    }
+    body[received] = '\0';
+
+    size_t count = 0U;
+    const esp_err_t result = internet_radio_catalog_replace(body, received, &count);
+    free(body);
+
+    if (result == ESP_ERR_INVALID_ARG) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Playlist has no valid stations");
+        return ESP_FAIL;
+    }
+    if (result != ESP_OK) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save playlist");
+        return ESP_FAIL;
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL || cJSON_AddNumberToObject(root, "count", (double)count) == NULL) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_FAIL;
+    }
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (json == NULL) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(request, "application/json");
+    const esp_err_t send_err = httpd_resp_sendstr(request, json);
+    cJSON_free(json);
+    return send_err;
+}
+
 esp_err_t web_server_start(void)
 {
     if (s_server != NULL) {
@@ -358,7 +486,7 @@ esp_err_t web_server_start(void)
     } else {
         httpd_config_t config = HTTPD_DEFAULT_CONFIG();
         config.stack_size = 6144;
-        config.max_uri_handlers = 12;
+        config.max_uri_handlers = 16;
         config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
         config.send_wait_timeout = 1;
         config.lru_purge_enable = false;
@@ -369,8 +497,12 @@ esp_err_t web_server_start(void)
             {.uri = "/style.css", .method = HTTP_GET, .handler = web_server_style_get},
             {.uri = "/settings", .method = HTTP_GET, .handler = web_server_settings_get},
             {.uri = "/settings.js", .method = HTTP_GET, .handler = web_server_settings_js_get},
+            {.uri = "/playlist", .method = HTTP_GET, .handler = web_server_playlist_page_get},
+            {.uri = "/playlist.js", .method = HTTP_GET, .handler = web_server_playlist_js_get},
             {.uri = "/api/status", .method = HTTP_GET, .handler = web_server_status_get},
             {.uri = "/api/wifi", .method = HTTP_POST, .handler = web_server_wifi_post},
+            {.uri = "/api/playlist", .method = HTTP_GET, .handler = web_server_playlist_get},
+            {.uri = "/api/playlist", .method = HTTP_POST, .handler = web_server_playlist_post},
         };
         for (size_t index = 0; index < sizeof(handlers) / sizeof(handlers[0]); ++index) {
             const esp_err_t err = httpd_register_uri_handler(s_server, &handlers[index]);

@@ -131,5 +131,6 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 node tests/test_web_player.js
 node tests/test_web_settings.js
+node tests/test_web_playlist.js
 
 printf 'All host tests passed.\n'

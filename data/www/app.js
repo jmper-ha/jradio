@@ -2,6 +2,7 @@
   'use strict';
 
   const socketState = document.querySelector('#socket-state');
+  const playlistLink = document.querySelector('#playlist-link');
   const sourceTabs = document.querySelector('#source-tabs');
   const modeLabel = document.querySelector('#mode-label');
   const playbackState = document.querySelector('#playback-state');
@@ -148,6 +149,10 @@
     sourceTabs.hidden = state.capabilities.length === 0;
   }
 
+  function updatePlaylistLink() {
+    playlistLink.hidden = state.activeSource !== 'internet_radio';
+  }
+
   function stateLabel(value) {
     return playbackLabels[value] || playbackLabels.unknown;
   }
@@ -286,6 +291,7 @@
     const previousList = state.list;
     if (nextList) state.list = nextList;
     renderSources();
+    updatePlaylistLink();
     renderPlayer();
     renderList(previousList);
   }
@@ -293,6 +299,7 @@
   function applyCapabilities(message) {
     state.capabilities = normalizeCapabilities(message.capabilities);
     renderSources();
+    updatePlaylistLink();
     renderList(state.list);
   }
 
@@ -300,6 +307,7 @@
     state.activeSource = safeString(message.active_source, state.activeSource);
     if (isObject(message.player)) state.player = normalizePlayer(message.player);
     renderSources();
+    updatePlaylistLink();
     renderPlayer();
     renderList(state.list);
   }
@@ -447,6 +455,7 @@
 
   playToggle.addEventListener('click', () => sendCommand('player.toggle'));
   renderSources();
+  updatePlaylistLink();
   renderPlayer();
   renderList();
   updateControlAvailability();

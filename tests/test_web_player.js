@@ -80,7 +80,7 @@ class Element {
 }
 
 const ids = [
-  'socket-state', 'source-tabs', 'mode-label', 'playback-state',
+  'socket-state', 'playlist-link', 'source-tabs', 'mode-label', 'playback-state',
   'track-title', 'track-artist', 'track-context', 'play-toggle',
   'stream-meta', 'player-error', 'command-status', 'media-list',
   'list-title', 'list-count', 'list-items', 'list-empty',
@@ -208,6 +208,7 @@ assert.equal(first.url, 'ws://radio.local/ws');
 first.readyState = FakeWebSocket.OPEN;
 first.emit('open');
 
+assert.equal(elements['#playlist-link'].hidden, true);
 elements['#play-toggle'].emit('click');
 assert.deepEqual(JSON.parse(first.sent.at(-1)), {
   type: 'command', id: 'web-1', action: 'player.toggle',
@@ -231,6 +232,7 @@ sendEvent(first, {
 });
 assert.equal(elements['#track-title'].textContent, 'Новое');
 assert.match(elements['#stream-meta'].textContent, /Wi-Fi -55/);
+assert.equal(elements['#playlist-link'].hidden, false);
 
 sendEvent(first, {
   type: 'player.update', revision: 1,

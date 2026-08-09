@@ -1,10 +1,12 @@
 #include "internet_radio.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <unistd.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
@@ -626,6 +628,103 @@ static void radio_load_catalog(internet_radio_context_t *radio)
     }
     free(text);
     ESP_LOGI(TAG, "loaded %u internet radio stations", (unsigned int)radio->catalog.count);
+}
+
+esp_err_t internet_radio_catalog_replace(const char *text, size_t length, size_t *out_count)
+{
+    if (!s_radio.initialized || text == NULL || length == 0U || length >= RADIO_CATALOG_BUFFER_SIZE) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char *buffer = malloc(length + 1U);
+    if (buffer == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    memcpy(buffer, text, length);
+    buffer[length] = '\0';
+
+    station_catalog_t *parsed = heap_caps_malloc(sizeof(station_catalog_t),
+                                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (parsed == NULL) {
+        parsed = heap_caps_malloc(sizeof(station_catalog_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (parsed == NULL) {
+        free(buffer);
+        return ESP_ERR_NO_MEM;
+    }
+    (void)station_catalog_load_text(buffer, parsed);
+
+    bool has_content = false;
+    for (size_t index = 0U; index < length; ++index) {
+        if (!isspace((unsigned char)buffer[index])) {
+            has_content = true;
+            break;
+        }
+    }
+    if (parsed->count == 0U && has_content) {
+        ESP_LOGW(TAG, "playlist replace rejected: no valid station lines found");
+        free(buffer);
+        heap_caps_free(parsed);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    FILE *file = fopen(STATION_CATALOG_TEMP_PATH, "w");
+    if (file == NULL) {
+        free(buffer);
+        heap_caps_free(parsed);
+        return ESP_FAIL;
+    }
+    const bool write_ok = fwrite(buffer, 1, length, file) == length;
+    const bool close_ok = fclose(file) == 0;
+    free(buffer);
+    if (!write_ok || !close_ok) {
+        (void)unlink(STATION_CATALOG_TEMP_PATH);
+        heap_caps_free(parsed);
+        return ESP_FAIL;
+    }
+    if (rename(STATION_CATALOG_TEMP_PATH, STATION_CATALOG_PATH) != 0) {
+        (void)unlink(STATION_CATALOG_TEMP_PATH);
+        heap_caps_free(parsed);
+        return ESP_FAIL;
+    }
+
+    // Install the new catalog and, if a station is currently playing,
+    // re-resolve its index by URL so status/list highlighting stays correct
+    // even if the save reordered or removed entries ahead of it. Readers of
+    // s_radio.catalog (internet_radio_station_at() and friends) do not take
+    // this lock: the entries array is fixed-size and never reallocated, so a
+    // concurrent read during the swap below can at worst observe a torn
+    // (mixed old/new) station name/url for a single UI refresh, never an
+    // out-of-bounds access. That is accepted as a minor, self-correcting
+    // cosmetic race rather than full read-side thread-safety.
+    char playing_url[STATION_CATALOG_URL_MAX_LEN] = {0};
+    bool was_playing = false;
+    taskENTER_CRITICAL(&s_status_lock);
+    if (s_radio.status.station_index < s_radio.catalog.count) {
+        snprintf(playing_url, sizeof(playing_url), "%s",
+                 s_radio.catalog.entries[s_radio.status.station_index].url);
+        was_playing = true;
+    }
+    s_radio.catalog = *parsed;
+    size_t new_index = SIZE_MAX;
+    if (was_playing) {
+        (void)station_catalog_find_by_url(&s_radio.catalog, playing_url, &new_index);
+        s_radio.status.station_index = new_index;
+    }
+    const size_t resulting_count = s_radio.catalog.count;
+    const bool must_stop_playing = was_playing && new_index == SIZE_MAX;
+    taskEXIT_CRITICAL(&s_status_lock);
+    heap_caps_free(parsed);
+
+    if (must_stop_playing) {
+        ESP_LOGW(TAG, "playing station removed from playlist; stopping");
+        (void)internet_radio_stop();
+    }
+    if (out_count != NULL) {
+        *out_count = resulting_count;
+    }
+    ESP_LOGI(TAG, "playlist replaced: %u stations", (unsigned int)resulting_count);
+    return ESP_OK;
 }
 
 esp_err_t internet_radio_init(void)

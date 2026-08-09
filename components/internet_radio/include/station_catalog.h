@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #define STATION_CATALOG_PATH "/littlefs/config/stations.csv"
+#define STATION_CATALOG_TEMP_PATH "/littlefs/config/stations.tmp"
 #define STATION_CATALOG_MAX_ENTRIES 32
 #define STATION_CATALOG_NAME_MAX_LEN 96
 #define STATION_CATALOG_URL_MAX_LEN 256

@@ -9,7 +9,12 @@
 #include "wifi_provisioning.h"
 
 #define WEB_SOCKET_MAX_CLIENTS 4U
-#define WEB_SOCKET_SERVER_SOCKET_CAPACITY (WEB_SOCKET_MAX_CLIENTS + 1U)
+// Total httpd session slots: WebSocket clients plus headroom for the several
+// concurrent plain HTTP connections a browser opens while loading a page
+// (HTML + JS + CSS + fetch requests). With too little headroom here, those
+// connections get refused outright once WS clients occupy some of the pool,
+// which is what caused pages to load slowly or incompletely.
+#define WEB_SOCKET_SERVER_SOCKET_CAPACITY (WEB_SOCKET_MAX_CLIENTS + 6U)
 
 enum {
     WEB_SOCKET_FRAME_CONTINUATION = 0x0,

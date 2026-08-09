@@ -20,4 +20,7 @@ CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 # CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC is not set
 CONFIG_HTTPD_WS_SUPPORT=y
-CONFIG_LWIP_MAX_SOCKETS=10
+# Must cover the httpd session pool (WEB_SOCKET_SERVER_SOCKET_CAPACITY, see
+# web_socket.h) plus the internet radio's streaming HTTP client socket and a
+# few spares for DNS/mDNS lookups.
+CONFIG_LWIP_MAX_SOCKETS=16

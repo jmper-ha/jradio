@@ -32,3 +32,4 @@ bool internet_radio_start_saved_station(void);
 bool internet_radio_saved_station_index(size_t *index);
 bool internet_radio_start_station_index(size_t index);
 size_t internet_radio_current_station_index(void);
+esp_err_t internet_radio_catalog_replace(const char *text, size_t length, size_t *out_count);

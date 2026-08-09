@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f7fb">
+  <title>jradio — плейлист</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="Вернуться к плееру">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M5 9.5h14v9H5zM8 6l8-3M8 13h5M8 16h3M16.5 13.5h.01M16.5 16.5h.01"/>
+          </svg>
+        </span>
+        <span>jradio</span>
+      </a>
+      <div class="header-actions">
+        <a class="icon-button" href="/" aria-label="Назад к плееру">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="m15 18-6-6 6-6"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-shell settings-page">
+    <div class="settings-heading">
+      <p class="eyebrow">Интернет-радио</p>
+      <h1>Плейлист</h1>
+      <p>Добавляйте, редактируйте и удаляйте станции. Импорт из файла заменяет
+        текущий список целиком, экспорт сохраняет то, что сейчас на экране.</p>
+    </div>
+
+    <section class="card settings-section" aria-labelledby="playlist-title">
+      <div class="settings-section-heading">
+        <div>
+          <p class="eyebrow">Станции</p>
+          <h2 id="playlist-title">Список</h2>
+        </div>
+        <span id="playlist-status" class="settings-status" role="status" aria-live="polite">Загрузка…</span>
+      </div>
+
+      <div class="playlist-toolbar">
+        <button id="playlist-add" class="secondary-button" type="button">Добавить станцию</button>
+        <label class="secondary-button file-button" for="playlist-import-input">
+          Импортировать файл
+          <input id="playlist-import-input" type="file" accept=".csv,text/plain" hidden>
+        </label>
+        <button id="playlist-export" class="secondary-button" type="button">Экспортировать</button>
+      </div>
+
+      <p class="field-note">Формат файла: одна станция на строку, поля разделены
+        символом табуляции — имя, URL, флаг (0 или 1).</p>
+
+      <ul id="playlist-rows" class="playlist-rows" aria-label="Станции плейлиста"></ul>
+      <p id="playlist-empty" class="empty-state">Список пока пуст — добавьте станцию или импортируйте файл</p>
+
+      <div class="playlist-save-bar">
+        <button id="playlist-save" class="primary-button" type="button" disabled>Сохранить на устройстве</button>
+        <p id="playlist-save-status" class="command-status" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+  </main>
+
+  <noscript><p class="noscript-message">Для редактора плейлиста требуется JavaScript.</p></noscript>
+  <script src="/playlist.js"></script>
+</body>
+</html>

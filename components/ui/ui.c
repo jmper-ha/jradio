@@ -495,14 +495,13 @@ esp_err_t ui_init(void)
     lv_init();
     lv_tick_set_cb(ui_tick_get_ms);
 
-    lv_color_t *buffer1 = heap_caps_malloc(UI_DRAW_BUFFER_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    lv_color_t *buffer2 = heap_caps_malloc(UI_DRAW_BUFFER_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if (buffer1 == NULL || buffer2 == NULL) {
-        ESP_LOGE(TAG, "draw buffer allocation failed: buffer1=%p buffer2=%p dma_largest=%u",
-                 buffer1, buffer2,
+    lv_color_t *buffer1 = heap_caps_malloc(UI_DRAW_BUFFER_SIZE,
+                                           MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (buffer1 == NULL) {
+        ESP_LOGE(TAG, "draw buffer allocation failed: buffer=%p dma_largest=%u",
+                 buffer1,
                  (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
         heap_caps_free(buffer1);
-        heap_caps_free(buffer2);
         vQueueDelete(s_input_queue);
         s_input_queue = NULL;
         return ESP_ERR_NO_MEM;
@@ -513,13 +512,13 @@ esp_err_t ui_init(void)
         ESP_LOGE(TAG, "LVGL display allocation failed: internal_largest=%u",
                  (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
         heap_caps_free(buffer1);
-        heap_caps_free(buffer2);
         vQueueDelete(s_input_queue);
         s_input_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
     lv_display_set_color_format(s_display, LV_COLOR_FORMAT_RGB565);
-    lv_display_set_buffers(s_display, buffer1, buffer2, UI_DRAW_BUFFER_SIZE, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(s_display, buffer1, NULL, UI_DRAW_BUFFER_SIZE,
+                           LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(s_display, ui_flush);
     ui_create_menu_screen();
     ui_create_source_screen();
@@ -533,7 +532,6 @@ esp_err_t ui_init(void)
         lv_display_delete(s_display);
         s_display = NULL;
         heap_caps_free(buffer1);
-        heap_caps_free(buffer2);
         vQueueDelete(s_input_queue);
         s_input_queue = NULL;
         return ESP_ERR_NO_MEM;

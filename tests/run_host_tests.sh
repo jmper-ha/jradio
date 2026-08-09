@@ -20,6 +20,7 @@ include_flags=(
     -I"${project_dir}/components/board/include"
     -I"${project_dir}/components/internet_radio/include"
     -I"${project_dir}/components/jradio_wifi_provisioning/include"
+    -I"${project_dir}/components/player_control/include"
     -I"${project_dir}/components/settings/include"
     -I"${project_dir}/components/ui/include"
     -I"${project_dir}/components/web_server/include"
@@ -44,6 +45,8 @@ run_test internet_radio_state tests/test_internet_radio_state.c \
     components/internet_radio/internet_radio_state.c
 run_test mp3_stream_info tests/test_mp3_stream_info.c components/internet_radio/mp3_stream_info.c
 run_test pcm_diagnostics tests/test_pcm_diagnostics.c components/board/pcm_diagnostics.c
+run_test player_control_logic tests/test_player_control_logic.c \
+    components/player_control/player_control_logic.c
 run_test radio_http_status tests/test_radio_http_status.c \
     components/internet_radio/radio_http_status.c
 run_test radio_stream_format tests/test_radio_stream_format.c \

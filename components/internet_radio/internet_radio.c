@@ -50,7 +50,6 @@ typedef struct {
     bool initialized;
     radio_stream_format_t stream_format;
     station_catalog_t catalog;
-    size_t current_station_index;
     radio_decoder_t *decoder;
     TaskHandle_t direct_task;
     SemaphoreHandle_t direct_done;
@@ -532,7 +531,9 @@ static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *ur
 
 static bool radio_direct_reconnect(internet_radio_context_t *radio)
 {
-    if (radio->current_station_index >= radio->catalog.count ||
+    internet_radio_status_t status;
+    internet_radio_get_status(&status);
+    if (status.station_index >= radio->catalog.count ||
         atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire) ||
         atomic_load_explicit(&radio->direct_paused, memory_order_acquire)) {
         return false;
@@ -551,7 +552,7 @@ static bool radio_direct_reconnect(internet_radio_context_t *radio)
 
     radio_http_close(radio);
     radio_decoder_reset(radio->decoder);
-    const char *url = radio->catalog.entries[radio->current_station_index].url;
+    const char *url = radio->catalog.entries[status.station_index].url;
     for (unsigned int attempt = 0U; attempt < RADIO_HTTP_CONNECT_RETRIES; ++attempt) {
         if (!radio_delay_interruptible(radio, RADIO_HTTP_RECONNECT_DELAY_MS)) {
             return false;
@@ -626,9 +627,9 @@ esp_err_t internet_radio_init(void)
     }
     taskENTER_CRITICAL(&s_status_lock);
     s_radio.status.state = INTERNET_RADIO_STATE_STOPPED;
+    s_radio.status.station_index = SIZE_MAX;
     snprintf(s_radio.status.station, sizeof(s_radio.status.station), "DB91-TX");
     taskEXIT_CRITICAL(&s_status_lock);
-    s_radio.current_station_index = SIZE_MAX;
     radio_load_catalog(&s_radio);
     ESP_RETURN_ON_ERROR(radio_sync_output(&s_radio), TAG, "disable idle I2S output failed");
     s_radio.initialized = true;
@@ -682,15 +683,19 @@ bool internet_radio_start_station_index(size_t index)
     }
     const radio_stream_format_t stream_format =
         radio_stream_format_from_url(s_radio.catalog.entries[index].url);
-    if (!radio_status_apply(&s_radio, INTERNET_RADIO_EVENT_START)) return false;
-    s_radio.current_station_index = index;
-    s_radio.stream_format = stream_format;
     taskENTER_CRITICAL(&s_status_lock);
-    snprintf(s_radio.status.station, sizeof(s_radio.status.station), "%.*s",
-             (int)sizeof(s_radio.status.station) - 1,
-             s_radio.catalog.entries[index].name);
-    s_radio.status.title[0] = '\0';
+    const bool started = internet_radio_state_apply(&s_radio.status.state,
+                                                     INTERNET_RADIO_EVENT_START);
+    if (started) {
+        s_radio.status.station_index = index;
+        snprintf(s_radio.status.station, sizeof(s_radio.status.station), "%.*s",
+                 (int)sizeof(s_radio.status.station) - 1,
+                 s_radio.catalog.entries[index].name);
+        s_radio.status.title[0] = '\0';
+    }
     taskEXIT_CRITICAL(&s_status_lock);
+    if (!started) return false;
+    s_radio.stream_format = stream_format;
     esp_err_t err = ESP_FAIL;
     for (unsigned int attempt = 0U; attempt < RADIO_HTTP_CONNECT_RETRIES; ++attempt) {
         err = radio_http_open(&s_radio, s_radio.catalog.entries[index].url);
@@ -755,10 +760,12 @@ esp_err_t internet_radio_stop(void)
             return ESP_ERR_TIMEOUT;
         }
     }
-    (void)radio_status_apply(&s_radio, INTERNET_RADIO_EVENT_STOP);
+    taskENTER_CRITICAL(&s_status_lock);
+    (void)internet_radio_state_apply(&s_radio.status.state, INTERNET_RADIO_EVENT_STOP);
+    s_radio.status.station_index = SIZE_MAX;
+    taskEXIT_CRITICAL(&s_status_lock);
     const esp_err_t output_result = radio_sync_output(&s_radio);
     radio_http_close(&s_radio);
-    s_radio.current_station_index = SIZE_MAX;
     return output_result;
 }
 
@@ -831,5 +838,9 @@ const station_catalog_entry_t *internet_radio_station_at(size_t index)
 
 size_t internet_radio_current_station_index(void)
 {
-    return s_radio.current_station_index;
+    size_t station_index;
+    taskENTER_CRITICAL(&s_status_lock);
+    station_index = s_radio.status.station_index;
+    taskEXIT_CRITICAL(&s_status_lock);
+    return station_index;
 }

@@ -1,4 +1,50 @@
-#include "player_control_types.h"
+#include "player_control.h"
+
+#include <string.h>
+
+player_playback_state_t player_playback_from_radio(internet_radio_state_t state)
+{
+    switch (state) {
+    case INTERNET_RADIO_STATE_STOPPED:
+        return PLAYER_PLAYBACK_STOPPED;
+    case INTERNET_RADIO_STATE_CONNECTING:
+        return PLAYER_PLAYBACK_CONNECTING;
+    case INTERNET_RADIO_STATE_PLAYING:
+        return PLAYER_PLAYBACK_PLAYING;
+    case INTERNET_RADIO_STATE_PAUSED:
+        return PLAYER_PLAYBACK_PAUSED;
+    case INTERNET_RADIO_STATE_RECONNECTING:
+        return PLAYER_PLAYBACK_RECONNECTING;
+    case INTERNET_RADIO_STATE_ERROR:
+        return PLAYER_PLAYBACK_ERROR;
+    default:
+        return PLAYER_PLAYBACK_ERROR;
+    }
+}
+
+bool player_snapshot_equal(const player_snapshot_t *left,
+                           const player_snapshot_t *right)
+{
+    if (left == right) {
+        return true;
+    }
+    if (left == NULL || right == NULL) {
+        return false;
+    }
+    return left->capabilities == right->capabilities &&
+           left->active_source == right->active_source &&
+           left->playback_state == right->playback_state &&
+           left->active_item_index == right->active_item_index &&
+           left->item_count == right->item_count &&
+           memcmp(left->context, right->context, sizeof(left->context)) == 0 &&
+           memcmp(left->stream_title, right->stream_title,
+                  sizeof(left->stream_title)) == 0 &&
+           memcmp(left->codec, right->codec, sizeof(left->codec)) == 0 &&
+           left->bitrate_kbps == right->bitrate_kbps &&
+           left->wifi_rssi_valid == right->wifi_rssi_valid &&
+           left->wifi_rssi_dbm == right->wifi_rssi_dbm &&
+           memcmp(left->error, right->error, sizeof(left->error)) == 0;
+}
 
 player_operation_t player_control_decide(const player_snapshot_t *state,
                                          const player_command_t *command)

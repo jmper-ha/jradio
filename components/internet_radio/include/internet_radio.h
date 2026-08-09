@@ -13,6 +13,7 @@
 
 typedef struct {
     internet_radio_state_t state;
+    size_t station_index;
     char station[32];
     char title[INTERNET_RADIO_TITLE_MAX_LEN];
     char codec[8];

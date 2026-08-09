@@ -33,6 +33,17 @@ size_t station_list_active_index(const station_list_state_t *state)
     return state == NULL ? 0 : state->active_index;
 }
 
+size_t station_list_window_start(const station_list_state_t *state, size_t visible_count)
+{
+    if (state == NULL || state->count == 0U || visible_count == 0U ||
+        state->count <= visible_count || state->selected_index < visible_count) {
+        return 0U;
+    }
+    const size_t last_start = state->count - visible_count;
+    const size_t selected_start = state->selected_index - visible_count + 1U;
+    return selected_start < last_start ? selected_start : last_start;
+}
+
 bool station_list_selection_requires_switch(const station_list_state_t *state)
 {
     return state != NULL && state->selected_index != state->active_index;

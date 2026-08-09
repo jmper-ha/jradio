@@ -1,5 +1,6 @@
 #include "settings_csv.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -64,7 +65,13 @@ bool settings_csv_set(const char *path, const char *key, const char *value)
     if (path_length < 0 || (size_t)path_length >= sizeof(temp_path)) return false;
     FILE *output = fopen(temp_path, "w");
     if (output == NULL) return false;
+    errno = 0;
     FILE *input = fopen(path, "r");
+    if (input == NULL && errno != ENOENT) {
+        fclose(output);
+        remove(temp_path);
+        return false;
+    }
     bool replaced = false;
     char line[SETTINGS_CSV_LINE_MAX];
     if (input != NULL) {

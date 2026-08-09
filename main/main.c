@@ -46,5 +46,7 @@ void app_main(void)
     ESP_ERROR_CHECK(ui_init(&source_manager));
     ESP_LOGI(TAG, "jradio booted; active audio source=%d",
              (int)audio_source_manager_active(&source_manager));
-    xTaskCreate(input_log_task, "input_log", 3072, NULL, 4, NULL);
+    ESP_ERROR_CHECK(xTaskCreate(input_log_task, "input_log", 3072, NULL, 4, NULL) == pdPASS
+                        ? ESP_OK
+                        : ESP_ERR_NO_MEM);
 }

@@ -15,6 +15,7 @@
 #include "freertos/task.h"
 
 #include "board.h"
+#include "board_audio_startup.h"
 #include "board_config.h"
 #include "board_input.h"
 #include "pcm_diagnostics.h"
@@ -194,7 +195,8 @@ static esp_err_t board_audio_preload_silence(void)
             break;
         }
     }
-    const size_t expected = BOARD_I2S_DMA_DESC_NUM * sizeof(s_i2s_silence);
+    const size_t expected = board_audio_startup_silence_bytes(BOARD_I2S_DMA_DESC_NUM,
+                                                              sizeof(s_i2s_silence));
     if (total_loaded != expected) {
         ESP_LOGE(TAG, "I2S silence preload incomplete: loaded=%u expected=%u",
                  (unsigned int)total_loaded, (unsigned int)expected);
@@ -239,17 +241,26 @@ esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloade
     xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
     esp_err_t result = ESP_ERR_INVALID_STATE;
     if (!s_audio_enabled) {
-        result = i2s_channel_preload_data(s_i2s_tx, pcm, pcm_length, preloaded);
-        if (result == ESP_OK && *preloaded == 0U) {
-            result = ESP_FAIL;
-        }
+        result = board_audio_preload_silence();
         if (result == ESP_OK) {
             result = i2s_channel_enable(s_i2s_tx);
         }
         if (result == ESP_OK) {
             s_audio_enabled = true;
-            ESP_LOGI(TAG, "PCM5102 I2S output enabled from first PCM block (%u bytes)",
-                     (unsigned int)*preloaded);
+            result = i2s_channel_write(s_i2s_tx, pcm, pcm_length, preloaded,
+                                       pdMS_TO_TICKS(1000));
+        }
+        if (result == ESP_OK && *preloaded == pcm_length) {
+            ESP_LOGI(TAG,
+                     "PCM5102 I2S output enabled after %u-byte silent clock pre-roll",
+                     (unsigned int)board_audio_startup_silence_bytes(
+                         BOARD_I2S_DMA_DESC_NUM, sizeof(s_i2s_silence)));
+        } else if (s_audio_enabled) {
+            (void)i2s_channel_disable(s_i2s_tx);
+            s_audio_enabled = false;
+            if (result == ESP_OK) {
+                result = ESP_FAIL;
+            }
         }
     }
     xSemaphoreGive(s_audio_mutex);

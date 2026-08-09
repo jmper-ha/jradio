@@ -1,0 +1,354 @@
+#include "radio_decoder.h"
+
+#include <algorithm>
+#include <cstring>
+#include <new>
+
+#include "esp_heap_caps.h"
+#include "decoder/impl/esp_aac_dec.h"
+#include "decoder/impl/esp_flac_dec.h"
+#include "simple_dec/esp_audio_simple_dec.h"
+#include "simple_dec/impl/esp_ogg_dec.h"
+#include "micro_flac/flac_decoder.h"
+#include "micro_mp3/mp3_decoder.h"
+
+struct radio_decoder {
+    explicit radio_decoder(radio_stream_format_t stream_format) : format(stream_format) {}
+
+    radio_stream_format_t format;
+    esp_audio_simple_dec_handle_t simple = nullptr;
+    bool simple_info_ready = false;
+    micro_mp3::Mp3Decoder mp3;
+    micro_flac::FLACDecoder flac;
+    int16_t *mp3_pcm = nullptr;
+    int32_t *flac_pcm = nullptr;
+    size_t flac_pcm_samples = 0;
+    radio_decoder_info_t info{};
+};
+
+static void free_mp3_buffer(radio_decoder_t *decoder)
+{
+    if (decoder->mp3_pcm != nullptr) {
+        heap_caps_free(decoder->mp3_pcm);
+        decoder->mp3_pcm = nullptr;
+    }
+}
+
+static bool allocate_mp3_buffer(radio_decoder_t *decoder)
+{
+    decoder->mp3_pcm = static_cast<int16_t *>(heap_caps_malloc(
+        micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (decoder->mp3_pcm == nullptr) {
+        decoder->mp3_pcm = static_cast<int16_t *>(heap_caps_malloc(
+            micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES,
+            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    }
+    return decoder->mp3_pcm != nullptr;
+}
+
+static void free_flac_buffer(radio_decoder_t *decoder)
+{
+    if (decoder->flac_pcm != nullptr) {
+        heap_caps_free(decoder->flac_pcm);
+        decoder->flac_pcm = nullptr;
+        decoder->flac_pcm_samples = 0;
+    }
+}
+
+static bool allocate_flac_buffer(radio_decoder_t *decoder)
+{
+    const size_t samples = decoder->flac.get_output_buffer_size_samples();
+    if (samples == 0U || samples > (128U * 1024U)) {
+        return false;
+    }
+    decoder->flac_pcm = static_cast<int32_t *>(heap_caps_malloc(
+        samples * sizeof(int32_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (decoder->flac_pcm == nullptr) {
+        decoder->flac_pcm = static_cast<int32_t *>(heap_caps_malloc(
+            samples * sizeof(int32_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    }
+    if (decoder->flac_pcm == nullptr) {
+        return false;
+    }
+    decoder->flac_pcm_samples = samples;
+    return true;
+}
+
+static void update_flac_info(radio_decoder_t *decoder)
+{
+    const micro_flac::FLACStreamInfo &stream_info = decoder->flac.get_stream_info();
+    decoder->info.sample_rate = stream_info.sample_rate();
+    decoder->info.channels = static_cast<uint8_t>(stream_info.num_channels());
+    decoder->info.bits_per_sample = static_cast<uint8_t>(stream_info.bits_per_sample());
+    decoder->info.bitrate_kbps = 0U;
+}
+
+static void update_mp3_info(radio_decoder_t *decoder)
+{
+    decoder->info.sample_rate = decoder->mp3.get_sample_rate();
+    decoder->info.channels = decoder->mp3.get_channels();
+    decoder->info.bits_per_sample = 16U;
+    decoder->info.bitrate_kbps = decoder->mp3.get_bitrate();
+}
+
+static bool normalize_pcm(const int32_t *input, size_t sample_count, uint8_t channels,
+                          uint8_t bits_per_sample, uint8_t *output, size_t capacity,
+                          size_t *written)
+{
+    if (input == nullptr || output == nullptr || written == nullptr ||
+        (channels != 1U && channels != 2U) || bits_per_sample == 0U || bits_per_sample > 32U) {
+        return false;
+    }
+    const size_t output_samples = sample_count / channels * 2U;
+    if (output_samples * sizeof(int16_t) > capacity) {
+        return false;
+    }
+    auto *destination = reinterpret_cast<int16_t *>(output);
+    const size_t frames = sample_count / channels;
+    for (size_t frame = 0; frame < frames; ++frame) {
+        const int32_t left = input[frame * channels];
+        const int32_t right = channels == 2U ? input[frame * channels + 1U] : left;
+        destination[frame * 2U] = static_cast<int16_t>(left >> 16);
+        destination[frame * 2U + 1U] = static_cast<int16_t>(right >> 16);
+    }
+    *written = output_samples * sizeof(int16_t);
+    return true;
+}
+
+extern "C" bool radio_decoder_is_supported(radio_stream_format_t format)
+{
+    return format == RADIO_STREAM_FORMAT_MP3 || format == RADIO_STREAM_FORMAT_AAC ||
+           format == RADIO_STREAM_FORMAT_FLAC || format == RADIO_STREAM_FORMAT_OGG_FLAC;
+}
+
+extern "C" radio_decoder_t *radio_decoder_create(radio_stream_format_t format)
+{
+    if (!radio_decoder_is_supported(format)) {
+        return nullptr;
+    }
+    auto *decoder = new (std::nothrow) radio_decoder(format);
+    if (decoder == nullptr) {
+        return nullptr;
+    }
+    if (format == RADIO_STREAM_FORMAT_AAC) {
+        // The simple decoder is only a parser/adapter. Its underlying AAC
+        // implementation must be registered explicitly before opening it.
+        // Keep the registration for the process lifetime; subsequent opens
+        // legitimately report that the implementation already exists.
+        const esp_audio_err_t register_result = esp_aac_dec_register();
+        if (register_result != ESP_AUDIO_ERR_OK &&
+            register_result != ESP_AUDIO_ERR_ALREADY_EXIST) {
+            delete decoder;
+            return nullptr;
+        }
+        esp_aac_dec_cfg_t aac_cfg = ESP_AAC_DEC_CONFIG_DEFAULT();
+        esp_audio_simple_dec_cfg_t simple_cfg = {
+            .dec_type = ESP_AUDIO_SIMPLE_DEC_TYPE_AAC,
+            .dec_cfg = &aac_cfg,
+            .cfg_size = sizeof(aac_cfg),
+            .use_frame_dec = false,
+        };
+        if (esp_audio_simple_dec_open(&simple_cfg, &decoder->simple) != ESP_AUDIO_ERR_OK) {
+            delete decoder;
+            return nullptr;
+        }
+    } else if (format == RADIO_STREAM_FORMAT_OGG_FLAC) {
+        const esp_audio_err_t flac_register_result = esp_flac_dec_register();
+        const esp_audio_err_t ogg_register_result = esp_ogg_dec_register();
+        if ((flac_register_result != ESP_AUDIO_ERR_OK &&
+             flac_register_result != ESP_AUDIO_ERR_ALREADY_EXIST) ||
+            (ogg_register_result != ESP_AUDIO_ERR_OK &&
+             ogg_register_result != ESP_AUDIO_ERR_ALREADY_EXIST)) {
+            delete decoder;
+            return nullptr;
+        }
+        esp_audio_simple_dec_cfg_t simple_cfg = {
+            .dec_type = ESP_AUDIO_SIMPLE_DEC_TYPE_OGG,
+            .dec_cfg = nullptr,
+            .cfg_size = 0U,
+            .use_frame_dec = false,
+        };
+        if (esp_audio_simple_dec_open(&simple_cfg, &decoder->simple) != ESP_AUDIO_ERR_OK) {
+            delete decoder;
+            return nullptr;
+        }
+    } else if (format == RADIO_STREAM_FORMAT_FLAC) {
+        decoder->flac.set_crc_check_enabled(true);
+    }
+    return decoder;
+}
+
+extern "C" void radio_decoder_destroy(radio_decoder_t *decoder)
+{
+    if (decoder == nullptr) {
+        return;
+    }
+    free_mp3_buffer(decoder);
+    free_flac_buffer(decoder);
+    if (decoder->simple != nullptr) {
+        esp_audio_simple_dec_close(decoder->simple);
+        decoder->simple = nullptr;
+    }
+    delete decoder;
+}
+
+extern "C" void radio_decoder_reset(radio_decoder_t *decoder)
+{
+    if (decoder == nullptr) {
+        return;
+    }
+    free_mp3_buffer(decoder);
+    free_flac_buffer(decoder);
+    decoder->mp3.reset();
+    decoder->flac.reset();
+    if (decoder->simple != nullptr) {
+        (void)esp_audio_simple_dec_reset(decoder->simple);
+    }
+    decoder->simple_info_ready = false;
+    decoder->info = {};
+}
+
+extern "C" radio_decoder_result_t radio_decoder_decode(
+    radio_decoder_t *decoder, const uint8_t *input, size_t input_length, uint8_t *pcm_output,
+    size_t pcm_capacity, size_t *bytes_consumed, size_t *pcm_bytes, radio_decoder_info_t *info)
+{
+    if (decoder == nullptr || input == nullptr || input_length == 0U || bytes_consumed == nullptr ||
+        pcm_bytes == nullptr) {
+        return RADIO_DECODER_ERROR;
+    }
+    *bytes_consumed = 0U;
+    *pcm_bytes = 0U;
+
+    if (decoder->format == RADIO_STREAM_FORMAT_AAC ||
+        decoder->format == RADIO_STREAM_FORMAT_OGG_FLAC) {
+        if (decoder->simple == nullptr || pcm_output == nullptr || pcm_capacity == 0U) {
+            return RADIO_DECODER_ERROR;
+        }
+        esp_audio_simple_dec_raw_t raw = {
+            .buffer = const_cast<uint8_t *>(input),
+            .len = static_cast<uint32_t>(input_length),
+            .eos = false,
+            .consumed = 0U,
+            .frame_recover = ESP_AUDIO_SIMPLE_DEC_RECOVERY_NONE,
+        };
+        esp_audio_simple_dec_out_t frame = {
+            .buffer = pcm_output,
+            .len = static_cast<uint32_t>(pcm_capacity),
+            .needed_size = 0U,
+            .decoded_size = 0U,
+        };
+        const esp_audio_err_t result = esp_audio_simple_dec_process(decoder->simple, &raw, &frame);
+        *bytes_consumed = raw.consumed;
+        *pcm_bytes = frame.decoded_size;
+
+        esp_audio_simple_dec_info_t simple_info = {};
+        const bool have_info =
+            esp_audio_simple_dec_get_info(decoder->simple, &simple_info) == ESP_AUDIO_ERR_OK;
+        if (have_info) {
+            decoder->info.sample_rate = simple_info.sample_rate;
+            decoder->info.channels = simple_info.channel;
+            decoder->info.bits_per_sample = simple_info.bits_per_sample;
+            decoder->info.bitrate_kbps = simple_info.bitrate / 1000U;
+            if (info != nullptr) {
+                *info = decoder->info;
+            }
+        }
+        if (result == ESP_AUDIO_ERR_BUFF_NOT_ENOUGH) {
+            return RADIO_DECODER_ERROR;
+        }
+        if (result != ESP_AUDIO_ERR_OK) {
+            return RADIO_DECODER_ERROR;
+        }
+        if (frame.decoded_size > 0U) {
+            decoder->simple_info_ready = decoder->simple_info_ready || have_info;
+            return RADIO_DECODER_PCM_READY;
+        }
+        if (have_info && !decoder->simple_info_ready) {
+            decoder->simple_info_ready = true;
+            return RADIO_DECODER_HEADER_READY;
+        }
+        return RADIO_DECODER_NEED_MORE_DATA;
+    }
+
+    size_t consumed = 0U;
+    size_t samples = 0U;
+    if (decoder->format == RADIO_STREAM_FORMAT_MP3) {
+        if (decoder->mp3_pcm == nullptr && !allocate_mp3_buffer(decoder)) {
+            return RADIO_DECODER_ERROR;
+        }
+        size_t mp3_consumed = 0U;
+        size_t mp3_samples = 0U;
+        const micro_mp3::Mp3Result result = decoder->mp3.decode(
+            input, input_length, reinterpret_cast<uint8_t *>(decoder->mp3_pcm),
+            micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES, mp3_consumed, mp3_samples);
+        *bytes_consumed = mp3_consumed;
+        if (result == micro_mp3::MP3_STREAM_INFO_READY ||
+            result == micro_mp3::MP3_STREAM_INFO_CHANGED) {
+            update_mp3_info(decoder);
+            if (info != nullptr) {
+                *info = decoder->info;
+            }
+            return RADIO_DECODER_HEADER_READY;
+        }
+        if (result == micro_mp3::MP3_NEED_MORE_DATA) {
+            return RADIO_DECODER_NEED_MORE_DATA;
+        }
+        if (result == micro_mp3::MP3_DECODE_ERROR) {
+            return RADIO_DECODER_NEED_MORE_DATA;
+        }
+        if (result < 0 || mp3_samples == 0U) {
+            return RADIO_DECODER_ERROR;
+        }
+        update_mp3_info(decoder);
+        const size_t pcm_size = mp3_samples * sizeof(int16_t) * decoder->info.channels;
+        if (pcm_size > pcm_capacity || pcm_output == nullptr) {
+            return RADIO_DECODER_ERROR;
+        }
+        memcpy(pcm_output, decoder->mp3_pcm, pcm_size);
+        *pcm_bytes = pcm_size;
+        if (info != nullptr) {
+            *info = decoder->info;
+        }
+        return RADIO_DECODER_PCM_READY;
+    }
+    if (decoder->flac_pcm == nullptr) {
+        const auto result = decoder->flac.decode(input, input_length, static_cast<int32_t *>(nullptr),
+                                                 0U, consumed, samples);
+        *bytes_consumed = consumed;
+        if (result == micro_flac::FLAC_DECODER_HEADER_READY) {
+            update_flac_info(decoder);
+            if (!allocate_flac_buffer(decoder)) {
+                return RADIO_DECODER_ERROR;
+            }
+            if (info != nullptr) {
+                *info = decoder->info;
+            }
+            return RADIO_DECODER_HEADER_READY;
+        }
+        if (result == micro_flac::FLAC_DECODER_NEED_MORE_DATA) {
+            return RADIO_DECODER_NEED_MORE_DATA;
+        }
+        return result == micro_flac::FLAC_DECODER_END_OF_STREAM ? RADIO_DECODER_END_OF_STREAM
+                                                                 : RADIO_DECODER_ERROR;
+    }
+
+    const auto result = decoder->flac.decode(input, input_length, decoder->flac_pcm,
+                                             decoder->flac_pcm_samples, consumed, samples);
+    *bytes_consumed = consumed;
+    update_flac_info(decoder);
+    if (info != nullptr) {
+        *info = decoder->info;
+    }
+    if (result == micro_flac::FLAC_DECODER_NEED_MORE_DATA) {
+        return RADIO_DECODER_NEED_MORE_DATA;
+    }
+    if (result == micro_flac::FLAC_DECODER_END_OF_STREAM) {
+        return RADIO_DECODER_END_OF_STREAM;
+    }
+    if (result != micro_flac::FLAC_DECODER_SUCCESS || samples == 0U ||
+        !normalize_pcm(decoder->flac_pcm, samples, decoder->info.channels,
+                       decoder->info.bits_per_sample, pcm_output, pcm_capacity, pcm_bytes)) {
+        return RADIO_DECODER_ERROR;
+    }
+    return RADIO_DECODER_PCM_READY;
+}

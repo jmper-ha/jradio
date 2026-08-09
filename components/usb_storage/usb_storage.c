@@ -15,6 +15,7 @@ typedef struct { usb_msg_id_t id; union { uint8_t address; msc_host_device_handl
 static QueueHandle_t s_queue;
 static EventGroupHandle_t s_events;
 #define USB_HOST_READY_BIT BIT0
+#define USB_HOST_FAILED_BIT BIT1
 static msc_host_device_handle_t s_device;
 static msc_host_vfs_handle_t s_vfs;
 
@@ -41,21 +42,49 @@ static void list_root(void)
 static void usb_lib_task(void *arg)
 {
     (void)arg;
-    ESP_ERROR_CHECK(usb_host_install(&(usb_host_config_t){ .intr_flags = ESP_INTR_FLAG_LEVEL1 }));
+    const esp_err_t err = usb_host_install(
+        &(usb_host_config_t){.intr_flags = ESP_INTR_FLAG_LEVEL1});
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "USB host install failed: %s", esp_err_to_name(err));
+        xEventGroupSetBits(s_events, USB_HOST_FAILED_BIT);
+        vTaskDelete(NULL);
+        return;
+    }
     xEventGroupSetBits(s_events, USB_HOST_READY_BIT);
-    for (;;) { uint32_t flags; usb_host_lib_handle_events(portMAX_DELAY, &flags); }
+    for (;;) {
+        uint32_t flags = 0;
+        const esp_err_t event_result = usb_host_lib_handle_events(portMAX_DELAY, &flags);
+        if (event_result != ESP_OK) {
+            ESP_LOGE(TAG, "USB host event handling failed: %s",
+                     esp_err_to_name(event_result));
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+    }
 }
 
 static void usb_app_task(void *arg)
 {
     (void)arg;
-    xEventGroupWaitBits(s_events, USB_HOST_READY_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
+    const EventBits_t startup = xEventGroupWaitBits(
+        s_events, USB_HOST_READY_BIT | USB_HOST_FAILED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
+    if ((startup & USB_HOST_FAILED_BIT) != 0U) {
+        ESP_LOGW(TAG, "USB storage disabled because host initialization failed");
+        vTaskDelete(NULL);
+        return;
+    }
     const msc_host_driver_config_t config = { .create_backround_task = true, .task_priority = 5, .stack_size = 4096, .callback = msc_event };
-    ESP_ERROR_CHECK(msc_host_install(&config));
+    const esp_err_t install_result = msc_host_install(&config);
+    if (install_result != ESP_OK) {
+        ESP_LOGE(TAG, "USB MSC install failed: %s", esp_err_to_name(install_result));
+        vTaskDelete(NULL);
+        return;
+    }
     ESP_LOGI(TAG, "USB Host ready; waiting for a FAT USB flash drive");
     for (;;) {
         usb_msg_t msg;
-        xQueueReceive(s_queue, &msg, portMAX_DELAY);
+        if (xQueueReceive(s_queue, &msg, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
         if (msg.id == USB_MSG_CONNECT && s_device == NULL) {
             esp_err_t err = msc_host_install_device(msg.address, &s_device);
             if (err == ESP_OK) {
@@ -74,18 +103,35 @@ static void usb_app_task(void *arg)
 
 esp_err_t usb_storage_init(void)
 {
-    esp_log_level_set("USB_MSC", ESP_LOG_DEBUG);
-    esp_log_level_set("ENUM", ESP_LOG_DEBUG);
-    esp_log_level_set("USBH", ESP_LOG_DEBUG);
-    esp_log_level_set("HCD DWC", ESP_LOG_DEBUG);
-    esp_log_level_set("HUB", ESP_LOG_DEBUG);
-    esp_log_level_set("USB HOST", ESP_LOG_DEBUG);
-    esp_log_level_set("usb_phy", ESP_LOG_DEBUG);
+    if (s_queue != NULL) {
+        return ESP_OK;
+    }
+    esp_log_level_set("USB_MSC", ESP_LOG_INFO);
+    esp_log_level_set("ENUM", ESP_LOG_WARN);
+    esp_log_level_set("USBH", ESP_LOG_WARN);
+    esp_log_level_set("HCD DWC", ESP_LOG_WARN);
+    esp_log_level_set("HUB", ESP_LOG_WARN);
+    esp_log_level_set("USB HOST", ESP_LOG_WARN);
+    esp_log_level_set("usb_phy", ESP_LOG_WARN);
     s_queue = xQueueCreate(4, sizeof(usb_msg_t));
     if (!s_queue) return ESP_ERR_NO_MEM;
     s_events = xEventGroupCreate();
     if (!s_events) { vQueueDelete(s_queue); s_queue = NULL; return ESP_ERR_NO_MEM; }
-    if (xTaskCreate(usb_lib_task, "usb_lib", 4096, NULL, 3, NULL) != pdPASS ||
-        xTaskCreate(usb_app_task, "usb_msc", 4096, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
+    TaskHandle_t app_task = NULL;
+    if (xTaskCreate(usb_app_task, "usb_msc", 4096, NULL, 4, &app_task) != pdPASS) {
+        vEventGroupDelete(s_events);
+        vQueueDelete(s_queue);
+        s_events = NULL;
+        s_queue = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    if (xTaskCreate(usb_lib_task, "usb_lib", 4096, NULL, 3, NULL) != pdPASS) {
+        vTaskDelete(app_task);
+        vEventGroupDelete(s_events);
+        vQueueDelete(s_queue);
+        s_events = NULL;
+        s_queue = NULL;
+        return ESP_ERR_NO_MEM;
+    }
     return ESP_OK;
 }

@@ -16,6 +16,7 @@
 #include "board_config.h"
 #include "internet_radio.h"
 #include "ui_deferred_start.h"
+#include "ui_draw_buffer.h"
 #include "ui_font_cyrillic_14.h"
 #include "ui_menu.h"
 #include "ui_radio_text.h"
@@ -23,7 +24,7 @@
 #include "wifi_provisioning.h"
 
 #define UI_DRAW_BUFFER_LINES 20
-#define UI_DRAW_BUFFER_SIZE (BOARD_TFT_WIDTH * UI_DRAW_BUFFER_LINES * sizeof(lv_color_t))
+#define UI_DRAW_BUFFER_SIZE ui_rgb565_draw_buffer_size(BOARD_TFT_WIDTH, UI_DRAW_BUFFER_LINES)
 #define UI_INPUT_QUEUE_LENGTH 16
 #define UI_TASK_STACK_SIZE 6144
 #define UI_TASK_PRIORITY 4
@@ -174,15 +175,18 @@ static void ui_create_menu_screen(void)
 static void ui_update_station_list(void)
 {
     const size_t count = internet_radio_station_count();
+    const size_t window_start = station_list_window_start(&s_station_list,
+                                                          UI_STATION_LIST_MAX_ROWS);
     for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
-        if (row >= count) {
+        const size_t entry_index = window_start + row;
+        if (entry_index >= count) {
             lv_obj_add_flag(s_station_list_rows[row], LV_OBJ_FLAG_HIDDEN);
             continue;
         }
         lv_obj_clear_flag(s_station_list_rows[row], LV_OBJ_FLAG_HIDDEN);
-        const station_catalog_entry_t *entry = internet_radio_station_at(row);
-        const bool selected = row == station_list_selected_index(&s_station_list);
-        const bool active = row == station_list_active_index(&s_station_list);
+        const station_catalog_entry_t *entry = internet_radio_station_at(entry_index);
+        const bool selected = entry_index == station_list_selected_index(&s_station_list);
+        const bool active = entry_index == station_list_active_index(&s_station_list);
         lv_obj_set_style_bg_color(s_station_list_rows[row], lv_color_hex(selected ? 0x1769AA : 0x101820), 0);
         lv_obj_set_style_bg_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(s_station_list_rows[row], active ? 2 : 0, 0);
@@ -282,12 +286,21 @@ static void ui_show_source(void)
     if (s_showing_radio) {
         s_wifi_rssi_seen = false;
         s_wifi_rssi_valid = false;
-        if (!internet_radio_start_saved_station()) {
+        size_t saved_station_index;
+        if (!internet_radio_saved_station_index(&saved_station_index)) {
             ui_show_station_list();
         } else {
-            const station_catalog_entry_t *entry = internet_radio_station_at(internet_radio_current_station_index());
+            const station_catalog_entry_t *entry = internet_radio_station_at(saved_station_index);
             if (entry != NULL) lv_label_set_text(s_source_title, entry->name);
-            ui_update_radio_status();
+            ui_set_label_text_if_changed(s_source_status, "Connecting");
+            ui_set_label_text_if_changed(s_source_detail, entry == NULL ? "" : entry->name);
+            char stream_text[32];
+            ui_radio_stream_text_for_url(stream_text, sizeof(stream_text),
+                                         entry == NULL ? NULL : entry->url);
+            ui_set_label_text_if_changed(s_source_stream, stream_text);
+            ui_set_label_text_if_changed(s_source_wifi, "");
+            ui_deferred_start_schedule(&s_deferred_station_start, saved_station_index,
+                                       ui_tick_get_ms(), UI_STATION_START_SCREEN_DELAY_MS);
         }
     } else {
         ui_set_label_text_if_changed(s_source_status, "Not implemented");
@@ -317,6 +330,10 @@ static void ui_show_menu(void)
 static void ui_show_station_list(void)
 {
     if (!s_showing_radio) return;
+    internet_radio_status_t status;
+    internet_radio_get_status(&status);
+    ESP_LOGI(TAG, "show station list: radio_state=%d active_station=%u",
+             (int)status.state, (unsigned int)internet_radio_current_station_index());
     ui_deferred_start_cancel(&s_deferred_station_start);
     const size_t station_count = internet_radio_station_count();
     const size_t active_station_index = internet_radio_current_station_index();
@@ -346,10 +363,12 @@ static void ui_handle_input(board_input_action_t action)
                 ui_update_radio_status();
                 return;
             }
-            (void)internet_radio_stop();
             ui_set_label_text_if_changed(s_source_status, "Connecting");
             ui_set_label_text_if_changed(s_source_detail, entry == NULL ? "" : entry->name);
-            ui_set_label_text_if_changed(s_source_stream, "MP3  |  -- kbps");
+            char stream_text[32];
+            ui_radio_stream_text_for_url(stream_text, sizeof(stream_text),
+                                         entry == NULL ? NULL : entry->url);
+            ui_set_label_text_if_changed(s_source_stream, stream_text);
             ui_set_label_text_if_changed(s_source_wifi, "");
             s_showing_station_list = false;
             lv_screen_load(s_source_screen);
@@ -406,8 +425,14 @@ esp_err_t ui_init(audio_source_manager_t *source_manager)
         return ESP_ERR_INVALID_STATE;
     }
 
+    ESP_LOGI(TAG, "init memory: internal_free=%u internal_largest=%u dma_largest=%u draw_buffer=%u",
+             (unsigned int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+             (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
+             (unsigned int)UI_DRAW_BUFFER_SIZE);
     s_input_queue = xQueueCreate(UI_INPUT_QUEUE_LENGTH, sizeof(board_input_action_t));
     if (s_input_queue == NULL) {
+        ESP_LOGE(TAG, "input queue allocation failed");
         return ESP_ERR_NO_MEM;
     }
     s_source_manager = source_manager;
@@ -419,6 +444,9 @@ esp_err_t ui_init(audio_source_manager_t *source_manager)
     lv_color_t *buffer1 = heap_caps_malloc(UI_DRAW_BUFFER_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     lv_color_t *buffer2 = heap_caps_malloc(UI_DRAW_BUFFER_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     if (buffer1 == NULL || buffer2 == NULL) {
+        ESP_LOGE(TAG, "draw buffer allocation failed: buffer1=%p buffer2=%p dma_largest=%u",
+                 buffer1, buffer2,
+                 (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
         heap_caps_free(buffer1);
         heap_caps_free(buffer2);
         vQueueDelete(s_input_queue);
@@ -428,6 +456,8 @@ esp_err_t ui_init(audio_source_manager_t *source_manager)
 
     s_display = lv_display_create(BOARD_TFT_WIDTH, BOARD_TFT_HEIGHT);
     if (s_display == NULL) {
+        ESP_LOGE(TAG, "LVGL display allocation failed: internal_largest=%u",
+                 (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
         heap_caps_free(buffer1);
         heap_caps_free(buffer2);
         vQueueDelete(s_input_queue);
@@ -443,6 +473,15 @@ esp_err_t ui_init(audio_source_manager_t *source_manager)
     lv_screen_load(s_menu_screen);
 
     if (xTaskCreate(ui_task, "ui", UI_TASK_STACK_SIZE, NULL, UI_TASK_PRIORITY, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "UI task allocation failed: internal_free=%u internal_largest=%u",
+                 (unsigned int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                 (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+        lv_display_delete(s_display);
+        s_display = NULL;
+        heap_caps_free(buffer1);
+        heap_caps_free(buffer2);
+        vQueueDelete(s_input_queue);
+        s_input_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
     ESP_LOGI(TAG, "LVGL UI initialized");

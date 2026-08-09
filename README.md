@@ -27,14 +27,16 @@ idf.py -p PORT flash
 idf.py -p PORT littlefs-flash
 ```
 
-`littlefs-flash` записывает web-файлы и начальный конфигурационный каталог.
+`littlefs-flash` записывает каталог `data` целиком: веб-файлы из `data/www`
+и начальные настройки из `data/config`.
 Обычная прошивка приложения не должна затирать пользовательские данные LittleFS.
 
 ## Конфигурация
 
-- `config/stations.csv` — список интернет-радиостанций;
-- `config/settings.csv` — настройки в формате `key,value`;
-- `config/wifi.json` — создаётся устройством и намеренно не входит в Git.
+- `data/config/stations.csv` — список интернет-радиостанций;
+- `data/config/settings.csv` — настройки в формате `key,value`;
+- `data/config/wifi.json` — создаётся устройством и намеренно не входит в Git.
+- `data/www/` — `index.html`, `app.js` и `style.css` веб-сервера.
 
 Не добавляйте в репозиторий реальные Wi-Fi-пароли, токены или другие ключи.
 

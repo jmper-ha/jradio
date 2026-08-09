@@ -69,7 +69,9 @@ esp_err_t wifi_settings_storage_init(void)
     const esp_vfs_littlefs_conf_t config = {
         .base_path = WIFI_SETTINGS_MOUNT_PATH,
         .partition_label = "littlefs",
-        .format_if_mount_failed = true,
+        /* Configuration and web assets share this partition. Never erase it
+         * automatically when a mount fails; surface the error instead. */
+        .format_if_mount_failed = false,
     };
     const esp_err_t err = esp_vfs_littlefs_register(&config);
     if (err == ESP_OK) {
@@ -151,20 +153,24 @@ esp_err_t wifi_settings_save_atomic(const wifi_settings_t *settings)
         return ESP_ERR_NO_MEM;
     }
     cJSON *networks = cJSON_AddArrayToObject(root, "networks");
-    if (networks == NULL) {
+    if (networks == NULL || cJSON_AddNumberToObject(root, "version", 1) == NULL) {
         cJSON_Delete(root);
         return ESP_ERR_NO_MEM;
     }
-    cJSON_AddNumberToObject(root, "version", 1);
     for (uint8_t index = 0; index < settings->count; ++index) {
         cJSON *network = cJSON_CreateObject();
         if (network == NULL) {
             cJSON_Delete(root);
             return ESP_ERR_NO_MEM;
         }
-        cJSON_AddStringToObject(network, "ssid", settings->networks[index].ssid);
-        cJSON_AddStringToObject(network, "password", settings->networks[index].password);
-        cJSON_AddItemToArray(networks, network);
+        if (cJSON_AddStringToObject(network, "ssid", settings->networks[index].ssid) == NULL ||
+            cJSON_AddStringToObject(network, "password",
+                                    settings->networks[index].password) == NULL ||
+            !cJSON_AddItemToArray(networks, network)) {
+            cJSON_Delete(network);
+            cJSON_Delete(root);
+            return ESP_ERR_NO_MEM;
+        }
     }
     char *json = root == NULL ? NULL : cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -180,9 +186,14 @@ esp_err_t wifi_settings_save_atomic(const wifi_settings_t *settings)
     const bool close_ok = fclose(file) == 0;
     cJSON_free(json);
     if (!write_ok || !close_ok) {
+        (void)unlink(WIFI_SETTINGS_TEMP_PATH);
         return ESP_FAIL;
     }
-    return rename(WIFI_SETTINGS_TEMP_PATH, WIFI_SETTINGS_CONFIG_PATH) == 0 ? ESP_OK : ESP_FAIL;
+    if (rename(WIFI_SETTINGS_TEMP_PATH, WIFI_SETTINGS_CONFIG_PATH) != 0) {
+        (void)unlink(WIFI_SETTINGS_TEMP_PATH);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }
 
 esp_err_t wifi_settings_clear(void)

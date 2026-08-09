@@ -28,7 +28,7 @@ form.addEventListener('submit', async (event) => {
     message.textContent = await response.text();
     return;
   }
-  message.textContent = 'Настройка сохранена. Устройство перезапускается…';
+  message.textContent = 'Параметры приняты. Устройство проверяет подключение…';
 });
 
 loadStatus().catch((error) => { statusElement.textContent = error.message; });

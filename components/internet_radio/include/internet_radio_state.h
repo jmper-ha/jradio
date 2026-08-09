@@ -1,6 +1,8 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 typedef enum {
     INTERNET_RADIO_STATE_STOPPED = 0,
@@ -22,6 +24,18 @@ typedef enum {
     INTERNET_RADIO_EVENT_FATAL,
 } internet_radio_event_t;
 
+typedef enum {
+    INTERNET_RADIO_READ_DATA = 0,
+    INTERNET_RADIO_READ_RETRY,
+    INTERNET_RADIO_READ_CLOSED,
+    INTERNET_RADIO_READ_ERROR,
+} internet_radio_read_action_t;
+
 bool internet_radio_state_apply(internet_radio_state_t *state, internet_radio_event_t event);
 bool internet_radio_state_output_enabled(internet_radio_state_t state);
 bool internet_radio_output_start_once(bool *output_started);
+bool internet_radio_output_needs_restart(uint32_t current_sample_rate,
+                                         uint32_t next_sample_rate,
+                                         bool output_started);
+internet_radio_read_action_t internet_radio_read_classify(int result, int try_again_result);
+bool internet_radio_input_buffer_stalled(bool need_input, size_t available, size_t capacity);

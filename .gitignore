@@ -8,9 +8,9 @@ sdkconfig.old
 sdkconfig.*.old
 
 # Runtime/user data in LittleFS
-components/web_server/web_assets/config/wifi.json
-components/web_server/web_assets/config/wifi.tmp
-components/web_server/web_assets/config/*.tmp
+data/config/wifi.json
+data/config/wifi.tmp
+data/config/*.tmp
 
 # Python, editor and OS files
 __pycache__/

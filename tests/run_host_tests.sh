@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+test_build_dir=$(mktemp -d /tmp/jradio-host-tests.XXXXXX)
+trap 'rm -rf -- "${test_build_dir}"' EXIT
+
+host_cc=${CC:-gcc}
+common_flags=(
+    -std=c17
+    -Wall
+    -Wextra
+    -Werror
+    -Wpedantic
+    -fsanitize=address,undefined
+    -fno-omit-frame-pointer
+)
+include_flags=(
+    -I"${project_dir}/components/audio/include"
+    -I"${project_dir}/components/board/include"
+    -I"${project_dir}/components/internet_radio/include"
+    -I"${project_dir}/components/jradio_wifi_provisioning/include"
+    -I"${project_dir}/components/settings/include"
+    -I"${project_dir}/components/ui/include"
+    -I"${project_dir}/components/web_server/include"
+)
+
+run_test() {
+    local name=$1
+    shift
+    "${host_cc}" "${common_flags[@]}" "${include_flags[@]}" "$@" \
+        -o "${test_build_dir}/${name}"
+    ASAN_OPTIONS=detect_leaks=1 "${test_build_dir}/${name}"
+}
+
+cd "${project_dir}"
+run_test audio_source tests/test_audio_source.c components/audio/audio_source_manager.c
+run_test board_audio_startup tests/test_board_audio_startup.c \
+    components/board/board_audio_startup.c
+run_test board_config tests/test_board_config.c
+run_test board_input tests/test_board_input.c components/board/board_input.c
+run_test icy_metadata tests/test_icy_metadata.c components/internet_radio/icy_metadata.c
+run_test internet_radio_state tests/test_internet_radio_state.c \
+    components/internet_radio/internet_radio_state.c
+run_test mp3_stream_info tests/test_mp3_stream_info.c components/internet_radio/mp3_stream_info.c
+run_test pcm_diagnostics tests/test_pcm_diagnostics.c components/board/pcm_diagnostics.c
+run_test radio_http_status tests/test_radio_http_status.c \
+    components/internet_radio/radio_http_status.c
+run_test radio_stream_format tests/test_radio_stream_format.c \
+    components/internet_radio/radio_stream_format.c components/internet_radio/station_catalog.c
+run_test settings_csv tests/test_settings_csv.c components/settings/settings_csv.c
+run_test station_catalog tests/test_station_catalog.c components/internet_radio/station_catalog.c
+run_test station_resume tests/test_station_resume.c components/internet_radio/station_resume.c \
+    components/settings/settings_csv.c
+run_test ui_deferred_start tests/test_ui_deferred_start.c components/ui/ui_deferred_start.c
+run_test ui_draw_buffer tests/test_ui_draw_buffer.c components/ui/ui_draw_buffer.c
+run_test ui_menu tests/test_ui_menu.c components/ui/ui_menu.c
+run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c \
+    components/internet_radio/radio_stream_format.c
+run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c
+run_test wifi_provisioning tests/test_wifi_provisioning.c \
+    components/jradio_wifi_provisioning/wifi_provisioning.c
+run_test wifi_settings tests/test_wifi_settings.c components/settings/wifi_settings.c
+run_test web_server tests/test_web_server.c components/web_server/web_server.c \
+    components/settings/wifi_settings.c
+
+printf 'All host tests passed.\n'

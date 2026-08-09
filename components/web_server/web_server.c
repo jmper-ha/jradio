@@ -6,12 +6,12 @@
 
 #ifdef ESP_PLATFORM
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "cJSON.h"
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_system.h"
-#include "esp_timer.h"
 #include "esp_http_server.h"
 
 #include "wifi_provisioning.h"
@@ -20,12 +20,11 @@
 #include "station_resume.h"
 
 #define WEB_SERVER_MOUNT_PATH "/littlefs"
+#define WEB_SERVER_WEB_ROOT "www"
 #define WEB_SERVER_REQUEST_MAX_LEN 256
-#define WEB_SERVER_RESTART_DELAY_US 1000000
 
 static const char *TAG = "web";
 static httpd_handle_t s_server;
-static esp_timer_handle_t s_restart_timer;
 #endif
 
 static void json_skip_whitespace(const char **cursor)
@@ -168,23 +167,31 @@ static esp_err_t web_server_send_file(httpd_req_t *request, const char *relative
             return err;
         }
     }
+    if (ferror(file)) {
+        fclose(file);
+        ESP_LOGE(TAG, "read web asset failed: %s", path);
+        return ESP_FAIL;
+    }
     fclose(file);
     return httpd_resp_send_chunk(request, NULL, 0);
 }
 
 static esp_err_t web_server_root_get(httpd_req_t *request)
 {
-    return web_server_send_file(request, "index.html", "text/html; charset=utf-8");
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/index.html",
+                                "text/html; charset=utf-8");
 }
 
 static esp_err_t web_server_app_js_get(httpd_req_t *request)
 {
-    return web_server_send_file(request, "app.js", "application/javascript; charset=utf-8");
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/app.js",
+                                "application/javascript; charset=utf-8");
 }
 
 static esp_err_t web_server_style_get(httpd_req_t *request)
 {
-    return web_server_send_file(request, "style.css", "text/css; charset=utf-8");
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/style.css",
+                                "text/css; charset=utf-8");
 }
 
 static const char *web_server_radio_state_name(internet_radio_state_t state)
@@ -266,11 +273,18 @@ static esp_err_t web_server_status_get(httpd_req_t *request)
     return err;
 }
 
-static void web_server_restart_callback(void *arg)
+static void web_server_apply_wifi_work(void *context)
 {
-    (void)arg;
-    ESP_LOGI(TAG, "restarting after Wi-Fi configuration update");
-    esp_restart();
+    wifi_network_t *network = context;
+    if (network == NULL) {
+        return;
+    }
+    const esp_err_t err = wifi_provisioning_save_network(network->ssid, network->password);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "apply Wi-Fi settings failed err=%s", esp_err_to_name(err));
+    }
+    memset(network, 0, sizeof(*network));
+    free(network);
 }
 
 static esp_err_t web_server_wifi_post(httpd_req_t *request)
@@ -295,29 +309,30 @@ static esp_err_t web_server_wifi_post(httpd_req_t *request)
         httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "SSID or password is invalid");
         return ESP_FAIL;
     }
-    const esp_err_t err = wifi_provisioning_save_network(network.ssid, network.password);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "save Wi-Fi settings failed err=%s", esp_err_to_name(err));
-        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Could not save settings");
-        return err;
+    wifi_network_t *pending = malloc(sizeof(*pending));
+    if (pending == NULL) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_ERR_NO_MEM;
     }
-    httpd_resp_set_status(request, "204 No Content");
-    ESP_RETURN_ON_ERROR(httpd_resp_send(request, NULL, 0), TAG, "send save response");
-    return esp_timer_start_once(s_restart_timer, WEB_SERVER_RESTART_DELAY_US);
+    *pending = network;
+    const esp_err_t queue_result = httpd_queue_work(s_server, web_server_apply_wifi_work,
+                                                    pending);
+    if (queue_result != ESP_OK) {
+        memset(pending, 0, sizeof(*pending));
+        free(pending);
+        ESP_LOGE(TAG, "queue Wi-Fi settings failed err=%s", esp_err_to_name(queue_result));
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
+                            "Could not apply settings");
+        return queue_result;
+    }
+    httpd_resp_set_status(request, "202 Accepted");
+    return httpd_resp_send(request, NULL, 0);
 }
 
 esp_err_t web_server_start(void)
 {
     if (s_server != NULL) {
         return ESP_OK;
-    }
-    const esp_timer_create_args_t restart_timer_config = {
-        .callback = web_server_restart_callback,
-        .name = "wifi_restart",
-    };
-    if (s_restart_timer == NULL) {
-        ESP_RETURN_ON_ERROR(esp_timer_create(&restart_timer_config, &s_restart_timer), TAG,
-                            "create restart timer");
     }
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 6144;

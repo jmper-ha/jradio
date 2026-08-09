@@ -45,9 +45,7 @@ bool internet_radio_state_apply(internet_radio_state_t *state, internet_radio_ev
 
 bool internet_radio_state_output_enabled(internet_radio_state_t state)
 {
-    return state == INTERNET_RADIO_STATE_CONNECTING ||
-           state == INTERNET_RADIO_STATE_PLAYING ||
-           state == INTERNET_RADIO_STATE_RECONNECTING;
+    return state == INTERNET_RADIO_STATE_PLAYING;
 }
 
 bool internet_radio_output_start_once(bool *output_started)
@@ -57,4 +55,28 @@ bool internet_radio_output_start_once(bool *output_started)
     }
     *output_started = true;
     return true;
+}
+
+bool internet_radio_output_needs_restart(uint32_t current_sample_rate,
+                                         uint32_t next_sample_rate,
+                                         bool output_started)
+{
+    return output_started && current_sample_rate > 0U && next_sample_rate > 0U &&
+           current_sample_rate != next_sample_rate;
+}
+
+internet_radio_read_action_t internet_radio_read_classify(int result, int try_again_result)
+{
+    if (result > 0) {
+        return INTERNET_RADIO_READ_DATA;
+    }
+    if (result == try_again_result) {
+        return INTERNET_RADIO_READ_RETRY;
+    }
+    return result == 0 ? INTERNET_RADIO_READ_CLOSED : INTERNET_RADIO_READ_ERROR;
+}
+
+bool internet_radio_input_buffer_stalled(bool need_input, size_t available, size_t capacity)
+{
+    return need_input && capacity > 0U && available >= capacity;
 }

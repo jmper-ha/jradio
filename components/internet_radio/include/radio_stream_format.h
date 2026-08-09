@@ -5,6 +5,8 @@
 typedef enum {
     RADIO_STREAM_FORMAT_MP3 = 0,
     RADIO_STREAM_FORMAT_AAC,
+    RADIO_STREAM_FORMAT_FLAC,
+    RADIO_STREAM_FORMAT_OGG_FLAC,
 } radio_stream_format_t;
 
 radio_stream_format_t radio_stream_format_from_url(const char *url);

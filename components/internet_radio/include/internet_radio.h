@@ -28,5 +28,6 @@ void internet_radio_get_status(internet_radio_status_t *status);
 size_t internet_radio_station_count(void);
 const station_catalog_entry_t *internet_radio_station_at(size_t index);
 bool internet_radio_start_saved_station(void);
+bool internet_radio_saved_station_index(size_t *index);
 bool internet_radio_start_station_index(size_t index);
 size_t internet_radio_current_station_index(void);

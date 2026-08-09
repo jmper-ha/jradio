@@ -20,6 +20,9 @@ typedef struct {
 
 wifi_provisioning_mode_t wifi_provisioning_initial_mode(const wifi_settings_t *settings);
 uint8_t wifi_provisioning_network_index(const wifi_settings_t *settings, uint8_t candidate);
+bool wifi_provisioning_should_reconnect(wifi_provisioning_mode_t mode);
+void wifi_provisioning_reset_saved_state(wifi_settings_t *current, wifi_settings_t *committed,
+                                         bool *pending_commit);
 
 #ifdef ESP_PLATFORM
 #include "esp_err.h"

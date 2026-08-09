@@ -5,4 +5,4 @@ project(jradio)
 
 # Static Web UI is flashed explicitly with `idf.py littlefs-flash`; normal firmware
 # flashes must preserve /littlefs/config/wifi.json.
-littlefs_create_partition_image(littlefs components/web_server/web_assets)
+littlefs_create_partition_image(littlefs data)

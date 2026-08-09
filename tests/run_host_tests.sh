@@ -26,6 +26,54 @@ include_flags=(
     -I"${project_dir}/components/web_server/include"
 )
 
+find_idf_path() {
+    if [[ -n ${IDF_PATH:-} && -f ${IDF_PATH}/components/json/cJSON/cJSON.c ]]; then
+        printf '%s\n' "${IDF_PATH}"
+        return 0
+    fi
+
+    local cache_path="${project_dir}/build/CMakeCache.txt"
+    if [[ -f ${cache_path} ]]; then
+        local cached_path
+        cached_path=$(sed -n 's/^IDF_PATH:PATH=//p' "${cache_path}" | head -n 1)
+        if [[ -n ${cached_path} && -f ${cached_path}/components/json/cJSON/cJSON.c ]]; then
+            printf '%s\n' "${cached_path}"
+            return 0
+        fi
+    fi
+
+    if command -v idf.py >/dev/null 2>&1; then
+        local idf_tool idf_from_path
+        idf_tool=$(command -v idf.py)
+        idf_from_path=$(cd "$(dirname "${idf_tool}")/.." && pwd)
+        if [[ -f ${idf_from_path}/components/json/cJSON/cJSON.c ]]; then
+            printf '%s\n' "${idf_from_path}"
+            return 0
+        fi
+    fi
+
+    local tools_root=${IDF_TOOLS_PATH:-${HOME}/.espressif}
+    local candidate discovered=""
+    for candidate in "${tools_root}"/v*/esp-idf; do
+        if [[ -f ${candidate}/components/json/cJSON/cJSON.c ]]; then
+            discovered=${candidate}
+        fi
+    done
+    if [[ -n ${discovered} ]]; then
+        printf '%s\n' "${discovered}"
+        return 0
+    fi
+
+    return 1
+}
+
+idf_path=$(find_idf_path) || {
+    printf 'ESP-IDF cJSON source not found; set IDF_PATH and retry.\n' >&2
+    exit 1
+}
+cjson_source="${idf_path}/components/json/cJSON/cJSON.c"
+cjson_include="${idf_path}/components/json/cJSON"
+
 run_test() {
     local name=$1
     shift
@@ -67,5 +115,9 @@ run_test wifi_provisioning tests/test_wifi_provisioning.c \
 run_test wifi_settings tests/test_wifi_settings.c components/settings/wifi_settings.c
 run_test web_server tests/test_web_server.c components/web_server/web_server.c \
     components/settings/wifi_settings.c
+run_test web_protocol -I"${cjson_include}" tests/test_web_protocol.c \
+    components/web_server/web_protocol.c "${cjson_source}"
+run_test web_view_model tests/test_web_view_model.c \
+    components/web_server/web_view_model.c
 
 printf 'All host tests passed.\n'

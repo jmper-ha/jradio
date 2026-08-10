@@ -473,10 +473,17 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
         ui_show_station_list();
     }
 
-    if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST &&
-        station_list_idle_timeout_elapsed(&s_station_list, ui_tick_get_ms(),
-                                          UI_STATION_LIST_IDLE_TIMEOUT_MS)) {
-        ui_close_station_list_to_source();
+    if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
+        // The playlist can be replaced from the web UI while this screen is
+        // open, so the count captured at open time may be stale.
+        if (station_list_sync_counts(&s_station_list, snapshot->item_count,
+                                     snapshot->active_item_index)) {
+            ui_update_station_list();
+        }
+        if (station_list_idle_timeout_elapsed(&s_station_list, ui_tick_get_ms(),
+                                              UI_STATION_LIST_IDLE_TIMEOUT_MS)) {
+            ui_close_station_list_to_source();
+        }
     }
     ui_update_radio_status(snapshot);
 }

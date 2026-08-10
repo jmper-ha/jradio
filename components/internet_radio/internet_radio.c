@@ -174,8 +174,14 @@ static esp_err_t radio_pcm_output(internet_radio_context_t *radio, const uint8_t
                  (unsigned int)written, (unsigned int)radio->pcm_bytes, peak);
     }
     if (!radio->output_logged && written > 0U) {
-        ESP_LOGI(TAG, "PCM output started: block=%d total=%u peak=%u", data_size,
-                 (unsigned int)radio->pcm_bytes, peak);
+        // Sampled here rather than at connect time: the I2S DMA buffers are
+        // only allocated once output is enabled, so this is the first point
+        // that reflects the DMA heap the TLS record decryption will see.
+        ESP_LOGI(TAG, "PCM output started: block=%u total=%u peak=%u "
+                      "dma_free=%u dma_largest_block=%u",
+                 (unsigned int)data_size, (unsigned int)radio->pcm_bytes, peak,
+                 (unsigned int)heap_caps_get_free_size(MALLOC_CAP_DMA),
+                 (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
         radio->output_logged = true;
         if (radio_status_apply(radio, INTERNET_RADIO_EVENT_PLAYER_RUNNING)) {
             (void)radio_sync_output(radio);
@@ -487,10 +493,20 @@ static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *ur
     esp_err_t err = esp_http_client_set_header(radio->http, "Icy-MetaData", "1");
     unsigned int redirects = 0U;
     while (err == ESP_OK) {
+        // MALLOC_CAP_DMA is reported separately and deliberately: it is a
+        // strict subset of the internal pool (PSRAM never carries this flag,
+        // even on targets whose GDMA can reach it), and it is the pool the
+        // hardware AES driver allocates its DMA descriptors from on every TLS
+        // record. An HTTPS stream can therefore fail while the internal
+        // figures still look healthy.
         const uint32_t internal_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
-        ESP_LOGI(TAG, "HTTP open heap: internal_free=%u largest_block=%u",
+        ESP_LOGI(TAG,
+                 "HTTP open heap: internal_free=%u largest_block=%u "
+                 "dma_free=%u dma_largest_block=%u",
                  (unsigned int)heap_caps_get_free_size(internal_caps),
-                 (unsigned int)heap_caps_get_largest_free_block(internal_caps));
+                 (unsigned int)heap_caps_get_largest_free_block(internal_caps),
+                 (unsigned int)heap_caps_get_free_size(MALLOC_CAP_DMA),
+                 (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
         err = esp_http_client_open(radio->http, 0);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "HTTP open failed after %u redirects: %s", redirects,
@@ -630,8 +646,12 @@ static void radio_load_catalog(internet_radio_context_t *radio)
     ESP_LOGI(TAG, "loaded %u internet radio stations", (unsigned int)radio->catalog.count);
 }
 
-esp_err_t internet_radio_catalog_replace(const char *text, size_t length, size_t *out_count)
+esp_err_t internet_radio_catalog_replace(const char *text, size_t length, size_t *out_count,
+                                         bool *out_active_station_removed)
 {
+    if (out_active_station_removed != NULL) {
+        *out_active_station_removed = false;
+    }
     if (!s_radio.initialized || text == NULL || length == 0U || length >= RADIO_CATALOG_BUFFER_SIZE) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -690,35 +710,57 @@ esp_err_t internet_radio_catalog_replace(const char *text, size_t length, size_t
 
     // Install the new catalog and, if a station is currently playing,
     // re-resolve its index by URL so status/list highlighting stays correct
-    // even if the save reordered or removed entries ahead of it. Readers of
-    // s_radio.catalog (internet_radio_station_at() and friends) do not take
-    // this lock: the entries array is fixed-size and never reallocated, so a
-    // concurrent read during the swap below can at worst observe a torn
-    // (mixed old/new) station name/url for a single UI refresh, never an
-    // out-of-bounds access. That is accepted as a minor, self-correcting
-    // cosmetic race rather than full read-side thread-safety.
+    // even if the save reordered or removed entries ahead of it.
+    //
+    // Only the status bookkeeping runs under s_status_lock. The catalog copy
+    // (~11 KB) and the URL search must stay outside it: taskENTER_CRITICAL
+    // disables interrupts on this core, and holding it that long starves the
+    // I2S DMA and Wi-Fi ISRs. Readers of s_radio.catalog
+    // (internet_radio_station_at() and friends) do not take this lock anyway:
+    // the entries array is fixed-size and never reallocated, so a concurrent
+    // read during the copy can at worst observe a torn (mixed old/new)
+    // station name/url for a single UI refresh, never an out-of-bounds
+    // access. That is accepted as a minor, self-correcting cosmetic race
+    // rather than full read-side thread-safety.
+    taskENTER_CRITICAL(&s_status_lock);
+    const size_t playing_index = s_radio.status.station_index;
+    taskEXIT_CRITICAL(&s_status_lock);
+
     char playing_url[STATION_CATALOG_URL_MAX_LEN] = {0};
     bool was_playing = false;
-    taskENTER_CRITICAL(&s_status_lock);
-    if (s_radio.status.station_index < s_radio.catalog.count) {
+    if (playing_index < s_radio.catalog.count) {
         snprintf(playing_url, sizeof(playing_url), "%s",
-                 s_radio.catalog.entries[s_radio.status.station_index].url);
+                 s_radio.catalog.entries[playing_index].url);
         was_playing = true;
     }
+
     s_radio.catalog = *parsed;
+    heap_caps_free(parsed);
     size_t new_index = SIZE_MAX;
     if (was_playing) {
         (void)station_catalog_find_by_url(&s_radio.catalog, playing_url, &new_index);
-        s_radio.status.station_index = new_index;
     }
     const size_t resulting_count = s_radio.catalog.count;
-    const bool must_stop_playing = was_playing && new_index == SIZE_MAX;
-    taskEXIT_CRITICAL(&s_status_lock);
-    heap_caps_free(parsed);
 
+    // Publish the re-resolved index, unless another task switched stations
+    // while the catalog was being installed - that newer choice wins.
+    bool must_stop_playing = false;
+    taskENTER_CRITICAL(&s_status_lock);
+    if (was_playing && s_radio.status.station_index == playing_index) {
+        s_radio.status.station_index = new_index;
+        must_stop_playing = new_index == SIZE_MAX;
+    }
+    taskEXIT_CRITICAL(&s_status_lock);
+
+    // Stopping is left to the caller: internet_radio_stop() blocks for up to
+    // RADIO_DIRECT_STOP_TIMEOUT_MS waiting for the decoder task, and this
+    // function runs on the single esp_http_server worker task, which would
+    // stall every other HTTP request and WebSocket broadcast meanwhile.
     if (must_stop_playing) {
-        ESP_LOGW(TAG, "playing station removed from playlist; stopping");
-        (void)internet_radio_stop();
+        ESP_LOGW(TAG, "playing station removed from playlist; stop requested");
+    }
+    if (out_active_station_removed != NULL) {
+        *out_active_station_removed = must_stop_playing;
     }
     if (out_count != NULL) {
         *out_count = resulting_count;

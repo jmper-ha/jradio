@@ -25,6 +25,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 
 #include "wifi_provisioning.h"
 #include "internet_radio.h"
+#include "player_control.h"
 
 #define WEB_SERVER_MOUNT_PATH "/littlefs"
 #define WEB_SERVER_WEB_ROOT "www"
@@ -432,8 +433,25 @@ static esp_err_t web_server_playlist_post(httpd_req_t *request)
     body[received] = '\0';
 
     size_t count = 0U;
-    const esp_err_t result = internet_radio_catalog_replace(body, received, &count);
+    bool active_station_removed = false;
+    const esp_err_t result =
+        internet_radio_catalog_replace(body, received, &count, &active_station_removed);
     free(body);
+
+    if (result == ESP_OK && active_station_removed) {
+        // Hand the stop to player_control instead of calling
+        // internet_radio_stop() here: it waits seconds for the decoder task,
+        // and this handler runs on the single HTTP worker task that also
+        // serves every other request and WebSocket broadcast.
+        const player_command_t stop = {
+            .kind = PLAYER_COMMAND_STOP_SOURCE,
+            .source = AUDIO_SOURCE_NONE,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        if (!player_control_post(&stop)) {
+            ESP_LOGW(TAG, "playing station removed but stop command was not queued");
+        }
+    }
 
     if (result == ESP_ERR_INVALID_ARG) {
         httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Playlist has no valid stations");

@@ -149,6 +149,17 @@ const {parseCatalogText, serializeCatalog, rowError} = context.module.exports;
     'Адрес не может содержать символ табуляции');
   assert.equal(rowError({name: 'ok', url: 'http://x', flag: 0}), '');
 
+  // Length boundary: station_catalog_copy_field() needs room for the NUL, so
+  // a field filling the whole buffer is dropped by the device rather than
+  // truncated. The editor must refuse it instead of silently losing the row.
+  assert.equal(rowError({name: 'x'.repeat(95), url: 'http://x', flag: 0}), '');
+  assert.equal(rowError({name: 'x'.repeat(96), url: 'http://x', flag: 0}), 'Название слишком длинное');
+  assert.equal(rowError({name: 'ok', url: 'h'.repeat(255), flag: 0}), '');
+  assert.equal(rowError({name: 'ok', url: 'h'.repeat(256), flag: 0}), 'Адрес слишком длинный');
+  // Byte length, not code-unit length: Cyrillic is two UTF-8 bytes per char.
+  assert.equal(rowError({name: 'я'.repeat(47), url: 'http://x', flag: 0}), '');
+  assert.equal(rowError({name: 'я'.repeat(48), url: 'http://x', flag: 0}), 'Название слишком длинное');
+
   // Script loads and immediately fetches the current playlist.
   await flush();
   await flush();
@@ -191,6 +202,18 @@ const {parseCatalogText, serializeCatalog, rowError} = context.module.exports;
   assert.equal(fetchCalls[1].options.body, 'Новая станция\thttp://example.com/stream\t0\n');
   assert.equal(elements['#playlist-save-status'].textContent, 'Сохранено: 1 станций');
   assert.equal(elements['#playlist-save'].disabled, false);
+
+  // If the device reports fewer stations than were sent, it silently dropped
+  // rows: report that as an error and keep the editor dirty so the mismatch
+  // is not hidden until the next page load.
+  nextPostResponse = () => ({ok: true, status: 200, json: async () => ({count: 0})});
+  elements['#playlist-save'].emit('click');
+  await flush();
+  await flush();
+  assert.match(elements['#playlist-save-status'].textContent, /приняло 0 станций из 1/);
+  assert.equal(elements['#playlist-save-status'].classList.values.has('is-error'), true);
+  assert.equal(elements['#playlist-save'].disabled, false);
+  nextPostResponse = () => ({ok: true, status: 200, json: async () => ({count: 1})});
 
   // A malformed row (tab inside a field) blocks saving again.
   nameInput.value = 'bad\tname';

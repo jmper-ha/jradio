@@ -10,6 +10,25 @@ void station_list_init(station_list_state_t *state, size_t count, size_t initial
     state->last_activity_ms = 0U;
 }
 
+bool station_list_sync_counts(station_list_state_t *state, size_t count, size_t active_index)
+{
+    if (state == NULL) return false;
+    const size_t clamped_active = active_index < count ? active_index : count;
+    if (state->count == count && state->active_index == clamped_active) {
+        return false;
+    }
+    state->count = count;
+    state->active_index = clamped_active;
+    if (state->selected_index >= count) {
+        // The list shrank under the cursor (the playlist was edited from the
+        // web UI while this screen was open). Without re-clamping, the cursor
+        // would keep wrapping over indices that no longer exist: those rows
+        // render blank and pressing the encoder is silently rejected.
+        state->selected_index = count > 0U ? count - 1U : 0U;
+    }
+    return true;
+}
+
 bool station_list_handle_input(station_list_state_t *state, board_input_action_t action)
 {
     if (state == NULL || state->count == 0) return false;

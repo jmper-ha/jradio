@@ -1,8 +1,13 @@
 (() => {
   'use strict';
 
-  const STATION_NAME_MAX_BYTES = 96;
-  const STATION_URL_MAX_BYTES = 256;
+  // Mirror sizeof(name)/sizeof(url) in station_catalog_entry_t. The device's
+  // station_catalog_copy_field() rejects a field whose length is >= the buffer
+  // size because it still needs room for the terminating NUL, and it drops the
+  // whole line rather than truncating it - so a value of exactly this many
+  // bytes must be refused here too, or the station vanishes on save.
+  const STATION_NAME_BUFFER_BYTES = 96;
+  const STATION_URL_BUFFER_BYTES = 256;
   const STATION_MAX_ENTRIES = 32;
 
   const statusEl = document.querySelector('#playlist-status');
@@ -76,10 +81,10 @@
   function rowError(row) {
     if (row.name.length === 0) return 'Укажите название станции';
     if (row.name.includes('\t')) return 'Название не может содержать символ табуляции';
-    if (byteLength(row.name) > STATION_NAME_MAX_BYTES) return 'Название слишком длинное';
+    if (byteLength(row.name) >= STATION_NAME_BUFFER_BYTES) return 'Название слишком длинное';
     if (row.url.length === 0) return 'Укажите адрес потока';
     if (row.url.includes('\t')) return 'Адрес не может содержать символ табуляции';
-    if (byteLength(row.url) > STATION_URL_MAX_BYTES) return 'Адрес слишком длинный';
+    if (byteLength(row.url) >= STATION_URL_BUFFER_BYTES) return 'Адрес слишком длинный';
     return '';
   }
 
@@ -132,7 +137,7 @@
     nameInput.type = 'text';
     nameInput.className = 'playlist-row-name-input';
     nameInput.value = row.name;
-    nameInput.maxLength = STATION_NAME_MAX_BYTES;
+    nameInput.maxLength = STATION_NAME_BUFFER_BYTES - 1;
     nameInput.setAttribute('aria-label', 'Название станции');
     nameLabel.appendChild(nameInput);
 
@@ -142,7 +147,7 @@
     urlInput.type = 'text';
     urlInput.className = 'playlist-row-url-input';
     urlInput.value = row.url;
-    urlInput.maxLength = STATION_URL_MAX_BYTES;
+    urlInput.maxLength = STATION_URL_BUFFER_BYTES - 1;
     urlInput.setAttribute('aria-label', 'Адрес потока');
     urlLabel.appendChild(urlInput);
 
@@ -294,8 +299,19 @@
         return response.json();
       })
       .then((payload) => {
+        const expected = state.rows.length;
+        const count = isObject(payload) && Number.isSafeInteger(payload.count) ? payload.count : expected;
+        if (count !== expected) {
+          // The device parsed fewer stations than were sent, so its playlist
+          // differs from what is on screen. Leave the editor marked dirty:
+          // treating this as a successful sync would hide the loss until the
+          // next page load.
+          setSaveStatus(
+            `Устройство приняло ${count} станций из ${expected}: часть строк отклонена. ` +
+            'Проверьте список и сохраните снова.', true);
+          return;
+        }
         state.lastSyncedText = text;
-        const count = isObject(payload) && Number.isSafeInteger(payload.count) ? payload.count : state.rows.length;
         setSaveStatus(`Сохранено: ${count} станций`);
       })
       .catch((error) => {

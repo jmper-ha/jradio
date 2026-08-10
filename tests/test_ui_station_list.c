@@ -6,14 +6,19 @@
 int main(void)
 {
     station_list_state_t state;
+    /* The cursor stops at both ends instead of wrapping, and reports "nothing
+     * changed" so the screen is not redrawn for a no-op. */
     station_list_init(&state, 3, 0, 1);
     assert(station_list_selected_index(&state) == 0);
     assert(station_list_active_index(&state) == 1);
-    assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_LEFT));
-    assert(station_list_selected_index(&state) == 2);
-    assert(station_list_active_index(&state) == 1);
-    assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT));
+    assert(!station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_LEFT));
     assert(station_list_selected_index(&state) == 0);
+    assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT));
+    assert(station_list_selected_index(&state) == 1);
+    assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT));
+    assert(station_list_selected_index(&state) == 2);
+    assert(!station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT));
+    assert(station_list_selected_index(&state) == 2);
     assert(station_list_active_index(&state) == 1);
     assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_BUTTON));
 
@@ -30,17 +35,37 @@ int main(void)
     assert(station_list_selected_index(&state) == 0);
     assert(station_list_active_index(&state) == 3);
 
+    /* The cursor is pinned to the middle row (row 3 of 7) and the window
+     * slides under it, padding past both ends of the catalogue. */
+    size_t cursor_row = 99U;
     station_list_init(&state, 12, 0, 0);
-    assert(station_list_window_start(&state, 7) == 0);
+    assert(station_list_window_top(&state, 7, &cursor_row) == -3);
+    assert(cursor_row == 3U);
     for (int index = 0; index < 8; ++index) {
         assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT));
     }
     assert(station_list_selected_index(&state) == 8);
-    assert(station_list_window_start(&state, 7) == 2);
+    assert(station_list_window_top(&state, 7, &cursor_row) == 5);
+    assert(cursor_row == 3U);
 
+    /* At the last entry the window runs past the end: rows 4..6 are padding. */
     station_list_init(&state, 12, 11, 11);
-    assert(station_list_window_start(&state, 7) == 5);
-    assert(station_list_window_start(&state, 0) == 0);
+    assert(station_list_window_top(&state, 7, &cursor_row) == 8);
+
+    /* The cursor row always lands on the selected entry: top + row == index. */
+    station_list_init(&state, 12, 6, 0);
+    assert(station_list_window_top(&state, 7, &cursor_row) + (int)cursor_row == 6);
+    station_list_init(&state, 12, 0, 0);
+    assert(station_list_window_top(&state, 7, &cursor_row) + (int)cursor_row == 0);
+
+    /* An even row count puts the cursor just below centre, consistently. */
+    station_list_init(&state, 12, 4, 0);
+    assert(station_list_window_top(&state, 6, &cursor_row) == 1);
+    assert(cursor_row == 3U);
+
+    assert(station_list_window_top(&state, 0, &cursor_row) == 0);
+    assert(station_list_window_top(NULL, 7, &cursor_row) == 0);
+    assert(cursor_row == 3U);
 
     size_t selected_index = 99;
     station_list_init(&state, 0, 0, 0);
@@ -53,8 +78,11 @@ int main(void)
     assert(station_list_sync_counts(&state, 3, 1));
     assert(station_list_selected_index(&state) == 2);
     assert(station_list_active_index(&state) == 1);
-    assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT));
-    assert(station_list_selected_index(&state) == 0);
+    /* Re-clamped onto the new last entry, which is now also the end stop. */
+    assert(!station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT));
+    assert(station_list_selected_index(&state) == 2);
+    assert(station_list_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_LEFT));
+    assert(station_list_selected_index(&state) == 1);
 
     /* No change reported when the snapshot still matches the cached counts. */
     assert(!station_list_sync_counts(&state, 3, 1));

@@ -178,19 +178,22 @@ static void ui_update_station_list(void)
 {
     player_snapshot_t snapshot;
     player_control_get_snapshot(&snapshot);
-    const size_t count = snapshot.item_count;
-    const size_t window_start = station_list_window_start(&s_station_list,
-                                                          UI_STATION_LIST_MAX_ROWS);
+    const int count = (int)snapshot.item_count;
+    size_t cursor_row = 0U;
+    const int window_top = station_list_window_top(&s_station_list,
+                                                   UI_STATION_LIST_MAX_ROWS, &cursor_row);
     for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
-        const size_t entry_index = window_start + row;
-        if (entry_index >= count) {
+        const int entry_index = window_top + (int)row;
+        if (entry_index < 0 || entry_index >= count) {
+            // Padding: the cursor stays on the middle row, so the rows beyond
+            // either end of the catalogue are simply blank.
             lv_obj_add_flag(s_station_list_rows[row], LV_OBJ_FLAG_HIDDEN);
             continue;
         }
         lv_obj_clear_flag(s_station_list_rows[row], LV_OBJ_FLAG_HIDDEN);
-        const station_catalog_entry_t *entry = player_control_station_at(entry_index);
-        const bool selected = entry_index == station_list_selected_index(&s_station_list);
-        const bool active = entry_index == station_list_active_index(&s_station_list);
+        const station_catalog_entry_t *entry = player_control_station_at((size_t)entry_index);
+        const bool selected = row == cursor_row;
+        const bool active = (size_t)entry_index == station_list_active_index(&s_station_list);
         lv_obj_set_style_bg_color(s_station_list_rows[row], lv_color_hex(selected ? 0x1769AA : 0x101820), 0);
         lv_obj_set_style_bg_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(s_station_list_rows[row], active ? 2 : 0, 0);

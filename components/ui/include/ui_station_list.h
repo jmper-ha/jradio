@@ -20,7 +20,13 @@ size_t station_list_selected_index(const station_list_state_t *state);
 bool station_list_get_selection(const station_list_state_t *state,
                                 size_t *selected_index);
 size_t station_list_active_index(const station_list_state_t *state);
-size_t station_list_window_start(const station_list_state_t *state, size_t visible_count);
+/* Station index shown on the topmost visible row. The cursor is pinned to the
+ * middle row and the list scrolls under it, so this is negative near the start
+ * of the catalogue and runs past the last entry near its end: those rows are
+ * padding and have no station. Returns the row the cursor sits on via
+ * *cursor_row. */
+int station_list_window_top(const station_list_state_t *state, size_t visible_count,
+                            size_t *cursor_row);
 bool station_list_selection_requires_switch(const station_list_state_t *state);
 /* Re-syncs the cached station count/active entry with a fresh player snapshot
  * and re-clamps the cursor if the list shrank. Returns true when something

@@ -32,12 +32,16 @@ bool station_list_sync_counts(station_list_state_t *state, size_t count, size_t 
 bool station_list_handle_input(station_list_state_t *state, board_input_action_t action)
 {
     if (state == NULL || state->count == 0) return false;
+    // The list scrolls under a fixed cursor and deliberately does not wrap:
+    // running off either end just stops, so the ends stay distinguishable.
     if (action == BOARD_INPUT_ACTION_ENCODER_LEFT) {
-        state->selected_index = state->selected_index == 0 ? state->count - 1 : state->selected_index - 1;
+        if (state->selected_index == 0U) return false;
+        --state->selected_index;
         return true;
     }
     if (action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
-        state->selected_index = (state->selected_index + 1) % state->count;
+        if (state->selected_index + 1U >= state->count) return false;
+        ++state->selected_index;
         return true;
     }
     return action == BOARD_INPUT_ACTION_ENCODER_BUTTON;
@@ -64,15 +68,17 @@ size_t station_list_active_index(const station_list_state_t *state)
     return state == NULL ? 0 : state->active_index;
 }
 
-size_t station_list_window_start(const station_list_state_t *state, size_t visible_count)
+int station_list_window_top(const station_list_state_t *state, size_t visible_count,
+                            size_t *cursor_row)
 {
-    if (state == NULL || state->count == 0U || visible_count == 0U ||
-        state->count <= visible_count || state->selected_index < visible_count) {
-        return 0U;
+    const size_t middle = visible_count / 2U;
+    if (cursor_row != NULL) {
+        *cursor_row = middle;
     }
-    const size_t last_start = state->count - visible_count;
-    const size_t selected_start = state->selected_index - visible_count + 1U;
-    return selected_start < last_start ? selected_start : last_start;
+    if (state == NULL || visible_count == 0U) {
+        return 0;
+    }
+    return (int)state->selected_index - (int)middle;
 }
 
 bool station_list_selection_requires_switch(const station_list_state_t *state)

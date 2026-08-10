@@ -3,7 +3,16 @@ CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
-CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=16384
+# Pool reserved for allocations that must be internal (DMA descriptors, task
+# stacks). The hardware AES driver takes MALLOC_CAP_DMA memory for every TLS
+# record, and PSRAM never carries that flag; with the I2S DMA buffers holding
+# ~16 KB during playback, this pool is what HTTPS streaming competes for.
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
+# Plain malloc() below this size prefers internal RAM. The ESP-IDF default of
+# 16384 sends almost every allocation in this firmware there, crowding out the
+# DMA-capable memory the AES driver needs; 1024 keeps only small, latency
+# sensitive allocations internal and pushes the rest to PSRAM.
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=1024
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

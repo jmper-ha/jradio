@@ -33,7 +33,10 @@
 #define BOARD_AUDIO_BITS_PER_SAMPLE 16
 #define BOARD_AUDIO_CHANNEL_COUNT 2
 #define BOARD_I2S_SLOT_BIT_WIDTH 16
-/* 8 x 512 frames provide about 92.9 ms of buffering at 44.1 kHz. */
+/* 8 x 512 frames provide about 92.9 ms of buffering at 44.1 kHz.
+ * This geometry is deliberate: it fixed the audible clicking (see the
+ * first-PCM I2S start design), so do not shrink it to reclaim the ~16 KB of
+ * internal DMA RAM it holds - find that headroom elsewhere. */
 #define BOARD_I2S_DMA_DESC_NUM 8
 #define BOARD_I2S_DMA_FRAME_NUM 512
 #define BOARD_I2S_AUTO_CLEAR_AFTER_CB 1

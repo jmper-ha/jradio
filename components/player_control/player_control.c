@@ -190,6 +190,7 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
              radio_status.title);
     snprintf(snapshot->codec, sizeof(snapshot->codec), "%s", radio_status.codec);
     snapshot->bitrate_kbps = radio_status.bitrate_kbps;
+    snapshot->sample_rate_hz = radio_status.sample_rate_hz;
     player_refresh_rssi_if_due();
     snapshot->wifi_rssi_valid =
         atomic_load_explicit(&s_rssi_valid, memory_order_acquire);

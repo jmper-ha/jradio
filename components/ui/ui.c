@@ -103,7 +103,7 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
     ui_set_label_text_if_changed(s_source_detail, display_title);
     char stream_text[64];
     ui_radio_stream_text(stream_text, sizeof(stream_text), snapshot->codec,
-                         snapshot->bitrate_kbps);
+                         snapshot->bitrate_kbps, snapshot->sample_rate_hz);
     ui_set_label_text_if_changed(s_source_stream, stream_text);
 
     char wifi_text[32];

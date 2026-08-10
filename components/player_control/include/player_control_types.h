@@ -57,6 +57,7 @@ typedef struct {
     char stream_title[PLAYER_TITLE_MAX_LEN];
     char codec[PLAYER_CODEC_MAX_LEN];
     uint16_t bitrate_kbps;
+    uint32_t sample_rate_hz;
     bool wifi_rssi_valid;
     int8_t wifi_rssi_dbm;
     char error[PLAYER_ERROR_MAX_LEN];

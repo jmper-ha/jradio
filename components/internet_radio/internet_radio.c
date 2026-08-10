@@ -252,6 +252,9 @@ static esp_err_t radio_direct_update_info(internet_radio_context_t *radio,
         radio->output_sample_rate = sample_rate;
         sample_rate_changed = true;
     }
+    if (sample_rate > 0U) {
+        radio->status.sample_rate_hz = sample_rate;
+    }
     taskEXIT_CRITICAL(&s_status_lock);
     esp_err_t result = ESP_OK;
     if (restart_output) {
@@ -601,6 +604,7 @@ static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *ur
     radio->output_sample_rate = 0U;
     taskENTER_CRITICAL(&s_status_lock);
     radio->status.bitrate_kbps = 0U;
+    radio->status.sample_rate_hz = 0U;
     snprintf(radio->status.codec, sizeof(radio->status.codec), "%s",
              radio_stream_format_codec_name(radio->stream_format));
     taskEXIT_CRITICAL(&s_status_lock);

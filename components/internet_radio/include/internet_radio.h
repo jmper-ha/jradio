@@ -18,6 +18,7 @@ typedef struct {
     char title[INTERNET_RADIO_TITLE_MAX_LEN];
     char codec[8];
     uint16_t bitrate_kbps;
+    uint32_t sample_rate_hz;
 } internet_radio_status_t;
 
 esp_err_t internet_radio_init(void);

@@ -505,6 +505,9 @@ esp_err_t web_server_start(void)
     } else {
         httpd_config_t config = HTTPD_DEFAULT_CONFIG();
         config.stack_size = 6144;
+        // The HTTP worker is network-bound; keep it on core 0 with Wi-Fi and
+        // lwIP so it cannot preempt the audio decoder pinned to core 1.
+        config.core_id = 0;
         config.max_uri_handlers = 16;
         config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
         config.send_wait_timeout = 1;

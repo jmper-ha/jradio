@@ -558,7 +558,12 @@ esp_err_t ui_init(void)
     ui_create_station_list_screen();
     lv_screen_load(s_menu_screen);
 
-    if (xTaskCreate(ui_task, "ui", UI_TASK_STACK_SIZE, NULL, UI_TASK_PRIORITY, NULL) != pdPASS) {
+    // Pinned to core 0 alongside Wi-Fi and lwIP: LVGL rendering and the
+    // synchronous SPI flush are not time critical, but they are long enough to
+    // stall the audio decoder pinned to core 1 if the scheduler puts them
+    // there.
+    if (xTaskCreatePinnedToCore(ui_task, "ui", UI_TASK_STACK_SIZE, NULL, UI_TASK_PRIORITY,
+                                NULL, 0) != pdPASS) {
         ESP_LOGE(TAG, "UI task allocation failed: internal_free=%u internal_largest=%u",
                  (unsigned int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                  (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));

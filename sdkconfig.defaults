@@ -29,6 +29,11 @@ CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 # CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC is not set
 CONFIG_HTTPD_WS_SUPPORT=y
+# Keep the whole network path on core 0, where the Wi-Fi task is already
+# pinned. The lwIP task runs at priority 18 - above everything this project
+# creates - so leaving it unpinned let it preempt the audio decoder on core 1
+# mid-stream.
+CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0=y
 # Must cover the httpd session pool (WEB_SOCKET_SERVER_SOCKET_CAPACITY, see
 # web_socket.h) plus the internet radio's streaming HTTP client socket and a
 # few spares for DNS/mDNS lookups.

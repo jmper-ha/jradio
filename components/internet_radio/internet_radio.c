@@ -37,6 +37,7 @@
 #define RADIO_DIRECT_NETWORK_CHUNK 2048U
 #define RADIO_DIRECT_PCM_SIZE 16384U
 #define RADIO_DIRECT_STOP_TIMEOUT_MS 12000U
+#define RADIO_STARVATION_REPORT_MS 10000U
 
 static const char *TAG = "internet_radio";
 
@@ -268,6 +269,13 @@ static void radio_direct_task(void *arg)
         ESP_LOGE(TAG, "direct decoder buffer allocation failed");
         fatal = true;
     }
+    // Starvation accounting: an audible dropout leaves no other trace, so
+    // track how often the decoder was left with an empty input buffer and how
+    // low the backlog ran, and pair it with the I2S underrun counter.
+    unsigned int starvations = 0U;
+    size_t min_available = RADIO_DIRECT_INPUT_SIZE;
+    unsigned int last_underruns = board_audio_underrun_count();
+    TickType_t next_report = xTaskGetTickCount() + pdMS_TO_TICKS(RADIO_STARVATION_REPORT_MS);
 
     while (!fatal &&
            !atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire)) {
@@ -276,7 +284,25 @@ static void radio_direct_task(void *arg)
             continue;
         }
 
+        if (radio->output_started && (int32_t)(xTaskGetTickCount() - next_report) >= 0) {
+            const unsigned int underruns = board_audio_underrun_count();
+            ESP_LOGI(TAG,
+                     "stream health: i2s_underruns=%u starvations=%u min_backlog=%u/%u",
+                     underruns - last_underruns, starvations,
+                     (unsigned int)min_available, (unsigned int)RADIO_DIRECT_INPUT_SIZE);
+            last_underruns = underruns;
+            starvations = 0U;
+            min_available = RADIO_DIRECT_INPUT_SIZE;
+            next_report = xTaskGetTickCount() + pdMS_TO_TICKS(RADIO_STARVATION_REPORT_MS);
+        }
+
         bool need_input = available == 0U;
+        if (available < min_available) {
+            min_available = available;
+        }
+        if (need_input && radio->output_started) {
+            ++starvations;
+        }
         if (!need_input) {
             size_t consumed = 0U;
             size_t pcm_bytes = 0U;

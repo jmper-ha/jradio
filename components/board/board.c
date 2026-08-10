@@ -1,3 +1,4 @@
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -123,6 +124,23 @@ static esp_err_t board_backlight_init(void)
     return board_backlight_set(0);
 }
 
+static atomic_uint s_audio_underruns = ATOMIC_VAR_INIT(0U);
+
+static IRAM_ATTR bool board_audio_on_send_q_ovf(i2s_chan_handle_t handle,
+                                                i2s_event_data_t *event, void *context)
+{
+    (void)handle;
+    (void)event;
+    (void)context;
+    atomic_fetch_add_explicit(&s_audio_underruns, 1U, memory_order_relaxed);
+    return false;
+}
+
+unsigned int board_audio_underrun_count(void)
+{
+    return atomic_load_explicit(&s_audio_underruns, memory_order_relaxed);
+}
+
 static esp_err_t board_audio_init(void)
 {
     s_audio_mutex = xSemaphoreCreateMutex();
@@ -135,6 +153,15 @@ static esp_err_t board_audio_init(void)
     channel_config.auto_clear_after_cb = BOARD_I2S_AUTO_CLEAR_AFTER_CB != 0;
     ESP_RETURN_ON_ERROR(i2s_new_channel(&channel_config, &s_i2s_tx, NULL), TAG,
                         "create I2S TX channel failed");
+
+    /* A TX "send queue overflow" means the DMA ran out of filled descriptors
+     * and replayed/zeroed a buffer - i.e. an audible dropout. Nothing else in
+     * the system notices this, so count it here and let callers poll. */
+    const i2s_event_callbacks_t audio_callbacks = {
+        .on_send_q_ovf = board_audio_on_send_q_ovf,
+    };
+    ESP_RETURN_ON_ERROR(i2s_channel_register_event_callback(s_i2s_tx, &audio_callbacks, NULL),
+                        TAG, "register I2S TX callbacks failed");
 
     i2s_std_config_t std_config = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(BOARD_AUDIO_DEFAULT_SAMPLE_RATE),

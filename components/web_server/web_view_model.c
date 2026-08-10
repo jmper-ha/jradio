@@ -229,6 +229,7 @@ uint32_t web_view_snapshot_changes(const player_snapshot_t *previous,
                sizeof(previous->stream_title)) != 0 ||
         memcmp(previous->codec, current->codec, sizeof(previous->codec)) != 0 ||
         previous->bitrate_kbps != current->bitrate_kbps ||
+        previous->sample_rate_hz != current->sample_rate_hz ||
         previous->wifi_rssi_valid != current->wifi_rssi_valid ||
         previous->wifi_rssi_dbm != current->wifi_rssi_dbm ||
         memcmp(previous->error, current->error, sizeof(previous->error)) != 0) {

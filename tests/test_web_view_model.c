@@ -102,6 +102,7 @@ static player_snapshot_t sample_snapshot(void)
         .active_item_index = 1U,
         .item_count = 5U,
         .bitrate_kbps = 128U,
+        .sample_rate_hz = 44100U,
         .wifi_rssi_valid = true,
         .wifi_rssi_dbm = -67,
     };
@@ -121,6 +122,9 @@ static void test_snapshot_changes_are_grouped_by_section(void)
     assert(web_view_snapshot_changes(&left, &right) == WEB_VIEW_SECTION_CAPABILITIES);
     right = left;
     right.bitrate_kbps = 192U;
+    assert(web_view_snapshot_changes(&left, &right) == WEB_VIEW_SECTION_PLAYER);
+    right = left;
+    right.sample_rate_hz = 48000U;
     assert(web_view_snapshot_changes(&left, &right) == WEB_VIEW_SECTION_PLAYER);
     right = left;
     right.active_item_index = 2U;

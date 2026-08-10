@@ -290,6 +290,8 @@ static void write_player(json_writer_t *writer,
     writer_string(writer, player->codec);
     writer_literal(writer, ",\"bitrate_kbps\":");
     writer_format(writer, "%u", (unsigned)player->bitrate_kbps);
+    writer_literal(writer, ",\"sample_rate_hz\":");
+    writer_format(writer, "%u", (unsigned)player->sample_rate_hz);
     if (player->wifi_rssi_valid) {
         writer_literal(writer, ",\"wifi_rssi_dbm\":");
         writer_format(writer, "%d", (int)player->wifi_rssi_dbm);

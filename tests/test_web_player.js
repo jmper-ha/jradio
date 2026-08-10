@@ -175,6 +175,7 @@ function player(title, rssi) {
     context: '',
     codec: 'MP3',
     bitrate_kbps: 128,
+    sample_rate_hz: 44100,
     error: '',
   };
   if (rssi !== undefined) value.wifi_rssi_dbm = rssi;
@@ -232,6 +233,10 @@ sendEvent(first, {
 });
 assert.equal(elements['#track-title'].textContent, 'Новое');
 assert.match(elements['#stream-meta'].textContent, /Wi-Fi -55/);
+// Codec, bitrate and sample rate all reach the stream metadata line.
+assert.match(elements['#stream-meta'].textContent, /MP3/);
+assert.match(elements['#stream-meta'].textContent, /128 кбит\/с/);
+assert.match(elements['#stream-meta'].textContent, /44100 Гц/);
 assert.equal(elements['#playlist-link'].hidden, false);
 
 sendEvent(first, {

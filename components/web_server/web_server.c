@@ -326,6 +326,7 @@ static esp_err_t web_server_status_get(httpd_req_t *request)
     cJSON_AddStringToObject(radio_json, "title", radio.title);
     cJSON_AddStringToObject(radio_json, "codec", radio.codec);
     cJSON_AddNumberToObject(radio_json, "bitrate_kbps", radio.bitrate_kbps);
+    cJSON_AddNumberToObject(radio_json, "sample_rate_hz", radio.sample_rate_hz);
     cJSON_AddNumberToObject(radio_json, "station_count", internet_radio_station_count());
     for (uint8_t index = 0; index < settings.count; ++index) {
         cJSON_AddItemToArray(networks, cJSON_CreateString(settings.ssids[index]));

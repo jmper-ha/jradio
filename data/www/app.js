@@ -47,6 +47,7 @@
       context: '',
       codec: '',
       bitrate_kbps: 0,
+      sample_rate_hz: 0,
       error: '',
     },
     list: {kind: '', active_index: null, items: []},
@@ -82,6 +83,7 @@
       context: safeString(player.context),
       codec: safeString(player.codec),
       bitrate_kbps: safeInteger(player.bitrate_kbps),
+      sample_rate_hz: safeInteger(player.sample_rate_hz),
       error: safeString(player.error),
     };
     if (Number.isInteger(player.wifi_rssi_dbm)) {
@@ -180,6 +182,8 @@
     const bitrate = safeInteger(player.bitrate_kbps);
     if (codec) metadata.push(codec.toUpperCase());
     if (bitrate > 0) metadata.push(`${bitrate} кбит/с`);
+    const sampleRate = safeInteger(player.sample_rate_hz);
+    if (sampleRate > 0) metadata.push(`${sampleRate} Гц`);
     if (Number.isInteger(player.wifi_rssi_dbm)) metadata.push(`Wi-Fi ${player.wifi_rssi_dbm} дБм`);
     streamMeta.textContent = metadata.length > 0
       ? metadata.join(' · ')

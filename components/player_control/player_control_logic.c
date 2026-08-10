@@ -50,6 +50,7 @@ bool player_snapshot_equal(const player_snapshot_t *left,
                   sizeof(left->stream_title)) == 0 &&
            memcmp(left->codec, right->codec, sizeof(left->codec)) == 0 &&
            left->bitrate_kbps == right->bitrate_kbps &&
+           left->sample_rate_hz == right->sample_rate_hz &&
            left->wifi_rssi_valid == right->wifi_rssi_valid &&
            left->wifi_rssi_dbm == right->wifi_rssi_dbm &&
            memcmp(left->error, right->error, sizeof(left->error)) == 0;

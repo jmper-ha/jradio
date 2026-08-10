@@ -74,6 +74,9 @@ static void test_snapshot_equality_detects_bitrate_change(void)
     assert(player_snapshot_equal(&left, &right));
     right.bitrate_kbps = 128;
     assert(!player_snapshot_equal(&left, &right));
+    right = left;
+    right.sample_rate_hz = 44100;
+    assert(!player_snapshot_equal(&left, &right));
 }
 
 static void test_rssi_refresh_is_limited_to_once_per_second(void)

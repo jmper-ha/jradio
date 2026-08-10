@@ -560,6 +560,17 @@ static esp_err_t radio_http_event(esp_http_client_event_t *event)
             radio->status.bitrate_kbps = bitrate;
             taskEXIT_CRITICAL(&s_status_lock);
         }
+    } else if (strcasecmp(event->header_key, "Content-Type") == 0) {
+        // The server knows what it is sending; the URL suffix is only a guess
+        // and misses streams served from extensionless or oddly named paths.
+        radio_stream_format_t format = radio->stream_format;
+        if (radio_stream_format_from_content_type(event->header_value, &format) &&
+            format != radio->stream_format) {
+            ESP_LOGI(TAG, "codec from Content-Type '%s': %s (URL suggested %s)",
+                     event->header_value, radio_stream_format_codec_name(format),
+                     radio_stream_format_codec_name(radio->stream_format));
+            radio->stream_format = format;
+        }
     } else if (strcasecmp(event->header_key, "icy-name") == 0) {
         taskENTER_CRITICAL(&s_status_lock);
         snprintf(radio->status.station, sizeof(radio->status.station), "%s", event->header_value);
@@ -666,8 +677,15 @@ static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *ur
     }
 
     icy_metadata_init(&radio->icy, radio->icy_interval, radio_set_title, radio);
-    ESP_LOGI(TAG, "HTTP connected: status=%d icy-metaint=%u",
-             esp_http_client_get_status_code(radio->http), (unsigned int)radio->icy_interval);
+    // Headers have been parsed by now, so Content-Type may have corrected the
+    // format guessed from the URL; republish the codec name to match.
+    taskENTER_CRITICAL(&s_status_lock);
+    snprintf(radio->status.codec, sizeof(radio->status.codec), "%s",
+             radio_stream_format_codec_name(radio->stream_format));
+    taskEXIT_CRITICAL(&s_status_lock);
+    ESP_LOGI(TAG, "HTTP connected: status=%d icy-metaint=%u codec=%s",
+             esp_http_client_get_status_code(radio->http), (unsigned int)radio->icy_interval,
+             radio_stream_format_codec_name(radio->stream_format));
     return ESP_OK;
 }
 
@@ -979,19 +997,19 @@ bool internet_radio_start_station_index(size_t index)
         (void)radio_sync_output(&s_radio);
         return false;
     }
-    taskENTER_CRITICAL(&s_status_lock);
-    snprintf(s_radio.status.codec, sizeof(s_radio.status.codec), "%s",
-             radio_stream_format_codec_name(stream_format));
-    taskEXIT_CRITICAL(&s_status_lock);
+    // radio_http_open() has seen the response headers, so Content-Type may
+    // have replaced the format guessed from the URL. The decoder must follow
+    // that, not the guess.
+    const radio_stream_format_t open_format = s_radio.stream_format;
     atomic_store_explicit(&s_radio.direct_stop_requested, false, memory_order_release);
     atomic_store_explicit(&s_radio.direct_paused, false, memory_order_release);
     if (s_radio.direct_done != NULL) {
         (void)xSemaphoreTake(s_radio.direct_done, 0);
     }
-    s_radio.decoder = radio_decoder_create(stream_format);
+    s_radio.decoder = radio_decoder_create(open_format);
     if (s_radio.decoder == NULL) {
         ESP_LOGE(TAG, "failed to create %s decoder",
-                 radio_stream_format_codec_name(stream_format));
+                 radio_stream_format_codec_name(open_format));
         (void)radio_status_apply(&s_radio, INTERNET_RADIO_EVENT_FATAL);
         (void)radio_sync_output(&s_radio);
         radio_http_close(&s_radio);

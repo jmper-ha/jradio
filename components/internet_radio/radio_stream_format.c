@@ -35,6 +35,49 @@ const char *radio_stream_format_raw_uri(radio_stream_format_t format)
     return "raw://radio/stream.mp3";
 }
 
+bool radio_stream_format_from_content_type(const char *content_type,
+                                           radio_stream_format_t *format)
+{
+    static const struct {
+        const char *media_type;
+        radio_stream_format_t format;
+    } known[] = {
+        {"audio/mpeg", RADIO_STREAM_FORMAT_MP3},
+        {"audio/mp3", RADIO_STREAM_FORMAT_MP3},
+        {"audio/x-mpeg", RADIO_STREAM_FORMAT_MP3},
+        {"audio/aac", RADIO_STREAM_FORMAT_AAC},
+        {"audio/aacp", RADIO_STREAM_FORMAT_AAC},
+        {"audio/x-aac", RADIO_STREAM_FORMAT_AAC},
+        {"audio/flac", RADIO_STREAM_FORMAT_FLAC},
+        {"audio/x-flac", RADIO_STREAM_FORMAT_FLAC},
+        /* Ogg carries FLAC on the stations this project targets. Vorbis
+         * announces the same media types and has no decoder here, so it stays
+         * broken either way - only the error it produces changes. */
+        {"audio/ogg", RADIO_STREAM_FORMAT_OGG_FLAC},
+        {"application/ogg", RADIO_STREAM_FORMAT_OGG_FLAC},
+        {"audio/x-ogg", RADIO_STREAM_FORMAT_OGG_FLAC},
+    };
+
+    if (content_type == NULL || format == NULL) return false;
+
+    while (*content_type == ' ' || *content_type == '\t') ++content_type;
+    size_t length = 0U;
+    while (content_type[length] != '\0' && content_type[length] != ';' &&
+           content_type[length] != ' ' && content_type[length] != '\t') {
+        ++length;
+    }
+    if (length == 0U) return false;
+
+    for (size_t index = 0U; index < sizeof(known) / sizeof(known[0]); ++index) {
+        if (strlen(known[index].media_type) == length &&
+            strncasecmp(content_type, known[index].media_type, length) == 0) {
+            *format = known[index].format;
+            return true;
+        }
+    }
+    return false;
+}
+
 const char *radio_stream_format_codec_name(radio_stream_format_t format)
 {
     if (format == RADIO_STREAM_FORMAT_AAC) return "AAC";

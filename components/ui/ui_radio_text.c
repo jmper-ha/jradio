@@ -18,17 +18,9 @@ void ui_radio_stream_text(char *text, size_t text_size, const char *codec,
     }
 
     if (sample_rate_hz > 0U) {
-        /* Tenths of a kHz, rounded, so 44100 shows as 44.1 and 48000 as 48
-         * rather than 48.0. */
-        const uint32_t tenths = (sample_rate_hz + 50U) / 100U;
-        if (tenths % 10U == 0U) {
-            snprintf(rate_text, sizeof(rate_text), "%u kHz", (unsigned int)(tenths / 10U));
-        } else {
-            snprintf(rate_text, sizeof(rate_text), "%u.%u kHz",
-                     (unsigned int)(tenths / 10U), (unsigned int)(tenths % 10U));
-        }
+        snprintf(rate_text, sizeof(rate_text), "%u", (unsigned int)sample_rate_hz);
     } else {
-        snprintf(rate_text, sizeof(rate_text), "-- kHz");
+        snprintf(rate_text, sizeof(rate_text), "--");
     }
 
     snprintf(text, text_size, "%s  |  %s  |  %s", display_codec, bitrate_text, rate_text);

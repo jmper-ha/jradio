@@ -20,6 +20,7 @@
 #include "esp_log.h"
 
 #include "board.h"
+#include "board_config.h"
 #include "icy_metadata.h"
 #include "pcm_diagnostics.h"
 #include "radio_http_status.h"
@@ -31,9 +32,26 @@
 #define RADIO_CATALOG_BUFFER_SIZE 16384
 #define RADIO_HTTP_MAX_REDIRECTS 5U
 #define RADIO_HTTP_CONNECT_RETRIES 3U
-#define RADIO_HTTP_IDLE_TIMEOUT_MS 30000U
+/* A live stream that stops delivering has already silenced the DAC well
+ * before this fires: even at 128 kbps the input buffer only holds about a
+ * second of audio. Waiting 30 s to notice, as this used to, turned a server
+ * stall into 30 s of dead air; reconnecting promptly costs a fraction of it. */
+#define RADIO_HTTP_IDLE_TIMEOUT_MS 3000U
 #define RADIO_HTTP_RECONNECT_DELAY_MS 500U
-#define RADIO_DIRECT_INPUT_SIZE 16384U
+/* Backlog held ahead of the decoder. 16 KB was about a second at 128 kbps but
+ * only 90 ms of a 1441 kbps FLAC stream - less cushion than the I2S DMA
+ * itself - so high-bitrate streams glitched on any network jitter. This lives
+ * in PSRAM, where the extra 48 KB is cheap. */
+#define RADIO_DIRECT_INPUT_SIZE 65536U
+/* Stop opportunistic top-up here rather than filling to the brim, so a burst
+ * cannot spend unbounded time in the read loop and stall decoding. */
+#define RADIO_DIRECT_PREBUFFER_TARGET (RADIO_DIRECT_INPUT_SIZE / 2U)
+/* Extra chunks pulled per pass through the decode loop. This has to stay well
+ * under the I2S DMA depth (~93 ms): a stream we are behind on always has more
+ * bytes waiting, so an uncapped top-up just reads until the target is met and
+ * silences the DAC while it does. The backlog still grows, one pass at a
+ * time, whenever the link is faster than playback. */
+#define RADIO_DIRECT_TOPUP_MAX_CHUNKS 2U
 #define RADIO_DIRECT_NETWORK_CHUNK 2048U
 #define RADIO_DIRECT_PCM_SIZE 16384U
 #define RADIO_DIRECT_STOP_TIMEOUT_MS 12000U
@@ -126,6 +144,24 @@ static int radio_http_read_blocking(internet_radio_context_t *radio, uint8_t *bu
             return -1;
         }
         vTaskDelay(pdMS_TO_TICKS(20));
+    }
+}
+
+/* Reads only what the socket already holds. Returns 0 when nothing is ready
+ * rather than waiting, so the decode loop can top the backlog up during a
+ * burst instead of pulling one chunk per decoded frame and always running
+ * on empty. */
+static int radio_http_read_ready(internet_radio_context_t *radio, uint8_t *buffer, int length)
+{
+    if (length <= 0) return 0;
+    const int received = esp_http_client_read(radio->http, (char *)buffer, length);
+    switch (internet_radio_read_classify(received, -ESP_ERR_HTTP_EAGAIN)) {
+    case INTERNET_RADIO_READ_DATA:
+        return received;
+    case INTERNET_RADIO_READ_RETRY:
+        return 0;
+    default:
+        return -1;
     }
 }
 
@@ -275,6 +311,8 @@ static void radio_direct_task(void *arg)
     unsigned int starvations = 0U;
     size_t min_available = RADIO_DIRECT_INPUT_SIZE;
     unsigned int last_underruns = board_audio_underrun_count();
+    size_t last_pcm_bytes = 0U;
+    bool report_armed = false;
     TickType_t next_report = xTaskGetTickCount() + pdMS_TO_TICKS(RADIO_STARVATION_REPORT_MS);
 
     while (!fatal &&
@@ -284,12 +322,37 @@ static void radio_direct_task(void *arg)
             continue;
         }
 
-        if (radio->output_started && (int32_t)(xTaskGetTickCount() - next_report) >= 0) {
+        if (!radio->output_started) {
+            // Output is down (starting up, or torn down by a reconnect, which
+            // also zeroes radio->pcm_bytes). Re-arm from scratch so the next
+            // window measures a whole interval of real playback instead of
+            // straddling the outage and underflowing the byte delta.
+            report_armed = false;
+        } else if (!report_armed) {
+            report_armed = true;
+            last_pcm_bytes = radio->pcm_bytes;
+            last_underruns = board_audio_underrun_count();
+            starvations = 0U;
+            min_available = RADIO_DIRECT_INPUT_SIZE;
+            next_report = xTaskGetTickCount() + pdMS_TO_TICKS(RADIO_STARVATION_REPORT_MS);
+        } else if ((int32_t)(xTaskGetTickCount() - next_report) >= 0) {
             const unsigned int underruns = board_audio_underrun_count();
+            // PCM throughput as a percentage of real time tells starvation
+            // apart from a decoder that simply cannot keep up: at 44.1 kHz
+            // stereo 16-bit, real time is 176400 B/s.
+            const size_t pcm_delta = radio->pcm_bytes - last_pcm_bytes;
+            const uint32_t expected =
+                (radio->output_sample_rate > 0U ? radio->output_sample_rate : 44100U) *
+                (uint32_t)BOARD_AUDIO_CHANNEL_COUNT *
+                (uint32_t)(BOARD_AUDIO_BITS_PER_SAMPLE / 8U) *
+                (RADIO_STARVATION_REPORT_MS / 1000U);
             ESP_LOGI(TAG,
-                     "stream health: i2s_underruns=%u starvations=%u min_backlog=%u/%u",
+                     "stream health: i2s_underruns=%u starvations=%u min_backlog=%u/%u "
+                     "pcm=%u%% of realtime",
                      underruns - last_underruns, starvations,
-                     (unsigned int)min_available, (unsigned int)RADIO_DIRECT_INPUT_SIZE);
+                     (unsigned int)min_available, (unsigned int)RADIO_DIRECT_INPUT_SIZE,
+                     expected > 0U ? (unsigned int)((pcm_delta * 100U) / expected) : 0U);
+            last_pcm_bytes = radio->pcm_bytes;
             last_underruns = underruns;
             starvations = 0U;
             min_available = RADIO_DIRECT_INPUT_SIZE;
@@ -403,35 +466,54 @@ static void radio_direct_task(void *arg)
                                               memory_order_acquire);
                 break;
             }
-            size_t audio_length = 0U;
-            const icy_metadata_result_t icy_result = icy_metadata_feed(
-                &radio->icy, network, (size_t)received, audio, RADIO_DIRECT_NETWORK_CHUNK,
-                &audio_length);
-            if (icy_result != ICY_METADATA_OK) {
-                ESP_LOGE(TAG, "ICY metadata processing failed: result=%d received=%d",
-                         (int)icy_result, received);
-                fatal = true;
-                break;
-            }
-            if (audio_length > RADIO_DIRECT_INPUT_SIZE - available) {
-                ESP_LOGE(TAG, "direct compressed buffer overflow: audio=%u available=%u",
-                         (unsigned int)audio_length, (unsigned int)available);
-                fatal = true;
-                break;
-            }
-            if (audio_length > 0U) {
-                if (compressed_offset + available + audio_length > RADIO_DIRECT_INPUT_SIZE) {
-                    // Trailing room ran out; reclaim the space already freed
-                    // by consumed frames with one compaction instead of
-                    // shifting on every decode call.
-                    if (available > 0U) {
-                        memmove(compressed, compressed + compressed_offset, available);
-                    }
-                    compressed_offset = 0U;
+            int chunk = received;
+            for (unsigned int topups = 0U;; ++topups) {
+                size_t audio_length = 0U;
+                const icy_metadata_result_t icy_result = icy_metadata_feed(
+                    &radio->icy, network, (size_t)chunk, audio, RADIO_DIRECT_NETWORK_CHUNK,
+                    &audio_length);
+                if (icy_result != ICY_METADATA_OK) {
+                    ESP_LOGE(TAG, "ICY metadata processing failed: result=%d received=%d",
+                             (int)icy_result, chunk);
+                    fatal = true;
+                    break;
                 }
-                memcpy(compressed + compressed_offset + available, audio, audio_length);
-                available += audio_length;
+                if (audio_length > RADIO_DIRECT_INPUT_SIZE - available) {
+                    ESP_LOGE(TAG, "direct compressed buffer overflow: audio=%u available=%u",
+                             (unsigned int)audio_length, (unsigned int)available);
+                    fatal = true;
+                    break;
+                }
+                if (audio_length > 0U) {
+                    if (compressed_offset + available + audio_length > RADIO_DIRECT_INPUT_SIZE) {
+                        // Trailing room ran out; reclaim the space already
+                        // freed by consumed frames with one compaction instead
+                        // of shifting on every decode call.
+                        if (available > 0U) {
+                            memmove(compressed, compressed + compressed_offset, available);
+                        }
+                        compressed_offset = 0U;
+                    }
+                    memcpy(compressed + compressed_offset + available, audio, audio_length);
+                    available += audio_length;
+                }
+
+                // Keep draining whatever the socket already has until the
+                // backlog is comfortable. Without this the loop pulled one
+                // chunk per decoded frame, so the buffer never built a cushion
+                // and any network hiccup reached the DAC immediately.
+                if (available >= RADIO_DIRECT_PREBUFFER_TARGET ||
+                    topups >= RADIO_DIRECT_TOPUP_MAX_CHUNKS) {
+                    break;
+                }
+                const size_t free_room = RADIO_DIRECT_INPUT_SIZE - available;
+                const int ready_length = (int)(free_room < RADIO_DIRECT_NETWORK_CHUNK
+                                                   ? free_room
+                                                   : RADIO_DIRECT_NETWORK_CHUNK);
+                chunk = radio_http_read_ready(radio, network, ready_length);
+                if (chunk <= 0) break;
             }
+            if (fatal) break;
         } else if (internet_radio_input_buffer_stalled(need_input, available,
                                                        RADIO_DIRECT_INPUT_SIZE)) {
             ESP_LOGE(TAG, "decoder needs more data but compressed buffer is full");

@@ -387,9 +387,70 @@ static void test_close_station_list_redirects_pending_timeout_to_source(void)
     assert(!ui_player_state_is_pending(&state));
 }
 
+static void test_list_view_opens_for_both_sources_with_a_list(void)
+{
+    ui_player_state_t state;
+
+    ui_player_state_init(&state);
+    player_snapshot_t usb = snapshot(AUDIO_SOURCE_USB, 0, 4);
+    ui_player_state_apply_snapshot(&state, &usb, 10);
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+    /* USB browses a directory in the same list view the radio uses. */
+    assert(ui_player_state_show_station_list(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
+
+    /* Sources without a list of their own still have nothing to show. */
+    ui_player_state_init(&state);
+    player_snapshot_t bluetooth = snapshot(AUDIO_SOURCE_BLUETOOTH, 0, 0);
+    ui_player_state_apply_snapshot(&state, &bluetooth, 10);
+    assert(!ui_player_state_show_station_list(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+}
+
+static void test_usb_browsing_does_not_go_pending(void)
+{
+    ui_player_state_t state;
+    ui_player_state_init(&state);
+    player_snapshot_t usb = snapshot(AUDIO_SOURCE_USB, PLAYER_ITEM_NONE, 4);
+    ui_player_state_apply_snapshot(&state, &usb, 10);
+    assert(ui_player_state_show_station_list(&state));
+
+    /* Opening a directory changes the listing, not the active item, so nothing
+     * could ever confirm it; leaving it pending would block the screen until
+     * the timeout. */
+    player_command_t open = command(PLAYER_COMMAND_SELECT_ITEM, AUDIO_SOURCE_USB, 1);
+    assert(ui_player_state_can_post(&state, &open));
+    assert(ui_player_state_apply_post_result(&state, &open, true, 20));
+    assert(!ui_player_state_is_pending(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
+
+    player_command_t up = command(PLAYER_COMMAND_BROWSE_UP, AUDIO_SOURCE_USB,
+                                  PLAYER_ITEM_NONE);
+    assert(ui_player_state_can_post(&state, &up));
+    assert(ui_player_state_apply_post_result(&state, &up, true, 30));
+    assert(!ui_player_state_is_pending(&state));
+
+    /* The radio keeps its pending window: a station switch blocks for seconds
+     * while the decoder task stops. */
+    ui_player_state_init(&state);
+    player_snapshot_t radio = snapshot(AUDIO_SOURCE_INTERNET_RADIO, 0, 4);
+    ui_player_state_apply_snapshot(&state, &radio, 10);
+    player_command_t station =
+        command(PLAYER_COMMAND_SELECT_ITEM, AUDIO_SOURCE_INTERNET_RADIO, 2);
+    assert(ui_player_state_apply_post_result(&state, &station, true, 20));
+    assert(ui_player_state_is_pending(&state));
+
+    /* Browsing up is meaningless for a flat station list. */
+    player_command_t radio_up =
+        command(PLAYER_COMMAND_BROWSE_UP, AUDIO_SOURCE_INTERNET_RADIO, PLAYER_ITEM_NONE);
+    assert(!ui_player_state_can_post(&state, &radio_up));
+}
+
 int main(void)
 {
     test_rejected_commands_preserve_current_view();
+    test_list_view_opens_for_both_sources_with_a_list();
+    test_usb_browsing_does_not_go_pending();
     test_first_snapshot_is_authoritative();
     test_stale_snapshot_keeps_pending_command_then_timeout_restores();
     test_confirmed_snapshot_clears_pending_command();

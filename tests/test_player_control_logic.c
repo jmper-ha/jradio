@@ -88,9 +88,65 @@ static void test_rssi_refresh_is_limited_to_once_per_second(void)
     assert(player_rssi_refresh_due(true, UINT32_MAX - 499, 500));
 }
 
+static void test_usb_source_requires_a_mounted_drive(void)
+{
+    player_snapshot_t state = {.capabilities = PLAYER_CAP_INTERNET_RADIO,
+                               .active_source = AUDIO_SOURCE_NONE};
+    player_command_t command = {.kind = PLAYER_COMMAND_SELECT_SOURCE,
+                                .source = AUDIO_SOURCE_USB};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+
+    state.capabilities |= PLAYER_CAP_USB;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_SELECT_SOURCE);
+}
+
+static void test_usb_reselecting_the_same_entry_still_acts(void)
+{
+    /* On USB the entry under the cursor may be a directory, and re-entering the
+     * directory you are already in has to work; only the radio may treat a
+     * repeated selection as a no-op. */
+    player_snapshot_t state = {.active_source = AUDIO_SOURCE_USB,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING,
+                               .active_item_index = 2, .item_count = 7};
+    player_command_t command = {.kind = PLAYER_COMMAND_SELECT_ITEM, .item_index = 2};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_START_ITEM);
+}
+
+static void test_track_finished_advances_only_on_usb(void)
+{
+    player_command_t command = {.kind = PLAYER_COMMAND_TRACK_FINISHED};
+    player_snapshot_t usb = {.active_source = AUDIO_SOURCE_USB,
+                             .playback_state = PLAYER_PLAYBACK_STOPPED,
+                             .item_count = 4};
+    assert(player_control_decide(&usb, &command) == PLAYER_OPERATION_ADVANCE_ITEM);
+
+    /* A radio stream that ends has failed; jumping to another station would
+     * hide the failure. */
+    player_snapshot_t radio = {.active_source = AUDIO_SOURCE_INTERNET_RADIO,
+                               .playback_state = PLAYER_PLAYBACK_STOPPED,
+                               .item_count = 4};
+    assert(player_control_decide(&radio, &command) == PLAYER_OPERATION_NONE);
+
+    player_snapshot_t idle = {.active_source = AUDIO_SOURCE_NONE};
+    assert(player_control_decide(&idle, &command) == PLAYER_OPERATION_NONE);
+}
+
+static void test_usb_state_maps_to_public_playback_state(void)
+{
+    assert(player_playback_from_usb(USB_PLAYER_STATE_STOPPED) == PLAYER_PLAYBACK_STOPPED);
+    assert(player_playback_from_usb(USB_PLAYER_STATE_STARTING) == PLAYER_PLAYBACK_CONNECTING);
+    assert(player_playback_from_usb(USB_PLAYER_STATE_PLAYING) == PLAYER_PLAYBACK_PLAYING);
+    assert(player_playback_from_usb(USB_PLAYER_STATE_PAUSED) == PLAYER_PLAYBACK_PAUSED);
+    assert(player_playback_from_usb(USB_PLAYER_STATE_ERROR) == PLAYER_PLAYBACK_ERROR);
+}
+
 int main(void)
 {
     test_toggle_maps_playing_to_pause();
+    test_usb_source_requires_a_mounted_drive();
+    test_usb_reselecting_the_same_entry_still_acts();
+    test_track_finished_advances_only_on_usb();
+    test_usb_state_maps_to_public_playback_state();
     test_active_station_is_not_restarted();
     test_failed_active_station_can_be_retried();
     test_healthy_active_source_reselect_is_noop();

@@ -23,6 +23,8 @@ include_flags=(
     -I"${project_dir}/components/player_control/include"
     -I"${project_dir}/components/settings/include"
     -I"${project_dir}/components/ui/include"
+    -I"${project_dir}/components/usb_player/include"
+    -I"${project_dir}/components/usb_storage/include"
     -I"${project_dir}/components/web_server"
     -I"${project_dir}/components/web_server/include"
 )
@@ -113,6 +115,8 @@ run_test ui_player_state tests/test_ui_player_state.c components/ui/ui_player_st
 run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c \
     components/internet_radio/radio_stream_format.c
 run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c
+run_test usb_browser tests/test_usb_browser.c components/usb_storage/usb_browser.c
+run_test usb_wav tests/test_usb_wav.c components/usb_player/usb_wav.c
 run_test wifi_provisioning tests/test_wifi_provisioning.c \
     components/jradio_wifi_provisioning/wifi_provisioning.c
 run_test wifi_settings tests/test_wifi_settings.c components/settings/wifi_settings.c

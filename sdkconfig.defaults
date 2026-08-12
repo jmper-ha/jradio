@@ -38,3 +38,12 @@ CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0=y
 # web_socket.h) plus the internet radio's streaming HTTP client socket and a
 # few spares for DNS/mDNS lookups.
 CONFIG_LWIP_MAX_SOCKETS=16
+# The USB flash drive is the only FAT volume. Without long-file-name support
+# readdir() returns 8.3 aliases, which makes a music browser useless: a track
+# named in Russian comes back as "______~1.MP3", identical for every such file.
+# UTF-8 API encoding hands those names straight to LVGL and the web UI, and
+# code page 866 keeps the DOS short-name aliases Cyrillic rather than 437.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+CONFIG_FATFS_API_ENCODING_UTF_8=y
+CONFIG_FATFS_CODEPAGE_866=y

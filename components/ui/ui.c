@@ -30,6 +30,7 @@
 #define UI_STATION_LIST_MAX_ROWS 7U
 #define UI_RADIO_EMPTY_LIST_DELAY_MS 250U
 #define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
+#define UI_MENU_FOOTER_TEXT "F1 Menu  F2 Back  F3 Play  F4 Options"
 
 static const char *TAG = "ui";
 static QueueHandle_t s_input_queue;
@@ -38,17 +39,40 @@ static lv_display_t *s_display;
 static lv_obj_t *s_menu_screen;
 static lv_obj_t *s_source_screen;
 static lv_obj_t *s_menu_rows[UI_MENU_ITEM_COUNT];
+static lv_obj_t *s_menu_footer;
 static lv_obj_t *s_source_title;
 static lv_obj_t *s_source_status;
 static lv_obj_t *s_source_detail;
 static lv_obj_t *s_source_stream;
 static lv_obj_t *s_source_wifi;
 static lv_obj_t *s_station_list_screen;
+static lv_obj_t *s_station_list_title;
+static lv_obj_t *s_station_list_footer;
 static lv_obj_t *s_station_list_rows[UI_STATION_LIST_MAX_ROWS];
 static station_list_state_t s_station_list;
 static ui_player_state_t s_player_ui;
 static bool s_waiting_for_radio_station;
 static uint32_t s_radio_station_wait_started_ms;
+// The USB browser reuses this list screen. Outside the drive's root it shows a
+// ".." row above the entries, so every listing index is one below its row.
+static bool s_usb_browser_has_parent_row;
+static unsigned int s_usb_listing_revision;
+// The USB source screen has nothing to show until a file is picked, so
+// selecting the source jumps straight to the browser. The jump waits for the
+// listing revision to move, otherwise the list would open on the previous
+// directory's rows for a poll or two.
+static bool s_usb_list_open_requested;
+static unsigned int s_usb_list_open_revision;
+
+static bool ui_list_shows_usb(void)
+{
+    return ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_USB;
+}
+
+static size_t ui_usb_row_offset(void)
+{
+    return s_usb_browser_has_parent_row ? 1U : 0U;
+}
 
 static uint32_t ui_tick_get_ms(void);
 
@@ -76,10 +100,31 @@ static const char *ui_radio_state_text(player_playback_state_t state)
     return "Unknown";
 }
 
+static void ui_update_usb_status(const player_snapshot_t *snapshot)
+{
+    ui_set_label_text_if_changed(s_source_status,
+                                 snapshot->playback_state == PLAYER_PLAYBACK_STOPPED
+                                     ? "Выберите файл"
+                                     : ui_radio_state_text(snapshot->playback_state));
+    // The USB player puts the file name where the radio puts the ICY title.
+    ui_set_label_text_if_changed(s_source_detail, snapshot->stream_title);
+    char stream_text[64];
+    ui_radio_stream_text(stream_text, sizeof(stream_text), snapshot->codec,
+                         snapshot->bitrate_kbps, snapshot->sample_rate_hz);
+    ui_set_label_text_if_changed(s_source_stream, stream_text);
+    // Nothing on this screen depends on the network, so the Wi-Fi line would
+    // only be noise.
+    ui_set_label_text_if_changed(s_source_wifi, "");
+}
+
 static void ui_update_radio_status(const player_snapshot_t *snapshot)
 {
-    if (ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_INTERNET_RADIO ||
-        snapshot == NULL) return;
+    if (snapshot == NULL) return;
+    if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_USB) {
+        ui_update_usb_status(snapshot);
+        return;
+    }
+    if (ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_INTERNET_RADIO) return;
     ui_set_label_text_if_changed(s_source_status,
                                  ui_radio_state_text(snapshot->playback_state));
     // While a station switch is pending confirmation, snapshot->active_item_index
@@ -167,19 +212,49 @@ static void ui_create_menu_screen(void)
         lv_obj_set_style_radius(s_menu_rows[index], 3, 0);
     }
 
-    lv_obj_t *footer = lv_label_create(s_menu_screen);
-    lv_label_set_text(footer, "F1 Menu  F2 Back  F3 Play  F4 Options");
-    lv_obj_set_pos(footer, 8, 220);
-    lv_obj_set_style_text_color(footer, lv_color_hex(0xB0BEC5), 0);
+    s_menu_footer = lv_label_create(s_menu_screen);
+    lv_label_set_text(s_menu_footer, UI_MENU_FOOTER_TEXT);
+    lv_obj_set_pos(s_menu_footer, 8, 220);
+    lv_obj_set_style_text_font(s_menu_footer, &ui_font_cyrillic_14, 0);
+    lv_obj_set_style_text_color(s_menu_footer, lv_color_hex(0xB0BEC5), 0);
     ui_update_menu_highlight();
+}
+
+// Fills `text` with what the row at `list_index` should read, and reports
+// whether that row is the one currently playing.
+static bool ui_list_row_text(size_t list_index, char *text, size_t text_size, bool *active)
+{
+    *active = false;
+    if (!ui_list_shows_usb()) {
+        const station_catalog_entry_t *entry = player_control_station_at(list_index);
+        snprintf(text, text_size, "%s", entry == NULL ? "" : entry->name);
+        *active = list_index == station_list_active_index(&s_station_list);
+        return true;
+    }
+    if (s_usb_browser_has_parent_row && list_index == 0U) {
+        snprintf(text, text_size, "..");
+        return true;
+    }
+    usb_browser_entry_t entry;
+    if (!player_control_usb_entry_at(list_index - ui_usb_row_offset(), &entry)) {
+        text[0] = '\0';
+        return false;
+    }
+    // Directories are marked rather than merely sorted first, so the row tells
+    // you what the encoder click will do before you press it.
+    if (entry.kind == USB_BROWSER_ENTRY_DIRECTORY) {
+        snprintf(text, text_size, "[%s]", entry.name);
+    } else {
+        snprintf(text, text_size, "%s", entry.name);
+    }
+    *active = list_index == station_list_active_index(&s_station_list);
+    return true;
 }
 
 static void ui_update_station_list(void)
 {
-    player_snapshot_t snapshot;
-    player_control_get_snapshot(&snapshot);
-    const int count = (int)snapshot.item_count;
     size_t cursor_row = 0U;
+    const int count = (int)s_station_list.count;
     const int window_top = station_list_window_top(&s_station_list,
                                                    UI_STATION_LIST_MAX_ROWS, &cursor_row);
     for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
@@ -191,16 +266,16 @@ static void ui_update_station_list(void)
             continue;
         }
         lv_obj_clear_flag(s_station_list_rows[row], LV_OBJ_FLAG_HIDDEN);
-        const station_catalog_entry_t *entry = player_control_station_at((size_t)entry_index);
+        char text[USB_BROWSER_NAME_MAX_LEN + 3U];
+        bool active = false;
+        (void)ui_list_row_text((size_t)entry_index, text, sizeof(text), &active);
         const bool selected = row == cursor_row;
-        const bool active = (size_t)entry_index == station_list_active_index(&s_station_list);
         lv_obj_set_style_bg_color(s_station_list_rows[row], lv_color_hex(selected ? 0x1769AA : 0x101820), 0);
         lv_obj_set_style_bg_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(s_station_list_rows[row], active ? 2 : 0, 0);
         lv_obj_set_style_border_color(s_station_list_rows[row], lv_color_hex(0xFFD54F), 0);
         lv_obj_set_style_border_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
-        lv_label_set_text_fmt(s_station_list_rows[row], "%c %s", selected ? '>' : ' ',
-                              entry == NULL ? "" : entry->name);
+        lv_label_set_text_fmt(s_station_list_rows[row], "%c %s", selected ? '>' : ' ', text);
     }
 }
 
@@ -210,10 +285,13 @@ static void ui_create_station_list_screen(void)
     lv_obj_set_style_bg_color(s_station_list_screen, lv_color_hex(0x101820), 0);
     lv_obj_set_style_border_width(s_station_list_screen, 0, 0);
     lv_obj_set_style_pad_all(s_station_list_screen, 0, 0);
-    lv_obj_t *title = lv_label_create(s_station_list_screen);
-    lv_label_set_text(title, "Internet radio | Stations");
-    lv_obj_set_pos(title, 12, 8);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
+    s_station_list_title = lv_label_create(s_station_list_screen);
+    lv_label_set_text(s_station_list_title, "Internet radio | Stations");
+    lv_obj_set_pos(s_station_list_title, 12, 8);
+    lv_obj_set_width(s_station_list_title, 300);
+    lv_label_set_long_mode(s_station_list_title, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_font(s_station_list_title, &ui_font_cyrillic_14, 0);
+    lv_obj_set_style_text_color(s_station_list_title, lv_color_hex(0xFFFFFF), 0);
     for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
         s_station_list_rows[row] = lv_label_create(s_station_list_screen);
         lv_obj_set_pos(s_station_list_rows[row], 10, 34 + (int)row * 26);
@@ -224,10 +302,10 @@ static void ui_create_station_list_screen(void)
         lv_obj_set_style_text_font(s_station_list_rows[row], &ui_font_cyrillic_14, 0);
         lv_obj_set_style_text_color(s_station_list_rows[row], lv_color_hex(0xFFFFFF), 0);
     }
-    lv_obj_t *footer = lv_label_create(s_station_list_screen);
-    lv_label_set_text(footer, "Encoder Select  F2 Back");
-    lv_obj_set_pos(footer, 8, 220);
-    lv_obj_set_style_text_color(footer, lv_color_hex(0xB0BEC5), 0);
+    s_station_list_footer = lv_label_create(s_station_list_screen);
+    lv_label_set_text(s_station_list_footer, "Encoder Select  F2 Back");
+    lv_obj_set_pos(s_station_list_footer, 8, 220);
+    lv_obj_set_style_text_color(s_station_list_footer, lv_color_hex(0xB0BEC5), 0);
 }
 
 static void ui_show_station_list(void);
@@ -247,6 +325,9 @@ static void ui_create_source_screen(void)
     s_source_status = lv_label_create(s_source_screen);
     lv_label_set_text(s_source_status, "Not implemented");
     lv_obj_set_pos(s_source_status, 14, 64);
+    // Carries Russian copy for the USB source; the built-in LVGL font has no
+    // Cyrillic and renders it as empty boxes.
+    lv_obj_set_style_text_font(s_source_status, &ui_font_cyrillic_14, 0);
     lv_obj_set_style_text_color(s_source_status, lv_color_hex(0xB0BEC5), 0);
 
     s_source_detail = lv_label_create(s_source_screen);
@@ -304,6 +385,14 @@ static void ui_load_source_screen(audio_source_t selected_source)
         ui_set_label_text_if_changed(s_source_wifi, "");
         s_waiting_for_radio_station = true;
         s_radio_station_wait_started_ms = ui_tick_get_ms();
+    } else if (selected_source == AUDIO_SOURCE_USB) {
+        s_waiting_for_radio_station = false;
+        // Nothing plays until a file is chosen, so this screen opens idle
+        // rather than pretending to connect.
+        ui_set_label_text_if_changed(s_source_status, "Выберите файл");
+        ui_set_label_text_if_changed(s_source_detail, "");
+        ui_set_label_text_if_changed(s_source_stream, "");
+        ui_set_label_text_if_changed(s_source_wifi, "");
     } else {
         s_waiting_for_radio_station = false;
         ui_set_label_text_if_changed(s_source_status, "Not implemented");
@@ -317,6 +406,18 @@ static void ui_show_source(void)
 {
     const audio_source_t selected_source = ui_menu_activate(&s_menu);
     if (selected_source == AUDIO_SOURCE_NONE) return;
+    if (selected_source == AUDIO_SOURCE_USB) {
+        // The command would be rejected by the controller anyway, but the UI
+        // switches screens optimistically, so without this check the user gets
+        // an empty browser instead of being told the drive is missing.
+        player_snapshot_t snapshot;
+        player_control_get_snapshot(&snapshot);
+        if ((snapshot.capabilities & PLAYER_CAP_USB) == 0U) {
+            ui_set_label_text_if_changed(s_menu_footer, "Вставьте USB-флешку");
+            return;
+        }
+    }
+    ui_set_label_text_if_changed(s_menu_footer, UI_MENU_FOOTER_TEXT);
     const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
     const audio_source_t old_source = ui_player_state_source(&s_player_ui);
     const player_command_t command = {
@@ -324,6 +425,10 @@ static void ui_show_source(void)
         .source = selected_source,
         .item_index = PLAYER_ITEM_NONE,
     };
+    if (selected_source == AUDIO_SOURCE_USB) {
+        s_usb_list_open_revision = player_control_usb_listing_revision();
+        s_usb_list_open_requested = true;
+    }
     if (!ui_submit_player_command(&command)) return;
     if (old_view != ui_player_state_view(&s_player_ui) ||
         old_source != ui_player_state_source(&s_player_ui)) {
@@ -354,20 +459,42 @@ static void ui_show_menu(void)
     }
 }
 
+// Re-seeds the list state from a fresh snapshot. Split out because the USB
+// browser has to do it again on every directory change, not just on open.
+static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
+{
+    size_t count = snapshot->item_count;
+    size_t active_index = snapshot->active_item_index;
+    if (ui_list_shows_usb()) {
+        s_usb_browser_has_parent_row = !usb_browser_path_is_root(snapshot->context);
+        const size_t offset = ui_usb_row_offset();
+        count += offset;
+        // The ".." row pushes every entry down, including the playing one.
+        active_index = active_index == PLAYER_ITEM_NONE ? PLAYER_ITEM_NONE
+                                                        : active_index + offset;
+        lv_label_set_text_fmt(s_station_list_title, "USB | %s", snapshot->context);
+        ui_set_label_text_if_changed(s_station_list_footer, "Encoder Open/Play  F2 Back");
+    } else {
+        s_usb_browser_has_parent_row = false;
+        ui_set_label_text_if_changed(s_station_list_title, "Internet radio | Stations");
+        ui_set_label_text_if_changed(s_station_list_footer, "Encoder Select  F2 Back");
+    }
+    const size_t initial_index = active_index < count ? active_index : 0U;
+    station_list_init(&s_station_list, count, initial_index, active_index);
+    station_list_note_activity(&s_station_list, ui_tick_get_ms());
+    ui_update_station_list();
+}
+
 static void ui_load_station_list_screen(void)
 {
     player_snapshot_t snapshot;
     player_control_get_snapshot(&snapshot);
-    ESP_LOGI(TAG, "show station list: player_state=%d active_station=%u",
-             (int)snapshot.playback_state, (unsigned int)snapshot.active_item_index);
+    ESP_LOGI(TAG, "show list: source=%d player_state=%d active_item=%u",
+             (int)snapshot.active_source, (int)snapshot.playback_state,
+             (unsigned int)snapshot.active_item_index);
     s_waiting_for_radio_station = false;
-    const size_t station_count = snapshot.item_count;
-    const size_t active_station_index = snapshot.active_item_index;
-    const size_t initial_index = active_station_index < station_count ? active_station_index : 0U;
-    station_list_init(&s_station_list, station_count, initial_index,
-                      active_station_index);
-    station_list_note_activity(&s_station_list, ui_tick_get_ms());
-    ui_update_station_list();
+    s_usb_listing_revision = player_control_usb_listing_revision();
+    ui_reset_list_from_snapshot(&snapshot);
     lv_screen_load(s_station_list_screen);
 }
 
@@ -408,6 +535,38 @@ static void ui_handle_input(board_input_action_t action)
         } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
                    action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
             if (station_list_handle_input(&s_station_list, action)) ui_update_station_list();
+        } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON && ui_list_shows_usb()) {
+            size_t row;
+            if (!station_list_get_selection(&s_station_list, &row)) return;
+            if (s_usb_browser_has_parent_row && row == 0U) {
+                const player_command_t up = {
+                    .kind = PLAYER_COMMAND_BROWSE_UP,
+                    .source = AUDIO_SOURCE_USB,
+                    .item_index = PLAYER_ITEM_NONE,
+                };
+                (void)ui_submit_player_command(&up);
+                return;
+            }
+            const size_t index = row - ui_usb_row_offset();
+            usb_browser_entry_t entry;
+            if (!player_control_usb_entry_at(index, &entry)) return;
+            const player_command_t command = {
+                .kind = PLAYER_COMMAND_SELECT_ITEM,
+                .source = AUDIO_SOURCE_USB,
+                .item_index = index,
+            };
+            if (!ui_submit_player_command(&command)) return;
+            // Opening a directory keeps the browser on screen; the new listing
+            // arrives through the snapshot poll. Only a file switches to the
+            // player.
+            if (entry.kind == USB_BROWSER_ENTRY_DIRECTORY) return;
+            ui_load_source_screen(AUDIO_SOURCE_USB);
+            lv_label_set_text(s_source_title, ui_menu_item_label(UI_MENU_ITEM_USB_FILES));
+            ui_set_label_text_if_changed(s_source_status, "Открытие файла");
+            ui_set_label_text_if_changed(s_source_detail, entry.name);
+            ui_set_label_text_if_changed(s_source_stream,
+                                         usb_browser_format_name(entry.format));
+            ui_set_label_text_if_changed(s_source_wifi, "");
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             size_t index;
             if (!station_list_get_selection(&s_station_list, &index) ||
@@ -433,13 +592,14 @@ static void ui_handle_input(board_input_action_t action)
         return;
     }
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_SOURCE) {
+        const audio_source_t source = ui_player_state_source(&s_player_ui);
+        const bool has_list = source == AUDIO_SOURCE_INTERNET_RADIO ||
+                              source == AUDIO_SOURCE_USB;
         if (action == BOARD_INPUT_ACTION_F2) {
             ui_show_menu();
-        } else if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_INTERNET_RADIO &&
-                   action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
+        } else if (has_list && action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             ui_show_station_list();
-        } else if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_INTERNET_RADIO &&
-                   action == BOARD_INPUT_ACTION_F3) {
+        } else if (has_list && action == BOARD_INPUT_ACTION_F3) {
             const player_command_t command = {
                 .kind = PLAYER_COMMAND_TOGGLE,
                 .source = AUDIO_SOURCE_NONE,
@@ -450,6 +610,8 @@ static void ui_handle_input(board_input_action_t action)
         return;
     }
     if (ui_menu_handle_input(&s_menu, action)) {
+        // Clears the "insert a drive" notice as soon as the user moves on.
+        ui_set_label_text_if_changed(s_menu_footer, UI_MENU_FOOTER_TEXT);
         ui_update_menu_highlight();
     } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
         ui_show_source();
@@ -467,6 +629,14 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
         ui_render_player_state();
     }
 
+    if (s_usb_list_open_requested &&
+        ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_USB &&
+        ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_SOURCE &&
+        player_control_usb_listing_revision() != s_usb_list_open_revision) {
+        s_usb_list_open_requested = false;
+        ui_show_station_list();
+    }
+
     if (s_waiting_for_radio_station &&
         snapshot->active_source == AUDIO_SOURCE_INTERNET_RADIO &&
         snapshot->active_item_index == PLAYER_ITEM_NONE &&
@@ -477,13 +647,32 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     }
 
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
-        // The playlist can be replaced from the web UI while this screen is
-        // open, so the count captured at open time may be stale.
-        if (station_list_sync_counts(&s_station_list, snapshot->item_count,
-                                     snapshot->active_item_index)) {
+        const unsigned int revision = player_control_usb_listing_revision();
+        if (ui_list_shows_usb() && revision != s_usb_listing_revision) {
+            // A directory was opened or left: the rows now describe different
+            // files, so the cursor cannot keep its position.
+            s_usb_listing_revision = revision;
+            ui_reset_list_from_snapshot(snapshot);
+        } else if (station_list_sync_counts(&s_station_list,
+                                            snapshot->item_count + ui_usb_row_offset(),
+                                            snapshot->active_item_index == PLAYER_ITEM_NONE
+                                                ? PLAYER_ITEM_NONE
+                                                : snapshot->active_item_index +
+                                                      ui_usb_row_offset())) {
+            // The playlist can be replaced from the web UI while this screen is
+            // open, so the count captured at open time may be stale.
             ui_update_station_list();
         }
-        if (station_list_idle_timeout_elapsed(&s_station_list, ui_tick_get_ms(),
+        // The timeout exists to return to something worth looking at. With
+        // nothing playing there is nothing behind this screen, so browsing is
+        // allowed to take as long as the user wants.
+        const bool playback_running =
+            snapshot->playback_state == PLAYER_PLAYBACK_PLAYING ||
+            snapshot->playback_state == PLAYER_PLAYBACK_PAUSED ||
+            snapshot->playback_state == PLAYER_PLAYBACK_CONNECTING ||
+            snapshot->playback_state == PLAYER_PLAYBACK_RECONNECTING;
+        if (playback_running &&
+            station_list_idle_timeout_elapsed(&s_station_list, ui_tick_get_ms(),
                                               UI_STATION_LIST_IDLE_TIMEOUT_MS)) {
             ui_close_station_list_to_source();
         }

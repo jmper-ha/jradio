@@ -129,6 +129,14 @@ static void test_accepts_source_and_station_selection(void)
     assert(command.player.kind == PLAYER_COMMAND_SELECT_SOURCE);
     assert(command.player.source == AUDIO_SOURCE_INTERNET_RADIO);
 
+    const char *usb =
+        "{\"type\":\"command\",\"id\":\"source-2\","
+        "\"action\":\"source.select\",\"source\":\"usb\"}";
+    assert(parse(usb, &command) == WEB_PROTOCOL_OK);
+    assert(command.kind == WEB_COMMAND_PLAYER);
+    assert(command.player.kind == PLAYER_COMMAND_SELECT_SOURCE);
+    assert(command.player.source == AUDIO_SOURCE_USB);
+
     const char *station =
         "{\"type\":\"command\",\"id\":\"43\",\"action\":\"list.select\",\"index\":3}";
     assert(parse(station, &command) == WEB_PROTOCOL_OK);

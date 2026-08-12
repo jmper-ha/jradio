@@ -8,6 +8,7 @@
 #include "internet_radio.h"
 #include "player_control.h"
 #include "ui.h"
+#include "usb_player.h"
 #include "usb_storage.h"
 #include "web_server.h"
 #include "wifi_provisioning.h"
@@ -38,6 +39,7 @@ void app_main(void)
     ESP_ERROR_CHECK(wifi_provisioning_init());
     ESP_ERROR_CHECK(wifi_provisioning_start());
     ESP_ERROR_CHECK(usb_storage_init());
+    ESP_ERROR_CHECK(usb_player_init());
     ESP_ERROR_CHECK(internet_radio_init());
     ESP_ERROR_CHECK(player_control_init());
     ESP_ERROR_CHECK(ui_init());

@@ -66,10 +66,23 @@ bool ui_player_state_can_select_item(const ui_player_state_t *state,
            item_index < state->item_count;
 }
 
+// USB browsing stays outside the pending machinery. That machinery exists for
+// the radio, where switching stations blocks for seconds while the decoder
+// task exits and the UI must not accept a second command meanwhile. Opening a
+// directory changes the listing rather than the active item, so no snapshot
+// could ever confirm it, and it would sit pending until the timeout.
+static bool ui_player_state_is_usb_browse(const player_command_t *command)
+{
+    return command->source == AUDIO_SOURCE_USB &&
+           (command->kind == PLAYER_COMMAND_SELECT_ITEM ||
+            command->kind == PLAYER_COMMAND_BROWSE_UP);
+}
+
 bool ui_player_state_can_post(const ui_player_state_t *state,
                               const player_command_t *command)
 {
     if (state == NULL || command == NULL) return false;
+    if (ui_player_state_is_usb_browse(command)) return !state->pending;
     switch (command->kind) {
     case PLAYER_COMMAND_SELECT_SOURCE:
         return !state->pending && command->source != AUDIO_SOURCE_NONE;
@@ -96,7 +109,8 @@ bool ui_player_state_apply_post_result(ui_player_state_t *state,
     if (!posted || !ui_player_state_can_post(state, command)) return false;
     if (command->kind == PLAYER_COMMAND_PLAY ||
         command->kind == PLAYER_COMMAND_PAUSE ||
-        command->kind == PLAYER_COMMAND_TOGGLE) return true;
+        command->kind == PLAYER_COMMAND_TOGGLE ||
+        ui_player_state_is_usb_browse(command)) return true;
 
     const bool superseding_stop =
         command->kind == PLAYER_COMMAND_STOP_SOURCE && state->pending;
@@ -216,7 +230,12 @@ void ui_player_state_apply_snapshot(ui_player_state_t *state,
 
 bool ui_player_state_show_station_list(ui_player_state_t *state)
 {
-    if (state == NULL || state->source != AUDIO_SOURCE_INTERNET_RADIO) return false;
+    // Both sources that have a list share this view: stations for the radio,
+    // the current directory for USB.
+    if (state == NULL || (state->source != AUDIO_SOURCE_INTERNET_RADIO &&
+                          state->source != AUDIO_SOURCE_USB)) {
+        return false;
+    }
     state->view = UI_PLAYER_VIEW_STATION_LIST;
     if (state->pending) {
         // If a pending command times out later, it should revert to where the

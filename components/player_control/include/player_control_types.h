@@ -18,6 +18,9 @@
 #define PLAYER_ERROR_MAX_LEN 64
 #define PLAYER_ITEM_NONE SIZE_MAX
 #define PLAYER_CAP_INTERNET_RADIO (1U << 0)
+// Set only while a drive is mounted: selecting the USB source with nothing
+// plugged in should be refused, not left showing an empty player screen.
+#define PLAYER_CAP_USB (1U << 1)
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,6 +42,13 @@ typedef enum {
     PLAYER_COMMAND_PAUSE,
     PLAYER_COMMAND_TOGGLE,
     PLAYER_COMMAND_SELECT_ITEM,
+    // Posted by the USB player itself when a track ends on its own, never by
+    // the UI or the web client. A stopped or failed track does not produce it,
+    // so pressing stop cannot be mistaken for "play the next one".
+    PLAYER_COMMAND_TRACK_FINISHED,
+    // Leaves the directory being browsed. Only USB has a hierarchy; the radio
+    // list is flat.
+    PLAYER_COMMAND_BROWSE_UP,
 } player_command_kind_t;
 
 typedef struct {
@@ -72,6 +82,8 @@ typedef enum {
     PLAYER_OPERATION_START_ITEM,
     PLAYER_OPERATION_PAUSE,
     PLAYER_OPERATION_RESUME,
+    PLAYER_OPERATION_ADVANCE_ITEM,
+    PLAYER_OPERATION_BROWSE_UP,
 } player_operation_t;
 
 player_operation_t player_control_decide(const player_snapshot_t *state,

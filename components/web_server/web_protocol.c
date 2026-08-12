@@ -695,12 +695,17 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
     if (strcmp(action, "source.select") == 0) {
         if (fields != (COMMON_FIELDS | FIELD_SOURCE)) return false;
         const cJSON *source = object_item(root, "source");
-        if (!json_string(source, sizeof("internet_radio") - 1U, false) ||
-            strcmp(source->valuestring, "internet_radio") != 0) {
+        if (!json_string(source, sizeof("internet_radio") - 1U, false)) return false;
+        // Only the sources that are actually implemented are accepted; the
+        // remaining audio_source_t values still name unbuilt modes.
+        if (strcmp(source->valuestring, "internet_radio") == 0) {
+            parsed->player.source = AUDIO_SOURCE_INTERNET_RADIO;
+        } else if (strcmp(source->valuestring, "usb") == 0) {
+            parsed->player.source = AUDIO_SOURCE_USB;
+        } else {
             return false;
         }
         parsed->player.kind = PLAYER_COMMAND_SELECT_SOURCE;
-        parsed->player.source = AUDIO_SOURCE_INTERNET_RADIO;
         return true;
     }
     if (strcmp(action, "list.select") == 0) {

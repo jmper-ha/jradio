@@ -104,6 +104,8 @@ run_test player_control_logic tests/test_player_control_logic.c \
     components/player_control/player_control_logic.c
 run_test radio_http_status tests/test_radio_http_status.c \
     components/internet_radio/radio_http_status.c
+run_test radio_prebuffer tests/test_radio_prebuffer.c \
+    components/internet_radio/radio_prebuffer.c
 run_test radio_stream_format tests/test_radio_stream_format.c \
     components/internet_radio/radio_stream_format.c components/internet_radio/station_catalog.c
 run_test settings_csv tests/test_settings_csv.c components/settings/settings_csv.c

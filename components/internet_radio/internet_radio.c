@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/select.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include "freertos/FreeRTOS.h"
@@ -24,6 +26,7 @@
 #include "icy_metadata.h"
 #include "pcm_diagnostics.h"
 #include "radio_http_status.h"
+#include "radio_prebuffer.h"
 #include "radio_decoder.h"
 #include "radio_stream_format.h"
 #include "station_resume.h"
@@ -43,15 +46,12 @@
  * itself - so high-bitrate streams glitched on any network jitter. This lives
  * in PSRAM, where the extra 48 KB is cheap. */
 #define RADIO_DIRECT_INPUT_SIZE 65536U
-/* Stop opportunistic top-up here rather than filling to the brim, so a burst
- * cannot spend unbounded time in the read loop and stall decoding. */
-#define RADIO_DIRECT_PREBUFFER_TARGET (RADIO_DIRECT_INPUT_SIZE / 2U)
-/* Extra chunks pulled per pass through the decode loop. This has to stay well
- * under the I2S DMA depth (~93 ms): a stream we are behind on always has more
- * bytes waiting, so an uncapped top-up just reads until the target is met and
- * silences the DAC while it does. The backlog still grows, one pass at a
- * time, whenever the link is faster than playback. */
-#define RADIO_DIRECT_TOPUP_MAX_CHUNKS 2U
+/* Wall-clock cap on one top-up burst. The bound has to be time, not a chunk
+ * count: a stream we are behind on always has more bytes waiting, so the
+ * question is only how long the loop may stay away from the decoder. Well
+ * under the ~93 ms of I2S DMA, or the burst starves the DAC it is protecting -
+ * which is exactly what an uncapped version did. */
+#define RADIO_DIRECT_TOPUP_BUDGET_MS 20U
 #define RADIO_DIRECT_NETWORK_CHUNK 2048U
 #define RADIO_DIRECT_PCM_SIZE 16384U
 #define RADIO_DIRECT_STOP_TIMEOUT_MS 12000U
@@ -147,13 +147,44 @@ static int radio_http_read_blocking(internet_radio_context_t *radio, uint8_t *bu
     }
 }
 
-/* Reads only what the socket already holds. Returns 0 when nothing is ready
- * rather than waiting, so the decode loop can top the backlog up during a
- * burst instead of pulling one chunk per decoded frame and always running
- * on empty. */
-static int radio_http_read_ready(internet_radio_context_t *radio, uint8_t *buffer, int length)
+/* Reads what the socket holds now, waiting at most `budget_ms` for the first
+ * byte and never blocking once data is flowing.
+ *
+ * The polling matters. esp_http_client_read() loops until it has filled the
+ * length asked for (`while (need_read > 0 && is_data_remain)`), blocking on
+ * the transport for up to client->timeout_ms - ten seconds here. An earlier
+ * version of this function passed the full free space and called itself
+ * non-blocking; it was not, which is why the backlog never grew and the loop
+ * spent its time waiting on the socket instead of decoding.
+ *
+ * So: poll first, then read only as much as is already buffered. That caps
+ * each call at one socket's worth of data and keeps the decoder running. */
+static int radio_http_read_ready(internet_radio_context_t *radio, uint8_t *buffer,
+                                 int length, uint32_t budget_ms)
 {
     if (length <= 0) return 0;
+    /* select() on the transport's own socket rather than a private
+     * esp_http_client call: get_socket is the only readiness hook the public
+     * API offers. Over TLS this is a lower bound - esp-tls may already hold a
+     * decrypted record with the socket quiet - but that only costs one skipped
+     * top-up, never a stall, because the urgent path still blocks. */
+    const int fd = esp_http_client_get_socket(radio->http);
+    if (fd >= 0) {
+        fd_set readable;
+        FD_ZERO(&readable);
+        FD_SET(fd, &readable);
+        struct timeval timeout = {
+            .tv_sec = (time_t)(budget_ms / 1000U),
+            .tv_usec = (suseconds_t)((budget_ms % 1000U) * 1000U),
+        };
+        const int ready = select(fd + 1, &readable, NULL, NULL, &timeout);
+        if (ready < 0) return -1;
+        if (ready == 0) return 0;
+    }
+    /* One MSS at a time: asking for more would make the client block waiting
+     * for the rest of the request even though the poll only promised one
+     * segment. */
+    if (length > RADIO_DIRECT_NETWORK_CHUNK) length = RADIO_DIRECT_NETWORK_CHUNK;
     const int received = esp_http_client_read(radio->http, (char *)buffer, length);
     switch (internet_radio_read_classify(received, -ESP_ERR_HTTP_EAGAIN)) {
     case INTERNET_RADIO_READ_DATA:
@@ -304,6 +335,9 @@ static void radio_direct_task(void *arg)
     size_t compressed_offset = 0U;
     unsigned int decode_error_retries = 0U;
     bool fatal = false;
+    radio_prebuffer_config_t prebuffer;
+    radio_prebuffer_config_init(&prebuffer, RADIO_DIRECT_INPUT_SIZE,
+                                RADIO_DIRECT_NETWORK_CHUNK);
     if (compressed == NULL || network == NULL || audio == NULL || pcm == NULL || radio->decoder == NULL) {
         ESP_LOGE(TAG, "direct decoder buffer allocation failed");
         fatal = true;
@@ -349,11 +383,19 @@ static void radio_direct_task(void *arg)
                 (uint32_t)BOARD_AUDIO_CHANNEL_COUNT *
                 (uint32_t)(BOARD_AUDIO_BITS_PER_SAMPLE / 8U) *
                 (RADIO_STARVATION_REPORT_MS / 1000U);
+            // min_backlog in milliseconds is the number that matters: the same
+            // byte count is a second of a 128 kbps stream and 90 ms of FLAC,
+            // and what protects the DAC is time, not bytes.
+            uint16_t bitrate;
+            taskENTER_CRITICAL(&s_status_lock);
+            bitrate = radio->status.bitrate_kbps;
+            taskEXIT_CRITICAL(&s_status_lock);
             ESP_LOGI(TAG,
                      "stream health: i2s_underruns=%u starvations=%u min_backlog=%u/%u "
-                     "pcm=%u%% of realtime",
+                     "(%ums) pcm=%u%% of realtime",
                      underruns - last_underruns, starvations,
                      (unsigned int)min_available, (unsigned int)RADIO_DIRECT_INPUT_SIZE,
+                     (unsigned int)radio_prebuffer_millis(min_available, bitrate),
                      expected > 0U ? (unsigned int)((pcm_delta * 100U) / expected) : 0U);
             last_pcm_bytes = radio->pcm_bytes;
             last_underruns = underruns;
@@ -441,13 +483,28 @@ static void radio_direct_task(void *arg)
             }
         }
 
-        if (need_input && available < RADIO_DIRECT_INPUT_SIZE) {
-            const size_t room = RADIO_DIRECT_INPUT_SIZE - available;
+        // Read whenever the backlog is below target, not only once the decoder
+        // has drained it to empty. Refilling from empty is what kept
+        // min_backlog at a few bytes on a link delivering well above real
+        // time, leaving the 93 ms of I2S DMA as the only real cushion.
+        const radio_prebuffer_plan_t plan =
+            radio_prebuffer_plan(&prebuffer, available, need_input);
+        if (plan.should_read) {
+            const size_t room = plan.max_bytes;
             const int request_length = (int)(room < RADIO_DIRECT_NETWORK_CHUNK
                                                  ? room
                                                  : RADIO_DIRECT_NETWORK_CHUNK);
-            const int received = radio_http_read_blocking(radio, network,
-                                                          request_length);
+            // Only a starved decoder may wait on the socket; a top-up takes
+            // what has already arrived and returns to decoding.
+            const int received =
+                plan.budget_ms == 0U
+                    ? radio_http_read_ready(radio, network, request_length, 0U)
+                    : radio_http_read_blocking(radio, network, request_length);
+            if (received == 0 && plan.budget_ms == 0U) {
+                // Nothing buffered yet and the decoder is not waiting: keep
+                // decoding rather than spinning on an idle socket.
+                continue;
+            }
             if (received <= 0) {
                 if (atomic_load_explicit(&radio->direct_stop_requested,
                                          memory_order_acquire)) {
@@ -470,7 +527,8 @@ static void radio_direct_task(void *arg)
                 break;
             }
             int chunk = received;
-            for (unsigned int topups = 0U;; ++topups) {
+            const TickType_t topup_started = xTaskGetTickCount();
+            for (;;) {
                 size_t audio_length = 0U;
                 const icy_metadata_result_t icy_result = icy_metadata_feed(
                     &radio->icy, network, (size_t)chunk, audio, RADIO_DIRECT_NETWORK_CHUNK,
@@ -501,19 +559,21 @@ static void radio_direct_task(void *arg)
                     available += audio_length;
                 }
 
-                // Keep draining whatever the socket already has until the
-                // backlog is comfortable. Without this the loop pulled one
-                // chunk per decoded frame, so the buffer never built a cushion
-                // and any network hiccup reached the DAC immediately.
-                if (available >= RADIO_DIRECT_PREBUFFER_TARGET ||
-                    topups >= RADIO_DIRECT_TOPUP_MAX_CHUNKS) {
+                // Drain whatever else the socket already holds, bounded by
+                // time rather than by a chunk count: what must not happen is
+                // spending longer here than the DMA can cover, and that is a
+                // duration. An early exit is cheap - the next pass reads again
+                // as soon as the decoder has produced a block.
+                if (available >= prebuffer.target ||
+                    (uint32_t)((xTaskGetTickCount() - topup_started) *
+                               portTICK_PERIOD_MS) >= RADIO_DIRECT_TOPUP_BUDGET_MS) {
                     break;
                 }
                 const size_t free_room = RADIO_DIRECT_INPUT_SIZE - available;
                 const int ready_length = (int)(free_room < RADIO_DIRECT_NETWORK_CHUNK
                                                    ? free_room
                                                    : RADIO_DIRECT_NETWORK_CHUNK);
-                chunk = radio_http_read_ready(radio, network, ready_length);
+                chunk = radio_http_read_ready(radio, network, ready_length, 0U);
                 if (chunk <= 0) break;
             }
             if (fatal) break;

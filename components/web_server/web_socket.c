@@ -1,9 +1,11 @@
 #include "web_socket.h"
 
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "web_json.h"
 #include "web_view_model.h"
 
 #ifdef ESP_PLATFORM
@@ -19,13 +21,6 @@
 #include "station_catalog.h"
 #endif
 
-typedef struct {
-    char *output;
-    size_t capacity;
-    size_t length;
-    bool valid;
-} json_writer_t;
-
 static void secure_zero(void *memory, size_t size)
 {
     volatile unsigned char *bytes = memory;
@@ -34,174 +29,16 @@ static void secure_zero(void *memory, size_t size)
     }
 }
 
-static void writer_init(json_writer_t *writer, char *output, size_t output_size)
+static int writer_finish(web_json_writer_t *writer)
 {
-    writer->output = output;
-    writer->capacity = output_size;
-    writer->length = 0U;
-    writer->valid = output != NULL && output_size > 0U;
-    if (writer->valid) {
-        output[0] = '\0';
-    }
-}
-
-static void writer_bytes(json_writer_t *writer, const char *bytes, size_t length)
-{
-    if (!writer->valid || bytes == NULL || length > WEB_PROTOCOL_EVENT_MAX - writer->length ||
-        length >= writer->capacity - writer->length) {
-        writer->valid = false;
-        return;
-    }
-    memcpy(writer->output + writer->length, bytes, length);
-    writer->length += length;
-    writer->output[writer->length] = '\0';
-}
-
-static void writer_literal(json_writer_t *writer, const char *literal)
-{
-    writer_bytes(writer, literal, strlen(literal));
-}
-
-static void writer_format(json_writer_t *writer, const char *format, ...)
-{
-    char value[32];
-    va_list args;
-    va_start(args, format);
-    const int length = vsnprintf(value, sizeof(value), format, args);
-    va_end(args);
-    if (length < 0 || (size_t)length >= sizeof(value)) {
-        writer->valid = false;
-        return;
-    }
-    writer_bytes(writer, value, (size_t)length);
-}
-
-static bool utf8_sequence(const unsigned char *value, size_t length,
-                          size_t *consumed)
-{
-    const unsigned char first = value[0];
-    if (first < 0x80U) {
-        *consumed = 1U;
-        return true;
-    }
-
-    size_t expected;
-    uint32_t codepoint;
-    uint32_t minimum;
-    if (first >= 0xC2U && first <= 0xDFU) {
-        expected = 2U;
-        codepoint = first & 0x1FU;
-        minimum = 0x80U;
-    } else if (first >= 0xE0U && first <= 0xEFU) {
-        expected = 3U;
-        codepoint = first & 0x0FU;
-        minimum = 0x800U;
-    } else if (first >= 0xF0U && first <= 0xF4U) {
-        expected = 4U;
-        codepoint = first & 0x07U;
-        minimum = 0x10000U;
-    } else {
-        *consumed = 1U;
-        return false;
-    }
-
-    size_t continuation_count = 0U;
-    while (continuation_count + 1U < expected &&
-           continuation_count + 1U < length &&
-           (value[continuation_count + 1U] & 0xC0U) == 0x80U) {
-        ++continuation_count;
-    }
-    *consumed = 1U + continuation_count;
-    if (*consumed != expected) {
-        return false;
-    }
-    for (size_t index = 1U; index < expected; ++index) {
-        codepoint = (codepoint << 6) | (uint32_t)(value[index] & 0x3FU);
-    }
-    return codepoint >= minimum && codepoint <= 0x10FFFFU &&
-           !(codepoint >= 0xD800U && codepoint <= 0xDFFFU);
-}
-
-static void writer_string_bounded(json_writer_t *writer, const char *text,
-                                  size_t content_budget)
-{
-    static const char replacement[] = "\xEF\xBF\xBD";
-    writer_literal(writer, "\"");
-    if (text == NULL) {
-        text = "";
-    }
-    const size_t length = strlen(text);
-    size_t offset = 0U;
-    size_t encoded = 0U;
-    while (offset < length && writer->valid) {
-        const unsigned char value = (unsigned char)text[offset];
-        const char *escaped = NULL;
-        size_t escaped_length = 0U;
-        size_t consumed = 1U;
-        if (value == '"') {
-            escaped = "\\\"";
-            escaped_length = 2U;
-        } else if (value == '\\') {
-            escaped = "\\\\";
-            escaped_length = 2U;
-        } else if (value == '\b') {
-            escaped = "\\b";
-            escaped_length = 2U;
-        } else if (value == '\f') {
-            escaped = "\\f";
-            escaped_length = 2U;
-        } else if (value == '\n') {
-            escaped = "\\n";
-            escaped_length = 2U;
-        } else if (value == '\r') {
-            escaped = "\\r";
-            escaped_length = 2U;
-        } else if (value == '\t') {
-            escaped = "\\t";
-            escaped_length = 2U;
-        } else if (value < 0x20U || value == 0x7FU) {
-            escaped_length = 6U;
-        } else if (value < 0x80U) {
-            escaped = text + offset;
-            escaped_length = 1U;
-        } else {
-            if (utf8_sequence((const unsigned char *)text + offset,
-                              length - offset, &consumed)) {
-                escaped = text + offset;
-                escaped_length = consumed;
-            } else {
-                escaped = replacement;
-                escaped_length = sizeof(replacement) - 1U;
-            }
-        }
-        if (escaped_length > content_budget - encoded) {
-            break;
-        }
-        if (value < 0x20U || value == 0x7FU) {
-            writer_format(writer, "\\u%04x", (unsigned)value);
-        } else {
-            writer_bytes(writer, escaped, escaped_length);
-        }
-        encoded += escaped_length;
-        offset += consumed;
-    }
-    writer_literal(writer, "\"");
-}
-
-static void writer_string(json_writer_t *writer, const char *text)
-{
-    writer_string_bounded(writer, text, WEB_PROTOCOL_EVENT_MAX);
-}
-
-static int writer_finish(json_writer_t *writer)
-{
-    if (!writer->valid || writer->length > WEB_PROTOCOL_EVENT_MAX) {
-        if (writer->output != NULL && writer->capacity > 0U) {
-            writer->output[0] = '\0';
-        }
+    if (!web_json_valid(writer) || web_json_length(writer) > WEB_PROTOCOL_EVENT_MAX) {
+        // Hand back an empty string rather than a truncated document: callers
+        // treat a zero length as "do not send", and half a frame would parse
+        // as garbage on the client.
+        web_json_truncate(writer);
         return 0;
     }
-    return (int)writer->length;
+    return (int)web_json_length(writer);
 }
 
 static bool request_id_valid(const char *request_id)
@@ -229,20 +66,20 @@ int web_server_command_result(char *output, size_t output_size,
                               const char *request_id, bool ok,
                               const char *error)
 {
-    json_writer_t writer;
-    writer_init(&writer, output, output_size);
+    web_json_writer_t writer;
+    web_json_init(&writer, output, output_size, WEB_PROTOCOL_EVENT_MAX);
     if (!request_id_valid(request_id) || (!ok && error == NULL)) {
-        writer.valid = false;
+        web_json_invalidate(&writer);
         return writer_finish(&writer);
     }
 
-    writer_literal(&writer, "{\"type\":\"command.result\",\"id\":");
-    writer_string(&writer, request_id);
-    writer_literal(&writer, ok ? ",\"ok\":true" : ",\"ok\":false,\"error\":");
+    web_json_literal(&writer, "{\"type\":\"command.result\",\"id\":");
+    web_json_string(&writer, request_id);
+    web_json_literal(&writer, ok ? ",\"ok\":true" : ",\"ok\":false,\"error\":");
     if (!ok) {
-        writer_string(&writer, error);
+        web_json_string(&writer, error);
     }
-    writer_literal(&writer, "}");
+    web_json_literal(&writer, "}");
     return writer_finish(&writer);
 }
 
@@ -256,19 +93,31 @@ static const char *wifi_mode_name(wifi_provisioning_mode_t mode)
     }
 }
 
-static void write_capabilities(json_writer_t *writer,
+static void write_capabilities(web_json_writer_t *writer,
                                const player_snapshot_t *player)
 {
-    writer_literal(writer, "\"capabilities\":[");
+    web_json_literal(writer, "\"capabilities\":[");
+    bool written = false;
     if ((player->capabilities & PLAYER_CAP_INTERNET_RADIO) != 0U) {
-        writer_literal(writer,
+        web_json_literal(writer,
                        "{\"id\":\"internet_radio\",\"label\":"
                        "\"Интернет-радио\",\"list_kind\":\"stations\"}");
+        written = true;
     }
-    writer_literal(writer, "]");
+    // USB only appears while a drive is mounted, so this list is what tells the
+    // browser whether to offer the source at all.
+    if ((player->capabilities & PLAYER_CAP_USB) != 0U) {
+        if (written) {
+            web_json_literal(writer, ",");
+        }
+        web_json_literal(writer,
+                       "{\"id\":\"usb\",\"label\":"
+                       "\"USB-накопитель\",\"list_kind\":\"files\"}");
+    }
+    web_json_literal(writer, "]");
 }
 
-static void write_player(json_writer_t *writer,
+static void write_player(web_json_writer_t *writer,
                          const player_snapshot_t *player)
 {
     char artist[PLAYER_NAME_MAX_LEN];
@@ -276,87 +125,121 @@ static void write_player(json_writer_t *writer,
     web_view_split_player_title(player->stream_title, player->context,
                                 artist, sizeof(artist), title, sizeof(title));
 
-    writer_literal(writer, "\"player\":{\"state\":");
-    writer_string(writer, web_view_playback_name(player->playback_state));
-    writer_literal(writer, ",\"mode\":");
-    writer_string(writer, web_view_source_label(player->active_source));
-    writer_literal(writer, ",\"artist\":");
-    writer_string(writer, artist);
-    writer_literal(writer, ",\"title\":");
-    writer_string(writer, title);
-    writer_literal(writer, ",\"context\":");
-    writer_string(writer, player->context);
-    writer_literal(writer, ",\"codec\":");
-    writer_string(writer, player->codec);
-    writer_literal(writer, ",\"bitrate_kbps\":");
-    writer_format(writer, "%u", (unsigned)player->bitrate_kbps);
-    writer_literal(writer, ",\"sample_rate_hz\":");
-    writer_format(writer, "%u", (unsigned)player->sample_rate_hz);
+    web_json_literal(writer, "\"player\":{\"state\":");
+    web_json_string(writer, web_view_playback_name(player->playback_state));
+    web_json_literal(writer, ",\"mode\":");
+    web_json_string(writer, web_view_source_label(player->active_source));
+    web_json_literal(writer, ",\"artist\":");
+    web_json_string(writer, artist);
+    web_json_literal(writer, ",\"title\":");
+    web_json_string(writer, title);
+    web_json_literal(writer, ",\"context\":");
+    web_json_string(writer, player->context);
+    web_json_literal(writer, ",\"codec\":");
+    web_json_string(writer, player->codec);
+    web_json_literal(writer, ",\"bitrate_kbps\":");
+    web_json_format(writer, "%u", (unsigned)player->bitrate_kbps);
+    web_json_literal(writer, ",\"sample_rate_hz\":");
+    web_json_format(writer, "%u", (unsigned)player->sample_rate_hz);
     if (player->wifi_rssi_valid) {
-        writer_literal(writer, ",\"wifi_rssi_dbm\":");
-        writer_format(writer, "%d", (int)player->wifi_rssi_dbm);
+        web_json_literal(writer, ",\"wifi_rssi_dbm\":");
+        web_json_format(writer, "%d", (int)player->wifi_rssi_dbm);
     }
-    writer_literal(writer, ",\"error\":");
-    writer_string(writer, player->error);
-    writer_literal(writer, "}");
+    web_json_literal(writer, ",\"error\":");
+    web_json_string(writer, player->error);
+    web_json_literal(writer, "}");
 
     secure_zero(artist, sizeof(artist));
     secure_zero(title, sizeof(title));
 }
 
-static void write_list(json_writer_t *writer, const player_snapshot_t *player,
+static void write_active_index(web_json_writer_t *writer,
+                               const player_snapshot_t *player)
+{
+    if (player->active_item_index == PLAYER_ITEM_NONE ||
+        player->active_item_index >= player->item_count) {
+        web_json_literal(writer, "null");
+    } else {
+        web_json_format(writer, "%u", (unsigned)player->active_item_index);
+    }
+}
+
+/* The USB listing is a header only: the entries themselves go over REST.
+ * A directory may hold up to USB_STORAGE_MAX_ENTRIES names of up to
+ * USB_BROWSER_NAME_MAX_LEN bytes each, which is far past the
+ * WEB_PROTOCOL_EVENT_MAX frame this serializer writes into, and growing that
+ * static buffer is the wrong trade in a firmware already short of internal
+ * SRAM. The revision is what tells the browser to re-fetch: opening a sibling
+ * directory can leave the path length, the count and the active index looking
+ * identical. */
+static void write_usb_list(web_json_writer_t *writer, const player_snapshot_t *player)
+{
+    web_json_literal(writer, "\"list\":{\"kind\":\"files\",\"active_index\":");
+    write_active_index(writer, player);
+    web_json_literal(writer, ",\"path\":");
+    web_json_string(writer, player->context);
+    web_json_literal(writer, ",\"revision\":");
+    web_json_format(writer, "%u", player->usb_listing_revision);
+    web_json_literal(writer, ",\"count\":");
+    web_json_format(writer, "%u", (unsigned)player->item_count);
+    web_json_literal(writer, ",\"has_parent\":");
+    web_json_literal(writer,
+                   usb_browser_path_is_root(player->context) ? "false" : "true");
+    web_json_literal(writer, "}");
+}
+
+static void write_list(web_json_writer_t *writer, const player_snapshot_t *player,
                        web_socket_station_label_fn station_label,
                        void *station_context)
 {
-    writer_literal(writer, "\"list\":{\"kind\":\"stations\",\"active_index\":");
-    if (player->active_item_index == PLAYER_ITEM_NONE ||
-        player->active_item_index >= player->item_count) {
-        writer_literal(writer, "null");
-    } else {
-        writer_format(writer, "%u", (unsigned)player->active_item_index);
+    if (player->active_source == AUDIO_SOURCE_USB) {
+        write_usb_list(writer, player);
+        return;
     }
-    writer_literal(writer, ",\"items\":[");
-    for (size_t index = 0U; index < player->item_count && writer->valid;
+    web_json_literal(writer, "\"list\":{\"kind\":\"stations\",\"active_index\":");
+    write_active_index(writer, player);
+    web_json_literal(writer, ",\"items\":[");
+    for (size_t index = 0U; index < player->item_count && web_json_valid(writer);
          ++index) {
         if (index > 0U) {
-            writer_literal(writer, ",");
+            web_json_literal(writer, ",");
         }
-        writer_literal(writer, "{\"index\":");
-        writer_format(writer, "%u", (unsigned)index);
-        writer_literal(writer, ",\"label\":");
-        writer_string_bounded(writer, station_label == NULL ? "" :
+        web_json_literal(writer, "{\"index\":");
+        web_json_format(writer, "%u", (unsigned)index);
+        web_json_literal(writer, ",\"label\":");
+        web_json_string_bounded(writer, station_label == NULL ? "" :
                                               station_label(index,
                                                             station_context),
                               48U);
-        writer_literal(writer, "}");
+        web_json_literal(writer, "}");
     }
-    writer_literal(writer, "]}");
+    web_json_literal(writer, "]}");
 }
 
-static void write_wifi(json_writer_t *writer,
+static void write_wifi(web_json_writer_t *writer,
                        const web_socket_wifi_state_t *wifi)
 {
-    writer_literal(writer, "\"wifi\":{\"mode\":");
-    writer_string(writer, wifi_mode_name(wifi->mode));
-    writer_literal(writer, ",\"active_ssid\":");
-    writer_string(writer, wifi->active_ssid);
-    writer_literal(writer, ",\"ip\":");
-    writer_string(writer, wifi->ipv4);
-    writer_literal(writer, ",\"save_pending\":");
-    writer_literal(writer, wifi->save_pending ? "true" : "false");
-    writer_literal(writer, ",\"last_error\":");
-    writer_format(writer, "%ld", (long)wifi->last_error);
-    writer_literal(writer, ",\"saved_ssids\":[");
+    web_json_literal(writer, "\"wifi\":{\"mode\":");
+    web_json_string(writer, wifi_mode_name(wifi->mode));
+    web_json_literal(writer, ",\"active_ssid\":");
+    web_json_string(writer, wifi->active_ssid);
+    web_json_literal(writer, ",\"ip\":");
+    web_json_string(writer, wifi->ipv4);
+    web_json_literal(writer, ",\"save_pending\":");
+    web_json_literal(writer, wifi->save_pending ? "true" : "false");
+    web_json_literal(writer, ",\"last_error\":");
+    web_json_format(writer, "%ld", (long)wifi->last_error);
+    web_json_literal(writer, ",\"saved_ssids\":[");
     const uint8_t count = wifi->saved_count <= WIFI_SETTINGS_MAX_NETWORKS
                               ? wifi->saved_count
                               : WIFI_SETTINGS_MAX_NETWORKS;
     for (uint8_t index = 0U; index < count; ++index) {
         if (index > 0U) {
-            writer_literal(writer, ",");
+            web_json_literal(writer, ",");
         }
-        writer_string(writer, wifi->saved_ssids[index]);
+        web_json_string(writer, wifi->saved_ssids[index]);
     }
-    writer_literal(writer, "]}");
+    web_json_literal(writer, "]}");
 }
 
 static const char *event_type(web_socket_event_kind_t kind)
@@ -378,55 +261,55 @@ int web_socket_serialize_event(char *output, size_t output_size,
                                web_socket_station_label_fn station_label,
                                void *station_context)
 {
-    json_writer_t writer;
-    writer_init(&writer, output, output_size);
+    web_json_writer_t writer;
+    web_json_init(&writer, output, output_size, WEB_PROTOCOL_EVENT_MAX);
     const char *type = event_type(kind);
     if (type == NULL || player == NULL || wifi == NULL) {
-        writer.valid = false;
+        web_json_invalidate(&writer);
         return writer_finish(&writer);
     }
 
-    writer_literal(&writer, "{\"type\":");
-    writer_string(&writer, type);
-    writer_literal(&writer, ",\"revision\":");
-    writer_format(&writer, "%u", (unsigned)revision);
+    web_json_literal(&writer, "{\"type\":");
+    web_json_string(&writer, type);
+    web_json_literal(&writer, ",\"revision\":");
+    web_json_format(&writer, "%u", (unsigned)revision);
 
     switch (kind) {
     case WEB_SOCKET_EVENT_SNAPSHOT:
-        writer_literal(&writer, ",");
+        web_json_literal(&writer, ",");
         write_capabilities(&writer, player);
-        writer_literal(&writer, ",\"active_source\":");
-        writer_string(&writer, web_view_source_name(player->active_source));
-        writer_literal(&writer, ",");
+        web_json_literal(&writer, ",\"active_source\":");
+        web_json_string(&writer, web_view_source_name(player->active_source));
+        web_json_literal(&writer, ",");
         write_player(&writer, player);
-        writer_literal(&writer, ",");
+        web_json_literal(&writer, ",");
         write_list(&writer, player, station_label, station_context);
-        writer_literal(&writer, ",");
+        web_json_literal(&writer, ",");
         write_wifi(&writer, wifi);
         break;
     case WEB_SOCKET_EVENT_CAPABILITIES_UPDATE:
-        writer_literal(&writer, ",");
+        web_json_literal(&writer, ",");
         write_capabilities(&writer, player);
         break;
     case WEB_SOCKET_EVENT_PLAYER_UPDATE:
-        writer_literal(&writer, ",\"active_source\":");
-        writer_string(&writer, web_view_source_name(player->active_source));
-        writer_literal(&writer, ",");
+        web_json_literal(&writer, ",\"active_source\":");
+        web_json_string(&writer, web_view_source_name(player->active_source));
+        web_json_literal(&writer, ",");
         write_player(&writer, player);
         break;
     case WEB_SOCKET_EVENT_LIST_UPDATE:
-        writer_literal(&writer, ",");
+        web_json_literal(&writer, ",");
         write_list(&writer, player, station_label, station_context);
         break;
     case WEB_SOCKET_EVENT_WIFI_UPDATE:
-        writer_literal(&writer, ",");
+        web_json_literal(&writer, ",");
         write_wifi(&writer, wifi);
         break;
     default:
-        writer.valid = false;
+        web_json_invalidate(&writer);
         break;
     }
-    writer_literal(&writer, "}");
+    web_json_literal(&writer, "}");
     return writer_finish(&writer);
 }
 

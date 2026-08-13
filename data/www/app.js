@@ -50,8 +50,16 @@
       sample_rate_hz: 0,
       error: '',
     },
-    list: {kind: '', active_index: null, items: []},
+    list: {kind: '', active_index: null, items: [], path: '', revision: null, has_parent: false},
   };
+
+  // The USB listing does not travel over the socket: a directory of long
+  // names dwarfs the frame budget, so the socket carries only a revision and
+  // the entries come from GET /api/usb. Tracked here so a reply for a
+  // directory the user has already left can be discarded - opening two folders
+  // quickly is enough to make the replies arrive out of order.
+  let usbFetchRevision = null;
+  let usbShownRevision = null;
 
   let socket = null;
   let reconnectTimer = null;
@@ -195,21 +203,94 @@
   }
 
   function listSignature(items) {
-    return items.map((item) => `${item.index}\u0000${item.label}`).join('\u0001');
+    return items
+      .map((item) => `${item.index}\u0000${item.label}\u0000${item.isDirectory ? 'd' : 'f'}`)
+      .join('\u0001');
   }
 
   function normalizeList(value) {
-    if (!isObject(value) || !Array.isArray(value.items)) return null;
+    if (!isObject(value)) return null;
+    const active_index = value.active_index === null || Number.isSafeInteger(value.active_index)
+      ? value.active_index
+      : null;
+    const kind = safeString(value.kind);
+    if (kind === 'files') {
+      // A file listing arrives as a header only; the entries are fetched
+      // separately, so the ones already on screen are kept until they do.
+      return {
+        kind,
+        active_index,
+        items: state.list.kind === 'files' ? state.list.items : [],
+        path: safeString(value.path),
+        revision: Number.isSafeInteger(value.revision) ? value.revision : null,
+        has_parent: value.has_parent === true,
+      };
+    }
+    if (!Array.isArray(value.items)) return null;
     const items = value.items
       .filter((item) => isObject(item) && Number.isSafeInteger(item.index) && typeof item.label === 'string')
       .map((item) => ({index: item.index, label: item.label}));
-    return {
-      kind: safeString(value.kind),
-      active_index: value.active_index === null || Number.isSafeInteger(value.active_index)
-        ? value.active_index
-        : null,
-      items,
-    };
+    return {kind, active_index, items, path: '', revision: null, has_parent: false};
+  }
+
+  function usbEntryLabel(entry) {
+    if (entry.kind === 'dir') return `${entry.name}/`;
+    return entry.format ? `${entry.name} · ${entry.format}` : entry.name;
+  }
+
+  function normalizeUsbEntries(payload) {
+    if (!isObject(payload) || !Array.isArray(payload.items)) return null;
+    return payload.items
+      .filter((item) => isObject(item) && Number.isSafeInteger(item.index) && typeof item.name === 'string')
+      .map((item) => ({
+        index: item.index,
+        label: usbEntryLabel(item),
+        isDirectory: item.kind === 'dir',
+      }));
+  }
+
+  async function loadUsbListing(revision) {
+    // Guard against the same revision being fetched twice: player updates
+    // arrive far more often than the listing changes.
+    if (usbFetchRevision === revision || usbShownRevision === revision) return;
+    usbFetchRevision = revision;
+    try {
+      const response = await fetch('/api/usb', {cache: 'no-store'});
+      if (!response.ok) throw new Error(`status ${response.status}`);
+      const payload = await response.json();
+      const entries = normalizeUsbEntries(payload);
+      if (!entries) throw new Error('unexpected payload');
+      // The device may have moved on while this was in flight. Trust the
+      // revision the response carries, not the one that triggered the fetch.
+      if (state.list.kind !== 'files') return;
+      if (usbShownRevision !== null && Number.isSafeInteger(payload.revision) &&
+          payload.revision < usbShownRevision) {
+        return;
+      }
+      const previousList = state.list;
+      state.list = {
+        ...state.list,
+        items: entries,
+        path: safeString(payload.path, state.list.path),
+        has_parent: payload.has_parent === true,
+      };
+      usbShownRevision = Number.isSafeInteger(payload.revision) ? payload.revision : revision;
+      renderList(previousList);
+    } catch (error) {
+      commandStatus.textContent = 'Не удалось прочитать флешку';
+      commandStatus.classList.add('is-error');
+    } finally {
+      if (usbFetchRevision === revision) usbFetchRevision = null;
+    }
+  }
+
+  function syncUsbListing() {
+    if (state.list.kind !== 'files') {
+      usbShownRevision = null;
+      return;
+    }
+    if (state.list.revision === null) return;
+    if (state.list.revision !== usbShownRevision) loadUsbListing(state.list.revision);
   }
 
   function focusedListIndex() {
@@ -219,10 +300,31 @@
     return Number.isSafeInteger(value) ? value : null;
   }
 
+  function buildParentRow() {
+    const row = document.createElement('li');
+    const button = document.createElement('button');
+    const label = document.createElement('span');
+
+    button.type = 'button';
+    button.className = 'list-item';
+    button.classList.add('is-directory');
+    button.dataset.command = 'browse.up';
+    label.className = 'list-item-label';
+    label.textContent = '.. (наверх)';
+    button.append(label);
+    button.addEventListener('click', () => {
+      sendCommand('browse.up');
+    });
+    button.disabled = !state.connected;
+    row.append(button);
+    return row;
+  }
+
   function rebuildListIfNeeded(previousList) {
     const previousSignature = listSignature(previousList.items);
     const nextSignature = listSignature(state.list.items);
-    if (previousSignature === nextSignature) return;
+    const parentChanged = Boolean(previousList.has_parent) !== Boolean(state.list.has_parent);
+    if (previousSignature === nextSignature && !parentChanged) return;
 
     const scrollTop = listItems.scrollTop;
     const focusIndex = focusedListIndex();
@@ -234,12 +336,16 @@
 
       button.type = 'button';
       button.className = 'list-item';
+      // Modifier through classList, matching how is-active is applied below.
+      button.classList.toggle('is-directory', Boolean(item.isDirectory));
       button.dataset.command = 'list.select';
       button.dataset.index = String(item.index);
       label.className = 'list-item-label';
       label.textContent = item.label || 'Без названия';
       marker.className = 'active-marker';
-      marker.textContent = 'Играет';
+      // A directory is opened, never played, so the playing marker would be
+      // meaningless on one.
+      marker.textContent = item.isDirectory ? 'Открыть' : 'Играет';
       marker.setAttribute('aria-hidden', 'true');
       button.append(label, marker);
       button.addEventListener('click', () => {
@@ -249,6 +355,10 @@
       return row;
     });
 
+    // The parent row belongs to the listing rather than to any entry, so it is
+    // prepended here instead of being carried in the items array - that keeps
+    // every item index equal to the device's own index.
+    if (state.list.has_parent) entries.unshift(buildParentRow());
     listItems.replaceChildren(...entries);
     listItems.scrollTop = scrollTop;
     if (focusIndex !== null) {
@@ -268,14 +378,23 @@
     mediaList.hidden = !applicable;
     if (!applicable) return;
 
-    listTitle.textContent = label.title;
+    // The current directory is the useful heading for a file listing: "Файлы"
+    // alone leaves the user with no idea where they are.
+    listTitle.textContent = kind === 'files' && state.list.path
+      ? state.list.path
+      : label.title;
     listItems.setAttribute('aria-label', label.aria);
     rebuildListIfNeeded(previousList);
     listCount.textContent = String(state.list.items.length);
-    listEmpty.hidden = state.list.items.length !== 0;
-    listItems.hidden = state.list.items.length === 0;
+    // A subdirectory with no playable files still offers the way back, so the
+    // list is only truly empty when there is nothing to click at all.
+    const rowCount = state.list.items.length + (state.list.has_parent ? 1 : 0);
+    listEmpty.hidden = rowCount !== 0;
+    listItems.hidden = rowCount === 0;
 
-    listItems.querySelectorAll('button[data-index]').forEach((button) => {
+    listItems.querySelectorAll('button').forEach((button) => {
+      button.disabled = !state.connected;
+      if (button.dataset.index === undefined) return;
       const active = Number(button.dataset.index) === state.list.active_index;
       button.classList.toggle('is-active', active);
       if (active) {
@@ -283,8 +402,11 @@
       } else {
         button.removeAttribute('aria-current');
       }
-      button.disabled = !state.connected;
     });
+
+    // Every path that changes the list ends here, so this is the single place
+    // the REST fetch needs to be triggered from.
+    syncUsbListing();
   }
 
   function applySnapshot(message) {

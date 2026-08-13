@@ -708,6 +708,14 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
         parsed->player.kind = PLAYER_COMMAND_SELECT_SOURCE;
         return true;
     }
+    if (strcmp(action, "browse.up") == 0) {
+        // No index: "up" is relative to whatever directory the shared listing
+        // is on, which is the same one the device screen shows.
+        if (fields != COMMON_FIELDS) return false;
+        parsed->player.kind = PLAYER_COMMAND_BROWSE_UP;
+        parsed->player.source = AUDIO_SOURCE_USB;
+        return true;
+    }
     if (strcmp(action, "list.select") == 0) {
         if (fields != (COMMON_FIELDS | FIELD_INDEX)) return false;
         const cJSON *index = object_item(root, "index");

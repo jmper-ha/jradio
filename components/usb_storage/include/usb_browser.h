@@ -16,6 +16,15 @@ extern "C" {
 #define USB_BROWSER_NAME_MAX_LEN 256
 #define USB_BROWSER_PATH_MAX_LEN 1024
 
+/* Why three states rather than a bool: "no drive" and "a drive that will not
+ * read" need different words on screen, and telling a user to insert a stick
+ * that is already inserted is worse than saying nothing. */
+typedef enum {
+    USB_BROWSER_MEDIA_ABSENT = 0,
+    USB_BROWSER_MEDIA_READY,
+    USB_BROWSER_MEDIA_UNREADABLE,
+} usb_browser_media_t;
+
 typedef enum {
     USB_BROWSER_ENTRY_DIRECTORY = 0,
     USB_BROWSER_ENTRY_FILE,

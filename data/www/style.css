@@ -503,6 +503,18 @@ button:disabled {
   display: inline;
 }
 
+/* A directory is opened rather than played, so it reads differently from a
+   track and shows its marker on hover instead of when active. */
+.list-item.is-directory .list-item-label {
+  font-weight: 700;
+  color: var(--accent-dark);
+}
+
+.list-item.is-directory:hover .active-marker,
+.list-item.is-directory:focus-visible .active-marker {
+  display: inline;
+}
+
 .empty-state {
   margin: 2rem 0;
   color: var(--muted);

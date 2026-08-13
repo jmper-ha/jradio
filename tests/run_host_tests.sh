@@ -89,6 +89,8 @@ cd "${project_dir}"
 grep -qx 'CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192' sdkconfig.defaults
 grep -Fq 'lv_display_set_buffers(s_display, buffer1, NULL,' components/ui/ui.c
 run_test audio_source tests/test_audio_source.c components/audio/audio_source_manager.c
+run_test board_audio_health tests/test_board_audio_health.c \
+    components/board/board_audio_health.c
 run_test board_audio_startup tests/test_board_audio_startup.c \
     components/board/board_audio_startup.c
 run_test board_config tests/test_board_config.c
@@ -115,6 +117,7 @@ run_test ui_player_state tests/test_ui_player_state.c components/ui/ui_player_st
 run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c \
     components/internet_radio/radio_stream_format.c
 run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c
+run_test ui_usb_notice tests/test_ui_usb_notice.c components/ui/ui_usb_notice.c
 run_test usb_browser tests/test_usb_browser.c components/usb_storage/usb_browser.c
 run_test usb_wav tests/test_usb_wav.c components/usb_player/usb_wav.c
 run_test wifi_provisioning tests/test_wifi_provisioning.c \
@@ -122,8 +125,10 @@ run_test wifi_provisioning tests/test_wifi_provisioning.c \
 run_test wifi_settings tests/test_wifi_settings.c components/settings/wifi_settings.c
 run_test web_server -I"${cjson_include}" tests/test_web_server.c \
     components/web_server/web_server.c components/web_server/web_socket.c \
-    components/web_server/web_view_model.c components/settings/wifi_settings.c \
-    "${cjson_source}"
+    components/web_server/web_view_model.c components/web_server/web_json.c \
+    components/settings/wifi_settings.c \
+    components/usb_storage/usb_browser.c "${cjson_source}"
+run_test web_json tests/test_web_json.c components/web_server/web_json.c
 run_test web_protocol -I"${cjson_include}" tests/test_web_protocol.c \
     components/web_server/web_protocol.c "${cjson_source}"
 run_test web_view_model tests/test_web_view_model.c \
@@ -136,5 +141,6 @@ fi
 node tests/test_web_player.js
 node tests/test_web_settings.js
 node tests/test_web_playlist.js
+node tests/test_web_usb.js
 
 printf 'All host tests passed.\n'

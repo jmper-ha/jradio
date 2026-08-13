@@ -16,6 +16,7 @@
 #include "freertos/task.h"
 
 #include "board.h"
+#include "board_audio_health.h"
 #include "board_audio_startup.h"
 #include "board_config.h"
 #include "board_input.h"
@@ -30,6 +31,7 @@
 #define BOARD_I2S_BYTES_PER_FRAME \
     (BOARD_AUDIO_CHANNEL_COUNT * (BOARD_AUDIO_BITS_PER_SAMPLE / 8U))
 #define BOARD_I2S_DMA_BUFFER_BYTES (BOARD_I2S_DMA_FRAME_NUM * BOARD_I2S_BYTES_PER_FRAME)
+#define BOARD_AUDIO_HEALTH_REPORT_MS 10000U
 
 static const char *TAG = "board";
 static uint16_t s_draw_buffer[BOARD_TFT_WIDTH * BOARD_LCD_DRAW_LINES];
@@ -40,6 +42,17 @@ static i2s_chan_handle_t s_i2s_tx;
 static SemaphoreHandle_t s_audio_mutex;
 static bool s_audio_enabled;
 static const uint8_t s_i2s_silence[BOARD_I2S_DMA_BUFFER_BYTES];
+/* Output accounting lives here rather than in each player because this is the
+ * one point both the radio and the USB player pass through, and because a
+ * silent-but-running fault has to be told apart from a stalled one without
+ * either player noticing anything is wrong. Guarded by s_audio_mutex. */
+static board_audio_health_t s_audio_health;
+static TickType_t s_audio_health_started;
+static unsigned int s_audio_health_underruns;
+static bool s_audio_gap_reported;
+static bool s_audio_mute_reported;
+static uint32_t s_audio_zero_carry;
+static uint32_t s_audio_sample_rate = BOARD_AUDIO_DEFAULT_SAMPLE_RATE;
 
 typedef struct {
     TaskHandle_t caller;
@@ -139,6 +152,21 @@ static IRAM_ATTR bool board_audio_on_send_q_ovf(i2s_chan_handle_t handle,
 unsigned int board_audio_underrun_count(void)
 {
     return atomic_load_explicit(&s_audio_underruns, memory_order_relaxed);
+}
+
+/* Call under s_audio_mutex whenever output is (re)started. A window that
+ * straddles a stopped period measures real time against bytes that were never
+ * meant to flow, and reads as a fault that is not there. */
+static void board_audio_health_rearm(void)
+{
+    board_audio_health_reset(&s_audio_health);
+    s_audio_health_started = xTaskGetTickCount();
+    s_audio_health_underruns = board_audio_underrun_count();
+    s_audio_gap_reported = false;
+    s_audio_mute_reported = false;
+    /* Not the zero-run carry: a run in flight belongs to the audio, not to the
+     * reporting window, and resetting it here would hide exactly the run that
+     * straddles a window boundary. */
 }
 
 static esp_err_t board_audio_init(void)
@@ -247,11 +275,83 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
         return ESP_ERR_TIMEOUT;
     }
     esp_err_t result = ESP_ERR_INVALID_STATE;
+    board_audio_health_t window = {0};
+    uint32_t window_ms = 0U;
+    unsigned int window_underruns = 0U;
+    uint32_t window_rate = 0U;
+    unsigned int gap_count = 0U;
+    uint32_t mute_run = 0U;
+    bool report = false;
+    bool mark_gap = false;
+    bool mark_silence = false;
+    bool mark_mute = false;
     if (s_audio_enabled) {
         result = i2s_channel_write(s_i2s_tx, pcm, pcm_length, written,
                                    pdMS_TO_TICKS(timeout_ms));
+        if (result == ESP_OK) {
+            board_audio_health_add(&s_audio_health, *written, pcm_length,
+                                   pcm_s16le_peak(pcm, *written));
+            const uint32_t zero_run =
+                pcm_s16le_zero_frame_run(pcm, *written, &s_audio_zero_carry);
+            board_audio_health_note_zero_run(&s_audio_health, zero_run);
+            if (!s_audio_mute_reported && zero_run >= BOARD_AUDIO_ZERO_DETECT_FRAMES) {
+                s_audio_mute_reported = true;
+                mute_run = zero_run;
+                mark_mute = true;
+            }
+            /* The 10 s window only says a fault happened somewhere inside it,
+             * which is too coarse to line up against what the listener heard.
+             * These pin the moment instead. Only the first occurrence of each
+             * kind per window is marked, so a long silence cannot flood the
+             * UART and stall the pipeline it is measuring. */
+            mark_silence = s_audio_health.silent_writes == 1U;
+            if (!s_audio_gap_reported &&
+                board_audio_underrun_count() != s_audio_health_underruns) {
+                gap_count = board_audio_underrun_count() - s_audio_health_underruns;
+                s_audio_gap_reported = true;
+                mark_gap = true;
+            }
+            const TickType_t now = xTaskGetTickCount();
+            const uint32_t elapsed =
+                (uint32_t)(now - s_audio_health_started) * portTICK_PERIOD_MS;
+            if (elapsed >= BOARD_AUDIO_HEALTH_REPORT_MS) {
+                window = s_audio_health;
+                window_ms = elapsed;
+                window_rate = s_audio_sample_rate;
+                const unsigned int underruns = board_audio_underrun_count();
+                window_underruns = underruns - s_audio_health_underruns;
+                board_audio_health_rearm();
+                report = true;
+            }
+        }
     }
     xSemaphoreGive(s_audio_mutex);
+    /* Logged outside the lock: ESP_LOG writes to the UART at 115200 baud, and
+     * this line is long enough that holding the audio mutex across it would
+     * stall the very pipeline being measured. */
+    if (mark_gap) {
+        ESP_LOGW(TAG, "audio gap: the DMA ran dry (%u buffer%s)", gap_count,
+                 gap_count == 1U ? "" : "s");
+    }
+    if (mark_silence) {
+        ESP_LOGW(TAG, "audio silence: an all-zero block reached the DAC");
+    }
+    if (mark_mute) {
+        ESP_LOGW(TAG,
+                 "audio zero-run: %u consecutive zero frames - past the PCM5102 "
+                 "zero-data detect at %u, so the DAC has muted its analog output",
+                 (unsigned int)mute_run, (unsigned int)BOARD_AUDIO_ZERO_DETECT_FRAMES);
+    }
+    if (report) {
+        ESP_LOGI(TAG,
+                 "audio health: realtime=%u%% peak=%u silent=%u zero_run=%u underruns=%u "
+                 "writes=%u short=%u bytes=%u rate=%u",
+                 board_audio_health_realtime_percent(window.bytes, window_rate, window_ms),
+                 (unsigned int)window.peak, window.silent_writes,
+                 (unsigned int)window.max_zero_run, window_underruns,
+                 window.writes, window.short_writes, (unsigned int)window.bytes,
+                 (unsigned int)window_rate);
+    }
     return result;
 }
 
@@ -274,6 +374,7 @@ esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloade
         }
         if (result == ESP_OK) {
             s_audio_enabled = true;
+            board_audio_health_rearm();
             result = i2s_channel_write(s_i2s_tx, pcm, pcm_length, preloaded,
                                        pdMS_TO_TICKS(1000));
         }
@@ -312,6 +413,9 @@ esp_err_t board_audio_set_enabled(bool enabled)
         }
         if (result == ESP_OK) {
             s_audio_enabled = enabled;
+            if (enabled) {
+                board_audio_health_rearm();
+            }
             ESP_LOGI(TAG, "PCM5102 I2S output %s", enabled ? "enabled" : "disabled");
         }
     }
@@ -337,6 +441,12 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
     }
     if (result == ESP_OK) {
         result = i2s_channel_reconfig_std_clock(s_i2s_tx, &clock_config);
+    }
+    if (result == ESP_OK) {
+        // The health window measures bytes against real time, so it is only
+        // meaningful against the rate those bytes are actually clocked at.
+        s_audio_sample_rate = sample_rate;
+        board_audio_health_rearm();
     }
     if (result == ESP_OK && was_enabled) {
         result = i2s_channel_enable(s_i2s_tx);

@@ -31,7 +31,13 @@ static msc_host_vfs_handle_t s_vfs;
 static usb_browser_entry_t *s_entries;
 static usb_browser_dir_t s_listing;
 static SemaphoreHandle_t s_listing_lock;
-static volatile bool s_mounted;
+static volatile usb_browser_media_t s_media = USB_BROWSER_MEDIA_ABSENT;
+
+// How long to wait for a drive to announce itself before assuming it is a
+// stale one left plugged in across a reset, and how many times to try.
+#define USB_STORAGE_RECOVERY_DELAY_MS 3000U
+#define USB_STORAGE_RECOVERY_SETTLE_MS 200U
+#define USB_STORAGE_RECOVERY_ATTEMPTS 3U
 
 static bool listing_lock(void)
 {
@@ -73,7 +79,9 @@ static usb_browser_entry_kind_t entry_kind(const char *path, const struct dirent
 esp_err_t usb_storage_read_directory(const char *path)
 {
     if (path == NULL || s_entries == NULL) return ESP_ERR_INVALID_ARG;
-    if (!s_mounted) return ESP_ERR_INVALID_STATE;
+    // READY only: the first read after a mount runs while the state is still
+    // being decided, so this deliberately accepts anything but "no drive".
+    if (s_media == USB_BROWSER_MEDIA_ABSENT) return ESP_ERR_INVALID_STATE;
     DIR *dir = opendir(path);
     if (dir == NULL) {
         ESP_LOGE(TAG, "cannot open %s", path);
@@ -105,7 +113,12 @@ esp_err_t usb_storage_read_directory(const char *path)
 
 bool usb_storage_is_mounted(void)
 {
-    return s_mounted;
+    return s_media == USB_BROWSER_MEDIA_READY;
+}
+
+usb_browser_media_t usb_storage_media(void)
+{
+    return s_media;
 }
 
 size_t usb_storage_entry_count(void)
@@ -181,6 +194,35 @@ static void usb_lib_task(void *arg)
     }
 }
 
+/* A drive left plugged in across an ESP32 reset never sees a power cycle: its
+ * VBUS comes from a separate supply, so it keeps the address the previous
+ * firmware gave it and ignores anything addressed to 0, which is where a fresh
+ * host starts. Nothing announces this - the drive simply never appears.
+ *
+ * Toggling the root port's power fixes it without switching VBUS at all. The
+ * call only clears and sets the PRTPWR bit of the DWC OTG host port register,
+ * and on re-power a device still holding its D+ pull-up raises a connection
+ * event, to which the hub driver answers with a real bus reset on D+/D-. That
+ * reset returns the drive to the Default state at address 0, and enumeration
+ * starts over. */
+static esp_err_t usb_storage_recover_port(void)
+{
+    esp_err_t err = usb_host_lib_set_root_port_power(false);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "root port power off failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    // Powering off raises a disconnect that the host event task has to consume
+    // first: hcd_port_command() refuses to act while a port event is pending,
+    // so powering back on without this gap fails with ESP_ERR_INVALID_STATE.
+    vTaskDelay(pdMS_TO_TICKS(USB_STORAGE_RECOVERY_SETTLE_MS));
+    err = usb_host_lib_set_root_port_power(true);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "root port power on failed: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
 static void usb_app_task(void *arg)
 {
     (void)arg;
@@ -199,9 +241,25 @@ static void usb_app_task(void *arg)
         return;
     }
     ESP_LOGI(TAG, "USB Host ready; waiting for a FAT USB flash drive");
+    unsigned int recovery_attempts = 0U;
+    TickType_t wait = pdMS_TO_TICKS(USB_STORAGE_RECOVERY_DELAY_MS);
     for (;;) {
         usb_msg_t msg;
-        if (xQueueReceive(s_queue, &msg, portMAX_DELAY) != pdTRUE) {
+        if (xQueueReceive(s_queue, &msg, wait) != pdTRUE) {
+            // Silence here is ambiguous: either no drive is plugged in, or one
+            // is plugged in and stuck from before the reset. Re-enumerating
+            // costs nothing in the first case and is the only cure in the
+            // second, so try it a few times and then stop waking up.
+            if (s_device == NULL && recovery_attempts < USB_STORAGE_RECOVERY_ATTEMPTS) {
+                ++recovery_attempts;
+                ESP_LOGI(TAG, "no drive yet; re-enumerating the root port (%u/%u)",
+                         recovery_attempts, (unsigned int)USB_STORAGE_RECOVERY_ATTEMPTS);
+                (void)usb_storage_recover_port();
+            } else {
+                // A drive inserted later announces itself through the callback,
+                // so from here on there is nothing to poll for.
+                wait = portMAX_DELAY;
+            }
             continue;
         }
         if (msg.id == USB_MSG_CONNECT && s_device == NULL) {
@@ -212,15 +270,28 @@ static void usb_app_task(void *arg)
             }
             if (err == ESP_OK) {
                 ESP_LOGI(TAG, "USB storage mounted at %s", USB_BROWSER_ROOT_PATH);
-                s_mounted = true;
-                if (usb_storage_read_directory(USB_BROWSER_ROOT_PATH) == ESP_OK) log_listing();
+                s_media = USB_BROWSER_MEDIA_READY;
+                // A drive can mount and still fail to read - a damaged FAT, or
+                // a filesystem the build has no code page for. That is not the
+                // same as no drive, so it keeps its own state.
+                if (usb_storage_read_directory(USB_BROWSER_ROOT_PATH) == ESP_OK) {
+                    log_listing();
+                } else {
+                    ESP_LOGE(TAG, "USB root directory is unreadable");
+                    s_media = USB_BROWSER_MEDIA_UNREADABLE;
+                }
             }
-            else { ESP_LOGE(TAG, "USB mount failed: %s", esp_err_to_name(err)); if (s_device) { msc_host_uninstall_device(s_device); s_device = NULL; } }
+            else {
+                ESP_LOGE(TAG, "USB mount failed: %s", esp_err_to_name(err));
+                // The drive is physically there; it simply will not mount.
+                s_media = USB_BROWSER_MEDIA_UNREADABLE;
+                if (s_device) { msc_host_uninstall_device(s_device); s_device = NULL; }
+            }
         } else if (msg.id == USB_MSG_DISCONNECT && msg.handle == s_device) {
             ESP_LOGI(TAG, "USB storage disconnected");
             // Clear the listing before tearing the mount down: it names files
             // that are no longer reachable, and the UI polls it independently.
-            s_mounted = false;
+            s_media = USB_BROWSER_MEDIA_ABSENT;
             if (listing_lock()) {
                 usb_browser_dir_init(&s_listing, s_entries, USB_STORAGE_MAX_ENTRIES,
                                      USB_BROWSER_ROOT_PATH);

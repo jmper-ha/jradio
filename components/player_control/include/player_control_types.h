@@ -7,6 +7,7 @@
 #include "audio_source.h"
 #include "icy_metadata.h"
 #include "internet_radio_state.h"
+#include "usb_browser.h"
 
 #ifndef INTERNET_RADIO_TITLE_MAX_LEN
 #define INTERNET_RADIO_TITLE_MAX_LEN ICY_METADATA_TITLE_MAX_LEN
@@ -63,6 +64,16 @@ typedef struct {
     player_playback_state_t playback_state;
     size_t active_item_index;
     size_t item_count;
+    /* Bumped every time the USB listing is refilled. Opening a directory can
+     * leave both the count and the active index unchanged, so nothing else in
+     * this struct distinguishes one directory from another - and the web needs
+     * that to know when to re-fetch the listing over REST. */
+    unsigned int usb_listing_revision;
+    usb_browser_media_t usb_media;
+    /* Separate from item_count, which describes whatever source is active: in
+     * the menu that is the station catalog, so it says nothing about the
+     * drive. This is what the "drive is empty" notice has to read. */
+    size_t usb_entry_count;
     char context[PLAYER_NAME_MAX_LEN];
     char stream_title[PLAYER_TITLE_MAX_LEN];
     char codec[PLAYER_CODEC_MAX_LEN];

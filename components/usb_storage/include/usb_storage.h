@@ -13,6 +13,11 @@ esp_err_t usb_storage_init(void);
 // snapshot.
 bool usb_storage_is_mounted(void);
 
+// Distinguishes "no drive" from "a drive that failed to mount or read", which
+// the UI needs to say something useful rather than "insert a drive" to someone
+// who already did.
+usb_browser_media_t usb_storage_media(void);
+
 // Reads `path` into the single shared listing. The listing is refilled in
 // place, so a read invalidates whatever the previous one held.
 esp_err_t usb_storage_read_directory(const char *path);

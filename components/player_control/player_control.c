@@ -298,6 +298,9 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
 
     memset(snapshot, 0, sizeof(*snapshot));
     snapshot->capabilities = PLAYER_CAP_INTERNET_RADIO;
+    snapshot->usb_media = usb_storage_media();
+    snapshot->usb_listing_revision = player_control_usb_listing_revision();
+    snapshot->usb_entry_count = usb_storage_entry_count();
     if (usb_storage_is_mounted()) {
         snapshot->capabilities |= PLAYER_CAP_USB;
     }

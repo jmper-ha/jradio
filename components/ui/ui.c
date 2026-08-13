@@ -21,6 +21,7 @@
 #include "ui_player_state.h"
 #include "ui_radio_text.h"
 #include "ui_station_list.h"
+#include "ui_usb_notice.h"
 
 #define UI_DRAW_BUFFER_LINES 20
 #define UI_DRAW_BUFFER_SIZE ui_rgb565_draw_buffer_size(BOARD_TFT_WIDTH, UI_DRAW_BUFFER_LINES)
@@ -407,13 +408,14 @@ static void ui_show_source(void)
     const audio_source_t selected_source = ui_menu_activate(&s_menu);
     if (selected_source == AUDIO_SOURCE_NONE) return;
     if (selected_source == AUDIO_SOURCE_USB) {
-        // The command would be rejected by the controller anyway, but the UI
-        // switches screens optimistically, so without this check the user gets
-        // an empty browser instead of being told the drive is missing.
+        // The UI switches screens optimistically, so without this check the
+        // user gets an empty browser instead of being told what is wrong -
+        // and "missing" needs different words from "unreadable" or "empty".
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
-        if ((snapshot.capabilities & PLAYER_CAP_USB) == 0U) {
-            ui_set_label_text_if_changed(s_menu_footer, "Вставьте USB-флешку");
+        const char *notice = ui_usb_notice(snapshot.usb_media, snapshot.usb_entry_count);
+        if (notice != NULL) {
+            ui_set_label_text_if_changed(s_menu_footer, notice);
             return;
         }
     }

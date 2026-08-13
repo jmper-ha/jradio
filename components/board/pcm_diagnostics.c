@@ -1,5 +1,7 @@
 #include "pcm_diagnostics.h"
 
+#include <stdbool.h>
+
 uint16_t pcm_s16le_peak(const uint8_t *pcm, size_t length)
 {
     uint16_t peak = 0;
@@ -17,6 +19,33 @@ uint16_t pcm_s16le_peak(const uint8_t *pcm, size_t length)
         }
     }
     return peak;
+}
+
+uint32_t pcm_s16le_zero_frame_run(const uint8_t *pcm, size_t length, uint32_t *carry)
+{
+    if (carry == NULL) {
+        return 0U;
+    }
+    if (pcm == NULL) {
+        return *carry;
+    }
+
+    uint32_t run = *carry;
+    uint32_t longest = *carry;
+    for (size_t offset = 0; offset + 3U < length; offset += 4U) {
+        const bool silent = pcm[offset] == 0U && pcm[offset + 1U] == 0U &&
+                            pcm[offset + 2U] == 0U && pcm[offset + 3U] == 0U;
+        if (silent) {
+            ++run;
+            if (run > longest) {
+                longest = run;
+            }
+        } else {
+            run = 0U;
+        }
+    }
+    *carry = run;
+    return longest;
 }
 
 size_t pcm_s16le_stereo_square_fill(uint8_t *pcm, size_t length, uint32_t sample_rate,

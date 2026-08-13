@@ -236,7 +236,10 @@ uint32_t web_view_snapshot_changes(const player_snapshot_t *previous,
         changes |= WEB_VIEW_SECTION_PLAYER;
     }
     if (previous->active_item_index != current->active_item_index ||
-        previous->item_count != current->item_count) {
+        previous->item_count != current->item_count ||
+        // Opening a sibling directory with the same number of entries changes
+        // neither of the above, yet the list is entirely different.
+        previous->usb_listing_revision != current->usb_listing_revision) {
         changes |= WEB_VIEW_SECTION_LIST;
     }
     return changes;

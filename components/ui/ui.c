@@ -361,9 +361,11 @@ static bool ui_list_row_text(size_t list_index, char *text, size_t text_size, bo
         return false;
     }
     // Directories are marked rather than merely sorted first, so the row tells
-    // you what the encoder click will do before you press it.
+    // you what the encoder click will do before you press it. The glyph comes
+    // from Montserrat through the Cyrillic font's fallback, so it can sit
+    // inline here instead of needing a label of its own.
     if (entry.kind == USB_BROWSER_ENTRY_DIRECTORY) {
-        snprintf(text, text_size, "[%s]", entry.name);
+        snprintf(text, text_size, LV_SYMBOL_DIRECTORY " %s", entry.name);
     } else {
         snprintf(text, text_size, "%s", entry.name);
     }

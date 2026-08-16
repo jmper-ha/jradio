@@ -3730,7 +3730,12 @@ lv_font_t ui_font_cyrillic_14 = {
 #endif
     .dsc = &font_dsc,          /*The custom font data. Will be accessed by `get_glyph_bitmap/dsc` */
 #if LV_VERSION_CHECK(8, 2, 0) || LVGL_VERSION_MAJOR >= 9
-    .fallback = NULL,
+    /* Hand-edited in this generated file: this font covers ASCII and Cyrillic
+     * only, so the LV_SYMBOL_* glyphs (U+F0xx) would draw as empty boxes. The
+     * fallback sends those to Montserrat, which carries them, and lets a
+     * symbol be written inline in ordinary text instead of needing its own
+     * label with its own font. Re-generating this font drops the line. */
+    .fallback = &lv_font_montserrat_14,
 #endif
     .user_data = NULL,
 };

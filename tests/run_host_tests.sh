@@ -89,6 +89,9 @@ run_test() {
 cd "${project_dir}"
 grep -qx 'CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192' sdkconfig.defaults
 grep -Fq 'lv_display_set_buffers(s_display, buffer1, NULL,' components/ui/ui.c
+# settings.csv has two writer tasks; without this call the lock is never
+# created and every write runs unsynchronised again.
+grep -Fq 'settings_csv_init();' main/main.c
 run_test audio_source tests/test_audio_source.c components/audio/audio_source_manager.c
 run_test board_audio_health tests/test_board_audio_health.c \
     components/board/board_audio_health.c

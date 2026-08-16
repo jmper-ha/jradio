@@ -7,6 +7,7 @@
 #include "board_input.h"
 #include "internet_radio.h"
 #include "player_control.h"
+#include "settings_csv.h"
 #include "ui.h"
 #include "usb_player.h"
 #include "usb_storage.h"
@@ -28,6 +29,10 @@ static void input_log_task(void *arg)
 
 void app_main(void)
 {
+    // Before anything that could write settings: the lock it creates has to
+    // exist by the time player_control and ui are running, and app_main is
+    // still the only task at this point.
+    settings_csv_init();
     ESP_ERROR_CHECK(board_init());
     ESP_ERROR_CHECK(wifi_provisioning_init());
     ESP_ERROR_CHECK(wifi_provisioning_start());

@@ -4,7 +4,47 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef ESP_PLATFORM
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#endif
+
 #define SETTINGS_CSV_LINE_MAX 512
+
+#ifdef ESP_PLATFORM
+static const char *TAG = "settings_csv";
+/* Created once from app_main, before the tasks that write settings exist, so
+ * there is no race on the creation itself. */
+static SemaphoreHandle_t s_lock;
+
+static bool settings_csv_lock(void)
+{
+    if (s_lock == NULL) {
+        /* Refuse rather than fall back to an unsynchronised write: silently
+         * running unlocked is exactly the bug this guards against, and it
+         * would only show up as a corrupted file much later. */
+        ESP_LOGE(TAG, "settings_csv_init() was never called");
+        return false;
+    }
+    return xSemaphoreTake(s_lock, portMAX_DELAY) == pdTRUE;
+}
+
+static void settings_csv_unlock(void)
+{
+    if (s_lock != NULL) xSemaphoreGive(s_lock);
+}
+
+void settings_csv_init(void)
+{
+    if (s_lock == NULL) s_lock = xSemaphoreCreateMutex();
+}
+#else
+/* The host tests are single-threaded. */
+static bool settings_csv_lock(void) { return true; }
+static void settings_csv_unlock(void) {}
+void settings_csv_init(void) {}
+#endif
 
 static bool valid_field(const char *text, size_t max_length)
 {
@@ -34,8 +74,12 @@ bool settings_csv_get(const char *path, const char *key, char *value, size_t val
 {
     if (path == NULL || !valid_field(key, SETTINGS_CSV_KEY_MAX_LEN) ||
         value == NULL || value_size == 0) return false;
+    if (!settings_csv_lock()) return false;
     FILE *file = fopen(path, "r");
-    if (file == NULL) return false;
+    if (file == NULL) {
+        settings_csv_unlock();
+        return false;
+    }
     char line[SETTINGS_CSV_LINE_MAX];
     char parsed_key[SETTINGS_CSV_KEY_MAX_LEN + 1];
     char parsed_value[SETTINGS_CSV_VALUE_MAX_LEN + 1];
@@ -45,14 +89,17 @@ bool settings_csv_get(const char *path, const char *key, char *value, size_t val
             const size_t length = strlen(parsed_value);
             if (length >= value_size) {
                 fclose(file);
+                settings_csv_unlock();
                 return false;
             }
             memcpy(value, parsed_value, length + 1);
             fclose(file);
+            settings_csv_unlock();
             return true;
         }
     }
     fclose(file);
+    settings_csv_unlock();
     return false;
 }
 
@@ -63,15 +110,20 @@ bool settings_csv_set(const char *path, const char *key, const char *value)
     char temp_path[SETTINGS_CSV_LINE_MAX];
     const int path_length = snprintf(temp_path, sizeof(temp_path), "%s.tmp", path);
     if (path_length < 0 || (size_t)path_length >= sizeof(temp_path)) return false;
+
+    /* Held across the whole read-modify-write, not just the rename: two
+     * writers that each read the old file would otherwise both write back
+     * their own copy, and whichever renamed last would drop the other's key. */
+    if (!settings_csv_lock()) return false;
+
+    bool ok = false;
+    FILE *input = NULL;
     FILE *output = fopen(temp_path, "w");
-    if (output == NULL) return false;
+    if (output == NULL) goto done;
     errno = 0;
-    FILE *input = fopen(path, "r");
-    if (input == NULL && errno != ENOENT) {
-        fclose(output);
-        remove(temp_path);
-        return false;
-    }
+    input = fopen(path, "r");
+    if (input == NULL && errno != ENOENT) goto done;
+
     bool replaced = false;
     char line[SETTINGS_CSV_LINE_MAX];
     if (input != NULL) {
@@ -79,28 +131,31 @@ bool settings_csv_set(const char *path, const char *key, const char *value)
             char parsed_key[SETTINGS_CSV_KEY_MAX_LEN + 1];
             char parsed_value[SETTINGS_CSV_VALUE_MAX_LEN + 1];
             const bool matches = parse_line(line, parsed_key, sizeof(parsed_key),
-                                           parsed_value, sizeof(parsed_value)) &&
+                                            parsed_value, sizeof(parsed_value)) &&
                                  strcmp(parsed_key, key) == 0;
             if (matches) {
-                if (!replaced && fprintf(output, "%s,%s\n", key, value) < 0) {
-                    fclose(input); fclose(output); remove(temp_path); return false;
-                }
+                if (!replaced && fprintf(output, "%s,%s\n", key, value) < 0) goto done;
                 replaced = true;
             } else if (fputs(line, output) == EOF) {
-                fclose(input); fclose(output); remove(temp_path); return false;
+                goto done;
             }
         }
-        if (ferror(input)) {
-            fclose(input); fclose(output); remove(temp_path); return false;
-        }
+        if (ferror(input)) goto done;
         fclose(input);
+        input = NULL;
     }
-    if (!replaced && fprintf(output, "%s,%s\n", key, value) < 0) {
-        fclose(output); remove(temp_path); return false;
+    if (!replaced && fprintf(output, "%s,%s\n", key, value) < 0) goto done;
+    if (fclose(output) != 0) {
+        output = NULL;
+        goto done;
     }
-    if (fclose(output) != 0 || rename(temp_path, path) != 0) {
-        remove(temp_path);
-        return false;
-    }
-    return true;
+    output = NULL;
+    ok = rename(temp_path, path) == 0;
+
+done:
+    if (input != NULL) fclose(input);
+    if (output != NULL) fclose(output);
+    if (!ok) remove(temp_path);
+    settings_csv_unlock();
+    return ok;
 }

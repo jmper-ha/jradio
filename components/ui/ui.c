@@ -20,6 +20,8 @@
 #include "ui_draw_buffer.h"
 #include "ui_font_cyrillic_14.h"
 #include "ui_menu.h"
+#include "ui_feed_icons.h"
+#include "ui_feed_model.h"
 #include "ui_player_state.h"
 #include "ui_radio_text.h"
 #include "ui_settings_model.h"
@@ -44,6 +46,11 @@ static lv_obj_t *s_menu_screen;
 static lv_obj_t *s_source_screen;
 static lv_obj_t *s_menu_rows[UI_MENU_ITEM_COUNT];
 static lv_obj_t *s_menu_notice;
+static lv_obj_t *s_feed_screen;
+static lv_obj_t *s_feed_title;
+static lv_obj_t *s_feed_notice;
+static lv_obj_t *s_feed_icons[5];
+static ui_feed_model_t s_feed_model;
 static lv_obj_t *s_source_title;
 static lv_obj_t *s_source_status;
 static lv_obj_t *s_source_detail;
@@ -174,6 +181,68 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
 static uint32_t ui_tick_get_ms(void)
 {
     return (uint32_t)(esp_timer_get_time() / 1000);
+}
+
+static const char *ui_feed_item_title(ui_feed_item_t item)
+{
+    return ui_menu_item_label((ui_menu_item_t)item);
+}
+
+static void ui_update_feed_screen(void)
+{
+    const ui_feed_item_t selected = ui_feed_model_selected(&s_feed_model);
+    const int offsets[5] = {-2, -1, 0, 1, 2};
+    const int positions[5] = {22, 80, 132, 200, 252};
+    for (size_t slot = 0; slot < 5U; ++slot) {
+        int index = (int)selected + offsets[slot];
+        while (index < 0) index += UI_FEED_ITEM_COUNT;
+        index %= UI_FEED_ITEM_COUNT;
+        const ui_feed_item_t item = (ui_feed_item_t)index;
+        const bool center = slot == 2U;
+        const bool enabled = ui_feed_model_is_supported(item) || item == UI_FEED_SETTINGS;
+        lv_label_set_text(s_feed_icons[slot], ui_feed_icon_symbol(item));
+        lv_obj_set_pos(s_feed_icons[slot], positions[slot], center ? 91 : 99);
+        lv_obj_set_size(s_feed_icons[slot], center ? 56 : 42, center ? 56 : 42);
+        lv_obj_set_style_text_color(s_feed_icons[slot],
+                                    lv_color_hex(!enabled ? 0x607D8B :
+                                                 center ? 0xFFFFFF : 0x90A4AE), 0);
+        lv_obj_set_style_text_align(s_feed_icons[slot], LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_border_width(s_feed_icons[slot], center ? 2 : 0, 0);
+        lv_obj_set_style_border_color(s_feed_icons[slot], lv_color_hex(0x29B6F6), 0);
+        lv_obj_set_style_border_opa(s_feed_icons[slot], LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(s_feed_icons[slot], 8, 0);
+        lv_obj_set_style_bg_color(s_feed_icons[slot],
+                                  center ? lv_color_hex(0x1769AA) : lv_color_hex(0x101820), 0);
+        lv_obj_set_style_bg_opa(s_feed_icons[slot], center ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    }
+    lv_label_set_text(s_feed_title, ui_feed_item_title(selected));
+}
+
+static void ui_create_feed_screen(void)
+{
+    s_feed_screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(s_feed_screen, lv_color_hex(0x101820), 0);
+    lv_obj_set_style_border_width(s_feed_screen, 0, 0);
+    lv_obj_set_style_pad_all(s_feed_screen, 0, 0);
+    lv_obj_set_style_text_font(s_feed_screen, &ui_font_cyrillic_14, 0);
+    s_feed_title = lv_label_create(s_feed_screen);
+    lv_obj_set_pos(s_feed_title, 10, 12);
+    lv_obj_set_size(s_feed_title, 300, 28);
+    lv_obj_set_style_text_align(s_feed_title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(s_feed_title, lv_color_hex(0xFFFFFF), 0);
+    s_feed_notice = lv_label_create(s_feed_screen);
+    lv_obj_set_pos(s_feed_notice, 8, 218);
+    lv_obj_set_size(s_feed_notice, 304, 18);
+    lv_obj_set_style_text_align(s_feed_notice, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(s_feed_notice, lv_color_hex(0xFFCC80), 0);
+    lv_label_set_text(s_feed_notice, "");
+    for (size_t index = 0; index < 5U; ++index) {
+        s_feed_icons[index] = lv_label_create(s_feed_screen);
+        lv_obj_set_style_text_font(s_feed_icons[index], &lv_font_montserrat_14, 0);
+        lv_obj_set_style_pad_all(s_feed_icons[index], 6, 0);
+    }
+    ui_feed_model_init(&s_feed_model, 0U);
+    ui_update_feed_screen();
 }
 
 static void ui_flush(lv_display_t *display, const lv_area_t *area, uint8_t *pixels)
@@ -647,6 +716,11 @@ static void ui_show_source(void)
 static void ui_load_menu_screen(void)
 {
     s_waiting_for_radio_station = false;
+    if (s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED && s_feed_screen != NULL) {
+        ui_update_feed_screen();
+        lv_screen_load(s_feed_screen);
+        return;
+    }
     ui_update_menu_highlight();
     lv_screen_load(s_menu_screen);
 }
@@ -839,6 +913,32 @@ static void ui_handle_input(board_input_action_t action)
         }
         return;
     }
+    if (s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED &&
+        lv_screen_active() == s_feed_screen) {
+        if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
+            action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
+            ui_feed_model_move(&s_feed_model,
+                               action == BOARD_INPUT_ACTION_ENCODER_RIGHT ? 1 : -1);
+            ui_update_feed_screen();
+        } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
+            const ui_feed_item_t item = ui_feed_model_selected(&s_feed_model);
+            if (item == UI_FEED_SETTINGS) {
+                ui_show_settings();
+            } else {
+                audio_source_t source = AUDIO_SOURCE_NONE;
+                if (!ui_feed_model_activate(item, &source)) {
+                    ui_set_label_text_if_changed(s_feed_notice, "Функция пока недоступна");
+                    return;
+                }
+                ui_set_label_text_if_changed(s_feed_notice, "");
+                (void)ui_menu_select_source(&s_menu, source);
+                ui_show_source();
+            }
+        } else if (action == BOARD_INPUT_ACTION_F2) {
+            ui_show_menu();
+        }
+        return;
+    }
     if (ui_menu_handle_input(&s_menu, action)) {
         // Clears the "insert a drive" notice as soon as the user moves on.
         ui_set_label_text_if_changed(s_menu_notice, "");
@@ -981,6 +1081,7 @@ esp_err_t ui_init(void)
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(s_display, ui_flush);
     ui_create_menu_screen();
+    ui_create_feed_screen();
     ui_create_settings_screen();
     ui_create_source_screen();
     ui_create_station_list_screen();
@@ -991,7 +1092,11 @@ esp_err_t ui_init(void)
         (void)board_display_set_rotation(s_device_settings.flip_vertical,
                                          s_device_settings.flip_horizontal);
     }
-    lv_screen_load(s_menu_screen);
+    if (s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED) {
+        lv_screen_load(s_feed_screen);
+    } else {
+        lv_screen_load(s_menu_screen);
+    }
 
     // Pinned to core 0 alongside Wi-Fi and lwIP: LVGL rendering and the
     // synchronous SPI flush are not time critical, but they are long enough to

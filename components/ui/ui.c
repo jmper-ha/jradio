@@ -323,6 +323,7 @@ static void ui_create_settings_screen(void)
         lv_label_set_long_mode(s_settings_rows[row], LV_LABEL_LONG_DOT);
         lv_obj_set_style_text_color(s_settings_rows[row], lv_color_hex(0xFFFFFF), 0);
         lv_obj_set_style_bg_opa(s_settings_rows[row], LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(0x101820), 0);
         lv_label_set_text(s_settings_rows[row], "");
     }
     s_settings_notice = lv_label_create(s_settings_screen);
@@ -330,6 +331,8 @@ static void ui_create_settings_screen(void)
     lv_obj_set_width(s_settings_notice, 300);
     lv_label_set_long_mode(s_settings_notice, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_settings_notice, lv_color_hex(0xFFCC80), 0);
+    lv_obj_set_style_bg_opa(s_settings_notice, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(s_settings_notice, lv_color_hex(0x101820), 0);
     lv_label_set_text(s_settings_notice, "");
 }
 
@@ -384,6 +387,7 @@ static void ui_update_settings(void)
     for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
         if (row >= row_count) {
             lv_label_set_text(s_settings_rows[row], "");
+            lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(0x101820), 0);
             continue;
         }
         const ui_settings_row_t item = ui_settings_model_row_at(&s_settings_model, row);
@@ -707,7 +711,7 @@ static void ui_handle_input(board_input_action_t action)
     // transition table for no gain. Any of the three ways out returns to the
     // main screen.
     if (s_settings_open) {
-        if (action == BOARD_INPUT_ACTION_F2) {
+        if (action == BOARD_INPUT_ACTION_F2 || action == BOARD_INPUT_ACTION_ENCODER_LONG) {
             ui_close_settings();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
                    action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {

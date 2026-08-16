@@ -13,11 +13,14 @@
  * choice. */
 #define INPUT_DEBOUNCE_SAMPLES (INPUT_DEBOUNCE_MS / INPUT_POLL_MS)
 #define INPUT_QUEUE_LENGTH 16
+#define INPUT_ENCODER_LONG_PRESS_MS 800
 
 typedef struct {
     int gpio_num;
     board_input_action_t action;
     board_input_debouncer_t debouncer;
+    uint32_t held_ms;
+    bool long_sent;
 } board_input_channel_t;
 
 static const char *TAG = "input";
@@ -49,8 +52,22 @@ static void board_input_task(void *arg)
             const int raw_level = gpio_get_level(channel->gpio_num);
             const bool pressed = raw_level == 0;
             if (board_input_debouncer_update(&channel->debouncer, pressed)) {
+                channel->held_ms = 0;
+                channel->long_sent = false;
                 if (xQueueSend(s_event_queue, &channel->action, 0) != pdTRUE) {
                     ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)channel->action);
+                }
+            } else if (!pressed) {
+                channel->held_ms = 0;
+                channel->long_sent = false;
+            } else if (channel->gpio_num == ENCODER_BUTTON_GPIO && !channel->long_sent) {
+                channel->held_ms += INPUT_POLL_MS;
+                if (channel->held_ms >= INPUT_ENCODER_LONG_PRESS_MS) {
+                    const board_input_action_t long_action = BOARD_INPUT_ACTION_ENCODER_LONG;
+                    channel->long_sent = true;
+                    if (xQueueSend(s_event_queue, &long_action, 0) != pdTRUE) {
+                        ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)long_action);
+                    }
                 }
             }
         }

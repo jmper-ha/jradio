@@ -14,6 +14,7 @@ typedef enum {
     BOARD_INPUT_ACTION_F2,
     BOARD_INPUT_ACTION_F3,
     BOARD_INPUT_ACTION_F4,
+    BOARD_INPUT_ACTION_ENCODER_LONG,
 } board_input_action_t;
 
 typedef struct {

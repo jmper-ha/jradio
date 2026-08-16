@@ -928,8 +928,13 @@ static void ui_handle_input(board_input_action_t action)
         lv_screen_active() == s_feed_screen) {
         if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
             action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
+            /*
+             * The encoder's physical clockwise direction is opposite to the
+             * visual feed order on this board.  Keep the common menu semantics
+             * unchanged and reverse movement only for the horizontal feed.
+             */
             ui_feed_model_move(&s_feed_model,
-                               action == BOARD_INPUT_ACTION_ENCODER_RIGHT ? 1 : -1);
+                               action == BOARD_INPUT_ACTION_ENCODER_RIGHT ? -1 : 1);
             ui_update_feed_screen();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             const ui_feed_item_t item = ui_feed_model_selected(&s_feed_model);

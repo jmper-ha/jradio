@@ -952,6 +952,13 @@ esp_err_t ui_init(void)
     ui_create_settings_screen();
     ui_create_source_screen();
     ui_create_station_list_screen();
+    ui_settings_model_init(&s_settings_model);
+    if (!device_settings_init(&s_device_settings)) {
+        lv_label_set_text(s_settings_notice, "Ошибка чтения settings.csv");
+    } else {
+        (void)board_display_set_rotation(s_device_settings.flip_vertical,
+                                         s_device_settings.flip_horizontal);
+    }
     lv_screen_load(s_menu_screen);
 
     // Pinned to core 0 alongside Wi-Fi and lwIP: LVGL rendering and the

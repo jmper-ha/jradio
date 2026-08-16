@@ -374,7 +374,7 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
     case UI_SETTINGS_ROW_HOME_SCREEN_FIELD:
         snprintf(text, text_size, "  %s: %s", english ? "Home screen" : "Главный экран",
                  s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED ?
-                     (english ? "Feed" : "Лента") : (english ? "Text" : "Текст"));
+                     (english ? "Feed" : "Лента") : (english ? "List" : "Список"));
         break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         snprintf(text, text_size, "  %s: %s", english ? "Flip vertical" : "Поворот по вертикали",

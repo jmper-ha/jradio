@@ -192,7 +192,7 @@ static void ui_update_feed_screen(void)
 {
     const ui_feed_item_t selected = ui_feed_model_selected(&s_feed_model);
     const int offsets[5] = {-2, -1, 0, 1, 2};
-    const int positions[5] = {8, 64, 116, 172, 228};
+    const int positions[5] = {4, 54, 108, 214, 264};
     for (size_t slot = 0; slot < 5U; ++slot) {
         int index = (int)selected + offsets[slot];
         while (index < 0) index += UI_FEED_ITEM_COUNT;
@@ -200,8 +200,10 @@ static void ui_update_feed_screen(void)
         const ui_feed_item_t item = (ui_feed_item_t)index;
         const bool center = slot == 2U;
         lv_label_set_text(s_feed_icons[slot], ui_feed_icon_symbol(item));
-        lv_obj_set_pos(s_feed_icons[slot], positions[slot], center ? 78 : 94);
-        lv_obj_set_size(s_feed_icons[slot], center ? 88 : 56, center ? 88 : 56);
+        lv_obj_set_pos(s_feed_icons[slot], positions[slot], center ? 66 : 96);
+        lv_obj_set_size(s_feed_icons[slot], center ? 104 : 52, center ? 104 : 52);
+        lv_obj_set_style_text_font(s_feed_icons[slot],
+                                   center ? &lv_font_montserrat_48 : &lv_font_montserrat_24, 0);
         lv_obj_set_style_text_color(s_feed_icons[slot],
                                     lv_color_hex(center ? 0xFFFFFF : 0x90A4AE), 0);
         lv_obj_set_style_text_align(s_feed_icons[slot], LV_TEXT_ALIGN_CENTER, 0);
@@ -237,7 +239,7 @@ static void ui_create_feed_screen(void)
     for (size_t index = 0; index < 5U; ++index) {
         s_feed_icons[index] = lv_label_create(s_feed_screen);
         lv_obj_set_style_text_font(s_feed_icons[index], &lv_font_montserrat_24, 0);
-        lv_obj_set_style_pad_all(s_feed_icons[index], 8, 0);
+        lv_obj_set_style_pad_all(s_feed_icons[index], 0, 0);
     }
     ui_feed_model_init(&s_feed_model, 0U);
     ui_update_feed_screen();

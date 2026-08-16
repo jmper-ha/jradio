@@ -17,6 +17,7 @@
 #include "device_settings.h"
 #include "player_control.h"
 #include "wifi_provisioning.h"
+#include "ui_click_gesture.h"
 #include "ui_draw_buffer.h"
 #include "ui_font_cyrillic_14.h"
 #include "ui_menu.h"
@@ -68,6 +69,9 @@ static lv_obj_t *s_station_list_title;
 static lv_obj_t *s_station_list_rows[UI_STATION_LIST_MAX_ROWS];
 static station_list_state_t s_station_list;
 static ui_player_state_t s_player_ui;
+// Only the player screen tells a single click from a double one, so only
+// there does a click wait out the window; every other screen acts at once.
+static ui_click_gesture_t s_player_click;
 static bool s_waiting_for_radio_station;
 static uint32_t s_radio_station_wait_started_ms;
 // The USB browser reuses this list screen. Outside the drive's root it shows a
@@ -817,6 +821,16 @@ static void ui_render_player_state(void)
     }
 }
 
+static void ui_toggle_playback(void)
+{
+    const player_command_t command = {
+        .kind = PLAYER_COMMAND_TOGGLE,
+        .source = AUDIO_SOURCE_NONE,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    (void)ui_submit_player_command(&command);
+}
+
 static void ui_handle_input(board_input_action_t action)
 {
     // Settings sits outside the player's view state: it shows no source and
@@ -910,17 +924,22 @@ static void ui_handle_input(board_input_action_t action)
         const audio_source_t source = ui_player_state_source(&s_player_ui);
         const bool has_list = source == AUDIO_SOURCE_INTERNET_RADIO ||
                               source == AUDIO_SOURCE_USB;
-        if (action == BOARD_INPUT_ACTION_F2) {
+        if (action == BOARD_INPUT_ACTION_F2 ||
+            action == BOARD_INPUT_ACTION_ENCODER_LONG) {
+            // Leaving the screen entirely, so a click waiting out its window
+            // must not land on the home screen.
+            ui_click_gesture_cancel(&s_player_click);
             ui_show_menu();
         } else if (has_list && action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
-            ui_show_station_list();
+            // Double click opens the list and leaves playback alone; the
+            // single click that toggles play/pause is delivered later, from
+            // the poll loop, once no second press has arrived.
+            if (ui_click_gesture_press(&s_player_click, ui_tick_get_ms()) ==
+                UI_CLICK_DOUBLE) {
+                ui_show_station_list();
+            }
         } else if (has_list && action == BOARD_INPUT_ACTION_F3) {
-            const player_command_t command = {
-                .kind = PLAYER_COMMAND_TOGGLE,
-                .source = AUDIO_SOURCE_NONE,
-                .item_index = PLAYER_ITEM_NONE,
-            };
-            (void)ui_submit_player_command(&command);
+            ui_toggle_playback();
         }
         return;
     }
@@ -976,6 +995,9 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     ui_player_state_apply_snapshot(&s_player_ui, snapshot, ui_tick_get_ms());
     if (old_view != ui_player_state_view(&s_player_ui) ||
         old_source != ui_player_state_source(&s_player_ui)) {
+        // The player screen went away on its own - a station finished
+        // connecting, the source stopped - so a click waiting on it is stale.
+        ui_click_gesture_cancel(&s_player_click);
         ui_render_player_state();
     }
 
@@ -1038,6 +1060,11 @@ static void ui_task(void *arg)
         if (xQueueReceive(s_input_queue, &action, pdMS_TO_TICKS(10)) == pdTRUE) {
             ui_handle_input(action);
         }
+        // A click held for the double-click window is delivered here, since
+        // nothing else runs while the UI waits for the second press.
+        if (ui_click_gesture_poll(&s_player_click, ui_tick_get_ms()) == UI_CLICK_SINGLE) {
+            ui_toggle_playback();
+        }
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         if (s_settings_open) {
@@ -1067,6 +1094,7 @@ esp_err_t ui_init(void)
     }
     ui_menu_init(&s_menu);
     ui_player_state_init(&s_player_ui);
+    ui_click_gesture_init(&s_player_click);
     s_waiting_for_radio_station = false;
     lv_init();
     lv_tick_set_cb(ui_tick_get_ms);

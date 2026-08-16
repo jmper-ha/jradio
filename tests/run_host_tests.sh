@@ -119,6 +119,7 @@ run_test device_settings tests/test_device_settings.c components/settings/device
 run_test station_catalog tests/test_station_catalog.c components/internet_radio/station_catalog.c
 run_test station_resume tests/test_station_resume.c components/internet_radio/station_resume.c \
     components/settings/settings_csv.c
+run_test ui_click_gesture tests/test_ui_click_gesture.c components/ui/ui_click_gesture.c
 run_test ui_deferred_start tests/test_ui_deferred_start.c components/ui/ui_deferred_start.c
 run_test ui_draw_buffer tests/test_ui_draw_buffer.c components/ui/ui_draw_buffer.c
 run_test ui_menu tests/test_ui_menu.c components/ui/ui_menu.c

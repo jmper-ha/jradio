@@ -412,16 +412,19 @@ static void ui_update_settings(void)
         const bool selected_row = item.id == selected;
         const uint32_t background = selected_row ? 0x1769AA :
             item.kind == UI_SETTINGS_ROW_FIELD ? 0x263746 : 0x101820;
+        const bool has_switch = item.id == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD ||
+                                item.id == UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD;
+        lv_obj_set_x(s_settings_rows[row], has_switch ? 58 : 10);
+        lv_obj_set_width(s_settings_rows[row], has_switch ? 242 : 300);
         lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(background), 0);
-        if (item.id == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD ||
-            item.id == UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD) {
+        if (has_switch) {
             const size_t switch_index = item.id == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD ? 0U : 1U;
             lv_obj_t *toggle = s_settings_switches[switch_index];
             const bool enabled = switch_index == 0U ? s_device_settings.flip_vertical
                                                     : s_device_settings.flip_horizontal;
             if (enabled) lv_obj_add_state(toggle, LV_STATE_CHECKED);
             else lv_obj_clear_state(toggle, LV_STATE_CHECKED);
-            lv_obj_set_pos(toggle, 250, 38 + (int)row * 26);
+            lv_obj_set_pos(toggle, 10, 38 + (int)row * 26);
             lv_obj_clear_flag(toggle, LV_OBJ_FLAG_HIDDEN);
         }
     }

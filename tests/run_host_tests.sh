@@ -110,6 +110,8 @@ run_test radio_prebuffer tests/test_radio_prebuffer.c \
 run_test radio_stream_format tests/test_radio_stream_format.c \
     components/internet_radio/radio_stream_format.c components/internet_radio/station_catalog.c
 run_test settings_csv tests/test_settings_csv.c components/settings/settings_csv.c
+run_test device_settings tests/test_device_settings.c components/settings/device_settings.c \
+    components/settings/settings_csv.c
 run_test station_catalog tests/test_station_catalog.c components/internet_radio/station_catalog.c
 run_test station_resume tests/test_station_resume.c components/internet_radio/station_resume.c \
     components/settings/settings_csv.c

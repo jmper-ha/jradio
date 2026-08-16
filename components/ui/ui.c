@@ -204,12 +204,11 @@ static void ui_update_feed_screen(void)
         lv_obj_set_size(s_feed_icons[slot], center ? 104 : 52, center ? 104 : 52);
         lv_obj_set_style_text_font(s_feed_icons[slot],
                                    center ? &lv_font_montserrat_48 : &lv_font_montserrat_24, 0);
-        /* FontAwesome glyphs have a small asymmetric side bearing.  Keep the
-         * tile itself mathematically centered, but compensate the central
-         * glyph inside its content box so the visible shape is centered too. */
+        /* Keep the tile mathematically centered and use a small vertical
+         * inset so the visible FontAwesome shape, not its line box, is centered. */
         lv_obj_set_style_pad_left(s_feed_icons[slot], 0, 0);
-        lv_obj_set_style_pad_right(s_feed_icons[slot], center ? 8 : 0, 0);
-        lv_obj_set_style_pad_top(s_feed_icons[slot], center ? 28 : 0, 0);
+        lv_obj_set_style_pad_right(s_feed_icons[slot], 0, 0);
+        lv_obj_set_style_pad_top(s_feed_icons[slot], center ? 20 : 0, 0);
         lv_obj_set_style_pad_bottom(s_feed_icons[slot], 0, 0);
         lv_obj_set_style_text_color(s_feed_icons[slot],
                                     lv_color_hex(center ? 0xFFFFFF : 0x90A4AE), 0);

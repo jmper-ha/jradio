@@ -15,11 +15,13 @@
 #include "board.h"
 #include "board_display_profile.h"
 #include "player_control.h"
+#include "wifi_provisioning.h"
 #include "ui_draw_buffer.h"
 #include "ui_font_cyrillic_14.h"
 #include "ui_menu.h"
 #include "ui_player_state.h"
 #include "ui_radio_text.h"
+#include "ui_settings_view.h"
 #include "ui_station_list.h"
 #include "ui_usb_notice.h"
 
@@ -31,7 +33,6 @@
 #define UI_STATION_LIST_MAX_ROWS 7U
 #define UI_RADIO_EMPTY_LIST_DELAY_MS 250U
 #define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
-#define UI_MENU_FOOTER_TEXT "F1 Menu  F2 Back  F3 Play  F4 Options"
 
 static const char *TAG = "ui";
 static QueueHandle_t s_input_queue;
@@ -40,15 +41,17 @@ static lv_display_t *s_display;
 static lv_obj_t *s_menu_screen;
 static lv_obj_t *s_source_screen;
 static lv_obj_t *s_menu_rows[UI_MENU_ITEM_COUNT];
-static lv_obj_t *s_menu_footer;
+static lv_obj_t *s_menu_notice;
 static lv_obj_t *s_source_title;
 static lv_obj_t *s_source_status;
 static lv_obj_t *s_source_detail;
 static lv_obj_t *s_source_stream;
 static lv_obj_t *s_source_wifi;
+static lv_obj_t *s_settings_screen;
+static lv_obj_t *s_settings_rows[UI_SETTINGS_ROW_COUNT];
+static bool s_settings_open;
 static lv_obj_t *s_station_list_screen;
 static lv_obj_t *s_station_list_title;
-static lv_obj_t *s_station_list_footer;
 static lv_obj_t *s_station_list_rows[UI_STATION_LIST_MAX_ROWS];
 static station_list_state_t s_station_list;
 static ui_player_state_t s_player_ui;
@@ -199,7 +202,7 @@ static void ui_create_menu_screen(void)
     lv_obj_set_style_pad_all(s_menu_screen, 0, 0);
 
     lv_obj_t *title = lv_label_create(s_menu_screen);
-    lv_label_set_text(title, "jradio  |  Sources");
+    lv_label_set_text(title, "jradio");
     lv_obj_set_pos(title, 12, 8);
     lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
 
@@ -213,11 +216,13 @@ static void ui_create_menu_screen(void)
         lv_obj_set_style_radius(s_menu_rows[index], 3, 0);
     }
 
-    s_menu_footer = lv_label_create(s_menu_screen);
-    lv_label_set_text(s_menu_footer, UI_MENU_FOOTER_TEXT);
-    lv_obj_set_pos(s_menu_footer, 8, 220);
-    lv_obj_set_style_text_font(s_menu_footer, &ui_font_cyrillic_14, 0);
-    lv_obj_set_style_text_color(s_menu_footer, lv_color_hex(0xB0BEC5), 0);
+    // Not a key hint: the only thing this line ever says is why a source
+    // refused to open, and it is empty the rest of the time.
+    s_menu_notice = lv_label_create(s_menu_screen);
+    lv_label_set_text(s_menu_notice, "");
+    lv_obj_set_pos(s_menu_notice, 12, 220);
+    lv_obj_set_style_text_font(s_menu_notice, &ui_font_cyrillic_14, 0);
+    lv_obj_set_style_text_color(s_menu_notice, lv_color_hex(0xFFD54F), 0);
     ui_update_menu_highlight();
 }
 
@@ -280,6 +285,69 @@ static void ui_update_station_list(void)
     }
 }
 
+static void ui_load_menu_screen(void);
+
+static void ui_create_settings_screen(void)
+{
+    s_settings_screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(s_settings_screen, lv_color_hex(0x101820), 0);
+    lv_obj_set_style_border_width(s_settings_screen, 0, 0);
+    lv_obj_set_style_pad_all(s_settings_screen, 0, 0);
+
+    lv_obj_t *title = lv_label_create(s_settings_screen);
+    lv_label_set_text(title, "Настройки");
+    lv_obj_set_pos(title, 12, 8);
+    lv_obj_set_style_text_font(title, &ui_font_cyrillic_14, 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
+
+    for (size_t row = 0; row < UI_SETTINGS_ROW_COUNT; ++row) {
+        s_settings_rows[row] = lv_label_create(s_settings_screen);
+        lv_obj_set_pos(s_settings_rows[row], 14, 44 + (int)row * 30);
+        lv_obj_set_width(s_settings_rows[row], 296);
+        lv_label_set_long_mode(s_settings_rows[row], LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_font(s_settings_rows[row], &ui_font_cyrillic_14, 0);
+        lv_obj_set_style_text_color(s_settings_rows[row], lv_color_hex(0xB0BEC5), 0);
+        lv_label_set_text(s_settings_rows[row], "");
+    }
+}
+
+// The screen is read-only, so it is refreshed from the poll loop rather than
+// on an event: Wi-Fi can associate or drop while the user is looking at it.
+static void ui_update_settings(void)
+{
+    if (!s_settings_open) return;
+    const wifi_provisioning_status_t wifi = wifi_provisioning_status();
+    int8_t rssi = 0;
+    const bool rssi_valid = wifi_provisioning_get_rssi(&rssi);
+    const ui_settings_info_t info = {
+        .connected = wifi.mode == WIFI_PROVISIONING_STA_CONNECTED,
+        .ssid = wifi.active_ssid,
+        .ipv4 = wifi.ipv4,
+        .rssi_valid = rssi_valid,
+        .rssi_dbm = rssi,
+        .web_ready = true,
+    };
+    for (size_t row = 0; row < UI_SETTINGS_ROW_COUNT; ++row) {
+        char text[96];
+        ui_settings_row_text((ui_settings_row_t)row, &info, text, sizeof(text));
+        ui_set_label_text_if_changed(s_settings_rows[row], text);
+    }
+}
+
+static void ui_show_settings(void)
+{
+    s_settings_open = true;
+    ui_update_settings();
+    lv_screen_load(s_settings_screen);
+}
+
+static void ui_close_settings(void)
+{
+    if (!s_settings_open) return;
+    s_settings_open = false;
+    ui_load_menu_screen();
+}
+
 static void ui_create_station_list_screen(void)
 {
     s_station_list_screen = lv_obj_create(NULL);
@@ -303,10 +371,6 @@ static void ui_create_station_list_screen(void)
         lv_obj_set_style_text_font(s_station_list_rows[row], &ui_font_cyrillic_14, 0);
         lv_obj_set_style_text_color(s_station_list_rows[row], lv_color_hex(0xFFFFFF), 0);
     }
-    s_station_list_footer = lv_label_create(s_station_list_screen);
-    lv_label_set_text(s_station_list_footer, "Encoder Select  F2 Back");
-    lv_obj_set_pos(s_station_list_footer, 8, 220);
-    lv_obj_set_style_text_color(s_station_list_footer, lv_color_hex(0xB0BEC5), 0);
 }
 
 static void ui_show_station_list(void);
@@ -347,10 +411,6 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_wifi, 14, 180);
     lv_obj_set_style_text_color(s_source_wifi, lv_color_hex(0xB0BEC5), 0);
 
-    lv_obj_t *footer = lv_label_create(s_source_screen);
-    lv_label_set_text(footer, "Encoder Stations  F2 Back  F3 Play/Pause");
-    lv_obj_set_pos(footer, 8, 220);
-    lv_obj_set_style_text_color(footer, lv_color_hex(0xB0BEC5), 0);
 }
 
 static bool ui_submit_player_command(const player_command_t *command)
@@ -415,11 +475,11 @@ static void ui_show_source(void)
         player_control_get_snapshot(&snapshot);
         const char *notice = ui_usb_notice(snapshot.usb_media, snapshot.usb_entry_count);
         if (notice != NULL) {
-            ui_set_label_text_if_changed(s_menu_footer, notice);
+            ui_set_label_text_if_changed(s_menu_notice, notice);
             return;
         }
     }
-    ui_set_label_text_if_changed(s_menu_footer, UI_MENU_FOOTER_TEXT);
+    ui_set_label_text_if_changed(s_menu_notice, "");
     const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
     const audio_source_t old_source = ui_player_state_source(&s_player_ui);
     const player_command_t command = {
@@ -475,11 +535,9 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
         active_index = active_index == PLAYER_ITEM_NONE ? PLAYER_ITEM_NONE
                                                         : active_index + offset;
         lv_label_set_text_fmt(s_station_list_title, "USB | %s", snapshot->context);
-        ui_set_label_text_if_changed(s_station_list_footer, "Encoder Open/Play  F2 Back");
     } else {
         s_usb_browser_has_parent_row = false;
         ui_set_label_text_if_changed(s_station_list_title, "Internet radio | Stations");
-        ui_set_label_text_if_changed(s_station_list_footer, "Encoder Select  F2 Back");
     }
     const size_t initial_index = active_index < count ? active_index : 0U;
     station_list_init(&s_station_list, count, initial_index, active_index);
@@ -530,6 +588,17 @@ static void ui_render_player_state(void)
 
 static void ui_handle_input(board_input_action_t action)
 {
+    // Settings sits outside the player's view state: it shows no source and
+    // starts nothing, so making it a fourth view would put an entry in every
+    // transition table for no gain. Any of the three ways out returns to the
+    // main screen.
+    if (s_settings_open) {
+        if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON ||
+            action == BOARD_INPUT_ACTION_F2) {
+            ui_close_settings();
+        }
+        return;
+    }
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
         station_list_note_activity(&s_station_list, ui_tick_get_ms());
         if (action == BOARD_INPUT_ACTION_F2) {
@@ -613,9 +682,13 @@ static void ui_handle_input(board_input_action_t action)
     }
     if (ui_menu_handle_input(&s_menu, action)) {
         // Clears the "insert a drive" notice as soon as the user moves on.
-        ui_set_label_text_if_changed(s_menu_footer, UI_MENU_FOOTER_TEXT);
+        ui_set_label_text_if_changed(s_menu_notice, "");
         ui_update_menu_highlight();
     } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
+        if (ui_menu_selection_is_settings(&s_menu)) {
+            ui_show_settings();
+            return;
+        }
         ui_show_source();
     }
 }
@@ -692,7 +765,11 @@ static void ui_task(void *arg)
         }
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
-        ui_sync_player_snapshot(&snapshot);
+        if (s_settings_open) {
+            ui_update_settings();
+        } else {
+            ui_sync_player_snapshot(&snapshot);
+        }
         lv_timer_handler();
     }
 }
@@ -745,6 +822,7 @@ esp_err_t ui_init(void)
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(s_display, ui_flush);
     ui_create_menu_screen();
+    ui_create_settings_screen();
     ui_create_source_screen();
     ui_create_station_list_screen();
     lv_screen_load(s_menu_screen);

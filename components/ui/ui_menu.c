@@ -14,6 +14,7 @@ static const ui_menu_item_config_t s_items[UI_MENU_ITEM_COUNT] = {
     [UI_MENU_ITEM_FM_RADIO] = {.label = "FM radio", .source = AUDIO_SOURCE_FM},
     [UI_MENU_ITEM_DLNA] = {.label = "DLNA", .source = AUDIO_SOURCE_DLNA},
     [UI_MENU_ITEM_YANDEX_MUSIC] = {.label = "Yandex Music", .source = AUDIO_SOURCE_NONE},
+    [UI_MENU_ITEM_SETTINGS] = {.label = "Настройки", .source = AUDIO_SOURCE_NONE},
 };
 
 void ui_menu_init(ui_menu_state_t *state)
@@ -63,6 +64,11 @@ uint8_t ui_menu_selected_index(const ui_menu_state_t *state)
 const char *ui_menu_item_label(ui_menu_item_t item)
 {
     return item < UI_MENU_ITEM_COUNT ? s_items[item].label : "";
+}
+
+bool ui_menu_selection_is_settings(const ui_menu_state_t *state)
+{
+    return state != NULL && state->selected_index == UI_MENU_ITEM_SETTINGS;
 }
 
 audio_source_t ui_menu_activate(const ui_menu_state_t *state)

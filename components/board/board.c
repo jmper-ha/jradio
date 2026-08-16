@@ -18,16 +18,37 @@
 #include "board.h"
 #include "board_audio_health.h"
 #include "board_audio_startup.h"
-#include "board_config.h"
+#include "board_options.h"
 #include "board_input.h"
 #include "pcm_diagnostics.h"
 
+/* Parts this file has code for. Selecting anything else in board_options.h
+ * fails the build rather than initialising a device that then misbehaves. */
+#if BOARD_DISPLAY_CONTROLLER != BOARD_DISPLAY_ILI9341
+#error "board.c only drives the ILI9341; see BOARD_DISPLAY_CONTROLLER"
+#endif
+#if BOARD_AUDIO_DAC != BOARD_AUDIO_DAC_PCM5102
+#error "board.c only drives the PCM5102; see BOARD_AUDIO_DAC"
+#endif
+
+/* The SPI host enum is not numbered by peripheral, so map it explicitly. */
+#if BOARD_DISPLAY_SPI_PERIPHERAL == 2
 #define BOARD_LCD_HOST SPI2_HOST
-#define BOARD_LCD_PIXEL_CLOCK_HZ (20 * 1000 * 1000)
+#elif BOARD_DISPLAY_SPI_PERIPHERAL == 3
+#define BOARD_LCD_HOST SPI3_HOST
+#else
+#error "unsupported BOARD_DISPLAY_SPI_PERIPHERAL"
+#endif
+
+/* Height of one flush band. A firmware memory/throughput tradeoff rather than
+ * a wiring fact, so it stays here. */
 #define BOARD_LCD_DRAW_LINES 20
-#define BOARD_BACKLIGHT_PWM_HZ 5000
-#define BOARD_BACKLIGHT_DUTY_RES LEDC_TIMER_13_BIT
-#define BOARD_BACKLIGHT_MAX_DUTY ((1U << BOARD_BACKLIGHT_DUTY_RES) - 1U)
+/* ledc_timer_bit_t enumerators are the bit counts themselves, which lets the
+ * option stay a plain number. Verified rather than assumed. */
+_Static_assert(LEDC_TIMER_13_BIT == 13,
+               "ledc_timer_bit_t no longer equals its bit count");
+#define BOARD_BACKLIGHT_DUTY_RES ((ledc_timer_bit_t)BOARD_BACKLIGHT_DUTY_BITS)
+#define BOARD_BACKLIGHT_MAX_DUTY ((1U << BOARD_BACKLIGHT_DUTY_BITS) - 1U)
 #define BOARD_I2S_BYTES_PER_FRAME \
     (BOARD_AUDIO_CHANNEL_COUNT * (BOARD_AUDIO_BITS_PER_SAMPLE / 8U))
 #define BOARD_I2S_DMA_BUFFER_BYTES (BOARD_I2S_DMA_FRAME_NUM * BOARD_I2S_BYTES_PER_FRAME)
@@ -588,7 +609,7 @@ static esp_err_t board_display_init(void)
     const esp_lcd_panel_io_spi_config_t io_config = {
         .dc_gpio_num = BOARD_TFT_DC_GPIO,
         .cs_gpio_num = BOARD_TFT_CS_GPIO,
-        .pclk_hz = BOARD_LCD_PIXEL_CLOCK_HZ,
+        .pclk_hz = BOARD_DISPLAY_PIXEL_CLOCK_HZ,
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
         .spi_mode = 0,

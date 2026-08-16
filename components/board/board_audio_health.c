@@ -1,6 +1,6 @@
 #include "board_audio_health.h"
 
-#include "board_config.h"
+#include "board_options.h"
 
 void board_audio_health_reset(board_audio_health_t *health)
 {

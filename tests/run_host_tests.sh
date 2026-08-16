@@ -16,6 +16,7 @@ common_flags=(
     -fno-omit-frame-pointer
 )
 include_flags=(
+    -I"${project_dir}"
     -I"${project_dir}/components/audio/include"
     -I"${project_dir}/components/board/include"
     -I"${project_dir}/components/internet_radio/include"
@@ -93,7 +94,7 @@ run_test board_audio_health tests/test_board_audio_health.c \
     components/board/board_audio_health.c
 run_test board_audio_startup tests/test_board_audio_startup.c \
     components/board/board_audio_startup.c
-run_test board_config tests/test_board_config.c
+run_test board_options tests/test_board_options.c
 run_test board_input tests/test_board_input.c components/board/board_input.c
 run_test icy_metadata tests/test_icy_metadata.c components/internet_radio/icy_metadata.c
 run_test internet_radio_state tests/test_internet_radio_state.c \

@@ -8,10 +8,10 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
-#define BOARD_INPUT_POLL_MS 5
-#define BOARD_INPUT_DEBOUNCE_MS 25
+/* Poll interval, debounce window and the F1 hold come from board_options.h -
+ * they describe the physical switches, not this driver. Only the queue depth
+ * is a firmware choice. */
 #define BOARD_INPUT_DEBOUNCE_SAMPLES (BOARD_INPUT_DEBOUNCE_MS / BOARD_INPUT_POLL_MS)
-#define BOARD_INPUT_F1_HOLD_MS 5000
 #define BOARD_INPUT_QUEUE_LENGTH 16
 
 typedef struct {

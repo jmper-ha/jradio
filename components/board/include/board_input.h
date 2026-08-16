@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "board_config.h"
+#include "board_options.h"
 
 typedef enum {
     BOARD_INPUT_ACTION_NONE = 0,

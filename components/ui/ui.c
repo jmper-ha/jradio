@@ -1177,10 +1177,24 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
     s_autoplay_pending = false;
 
     switch (action) {
-    case UI_AUTOPLAY_RADIO:
+    case UI_AUTOPLAY_RADIO: {
+        // Not ui_show_source(): that opens the list, which is right when the
+        // user is picking something and wrong here - autoplay already knows
+        // what plays, so the player screen is the answer.
         (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_INTERNET_RADIO);
-        ui_show_source();
+        const player_command_t select = {
+            .kind = PLAYER_COMMAND_SELECT_SOURCE,
+            .source = AUDIO_SOURCE_INTERNET_RADIO,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        if (!ui_submit_player_command(&select)) return;
+        ui_load_source_screen(AUDIO_SOURCE_INTERNET_RADIO);
+        // That screen arms the "no station to play" fallback, which opens the
+        // list after a moment. Autoplay has a station, so the only thing that
+        // fallback could do here is flip away from the screen just loaded.
+        s_waiting_for_radio_station = false;
         return;
+    }
     case UI_AUTOPLAY_USB_UNAVAILABLE:
         (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_USB);
         ui_show_source();

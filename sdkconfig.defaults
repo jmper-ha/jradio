@@ -40,6 +40,13 @@ CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0=y
 # web_socket.h) plus the internet radio's streaming HTTP client socket and a
 # few spares for DNS/mDNS lookups.
 CONFIG_LWIP_MAX_SOCKETS=16
+# Nothing here speaks IPv6: no source file references it, autoconfig was off,
+# and the router hands out IPv4. Measured cost of leaving it on: 33 KB of
+# flash and 1.8 KB of internal SRAM, the latter being the scarce one - TLS
+# needs DMA-capable internal memory, which is what made HTTPS streams fail
+# before. Note this also fixes TCP_MSS at 1440: that value is the IPv6 ceiling
+# (1500 - 40 - 20), and only an IPv4-only build may raise it to 1460.
+# CONFIG_LWIP_IPV6 is not set
 # The USB flash drive is the only FAT volume. Without long-file-name support
 # readdir() returns 8.3 aliases, which makes a music browser useless: a track
 # named in Russian comes back as "______~1.MP3", identical for every such file.

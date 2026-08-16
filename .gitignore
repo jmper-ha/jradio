@@ -26,3 +26,6 @@ docs/
 .worktrees/
 *.md
 !README.md
+
+# Local photos and scratch images of the device
+img/

@@ -75,6 +75,35 @@ static bool s_audio_gap_reported;
 static bool s_audio_mute_reported;
 static uint32_t s_audio_zero_carry;
 static uint32_t s_audio_sample_rate = AUDIO_DEFAULT_SAMPLE_RATE;
+/* Peak since the UI last looked. Written by the player tasks, taken by the UI
+ * task, so this uses atomics rather than s_audio_mutex: drawing a bar must
+ * never block the audio path, nor be blocked by it. */
+static atomic_uint s_audio_level_left = ATOMIC_VAR_INIT(0U);
+static atomic_uint s_audio_level_right = ATOMIC_VAR_INIT(0U);
+
+static void board_audio_level_note(unsigned int value, atomic_uint *slot)
+{
+    unsigned int previous = atomic_load_explicit(slot, memory_order_relaxed);
+    // Keep the loudest block written since the last take, so a peak falling
+    // between two UI polls is still the one reported.
+    while (value > previous &&
+           !atomic_compare_exchange_weak_explicit(slot, &previous, value,
+                                                  memory_order_relaxed,
+                                                  memory_order_relaxed)) {
+    }
+}
+
+void board_audio_level_take(uint16_t *left, uint16_t *right)
+{
+    if (left != NULL) {
+        *left = (uint16_t)atomic_exchange_explicit(&s_audio_level_left, 0U,
+                                                   memory_order_relaxed);
+    }
+    if (right != NULL) {
+        *right = (uint16_t)atomic_exchange_explicit(&s_audio_level_right, 0U,
+                                                    memory_order_relaxed);
+    }
+}
 
 typedef struct {
     TaskHandle_t caller;
@@ -311,8 +340,13 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
         result = i2s_channel_write(s_i2s_tx, pcm, pcm_length, written,
                                    pdMS_TO_TICKS(timeout_ms));
         if (result == ESP_OK) {
+            uint16_t level_left = 0U;
+            uint16_t level_right = 0U;
+            pcm_s16le_peak_stereo(pcm, *written, &level_left, &level_right);
+            board_audio_level_note(level_left, &s_audio_level_left);
+            board_audio_level_note(level_right, &s_audio_level_right);
             board_audio_health_add(&s_audio_health, *written, pcm_length,
-                                   pcm_s16le_peak(pcm, *written));
+                                   level_left > level_right ? level_left : level_right);
             const uint32_t zero_run =
                 pcm_s16le_zero_frame_run(pcm, *written, &s_audio_zero_carry);
             board_audio_health_note_zero_run(&s_audio_health, zero_run);

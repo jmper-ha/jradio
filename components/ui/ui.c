@@ -29,6 +29,7 @@
 #include "ui_settings_model.h"
 #include "ui_station_list.h"
 #include "ui_usb_notice.h"
+#include "ui_vu_meter.h"
 
 #define UI_DRAW_BUFFER_LINES 20
 #define UI_DRAW_BUFFER_SIZE ui_rgb565_draw_buffer_size(TFT_WIDTH, UI_DRAW_BUFFER_LINES)
@@ -59,6 +60,14 @@ static lv_obj_t *s_source_status;
 static lv_obj_t *s_source_detail;
 static lv_obj_t *s_source_stream;
 static lv_obj_t *s_source_wifi;
+/* 20 blocks per channel: 20*11 + 19*3 = 277 px starting at x=30, so the row
+ * ends at 307 on a 320 px panel. */
+#define UI_VU_SEGMENTS 20U
+#define UI_VU_SEGMENT_W 11
+#define UI_VU_SEGMENT_GAP 3
+static lv_obj_t *s_source_vu[2][UI_VU_SEGMENTS];
+static ui_vu_meter_t s_vu_state[2];
+static uint32_t s_vu_updated_ms;
 static lv_obj_t *s_settings_screen;
 static lv_obj_t *s_settings_rows[UI_SETTINGS_MAX_ROWS];
 #define UI_SETTINGS_SWITCH_COUNT 3U
@@ -728,6 +737,26 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_stream, 14, 154);
     lv_obj_set_style_text_color(s_source_stream, lv_color_hex(0xB0BEC5), 0);
 
+    for (size_t channel = 0; channel < 2U; ++channel) {
+        for (size_t segment = 0; segment < UI_VU_SEGMENTS; ++segment) {
+            lv_obj_t *block = lv_obj_create(s_source_screen);
+            lv_obj_set_size(block, UI_VU_SEGMENT_W, 10);
+            lv_obj_set_pos(block,
+                           30 + (int)segment * (UI_VU_SEGMENT_W + UI_VU_SEGMENT_GAP),
+                           204 + (int)channel * 14);
+            lv_obj_set_style_border_width(block, 0, 0);
+            lv_obj_set_style_radius(block, 1, 0);
+            lv_obj_set_style_pad_all(block, 0, 0);
+            // Scrolling is on by default for lv_obj and would let these tiny
+            // blocks take the encoder's input away from the screen.
+            lv_obj_clear_flag(block, LV_OBJ_FLAG_SCROLLABLE);
+            s_source_vu[channel][segment] = block;
+        }
+        lv_obj_t *mark = lv_label_create(s_source_screen);
+        lv_label_set_text(mark, channel == 0U ? "L" : "R");
+        lv_obj_set_pos(mark, 14, 200 + (int)channel * 14);
+        lv_obj_set_style_text_color(mark, lv_color_hex(0xB0BEC5), 0);
+    }
     s_source_wifi = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_wifi, 14, 180);
     lv_obj_set_style_text_color(s_source_wifi, lv_color_hex(0xB0BEC5), 0);
@@ -1265,6 +1294,34 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
     }
 }
 
+/* Runs every poll, not only when something changed: the meter is an animation,
+ * and its whole job is to keep moving between the ~26 ms PCM blocks. */
+static void ui_update_vu(void)
+{
+    if (lv_screen_active() != s_source_screen) return;
+    const uint32_t now = ui_tick_get_ms();
+    const uint32_t elapsed = now - s_vu_updated_ms;
+    s_vu_updated_ms = now;
+
+    uint16_t peak[2] = {0U, 0U};
+    board_audio_level_take(&peak[0], &peak[1]);
+    for (size_t channel = 0; channel < 2U; ++channel) {
+        const uint8_t target = ui_vu_percent_from_peak(peak[channel]);
+        const uint8_t value = ui_vu_meter_step(&s_vu_state[channel], target, elapsed);
+        const uint8_t lit = ui_vu_lit_segments(value, UI_VU_SEGMENTS);
+        for (uint8_t segment = 0U; segment < UI_VU_SEGMENTS; ++segment) {
+            // Unlit blocks stay visible in a dim shade rather than hiding, so
+            // the meter reads as a scale at rest instead of an empty strip.
+            const uint32_t colour =
+                segment >= lit ? 0x263746U
+                : ui_vu_segment_is_red(segment, UI_VU_SEGMENTS) ? 0xE53935U
+                                                                : 0x43A047U;
+            lv_obj_set_style_bg_color(s_source_vu[channel][segment],
+                                      lv_color_hex(colour), 0);
+        }
+    }
+}
+
 static void ui_task(void *arg)
 {
     (void)arg;
@@ -1281,6 +1338,7 @@ static void ui_task(void *arg)
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
+        ui_update_vu();
         if (s_settings_open) {
             ui_update_settings();
         } else {
@@ -1309,6 +1367,9 @@ esp_err_t ui_init(void)
     ui_menu_init(&s_menu);
     ui_player_state_init(&s_player_ui);
     ui_click_gesture_init(&s_player_click);
+    ui_vu_meter_init(&s_vu_state[0]);
+    ui_vu_meter_init(&s_vu_state[1]);
+    s_vu_updated_ms = ui_tick_get_ms();
     s_waiting_for_radio_station = false;
     lv_init();
     lv_tick_set_cb(ui_tick_get_ms);

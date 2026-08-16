@@ -132,6 +132,7 @@ run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c 
 run_test ui_settings_view tests/test_ui_settings_view.c components/ui/ui_settings_view.c
 run_test ui_settings_model tests/test_ui_settings_model.c components/ui/ui_settings_model.c
 run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c
+run_test ui_vu_meter tests/test_ui_vu_meter.c components/ui/ui_vu_meter.c
 run_test ui_usb_notice tests/test_ui_usb_notice.c components/ui/ui_usb_notice.c
 run_test usb_browser tests/test_usb_browser.c components/usb_storage/usb_browser.c
 run_test usb_wav tests/test_usb_wav.c components/usb_player/usb_wav.c

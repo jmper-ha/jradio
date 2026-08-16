@@ -20,3 +20,11 @@ esp_err_t board_audio_self_test(uint32_t duration_ms);
 unsigned int board_audio_underrun_count(void);
 esp_err_t board_display_draw_rgb565(int x1, int y1, int x2, int y2, const uint16_t *pixels);
 esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal);
+
+/* Loudest sample per channel since the previous call, then resets. Taking
+ * rather than reading matters: PCM arrives in ~26 ms blocks while the UI polls
+ * every 10 ms, so a plain "current level" would be sampled several times
+ * between blocks and would miss peaks whenever the two rates drift. Returns
+ * zeros when nothing has been written, which is what makes the meter fall to
+ * silence on its own. */
+void board_audio_level_take(uint16_t *left, uint16_t *right);

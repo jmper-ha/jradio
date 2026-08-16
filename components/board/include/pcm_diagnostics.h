@@ -5,6 +5,13 @@
 
 uint16_t pcm_s16le_peak(const uint8_t *pcm, size_t length);
 
+/* Per-channel peaks of interleaved 16-bit stereo. A VU meter wants the two
+ * apart: a single combined peak hides a dead channel completely, which is one
+ * of the few faults a meter is actually good at showing. A trailing partial
+ * frame is ignored rather than counted against one channel. */
+void pcm_s16le_peak_stereo(const uint8_t *pcm, size_t length, uint16_t *left,
+                           uint16_t *right);
+
 /* Longest run of consecutive all-zero stereo frames, in frames.
  *
  * The PCM5102 engages its analog mute after 1024 consecutive zero frames

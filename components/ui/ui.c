@@ -235,6 +235,9 @@ static void ui_create_feed_screen(void)
     lv_obj_set_pos(s_feed_title, 10, 12);
     lv_obj_set_size(s_feed_title, 300, 28);
     lv_obj_set_style_text_align(s_feed_title, LV_TEXT_ALIGN_CENTER, 0);
+    /* Keep the Cyrillic-capable 14 px font, but enlarge the rendered title
+     * without pulling another multi-language font into flash. */
+    lv_obj_set_style_transform_scale(s_feed_title, 320, 0);
     lv_obj_set_style_text_color(s_feed_title, lv_color_hex(0xFFFFFF), 0);
     s_feed_notice = lv_label_create(s_feed_screen);
     lv_obj_set_pos(s_feed_notice, 8, 218);

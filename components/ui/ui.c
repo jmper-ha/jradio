@@ -363,8 +363,7 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
     const bool english = s_device_settings.language == DEVICE_LANGUAGE_EN;
     const char *group = ui_settings_group_text(row->group, english);
     if (row->kind == UI_SETTINGS_ROW_GROUP) {
-        snprintf(text, text_size, "%c %s",
-                 ui_settings_model_is_expanded(&s_settings_model, row->group) ? 'v' : '>', group);
+        snprintf(text, text_size, "%s", group);
         return;
     }
     switch (row->id) {

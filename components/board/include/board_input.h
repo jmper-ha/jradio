@@ -29,6 +29,12 @@ typedef struct {
     int8_t transition_sum;
 } board_encoder_decoder_t;
 
+typedef struct {
+    bool pressed;
+    bool long_sent;
+    uint32_t held_ms;
+} board_button_gesture_t;
+
 board_input_action_t board_input_action_from_gpio(int gpio_num, int level);
 void board_input_debouncer_init(board_input_debouncer_t *debouncer, uint8_t required_samples);
 void board_input_debouncer_init_from_level(board_input_debouncer_t *debouncer, int level,
@@ -37,6 +43,9 @@ bool board_input_debouncer_update(board_input_debouncer_t *debouncer, bool sampl
 void board_encoder_decoder_init(board_encoder_decoder_t *decoder, int left_level, int right_level);
 board_input_action_t board_encoder_decoder_update(board_encoder_decoder_t *decoder, int left_level,
                                                   int right_level);
+void board_button_gesture_init(board_button_gesture_t *gesture);
+board_input_action_t board_button_gesture_update(board_button_gesture_t *gesture, bool pressed,
+                                                 uint32_t elapsed_ms);
 
 #ifdef ESP_PLATFORM
 #include "esp_err.h"

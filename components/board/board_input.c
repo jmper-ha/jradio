@@ -2,6 +2,39 @@
 
 #include "board_input.h"
 
+#define BOARD_INPUT_LONG_PRESS_MS 800U
+
+void board_button_gesture_init(board_button_gesture_t *gesture)
+{
+    if (gesture != NULL) *gesture = (board_button_gesture_t){0};
+}
+
+board_input_action_t board_button_gesture_update(board_button_gesture_t *gesture, bool pressed,
+                                                 uint32_t elapsed_ms)
+{
+    if (gesture == NULL) return BOARD_INPUT_ACTION_NONE;
+    if (!pressed) {
+        const board_input_action_t action = gesture->pressed && !gesture->long_sent
+                                                ? BOARD_INPUT_ACTION_ENCODER_BUTTON
+                                                : BOARD_INPUT_ACTION_NONE;
+        *gesture = (board_button_gesture_t){0};
+        return action;
+    }
+    if (!gesture->pressed) {
+        gesture->pressed = true;
+        gesture->held_ms = 0U;
+        gesture->long_sent = false;
+        return BOARD_INPUT_ACTION_NONE;
+    }
+    if (gesture->long_sent) return BOARD_INPUT_ACTION_NONE;
+    gesture->held_ms += elapsed_ms;
+    if (gesture->held_ms >= BOARD_INPUT_LONG_PRESS_MS) {
+        gesture->long_sent = true;
+        return BOARD_INPUT_ACTION_ENCODER_LONG;
+    }
+    return BOARD_INPUT_ACTION_NONE;
+}
+
 #ifdef ESP_PLATFORM
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -13,14 +46,12 @@
  * choice. */
 #define INPUT_DEBOUNCE_SAMPLES (INPUT_DEBOUNCE_MS / INPUT_POLL_MS)
 #define INPUT_QUEUE_LENGTH 16
-#define INPUT_ENCODER_LONG_PRESS_MS 800
 
 typedef struct {
     int gpio_num;
     board_input_action_t action;
     board_input_debouncer_t debouncer;
-    uint32_t held_ms;
-    bool long_sent;
+    board_button_gesture_t gesture;
 } board_input_channel_t;
 
 static const char *TAG = "input";
@@ -51,24 +82,15 @@ static void board_input_task(void *arg)
             board_input_channel_t *channel = &s_channels[index];
             const int raw_level = gpio_get_level(channel->gpio_num);
             const bool pressed = raw_level == 0;
-            if (board_input_debouncer_update(&channel->debouncer, pressed)) {
-                channel->held_ms = 0;
-                channel->long_sent = false;
-                if (xQueueSend(s_event_queue, &channel->action, 0) != pdTRUE) {
-                    ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)channel->action);
-                }
-            } else if (!pressed) {
-                channel->held_ms = 0;
-                channel->long_sent = false;
-            } else if (channel->gpio_num == ENCODER_BUTTON_GPIO && !channel->long_sent) {
-                channel->held_ms += INPUT_POLL_MS;
-                if (channel->held_ms >= INPUT_ENCODER_LONG_PRESS_MS) {
-                    const board_input_action_t long_action = BOARD_INPUT_ACTION_ENCODER_LONG;
-                    channel->long_sent = true;
-                    if (xQueueSend(s_event_queue, &long_action, 0) != pdTRUE) {
-                        ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)long_action);
-                    }
-                }
+            const bool changed = board_input_debouncer_update(&channel->debouncer, pressed);
+            (void)changed;
+            const board_input_action_t generated = channel->gpio_num == ENCODER_BUTTON_GPIO
+                ? board_button_gesture_update(&channel->gesture,
+                                              channel->debouncer.stable_pressed, INPUT_POLL_MS)
+                : (changed && pressed ? channel->action : BOARD_INPUT_ACTION_NONE);
+            if (generated != BOARD_INPUT_ACTION_NONE &&
+                xQueueSend(s_event_queue, &generated, 0) != pdTRUE) {
+                ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)generated);
             }
         }
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(INPUT_POLL_MS));
@@ -233,6 +255,7 @@ esp_err_t board_input_init(void)
         const int level = gpio_get_level(s_channels[index].gpio_num);
         board_input_debouncer_init_from_level(&s_channels[index].debouncer, level,
                                               INPUT_DEBOUNCE_SAMPLES);
+        board_button_gesture_init(&s_channels[index].gesture);
     }
     board_encoder_decoder_init(&s_encoder_decoder, gpio_get_level(ENCODER_LEFT_GPIO),
                                gpio_get_level(ENCODER_RIGHT_GPIO));

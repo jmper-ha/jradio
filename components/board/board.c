@@ -642,6 +642,12 @@ static esp_err_t board_display_init(void)
     return board_display_fill(0x001F);
 }
 
+esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal)
+{
+    if (s_panel == NULL) return ESP_ERR_INVALID_STATE;
+    return esp_lcd_panel_mirror(s_panel, flip_horizontal, flip_vertical);
+}
+
 esp_err_t board_init(void)
 {
     ESP_LOGI(TAG, "initializing input, PWM backlight, I2S and ILI9341");

@@ -14,6 +14,7 @@
 
 #include "board.h"
 #include "board_display_profile.h"
+#include "device_settings.h"
 #include "player_control.h"
 #include "wifi_provisioning.h"
 #include "ui_draw_buffer.h"
@@ -21,7 +22,7 @@
 #include "ui_menu.h"
 #include "ui_player_state.h"
 #include "ui_radio_text.h"
-#include "ui_settings_view.h"
+#include "ui_settings_model.h"
 #include "ui_station_list.h"
 #include "ui_usb_notice.h"
 
@@ -33,6 +34,7 @@
 #define UI_STATION_LIST_MAX_ROWS 7U
 #define UI_RADIO_EMPTY_LIST_DELAY_MS 250U
 #define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
+#define UI_SETTINGS_MAX_ROWS 7U
 
 static const char *TAG = "ui";
 static QueueHandle_t s_input_queue;
@@ -48,7 +50,10 @@ static lv_obj_t *s_source_detail;
 static lv_obj_t *s_source_stream;
 static lv_obj_t *s_source_wifi;
 static lv_obj_t *s_settings_screen;
-static lv_obj_t *s_settings_rows[UI_SETTINGS_ROW_COUNT];
+static lv_obj_t *s_settings_rows[UI_SETTINGS_MAX_ROWS];
+static lv_obj_t *s_settings_notice;
+static ui_settings_model_t s_settings_model;
+static device_settings_t s_device_settings;
 static bool s_settings_open;
 static lv_obj_t *s_station_list_screen;
 static lv_obj_t *s_station_list_title;
@@ -308,42 +313,101 @@ static void ui_create_settings_screen(void)
     lv_obj_set_pos(title, 12, 8);
     lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
 
-    for (size_t row = 0; row < UI_SETTINGS_ROW_COUNT; ++row) {
+    for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
         s_settings_rows[row] = lv_label_create(s_settings_screen);
-        lv_obj_set_pos(s_settings_rows[row], 14, 44 + (int)row * 30);
-        lv_obj_set_width(s_settings_rows[row], 296);
+        lv_obj_set_pos(s_settings_rows[row], 10, 36 + (int)row * 26);
+        lv_obj_set_width(s_settings_rows[row], 300);
+        lv_obj_set_height(s_settings_rows[row], 24);
+        lv_obj_set_style_pad_left(s_settings_rows[row], 6, 0);
+        lv_obj_set_style_pad_top(s_settings_rows[row], 3, 0);
         lv_label_set_long_mode(s_settings_rows[row], LV_LABEL_LONG_DOT);
-        lv_obj_set_style_text_color(s_settings_rows[row], lv_color_hex(0xB0BEC5), 0);
+        lv_obj_set_style_text_color(s_settings_rows[row], lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_bg_opa(s_settings_rows[row], LV_OPA_COVER, 0);
         lv_label_set_text(s_settings_rows[row], "");
+    }
+    s_settings_notice = lv_label_create(s_settings_screen);
+    lv_obj_set_pos(s_settings_notice, 10, 218);
+    lv_obj_set_width(s_settings_notice, 300);
+    lv_label_set_long_mode(s_settings_notice, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_color(s_settings_notice, lv_color_hex(0xFFCC80), 0);
+    lv_label_set_text(s_settings_notice, "");
+}
+
+static const char *ui_settings_group_text(ui_settings_group_t group, bool english)
+{
+    switch (group) {
+    case UI_SETTINGS_GROUP_LANGUAGE: return english ? "Language" : "Язык";
+    case UI_SETTINGS_GROUP_GENERAL: return english ? "General" : "Общие";
+    case UI_SETTINGS_GROUP_DISPLAY: return english ? "Display" : "Экран";
+    default: return "";
     }
 }
 
-// The screen is read-only, so it is refreshed from the poll loop rather than
-// on an event: Wi-Fi can associate or drop while the user is looking at it.
+static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_t text_size)
+{
+    const bool english = s_device_settings.language == DEVICE_LANGUAGE_EN;
+    const char *group = ui_settings_group_text(row->group, english);
+    if (row->kind == UI_SETTINGS_ROW_GROUP) {
+        snprintf(text, text_size, "%c %s",
+                 ui_settings_model_is_expanded(&s_settings_model, row->group) ? 'v' : '>', group);
+        return;
+    }
+    switch (row->id) {
+    case UI_SETTINGS_ROW_LANGUAGE_FIELD:
+        snprintf(text, text_size, "  %s: %s", english ? "Language" : "Язык",
+                 english ? "English" : "Русский");
+        break;
+    case UI_SETTINGS_ROW_HOME_SCREEN_FIELD:
+        snprintf(text, text_size, "  %s: %s", english ? "Home screen" : "Главный экран",
+                 s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED ?
+                     (english ? "Feed" : "Лента") : (english ? "Text" : "Текст"));
+        break;
+    case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
+        snprintf(text, text_size, "  %s: %s", english ? "Flip vertical" : "Поворот по вертикали",
+                 s_device_settings.flip_vertical ? "ON" : "OFF");
+        break;
+    case UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD:
+        snprintf(text, text_size, "  %s: %s", english ? "Flip horizontal" : "Поворот по горизонтали",
+                 s_device_settings.flip_horizontal ? "ON" : "OFF");
+        break;
+    default:
+        text[0] = '\0';
+        break;
+    }
+}
+
 static void ui_update_settings(void)
 {
     if (!s_settings_open) return;
-    const wifi_provisioning_status_t wifi = wifi_provisioning_status();
-    int8_t rssi = 0;
-    const bool rssi_valid = wifi_provisioning_get_rssi(&rssi);
-    const ui_settings_info_t info = {
-        .connected = wifi.mode == WIFI_PROVISIONING_STA_CONNECTED,
-        .ssid = wifi.active_ssid,
-        .ipv4 = wifi.ipv4,
-        .rssi_valid = rssi_valid,
-        .rssi_dbm = rssi,
-        .web_ready = true,
-    };
-    for (size_t row = 0; row < UI_SETTINGS_ROW_COUNT; ++row) {
+    const size_t row_count = ui_settings_model_row_count(&s_settings_model);
+    const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
+    for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
+        if (row >= row_count) {
+            lv_label_set_text(s_settings_rows[row], "");
+            continue;
+        }
+        const ui_settings_row_t item = ui_settings_model_row_at(&s_settings_model, row);
         char text[96];
-        ui_settings_row_text((ui_settings_row_t)row, &info, text, sizeof(text));
+        ui_settings_row_text(&item, text, sizeof(text));
         ui_set_label_text_if_changed(s_settings_rows[row], text);
+        const bool selected_row = item.id == selected;
+        const uint32_t background = selected_row ? 0x1769AA :
+            item.kind == UI_SETTINGS_ROW_FIELD ? 0x263746 : 0x101820;
+        lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(background), 0);
     }
 }
 
 static void ui_show_settings(void)
 {
     s_settings_open = true;
+    ui_settings_model_init(&s_settings_model);
+    if (!device_settings_init(&s_device_settings)) {
+        lv_label_set_text(s_settings_notice, "Ошибка чтения settings.csv");
+    } else {
+        lv_label_set_text(s_settings_notice, "");
+        (void)board_display_set_rotation(s_device_settings.flip_vertical,
+                                         s_device_settings.flip_horizontal);
+    }
     ui_update_settings();
     lv_screen_load(s_settings_screen);
 }
@@ -353,6 +417,44 @@ static void ui_close_settings(void)
     if (!s_settings_open) return;
     s_settings_open = false;
     ui_load_menu_screen();
+}
+
+static void ui_settings_change_selected(void)
+{
+    const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
+    bool changed = false;
+    switch (selected) {
+    case UI_SETTINGS_ROW_LANGUAGE_FIELD:
+        changed = device_settings_set_language(
+            &s_device_settings,
+            s_device_settings.language == DEVICE_LANGUAGE_EN ? DEVICE_LANGUAGE_RU : DEVICE_LANGUAGE_EN);
+        break;
+    case UI_SETTINGS_ROW_HOME_SCREEN_FIELD:
+        changed = device_settings_set_home_screen(
+            &s_device_settings,
+            s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED ?
+                DEVICE_HOME_SCREEN_TEXT : DEVICE_HOME_SCREEN_FEED);
+        break;
+    case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
+        changed = device_settings_set_flip_vertical(&s_device_settings,
+                                                    !s_device_settings.flip_vertical);
+        if (changed) {
+            (void)board_display_set_rotation(s_device_settings.flip_vertical,
+                                             s_device_settings.flip_horizontal);
+        }
+        break;
+    case UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD:
+        changed = device_settings_set_flip_horizontal(&s_device_settings,
+                                                      !s_device_settings.flip_horizontal);
+        if (changed) {
+            (void)board_display_set_rotation(s_device_settings.flip_vertical,
+                                             s_device_settings.flip_horizontal);
+        }
+        break;
+    default:
+        return;
+    }
+    lv_label_set_text(s_settings_notice, changed ? "" : "Ошибка записи settings.csv");
 }
 
 static void ui_create_station_list_screen(void)
@@ -605,9 +707,22 @@ static void ui_handle_input(board_input_action_t action)
     // transition table for no gain. Any of the three ways out returns to the
     // main screen.
     if (s_settings_open) {
-        if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON ||
-            action == BOARD_INPUT_ACTION_F2) {
+        if (action == BOARD_INPUT_ACTION_F2) {
             ui_close_settings();
+        } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
+                   action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
+            const int direction = action == BOARD_INPUT_ACTION_ENCODER_RIGHT ? 1 : -1;
+            (void)ui_settings_model_move(&s_settings_model, direction);
+            ui_update_settings();
+        } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
+            const ui_settings_row_t row = ui_settings_model_row_at(
+                &s_settings_model, s_settings_model.cursor);
+            if (row.kind == UI_SETTINGS_ROW_GROUP) {
+                (void)ui_settings_model_activate(&s_settings_model);
+            } else {
+                ui_settings_change_selected();
+            }
+            ui_update_settings();
         }
         return;
     }

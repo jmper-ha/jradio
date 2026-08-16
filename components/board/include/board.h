@@ -19,3 +19,4 @@ esp_err_t board_audio_self_test(uint32_t duration_ms);
  * glitches to starvation rather than to decoding or the network. */
 unsigned int board_audio_underrun_count(void);
 esp_err_t board_display_draw_rgb565(int x1, int y1, int x2, int y2, const uint16_t *pixels);
+esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal);

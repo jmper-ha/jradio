@@ -200,6 +200,11 @@ static void ui_create_menu_screen(void)
     lv_obj_set_style_bg_color(s_menu_screen, lv_color_hex(0x101820), 0);
     lv_obj_set_style_border_width(s_menu_screen, 0, 0);
     lv_obj_set_style_pad_all(s_menu_screen, 0, 0);
+    // Set once here rather than on each label: text_font is inherited in LVGL,
+    // so this covers every label on the screen including any added later. The
+    // default font has no Cyrillic and renders it as empty boxes, which is a
+    // mistake that only shows up when a label first receives Russian text.
+    lv_obj_set_style_text_font(s_menu_screen, &ui_font_cyrillic_14, 0);
 
     lv_obj_t *title = lv_label_create(s_menu_screen);
     lv_label_set_text(title, "jradio");
@@ -221,7 +226,6 @@ static void ui_create_menu_screen(void)
     s_menu_notice = lv_label_create(s_menu_screen);
     lv_label_set_text(s_menu_notice, "");
     lv_obj_set_pos(s_menu_notice, 12, 220);
-    lv_obj_set_style_text_font(s_menu_notice, &ui_font_cyrillic_14, 0);
     lv_obj_set_style_text_color(s_menu_notice, lv_color_hex(0xFFD54F), 0);
     ui_update_menu_highlight();
 }
@@ -293,11 +297,15 @@ static void ui_create_settings_screen(void)
     lv_obj_set_style_bg_color(s_settings_screen, lv_color_hex(0x101820), 0);
     lv_obj_set_style_border_width(s_settings_screen, 0, 0);
     lv_obj_set_style_pad_all(s_settings_screen, 0, 0);
+    // Set once here rather than on each label: text_font is inherited in LVGL,
+    // so this covers every label on the screen including any added later. The
+    // default font has no Cyrillic and renders it as empty boxes, which is a
+    // mistake that only shows up when a label first receives Russian text.
+    lv_obj_set_style_text_font(s_settings_screen, &ui_font_cyrillic_14, 0);
 
     lv_obj_t *title = lv_label_create(s_settings_screen);
     lv_label_set_text(title, "Настройки");
     lv_obj_set_pos(title, 12, 8);
-    lv_obj_set_style_text_font(title, &ui_font_cyrillic_14, 0);
     lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
 
     for (size_t row = 0; row < UI_SETTINGS_ROW_COUNT; ++row) {
@@ -305,7 +313,6 @@ static void ui_create_settings_screen(void)
         lv_obj_set_pos(s_settings_rows[row], 14, 44 + (int)row * 30);
         lv_obj_set_width(s_settings_rows[row], 296);
         lv_label_set_long_mode(s_settings_rows[row], LV_LABEL_LONG_DOT);
-        lv_obj_set_style_text_font(s_settings_rows[row], &ui_font_cyrillic_14, 0);
         lv_obj_set_style_text_color(s_settings_rows[row], lv_color_hex(0xB0BEC5), 0);
         lv_label_set_text(s_settings_rows[row], "");
     }
@@ -354,12 +361,16 @@ static void ui_create_station_list_screen(void)
     lv_obj_set_style_bg_color(s_station_list_screen, lv_color_hex(0x101820), 0);
     lv_obj_set_style_border_width(s_station_list_screen, 0, 0);
     lv_obj_set_style_pad_all(s_station_list_screen, 0, 0);
+    // Set once here rather than on each label: text_font is inherited in LVGL,
+    // so this covers every label on the screen including any added later. The
+    // default font has no Cyrillic and renders it as empty boxes, which is a
+    // mistake that only shows up when a label first receives Russian text.
+    lv_obj_set_style_text_font(s_station_list_screen, &ui_font_cyrillic_14, 0);
     s_station_list_title = lv_label_create(s_station_list_screen);
     lv_label_set_text(s_station_list_title, "Internet radio | Stations");
     lv_obj_set_pos(s_station_list_title, 12, 8);
     lv_obj_set_width(s_station_list_title, 300);
     lv_label_set_long_mode(s_station_list_title, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(s_station_list_title, &ui_font_cyrillic_14, 0);
     lv_obj_set_style_text_color(s_station_list_title, lv_color_hex(0xFFFFFF), 0);
     for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
         s_station_list_rows[row] = lv_label_create(s_station_list_screen);
@@ -368,7 +379,6 @@ static void ui_create_station_list_screen(void)
         lv_obj_set_style_pad_left(s_station_list_rows[row], 6, 0);
         lv_obj_set_style_pad_top(s_station_list_rows[row], 2, 0);
         lv_obj_set_style_radius(s_station_list_rows[row], 3, 0);
-        lv_obj_set_style_text_font(s_station_list_rows[row], &ui_font_cyrillic_14, 0);
         lv_obj_set_style_text_color(s_station_list_rows[row], lv_color_hex(0xFFFFFF), 0);
     }
 }
@@ -381,10 +391,14 @@ static void ui_create_source_screen(void)
     lv_obj_set_style_bg_color(s_source_screen, lv_color_hex(0x101820), 0);
     lv_obj_set_style_border_width(s_source_screen, 0, 0);
     lv_obj_set_style_pad_all(s_source_screen, 0, 0);
+    // Set once here rather than on each label: text_font is inherited in LVGL,
+    // so this covers every label on the screen including any added later. The
+    // default font has no Cyrillic and renders it as empty boxes, which is a
+    // mistake that only shows up when a label first receives Russian text.
+    lv_obj_set_style_text_font(s_source_screen, &ui_font_cyrillic_14, 0);
 
     s_source_title = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_title, 14, 32);
-    lv_obj_set_style_text_font(s_source_title, &ui_font_cyrillic_14, 0);
     lv_obj_set_style_text_color(s_source_title, lv_color_hex(0xFFFFFF), 0);
 
     s_source_status = lv_label_create(s_source_screen);
@@ -392,7 +406,6 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_status, 14, 64);
     // Carries Russian copy for the USB source; the built-in LVGL font has no
     // Cyrillic and renders it as empty boxes.
-    lv_obj_set_style_text_font(s_source_status, &ui_font_cyrillic_14, 0);
     lv_obj_set_style_text_color(s_source_status, lv_color_hex(0xB0BEC5), 0);
 
     s_source_detail = lv_label_create(s_source_screen);
@@ -400,7 +413,6 @@ static void ui_create_source_screen(void)
     lv_obj_set_width(s_source_detail, 290);
     lv_obj_set_height(s_source_detail, 52);
     lv_label_set_long_mode(s_source_detail, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_font(s_source_detail, &ui_font_cyrillic_14, 0);
     lv_obj_set_style_text_color(s_source_detail, lv_color_hex(0xFFFFFF), 0);
 
     s_source_stream = lv_label_create(s_source_screen);

@@ -209,6 +209,8 @@ static void ui_update_feed_screen(void)
          * glyph inside its content box so the visible shape is centered too. */
         lv_obj_set_style_pad_left(s_feed_icons[slot], 0, 0);
         lv_obj_set_style_pad_right(s_feed_icons[slot], center ? 8 : 0, 0);
+        lv_obj_set_style_pad_top(s_feed_icons[slot], center ? 28 : 0, 0);
+        lv_obj_set_style_pad_bottom(s_feed_icons[slot], 0, 0);
         lv_obj_set_style_text_color(s_feed_icons[slot],
                                     lv_color_hex(center ? 0xFFFFFF : 0x90A4AE), 0);
         lv_obj_set_style_text_align(s_feed_icons[slot], LV_TEXT_ALIGN_CENTER, 0);

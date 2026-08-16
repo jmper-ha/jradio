@@ -32,6 +32,14 @@ bool station_list_selection_requires_switch(const station_list_state_t *state);
  * and re-clamps the cursor if the list shrank. Returns true when something
  * changed and the screen needs a redraw. */
 bool station_list_sync_counts(station_list_state_t *state, size_t count, size_t active_index);
+/* Cursor position as a percentage, for the scroll bar under the list. The
+ * edge cases are the point of having this apart from the caller: an empty list
+ * has no position at all, and a list that fits on screen would divide by zero
+ * on (count - 1). Both answer 100 - a bar that cannot move should look filled
+ * rather than empty, which would read as "you are at the top of something
+ * longer". */
+uint8_t station_list_progress_percent(const station_list_state_t *state);
+
 void station_list_note_activity(station_list_state_t *state, uint32_t now_ms);
 bool station_list_idle_timeout_elapsed(const station_list_state_t *state, uint32_t now_ms,
                                        uint32_t timeout_ms);

@@ -3,6 +3,43 @@
 
 #include "ui_station_list.h"
 
+
+static void test_progress_percent_tracks_the_cursor(void)
+{
+    station_list_state_t state;
+    station_list_init(&state, 11U, 0U, 0U);
+    assert(station_list_progress_percent(&state) == 0U);
+
+    state.selected_index = 5U;
+    assert(station_list_progress_percent(&state) == 50U);
+    state.selected_index = 10U;
+    assert(station_list_progress_percent(&state) == 100U);
+}
+
+static void test_progress_percent_handles_lists_that_cannot_scroll(void)
+{
+    /* A bar that cannot move should read as full, not empty: an empty bar says
+     * "you are at the top of something longer", which would be a lie. */
+    station_list_state_t state;
+    station_list_init(&state, 1U, 0U, 0U);
+    assert(station_list_progress_percent(&state) == 100U);
+
+    /* An empty list has no position at all, and (count - 1) would wrap. */
+    station_list_init(&state, 0U, 0U, SIZE_MAX);
+    assert(station_list_progress_percent(&state) == 100U);
+
+    assert(station_list_progress_percent(NULL) == 100U);
+}
+
+static void test_progress_percent_clamps_a_cursor_past_the_end(void)
+{
+    /* The catalogue can shrink under the cursor between a redraw and a sync. */
+    station_list_state_t state;
+    station_list_init(&state, 4U, 0U, 0U);
+    state.selected_index = 99U;
+    assert(station_list_progress_percent(&state) == 100U);
+}
+
 int main(void)
 {
     station_list_state_t state;
@@ -107,6 +144,9 @@ int main(void)
     station_list_note_activity(&state, 1000 + 9999);
     assert(!station_list_idle_timeout_elapsed(&state, 1000 + 9999 + 9999, 10000));
 
+    test_progress_percent_tracks_the_cursor();
+    test_progress_percent_handles_lists_that_cannot_scroll();
+    test_progress_percent_clamps_a_cursor_past_the_end();
     puts("ui_station_list tests passed");
     return 0;
 }

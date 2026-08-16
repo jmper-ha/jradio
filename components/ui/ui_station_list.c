@@ -86,6 +86,15 @@ bool station_list_selection_requires_switch(const station_list_state_t *state)
     return state != NULL && state->selected_index != state->active_index;
 }
 
+uint8_t station_list_progress_percent(const station_list_state_t *state)
+{
+    if (state == NULL || state->count == 0U) return 100U;
+    if (state->count == 1U) return 100U;
+    const size_t last = state->count - 1U;
+    const size_t index = state->selected_index > last ? last : state->selected_index;
+    return (uint8_t)((index * 100U) / last);
+}
+
 void station_list_note_activity(station_list_state_t *state, uint32_t now_ms)
 {
     if (state == NULL) return;

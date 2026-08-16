@@ -35,7 +35,8 @@
 #define UI_INPUT_QUEUE_LENGTH 16
 #define UI_TASK_STACK_SIZE 6144
 #define UI_TASK_PRIORITY 4
-#define UI_STATION_LIST_MAX_ROWS 7U
+/* Six rows, not seven: the bottom strip belongs to the scroll bar. */
+#define UI_STATION_LIST_MAX_ROWS 6U
 #define UI_RADIO_EMPTY_LIST_DELAY_MS 250U
 #define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
 #define UI_SETTINGS_MAX_ROWS 7U
@@ -70,6 +71,7 @@ static lv_obj_t *s_station_list_screen;
 static lv_obj_t *s_station_list_title;
 static lv_obj_t *s_station_list_notice;
 static lv_obj_t *s_station_list_rows[UI_STATION_LIST_MAX_ROWS];
+static lv_obj_t *s_station_list_progress;
 static station_list_state_t s_station_list;
 static ui_player_state_t s_player_ui;
 // Only the player screen tells a single click from a double one, so only
@@ -343,7 +345,9 @@ static bool ui_list_row_text(size_t list_index, char *text, size_t text_size, bo
     *active = false;
     if (!ui_list_shows_usb()) {
         const station_catalog_entry_t *entry = player_control_station_at(list_index);
-        snprintf(text, text_size, "%s", entry == NULL ? "" : entry->name);
+        // Ordinal, so the first station reads 001 rather than 000.
+        snprintf(text, text_size, "%03u %s", (unsigned)(list_index + 1U),
+                 entry == NULL ? "" : entry->name);
         *active = list_index == station_list_active_index(&s_station_list);
         return true;
     }
@@ -392,6 +396,15 @@ static void ui_update_station_list(void)
         lv_obj_set_style_border_color(s_station_list_rows[row], lv_color_hex(0xFFD54F), 0);
         lv_obj_set_style_border_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
         lv_label_set_text_fmt(s_station_list_rows[row], "%c %s", selected ? '>' : ' ', text);
+    }
+    // Hidden when there is nothing to scroll through at all - on the "no
+    // drive" screen a full bar under an empty list would be nonsense.
+    if (s_station_list.count == 0U) {
+        lv_obj_add_flag(s_station_list_progress, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_clear_flag(s_station_list_progress, LV_OBJ_FLAG_HIDDEN);
+        lv_bar_set_value(s_station_list_progress,
+                         station_list_progress_percent(&s_station_list), LV_ANIM_OFF);
     }
 }
 
@@ -641,6 +654,13 @@ static void ui_create_station_list_screen(void)
     lv_obj_set_width(s_station_list_title, 300);
     lv_label_set_long_mode(s_station_list_title, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_station_list_title, lv_color_hex(0xFFFFFF), 0);
+    s_station_list_progress = lv_bar_create(s_station_list_screen);
+    lv_obj_set_pos(s_station_list_progress, 12, 200);
+    lv_obj_set_size(s_station_list_progress, 296, 8);
+    lv_bar_set_range(s_station_list_progress, 0, 100);
+    lv_obj_set_style_bg_color(s_station_list_progress, lv_color_hex(0x263746), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_station_list_progress, lv_color_hex(0x1769AA),
+                              LV_PART_INDICATOR);
     for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
         s_station_list_rows[row] = lv_label_create(s_station_list_screen);
         lv_obj_set_pos(s_station_list_rows[row], 10, 34 + (int)row * 26);

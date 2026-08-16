@@ -394,9 +394,26 @@ static void ui_update_station_list(void)
         const bool selected = row == cursor_row;
         lv_obj_set_style_bg_color(s_station_list_rows[row], lv_color_hex(selected ? 0x1769AA : 0x101820), 0);
         lv_obj_set_style_bg_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(s_station_list_rows[row], active ? 2 : 0, 0);
-        lv_obj_set_style_border_color(s_station_list_rows[row], lv_color_hex(0xFFD54F), 0);
-        lv_obj_set_style_border_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
+        // Outline, not border: a border is drawn inside and takes 2 px off each
+        // edge, which left 18 px of content for a 19 px line - so the playing
+        // row overflowed vertically and LV_LABEL_LONG_MODE_SCROLL rolled it
+        // up and down, even for names that fitted across. An outline is drawn
+        // outside the object and costs the content nothing.
+        lv_obj_set_style_outline_width(s_station_list_rows[row], active ? 2 : 0, 0);
+        lv_obj_set_style_outline_color(s_station_list_rows[row], lv_color_hex(0xFFD54F), 0);
+        lv_obj_set_style_outline_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
+        // Hug the row: the 2 px gap between rows is exactly where it goes.
+        lv_obj_set_style_outline_pad(s_station_list_rows[row], 0, 0);
+        // Only the row under the cursor scrolls: a screen of six marquees at
+        // once is unreadable, and the row being pointed at is the one whose
+        // full name the user is actually after. The others keep the ellipsis.
+        //
+        // Set before the text, since changing either restarts the animation -
+        // which is why this function is only called when something really
+        // changed, never from the poll loop.
+        lv_label_set_long_mode(s_station_list_rows[row],
+                               selected ? LV_LABEL_LONG_MODE_SCROLL
+                                        : LV_LABEL_LONG_MODE_DOTS);
         lv_label_set_text_fmt(s_station_list_rows[row], "%c %s", selected ? '>' : ' ', text);
     }
     // Hidden when there is nothing to scroll through at all - on the "no
@@ -671,6 +688,7 @@ static void ui_create_station_list_screen(void)
         lv_obj_set_style_pad_top(s_station_list_rows[row], 2, 0);
         lv_obj_set_style_radius(s_station_list_rows[row], 3, 0);
         lv_obj_set_style_text_color(s_station_list_rows[row], lv_color_hex(0xFFFFFF), 0);
+        lv_label_set_long_mode(s_station_list_rows[row], LV_LABEL_LONG_MODE_DOTS);
     }
 }
 

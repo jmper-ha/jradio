@@ -192,20 +192,18 @@ static void ui_update_feed_screen(void)
 {
     const ui_feed_item_t selected = ui_feed_model_selected(&s_feed_model);
     const int offsets[5] = {-2, -1, 0, 1, 2};
-    const int positions[5] = {22, 80, 132, 200, 252};
+    const int positions[5] = {8, 64, 116, 172, 228};
     for (size_t slot = 0; slot < 5U; ++slot) {
         int index = (int)selected + offsets[slot];
         while (index < 0) index += UI_FEED_ITEM_COUNT;
         index %= UI_FEED_ITEM_COUNT;
         const ui_feed_item_t item = (ui_feed_item_t)index;
         const bool center = slot == 2U;
-        const bool enabled = ui_feed_model_is_supported(item) || item == UI_FEED_SETTINGS;
         lv_label_set_text(s_feed_icons[slot], ui_feed_icon_symbol(item));
-        lv_obj_set_pos(s_feed_icons[slot], positions[slot], center ? 91 : 99);
-        lv_obj_set_size(s_feed_icons[slot], center ? 56 : 42, center ? 56 : 42);
+        lv_obj_set_pos(s_feed_icons[slot], positions[slot], center ? 78 : 94);
+        lv_obj_set_size(s_feed_icons[slot], center ? 88 : 56, center ? 88 : 56);
         lv_obj_set_style_text_color(s_feed_icons[slot],
-                                    lv_color_hex(!enabled ? 0x607D8B :
-                                                 center ? 0xFFFFFF : 0x90A4AE), 0);
+                                    lv_color_hex(center ? 0xFFFFFF : 0x90A4AE), 0);
         lv_obj_set_style_text_align(s_feed_icons[slot], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_border_width(s_feed_icons[slot], center ? 2 : 0, 0);
         lv_obj_set_style_border_color(s_feed_icons[slot], lv_color_hex(0x29B6F6), 0);
@@ -238,8 +236,8 @@ static void ui_create_feed_screen(void)
     lv_label_set_text(s_feed_notice, "");
     for (size_t index = 0; index < 5U; ++index) {
         s_feed_icons[index] = lv_label_create(s_feed_screen);
-        lv_obj_set_style_text_font(s_feed_icons[index], &lv_font_montserrat_14, 0);
-        lv_obj_set_style_pad_all(s_feed_icons[index], 6, 0);
+        lv_obj_set_style_text_font(s_feed_icons[index], &lv_font_montserrat_24, 0);
+        lv_obj_set_style_pad_all(s_feed_icons[index], 8, 0);
     }
     ui_feed_model_init(&s_feed_model, 0U);
     ui_update_feed_screen();

@@ -1,15 +1,28 @@
 #include <assert.h>
 #include <stdio.h>
 
+#include "board_audio_format.h"
+#include "board_display_profile.h"
 #include "board_options.h"
 
-/* board_options.h is plain data, so these are not tests of behaviour: they pin
- * the wiring against accidental edits and check the relations between options
- * that the drivers depend on but cannot verify at runtime. */
+/* These headers are plain data, so these are not tests of behaviour: they pin
+ * the wiring against accidental edits and check the relations the drivers
+ * depend on but cannot verify at runtime. The profile headers are included
+ * too, because the invariants worth checking are precisely the ones that span
+ * a choice in board_options.h and its consequences. */
+
+static void test_a_selected_part_resolves_to_a_real_catalogue_entry(void)
+{
+    /* The point of naming parts in board_parts.h: a typo in a selection is an
+     * unknown identifier and fails to compile, rather than evaluating to 0 and
+     * silently selecting "none". */
+    assert(DISPLAY != DISPLAY_NONE);
+    assert(AUDIO_DAC != DAC_NONE);
+}
 
 static void test_display_group_is_complete_and_consistent(void)
 {
-    assert(DISPLAY_CONTROLLER == DISPLAY_ILI9341);
+    assert(DISPLAY == DISPLAY_ILI9341_320);
     /* Only SPI2 and SPI3 can drive a panel on this part; SPI1 is the flash bus. */
     assert(DISPLAY_SPI_PERIPHERAL == 2 || DISPLAY_SPI_PERIPHERAL == 3);
     assert(TFT_CS_GPIO == 10);
@@ -22,7 +35,6 @@ static void test_display_group_is_complete_and_consistent(void)
     assert(TFT_SWAP_XY == 1);
     assert(TFT_MIRROR_X == 0);
     assert(TFT_MIRROR_Y == 0);
-    assert(LCD_WAIT_FOR_TRANSFER == 1);
     /* The panel is landscape, which only holds while the axes are swapped. */
     assert(TFT_SWAP_XY == 0 || TFT_WIDTH > TFT_HEIGHT);
 }
@@ -66,7 +78,7 @@ static void test_debounce_is_a_whole_number_of_polls(void)
 
 static void test_audio_group_matches_the_fixed_i2s_slots(void)
 {
-    assert(AUDIO_DAC == AUDIO_DAC_PCM5102);
+    assert(AUDIO_DAC == DAC_PCM5102);
     assert(I2S_DOUT_GPIO == 16);
     assert(I2S_BCLK_GPIO == 18);
     assert(I2S_LRCK_GPIO == 17);
@@ -79,7 +91,6 @@ static void test_audio_group_matches_the_fixed_i2s_slots(void)
     /* The players expand mono into stereo rather than reconfiguring, so the
      * slot width and the sample width must agree. */
     assert(I2S_SLOT_BIT_WIDTH == AUDIO_BITS_PER_SAMPLE);
-    assert(I2S_AUTO_CLEAR_AFTER_CB == 1);
     assert(I2S_PRELOAD_SILENCE == 1);
 }
 
@@ -132,6 +143,7 @@ static void test_no_pin_is_claimed_by_two_devices(void)
 
 int main(void)
 {
+    test_a_selected_part_resolves_to_a_real_catalogue_entry();
     test_display_group_is_complete_and_consistent();
     test_backlight_duty_fits_the_pwm_timer();
     test_control_pins_are_distinct();

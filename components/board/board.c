@@ -18,19 +18,14 @@
 #include "board.h"
 #include "board_audio_health.h"
 #include "board_audio_startup.h"
+#include "board_audio_format.h"
+#include "board_display_profile.h"
 #include "board_options.h"
 #include "board_input.h"
 #include "pcm_diagnostics.h"
 
 /* Parts this file has code for. Selecting anything else in board_options.h
  * fails the build rather than initialising a device that then misbehaves. */
-#if DISPLAY_CONTROLLER != DISPLAY_ILI9341
-#error "board.c only drives the ILI9341; see DISPLAY_CONTROLLER"
-#endif
-#if AUDIO_DAC != AUDIO_DAC_PCM5102
-#error "board.c only drives the PCM5102; see AUDIO_DAC"
-#endif
-
 /* The SPI host enum is not numbered by peripheral, so map it explicitly. */
 #if DISPLAY_SPI_PERIPHERAL == 2
 #define LCD_HOST SPI2_HOST
@@ -40,9 +35,15 @@
 #error "unsupported DISPLAY_SPI_PERIPHERAL"
 #endif
 
-/* Height of one flush band. A firmware memory/throughput tradeoff rather than
- * a wiring fact, so it stays here. */
+/* Height of one flush band, and whether to block until the panel has taken it.
+ * Both are firmware tradeoffs rather than facts about the hardware: LVGL is
+ * given a single draw buffer, so the flush must complete before that buffer is
+ * reused. */
 #define LCD_DRAW_LINES 20
+#define LCD_WAIT_FOR_TRANSFER 1
+/* Zero the DMA buffer after each callback so a stalled writer clocks out
+ * silence rather than replaying the last block. */
+#define I2S_AUTO_CLEAR_AFTER_CB 1
 /* ledc_timer_bit_t enumerators are the bit counts themselves, which lets the
  * option stay a plain number. Verified rather than assumed. */
 _Static_assert(LEDC_TIMER_13_BIT == 13,

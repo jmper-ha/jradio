@@ -13,7 +13,7 @@
 #include "lvgl.h"
 
 #include "board.h"
-#include "board_options.h"
+#include "board_display_profile.h"
 #include "player_control.h"
 #include "ui_draw_buffer.h"
 #include "ui_font_cyrillic_14.h"

@@ -22,7 +22,7 @@
 #include "esp_log.h"
 
 #include "board.h"
-#include "board_options.h"
+#include "board_audio_format.h"
 #include "icy_metadata.h"
 #include "pcm_diagnostics.h"
 #include "radio_http_status.h"

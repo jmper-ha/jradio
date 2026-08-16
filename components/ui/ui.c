@@ -60,7 +60,8 @@ static lv_obj_t *s_source_stream;
 static lv_obj_t *s_source_wifi;
 static lv_obj_t *s_settings_screen;
 static lv_obj_t *s_settings_rows[UI_SETTINGS_MAX_ROWS];
-static lv_obj_t *s_settings_switches[2];
+#define UI_SETTINGS_SWITCH_COUNT 3U
+static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_notice;
 static ui_settings_model_t s_settings_model;
 static device_settings_t s_device_settings;
@@ -426,7 +427,7 @@ static void ui_create_settings_screen(void)
         lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(0x101820), 0);
         lv_label_set_text(s_settings_rows[row], "");
     }
-    for (size_t index = 0; index < 2U; ++index) {
+    for (size_t index = 0; index < UI_SETTINGS_SWITCH_COUNT; ++index) {
         s_settings_switches[index] = lv_switch_create(s_settings_screen);
         lv_obj_set_size(s_settings_switches[index], 42, 20);
         lv_obj_set_style_bg_color(s_settings_switches[index], lv_color_hex(0x546E7A), LV_PART_MAIN);
@@ -493,12 +494,36 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
     }
 }
 
+/* Maps a row to its switch, or answers false for rows that have none. Kept as
+ * one lookup rather than a chain of ternaries: every boolean setting needs the
+ * index, the current value and the "has a switch" test to agree, and three
+ * separate expressions is how they stop agreeing. */
+static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool *value)
+{
+    switch (id) {
+    case UI_SETTINGS_ROW_AUTOPLAY_FIELD:
+        *index = 0U;
+        *value = s_device_settings.autoplay;
+        return true;
+    case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
+        *index = 1U;
+        *value = s_device_settings.flip_vertical;
+        return true;
+    case UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD:
+        *index = 2U;
+        *value = s_device_settings.flip_horizontal;
+        return true;
+    default:
+        return false;
+    }
+}
+
 static void ui_update_settings(void)
 {
     if (!s_settings_open) return;
     const size_t row_count = ui_settings_model_row_count(&s_settings_model);
     const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
-    for (size_t index = 0; index < 2U; ++index) {
+    for (size_t index = 0; index < UI_SETTINGS_SWITCH_COUNT; ++index) {
         lv_obj_add_flag(s_settings_switches[index], LV_OBJ_FLAG_HIDDEN);
     }
     for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
@@ -514,16 +539,14 @@ static void ui_update_settings(void)
         const bool selected_row = item.id == selected;
         const uint32_t background = selected_row ? 0x1769AA :
             item.kind == UI_SETTINGS_ROW_FIELD ? 0x263746 : 0x101820;
-        const bool has_switch = item.id == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD ||
-                                item.id == UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD;
+        size_t switch_index = 0U;
+        bool enabled = false;
+        const bool has_switch = ui_settings_row_switch(item.id, &switch_index, &enabled);
         lv_obj_set_x(s_settings_rows[row], has_switch ? 58 : 10);
         lv_obj_set_width(s_settings_rows[row], has_switch ? 242 : 300);
         lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(background), 0);
         if (has_switch) {
-            const size_t switch_index = item.id == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD ? 0U : 1U;
             lv_obj_t *toggle = s_settings_switches[switch_index];
-            const bool enabled = switch_index == 0U ? s_device_settings.flip_vertical
-                                                    : s_device_settings.flip_horizontal;
             if (enabled) lv_obj_add_state(toggle, LV_STATE_CHECKED);
             else lv_obj_clear_state(toggle, LV_STATE_CHECKED);
             lv_obj_set_pos(toggle, 10, 38 + (int)row * 26);

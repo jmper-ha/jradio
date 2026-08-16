@@ -380,8 +380,8 @@ static void radio_direct_task(void *arg)
             const size_t pcm_delta = radio->pcm_bytes - last_pcm_bytes;
             const uint32_t expected =
                 (radio->output_sample_rate > 0U ? radio->output_sample_rate : 44100U) *
-                (uint32_t)BOARD_AUDIO_CHANNEL_COUNT *
-                (uint32_t)(BOARD_AUDIO_BITS_PER_SAMPLE / 8U) *
+                (uint32_t)AUDIO_CHANNEL_COUNT *
+                (uint32_t)(AUDIO_BITS_PER_SAMPLE / 8U) *
                 (RADIO_STARVATION_REPORT_MS / 1000U);
             // min_backlog in milliseconds is the number that matters: the same
             // byte count is a second of a 128 kbps stream and 90 ms of FLAC,

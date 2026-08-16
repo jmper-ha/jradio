@@ -11,8 +11,8 @@
 /* Poll interval, debounce window and the F1 hold come from board_options.h -
  * they describe the physical switches, not this driver. Only the queue depth
  * is a firmware choice. */
-#define BOARD_INPUT_DEBOUNCE_SAMPLES (BOARD_INPUT_DEBOUNCE_MS / BOARD_INPUT_POLL_MS)
-#define BOARD_INPUT_QUEUE_LENGTH 16
+#define INPUT_DEBOUNCE_SAMPLES (INPUT_DEBOUNCE_MS / INPUT_POLL_MS)
+#define INPUT_QUEUE_LENGTH 16
 
 typedef struct {
     int gpio_num;
@@ -23,11 +23,11 @@ typedef struct {
 static const char *TAG = "input";
 static QueueHandle_t s_event_queue;
 static board_input_channel_t s_channels[] = {
-    {.gpio_num = BOARD_ENCODER_BUTTON_GPIO, .action = BOARD_INPUT_ACTION_ENCODER_BUTTON},
-    {.gpio_num = BOARD_BUTTON_F1_GPIO, .action = BOARD_INPUT_ACTION_F1},
-    {.gpio_num = BOARD_BUTTON_F2_GPIO, .action = BOARD_INPUT_ACTION_F2},
-    {.gpio_num = BOARD_BUTTON_F3_GPIO, .action = BOARD_INPUT_ACTION_F3},
-    {.gpio_num = BOARD_BUTTON_F4_GPIO, .action = BOARD_INPUT_ACTION_F4},
+    {.gpio_num = ENCODER_BUTTON_GPIO, .action = BOARD_INPUT_ACTION_ENCODER_BUTTON},
+    {.gpio_num = BUTTON_F1_GPIO, .action = BOARD_INPUT_ACTION_F1},
+    {.gpio_num = BUTTON_F2_GPIO, .action = BOARD_INPUT_ACTION_F2},
+    {.gpio_num = BUTTON_F3_GPIO, .action = BOARD_INPUT_ACTION_F3},
+    {.gpio_num = BUTTON_F4_GPIO, .action = BOARD_INPUT_ACTION_F4},
 };
 static board_encoder_decoder_t s_encoder_decoder;
 static board_input_hold_t s_f1_hold;
@@ -39,8 +39,8 @@ static void board_input_task(void *arg)
 
     while (true) {
         const board_input_action_t encoder_action =
-            board_encoder_decoder_update(&s_encoder_decoder, gpio_get_level(BOARD_ENCODER_LEFT_GPIO),
-                                         gpio_get_level(BOARD_ENCODER_RIGHT_GPIO));
+            board_encoder_decoder_update(&s_encoder_decoder, gpio_get_level(ENCODER_LEFT_GPIO),
+                                         gpio_get_level(ENCODER_RIGHT_GPIO));
         if (encoder_action != BOARD_INPUT_ACTION_NONE &&
             xQueueSend(s_event_queue, &encoder_action, 0) != pdTRUE) {
             ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)encoder_action);
@@ -62,7 +62,7 @@ static void board_input_task(void *arg)
                 }
             }
         }
-        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(BOARD_INPUT_POLL_MS));
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(INPUT_POLL_MS));
     }
 }
 #endif
@@ -74,19 +74,19 @@ board_input_action_t board_input_action_from_gpio(int gpio_num, int level)
     }
 
     switch (gpio_num) {
-    case BOARD_ENCODER_LEFT_GPIO:
+    case ENCODER_LEFT_GPIO:
         return BOARD_INPUT_ACTION_ENCODER_LEFT;
-    case BOARD_ENCODER_RIGHT_GPIO:
+    case ENCODER_RIGHT_GPIO:
         return BOARD_INPUT_ACTION_ENCODER_RIGHT;
-    case BOARD_ENCODER_BUTTON_GPIO:
+    case ENCODER_BUTTON_GPIO:
         return BOARD_INPUT_ACTION_ENCODER_BUTTON;
-    case BOARD_BUTTON_F1_GPIO:
+    case BUTTON_F1_GPIO:
         return BOARD_INPUT_ACTION_F1;
-    case BOARD_BUTTON_F2_GPIO:
+    case BUTTON_F2_GPIO:
         return BOARD_INPUT_ACTION_F2;
-    case BOARD_BUTTON_F3_GPIO:
+    case BUTTON_F3_GPIO:
         return BOARD_INPUT_ACTION_F3;
-    case BOARD_BUTTON_F4_GPIO:
+    case BUTTON_F4_GPIO:
         return BOARD_INPUT_ACTION_F4;
     default:
         return BOARD_INPUT_ACTION_NONE;
@@ -230,17 +230,17 @@ board_input_action_t board_encoder_decoder_update(board_encoder_decoder_t *decod
 #ifdef ESP_PLATFORM
 esp_err_t board_input_init(void)
 {
-    const uint64_t pin_mask = (1ULL << BOARD_ENCODER_RIGHT_GPIO) |
-                              (1ULL << BOARD_ENCODER_LEFT_GPIO) |
-                              (1ULL << BOARD_ENCODER_BUTTON_GPIO) |
-                              (1ULL << BOARD_BUTTON_F1_GPIO) |
-                              (1ULL << BOARD_BUTTON_F2_GPIO) |
-                              (1ULL << BOARD_BUTTON_F3_GPIO) |
-                              (1ULL << BOARD_BUTTON_F4_GPIO);
+    const uint64_t pin_mask = (1ULL << ENCODER_RIGHT_GPIO) |
+                              (1ULL << ENCODER_LEFT_GPIO) |
+                              (1ULL << ENCODER_BUTTON_GPIO) |
+                              (1ULL << BUTTON_F1_GPIO) |
+                              (1ULL << BUTTON_F2_GPIO) |
+                              (1ULL << BUTTON_F3_GPIO) |
+                              (1ULL << BUTTON_F4_GPIO);
     const gpio_config_t config = {
         .pin_bit_mask = pin_mask,
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = BOARD_INPUT_USE_INTERNAL_PULLUPS ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+        .pull_up_en = INPUT_USE_INTERNAL_PULLUPS ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
@@ -253,26 +253,26 @@ esp_err_t board_input_init(void)
         return ESP_OK;
     }
 
-    s_event_queue = xQueueCreate(BOARD_INPUT_QUEUE_LENGTH, sizeof(board_input_action_t));
+    s_event_queue = xQueueCreate(INPUT_QUEUE_LENGTH, sizeof(board_input_action_t));
     if (s_event_queue == NULL) {
         return ESP_ERR_NO_MEM;
     }
     for (size_t index = 0; index < sizeof(s_channels) / sizeof(s_channels[0]); ++index) {
         const int level = gpio_get_level(s_channels[index].gpio_num);
         board_input_debouncer_init_from_level(&s_channels[index].debouncer, level,
-                                              BOARD_INPUT_DEBOUNCE_SAMPLES);
+                                              INPUT_DEBOUNCE_SAMPLES);
     }
-    board_encoder_decoder_init(&s_encoder_decoder, gpio_get_level(BOARD_ENCODER_LEFT_GPIO),
-                               gpio_get_level(BOARD_ENCODER_RIGHT_GPIO));
-    board_input_hold_init(&s_f1_hold, BOARD_INPUT_F1_HOLD_MS, BOARD_INPUT_POLL_MS);
+    board_encoder_decoder_init(&s_encoder_decoder, gpio_get_level(ENCODER_LEFT_GPIO),
+                               gpio_get_level(ENCODER_RIGHT_GPIO));
+    board_input_hold_init(&s_f1_hold, INPUT_F1_HOLD_MS, INPUT_POLL_MS);
     if (xTaskCreate(board_input_task, "board_input", 3072, NULL, 5, NULL) != pdPASS) {
         vQueueDelete(s_event_queue);
         s_event_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "input task started; poll=%d ms debounce=%d ms", BOARD_INPUT_POLL_MS,
-             BOARD_INPUT_DEBOUNCE_MS);
+    ESP_LOGI(TAG, "input task started; poll=%d ms debounce=%d ms", INPUT_POLL_MS,
+             INPUT_DEBOUNCE_MS);
     return ESP_OK;
 }
 

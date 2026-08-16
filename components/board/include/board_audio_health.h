@@ -29,7 +29,7 @@ typedef struct {
 } board_audio_health_t;
 
 /* The DAC mutes itself after this many consecutive zero frames. */
-#define BOARD_AUDIO_ZERO_DETECT_FRAMES 1024U
+#define AUDIO_ZERO_DETECT_FRAMES 1024U
 
 void board_audio_health_reset(board_audio_health_t *health);
 

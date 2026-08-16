@@ -24,7 +24,7 @@
 #include "ui_usb_notice.h"
 
 #define UI_DRAW_BUFFER_LINES 20
-#define UI_DRAW_BUFFER_SIZE ui_rgb565_draw_buffer_size(BOARD_TFT_WIDTH, UI_DRAW_BUFFER_LINES)
+#define UI_DRAW_BUFFER_SIZE ui_rgb565_draw_buffer_size(TFT_WIDTH, UI_DRAW_BUFFER_LINES)
 #define UI_INPUT_QUEUE_LENGTH 16
 #define UI_TASK_STACK_SIZE 6144
 #define UI_TASK_PRIORITY 4
@@ -731,7 +731,7 @@ esp_err_t ui_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    s_display = lv_display_create(BOARD_TFT_WIDTH, BOARD_TFT_HEIGHT);
+    s_display = lv_display_create(TFT_WIDTH, TFT_HEIGHT);
     if (s_display == NULL) {
         ESP_LOGE(TAG, "LVGL display allocation failed: internal_largest=%u",
                  (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));

@@ -53,8 +53,8 @@ unsigned int board_audio_health_realtime_percent(size_t bytes, uint32_t sample_r
     }
     /* 64-bit throughout: at 48 kHz a 10 s window is already 1.9 MB, and the
      * x100 for the percentage would overflow 32 bits on a longer one. */
-    const uint64_t expected = ((uint64_t)sample_rate * (uint64_t)BOARD_AUDIO_CHANNEL_COUNT *
-                               (uint64_t)(BOARD_AUDIO_BITS_PER_SAMPLE / 8U) *
+    const uint64_t expected = ((uint64_t)sample_rate * (uint64_t)AUDIO_CHANNEL_COUNT *
+                               (uint64_t)(AUDIO_BITS_PER_SAMPLE / 8U) *
                                (uint64_t)elapsed_ms) / 1000U;
     if (expected == 0U) {
         return 0U;

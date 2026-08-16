@@ -11,11 +11,11 @@ int main(void)
     board_encoder_decoder_t encoder;
     board_input_hold_t f1_hold;
 
-    assert(board_input_action_from_gpio(BOARD_BUTTON_F1_GPIO, 0) == BOARD_INPUT_ACTION_F1);
-    assert(board_input_action_from_gpio(BOARD_BUTTON_F1_GPIO, 1) == BOARD_INPUT_ACTION_NONE);
-    assert(board_input_action_from_gpio(BOARD_ENCODER_LEFT_GPIO, 0) == BOARD_INPUT_ACTION_ENCODER_LEFT);
-    assert(board_input_action_from_gpio(BOARD_ENCODER_RIGHT_GPIO, 0) == BOARD_INPUT_ACTION_ENCODER_RIGHT);
-    assert(board_input_action_from_gpio(BOARD_ENCODER_BUTTON_GPIO, 0) == BOARD_INPUT_ACTION_ENCODER_BUTTON);
+    assert(board_input_action_from_gpio(BUTTON_F1_GPIO, 0) == BOARD_INPUT_ACTION_F1);
+    assert(board_input_action_from_gpio(BUTTON_F1_GPIO, 1) == BOARD_INPUT_ACTION_NONE);
+    assert(board_input_action_from_gpio(ENCODER_LEFT_GPIO, 0) == BOARD_INPUT_ACTION_ENCODER_LEFT);
+    assert(board_input_action_from_gpio(ENCODER_RIGHT_GPIO, 0) == BOARD_INPUT_ACTION_ENCODER_RIGHT);
+    assert(board_input_action_from_gpio(ENCODER_BUTTON_GPIO, 0) == BOARD_INPUT_ACTION_ENCODER_BUTTON);
     assert(board_input_action_from_gpio(99, 0) == BOARD_INPUT_ACTION_NONE);
 
     board_input_debouncer_init(&debouncer, 5);

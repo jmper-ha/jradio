@@ -131,7 +131,7 @@ static void test_the_window_keeps_the_longest_zero_run(void)
     /* A later, shorter run must not erase the one that tripped the DAC. */
     board_audio_health_note_zero_run(&health, 40U);
     assert(health.max_zero_run == 1500U);
-    assert(health.max_zero_run >= BOARD_AUDIO_ZERO_DETECT_FRAMES);
+    assert(health.max_zero_run >= AUDIO_ZERO_DETECT_FRAMES);
 }
 
 static void test_the_accessors_tolerate_a_missing_window(void)

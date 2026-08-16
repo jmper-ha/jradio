@@ -66,6 +66,7 @@ static device_settings_t s_device_settings;
 static bool s_settings_open;
 static lv_obj_t *s_station_list_screen;
 static lv_obj_t *s_station_list_title;
+static lv_obj_t *s_station_list_notice;
 static lv_obj_t *s_station_list_rows[UI_STATION_LIST_MAX_ROWS];
 static station_list_state_t s_station_list;
 static ui_player_state_t s_player_ui;
@@ -82,6 +83,12 @@ static unsigned int s_usb_listing_revision;
 // selecting the source jumps straight to the browser. The jump waits for the
 // listing revision to move, otherwise the list would open on the previous
 // directory's rows for a poll or two.
+// The USB screen can be opened with no usable drive: it then shows the reason
+// instead of rows. Kept from the last snapshot because ui_show_source() runs
+// on a key press, not on the poll that carries the snapshot.
+static bool s_usb_unavailable;
+static usb_browser_media_t s_last_usb_media = USB_BROWSER_MEDIA_ABSENT;
+static size_t s_last_usb_entry_count;
 static bool s_usb_list_open_requested;
 static unsigned int s_usb_list_open_revision;
 
@@ -584,6 +591,11 @@ static void ui_create_station_list_screen(void)
     // default font has no Cyrillic and renders it as empty boxes, which is a
     // mistake that only shows up when a label first receives Russian text.
     lv_obj_set_style_text_font(s_station_list_screen, &ui_font_cyrillic_14, 0);
+    s_station_list_notice = lv_label_create(s_station_list_screen);
+    lv_label_set_text(s_station_list_notice, "");
+    lv_obj_set_pos(s_station_list_notice, 14, 100);
+    lv_obj_set_width(s_station_list_notice, 292);
+    lv_obj_set_style_text_color(s_station_list_notice, lv_color_hex(0xFFD54F), 0);
     s_station_list_title = lv_label_create(s_station_list_screen);
     lv_label_set_text(s_station_list_title, "Internet radio | Stations");
     lv_obj_set_pos(s_station_list_title, 12, 8);
@@ -697,35 +709,31 @@ static void ui_show_source(void)
 {
     const audio_source_t selected_source = ui_menu_activate(&s_menu);
     if (selected_source == AUDIO_SOURCE_NONE) return;
-    if (selected_source == AUDIO_SOURCE_USB) {
-        // The UI switches screens optimistically, so without this check the
-        // user gets an empty browser instead of being told what is wrong -
-        // and "missing" needs different words from "unreadable" or "empty".
-        player_snapshot_t snapshot;
-        player_control_get_snapshot(&snapshot);
-        const char *notice = ui_usb_notice(snapshot.usb_media, snapshot.usb_entry_count);
-        if (notice != NULL) {
-            ui_set_label_text_if_changed(s_menu_notice, notice);
-            return;
-        }
-    }
+    // A drive that cannot be browsed still opens its screen - the list, empty,
+    // saying why. Refusing to leave the menu left the user pressing a working
+    // button with nothing happening but a line of small print.
+    s_usb_unavailable = selected_source == AUDIO_SOURCE_USB &&
+                        !ui_usb_can_open(s_last_usb_media, s_last_usb_entry_count);
     ui_set_label_text_if_changed(s_menu_notice, "");
-    const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
-    const audio_source_t old_source = ui_player_state_source(&s_player_ui);
     const player_command_t command = {
         .kind = PLAYER_COMMAND_SELECT_SOURCE,
         .source = selected_source,
         .item_index = PLAYER_ITEM_NONE,
     };
+    if (s_usb_unavailable) {
+        // No source to select, so drive the screen directly.
+        s_player_ui.source = AUDIO_SOURCE_USB;
+        ui_show_station_list();
+        return;
+    }
     if (selected_source == AUDIO_SOURCE_USB) {
         s_usb_list_open_revision = player_control_usb_listing_revision();
         s_usb_list_open_requested = true;
     }
     if (!ui_submit_player_command(&command)) return;
-    if (old_view != ui_player_state_view(&s_player_ui) ||
-        old_source != ui_player_state_source(&s_player_ui)) {
-        ui_load_source_screen(ui_player_state_source(&s_player_ui));
-    }
+    // Both sources open on their list rather than the player: there is nothing
+    // to look at on the player screen until something has been chosen.
+    ui_show_station_list();
 }
 
 static void ui_load_menu_screen(void)
@@ -742,6 +750,7 @@ static void ui_load_menu_screen(void)
 
 static void ui_show_menu(void)
 {
+    s_usb_unavailable = false;
     const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
     const audio_source_t old_source = ui_player_state_source(&s_player_ui);
     const player_command_t command = {
@@ -762,6 +771,19 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
 {
     size_t count = snapshot->item_count;
     size_t active_index = snapshot->active_item_index;
+    if (s_usb_unavailable) {
+        // Nothing to list and nothing to scroll: the screen exists only to say
+        // why, and to be left with F2 or a long press.
+        ui_set_label_text_if_changed(s_station_list_title, "USB");
+        ui_set_label_text_if_changed(
+            s_station_list_notice,
+            ui_usb_notice(s_last_usb_media, s_last_usb_entry_count));
+        s_usb_browser_has_parent_row = false;
+        station_list_init(&s_station_list, 0U, 0U, PLAYER_ITEM_NONE);
+        ui_update_station_list();
+        return;
+    }
+    ui_set_label_text_if_changed(s_station_list_notice, "");
     if (ui_list_shows_usb()) {
         s_usb_browser_has_parent_row = !usb_browser_path_is_root(snapshot->context);
         const size_t offset = ui_usb_row_offset();
@@ -859,7 +881,11 @@ static void ui_handle_input(board_input_action_t action)
     }
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
         station_list_note_activity(&s_station_list, ui_tick_get_ms());
-        if (action == BOARD_INPUT_ACTION_F2) {
+        if (action == BOARD_INPUT_ACTION_F2 ||
+            action == BOARD_INPUT_ACTION_ENCODER_LONG) {
+            // Same gesture as on the player screen: hold to leave and stop.
+            // Without it the list was a dead end for anyone using the encoder
+            // alone, since a short press there selects rather than exits.
             ui_show_menu();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
                    action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
@@ -992,6 +1018,22 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     if (snapshot == NULL) return;
     const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
     const audio_source_t old_source = ui_player_state_source(&s_player_ui);
+    s_last_usb_media = snapshot->usb_media;
+    s_last_usb_entry_count = snapshot->usb_entry_count;
+    if (s_usb_unavailable && ui_usb_can_open(s_last_usb_media, s_last_usb_entry_count)) {
+        // A drive appeared while its "unavailable" screen was open: pick the
+        // source up rather than making the user back out and re-enter.
+        s_usb_unavailable = false;
+        const player_command_t select = {
+            .kind = PLAYER_COMMAND_SELECT_SOURCE,
+            .source = AUDIO_SOURCE_USB,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        if (ui_submit_player_command(&select)) {
+            s_usb_list_open_revision = player_control_usb_listing_revision();
+            s_usb_list_open_requested = true;
+        }
+    }
     ui_player_state_apply_snapshot(&s_player_ui, snapshot, ui_tick_get_ms());
     if (old_view != ui_player_state_view(&s_player_ui) ||
         old_source != ui_player_state_source(&s_player_ui)) {

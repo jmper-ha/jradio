@@ -72,8 +72,6 @@ static void test_debounce_is_a_whole_number_of_polls(void)
     assert(INPUT_POLL_MS > 0);
     assert(INPUT_DEBOUNCE_MS % INPUT_POLL_MS == 0);
     assert(INPUT_DEBOUNCE_MS / INPUT_POLL_MS >= 2);
-    /* The hold has to outlast the debounce, or F1 would register as held. */
-    assert(INPUT_F1_HOLD_MS > INPUT_DEBOUNCE_MS);
 }
 
 static void test_audio_group_matches_the_fixed_i2s_slots(void)

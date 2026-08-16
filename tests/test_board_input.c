@@ -9,7 +9,6 @@ int main(void)
     board_input_debouncer_t debouncer;
     board_input_debouncer_t released_debouncer;
     board_encoder_decoder_t encoder;
-    board_input_hold_t f1_hold;
 
     assert(board_input_action_from_gpio(BUTTON_F1_GPIO, 0) == BOARD_INPUT_ACTION_F1);
     assert(board_input_action_from_gpio(BUTTON_F1_GPIO, 1) == BOARD_INPUT_ACTION_NONE);
@@ -54,18 +53,6 @@ int main(void)
     assert(board_encoder_decoder_update(&encoder, 0, 0) == BOARD_INPUT_ACTION_NONE);
     assert(board_encoder_decoder_update(&encoder, 1, 0) == BOARD_INPUT_ACTION_NONE);
     assert(board_encoder_decoder_update(&encoder, 1, 1) == BOARD_INPUT_ACTION_ENCODER_LEFT);
-
-    board_input_hold_init(&f1_hold, 5000, 5);
-    for (int index = 0; index < 999; ++index) {
-        assert(!board_input_hold_update(&f1_hold, true));
-    }
-    assert(board_input_hold_update(&f1_hold, true));
-    assert(!board_input_hold_update(&f1_hold, true));
-    assert(!board_input_hold_update(&f1_hold, false));
-    for (int index = 0; index < 999; ++index) {
-        assert(!board_input_hold_update(&f1_hold, true));
-    }
-    assert(board_input_hold_update(&f1_hold, true));
 
     puts("board_input tests passed");
     return 0;

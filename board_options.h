@@ -84,8 +84,6 @@ at its use sites."
  * interval. */
 #define INPUT_POLL_MS 5
 #define INPUT_DEBOUNCE_MS 25
-/* Hold F1 this long to clear the saved Wi-Fi networks. */
-#define INPUT_F1_HOLD_MS 5000
 
 /* ======================================================================
  * Audio output - I2S DAC, line out

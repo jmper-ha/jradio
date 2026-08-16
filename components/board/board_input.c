@@ -8,9 +8,9 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
-/* Poll interval, debounce window and the F1 hold come from board_options.h -
- * they describe the physical switches, not this driver. Only the queue depth
- * is a firmware choice. */
+/* Poll interval and debounce window come from board_options.h - they describe
+ * the physical switches, not this driver. Only the queue depth is a firmware
+ * choice. */
 #define INPUT_DEBOUNCE_SAMPLES (INPUT_DEBOUNCE_MS / INPUT_POLL_MS)
 #define INPUT_QUEUE_LENGTH 16
 
@@ -30,7 +30,6 @@ static board_input_channel_t s_channels[] = {
     {.gpio_num = BUTTON_F4_GPIO, .action = BOARD_INPUT_ACTION_F4},
 };
 static board_encoder_decoder_t s_encoder_decoder;
-static board_input_hold_t s_f1_hold;
 
 static void board_input_task(void *arg)
 {
@@ -49,13 +48,6 @@ static void board_input_task(void *arg)
             board_input_channel_t *channel = &s_channels[index];
             const int raw_level = gpio_get_level(channel->gpio_num);
             const bool pressed = raw_level == 0;
-            if (channel->action == BOARD_INPUT_ACTION_F1 &&
-                board_input_hold_update(&s_f1_hold, pressed)) {
-                const board_input_action_t long_action = BOARD_INPUT_ACTION_F1_LONG;
-                if (xQueueSend(s_event_queue, &long_action, 0) != pdTRUE) {
-                    ESP_LOGW(TAG, "input queue full; F1 long action dropped");
-                }
-            }
             if (board_input_debouncer_update(&channel->debouncer, pressed)) {
                 if (xQueueSend(s_event_queue, &channel->action, 0) != pdTRUE) {
                     ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)channel->action);
@@ -139,43 +131,6 @@ bool board_input_debouncer_update(board_input_debouncer_t *debouncer, bool sampl
     debouncer->stable_pressed = sampled_pressed;
     debouncer->candidate_samples = 0;
     return sampled_pressed;
-}
-
-void board_input_hold_init(board_input_hold_t *hold, uint16_t hold_ms, uint16_t poll_ms)
-{
-    if (hold == NULL) {
-        return;
-    }
-    const uint16_t interval = poll_ms == 0 ? 1 : poll_ms;
-    hold->required_samples = (uint16_t)((hold_ms + interval - 1) / interval);
-    if (hold->required_samples == 0) {
-        hold->required_samples = 1;
-    }
-    hold->held_samples = 0;
-    hold->emitted = false;
-}
-
-bool board_input_hold_update(board_input_hold_t *hold, bool sampled_pressed)
-{
-    if (hold == NULL) {
-        return false;
-    }
-    if (!sampled_pressed) {
-        hold->held_samples = 0;
-        hold->emitted = false;
-        return false;
-    }
-    if (hold->emitted) {
-        return false;
-    }
-    if (hold->held_samples < hold->required_samples) {
-        ++hold->held_samples;
-    }
-    if (hold->held_samples < hold->required_samples) {
-        return false;
-    }
-    hold->emitted = true;
-    return true;
 }
 
 static uint8_t board_encoder_state_from_levels(int left_level, int right_level)
@@ -264,7 +219,6 @@ esp_err_t board_input_init(void)
     }
     board_encoder_decoder_init(&s_encoder_decoder, gpio_get_level(ENCODER_LEFT_GPIO),
                                gpio_get_level(ENCODER_RIGHT_GPIO));
-    board_input_hold_init(&s_f1_hold, INPUT_F1_HOLD_MS, INPUT_POLL_MS);
     if (xTaskCreate(board_input_task, "board_input", 3072, NULL, 5, NULL) != pdPASS) {
         vQueueDelete(s_event_queue);
         s_event_queue = NULL;

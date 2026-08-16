@@ -14,7 +14,6 @@ typedef enum {
     BOARD_INPUT_ACTION_F2,
     BOARD_INPUT_ACTION_F3,
     BOARD_INPUT_ACTION_F4,
-    BOARD_INPUT_ACTION_F1_LONG,
 } board_input_action_t;
 
 typedef struct {
@@ -29,12 +28,6 @@ typedef struct {
     int8_t transition_sum;
 } board_encoder_decoder_t;
 
-typedef struct {
-    uint16_t required_samples;
-    uint16_t held_samples;
-    bool emitted;
-} board_input_hold_t;
-
 board_input_action_t board_input_action_from_gpio(int gpio_num, int level);
 void board_input_debouncer_init(board_input_debouncer_t *debouncer, uint8_t required_samples);
 void board_input_debouncer_init_from_level(board_input_debouncer_t *debouncer, int level,
@@ -43,8 +36,6 @@ bool board_input_debouncer_update(board_input_debouncer_t *debouncer, bool sampl
 void board_encoder_decoder_init(board_encoder_decoder_t *decoder, int left_level, int right_level);
 board_input_action_t board_encoder_decoder_update(board_encoder_decoder_t *decoder, int left_level,
                                                   int right_level);
-void board_input_hold_init(board_input_hold_t *hold, uint16_t hold_ms, uint16_t poll_ms);
-bool board_input_hold_update(board_input_hold_t *hold, bool sampled_pressed);
 
 #ifdef ESP_PLATFORM
 #include "esp_err.h"

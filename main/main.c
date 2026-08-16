@@ -21,13 +21,6 @@ static void input_log_task(void *arg)
     board_input_action_t action;
     while (true) {
         if (board_input_read(&action, portMAX_DELAY)) {
-            if (action == BOARD_INPUT_ACTION_F1_LONG) {
-                const esp_err_t err = wifi_provisioning_reset();
-                if (err != ESP_OK) {
-                    ESP_LOGE(TAG, "F1 long reset failed err=%s", esp_err_to_name(err));
-                }
-                continue;
-            }
             (void)ui_post_input(action);
         }
     }

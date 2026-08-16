@@ -28,6 +28,10 @@ size_t usb_storage_entry_count(void);
 bool usb_storage_entry_at(size_t index, usb_browser_entry_t *out);
 bool usb_storage_current_path(char *out, size_t out_size);
 
-// Index of the next playable file at or after `from`, or the entry count when
-// the listing has none left. Used to advance to the next track.
+// Index of the next playable file at or after `from`. Returns a value past the
+// end of the listing when there is none left *and* when the listing could not
+// be read, so a caller that stops on "past the end" stops in both cases. Never
+// returns a valid index it is not sure about - answering 0 on failure would
+// send track advance back to the first file. Used to advance to the next
+// track.
 size_t usb_storage_next_file(size_t from);

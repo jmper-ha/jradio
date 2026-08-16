@@ -1,4 +1,5 @@
 #include <dirent.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -140,7 +141,12 @@ bool usb_storage_entry_at(size_t index, usb_browser_entry_t *out)
 
 size_t usb_storage_next_file(size_t from)
 {
-    if (!listing_lock()) return 0U;
+    // SIZE_MAX, not 0: the caller advances to whatever comes back and only
+    // stops when it is past the end, so returning 0 here would restart the
+    // directory from its first track instead of stopping. Failing "past the
+    // end" makes a lock timeout indistinguishable from "nothing left", which
+    // is the safe direction to be wrong in.
+    if (!listing_lock()) return SIZE_MAX;
     const size_t index = usb_browser_dir_next_file(&s_listing, from);
     listing_unlock();
     return index;
@@ -156,19 +162,25 @@ bool usb_storage_current_path(char *out, size_t out_size)
     return fits;
 }
 
+/* Copies each entry out before printing it. Holding the lock across the whole
+ * loop meant holding it across the UART: a 256-entry directory is some 15 KB of
+ * log, over a second at 115200 baud, which is longer than the 1 s other callers
+ * wait for the lock. Track advance ran into exactly that. */
 static void log_listing(void)
 {
-    if (!listing_lock()) return;
-    ESP_LOGI(TAG, "files on %s:", s_listing.path);
-    for (size_t i = 0U; i < s_listing.count; ++i) {
-        const usb_browser_entry_t *entry = &s_listing.entries[i];
-        if (entry->kind == USB_BROWSER_ENTRY_DIRECTORY) {
-            ESP_LOGI(TAG, "  [dir] %s", entry->name);
+    char path[USB_BROWSER_PATH_MAX_LEN];
+    if (!usb_storage_current_path(path, sizeof(path))) return;
+    ESP_LOGI(TAG, "files on %s:", path);
+    const size_t count = usb_storage_entry_count();
+    for (size_t i = 0U; i < count; ++i) {
+        usb_browser_entry_t entry;
+        if (!usb_storage_entry_at(i, &entry)) break;
+        if (entry.kind == USB_BROWSER_ENTRY_DIRECTORY) {
+            ESP_LOGI(TAG, "  [dir] %s", entry.name);
         } else {
-            ESP_LOGI(TAG, "  %-4s %s", usb_browser_format_name(entry->format), entry->name);
+            ESP_LOGI(TAG, "  %-4s %s", usb_browser_format_name(entry.format), entry.name);
         }
     }
-    listing_unlock();
 }
 
 static void usb_lib_task(void *arg)

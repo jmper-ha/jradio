@@ -26,6 +26,10 @@ esp_err_t usb_storage_read_directory(const char *path);
 // drive and clear the listing while the UI task is walking it.
 size_t usb_storage_entry_count(void);
 bool usb_storage_entry_at(size_t index, usb_browser_entry_t *out);
+
+// Index of `name` in the current listing, or the entry count when it is absent
+// or unreadable. Used to find a remembered track after a restart.
+size_t usb_storage_find_entry(const char *name);
 bool usb_storage_current_path(char *out, size_t out_size);
 
 // Index of the next playable file at or after `from`. Returns a value past the

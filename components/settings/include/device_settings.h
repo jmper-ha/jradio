@@ -13,14 +13,28 @@ typedef enum {
     DEVICE_HOME_SCREEN_FEED,
 } device_home_screen_t;
 
+typedef enum {
+    DEVICE_LAST_SOURCE_NONE = 0,
+    DEVICE_LAST_SOURCE_INTERNET_RADIO,
+    DEVICE_LAST_SOURCE_USB,
+} device_last_source_t;
+
 #define DEVICE_SETTINGS_PATH "/littlefs/config/settings.csv"
 #define DEVICE_SETTINGS_PATH_MAX 128
+/* Long enough for a full path on the drive; the CSV value field caps at 256. */
+#define DEVICE_LAST_USB_FILE_MAX 256
 
 typedef struct {
     device_language_t language;
     device_home_screen_t home_screen;
     bool flip_vertical;
     bool flip_horizontal;
+    /* Resume what was playing at power-off instead of opening the home
+     * screen. What "what was playing" means is the two fields below: the
+     * radio's own last-station URL is stored separately by station_resume. */
+    bool autoplay;
+    device_last_source_t last_source;
+    char last_usb_file[DEVICE_LAST_USB_FILE_MAX];
     char storage_path[DEVICE_SETTINGS_PATH_MAX];
 } device_settings_t;
 
@@ -33,4 +47,10 @@ bool device_settings_set_flip_vertical(device_settings_t *settings, bool enabled
 bool device_settings_set_flip_horizontal(device_settings_t *settings, bool enabled);
 bool device_settings_set_flip_vertical_value(device_settings_t *settings, int value);
 bool device_settings_set_flip_horizontal_value(device_settings_t *settings, int value);
+bool device_settings_set_autoplay(device_settings_t *settings, bool enabled);
+/* Recorded as playback starts, so a power cut still leaves the last choice
+ * behind. Writing "none" clears the resume point. */
+bool device_settings_set_last_source(device_settings_t *settings,
+                                     device_last_source_t source);
+bool device_settings_set_last_usb_file(device_settings_t *settings, const char *path);
 bool device_settings_get(const device_settings_t *settings, device_settings_t *copy);

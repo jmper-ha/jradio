@@ -54,6 +54,20 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     if (read_value(path, "display_flip_horizontal", value, sizeof(value))) {
         (void)parse_bool(value, &settings->flip_horizontal);
     }
+    if (read_value(path, "autoplay", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->autoplay);
+    }
+    if (read_value(path, "last_source", value, sizeof(value))) {
+        if (strcmp(value, "internet_radio") == 0) {
+            settings->last_source = DEVICE_LAST_SOURCE_INTERNET_RADIO;
+        } else if (strcmp(value, "usb") == 0) {
+            settings->last_source = DEVICE_LAST_SOURCE_USB;
+        }
+    }
+    /* Read into its own buffer: a path is far longer than the little `value`
+     * the other keys share. */
+    (void)settings_csv_get(path, "last_usb_file", settings->last_usb_file,
+                           sizeof(settings->last_usb_file));
     return true;
 }
 
@@ -102,6 +116,38 @@ bool device_settings_set_flip_vertical_value(device_settings_t *settings, int va
 bool device_settings_set_flip_horizontal_value(device_settings_t *settings, int value)
 {
     return value == 0 || value == 1 ? device_settings_set_flip_horizontal(settings, value != 0) : false;
+}
+
+bool device_settings_set_autoplay(device_settings_t *settings, bool enabled)
+{
+    if (!save_value(settings, "autoplay", enabled ? "1" : "0")) return false;
+    settings->autoplay = enabled;
+    return true;
+}
+
+bool device_settings_set_last_source(device_settings_t *settings,
+                                     device_last_source_t source)
+{
+    const char *text = source == DEVICE_LAST_SOURCE_INTERNET_RADIO ? "internet_radio"
+                     : source == DEVICE_LAST_SOURCE_USB           ? "usb"
+                                                                   : "none";
+    if (settings == NULL || source > DEVICE_LAST_SOURCE_USB) return false;
+    /* Skip the write when nothing changed: this is called as playback starts,
+     * and settings.csv lives on flash with a finite erase budget. */
+    if (settings->last_source == source) return true;
+    if (!save_value(settings, "last_source", text)) return false;
+    settings->last_source = source;
+    return true;
+}
+
+bool device_settings_set_last_usb_file(device_settings_t *settings, const char *path)
+{
+    if (settings == NULL || path == NULL ||
+        strlen(path) >= sizeof(settings->last_usb_file)) return false;
+    if (strcmp(settings->last_usb_file, path) == 0) return true;
+    if (!save_value(settings, "last_usb_file", path)) return false;
+    memcpy(settings->last_usb_file, path, strlen(path) + 1U);
+    return true;
 }
 
 bool device_settings_get(const device_settings_t *settings, device_settings_t *copy)

@@ -29,6 +29,14 @@ bool player_control_usb_entry_at(size_t index, usb_browser_entry_t *entry);
 // Changes every time the listing is replaced, so a screen can tell "the same
 // directory changed" from "this is a different directory".
 unsigned int player_control_usb_listing_revision(void);
+
+/* Reopens the directory holding `path` and starts that file, for resuming what
+ * was playing before a restart. Runs on the caller's task and reads a
+ * directory off the drive, so it stalls that task for as long as the read
+ * takes - fine once at startup, not per poll. Returns false when the drive, the
+ * directory or the file is gone; the listing is then left on whatever did
+ * open, so the browser has somewhere to show. */
+bool player_control_usb_resume_path(const char *path);
 #endif
 
 #ifdef __cplusplus

@@ -98,6 +98,11 @@ const usb_browser_entry_t *usb_browser_dir_entry(const usb_browser_dir_t *dir, s
 // auto-advance to the next track.
 size_t usb_browser_dir_next_file(const usb_browser_dir_t *dir, size_t from);
 
+/* Index of the entry called `name`, or the entry count when there is none.
+ * Used to find a remembered track again after a restart, where only the name
+ * survived. */
+size_t usb_browser_dir_find(const usb_browser_dir_t *dir, const char *name);
+
 bool usb_browser_path_is_root(const char *path);
 // Both return false rather than truncating: a truncated path is a path to the
 // wrong file, and silently opening the wrong file is worse than refusing.

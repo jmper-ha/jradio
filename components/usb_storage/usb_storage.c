@@ -139,6 +139,17 @@ bool usb_storage_entry_at(size_t index, usb_browser_entry_t *out)
     return entry != NULL;
 }
 
+size_t usb_storage_find_entry(const char *name)
+{
+    // Same "past the end on failure" contract as next_file, and for the same
+    // reason: the caller falls back to the browser rather than opening
+    // whatever happens to sit at index 0.
+    if (!listing_lock()) return SIZE_MAX;
+    const size_t index = usb_browser_dir_find(&s_listing, name);
+    listing_unlock();
+    return index;
+}
+
 size_t usb_storage_next_file(size_t from)
 {
     // SIZE_MAX, not 0: the caller advances to whatever comes back and only

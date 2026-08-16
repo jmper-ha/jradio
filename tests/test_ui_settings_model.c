@@ -44,11 +44,16 @@ static void test_each_group_has_expected_fields(void)
     ui_settings_model_init(&model);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_row_count(&model) == 4U);
+    /* General holds two fields now: home screen and autoplay. */
+    assert(ui_settings_model_row_count(&model) == 5U);
     assert(ui_settings_model_row_at(&model, 2U).id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
+    assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_AUTOPLAY_FIELD);
 
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_AUTOPLAY_FIELD);
+    /* And the cursor still cannot walk out of the expanded group. */
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_NO_CHANGE);
 }
 

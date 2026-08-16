@@ -33,6 +33,11 @@ static const ui_settings_row_t s_field_rows[] = {
         .kind = UI_SETTINGS_ROW_FIELD,
     },
     {
+        .id = UI_SETTINGS_ROW_AUTOPLAY_FIELD,
+        .group = UI_SETTINGS_GROUP_GENERAL,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
         .id = UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD,
         .group = UI_SETTINGS_GROUP_DISPLAY,
         .kind = UI_SETTINGS_ROW_FIELD,
@@ -48,8 +53,9 @@ static size_t field_count(ui_settings_group_t group)
 {
     switch (group) {
     case UI_SETTINGS_GROUP_LANGUAGE:
-    case UI_SETTINGS_GROUP_GENERAL:
         return 1U;
+    case UI_SETTINGS_GROUP_GENERAL:
+        return 2U;
     case UI_SETTINGS_GROUP_DISPLAY:
         return 2U;
     default:

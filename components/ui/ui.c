@@ -17,6 +17,7 @@
 #include "device_settings.h"
 #include "player_control.h"
 #include "wifi_provisioning.h"
+#include "ui_autoplay.h"
 #include "ui_click_gesture.h"
 #include "ui_draw_buffer.h"
 #include "ui_font_cyrillic_14.h"
@@ -89,6 +90,13 @@ static unsigned int s_usb_listing_revision;
 static bool s_usb_unavailable;
 static usb_browser_media_t s_last_usb_media = USB_BROWSER_MEDIA_ABSENT;
 static size_t s_last_usb_entry_count;
+// Autoplay runs once, and only after the drive has had time to appear: USB
+// mounts around five seconds in, later still when the root port needs
+// re-enumerating, so deciding "no drive" any earlier would be deciding it
+// before the answer exists.
+#define UI_AUTOPLAY_USB_WAIT_MS 12000U
+static bool s_autoplay_pending;
+static uint32_t s_autoplay_started_ms;
 static bool s_usb_list_open_requested;
 static unsigned int s_usb_list_open_revision;
 
@@ -467,6 +475,10 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
                  s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED ?
                      (english ? "Feed" : "Лента") : (english ? "List" : "Список"));
         break;
+    case UI_SETTINGS_ROW_AUTOPLAY_FIELD:
+        snprintf(text, text_size, "  %s: %s", english ? "Autoplay" : "Автовоспроизведение",
+                 s_device_settings.autoplay ? "ON" : "OFF");
+        break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         snprintf(text, text_size, "  %s: %s", english ? "Flip vertical" : "Поворот по вертикали",
                  s_device_settings.flip_vertical ? "ON" : "OFF");
@@ -557,6 +569,10 @@ static void ui_settings_change_selected(void)
             &s_device_settings,
             s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED ?
                 DEVICE_HOME_SCREEN_TEXT : DEVICE_HOME_SCREEN_FEED);
+        break;
+    case UI_SETTINGS_ROW_AUTOPLAY_FIELD:
+        changed = device_settings_set_autoplay(&s_device_settings,
+                                               !s_device_settings.autoplay);
         break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         changed = device_settings_set_flip_vertical(&s_device_settings,
@@ -1013,6 +1029,36 @@ static void ui_handle_input(board_input_action_t action)
     }
 }
 
+/* Keeps the resume point current. Written from the poll loop rather than at
+ * the moment of selection because this is the one place that sees both the
+ * active source and the file the USB player actually opened; the setters skip
+ * a write when nothing changed, so this does not hammer the flash. */
+static void ui_remember_playing(const player_snapshot_t *snapshot)
+{
+    if (!s_device_settings.autoplay) return;
+    switch (snapshot->active_source) {
+    case AUDIO_SOURCE_INTERNET_RADIO:
+        (void)device_settings_set_last_source(&s_device_settings,
+                                              DEVICE_LAST_SOURCE_INTERNET_RADIO);
+        return;
+    case AUDIO_SOURCE_USB: {
+        (void)device_settings_set_last_source(&s_device_settings, DEVICE_LAST_SOURCE_USB);
+        // context is the directory, stream_title the file the player opened.
+        // Only remember a track once one is actually playing, or leaving the
+        // browser would erase the previous resume point.
+        if (snapshot->stream_title[0] == '\0') return;
+        char path[USB_BROWSER_PATH_MAX_LEN];
+        if (usb_browser_path_child(snapshot->context, snapshot->stream_title, path,
+                                   sizeof(path))) {
+            (void)device_settings_set_last_usb_file(&s_device_settings, path);
+        }
+        return;
+    }
+    default:
+        return;
+    }
+}
+
 static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
 {
     if (snapshot == NULL) return;
@@ -1020,6 +1066,7 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     const audio_source_t old_source = ui_player_state_source(&s_player_ui);
     s_last_usb_media = snapshot->usb_media;
     s_last_usb_entry_count = snapshot->usb_entry_count;
+    ui_remember_playing(snapshot);
     if (s_usb_unavailable && ui_usb_can_open(s_last_usb_media, s_last_usb_entry_count)) {
         // A drive appeared while its "unavailable" screen was open: pick the
         // source up rather than making the user back out and re-enter.
@@ -1094,6 +1141,53 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     ui_update_radio_status(snapshot);
 }
 
+static void ui_autoplay_step(const player_snapshot_t *snapshot)
+{
+    if (!s_autoplay_pending) return;
+    const ui_autoplay_action_t action =
+        ui_autoplay_decide(&s_device_settings, snapshot->usb_media, false);
+    const bool waited =
+        (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_USB_WAIT_MS;
+    // Hold off only while the answer could still change: a drive that has not
+    // shown up yet may still mount.
+    if (action == UI_AUTOPLAY_USB_UNAVAILABLE && !waited) return;
+    s_autoplay_pending = false;
+
+    switch (action) {
+    case UI_AUTOPLAY_RADIO:
+        (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_INTERNET_RADIO);
+        ui_show_source();
+        return;
+    case UI_AUTOPLAY_USB_UNAVAILABLE:
+        (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_USB);
+        ui_show_source();
+        return;
+    case UI_AUTOPLAY_USB_FILE:
+    case UI_AUTOPLAY_USB_BROWSER: {
+        const player_command_t select = {
+            .kind = PLAYER_COMMAND_SELECT_SOURCE,
+            .source = AUDIO_SOURCE_USB,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        if (!ui_submit_player_command(&select)) return;
+        // Whether the remembered file is still there is only knowable by
+        // looking, so the attempt itself is the test: it opens the file's
+        // directory either way, leaving the browser somewhere useful.
+        if (player_control_usb_resume_path(s_device_settings.last_usb_file)) {
+            ui_load_source_screen(AUDIO_SOURCE_USB);
+            return;
+        }
+        s_usb_list_open_revision = player_control_usb_listing_revision();
+        s_usb_list_open_requested = true;
+        ui_show_station_list();
+        return;
+    }
+    case UI_AUTOPLAY_HOME:
+    default:
+        return;
+    }
+}
+
 static void ui_task(void *arg)
 {
     (void)arg;
@@ -1109,6 +1203,7 @@ static void ui_task(void *arg)
         }
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
+        ui_autoplay_step(&snapshot);
         if (s_settings_open) {
             ui_update_settings();
         } else {
@@ -1178,6 +1273,10 @@ esp_err_t ui_init(void)
         (void)board_display_set_rotation(s_device_settings.flip_vertical,
                                          s_device_settings.flip_horizontal);
     }
+    s_autoplay_pending = ui_autoplay_decide(&s_device_settings,
+                                            USB_BROWSER_MEDIA_READY, true) !=
+                         UI_AUTOPLAY_HOME;
+    s_autoplay_started_ms = ui_tick_get_ms();
     if (s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED) {
         lv_screen_load(s_feed_screen);
     } else {

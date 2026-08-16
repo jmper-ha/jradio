@@ -142,6 +142,20 @@ const usb_browser_entry_t *usb_browser_dir_entry(const usb_browser_dir_t *dir, s
     return &dir->entries[index];
 }
 
+size_t usb_browser_dir_find(const usb_browser_dir_t *dir, const char *name)
+{
+    const size_t count = usb_browser_dir_count(dir);
+    if (name == NULL || name[0] == '\0') return count;
+    for (size_t index = 0U; index < count; ++index) {
+        const usb_browser_entry_t *entry = usb_browser_dir_entry(dir, index);
+        /* Exact match, not the case-insensitive compare the sort uses: this
+         * answers "is the very same file still here", and on a FAT volume two
+         * names differing only in case are the same file anyway. */
+        if (entry != NULL && strcmp(entry->name, name) == 0) return index;
+    }
+    return count;
+}
+
 size_t usb_browser_dir_next_file(const usb_browser_dir_t *dir, size_t from)
 {
     if (dir == NULL) return 0U;

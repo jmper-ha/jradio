@@ -360,6 +360,35 @@ bool player_control_usb_entry_at(size_t index, usb_browser_entry_t *entry)
     return usb_storage_entry_at(index, entry);
 }
 
+bool player_control_usb_resume_path(const char *path)
+{
+    char parent[USB_BROWSER_PATH_MAX_LEN];
+    if (path == NULL || path[0] == '\0' || !usb_storage_is_mounted()) return false;
+    if (!usb_browser_path_parent(path, parent, sizeof(parent))) return false;
+
+    /* Open the directory first: the remembered name is only meaningful inside
+     * it, and if that fails there is nothing to search. */
+    if (usb_storage_read_directory(parent) != ESP_OK) {
+        (void)usb_storage_read_directory(USB_BROWSER_ROOT_PATH);
+        atomic_fetch_add_explicit(&s_usb_listing_revision, 1U, memory_order_release);
+        return false;
+    }
+    atomic_fetch_add_explicit(&s_usb_listing_revision, 1U, memory_order_release);
+
+    const char *name = strrchr(path, '/');
+    name = name == NULL ? path : name + 1;
+    const size_t index = usb_storage_find_entry(name);
+    if (index >= usb_storage_entry_count()) return false;
+    usb_browser_entry_t entry;
+    /* A directory that took the file's name is not the track we remembered. */
+    if (!usb_storage_entry_at(index, &entry) ||
+        entry.kind == USB_BROWSER_ENTRY_DIRECTORY) {
+        return false;
+    }
+    player_usb_select_item(index);
+    return true;
+}
+
 unsigned int player_control_usb_listing_revision(void)
 {
     return atomic_load_explicit(&s_usb_listing_revision, memory_order_acquire);

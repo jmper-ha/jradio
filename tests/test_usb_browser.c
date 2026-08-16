@@ -185,6 +185,33 @@ static void test_paths(void)
     assert(!usb_browser_path_parent(NULL, child, sizeof(child)));
 }
 
+
+static void test_finding_an_entry_by_name(void)
+{
+    /* Only the name survives a restart, so the remembered track is located
+     * this way rather than by the index it used to have. */
+    usb_browser_entry_t storage[8];
+    usb_browser_dir_t dir;
+    usb_browser_dir_init(&dir, storage, 8U, "/usb0");
+    assert(usb_browser_dir_add(&dir, "b.mp3", USB_BROWSER_ENTRY_FILE));
+    assert(usb_browser_dir_add(&dir, "Album", USB_BROWSER_ENTRY_DIRECTORY));
+    assert(usb_browser_dir_add(&dir, "a.mp3", USB_BROWSER_ENTRY_FILE));
+    usb_browser_dir_sort(&dir);
+
+    const size_t found = usb_browser_dir_find(&dir, "a.mp3");
+    assert(found < usb_browser_dir_count(&dir));
+    assert(strcmp(usb_browser_dir_entry(&dir, found)->name, "a.mp3") == 0);
+    /* Directories are found too - the caller decides what to do with one. */
+    assert(usb_browser_dir_find(&dir, "Album") < usb_browser_dir_count(&dir));
+
+    /* A gone track reports past the end, which is how the caller falls back to
+     * the browser rather than playing the wrong file. */
+    assert(usb_browser_dir_find(&dir, "gone.mp3") == usb_browser_dir_count(&dir));
+    assert(usb_browser_dir_find(&dir, "") == usb_browser_dir_count(&dir));
+    assert(usb_browser_dir_find(&dir, NULL) == usb_browser_dir_count(&dir));
+    assert(usb_browser_dir_find(NULL, "a.mp3") == 0U);
+}
+
 int main(void)
 {
     test_format_from_name();
@@ -194,6 +221,7 @@ int main(void)
     test_sort_order();
     test_next_file();
     test_paths();
+    test_finding_an_entry_by_name();
     printf("usb_browser tests passed\n");
     return 0;
 }

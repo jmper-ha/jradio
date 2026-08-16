@@ -642,6 +642,16 @@ static esp_err_t board_display_init(void)
     return board_display_fill(0x001F);
 }
 
+/* The argument order looks transposed and is not: with TFT_SWAP_XY set, MADCTL
+ * has MV on, and reasoning from the datasheet suggests MX should then act on
+ * the screen's vertical axis - i.e. that these two are swapped. Checked on the
+ * panel 2026-08-16: both switches move the image the way their labels say. Do
+ * not "fix" this without looking at the screen again.
+ *
+ * mirror() only touches MX/MY and leaves MV alone, so the swap_xy set at init
+ * survives. It does however replace TFT_MIRROR_X/Y from the display profile
+ * rather than composing with them; that is invisible while both are 0, but a
+ * panel needing a non-zero baseline would lose it here. */
 esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal)
 {
     if (s_panel == NULL) return ESP_ERR_INVALID_STATE;

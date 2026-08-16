@@ -23,5 +23,4 @@ typedef struct {
 void ui_feed_model_init(ui_feed_model_t *model, uint8_t initial_index);
 void ui_feed_model_move(ui_feed_model_t *model, int direction);
 ui_feed_item_t ui_feed_model_selected(const ui_feed_model_t *model);
-bool ui_feed_model_is_supported(ui_feed_item_t item);
 bool ui_feed_model_activate(ui_feed_item_t item, audio_source_t *source_out);

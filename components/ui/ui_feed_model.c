@@ -28,11 +28,6 @@ ui_feed_item_t ui_feed_model_selected(const ui_feed_model_t *model)
     return (ui_feed_item_t)model->selected;
 }
 
-bool ui_feed_model_is_supported(ui_feed_item_t item)
-{
-    return item == UI_FEED_INTERNET_RADIO || item == UI_FEED_USB;
-}
-
 bool ui_feed_model_activate(ui_feed_item_t item, audio_source_t *source_out)
 {
     if (source_out == NULL) return false;

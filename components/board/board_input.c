@@ -82,12 +82,17 @@ static void board_input_task(void *arg)
             board_input_channel_t *channel = &s_channels[index];
             const int raw_level = gpio_get_level(channel->gpio_num);
             const bool pressed = raw_level == 0;
-            const bool changed = board_input_debouncer_update(&channel->debouncer, pressed);
-            (void)changed;
+            // The debouncer reports a confirmed *press* and nothing else, so
+            // a true return already means "just pressed" - testing the raw
+            // level again would only suggest releases were handled here.
+            const bool press_confirmed =
+                board_input_debouncer_update(&channel->debouncer, pressed);
+            // The encoder button has to tell a click from a hold, so it reads
+            // the debounced level rather than the edge.
             const board_input_action_t generated = channel->gpio_num == ENCODER_BUTTON_GPIO
                 ? board_button_gesture_update(&channel->gesture,
                                               channel->debouncer.stable_pressed, INPUT_POLL_MS)
-                : (changed && pressed ? channel->action : BOARD_INPUT_ACTION_NONE);
+                : (press_confirmed ? channel->action : BOARD_INPUT_ACTION_NONE);
             if (generated != BOARD_INPUT_ACTION_NONE &&
                 xQueueSend(s_event_queue, &generated, 0) != pdTRUE) {
                 ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)generated);

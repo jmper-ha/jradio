@@ -54,6 +54,12 @@ _Static_assert(LEDC_TIMER_13_BIT == 13,
     (AUDIO_CHANNEL_COUNT * (AUDIO_BITS_PER_SAMPLE / 8U))
 #define I2S_DMA_BUFFER_BYTES (I2S_DMA_FRAME_NUM * I2S_BYTES_PER_FRAME)
 #define AUDIO_HEALTH_REPORT_MS 10000U
+/* Averaging window for the level meter, in frames: 256 is 5.8 ms at 44.1 kHz.
+ * A decoded block is 23-26 ms, and averaging one whole flattens the attack of
+ * every note - the movement the meter is watched for. Short enough to let
+ * transients through, long enough that the reading is still energy and not the
+ * peak of a handful of samples. */
+#define AUDIO_LEVEL_WINDOW_FRAMES 256U
 
 static const char *TAG = "board";
 static uint16_t s_draw_buffer[TFT_WIDTH * LCD_DRAW_LINES];
@@ -350,7 +356,8 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
              * of the scale. */
             uint16_t level_left = 0U;
             uint16_t level_right = 0U;
-            pcm_s16le_rms_stereo(pcm, *written, &level_left, &level_right);
+            pcm_s16le_rms_stereo(pcm, *written, AUDIO_LEVEL_WINDOW_FRAMES, &level_left,
+                                 &level_right);
             board_audio_level_note(level_left, &s_audio_level_left);
             board_audio_level_note(level_right, &s_audio_level_right);
             board_audio_health_add(&s_audio_health, *written, pcm_length,

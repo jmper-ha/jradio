@@ -133,7 +133,7 @@ static void test_peak_and_rms_read_the_channels_apart(void)
     fill_stereo(pcm, 64U, 9000, 0);
     pcm_s16le_peak_stereo(pcm, sizeof(pcm), &left, &right);
     assert(left == 9000U && right == 0U);
-    pcm_s16le_rms_stereo(pcm, sizeof(pcm), &left, &right);
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), 0U, &left, &right);
     assert(left == 9000U && right == 0U);
 }
 
@@ -146,7 +146,7 @@ static void test_rms_of_a_constant_level_is_that_level(void)
     uint16_t left = 0U;
     uint16_t right = 0U;
     fill_stereo(pcm, 128U, 20000, -20000);
-    pcm_s16le_rms_stereo(pcm, sizeof(pcm), &left, &right);
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), 0U, &left, &right);
     assert(left == 20000U);
     assert(right == 20000U);
 }
@@ -165,7 +165,7 @@ static void test_rms_sits_well_below_peak_on_a_varying_signal(void)
     fill_stereo(pcm, 128U, 0, 0);
     fill_stereo(pcm, 64U, 30000, 30000);
     pcm_s16le_peak_stereo(pcm, sizeof(pcm), &peak_l, &peak_r);
-    pcm_s16le_rms_stereo(pcm, sizeof(pcm), &rms_l, &rms_r);
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), 0U, &rms_l, &rms_r);
 
     assert(peak_l == 30000U);
     /* 30000 / sqrt(2) = 21213. */
@@ -180,7 +180,7 @@ static void test_rms_of_silence_is_zero(void)
     uint16_t left = 1U;
     uint16_t right = 1U;
     fill_stereo(pcm, 32U, 0, 0);
-    pcm_s16le_rms_stereo(pcm, sizeof(pcm), &left, &right);
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), 0U, &left, &right);
     assert(left == 0U && right == 0U);
 }
 
@@ -192,7 +192,7 @@ static void test_rms_survives_a_full_scale_block(void)
     uint16_t left = 0U;
     uint16_t right = 0U;
     fill_stereo(pcm, 1152U, INT16_MIN, INT16_MIN);
-    pcm_s16le_rms_stereo(pcm, sizeof(pcm), &left, &right);
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), 0U, &left, &right);
     assert(left == 32768U || left == 32767U);
     assert(right == left);
 }
@@ -201,17 +201,89 @@ static void test_rms_tolerates_empty_and_missing_input(void)
 {
     uint16_t left = 5U;
     uint16_t right = 5U;
-    pcm_s16le_rms_stereo(NULL, 16U, &left, &right);
+    pcm_s16le_rms_stereo(NULL, 16U, 0U, &left, &right);
     assert(left == 0U && right == 0U);
 
     uint8_t pcm[4];
     left = 5U;
     right = 5U;
     /* Less than one whole frame: nothing to average. */
-    pcm_s16le_rms_stereo(pcm, 2U, &left, &right);
+    pcm_s16le_rms_stereo(pcm, 2U, 0U, &left, &right);
     assert(left == 0U && right == 0U);
-    pcm_s16le_rms_stereo(pcm, 4U, NULL, &right);
+    pcm_s16le_rms_stereo(pcm, 4U, 0U, NULL, &right);
     pcm_s16le_peak_stereo(pcm, 4U, &left, NULL);
+}
+
+
+static void test_a_short_window_finds_the_loud_part_a_long_one_averages_away(void)
+{
+    /* The reason the window exists. A quarter of the block is loud and the
+     * rest is quiet - the sort of thing a note attack looks like. Averaged
+     * whole, the block reads close to the quiet part and the meter never sees
+     * the note; measured in windows, the loud one is reported. */
+    uint8_t pcm[1024U * 4U];
+    fill_stereo(pcm, 1024U, 2000, 2000);
+    fill_stereo(pcm, 256U, 24000, 24000);
+
+    uint16_t whole_l = 0U;
+    uint16_t whole_r = 0U;
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), 0U, &whole_l, &whole_r);
+
+    uint16_t windowed_l = 0U;
+    uint16_t windowed_r = 0U;
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), 256U, &windowed_l, &windowed_r);
+
+    assert(windowed_l == 24000U);
+    assert(windowed_r == 24000U);
+    assert(whole_l < 13000U);
+    assert(windowed_l > whole_l);
+}
+
+static void test_windows_tile_the_block_with_nothing_left_over(void)
+{
+    /* An MP3 block is 1152 frames, which no fixed 256-frame window divides.
+     * Leaving the tail out would drop 128 frames of every block; here the
+     * loud part sits exactly in that tail and still has to be found. */
+    uint8_t pcm[1152U * 4U];
+    fill_stereo(pcm, 1152U, 1000, 1000);
+    fill_stereo(pcm + 1024U * 4U, 128U, 20000, 20000);
+
+    uint16_t left = 0U;
+    uint16_t right = 0U;
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), 256U, &left, &right);
+    /* 1152 / 256 = 4 windows of 288 frames; the last holds 128 loud frames
+     * and 160 quiet ones, so it reads well above the quiet level without
+     * reaching the loud one. */
+    assert(left > 9000U && left < 20000U);
+    assert(right == left);
+}
+
+static void test_a_window_larger_than_the_block_is_one_window(void)
+{
+    /* Nothing to subdivide: the answer must be the plain block average, not
+     * zero and not a division by zero. */
+    uint8_t pcm[64U * 4U];
+    fill_stereo(pcm, 64U, 8000, 8000);
+    uint16_t left = 0U;
+    uint16_t right = 0U;
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), 4096U, &left, &right);
+    assert(left == 8000U && right == 8000U);
+}
+
+static void test_a_steady_signal_reads_the_same_at_any_window(void)
+{
+    /* Windowing must not change the level of something that is not changing,
+     * or the scale would depend on the window size. */
+    uint8_t pcm[1024U * 4U];
+    fill_stereo(pcm, 1024U, 15000, -15000);
+    uint16_t whole_l = 0U;
+    uint16_t whole_r = 0U;
+    uint16_t windowed_l = 0U;
+    uint16_t windowed_r = 0U;
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), 0U, &whole_l, &whole_r);
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), 128U, &windowed_l, &windowed_r);
+    assert(whole_l == 15000U && whole_r == 15000U);
+    assert(windowed_l == 15000U && windowed_r == 15000U);
 }
 
 int main(void)
@@ -229,6 +301,10 @@ int main(void)
     test_rms_of_silence_is_zero();
     test_rms_survives_a_full_scale_block();
     test_rms_tolerates_empty_and_missing_input();
+    test_a_short_window_finds_the_loud_part_a_long_one_averages_away();
+    test_windows_tile_the_block_with_nothing_left_over();
+    test_a_window_larger_than_the_block_is_one_window();
+    test_a_steady_signal_reads_the_same_at_any_window();
     puts("pcm_diagnostics tests passed");
     return 0;
 }

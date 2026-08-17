@@ -62,29 +62,46 @@ static uint32_t isqrt64(uint64_t value)
     return (uint32_t)result;
 }
 
-void pcm_s16le_rms_stereo(const uint8_t *pcm, size_t length, uint16_t *left,
-                          uint16_t *right)
+void pcm_s16le_rms_stereo(const uint8_t *pcm, size_t length, size_t window_frames,
+                          uint16_t *left, uint16_t *right)
 {
     if (left == NULL || right == NULL) return;
     *left = 0U;
     *right = 0U;
     if (pcm == NULL) return;
 
-    uint64_t sum_left = 0U;
-    uint64_t sum_right = 0U;
-    size_t frames = 0U;
-    for (size_t offset = 0; offset + 3U < length; offset += 4U) {
-        const uint32_t l = sample_magnitude(pcm, offset);
-        const uint32_t r = sample_magnitude(pcm, offset + 2U);
-        // 32768^2 * 1152 frames still fits a uint64 with room to spare, so no
-        // block size this pipeline produces can overflow the accumulator.
-        sum_left += (uint64_t)l * l;
-        sum_right += (uint64_t)r * r;
-        ++frames;
-    }
+    const size_t frames = length / 4U;
     if (frames == 0U) return;
-    *left = (uint16_t)isqrt64(sum_left / frames);
-    *right = (uint16_t)isqrt64(sum_right / frames);
+
+    /* Dividing the frames among a whole number of windows tiles the block
+     * exactly, which a fixed window size would not: an MP3 block of 1152
+     * frames would leave 128 unmeasured every time. */
+    size_t windows = window_frames == 0U ? 1U : frames / window_frames;
+    if (windows == 0U) windows = 1U;
+
+    for (size_t window = 0U; window < windows; ++window) {
+        const size_t first = (frames * window) / windows;
+        const size_t last = (frames * (window + 1U)) / windows;
+        const size_t count = last - first;
+        if (count == 0U) continue;
+
+        uint64_t sum_left = 0U;
+        uint64_t sum_right = 0U;
+        for (size_t frame = first; frame < last; ++frame) {
+            const size_t offset = frame * 4U;
+            const uint32_t l = sample_magnitude(pcm, offset);
+            const uint32_t r = sample_magnitude(pcm, offset + 2U);
+            // 32768^2 * 1152 frames still fits a uint64 with room to spare, so
+            // no block size this pipeline produces can overflow the
+            // accumulator.
+            sum_left += (uint64_t)l * l;
+            sum_right += (uint64_t)r * r;
+        }
+        const uint16_t rms_left = (uint16_t)isqrt64(sum_left / count);
+        const uint16_t rms_right = (uint16_t)isqrt64(sum_right / count);
+        if (rms_left > *left) *left = rms_left;
+        if (rms_right > *right) *right = rms_right;
+    }
 }
 
 uint32_t pcm_s16le_zero_frame_run(const uint8_t *pcm, size_t length, uint32_t *carry)

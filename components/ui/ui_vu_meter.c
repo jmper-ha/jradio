@@ -8,26 +8,44 @@
  * of hundred pixels and nobody reads a VU meter to three decimals. Integer-only
  * on purpose: no libm on the device, no -lm in the host tests.
  *
- * The top of the scale is -6 dBFS, not 0. RMS only reaches full scale for a
- * square wave; music short-term RMS runs 10-14 dB under its own peaks, so a
- * scale topping out at 0 dBFS would leave the last quarter of the bar
- * permanently dark. -6 dB puts loud material around three quarters up with
- * room to move in both directions. */
+ * The scale spans 20 dB, from -5 dBFS at the top to -25 dBFS at the bottom,
+ * and that width is the whole point. Level readings measured on this device
+ * with real music averaged about 7400 out of a full scale of 32768 and moved
+ * some 14% block to block. Spread over the 48 dB the scale used to cover, that
+ * movement was under four percent of the bar per block and the whole of the
+ * music sat in the top third - which is what "sluggish" looks like. Over 20 dB
+ * the same music travels thirteen blocks of twenty and moves about one block
+ * per reading, twenty-three milliseconds apart.
+ *
+ * The position also follows measurement: readings rose 1.7 dB when the meter
+ * moved from averaging a whole decoded block to 5.8 ms windows, so the scale
+ * moved up with them rather than letting the bar peg at the top.
+ *
+ * The cost is deliberate: anything under -25 dBFS reads empty. That is a
+ * genuinely quiet passage, and a meter that still shows something there is
+ * spending its resolution where nothing is happening.
+ *
+ * RMS and not peak: mastered music holds its peaks within a couple of dB of
+ * full scale almost continuously, and a peak-fed bar sat pinned at the top. */
 typedef struct {
     uint16_t level;
     uint8_t percent;
 } ui_vu_point_t;
 
+/* Even 2 dB per ten percent, so the bar is linear in decibels across its
+ * whole length rather than only near the top. */
 static const ui_vu_point_t s_curve[] = {
-    {16422U, 100U},  /*  -6 dBFS */
-    {11627U, 90U},   /*  -9 dBFS */
-    {8218U, 80U},    /* -12 dBFS */
-    {4125U, 60U},    /* -18 dBFS */
-    {2067U, 45U},    /* -24 dBFS */
-    {1036U, 30U},    /* -30 dBFS */
-    {519U, 20U},     /* -36 dBFS */
-    {164U, 8U},      /* -46 dBFS */
-    {65U, 0U},       /* -54 dBFS */
+    {18426U, 100U},  /*  -5 dBFS */
+    {14640U, 90U},   /*  -7 dBFS */
+    {11626U, 80U},   /*  -9 dBFS */
+    {9238U, 70U},    /* -11 dBFS */
+    {7338U, 60U},    /* -13 dBFS */
+    {5828U, 50U},    /* -15 dBFS */
+    {4630U, 40U},    /* -17 dBFS */
+    {3677U, 30U},    /* -19 dBFS */
+    {2921U, 20U},    /* -21 dBFS */
+    {2320U, 10U},    /* -23 dBFS */
+    {1843U, 0U},     /* -25 dBFS */
 };
 
 void ui_vu_meter_init(ui_vu_meter_t *meter)

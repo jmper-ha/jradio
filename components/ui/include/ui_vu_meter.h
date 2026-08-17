@@ -21,10 +21,17 @@
 
 /* Full scale is a 16-bit sample at its limit. */
 #define UI_VU_FULL_SCALE 32768U
-/* Percent per second the bar falls when the signal drops. About two thirds of
- * a second from top to bottom, near classic VU ballistics - slow enough to
- * read, fast enough to follow the music down instead of hanging above it. */
-#define UI_VU_RELEASE_PERCENT_PER_SEC 160U
+/* Percent per second the bar falls when the signal drops - about a third of a
+ * second from top to bottom.
+ *
+ * This has to be read against the scale, not on its own. A fresh reading
+ * arrives every 23 ms and the attack is instant, so what the release governs
+ * is how fast the bar may follow the music *down*. Readings were measured to
+ * move about 14% - close to 6 percent of this bar - from one block to the
+ * next, and 320 %/s allows 7 in that time, so the bar can now track a fall
+ * instead of lagging behind it. At the 160 %/s this used to be it could only
+ * give up 4, and read as heavy. */
+#define UI_VU_RELEASE_PERCENT_PER_SEC 320U
 
 typedef struct {
     uint8_t percent;
@@ -32,8 +39,9 @@ typedef struct {
 
 void ui_vu_meter_init(ui_vu_meter_t *meter);
 
-/* Maps an RMS magnitude to 0..100 on an approximate dB scale, topping out at
- * -6 dBFS. Silence is 0; anything below about -54 dB is also 0, since a bar
+/* Maps an RMS magnitude to 0..100 on an approximate dB scale running from
+ * -5 dBFS down to -25 dBFS - the range real music was measured to occupy on
+ * this device. Silence is 0, and so is anything below the floor, since a bar
  * that never quite empties reads as a stuck meter.
  *
  * RMS and not peak on purpose: mastered music holds its peaks within a couple

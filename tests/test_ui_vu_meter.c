@@ -14,19 +14,45 @@ static void test_the_scale_spans_silence_to_full(void)
 
 static void test_the_scale_is_logarithmic_not_linear(void)
 {
-    /* Half of full scale is -6 dB. As an RMS reading that is a denser signal
-     * than music sustains, so it tops the scale out; a linear bar would call
-     * it exactly half.  */
-    assert(ui_vu_percent_from_level(UI_VU_FULL_SCALE / 2U) >= 95U);
+    /* Half of full scale is -6 dB. As an RMS reading that is denser than music
+     * sustains, so it belongs at the very top of the bar - a linear bar would
+     * call it exactly half. Not pegged, though: the scale runs to -5. */
+    const uint8_t half = ui_vu_percent_from_level(UI_VU_FULL_SCALE / 2U);
+    assert(half > 90U && half < 100U);
 
-    /* A quarter (-12 dB) is where loud music actually reads, and it has to sit
-     * high with room left in both directions. */
+    /* A quarter (-12 dB) is where loud music reads, and it has to sit above
+     * the middle with room left in both directions. */
     const uint8_t quarter = ui_vu_percent_from_level(UI_VU_FULL_SCALE / 4U);
-    assert(quarter > 65U && quarter < 90U);
+    assert(quarter > 55U && quarter < 80U);
 
-    /* An eighth (-18 dB) is a quiet passage, not a dead meter. */
+    /* An eighth (-18 dB) is a quiet passage, not a dead meter. Six decibels
+     * below the quarter, and the scale is linear in decibels, so it has to
+     * land three tenths of the bar lower. */
     const uint8_t eighth = ui_vu_percent_from_level(UI_VU_FULL_SCALE / 8U);
-    assert(eighth > 45U && eighth < quarter);
+    assert(eighth > 25U && eighth < quarter);
+    assert((unsigned int)(quarter - eighth) > 25U);
+}
+
+
+static void test_the_scale_is_wide_enough_to_look_alive(void)
+{
+    /* The complaint this scale exists to answer was a bar that barely moved.
+     * These numbers are the level readings measured on the device with real
+     * music playing, and they have to cover most of the bar - if a change here
+     * squeezes them back into a third of it, the meter is sluggish again. */
+    const uint8_t quiet = ui_vu_percent_from_level(2500U);
+    const uint8_t loud = ui_vu_percent_from_level(14000U);
+    assert(loud > quiet);
+    assert((unsigned int)(loud - quiet) > 55U);
+
+    /* The mean reading has to land mid-bar, not against either end: a meter
+     * parked at the top has nowhere to go, one parked at the bottom shows
+     * nothing. */
+    const uint8_t mean = ui_vu_percent_from_level(7400U);
+    assert(mean > 40U && mean < 75U);
+
+    /* And the loudest readings must not peg, or the peaks all look alike. */
+    assert(ui_vu_percent_from_level(16385U) < 100U);
 }
 
 static void test_the_scale_rises_monotonically(void)
@@ -66,9 +92,10 @@ static void test_the_meter_falls_gradually(void)
     ui_vu_meter_init(&meter);
     (void)ui_vu_meter_step(&meter, 100U, 10U);
 
-    /* Silence arrives; one 100 ms tick must not empty the bar. */
+    /* Silence arrives; one 100 ms tick moves the bar a long way now, but must
+     * not empty it - a bar that snaps to zero reads as a dropout. */
     const uint8_t after = ui_vu_meter_step(&meter, 0U, 100U);
-    assert(after < 100U && after > 80U);
+    assert(after < 100U && after > 60U);
 
     /* But it does empty within a couple of seconds. */
     for (int tick = 0; tick < 40; ++tick) {
@@ -158,6 +185,7 @@ int main(void)
 {
     test_the_scale_spans_silence_to_full();
     test_the_scale_is_logarithmic_not_linear();
+    test_the_scale_is_wide_enough_to_look_alive();
     test_the_scale_rises_monotonically();
     test_very_quiet_signals_read_as_empty();
     test_the_meter_jumps_straight_up();

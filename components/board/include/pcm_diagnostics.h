@@ -17,9 +17,21 @@ void pcm_s16le_peak_stereo(const uint8_t *pcm, size_t length, uint16_t *left,
  * few dB of full scale almost continuously, so a peak meter sits pinned at the
  * top and shows nothing. RMS follows the power the listener actually hears and
  * typically runs 12-20 dB below peak, which is where the movement is.
- * Integer throughout - no libm, no floating point on the audio path. */
-void pcm_s16le_rms_stereo(const uint8_t *pcm, size_t length, uint16_t *left,
-                          uint16_t *right);
+ * Integer throughout - no libm, no floating point on the audio path.
+ *
+ * `window_frames` sets how long each average is; the result is the loudest
+ * window in the block. Averaging a whole block (pass 0) hides everything that
+ * happens inside it, and a decoded block is 23-26 ms - long enough to flatten
+ * the attack of every note, which is exactly the movement a meter is watched
+ * for. A shorter window keeps the reading an energy measure while letting
+ * transients through.
+ *
+ * The windows tile the block completely and evenly: the count is
+ * frames / window_frames (at least one) and the frames are divided among them,
+ * so nothing is dropped and no window is short enough to behave like a peak
+ * reading of a handful of samples. */
+void pcm_s16le_rms_stereo(const uint8_t *pcm, size_t length, size_t window_frames,
+                          uint16_t *left, uint16_t *right);
 
 /* Longest run of consecutive all-zero stereo frames, in frames.
  *

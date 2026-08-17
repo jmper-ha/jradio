@@ -60,6 +60,7 @@ static lv_obj_t *s_source_status;
 static lv_obj_t *s_source_detail;
 static lv_obj_t *s_source_stream;
 static lv_obj_t *s_source_wifi;
+static lv_obj_t *s_source_buffer;
 /* 20 blocks per channel: 20*11 + 19*3 = 277 px starting at x=30, so the row
  * ends at 307 on a 320 px panel. */
 #define UI_VU_SEGMENTS 20U
@@ -761,6 +762,12 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_wifi, 14, 180);
     lv_obj_set_style_text_color(s_source_wifi, lv_color_hex(0xB0BEC5), 0);
 
+    // Shares the Wi-Fi row, which is the one line free in both sources: the
+    // USB player leaves it empty because nothing there depends on the network.
+    s_source_buffer = lv_label_create(s_source_screen);
+    lv_obj_set_pos(s_source_buffer, 190, 180);
+    lv_obj_set_style_text_color(s_source_buffer, lv_color_hex(0xB0BEC5), 0);
+
 }
 
 static bool ui_submit_player_command(const player_command_t *command)
@@ -1296,6 +1303,24 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
 
 /* Runs every poll, not only when something changed: the meter is an animation,
  * and its whole job is to keep moving between the ~26 ms PCM blocks. */
+/* Fill of the decoder's input buffer. Read straight from player_control on
+ * every pass rather than from the snapshot, like the level meter: it changes
+ * far too often to belong in a structure the web diffs against. */
+static void ui_update_buffer(void)
+{
+    if (lv_screen_active() != s_source_screen) return;
+    uint8_t percent = 0U;
+    char text[16];
+    if (player_control_input_fill(&percent)) {
+        snprintf(text, sizeof(text), "Буфер %u%%", (unsigned int)percent);
+    } else {
+        // Nothing playing, or a source with no backlog at all. A dash says
+        // that; a zero would claim the buffer had run dry.
+        snprintf(text, sizeof(text), "Буфер --");
+    }
+    ui_set_label_text_if_changed(s_source_buffer, text);
+}
+
 static void ui_update_vu(void)
 {
     if (lv_screen_active() != s_source_screen) return;
@@ -1339,6 +1364,7 @@ static void ui_task(void *arg)
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
         ui_update_vu();
+        ui_update_buffer();
         if (s_settings_open) {
             ui_update_settings();
         } else {

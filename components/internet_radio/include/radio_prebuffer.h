@@ -56,3 +56,21 @@ radio_prebuffer_plan_t radio_prebuffer_plan(const radio_prebuffer_config_t *conf
 /* Milliseconds of audio a backlog represents, for logging. 0 when the bitrate
  * is unknown, which is normal before the first frame is decoded. */
 uint32_t radio_prebuffer_millis(size_t available, uint32_t bitrate_kbps);
+
+/* How full the input buffer is, 0..100, for display.
+ *
+ * Deliberately a fraction of the whole buffer and not of the read target, so
+ * the number means one thing: how much audio is actually held. A healthy radio
+ * stream therefore sits near 50, because radio_prebuffer_config_init() aims at
+ * half the buffer and stops reading there - it is not a stream in trouble. The
+ * USB path refills to the brim and reads near 100. What matters either way is
+ * the number falling, which is the only thing a dropout looks like from here.
+ *
+ * RADIO_PREBUFFER_PERCENT_NONE means the source has no input backlog at all,
+ * which is not the same as an empty one: the WAV path reads a chunk straight
+ * into I2S and never holds a buffer, so reporting 0 would look like a fault.
+ *
+ * Rounds to nearest but keeps both ends exact: anything held at all shows at
+ * least 1, so an almost-empty buffer is not displayed as an empty one. */
+#define RADIO_PREBUFFER_PERCENT_NONE 0xFFU
+uint8_t radio_prebuffer_percent(size_t available, size_t capacity);

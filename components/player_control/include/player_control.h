@@ -30,6 +30,16 @@ bool player_control_usb_entry_at(size_t index, usb_browser_entry_t *entry);
 // directory changed" from "this is a different directory".
 unsigned int player_control_usb_listing_revision(void);
 
+/* How full the active source's decoder input buffer is, 0..100. False when
+ * there is nothing to report - no source playing, or a WAV file, which is read
+ * straight to I2S without a backlog.
+ *
+ * Deliberately outside player_snapshot_t. This changes on every pass of the
+ * decode loop, and the web transport sends a diff whenever the snapshot
+ * differs, so carrying it there would push a frame several times a second for
+ * a number only the local screen shows. */
+bool player_control_input_fill(uint8_t *percent);
+
 /* Reopens the directory holding `path` and starts that file, for resuming what
  * was playing before a restart. Runs on the caller's task and reads a
  * directory off the drive, so it stalls that task for as long as the read

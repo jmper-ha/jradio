@@ -19,6 +19,10 @@ typedef struct {
     char codec[8];
     uint16_t bitrate_kbps;
     uint32_t sample_rate_hz;
+    /* How full the decoder's input buffer is, 0..100. Reads ~50 on a healthy
+     * stream because the read loop targets half the buffer; see
+     * radio_prebuffer_percent(). */
+    uint8_t buffer_percent;
 } internet_radio_status_t;
 
 esp_err_t internet_radio_init(void);

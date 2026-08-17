@@ -116,6 +116,40 @@ static void test_a_full_buffer_of_high_bitrate_audio_still_beats_the_dma(void)
     assert(radio_prebuffer_millis(CAPACITY / 2U, 1441U) > 93U);
 }
 
+
+static void test_fill_percent_reads_the_whole_buffer_not_the_target(void)
+{
+    /* The read loop stops at half the buffer, so a perfectly healthy stream
+     * reads 50 here. Scaling to the target instead would show 100 for a stream
+     * holding exactly as much as one holding twice that. */
+    assert(radio_prebuffer_percent(32768U, 65536U) == 50U);
+    assert(radio_prebuffer_percent(65536U, 65536U) == 100U);
+    assert(radio_prebuffer_percent(0U, 65536U) == 0U);
+}
+
+static void test_fill_percent_keeps_both_ends_honest(void)
+{
+    /* A buffer holding something must not read as empty - that is exactly the
+     * state worth telling apart from silence. */
+    assert(radio_prebuffer_percent(1U, 65536U) == 1U);
+    assert(radio_prebuffer_percent(300U, 65536U) == 1U);
+    /* The other end needs no such guard: a buffer one byte short of full is
+     * full for any purpose this number serves, and rounding it down to 99
+     * would be the surprising answer.
+     * More than capacity cannot happen, but must not wrap if it does. */
+    assert(radio_prebuffer_percent(100000U, 65536U) == 100U);
+    assert(radio_prebuffer_percent(1000U, 0U) == 0U);
+}
+
+static void test_fill_percent_rounds_to_nearest(void)
+{
+    /* Truncating would make the meter sit a notch low all the time. */
+    assert(radio_prebuffer_percent(32768U, 65536U) == 50U);
+    /* 5.65% - truncating would show 5. */
+    assert(radio_prebuffer_percent(3700U, 65536U) == 6U);
+    assert(radio_prebuffer_percent(16384U, 32768U) == 50U);
+}
+
 int main(void)
 {
     test_an_empty_buffer_is_allowed_to_wait_for_data();
@@ -128,6 +162,9 @@ int main(void)
     test_a_missing_or_degenerate_config_reads_nothing();
     test_backlog_converts_to_playing_time();
     test_a_full_buffer_of_high_bitrate_audio_still_beats_the_dma();
+    test_fill_percent_reads_the_whole_buffer_not_the_target();
+    test_fill_percent_keeps_both_ends_honest();
+    test_fill_percent_rounds_to_nearest();
     puts("radio_prebuffer tests passed");
     return 0;
 }

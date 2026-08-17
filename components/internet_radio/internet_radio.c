@@ -121,6 +121,10 @@ typedef struct {
     SemaphoreHandle_t direct_io_mutex;
     atomic_bool direct_stop_requested;
     atomic_bool direct_paused;
+    /* Written by the decode task on every pass and read by whoever asks for
+     * status. Atomic rather than inside the status critical section: the loop
+     * runs thousands of times a second and this is one byte of display. */
+    atomic_uint input_fill_percent;
     uint32_t output_sample_rate;
 } internet_radio_context_t;
 
@@ -459,6 +463,9 @@ static void radio_direct_task(void *arg)
         if (available < min_available) {
             min_available = available;
         }
+        atomic_store_explicit(&radio->input_fill_percent,
+                              radio_prebuffer_percent(available, RADIO_DIRECT_INPUT_SIZE),
+                              memory_order_relaxed);
         if (need_input && radio->output_started) {
             ++starvations;
         }
@@ -642,6 +649,9 @@ static void radio_direct_task(void *arg)
         (void)radio_sync_output(radio);
     }
     (void)board_audio_set_enabled(false);
+    // Nothing is buffered once the task is gone; leaving the last reading in
+    // place would show a healthy buffer on a stopped player.
+    atomic_store_explicit(&radio->input_fill_percent, 0U, memory_order_relaxed);
     radio_stream_close(radio);
     radio_decoder_destroy(radio->decoder);
     radio->decoder = NULL;
@@ -1753,6 +1763,8 @@ void internet_radio_get_status(internet_radio_status_t *status)
     taskENTER_CRITICAL(&s_status_lock);
     *status = s_radio.status;
     taskEXIT_CRITICAL(&s_status_lock);
+    status->buffer_percent = (uint8_t)atomic_load_explicit(&s_radio.input_fill_percent,
+                                                           memory_order_relaxed);
 }
 
 size_t internet_radio_station_count(void)

@@ -13,6 +13,7 @@
 
 #include "board.h"
 #include "radio_decoder.h"
+#include "radio_prebuffer.h"
 #include "radio_stream_format.h"
 #include "usb_wav.h"
 
@@ -34,6 +35,10 @@ static const char *TAG = "usb_player";
 
 static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
 static usb_player_status_t s_status;
+/* Written by the playback task on every pass and read by whoever asks for
+ * status. Atomic rather than inside the status critical section: the loop runs
+ * thousands of times a second and this is one byte of display. */
+static atomic_uint s_input_fill_percent = ATOMIC_VAR_INIT(0);
 static SemaphoreHandle_t s_control_lock;
 static TaskHandle_t s_task;
 static atomic_bool s_stop_requested = ATOMIC_VAR_INIT(false);
@@ -288,6 +293,10 @@ static void usb_player_task(void *arg)
 
     unsigned int pcm_blocks = 0U;
     if (!failed && is_wav) {
+        // WAV goes from the file to I2S a chunk at a time with no backlog in
+        // between, so there is no fill to report - and 0 would read as starved.
+        atomic_store_explicit(&s_input_fill_percent, RADIO_PREBUFFER_PERCENT_NONE,
+                              memory_order_relaxed);
         failed = play_wav(&ctx, &pcm_blocks);
     }
     while (!failed && !is_wav) {
@@ -295,6 +304,9 @@ static void usb_player_task(void *arg)
         if (wait_while_paused()) continue;
 
         bool need_input = ctx.available == 0U;
+        atomic_store_explicit(&s_input_fill_percent,
+                              radio_prebuffer_percent(ctx.available, USB_PLAYER_INPUT_SIZE),
+                              memory_order_relaxed);
         if (!need_input) {
             size_t consumed = 0U;
             size_t pcm_bytes = 0U;
@@ -358,6 +370,9 @@ static void usb_player_task(void *arg)
     }
 
     if (ctx.output_started) (void)board_audio_set_enabled(false);
+    // Nothing is buffered once the task is gone; leaving the last reading in
+    // place would show a healthy buffer on a stopped player.
+    atomic_store_explicit(&s_input_fill_percent, 0U, memory_order_relaxed);
     if (decoder != NULL) radio_decoder_destroy(decoder);
     if (ctx.file != NULL) fclose(ctx.file);
     free(ctx.compressed);
@@ -477,4 +492,6 @@ void usb_player_get_status(usb_player_status_t *status)
     taskENTER_CRITICAL(&s_status_lock);
     *status = s_status;
     taskEXIT_CRITICAL(&s_status_lock);
+    status->buffer_percent =
+        (uint8_t)atomic_load_explicit(&s_input_fill_percent, memory_order_relaxed);
 }

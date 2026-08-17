@@ -19,6 +19,10 @@ typedef struct {
     char codec[USB_PLAYER_CODEC_MAX_LEN];
     uint32_t sample_rate_hz;
     uint16_t bitrate_kbps;
+    /* How full the decoder's input buffer is, 0..100. Reads near 100 on a
+     * healthy track: unlike the network path, this one refills to the brim on
+     * every pass because a file always has the next bytes ready. */
+    uint8_t buffer_percent;
 } usb_player_status_t;
 
 // Called from the playback task once a track ends *by itself* - not after a

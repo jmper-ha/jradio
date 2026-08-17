@@ -48,3 +48,12 @@ uint32_t radio_prebuffer_millis(size_t available, uint32_t bitrate_kbps)
     /* bytes * 8 / (kbps * 1000) seconds -> * 1000 for ms, i.e. bytes*8/kbps. */
     return (uint32_t)((uint64_t)available * 8U / bitrate_kbps);
 }
+
+uint8_t radio_prebuffer_percent(size_t available, size_t capacity)
+{
+    if (capacity == 0U) return 0U;
+    if (available >= capacity) return 100U;
+    if (available == 0U) return 0U;
+    const uint8_t percent = (uint8_t)((available * 100U + capacity / 2U) / capacity);
+    return percent == 0U ? 1U : percent;
+}

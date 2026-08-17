@@ -1,5 +1,7 @@
 #include "player_control.h"
 
+#include "radio_prebuffer.h"
+
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -348,6 +350,36 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
         snprintf(snapshot->error, sizeof(snapshot->error),
                  "Не удалось подключиться к станции");
     }
+}
+
+bool player_control_input_fill(uint8_t *percent)
+{
+    if (percent == NULL) return false;
+    const audio_source_t source =
+        (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
+    uint8_t reported;
+    if (source == AUDIO_SOURCE_USB) {
+        usb_player_status_t status;
+        usb_player_get_status(&status);
+        if (status.state != USB_PLAYER_STATE_PLAYING &&
+            status.state != USB_PLAYER_STATE_PAUSED) {
+            return false;
+        }
+        reported = status.buffer_percent;
+    } else if (source == AUDIO_SOURCE_INTERNET_RADIO) {
+        internet_radio_status_t status;
+        internet_radio_get_status(&status);
+        if (status.state != INTERNET_RADIO_STATE_PLAYING &&
+            status.state != INTERNET_RADIO_STATE_PAUSED) {
+            return false;
+        }
+        reported = status.buffer_percent;
+    } else {
+        return false;
+    }
+    if (reported == RADIO_PREBUFFER_PERCENT_NONE) return false;
+    *percent = reported;
+    return true;
 }
 
 const station_catalog_entry_t *player_control_station_at(size_t index)

@@ -340,13 +340,21 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
         result = i2s_channel_write(s_i2s_tx, pcm, pcm_length, written,
                                    pdMS_TO_TICKS(timeout_ms));
         if (result == ESP_OK) {
+            uint16_t peak_left = 0U;
+            uint16_t peak_right = 0U;
+            pcm_s16le_peak_stereo(pcm, *written, &peak_left, &peak_right);
+            /* The health log wants the peak - it is looking for clipping and
+             * for a channel gone dead, both of which are peak questions. The
+             * meter wants RMS: peaks of mastered music sit a couple of dB under
+             * full scale continuously, so a peak-fed meter never leaves the top
+             * of the scale. */
             uint16_t level_left = 0U;
             uint16_t level_right = 0U;
-            pcm_s16le_peak_stereo(pcm, *written, &level_left, &level_right);
+            pcm_s16le_rms_stereo(pcm, *written, &level_left, &level_right);
             board_audio_level_note(level_left, &s_audio_level_left);
             board_audio_level_note(level_right, &s_audio_level_right);
             board_audio_health_add(&s_audio_health, *written, pcm_length,
-                                   level_left > level_right ? level_left : level_right);
+                                   peak_left > peak_right ? peak_left : peak_right);
             const uint32_t zero_run =
                 pcm_s16le_zero_frame_run(pcm, *written, &s_audio_zero_carry);
             board_audio_health_note_zero_run(&s_audio_health, zero_run);

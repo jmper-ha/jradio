@@ -12,6 +12,15 @@ uint16_t pcm_s16le_peak(const uint8_t *pcm, size_t length);
 void pcm_s16le_peak_stereo(const uint8_t *pcm, size_t length, uint16_t *left,
                            uint16_t *right);
 
+/* Root-mean-square level per channel, the quantity a level meter should show.
+ * Peak is the wrong one for a display: mastered music holds its peaks within a
+ * few dB of full scale almost continuously, so a peak meter sits pinned at the
+ * top and shows nothing. RMS follows the power the listener actually hears and
+ * typically runs 12-20 dB below peak, which is where the movement is.
+ * Integer throughout - no libm, no floating point on the audio path. */
+void pcm_s16le_rms_stereo(const uint8_t *pcm, size_t length, uint16_t *left,
+                          uint16_t *right);
+
 /* Longest run of consecutive all-zero stereo frames, in frames.
  *
  * The PCM5102 engages its analog mute after 1024 consecutive zero frames

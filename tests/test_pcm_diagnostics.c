@@ -109,6 +109,111 @@ static void test_zero_run_survives_an_empty_or_missing_block(void)
     assert(pcm_s16le_zero_frame_run((const uint8_t *)"", 0U, NULL) == 0U);
 }
 
+
+static void fill_stereo(uint8_t *pcm, size_t frames, int16_t left, int16_t right)
+{
+    for (size_t frame = 0; frame < frames; ++frame) {
+        const uint16_t l = (uint16_t)left;
+        const uint16_t r = (uint16_t)right;
+        pcm[frame * 4U] = (uint8_t)l;
+        pcm[frame * 4U + 1U] = (uint8_t)(l >> 8U);
+        pcm[frame * 4U + 2U] = (uint8_t)r;
+        pcm[frame * 4U + 3U] = (uint8_t)(r >> 8U);
+    }
+}
+
+static void test_peak_and_rms_read_the_channels_apart(void)
+{
+    /* A dead channel is one of the few faults a meter can show, and a combined
+     * figure would hide it completely. */
+    uint8_t pcm[64U * 4U];
+    uint16_t left = 0U;
+    uint16_t right = 0U;
+
+    fill_stereo(pcm, 64U, 9000, 0);
+    pcm_s16le_peak_stereo(pcm, sizeof(pcm), &left, &right);
+    assert(left == 9000U && right == 0U);
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), &left, &right);
+    assert(left == 9000U && right == 0U);
+}
+
+static void test_rms_of_a_constant_level_is_that_level(void)
+{
+    /* A square wave at full amplitude has RMS equal to its amplitude - the one
+     * case where peak and RMS agree, which makes it a clean check that the
+     * squaring and the root cancel. */
+    uint8_t pcm[128U * 4U];
+    uint16_t left = 0U;
+    uint16_t right = 0U;
+    fill_stereo(pcm, 128U, 20000, -20000);
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), &left, &right);
+    assert(left == 20000U);
+    assert(right == 20000U);
+}
+
+static void test_rms_sits_well_below_peak_on_a_varying_signal(void)
+{
+    /* The whole reason for the change: half the frames loud, half silent, so
+     * the peak reads full while the power is 3 dB down. A peak meter would
+     * show the top of the scale for a signal that is plainly quieter. */
+    uint8_t pcm[128U * 4U];
+    uint16_t peak_l = 0U;
+    uint16_t peak_r = 0U;
+    uint16_t rms_l = 0U;
+    uint16_t rms_r = 0U;
+
+    fill_stereo(pcm, 128U, 0, 0);
+    fill_stereo(pcm, 64U, 30000, 30000);
+    pcm_s16le_peak_stereo(pcm, sizeof(pcm), &peak_l, &peak_r);
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), &rms_l, &rms_r);
+
+    assert(peak_l == 30000U);
+    /* 30000 / sqrt(2) = 21213. */
+    assert(rms_l > 21000U && rms_l < 21400U);
+    assert(rms_l < peak_l);
+    assert(rms_r == rms_l);
+}
+
+static void test_rms_of_silence_is_zero(void)
+{
+    uint8_t pcm[32U * 4U];
+    uint16_t left = 1U;
+    uint16_t right = 1U;
+    fill_stereo(pcm, 32U, 0, 0);
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), &left, &right);
+    assert(left == 0U && right == 0U);
+}
+
+static void test_rms_survives_a_full_scale_block(void)
+{
+    /* Every sample at the negative limit folds to 32768; a block of them must
+     * not overflow the sum of squares nor the 16-bit result. */
+    uint8_t pcm[1152U * 4U];
+    uint16_t left = 0U;
+    uint16_t right = 0U;
+    fill_stereo(pcm, 1152U, INT16_MIN, INT16_MIN);
+    pcm_s16le_rms_stereo(pcm, sizeof(pcm), &left, &right);
+    assert(left == 32768U || left == 32767U);
+    assert(right == left);
+}
+
+static void test_rms_tolerates_empty_and_missing_input(void)
+{
+    uint16_t left = 5U;
+    uint16_t right = 5U;
+    pcm_s16le_rms_stereo(NULL, 16U, &left, &right);
+    assert(left == 0U && right == 0U);
+
+    uint8_t pcm[4];
+    left = 5U;
+    right = 5U;
+    /* Less than one whole frame: nothing to average. */
+    pcm_s16le_rms_stereo(pcm, 2U, &left, &right);
+    assert(left == 0U && right == 0U);
+    pcm_s16le_rms_stereo(pcm, 4U, NULL, &right);
+    pcm_s16le_peak_stereo(pcm, 4U, &left, NULL);
+}
+
 int main(void)
 {
     test_peak_handles_s16le_extremes();
@@ -118,6 +223,12 @@ int main(void)
     test_zero_run_spans_block_boundaries();
     test_zero_run_needs_both_channels_silent();
     test_zero_run_survives_an_empty_or_missing_block();
+    test_peak_and_rms_read_the_channels_apart();
+    test_rms_of_a_constant_level_is_that_level();
+    test_rms_sits_well_below_peak_on_a_varying_signal();
+    test_rms_of_silence_is_zero();
+    test_rms_survives_a_full_scale_block();
+    test_rms_tolerates_empty_and_missing_input();
     puts("pcm_diagnostics tests passed");
     return 0;
 }

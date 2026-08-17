@@ -43,6 +43,50 @@ void pcm_s16le_peak_stereo(const uint8_t *pcm, size_t length, uint16_t *left,
     }
 }
 
+/* Bit-by-bit integer square root: the audio path runs on every PCM block and
+ * has no business pulling in the FPU or libm for a display value. */
+static uint32_t isqrt64(uint64_t value)
+{
+    uint64_t result = 0U;
+    uint64_t bit = 1ULL << 62;
+    while (bit > value) bit >>= 2;
+    while (bit != 0U) {
+        if (value >= result + bit) {
+            value -= result + bit;
+            result = (result >> 1) + bit;
+        } else {
+            result >>= 1;
+        }
+        bit >>= 2;
+    }
+    return (uint32_t)result;
+}
+
+void pcm_s16le_rms_stereo(const uint8_t *pcm, size_t length, uint16_t *left,
+                          uint16_t *right)
+{
+    if (left == NULL || right == NULL) return;
+    *left = 0U;
+    *right = 0U;
+    if (pcm == NULL) return;
+
+    uint64_t sum_left = 0U;
+    uint64_t sum_right = 0U;
+    size_t frames = 0U;
+    for (size_t offset = 0; offset + 3U < length; offset += 4U) {
+        const uint32_t l = sample_magnitude(pcm, offset);
+        const uint32_t r = sample_magnitude(pcm, offset + 2U);
+        // 32768^2 * 1152 frames still fits a uint64 with room to spare, so no
+        // block size this pipeline produces can overflow the accumulator.
+        sum_left += (uint64_t)l * l;
+        sum_right += (uint64_t)r * r;
+        ++frames;
+    }
+    if (frames == 0U) return;
+    *left = (uint16_t)isqrt64(sum_left / frames);
+    *right = (uint16_t)isqrt64(sum_right / frames);
+}
+
 uint32_t pcm_s16le_zero_frame_run(const uint8_t *pcm, size_t length, uint32_t *carry)
 {
     if (carry == NULL) {

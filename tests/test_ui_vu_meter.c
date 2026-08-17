@@ -5,24 +5,28 @@
 
 static void test_the_scale_spans_silence_to_full(void)
 {
-    assert(ui_vu_percent_from_peak(0U) == 0U);
-    assert(ui_vu_percent_from_peak(UI_VU_FULL_SCALE) == 100U);
+    assert(ui_vu_percent_from_level(0U) == 0U);
+    assert(ui_vu_percent_from_level(UI_VU_FULL_SCALE) == 100U);
     /* Anything the DAC can produce is on the scale, including the value a
      * saturated negative sample folds to. */
-    assert(ui_vu_percent_from_peak(65535U) == 100U);
+    assert(ui_vu_percent_from_level(65535U) == 100U);
 }
 
 static void test_the_scale_is_logarithmic_not_linear(void)
 {
-    /* The whole point: half of full scale is -6 dB, which is most of the way
-     * up a dB bar and would be exactly half of a linear one. A meter that
-     * reads 50 here makes ordinary music sit in the bottom third. */
-    const uint8_t half = ui_vu_percent_from_peak(UI_VU_FULL_SCALE / 2U);
-    assert(half > 70U && half <= 85U);
+    /* Half of full scale is -6 dB. As an RMS reading that is a denser signal
+     * than music sustains, so it tops the scale out; a linear bar would call
+     * it exactly half.  */
+    assert(ui_vu_percent_from_level(UI_VU_FULL_SCALE / 2U) >= 95U);
 
-    /* And a quarter (-12 dB) is still well up the bar. */
-    const uint8_t quarter = ui_vu_percent_from_peak(UI_VU_FULL_SCALE / 4U);
-    assert(quarter > 50U && quarter < half);
+    /* A quarter (-12 dB) is where loud music actually reads, and it has to sit
+     * high with room left in both directions. */
+    const uint8_t quarter = ui_vu_percent_from_level(UI_VU_FULL_SCALE / 4U);
+    assert(quarter > 65U && quarter < 90U);
+
+    /* An eighth (-18 dB) is a quiet passage, not a dead meter. */
+    const uint8_t eighth = ui_vu_percent_from_level(UI_VU_FULL_SCALE / 8U);
+    assert(eighth > 45U && eighth < quarter);
 }
 
 static void test_the_scale_rises_monotonically(void)
@@ -30,8 +34,8 @@ static void test_the_scale_rises_monotonically(void)
     /* A dip anywhere would show as the bar twitching backwards while the
      * music gets louder. */
     uint8_t previous = 0U;
-    for (uint32_t peak = 0U; peak <= UI_VU_FULL_SCALE; peak += 97U) {
-        const uint8_t percent = ui_vu_percent_from_peak((uint16_t)peak);
+    for (uint32_t level = 0U; level <= UI_VU_FULL_SCALE; level += 97U) {
+        const uint8_t percent = ui_vu_percent_from_level((uint16_t)level);
         assert(percent >= previous);
         assert(percent <= 100U);
         previous = percent;
@@ -42,9 +46,9 @@ static void test_very_quiet_signals_read_as_empty(void)
 {
     /* Below the floor the bar must actually empty: a meter that never quite
      * reaches zero looks stuck rather than quiet. */
-    assert(ui_vu_percent_from_peak(1U) == 0U);
-    assert(ui_vu_percent_from_peak(100U) == 0U);
-    assert(ui_vu_percent_from_peak(2000U) > 0U);
+    assert(ui_vu_percent_from_level(1U) == 0U);
+    assert(ui_vu_percent_from_level(60U) == 0U);
+    assert(ui_vu_percent_from_level(2000U) > 0U);
 }
 
 static void test_the_meter_jumps_straight_up(void)

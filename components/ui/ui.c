@@ -1306,7 +1306,7 @@ static void ui_update_vu(void)
     uint16_t peak[2] = {0U, 0U};
     board_audio_level_take(&peak[0], &peak[1]);
     for (size_t channel = 0; channel < 2U; ++channel) {
-        const uint8_t target = ui_vu_percent_from_peak(peak[channel]);
+        const uint8_t target = ui_vu_percent_from_level(peak[channel]);
         const uint8_t value = ui_vu_meter_step(&s_vu_state[channel], target, elapsed);
         const uint8_t lit = ui_vu_lit_segments(value, UI_VU_SEGMENTS);
         for (uint8_t segment = 0U; segment < UI_VU_SEGMENTS; ++segment) {

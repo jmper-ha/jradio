@@ -14,17 +14,17 @@
  * libm, which keeps this testable on the host and floating point off the
  * device.
  *
- * And a meter that simply follows the peak flickers uselessly at 44 kHz. It
- * needs a fast attack, so a transient registers at full height, and a slow
+ * And a meter that simply follows the signal flickers uselessly at 44 kHz. It
+ * needs a fast attack, so a swell registers at full height, and a slower
  * release, so the eye can read the level it reached.
  */
 
 /* Full scale is a 16-bit sample at its limit. */
 #define UI_VU_FULL_SCALE 32768U
-/* Percent per second the bar falls when the signal drops. About a second and
- * a half from top to bottom - slow enough to read, fast enough that silence
- * looks like silence. */
-#define UI_VU_RELEASE_PERCENT_PER_SEC 70U
+/* Percent per second the bar falls when the signal drops. About two thirds of
+ * a second from top to bottom, near classic VU ballistics - slow enough to
+ * read, fast enough to follow the music down instead of hanging above it. */
+#define UI_VU_RELEASE_PERCENT_PER_SEC 160U
 
 typedef struct {
     uint8_t percent;
@@ -32,10 +32,14 @@ typedef struct {
 
 void ui_vu_meter_init(ui_vu_meter_t *meter);
 
-/* Maps a peak sample magnitude to 0..100 on an approximate dB scale.
- * Silence is 0; anything below about -48 dB is also 0, since a bar that never
- * quite empties reads as a stuck meter. */
-uint8_t ui_vu_percent_from_peak(uint16_t peak);
+/* Maps an RMS magnitude to 0..100 on an approximate dB scale, topping out at
+ * -6 dBFS. Silence is 0; anything below about -54 dB is also 0, since a bar
+ * that never quite empties reads as a stuck meter.
+ *
+ * RMS and not peak on purpose: mastered music holds its peaks within a couple
+ * of dB of full scale continuously, so a peak-fed bar sits pinned at the top
+ * and shows nothing at all. */
+uint8_t ui_vu_percent_from_level(uint16_t level);
 
 /* Advances the meter by `elapsed_ms` towards `target_percent`. Rises to the
  * target at once and falls gradually, returning the value to display. */

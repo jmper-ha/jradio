@@ -23,6 +23,7 @@
 
 #include "board.h"
 #include "board_audio_format.h"
+#include "hls_playlist.h"
 #include "icy_metadata.h"
 #include "pcm_diagnostics.h"
 #include "radio_http_status.h"
@@ -56,11 +57,54 @@
 #define RADIO_DIRECT_PCM_SIZE 16384U
 #define RADIO_DIRECT_STOP_TIMEOUT_MS 12000U
 #define RADIO_STARVATION_REPORT_MS 10000U
+/* Room for one HLS playlist. Relax FM's is 653 bytes; the ceiling is a master
+ * playlist listing many variants, which is still text and still small. */
+#define RADIO_HLS_TEXT_SIZE 8192U
+#define RADIO_HLS_URL_MAX 320U
+/* How long playback may go without a new segment before the stream counts as
+ * dead. Has to be several segments: HLS delivers in ~6 s lumps, so the 3 s
+ * that catches a stalled socket would fire between every one of them. */
+#define RADIO_HLS_STALL_TIMEOUT_MS 25000U
+/* Fallback when a playlist omits EXT-X-TARGETDURATION. */
+#define RADIO_HLS_DEFAULT_TARGET_MS 6000U
+#define RADIO_HLS_TIMEOUT_MS 10000
+/* Cap on one read-ahead attempt into an open segment. Short enough that a
+ * genuinely empty buffer costs the decode loop almost nothing. */
+#define RADIO_HLS_TOPUP_TIMEOUT_MS 15
 
 static const char *TAG = "internet_radio";
 
+/* Live state of an HLS session: which playlist, how far through it, and the
+ * bytes of the current segment still to be skipped. */
+typedef struct {
+    bool active;
+    char media_url[RADIO_HLS_URL_MAX];
+    uint64_t next_sequence;
+    uint32_t target_duration_ms;
+    /* Earliest tick at which the playlist may be fetched again. RFC 8216 bars
+     * hammering a live playlist; without this a dry queue would re-fetch in a
+     * tight loop for the whole gap before the next segment is published. */
+    TickType_t refresh_allowed;
+    TickType_t last_segment;
+    hls_playlist_t *playlist;
+    char *text;
+    /* A response body is open on a segment. Not the same as "the connection is
+     * open": the connection is held across segments on purpose. */
+    bool segment_open;
+    /* A request is on the wire whose response has not been collected yet. The
+     * gap between the two is where the decoder keeps working. */
+    bool request_sent;
+    bool request_is_playlist;
+    /* First bytes of a segment, read early to look for an ID3 tag and held
+     * here when there was none - they are audio and must not be dropped. */
+    uint8_t lead[16];
+    size_t lead_length;
+    size_t lead_offset;
+} radio_hls_t;
+
 typedef struct {
     esp_http_client_handle_t http;
+    radio_hls_t hls;
     icy_metadata_t icy;
     internet_radio_status_t status;
     size_t icy_interval;
@@ -84,6 +128,13 @@ static internet_radio_context_t s_radio;
 static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static bool radio_direct_reconnect(internet_radio_context_t *radio);
+/* Defined below, past the HLS layer they dispatch to. */
+static esp_err_t radio_stream_open(internet_radio_context_t *radio, const char *url);
+static void radio_stream_close(internet_radio_context_t *radio);
+static int radio_stream_read_blocking(internet_radio_context_t *radio, uint8_t *buffer,
+                                      int length);
+static int radio_stream_read_ready(internet_radio_context_t *radio, uint8_t *buffer, int length,
+                                   uint32_t budget_ms);
 
 static const station_catalog_entry_t s_europa_plus_station = {
     .name = "Европа плюс",
@@ -498,8 +549,8 @@ static void radio_direct_task(void *arg)
             // what has already arrived and returns to decoding.
             const int received =
                 plan.budget_ms == 0U
-                    ? radio_http_read_ready(radio, network, request_length, 0U)
-                    : radio_http_read_blocking(radio, network, request_length);
+                    ? radio_stream_read_ready(radio, network, request_length, 0U)
+                    : radio_stream_read_blocking(radio, network, request_length);
             if (received == 0 && plan.budget_ms == 0U) {
                 // Nothing buffered yet and the decoder is not waiting: keep
                 // decoding rather than spinning on an idle socket.
@@ -573,7 +624,7 @@ static void radio_direct_task(void *arg)
                 const int ready_length = (int)(free_room < RADIO_DIRECT_NETWORK_CHUNK
                                                    ? free_room
                                                    : RADIO_DIRECT_NETWORK_CHUNK);
-                chunk = radio_http_read_ready(radio, network, ready_length, 0U);
+                chunk = radio_stream_read_ready(radio, network, ready_length, 0U);
                 if (chunk <= 0) break;
             }
             if (fatal) break;
@@ -591,7 +642,7 @@ static void radio_direct_task(void *arg)
         (void)radio_sync_output(radio);
     }
     (void)board_audio_set_enabled(false);
-    radio_http_close(radio);
+    radio_stream_close(radio);
     radio_decoder_destroy(radio->decoder);
     radio->decoder = NULL;
     heap_caps_free(compressed);
@@ -642,7 +693,11 @@ static esp_err_t radio_http_event(esp_http_client_event_t *event)
     return ESP_OK;
 }
 
-static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *url)
+/* Opens `url` into radio->http and follows redirects, leaving the response
+ * body ready to read. Split out of radio_http_open() because an HLS session
+ * runs this once per segment, and must not reset the per-station counters and
+ * status that opening a stream does. */
+static esp_err_t radio_http_connect(internet_radio_context_t *radio, const char *url)
 {
     if (url == NULL || url[0] == '\0') return ESP_ERR_INVALID_ARG;
     const esp_http_client_config_t config = {
@@ -656,18 +711,6 @@ static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *ur
         .event_handler = radio_http_event,
         .user_data = radio,
     };
-    radio->icy_interval = 0;
-    radio->pcm_bytes = 0;
-    radio->pcm_blocks = 0;
-    radio->output_logged = false;
-    radio->output_started = false;
-    radio->output_sample_rate = 0U;
-    taskENTER_CRITICAL(&s_status_lock);
-    radio->status.bitrate_kbps = 0U;
-    radio->status.sample_rate_hz = 0U;
-    snprintf(radio->status.codec, sizeof(radio->status.codec), "%s",
-             radio_stream_format_codec_name(radio->stream_format));
-    taskEXIT_CRITICAL(&s_status_lock);
     radio->http = esp_http_client_init(&config);
     if (radio->http == NULL) {
         return ESP_ERR_NO_MEM;
@@ -737,8 +780,33 @@ static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *ur
     }
     if (err != ESP_OK) {
         radio_http_close(radio);
-        return err;
     }
+    return err;
+}
+
+/* Resets the per-station counters and publishes the codec. Everything here is
+ * once per station, not once per HTTP response. */
+static void radio_stream_reset_status(internet_radio_context_t *radio)
+{
+    radio->icy_interval = 0;
+    radio->pcm_bytes = 0;
+    radio->pcm_blocks = 0;
+    radio->output_logged = false;
+    radio->output_started = false;
+    radio->output_sample_rate = 0U;
+    taskENTER_CRITICAL(&s_status_lock);
+    radio->status.bitrate_kbps = 0U;
+    radio->status.sample_rate_hz = 0U;
+    snprintf(radio->status.codec, sizeof(radio->status.codec), "%s",
+             radio_stream_format_codec_name(radio->stream_format));
+    taskEXIT_CRITICAL(&s_status_lock);
+}
+
+static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *url)
+{
+    radio_stream_reset_status(radio);
+    const esp_err_t err = radio_http_connect(radio, url);
+    if (err != ESP_OK) return err;
 
     icy_metadata_init(&radio->icy, radio->icy_interval, radio_set_title, radio);
     // Headers have been parsed by now, so Content-Type may have corrected the
@@ -751,6 +819,502 @@ static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *ur
              esp_http_client_get_status_code(radio->http), (unsigned int)radio->icy_interval,
              radio_stream_format_codec_name(radio->stream_format));
     return ESP_OK;
+}
+
+/* ---------------------------------------------------------------- HLS ----
+ *
+ * An .m3u8 station is an index, not a stream: a text file naming a handful of
+ * short files that the server keeps replacing as time passes. Playing it means
+ * fetching segments back to back and re-fetching the index when the queue runs
+ * dry, while the decode loop upstream still believes it is reading one endless
+ * socket. That illusion is what these functions provide - radio_hls_read()
+ * has the same contract as radio_http_read_*(), so nothing above it changes.
+ *
+ * Everything goes over one keep-alive connection, deliberately. The first
+ * version opened a fresh client per segment and the TLS handshake - several
+ * hundred milliseconds at this signal strength - blocked the decode loop once
+ * every six seconds, far longer than the ~93 ms of I2S DMA, so the DAC ran dry
+ * on every segment boundary. Reusing the connection turns that into one
+ * request on an open socket.
+ *
+ * The parsing lives in hls_playlist.c, where it is host-tested; only the
+ * fetching and the sequencing are here.
+ */
+
+static void radio_hls_stop(internet_radio_context_t *radio)
+{
+    radio->hls.active = false;
+    radio->hls.segment_open = false;
+    radio->hls.request_sent = false;
+    radio->hls.lead_length = 0U;
+    radio->hls.lead_offset = 0U;
+    if (radio->hls.playlist != NULL) {
+        heap_caps_free(radio->hls.playlist);
+        radio->hls.playlist = NULL;
+    }
+    if (radio->hls.text != NULL) {
+        heap_caps_free(radio->hls.text);
+        radio->hls.text = NULL;
+    }
+}
+
+/* Puts a GET on the wire and returns without waiting for the answer.
+ *
+ * This split is the whole trick. Opening a segment used to be one blocking
+ * call, and the round trip - 77 to 180 ms measured on the device - stopped the
+ * decode loop for longer than the ~93 ms the I2S DMA holds, so the DAC ran dry
+ * at every segment boundary. Writing the request is fast on an already
+ * connected socket; only the reply costs a round trip, and the decoder can
+ * spend that time on the two seconds of audio already in its buffer. */
+static esp_err_t radio_hls_send_request(internet_radio_context_t *radio, const char *url)
+{
+    esp_err_t err = esp_http_client_set_url(radio->http, url);
+    if (err != ESP_OK) return err;
+    err = esp_http_client_open(radio->http, 0);
+    if (err != ESP_OK) {
+        // The pooled socket may have been closed by the server while idle.
+        // One reconnect covers that; a second failure is a real one.
+        esp_http_client_close(radio->http);
+        err = esp_http_client_open(radio->http, 0);
+        if (err != ESP_OK) return err;
+    }
+    radio->hls.request_sent = true;
+    return ESP_OK;
+}
+
+/* True once the reply to the outstanding request has started to arrive.
+ *
+ * select() is exact here, unlike in the middle of a transfer: nothing is
+ * waiting inside esp-tls, because the reply has not begun. */
+static bool radio_hls_response_ready(internet_radio_context_t *radio, uint32_t budget_ms)
+{
+    const int fd = esp_http_client_get_socket(radio->http);
+    if (fd < 0) return true;
+    fd_set readable;
+    FD_ZERO(&readable);
+    FD_SET(fd, &readable);
+    struct timeval timeout = {
+        .tv_sec = (time_t)(budget_ms / 1000U),
+        .tv_usec = (suseconds_t)((budget_ms % 1000U) * 1000U),
+    };
+    return select(fd + 1, &readable, NULL, NULL, &timeout) > 0;
+}
+
+/* Reads the response headers of the outstanding request. Only called once the
+ * reply is known to have arrived, so it does not wait on the network. */
+static esp_err_t radio_hls_collect_headers(internet_radio_context_t *radio)
+{
+    radio->hls.request_sent = false;
+    if (esp_http_client_fetch_headers(radio->http) < 0) {
+        esp_http_client_close(radio->http);
+        return ESP_FAIL;
+    }
+    const int status = esp_http_client_get_status_code(radio->http);
+    if (radio_http_status_is_redirect(status)) {
+        if (esp_http_client_set_redirection(radio->http) != ESP_OK ||
+            esp_http_client_open(radio->http, 0) != ESP_OK ||
+            esp_http_client_fetch_headers(radio->http) < 0) {
+            esp_http_client_close(radio->http);
+            return ESP_FAIL;
+        }
+    } else if (status != 200) {
+        ESP_LOGW(TAG, "HLS request status %d", status);
+        esp_http_client_close(radio->http);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+/* Drains the body of a playlist response and parses it. */
+static esp_err_t radio_hls_read_playlist_body(internet_radio_context_t *radio)
+{
+    size_t length = 0U;
+    while (length + 1U < RADIO_HLS_TEXT_SIZE) {
+        if (atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire)) {
+            return ESP_ERR_INVALID_STATE;
+        }
+        const int received = esp_http_client_read(radio->http, radio->hls.text + length,
+                                                  (int)(RADIO_HLS_TEXT_SIZE - 1U - length));
+        if (received < 0) return ESP_FAIL;
+        if (received == 0) break;
+        length += (size_t)received;
+    }
+    radio->hls.text[length] = '\0';
+    if (!hls_playlist_parse(radio->hls.text, length, radio->hls.playlist)) {
+        ESP_LOGE(TAG, "HLS playlist parse failed: %u bytes", (unsigned int)length);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    return ESP_OK;
+}
+
+/* Blocking playlist fetch, used only while starting a session - there is no
+ * audio to protect yet, so the round trip costs nothing. */
+static esp_err_t radio_hls_load_playlist(internet_radio_context_t *radio, const char *url)
+{
+    esp_err_t err = radio_hls_send_request(radio, url);
+    if (err != ESP_OK) return err;
+    (void)radio_hls_response_ready(radio, RADIO_HLS_TIMEOUT_MS);
+    err = radio_hls_collect_headers(radio);
+    if (err != ESP_OK) return err;
+    return radio_hls_read_playlist_body(radio);
+}
+
+/* Opens an HLS session: create the connection, fetch the playlist, follow a
+ * master playlist to its variant, and pick the segment to join at. No segment
+ * is opened here - the read path fetches the first one like every other. */
+static esp_err_t radio_hls_start(internet_radio_context_t *radio, const char *url)
+{
+    radio_hls_stop(radio);
+    radio_http_close(radio);
+    radio->hls.playlist = heap_caps_malloc(sizeof(hls_playlist_t),
+                                           MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (radio->hls.playlist == NULL) {
+        radio->hls.playlist = heap_caps_malloc(sizeof(hls_playlist_t),
+                                               MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    radio->hls.text = heap_caps_malloc(RADIO_HLS_TEXT_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (radio->hls.text == NULL) {
+        radio->hls.text = heap_caps_malloc(RADIO_HLS_TEXT_SIZE,
+                                           MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (radio->hls.playlist == NULL || radio->hls.text == NULL) {
+        ESP_LOGE(TAG, "HLS buffer allocation failed");
+        radio_hls_stop(radio);
+        return ESP_ERR_NO_MEM;
+    }
+    if (snprintf(radio->hls.media_url, sizeof(radio->hls.media_url), "%s", url) >=
+        (int)sizeof(radio->hls.media_url)) {
+        ESP_LOGE(TAG, "HLS playlist URL too long");
+        radio_hls_stop(radio);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const esp_http_client_config_t config = {
+        .url = url,
+        .buffer_size = RADIO_HTTP_BUFFER_SIZE,
+        .timeout_ms = RADIO_HLS_TIMEOUT_MS,
+        // The whole point: one handshake for the session, not one per segment.
+        .keep_alive_enable = true,
+        .user_agent = "VLC/3.0",
+        .disable_auto_redirect = true,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .event_handler = radio_http_event,
+        .user_data = radio,
+    };
+    radio->http = esp_http_client_init(&config);
+    if (radio->http == NULL) {
+        radio_hls_stop(radio);
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t err = radio_hls_load_playlist(radio, radio->hls.media_url);
+    if (err == ESP_OK && radio->hls.playlist->is_master) {
+        char variant[RADIO_HLS_URL_MAX];
+        if (!hls_url_resolve(radio->hls.media_url, radio->hls.playlist->variant_uri, variant,
+                             sizeof(variant))) {
+            ESP_LOGE(TAG, "HLS variant URL does not fit");
+            err = ESP_ERR_INVALID_ARG;
+        } else {
+            ESP_LOGI(TAG, "HLS variant selected: %u bps",
+                     (unsigned int)radio->hls.playlist->variant_bandwidth);
+            snprintf(radio->hls.media_url, sizeof(radio->hls.media_url), "%s", variant);
+            err = radio_hls_load_playlist(radio, radio->hls.media_url);
+            if (err == ESP_OK && radio->hls.playlist->is_master) {
+                ESP_LOGE(TAG, "HLS variant is another master playlist");
+                err = ESP_ERR_INVALID_RESPONSE;
+            }
+        }
+    }
+    if (err == ESP_OK && radio->hls.playlist->segment_count == 0U) {
+        ESP_LOGE(TAG, "HLS playlist has no segments");
+        err = ESP_ERR_INVALID_RESPONSE;
+    }
+    if (err != ESP_OK) {
+        radio_http_close(radio);
+        radio_hls_stop(radio);
+        return err;
+    }
+
+    radio->hls.target_duration_ms = radio->hls.playlist->target_duration_ms > 0U
+                                        ? radio->hls.playlist->target_duration_ms
+                                        : RADIO_HLS_DEFAULT_TARGET_MS;
+    radio->hls.next_sequence = hls_playlist_live_start(radio->hls.playlist);
+    radio->hls.refresh_allowed = xTaskGetTickCount();
+    radio->hls.last_segment = xTaskGetTickCount();
+    radio->hls.segment_open = false;
+    radio->hls.request_sent = false;
+    radio->hls.lead_length = 0U;
+    radio->hls.lead_offset = 0U;
+    radio->hls.active = true;
+
+    // The segment names carry the codec; the playlist URL says nothing about
+    // it, so without this every HLS station would be decoded as MP3.
+    radio->stream_format = radio_stream_format_from_url(radio->hls.playlist->segments[0].uri);
+    radio_stream_reset_status(radio);
+    // HLS carries no ICY metadata; an interval of 0 makes the feed a
+    // pass-through so the decode loop needs no special case.
+    icy_metadata_init(&radio->icy, 0U, radio_set_title, radio);
+    ESP_LOGI(TAG, "HLS session: %u segments, target %u ms, joining at %llu, codec=%s",
+             (unsigned int)radio->hls.playlist->segment_count,
+             (unsigned int)radio->hls.target_duration_ms,
+             (unsigned long long)radio->hls.next_sequence,
+             radio_stream_format_codec_name(radio->stream_format));
+    return ESP_OK;
+}
+
+/* Discards the ID3 tag every elementary-AAC segment starts with. The tag has
+ * to go before the decoder sees the bytes - it looks for an ADTS sync word -
+ * and this is the only place that knows where a segment begins. */
+static esp_err_t radio_hls_consume_lead(internet_radio_context_t *radio)
+{
+    radio->hls.lead_length = 0U;
+    radio->hls.lead_offset = 0U;
+    // esp_http_client_read() returns short only at the end of the body, so a
+    // segment with fewer than ten bytes in it is broken rather than slow.
+    const int received = esp_http_client_read(radio->http, (char *)radio->hls.lead, 10);
+    if (received < 10) return ESP_FAIL;
+
+    const size_t prefix = hls_id3_prefix_length(radio->hls.lead, (size_t)received);
+    if (prefix == 0U) {
+        // No tag: those ten bytes are audio, so hand them to the decoder.
+        radio->hls.lead_length = (size_t)received;
+        return ESP_OK;
+    }
+
+    size_t remaining = prefix - (size_t)received;
+    char scratch[128];
+    while (remaining > 0U) {
+        const int want = (int)(remaining < sizeof(scratch) ? remaining : sizeof(scratch));
+        const int skipped = esp_http_client_read(radio->http, scratch, want);
+        if (skipped <= 0) return ESP_FAIL;
+        remaining -= (size_t)skipped;
+    }
+    return ESP_OK;
+}
+
+/* Puts the next request on the wire: a segment when one is published, a
+ * playlist refresh when the queue has run dry. ESP_ERR_NOT_FOUND means there
+ * is nothing to ask for yet - a wait, not a failure. */
+static esp_err_t radio_hls_send_next(internet_radio_context_t *radio)
+{
+    const size_t index = hls_playlist_index_of(radio->hls.playlist, radio->hls.next_sequence);
+    if (index == HLS_SEGMENT_NONE) {
+        if ((int32_t)(xTaskGetTickCount() - radio->hls.refresh_allowed) < 0) {
+            return ESP_ERR_NOT_FOUND;
+        }
+        // Half the target duration is the RFC 8216 rate for re-reading a
+        // playlist that gained nothing last time.
+        radio->hls.refresh_allowed =
+            xTaskGetTickCount() + pdMS_TO_TICKS(radio->hls.target_duration_ms / 2U);
+        radio->hls.request_is_playlist = true;
+        return radio_hls_send_request(radio, radio->hls.media_url);
+    }
+
+    char url[RADIO_HLS_URL_MAX];
+    if (!hls_url_resolve(radio->hls.media_url, radio->hls.playlist->segments[index].uri, url,
+                         sizeof(url))) {
+        ESP_LOGE(TAG, "HLS segment URL does not fit; skipping sequence %llu",
+                 (unsigned long long)radio->hls.next_sequence);
+        ++radio->hls.next_sequence;
+        return ESP_ERR_NOT_FOUND;
+    }
+    radio->hls.request_is_playlist = false;
+    return radio_hls_send_request(radio, url);
+}
+
+/* Collects the reply to the outstanding request. ESP_OK means a segment body
+ * is now open; ESP_ERR_NOT_FOUND means the reply was a playlist and the caller
+ * should ask again. */
+static esp_err_t radio_hls_collect(internet_radio_context_t *radio)
+{
+    const bool was_playlist = radio->hls.request_is_playlist;
+    esp_err_t err = radio_hls_collect_headers(radio);
+    if (err != ESP_OK) {
+        if (was_playlist) return err;
+        // One segment the server will not serve is not a dead station. Step
+        // over it - the stall timeout still fires if every segment fails,
+        // because it is only cleared by a segment that actually opened.
+        ESP_LOGW(TAG, "HLS segment %llu unavailable; skipping",
+                 (unsigned long long)radio->hls.next_sequence);
+        ++radio->hls.next_sequence;
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (was_playlist) {
+        err = radio_hls_read_playlist_body(radio);
+        if (err != ESP_OK) return err;
+        if (radio->hls.playlist->has_endlist &&
+            radio->hls.next_sequence >=
+                radio->hls.playlist->media_sequence + radio->hls.playlist->segment_count) {
+            ESP_LOGI(TAG, "HLS playlist ended");
+            return ESP_FAIL;
+        }
+        if (radio->hls.next_sequence < radio->hls.playlist->media_sequence) {
+            // The window slid past while we were behind: the audio in between
+            // is gone, and chasing it would only fall further behind.
+            ESP_LOGW(TAG, "HLS fell behind the window: wanted %llu, rejoining at %llu",
+                     (unsigned long long)radio->hls.next_sequence,
+                     (unsigned long long)radio->hls.playlist->media_sequence);
+            radio->hls.next_sequence = radio->hls.playlist->media_sequence;
+        }
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    ++radio->hls.next_sequence;
+    radio->hls.last_segment = xTaskGetTickCount();
+    radio->hls.segment_open = true;
+    if (radio_hls_consume_lead(radio) != ESP_OK) {
+        ESP_LOGW(TAG, "HLS segment too short to read; skipping");
+        radio->hls.segment_open = false;
+        esp_http_client_close(radio->http);
+        return ESP_ERR_NOT_FOUND;
+    }
+    return ESP_OK;
+}
+
+/* Reads ahead into the open segment without waiting on real time.
+ *
+ * radio_http_read_ready() cannot be used here. It polls the socket, and over
+ * TLS the socket says nothing while esp-tls holds a decrypted record - which
+ * is most of the time, since one 16 KB record feeds eight 2 KB reads. The
+ * backlog therefore never grew past a single chunk and every segment boundary
+ * emptied the DMA.
+ *
+ * Reading ahead is safe here in a way it is not on a live socket: a segment is
+ * a finished file already sitting on the server, so the bytes are a download,
+ * not a wait for the next moment of audio to happen. esp_http_client_read()
+ * blocks until it fills the request, so the bound is the timeout - buffered
+ * bytes come back at once, an empty buffer costs 15 ms and returns whatever
+ * had arrived. */
+static int radio_hls_read_topup(internet_radio_context_t *radio, uint8_t *buffer, int length)
+{
+    if (length > (int)RADIO_DIRECT_NETWORK_CHUNK) length = (int)RADIO_DIRECT_NETWORK_CHUNK;
+    esp_http_client_set_timeout_ms(radio->http, RADIO_HLS_TOPUP_TIMEOUT_MS);
+    const int received = esp_http_client_read(radio->http, (char *)buffer, length);
+    esp_http_client_set_timeout_ms(radio->http, RADIO_HLS_TIMEOUT_MS);
+    switch (internet_radio_read_classify(received, -ESP_ERR_HTTP_EAGAIN)) {
+    case INTERNET_RADIO_READ_DATA:
+        return received;
+    case INTERNET_RADIO_READ_RETRY:
+        return 0;
+    case INTERNET_RADIO_READ_CLOSED:
+        // May be the end of the segment body; the caller decides by asking
+        // whether the whole response arrived.
+        return 0;
+    default:
+        return -1;
+    }
+}
+
+/* Same contract as radio_http_read_*: bytes read, 0 for nothing available
+ * right now, negative for a stream that needs reconnecting. Segment
+ * boundaries are invisible to the caller. */
+static int radio_hls_read(internet_radio_context_t *radio, uint8_t *buffer, int length,
+                          bool blocking)
+{
+    if (length <= 0) return 0;
+    for (;;) {
+        if (atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire)) {
+            return -1;
+        }
+        // The bytes read to test for an ID3 tag come first, or the first frame
+        // of every untagged segment would be lost.
+        if (radio->hls.lead_offset < radio->hls.lead_length) {
+            const size_t held = radio->hls.lead_length - radio->hls.lead_offset;
+            const size_t take = held < (size_t)length ? held : (size_t)length;
+            memcpy(buffer, radio->hls.lead + radio->hls.lead_offset, take);
+            radio->hls.lead_offset += take;
+            return (int)take;
+        }
+
+        if (!radio->hls.segment_open) {
+            if ((uint32_t)((xTaskGetTickCount() - radio->hls.last_segment) *
+                           portTICK_PERIOD_MS) >= RADIO_HLS_STALL_TIMEOUT_MS) {
+                ESP_LOGW(TAG, "HLS published no segment for %u ms", RADIO_HLS_STALL_TIMEOUT_MS);
+                return -1;
+            }
+            if (!radio->hls.request_sent) {
+                const esp_err_t err = radio_hls_send_next(radio);
+                if (err == ESP_ERR_NOT_FOUND) {
+                    // Nothing published yet. Only a starved decoder waits;
+                    // anyone else returns to decoding what it already has.
+                    if (!blocking) return 0;
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    continue;
+                }
+                if (err != ESP_OK) return -1;
+            }
+            // The reply is worth waiting for only when there is nothing left
+            // to decode. Otherwise return empty-handed and let the loop spend
+            // the round trip on the backlog - which is the point of sending
+            // the request ahead of needing it.
+            if (!radio_hls_response_ready(radio, blocking ? 50U : 0U)) {
+                if (!blocking) return 0;
+                continue;
+            }
+            const esp_err_t err = radio_hls_collect(radio);
+            if (err == ESP_ERR_NOT_FOUND) continue;
+            if (err != ESP_OK) return -1;
+        }
+
+        const int received = blocking ? radio_http_read_blocking(radio, buffer, length)
+                                      : radio_hls_read_topup(radio, buffer, length);
+        if (received > 0) return received;
+        if (received < 0) {
+            // A segment that dies mid-download is not a dead stream: drop the
+            // connection and move on, the next segment is a separate request.
+            ESP_LOGW(TAG, "HLS segment read failed; advancing");
+            radio->hls.segment_open = false;
+            radio->hls.request_sent = false;
+            esp_http_client_close(radio->http);
+            continue;
+        }
+        if (!esp_http_client_is_complete_data_received(radio->http)) {
+            // A top-up reading nothing means only that the socket is quiet.
+            if (!blocking) return 0;
+            // A blocking read reaching zero is different: it waits for data
+            // and returns zero only when the transport closed, so the body
+            // ended short. Retrying would spin the task forever on a segment
+            // that has no more bytes to give.
+            ESP_LOGW(TAG, "HLS segment truncated; advancing");
+            radio->hls.segment_open = false;
+            radio->hls.request_sent = false;
+            esp_http_client_close(radio->http);
+            continue;
+        }
+        // Body complete. Leave the connection alone - keep-alive is what makes
+        // the next segment cost a request instead of a handshake.
+        radio->hls.segment_open = false;
+    }
+}
+
+static esp_err_t radio_stream_open(internet_radio_context_t *radio, const char *url)
+{
+    if (hls_url_is_playlist(url)) {
+        return radio_hls_start(radio, url);
+    }
+    radio_hls_stop(radio);
+    return radio_http_open(radio, url);
+}
+
+static void radio_stream_close(internet_radio_context_t *radio)
+{
+    radio_http_close(radio);
+    radio_hls_stop(radio);
+}
+
+static int radio_stream_read_blocking(internet_radio_context_t *radio, uint8_t *buffer,
+                                      int length)
+{
+    if (radio->hls.active) return radio_hls_read(radio, buffer, length, true);
+    return radio_http_read_blocking(radio, buffer, length);
+}
+
+static int radio_stream_read_ready(internet_radio_context_t *radio, uint8_t *buffer, int length,
+                                   uint32_t budget_ms)
+{
+    if (radio->hls.active) return radio_hls_read(radio, buffer, length, false);
+    return radio_http_read_ready(radio, buffer, length, budget_ms);
 }
 
 static bool radio_direct_reconnect(internet_radio_context_t *radio)
@@ -774,7 +1338,7 @@ static bool radio_direct_reconnect(internet_radio_context_t *radio)
     radio->output_started = false;
     xSemaphoreGive(radio->direct_io_mutex);
 
-    radio_http_close(radio);
+    radio_stream_close(radio);
     radio_decoder_reset(radio->decoder);
     const char *url = radio->catalog.entries[status.station_index].url;
     for (unsigned int attempt = 0U; attempt < RADIO_HTTP_CONNECT_RETRIES; ++attempt) {
@@ -784,7 +1348,7 @@ static bool radio_direct_reconnect(internet_radio_context_t *radio)
         if (!radio_status_apply(radio, INTERNET_RADIO_EVENT_RETRY)) {
             return false;
         }
-        const esp_err_t err = radio_http_open(radio, url);
+        const esp_err_t err = radio_stream_open(radio, url);
         if (err == ESP_OK) {
             ESP_LOGI(TAG, "HTTP stream reconnected on attempt %u/%u", attempt + 1U,
                      RADIO_HTTP_CONNECT_RETRIES);
@@ -1046,9 +1610,15 @@ bool internet_radio_start_station_index(size_t index)
     taskEXIT_CRITICAL(&s_status_lock);
     if (!started) return false;
     s_radio.stream_format = stream_format;
+    // Clear the stop flag before opening, not after. internet_radio_stop() has
+    // already waited for the previous task to exit, so what is left here is a
+    // stale true - and opening an HLS station reads a playlist over the
+    // network, which honours the flag and would abort every attempt.
+    atomic_store_explicit(&s_radio.direct_stop_requested, false, memory_order_release);
+    atomic_store_explicit(&s_radio.direct_paused, false, memory_order_release);
     esp_err_t err = ESP_FAIL;
     for (unsigned int attempt = 0U; attempt < RADIO_HTTP_CONNECT_RETRIES; ++attempt) {
-        err = radio_http_open(&s_radio, s_radio.catalog.entries[index].url);
+        err = radio_stream_open(&s_radio, s_radio.catalog.entries[index].url);
         if (err == ESP_OK) break;
         if (attempt + 1U < RADIO_HTTP_CONNECT_RETRIES) {
             ESP_LOGW(TAG, "HTTP connect retry %u/%u after %s",
@@ -1061,12 +1631,10 @@ bool internet_radio_start_station_index(size_t index)
         (void)radio_sync_output(&s_radio);
         return false;
     }
-    // radio_http_open() has seen the response headers, so Content-Type may
-    // have replaced the format guessed from the URL. The decoder must follow
-    // that, not the guess.
+    // radio_stream_open() has seen the response headers - or, for HLS, the
+    // segment names - so the format may no longer be the one guessed from the
+    // station URL. The decoder must follow that, not the guess.
     const radio_stream_format_t open_format = s_radio.stream_format;
-    atomic_store_explicit(&s_radio.direct_stop_requested, false, memory_order_release);
-    atomic_store_explicit(&s_radio.direct_paused, false, memory_order_release);
     if (s_radio.direct_done != NULL) {
         (void)xSemaphoreTake(s_radio.direct_done, 0);
     }
@@ -1076,7 +1644,7 @@ bool internet_radio_start_station_index(size_t index)
                  radio_stream_format_codec_name(open_format));
         (void)radio_status_apply(&s_radio, INTERNET_RADIO_EVENT_FATAL);
         (void)radio_sync_output(&s_radio);
-        radio_http_close(&s_radio);
+        radio_stream_close(&s_radio);
         return false;
     }
     ESP_LOGI(TAG, "decoder created: internal_free=%u largest_block=%u",
@@ -1091,7 +1659,7 @@ bool internet_radio_start_station_index(size_t index)
         s_radio.decoder = NULL;
         (void)radio_status_apply(&s_radio, INTERNET_RADIO_EVENT_FATAL);
         (void)radio_sync_output(&s_radio);
-        radio_http_close(&s_radio);
+        radio_stream_close(&s_radio);
         return false;
     }
     taskENTER_CRITICAL(&s_status_lock);

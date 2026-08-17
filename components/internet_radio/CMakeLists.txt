@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "icy_metadata.c" "internet_radio_state.c" "mp3_stream_info.c" "radio_decoder.cpp" "radio_http_status.c" "radio_stream_format.c" "station_catalog.c"
+    SRCS "hls_playlist.c" "icy_metadata.c" "internet_radio_state.c" "mp3_stream_info.c" "radio_decoder.cpp" "radio_http_status.c" "radio_stream_format.c" "station_catalog.c"
          "station_resume.c" "internet_radio.c" "radio_prebuffer.c"
     INCLUDE_DIRS "include"
     REQUIRES board esp_http_client esphome__micro-flac esphome__micro-mp3

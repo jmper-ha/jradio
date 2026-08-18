@@ -71,6 +71,7 @@ static lv_obj_t *s_source_clock;
 static lv_obj_t *s_source_art;
 static lv_obj_t *s_source_volume;
 static lv_obj_t *s_source_volume_bar;
+static lv_obj_t *s_source_pause;
 /* Four rising bars. Drawn rather than taken from a font: LVGL's symbol set has
  * one Wi-Fi glyph with no strength in it, and the strength is the half worth
  * showing. */
@@ -238,17 +239,49 @@ static void ui_update_footer(void)
     }
 }
 
+/* The badge and the state line answer the same question, so they are decided
+ * together: whichever is showing, the other is not, and the performer row is
+ * only the performer's when neither wants it. */
+static void ui_update_playback_marks(const player_snapshot_t *snapshot)
+{
+    const bool paused = snapshot->playback_state == PLAYER_PLAYBACK_PAUSED;
+    if (paused) {
+        lv_obj_clear_flag(s_source_pause, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_source_pause, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+/* Puts `state` on the performer row, or gives the row back to the performer.
+ *
+ * Hiding one of the two is what makes this safe. They share a row because
+ * there is no third line to spare, and an earlier version relied on the
+ * performer being empty whenever a state was worth showing - which is false on
+ * pause, where the title is still there and the two drew on top of each
+ * other. */
+static void ui_set_state_line(const char *state, const char *artist)
+{
+    const bool show_state = state != NULL && state[0] != '\0';
+    ui_set_label_text_if_changed(s_source_status, show_state ? state : "");
+    ui_set_label_text_if_changed(s_source_artist, show_state ? "" : artist);
+    if (show_state) {
+        lv_obj_add_flag(s_source_artist, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s_source_status, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_source_status, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s_source_artist, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void ui_update_usb_status(const player_snapshot_t *snapshot)
 {
     // The directory takes the place the radio gives the station name.
     ui_set_label_text_if_changed(s_source_title, snapshot->context);
     ui_set_label_text_if_changed(s_source_detail, snapshot->stream_title);
-    // No performer to show for a file; the state line takes the row instead.
-    ui_set_label_text_if_changed(s_source_artist, "");
-    ui_set_label_text_if_changed(s_source_status,
-                                 snapshot->playback_state == PLAYER_PLAYBACK_STOPPED
-                                     ? "Выберите файл"
-                                     : "");
+    // A file has no performer to show, so the row is the state line's whenever
+    // there is a state worth naming. Pause is not one - the badge says it.
+    ui_set_state_line(snapshot->playback_state == PLAYER_PLAYBACK_STOPPED ? "Выберите файл" : "",
+                      "");
     char stream_text[64];
     ui_radio_stream_text(stream_text, sizeof(stream_text), snapshot->codec,
                          snapshot->bitrate_kbps, snapshot->sample_rate_hz);
@@ -259,6 +292,7 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
 {
     if (snapshot == NULL) return;
     ui_update_status_strip(snapshot);
+    ui_update_playback_marks(snapshot);
     if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_USB) {
         ui_update_usb_status(snapshot);
         return;
@@ -289,13 +323,13 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
     char track[PLAYER_TITLE_MAX_LEN];
     (void)ui_radio_split_title(icy, artist, sizeof(artist), track, sizeof(track));
     ui_set_label_text_if_changed(s_source_detail, track);
-    ui_set_label_text_if_changed(s_source_artist, artist);
 
-    // The performer row carries the state instead whenever there is no
-    // performer to show - which is exactly when the state matters.
-    const bool playing = snapshot->playback_state == PLAYER_PLAYBACK_PLAYING;
-    ui_set_label_text_if_changed(s_source_status,
-                                 playing ? "" : ui_radio_state_text(snapshot->playback_state));
+    // Playing and paused both leave the row to the performer: one needs no
+    // announcement, the other has the badge. Connecting, reconnecting and
+    // failure are the states worth a line.
+    const bool settled = snapshot->playback_state == PLAYER_PLAYBACK_PLAYING ||
+                         snapshot->playback_state == PLAYER_PLAYBACK_PAUSED;
+    ui_set_state_line(settled ? "" : ui_radio_state_text(snapshot->playback_state), artist);
 
     char stream_text[64];
     ui_radio_stream_text(stream_text, sizeof(stream_text), snapshot->codec,
@@ -822,6 +856,10 @@ static void ui_show_station_list(void);
 #define UI_SRC_VU_Y 155
 #define UI_SRC_RULE_BOTTOM 200
 #define UI_SRC_FOOT_Y 210
+#define UI_SRC_PAUSE_SIZE 76
+#define UI_SRC_PAUSE_BAR_W 10
+#define UI_SRC_PAUSE_BAR_H 34
+#define UI_SRC_PAUSE_GAP 10
 
 static void ui_create_source_screen(void)
 {
@@ -985,6 +1023,44 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_volume, 266, UI_SRC_FOOT_Y);
     lv_obj_set_style_text_color(s_source_volume, lv_color_hex(0xB0BEC5), 0);
     lv_label_set_text(s_source_volume, "");
+
+    /* Pause badge, created last so it draws over everything else.
+     *
+     * A word in a corner competed with the performer for the same row and lost
+     * either way. A symbol in the middle of the screen says the same thing
+     * without needing a line to itself, and reads at a glance from across the
+     * room - which the word never did. */
+    s_source_pause = lv_obj_create(s_source_screen);
+    lv_obj_set_size(s_source_pause, UI_SRC_PAUSE_SIZE, UI_SRC_PAUSE_SIZE);
+    lv_obj_center(s_source_pause);
+    lv_obj_set_style_radius(s_source_pause, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(s_source_pause, lv_color_hex(0x000000), 0);
+    // Translucent rather than solid: the badge has to read as laid over the
+    // screen, not as a hole punched in it.
+    lv_obj_set_style_bg_opa(s_source_pause, LV_OPA_60, 0);
+    lv_obj_set_style_border_color(s_source_pause, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_border_opa(s_source_pause, LV_OPA_30, 0);
+    lv_obj_set_style_border_width(s_source_pause, 1, 0);
+    lv_obj_set_style_pad_all(s_source_pause, 0, 0);
+    lv_obj_clear_flag(s_source_pause, LV_OBJ_FLAG_SCROLLABLE);
+    for (int bar = 0; bar < 2; ++bar) {
+        lv_obj_t *stroke = lv_obj_create(s_source_pause);
+        lv_obj_set_size(stroke, UI_SRC_PAUSE_BAR_W, UI_SRC_PAUSE_BAR_H);
+        lv_obj_set_pos(stroke,
+                       (UI_SRC_PAUSE_SIZE - (2 * UI_SRC_PAUSE_BAR_W + UI_SRC_PAUSE_GAP)) / 2 +
+                           bar * (UI_SRC_PAUSE_BAR_W + UI_SRC_PAUSE_GAP),
+                       (UI_SRC_PAUSE_SIZE - UI_SRC_PAUSE_BAR_H) / 2);
+        // The muted tone the rest of the screen uses for secondary text, not
+        // pure white: the badge should read clearly without being the
+        // brightest thing on a dark panel.
+        lv_obj_set_style_bg_color(stroke, lv_color_hex(0xB0BEC5), 0);
+        lv_obj_set_style_bg_opa(stroke, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(stroke, 0, 0);
+        lv_obj_set_style_radius(stroke, 2, 0);
+        lv_obj_set_style_pad_all(stroke, 0, 0);
+        lv_obj_clear_flag(stroke, LV_OBJ_FLAG_SCROLLABLE);
+    }
+    lv_obj_add_flag(s_source_pause, LV_OBJ_FLAG_HIDDEN);
 }
 
 static bool ui_submit_player_command(const player_command_t *command)
@@ -1014,26 +1090,23 @@ static void ui_load_source_screen(audio_source_t selected_source)
     lv_label_set_text(s_source_title, ui_menu_item_label((ui_menu_item_t)index));
     lv_screen_load(s_source_screen);
     if (selected_source == AUDIO_SOURCE_INTERNET_RADIO) {
-        ui_set_label_text_if_changed(s_source_status, "Connecting...");
+        ui_set_state_line("Connecting...", "");
         ui_set_label_text_if_changed(s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
-        ui_set_label_text_if_changed(s_source_artist, "");
         s_waiting_for_radio_station = true;
         s_radio_station_wait_started_ms = ui_tick_get_ms();
     } else if (selected_source == AUDIO_SOURCE_USB) {
         s_waiting_for_radio_station = false;
         // Nothing plays until a file is chosen, so this screen opens idle
         // rather than pretending to connect.
-        ui_set_label_text_if_changed(s_source_status, "Выберите файл");
+        ui_set_state_line("Выберите файл", "");
         ui_set_label_text_if_changed(s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
-        ui_set_label_text_if_changed(s_source_artist, "");
     } else {
         s_waiting_for_radio_station = false;
-        ui_set_label_text_if_changed(s_source_status, "Not implemented");
+        ui_set_state_line("Not implemented", "");
         ui_set_label_text_if_changed(s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
-        ui_set_label_text_if_changed(s_source_artist, "");
     }
 }
 
@@ -1249,11 +1322,10 @@ static void ui_handle_input(board_input_action_t action)
             if (entry.kind == USB_BROWSER_ENTRY_DIRECTORY) return;
             ui_load_source_screen(AUDIO_SOURCE_USB);
             lv_label_set_text(s_source_title, ui_menu_item_label(UI_MENU_ITEM_USB_FILES));
-            ui_set_label_text_if_changed(s_source_status, "Открытие файла");
+            ui_set_state_line("Открытие файла", "");
             ui_set_label_text_if_changed(s_source_detail, entry.name);
             ui_set_label_text_if_changed(s_source_stream,
                                          usb_browser_format_name(entry.format));
-            ui_set_label_text_if_changed(s_source_artist, "");
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             size_t index;
             if (!station_list_get_selection(&s_station_list, &index) ||
@@ -1267,14 +1339,13 @@ static void ui_handle_input(board_input_action_t action)
             if (!ui_submit_player_command(&command)) return;
             ui_load_source_screen(AUDIO_SOURCE_INTERNET_RADIO);
             if (entry != NULL) lv_label_set_text(s_source_title, entry->name);
-            ui_set_label_text_if_changed(s_source_status, "Connecting");
+            ui_set_state_line("Connecting", "");
             ui_set_label_text_if_changed(s_source_detail,
                                          entry == NULL ? "" : entry->name);
             char stream_text[32];
             ui_radio_stream_text_for_url(stream_text, sizeof(stream_text),
                                          entry == NULL ? NULL : entry->url);
             ui_set_label_text_if_changed(s_source_stream, stream_text);
-            ui_set_label_text_if_changed(s_source_artist, "");
         }
         return;
     }

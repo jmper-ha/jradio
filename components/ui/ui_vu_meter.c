@@ -1,5 +1,7 @@
 #include "ui_vu_meter.h"
 
+#include <stdbool.h>
+
 #include <stddef.h>
 
 /* Breakpoints of the dB curve: RMS magnitude and the bar percentage it maps
@@ -78,18 +80,30 @@ uint8_t ui_vu_meter_step(ui_vu_meter_t *meter, uint8_t target_percent,
 {
     if (meter == NULL) return 0U;
     if (target_percent > 100U) target_percent = 100U;
-    /* Attack is instant: a transient that only lasted one block still has to
-     * reach its true height, or the meter under-reads exactly the peaks it
-     * exists to show. */
-    if (target_percent >= meter->percent) {
+    if (target_percent == meter->percent) return meter->percent;
+
+    const bool rising = target_percent > meter->percent;
+    const uint32_t constant_ms = rising ? UI_VU_ATTACK_MS : UI_VU_RELEASE_MS;
+    const uint32_t gap = rising ? (uint32_t)(target_percent - meter->percent)
+                                : (uint32_t)(meter->percent - target_percent);
+
+    /* Away for longer than the time constant - another screen, a slow flush -
+     * means the reading is the only thing left worth showing. */
+    if (elapsed_ms >= constant_ms) {
         meter->percent = target_percent;
         return meter->percent;
     }
-    const uint32_t fall = (elapsed_ms * UI_VU_RELEASE_PERCENT_PER_SEC) / 1000U;
-    meter->percent = fall >= meter->percent ? target_percent
-                   : (uint8_t)(meter->percent - fall) < target_percent
-                         ? target_percent
-                         : (uint8_t)(meter->percent - fall);
+
+    uint32_t move = (gap * elapsed_ms) / constant_ms;
+    /* Proportional movement alone stalls one percent short, and a bar that
+     * never quite empties reads as a stuck meter. */
+    if (move == 0U) move = 1U;
+    if (move >= gap) {
+        meter->percent = target_percent;
+    } else {
+        meter->percent = rising ? (uint8_t)(meter->percent + move)
+                                : (uint8_t)(meter->percent - move);
+    }
     return meter->percent;
 }
 

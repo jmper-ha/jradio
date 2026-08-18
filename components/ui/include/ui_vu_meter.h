@@ -14,24 +14,32 @@
  * libm, which keeps this testable on the host and floating point off the
  * device.
  *
- * And a meter that simply follows the signal flickers uselessly at 44 kHz. It
- * needs a fast attack, so a swell registers at full height, and a slower
- * release, so the eye can read the level it reached.
+ * And a meter that simply follows the signal flickers uselessly. It needs a
+ * fast rise, so a swell registers, and a slower fall, so the eye can read the
+ * level it reached - see the time constants below.
  */
 
 /* Full scale is a 16-bit sample at its limit. */
 #define UI_VU_FULL_SCALE 32768U
-/* Percent per second the bar falls when the signal drops - about a third of a
- * second from top to bottom.
+/* Ballistics, as time constants: each pass the bar closes `elapsed / constant`
+ * of the distance to the reading, so movement is proportional to the gap and
+ * the same however often the loop runs.
  *
- * This has to be read against the scale, not on its own. A fresh reading
- * arrives every 23 ms and the attack is instant, so what the release governs
- * is how fast the bar may follow the music *down*. Readings were measured to
- * move about 14% - close to 6 percent of this bar - from one block to the
- * next, and 320 %/s allows 7 in that time, so the bar can now track a fall
- * instead of lagging behind it. At the 160 %/s this used to be it could only
- * give up 4, and read as heavy. */
-#define UI_VU_RELEASE_PERCENT_PER_SEC 320U
+ * Both numbers exist because of what the display is fed. A reading arrives
+ * every 23 ms and they vary about 14% block to block - a real property of the
+ * music, not noise - so a meter that simply took each one flickered too fast
+ * to read. It has to show the envelope, which means it needs a rise time as
+ * well as a fall time. Real meters have always worked this way: a VU averages
+ * about 300 ms in both directions, a peak meter rises in milliseconds and
+ * falls over a second.
+ *
+ * Asymmetric, because a swell should register at once and a gap should linger
+ * long enough to see. The attack was previously instant, which was invisible
+ * only because the UI loop was repainting the whole display and updating this
+ * four times a second; at twenty-five it read as nervous.
+ */
+#define UI_VU_ATTACK_MS 90U
+#define UI_VU_RELEASE_MS 340U
 
 typedef struct {
     uint8_t percent;
@@ -49,8 +57,9 @@ void ui_vu_meter_init(ui_vu_meter_t *meter);
  * and shows nothing at all. */
 uint8_t ui_vu_percent_from_level(uint16_t level);
 
-/* Advances the meter by `elapsed_ms` towards `target_percent`. Rises to the
- * target at once and falls gradually, returning the value to display. */
+/* Advances the meter by `elapsed_ms` towards `target_percent`, returning the
+ * value to display. Always closes at least one percent of a gap, so it settles
+ * exactly on the target instead of creeping towards it forever. */
 uint8_t ui_vu_meter_step(ui_vu_meter_t *meter, uint8_t target_percent,
                          uint32_t elapsed_ms);
 

@@ -77,60 +77,93 @@ static void test_very_quiet_signals_read_as_empty(void)
     assert(ui_vu_percent_from_level(2000U) > 0U);
 }
 
-static void test_the_meter_jumps_straight_up(void)
+static void test_the_meter_rises_quickly_but_not_in_one_step(void)
 {
-    /* A transient lasting one block still has to reach its real height. */
+    /* The whole point of having an attack time: a single loud block must not
+     * throw the bar to the top, or the meter flickers too fast to read. It
+     * still has to get there promptly - a swell that never registers is no
+     * better. */
     ui_vu_meter_t meter;
     ui_vu_meter_init(&meter);
-    assert(ui_vu_meter_step(&meter, 90U, 10U) == 90U);
-    assert(ui_vu_meter_step(&meter, 100U, 0U) == 100U);
-}
 
-static void test_the_meter_falls_gradually(void)
-{
-    ui_vu_meter_t meter;
-    ui_vu_meter_init(&meter);
-    (void)ui_vu_meter_step(&meter, 100U, 10U);
+    const uint8_t first = ui_vu_meter_step(&meter, 100U, 40U);
+    assert(first > 20U);
+    assert(first < 100U);
 
-    /* Silence arrives; one 100 ms tick moves the bar a long way now, but must
-     * not empty it - a bar that snaps to zero reads as a dropout. */
-    const uint8_t after = ui_vu_meter_step(&meter, 0U, 100U);
-    assert(after < 100U && after > 60U);
-
-    /* But it does empty within a couple of seconds. */
-    for (int tick = 0; tick < 40; ++tick) {
-        (void)ui_vu_meter_step(&meter, 0U, 50U);
+    /* Visibly there within about a sixth of a second - the remaining few
+     * percent close a point at a time and are under a fifth of one block. */
+    uint8_t value = first;
+    for (int tick = 0; tick < 3; ++tick) {
+        value = ui_vu_meter_step(&meter, 100U, 40U);
     }
-    assert(ui_vu_meter_step(&meter, 0U, 50U) == 0U);
+    assert(value >= 90U);
 }
 
-static void test_the_fall_never_undershoots_the_target(void)
+static void test_the_meter_rises_faster_than_it_falls(void)
 {
-    /* Falling towards a level that is not zero must stop there, not sail
-     * past it into a dip the signal never had. */
+    /* A swell should register at once; a gap should linger long enough to see.
+     * Same gap, same elapsed time, so the difference is the ballistics alone. */
+    ui_vu_meter_t up;
+    ui_vu_meter_init(&up);
+    const uint8_t risen = ui_vu_meter_step(&up, 80U, 40U);
+
+    ui_vu_meter_t down;
+    ui_vu_meter_init(&down);
+    (void)ui_vu_meter_step(&down, 100U, 10000U);
+    const uint8_t fallen = ui_vu_meter_step(&down, 20U, 40U);
+
+    assert(risen > 100U - fallen);
+}
+
+static void test_the_meter_settles_exactly_on_the_target(void)
+{
+    /* Movement proportional to the gap gets smaller as the gap does, and would
+     * stall a percent short forever. A bar that never quite empties reads as a
+     * stuck meter, so it has to land. */
     ui_vu_meter_t meter;
     ui_vu_meter_init(&meter);
-    (void)ui_vu_meter_step(&meter, 100U, 10U);
-    const uint8_t held = ui_vu_meter_step(&meter, 60U, 10000U);
-    assert(held == 60U);
+    (void)ui_vu_meter_step(&meter, 100U, 10000U);
+    for (int tick = 0; tick < 200; ++tick) {
+        (void)ui_vu_meter_step(&meter, 0U, 10U);
+    }
+    assert(ui_vu_meter_step(&meter, 0U, 10U) == 0U);
 }
 
-static void test_a_long_gap_does_not_wrap_the_bar(void)
+static void test_neither_direction_overshoots(void)
+{
+    /* Sailing past the reading would invent a level the music never had. */
+    ui_vu_meter_t meter;
+    ui_vu_meter_init(&meter);
+    for (int tick = 0; tick < 50; ++tick) {
+        const uint8_t value = ui_vu_meter_step(&meter, 60U, 30U);
+        assert(value <= 60U);
+    }
+    assert(ui_vu_meter_step(&meter, 60U, 30U) == 60U);
+
+    for (int tick = 0; tick < 50; ++tick) {
+        const uint8_t value = ui_vu_meter_step(&meter, 25U, 30U);
+        assert(value >= 25U);
+    }
+    assert(ui_vu_meter_step(&meter, 25U, 30U) == 25U);
+}
+
+static void test_a_long_gap_shows_the_reading_rather_than_wrapping(void)
 {
     /* The UI can be away for a while - another screen, a slow flush - and the
-     * elapsed time then dwarfs the level. Unsigned subtraction would wrap and
-     * paint a full bar out of silence. */
+     * elapsed time then dwarfs the time constant. Unsigned arithmetic on the
+     * movement would wrap and paint a full bar out of silence. */
     ui_vu_meter_t meter;
     ui_vu_meter_init(&meter);
     (void)ui_vu_meter_step(&meter, 40U, 10U);
     assert(ui_vu_meter_step(&meter, 0U, 60000U) == 0U);
+    assert(ui_vu_meter_step(&meter, 70U, 60000U) == 70U);
 }
 
 static void test_a_target_above_the_scale_is_clamped(void)
 {
     ui_vu_meter_t meter;
     ui_vu_meter_init(&meter);
-    assert(ui_vu_meter_step(&meter, 200U, 10U) == 100U);
+    assert(ui_vu_meter_step(&meter, 200U, 10000U) == 100U);
 }
 
 static void test_the_meter_tolerates_being_handed_nothing(void)
@@ -188,10 +221,11 @@ int main(void)
     test_the_scale_is_wide_enough_to_look_alive();
     test_the_scale_rises_monotonically();
     test_very_quiet_signals_read_as_empty();
-    test_the_meter_jumps_straight_up();
-    test_the_meter_falls_gradually();
-    test_the_fall_never_undershoots_the_target();
-    test_a_long_gap_does_not_wrap_the_bar();
+    test_the_meter_rises_quickly_but_not_in_one_step();
+    test_the_meter_rises_faster_than_it_falls();
+    test_the_meter_settles_exactly_on_the_target();
+    test_neither_direction_overshoots();
+    test_a_long_gap_shows_the_reading_rather_than_wrapping();
     test_a_target_above_the_scale_is_clamped();
     test_the_meter_tolerates_being_handed_nothing();
     test_segment_count_is_exact_at_both_ends();

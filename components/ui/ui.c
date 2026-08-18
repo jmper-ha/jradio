@@ -876,7 +876,9 @@ static void ui_create_source_screen(void)
     lv_obj_t *status = lv_obj_create(s_source_screen);
     lv_obj_set_pos(status, 0, 0);
     lv_obj_set_size(status, 320, UI_SRC_STATUS_H);
-    lv_obj_set_style_bg_color(status, lv_color_hex(0x16222C), 0);
+    // Lighter than the first attempt: at 0x16222C the strip sat only a few
+    // levels above the 0x101820 ground and barely read as a separate band.
+    lv_obj_set_style_bg_color(status, lv_color_hex(0x1E2C3A), 0);
     lv_obj_set_style_border_width(status, 0, 0);
     lv_obj_set_style_radius(status, 0, 0);
     lv_obj_set_style_pad_all(status, 0, 0);
@@ -961,10 +963,14 @@ static void ui_create_source_screen(void)
     lv_label_set_long_mode(s_source_stream, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_source_stream, lv_color_hex(0x78909C), 0);
 
+    /* Brighter than the meter's own unlit blocks, which looks backwards for a
+     * divider until you remember it is one pixel tall: a hairline loses far
+     * more perceived contrast than a solid block of the same colour, and at
+     * 0x23303C these were there in principle and invisible in practice. */
     lv_obj_t *rule_top = lv_obj_create(s_source_screen);
     lv_obj_set_pos(rule_top, 10, UI_SRC_RULE_TOP);
     lv_obj_set_size(rule_top, 300, 1);
-    lv_obj_set_style_bg_color(rule_top, lv_color_hex(0x23303C), 0);
+    lv_obj_set_style_bg_color(rule_top, lv_color_hex(0x334454), 0);
     lv_obj_set_style_border_width(rule_top, 0, 0);
     lv_obj_set_style_pad_all(rule_top, 0, 0);
     lv_obj_clear_flag(rule_top, LV_OBJ_FLAG_SCROLLABLE);
@@ -993,7 +999,7 @@ static void ui_create_source_screen(void)
     lv_obj_t *rule_bottom = lv_obj_create(s_source_screen);
     lv_obj_set_pos(rule_bottom, 10, UI_SRC_RULE_BOTTOM);
     lv_obj_set_size(rule_bottom, 300, 1);
-    lv_obj_set_style_bg_color(rule_bottom, lv_color_hex(0x23303C), 0);
+    lv_obj_set_style_bg_color(rule_bottom, lv_color_hex(0x334454), 0);
     lv_obj_set_style_border_width(rule_bottom, 0, 0);
     lv_obj_set_style_pad_all(rule_bottom, 0, 0);
     lv_obj_clear_flag(rule_bottom, LV_OBJ_FLAG_SCROLLABLE);

@@ -437,11 +437,16 @@ static void ui_create_feed_screen(void)
     lv_obj_set_pos(s_feed_title, 0, 12);
     lv_obj_set_size(s_feed_title, 320, 28);
     lv_obj_set_style_text_align(s_feed_title, LV_TEXT_ALIGN_CENTER, 0);
-    /* Keep the Cyrillic-capable 14 px font, but enlarge the rendered title
-     * without pulling another multi-language font into flash. */
-    lv_obj_set_style_transform_scale(s_feed_title, 320, 0);
-    lv_obj_set_style_transform_pivot_x(s_feed_title, 160, 0);
-    lv_obj_set_style_transform_pivot_y(s_feed_title, 14, 0);
+    /* A real 20 px face, not the 14 px one scaled up.
+     *
+     * The scale was a workaround from before this build had a large Cyrillic
+     * font, and it was the only transform in the whole interface. LVGL renders
+     * a transformed object through an intermediate layer, and on this screen
+     * that composite wedged lv_timer_handler() in a loop it never came out of:
+     * the UI task pinned a core until the task watchdog fired, which looked
+     * like the display freezing on the way back to the home screen. A drawn
+     * glyph is also sharper than a stretched one. */
+    lv_obj_set_style_text_font(s_feed_title, &ui_font_cyrillic_20, 0);
     lv_obj_set_style_text_color(s_feed_title, lv_color_hex(0xFFFFFF), 0);
     s_feed_notice = lv_label_create(s_feed_screen);
     lv_obj_set_pos(s_feed_notice, 8, 218);
@@ -1767,7 +1772,29 @@ static void ui_task(void *arg)
         } else {
             ui_sync_player_snapshot(&snapshot);
         }
-        lv_timer_handler();
+        /* A repaint this slow is a fault, not a slow frame: the loop is meant
+         * to run in tens of milliseconds, and the display task holds a core
+         * while it draws. Kept because the fault that motivated it - LVGL
+         * looping forever inside one call - was invisible from the outside
+         * except as a frozen screen. */
+        {
+            const int64_t started = esp_timer_get_time();
+            lv_timer_handler();
+            const int64_t took = (esp_timer_get_time() - started) / 1000;
+            // A screen change legitimately repaints all 76800 pixels and costs
+            // about 200 ms, so the threshold sits well above that: what this
+            // is watching for is a pass that never ends.
+            if (took > 400) {
+                lv_obj_t *active = lv_screen_active();
+                ESP_LOGW(TAG, "slow repaint: %dms on %s", (int)took,
+                         active == s_source_screen    ? "player"
+                         : active == s_feed_screen    ? "feed"
+                         : active == s_menu_screen    ? "menu"
+                         : active == s_settings_screen ? "settings"
+                         : active == s_station_list_screen ? "list"
+                                                       : "other");
+            }
+        }
     }
 }
 

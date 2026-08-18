@@ -44,6 +44,38 @@
 #define UI_TASK_PRIORITY 4
 /* Six rows, not seven: the bottom strip belongs to the scroll bar. */
 #define UI_STATION_LIST_MAX_ROWS 6U
+
+/* The screens share one palette, stated here rather than repeated as literals.
+ * The player screen defined it by accretion; the others were on a different
+ * set entirely - white titles and a blue selection against the same ground -
+ * and the only way "the same style" survives the next edit is if there is one
+ * place to change. */
+#define UI_COLOR_GROUND 0x101820
+#define UI_COLOR_STRIP 0x1E2C3A
+#define UI_COLOR_TILE 0x18242E
+#define UI_COLOR_TILE_EDGE 0x26343F
+#define UI_COLOR_RULE 0x334454
+#define UI_COLOR_ACCENT 0xF2A33C
+#define UI_COLOR_TEXT 0xFFFFFF
+#define UI_COLOR_MUTED 0xB0BEC5
+#define UI_COLOR_DIM 0x78909C
+/* Only ever a warning; never decoration, so it stays out of the ramp above. */
+#define UI_COLOR_NOTICE 0xFFD54F
+/* A raised step rather than a colour of its own: the row under the cursor is
+ * lifted off the ground and its text takes the accent, which is how the player
+ * screen marks the thing being played. */
+#define UI_COLOR_SELECTED 0x2A3B4A
+
+/* Height of the status strip every screen carries. */
+#define UI_STRIP_H 26
+
+/* List screens: rows start straight under the strip, and a rule and the
+ * position bar close the screen the way they close the player's. */
+#define UI_LIST_ROW_Y (UI_STRIP_H + 6)
+#define UI_LIST_ROW_PITCH 26
+#define UI_LIST_RULE_Y (UI_LIST_ROW_Y + (int)UI_STATION_LIST_MAX_ROWS * UI_LIST_ROW_PITCH + 6)
+#define UI_LIST_PROGRESS_Y (UI_LIST_RULE_Y + 8)
+
 #define UI_RADIO_EMPTY_LIST_DELAY_MS 250U
 #define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
 #define UI_SETTINGS_MAX_ROWS 7U
@@ -65,10 +97,32 @@ static lv_obj_t *s_source_title;
 static lv_obj_t *s_source_status;
 static lv_obj_t *s_source_detail;
 static lv_obj_t *s_source_stream;
-static lv_obj_t *s_source_wifi;
 static lv_obj_t *s_source_buffer;
 static lv_obj_t *s_source_artist;
-static lv_obj_t *s_source_clock;
+/* Every screen carries the same strip, so it is built once and each screen
+ * gets its own instance - LVGL objects belong to one parent, so they cannot be
+ * moved between screens. Only the active screen's is refreshed. */
+/* Four rising bars. Drawn rather than taken from a font: LVGL's symbol set has
+ * one Wi-Fi glyph with no strength in it, and the strength is the half worth
+ * showing. */
+#define UI_WIFI_BARS 4
+#define UI_COLOR_BAR_OFF 0x2D3F4D
+
+typedef struct {
+    lv_obj_t *context;
+    lv_obj_t *clock;
+    lv_obj_t *rssi;
+    lv_obj_t *bars[UI_WIFI_BARS];
+    /* Per strip, not shared: only the active screen's is refreshed, so a
+     * shared cache would go stale the moment the screen changed and leave the
+     * new strip painted at whatever it was built with. */
+    uint32_t bar_colour[UI_WIFI_BARS];
+} ui_status_strip_t;
+
+static ui_status_strip_t s_source_strip;
+static ui_status_strip_t s_menu_strip;
+static ui_status_strip_t s_feed_strip;
+static ui_status_strip_t s_list_strip;
 static lv_obj_t *s_source_art;
 static lv_obj_t *s_source_volume;
 static lv_obj_t *s_source_volume_bar;
@@ -84,8 +138,6 @@ static lv_obj_t *s_source_progress;
  * Long enough to cover a whole gesture, short enough that a power cut right
  * after adjusting is unlikely to lose it. */
 #define UI_VOLUME_SETTLE_MS 1500U
-#define UI_WIFI_BARS 4
-static lv_obj_t *s_source_wifi_bars[UI_WIFI_BARS];
 /* 20 blocks per channel: 20*11 + 19*3 = 277 px starting at x=30, so the row
  * ends at 307 on a 320 px panel. */
 #define UI_VU_SEGMENTS 20U
@@ -182,32 +234,86 @@ static const char *ui_radio_state_text(player_playback_state_t state)
     return "Unknown";
 }
 
-/* The status strip and the footer are the same for both sources, so they are
- * filled from one place rather than duplicated per source. */
-static void ui_update_status_strip(const player_snapshot_t *snapshot)
+/* Builds the strip on `screen`. Left slot names the screen, centre carries the
+ * clock and the right the signal - the same three positions everywhere, so
+ * moving between screens does not move the eye. */
+static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
+                                   const char *context)
 {
+    lv_obj_t *band = lv_obj_create(screen);
+    lv_obj_set_pos(band, 0, 0);
+    lv_obj_set_size(band, 320, UI_STRIP_H);
+    lv_obj_set_style_bg_color(band, lv_color_hex(UI_COLOR_STRIP), 0);
+    lv_obj_set_style_border_width(band, 0, 0);
+    lv_obj_set_style_radius(band, 0, 0);
+    lv_obj_set_style_pad_all(band, 0, 0);
+    lv_obj_clear_flag(band, LV_OBJ_FLAG_SCROLLABLE);
+
+    strip->context = lv_label_create(screen);
+    lv_obj_set_pos(strip->context, 10, 6);
+    lv_obj_set_size(strip->context, 116, 19);
+    lv_label_set_long_mode(strip->context, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_color(strip->context, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_label_set_text(strip->context, context);
+
+    // Centred rather than left-aligned: it is the one thing on the screen read
+    // from across the room, and the middle is where the eye goes first.
+    strip->clock = lv_label_create(screen);
+    lv_obj_set_pos(strip->clock, 130, 5);
+    lv_obj_set_width(strip->clock, 60);
+    lv_obj_set_style_text_align(strip->clock, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(strip->clock, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_label_set_text(strip->clock, "");
+
+    for (int bar = 0; bar < UI_WIFI_BARS; ++bar) {
+        lv_obj_t *block = lv_obj_create(screen);
+        const int height = 3 + bar * 3;
+        lv_obj_set_size(block, 3, height);
+        // Grown from a common baseline so the four read as one rising shape.
+        lv_obj_set_pos(block, 252 + bar * 5, 7 + (12 - height));
+        lv_obj_set_style_border_width(block, 0, 0);
+        lv_obj_set_style_radius(block, 1, 0);
+        lv_obj_set_style_pad_all(block, 0, 0);
+        lv_obj_set_style_bg_color(block, lv_color_hex(UI_COLOR_BAR_OFF), 0);
+        lv_obj_clear_flag(block, LV_OBJ_FLAG_SCROLLABLE);
+        strip->bars[bar] = block;
+        strip->bar_colour[bar] = UI_COLOR_BAR_OFF;
+    }
+    strip->rssi = lv_label_create(screen);
+    lv_obj_set_pos(strip->rssi, 275, 6);
+    lv_obj_set_style_text_color(strip->rssi, lv_color_hex(UI_COLOR_MUTED), 0);
+    lv_label_set_text(strip->rssi, "");
+}
+
+static void ui_status_strip_update(ui_status_strip_t *strip,
+                                   const player_snapshot_t *snapshot)
+{
+    if (strip == NULL || strip->clock == NULL) return;
+
     int hour = 0;
     int minute = 0;
     const bool have_time = device_clock_now(&hour, &minute);
     char clock_text[8];
     ui_status_clock_text(clock_text, sizeof(clock_text), have_time, hour, minute);
-    ui_set_label_text_if_changed(s_source_clock, clock_text);
+    ui_set_label_text_if_changed(strip->clock, clock_text);
 
     const uint8_t bars = ui_status_wifi_bars(snapshot->wifi_rssi_valid,
                                              snapshot->wifi_rssi_dbm);
     for (int bar = 0; bar < UI_WIFI_BARS; ++bar) {
         // Unlit bars stay visible in a dim shade rather than hiding, so the
         // shape reads as a scale at rest instead of a missing icon.
-        lv_obj_set_style_bg_color(s_source_wifi_bars[bar],
-                                  lv_color_hex(bar < (int)bars ? 0xB0BEC5 : 0x2D3F4D), 0);
+        const uint32_t colour = bar < (int)bars ? UI_COLOR_MUTED : UI_COLOR_BAR_OFF;
+        if (strip->bar_colour[bar] == colour) continue;
+        strip->bar_colour[bar] = colour;
+        lv_obj_set_style_bg_color(strip->bars[bar], lv_color_hex(colour), 0);
     }
-    char wifi_text[8];
+    char rssi_text[8];
     if (snapshot->wifi_rssi_valid) {
-        snprintf(wifi_text, sizeof(wifi_text), "%d", (int)snapshot->wifi_rssi_dbm);
+        snprintf(rssi_text, sizeof(rssi_text), "%d", (int)snapshot->wifi_rssi_dbm);
     } else {
-        snprintf(wifi_text, sizeof(wifi_text), "--");
+        snprintf(rssi_text, sizeof(rssi_text), "--");
     }
-    ui_set_label_text_if_changed(s_source_wifi, wifi_text);
+    ui_set_label_text_if_changed(strip->rssi, rssi_text);
 }
 
 /* Runs every poll rather than only on a snapshot change: both readings here
@@ -334,7 +440,6 @@ static void ui_update_usb_status(const player_snapshot_t *snapshot)
 static void ui_update_radio_status(const player_snapshot_t *snapshot)
 {
     if (snapshot == NULL) return;
-    ui_update_status_strip(snapshot);
     ui_update_playback_marks(snapshot);
     if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_USB) {
         ui_update_usb_status(snapshot);
@@ -402,7 +507,8 @@ static void ui_update_feed_screen(void)
         const ui_feed_item_t item = (ui_feed_item_t)index;
         const bool center = slot == 2U;
         lv_label_set_text(s_feed_icons[slot], ui_feed_icon_symbol(item));
-        lv_obj_set_pos(s_feed_icons[slot], positions[slot], center ? 66 : 96);
+        // Shifted down with the title to clear the status strip.
+        lv_obj_set_pos(s_feed_icons[slot], positions[slot], center ? 88 : 118);
         lv_obj_set_size(s_feed_icons[slot], center ? 104 : 52, center ? 104 : 52);
         lv_obj_set_style_text_font(s_feed_icons[slot],
                                    center ? &lv_font_montserrat_48 : &lv_font_montserrat_24, 0);
@@ -413,14 +519,15 @@ static void ui_update_feed_screen(void)
         lv_obj_set_style_pad_top(s_feed_icons[slot], center ? 20 : 0, 0);
         lv_obj_set_style_pad_bottom(s_feed_icons[slot], 0, 0);
         lv_obj_set_style_text_color(s_feed_icons[slot],
-                                    lv_color_hex(center ? 0xFFFFFF : 0x90A4AE), 0);
+                                    lv_color_hex(center ? UI_COLOR_ACCENT : UI_COLOR_DIM), 0);
         lv_obj_set_style_text_align(s_feed_icons[slot], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_border_width(s_feed_icons[slot], center ? 2 : 0, 0);
-        lv_obj_set_style_border_color(s_feed_icons[slot], lv_color_hex(0x29B6F6), 0);
+        lv_obj_set_style_border_color(s_feed_icons[slot], lv_color_hex(UI_COLOR_ACCENT), 0);
         lv_obj_set_style_border_opa(s_feed_icons[slot], LV_OPA_COVER, 0);
         lv_obj_set_style_radius(s_feed_icons[slot], 8, 0);
         lv_obj_set_style_bg_color(s_feed_icons[slot],
-                                  center ? lv_color_hex(0x1769AA) : lv_color_hex(0x101820), 0);
+                                  center ? lv_color_hex(UI_COLOR_SELECTED)
+                                         : lv_color_hex(UI_COLOR_GROUND), 0);
         lv_obj_set_style_bg_opa(s_feed_icons[slot], center ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
     }
     lv_label_set_text(s_feed_title, ui_feed_item_title(selected));
@@ -429,12 +536,14 @@ static void ui_update_feed_screen(void)
 static void ui_create_feed_screen(void)
 {
     s_feed_screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_feed_screen, lv_color_hex(0x101820), 0);
+    lv_obj_set_style_bg_color(s_feed_screen, lv_color_hex(UI_COLOR_GROUND), 0);
     lv_obj_set_style_border_width(s_feed_screen, 0, 0);
     lv_obj_set_style_pad_all(s_feed_screen, 0, 0);
     lv_obj_set_style_text_font(s_feed_screen, &ui_font_cyrillic_14, 0);
+    ui_status_strip_create(s_feed_screen, &s_feed_strip, "jradio");
+
     s_feed_title = lv_label_create(s_feed_screen);
-    lv_obj_set_pos(s_feed_title, 0, 12);
+    lv_obj_set_pos(s_feed_title, 0, UI_STRIP_H + 8);
     lv_obj_set_size(s_feed_title, 320, 28);
     lv_obj_set_style_text_align(s_feed_title, LV_TEXT_ALIGN_CENTER, 0);
     /* A real 20 px face, not the 14 px one scaled up.
@@ -447,7 +556,7 @@ static void ui_create_feed_screen(void)
      * like the display freezing on the way back to the home screen. A drawn
      * glyph is also sharper than a stretched one. */
     lv_obj_set_style_text_font(s_feed_title, &ui_font_cyrillic_20, 0);
-    lv_obj_set_style_text_color(s_feed_title, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_color(s_feed_title, lv_color_hex(UI_COLOR_TEXT), 0);
     s_feed_notice = lv_label_create(s_feed_screen);
     lv_obj_set_pos(s_feed_notice, 8, 218);
     lv_obj_set_size(s_feed_notice, 304, 18);
@@ -478,19 +587,24 @@ static void ui_update_menu_highlight(void)
     const uint8_t selected = ui_menu_selected_index(&s_menu);
     for (uint8_t index = 0; index < UI_MENU_ITEM_COUNT; ++index) {
         const bool is_selected = index == selected;
-        const lv_color_t color = lv_color_hex(is_selected ? 0x1769AA : 0x101820);
-        lv_obj_set_style_bg_color(s_menu_rows[index], color, 0);
+        // Raised tile plus accent text, the way the player screen marks what
+        // it is playing. The arrow the old highlight needed is gone: a filled
+        // row says the same thing without spending a character on it.
+        lv_obj_set_style_bg_color(s_menu_rows[index],
+                                  lv_color_hex(is_selected ? UI_COLOR_SELECTED
+                                                           : UI_COLOR_GROUND), 0);
         lv_obj_set_style_bg_opa(s_menu_rows[index], LV_OPA_COVER, 0);
-        lv_obj_set_style_text_color(s_menu_rows[index], lv_color_hex(0xFFFFFF), 0);
-        lv_label_set_text_fmt(s_menu_rows[index], "%c %s", is_selected ? '>' : ' ',
-                              ui_menu_item_label((ui_menu_item_t)index));
+        lv_obj_set_style_text_color(s_menu_rows[index],
+                                    lv_color_hex(is_selected ? UI_COLOR_ACCENT
+                                                             : UI_COLOR_MUTED), 0);
+        lv_label_set_text(s_menu_rows[index], ui_menu_item_label((ui_menu_item_t)index));
     }
 }
 
 static void ui_create_menu_screen(void)
 {
     s_menu_screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_menu_screen, lv_color_hex(0x101820), 0);
+    lv_obj_set_style_bg_color(s_menu_screen, lv_color_hex(UI_COLOR_GROUND), 0);
     lv_obj_set_style_border_width(s_menu_screen, 0, 0);
     lv_obj_set_style_pad_all(s_menu_screen, 0, 0);
     // Set once here rather than on each label: text_font is inherited in LVGL,
@@ -499,19 +613,17 @@ static void ui_create_menu_screen(void)
     // mistake that only shows up when a label first receives Russian text.
     lv_obj_set_style_text_font(s_menu_screen, &ui_font_cyrillic_14, 0);
 
-    lv_obj_t *title = lv_label_create(s_menu_screen);
-    lv_label_set_text(title, "jradio");
-    lv_obj_set_pos(title, 12, 8);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
+    ui_status_strip_create(s_menu_screen, &s_menu_strip, "jradio");
 
     for (uint8_t index = 0; index < UI_MENU_ITEM_COUNT; ++index) {
         s_menu_rows[index] = lv_label_create(s_menu_screen);
         lv_label_set_text(s_menu_rows[index], ui_menu_item_label((ui_menu_item_t)index));
-        lv_obj_set_pos(s_menu_rows[index], 14, 38 + index * 27);
-        lv_obj_set_size(s_menu_rows[index], 292, 24);
-        lv_obj_set_style_pad_left(s_menu_rows[index], 6, 0);
+        lv_obj_set_pos(s_menu_rows[index], 10, UI_STRIP_H + 10 + index * 27);
+        lv_obj_set_size(s_menu_rows[index], 300, 24);
+        lv_obj_set_style_pad_left(s_menu_rows[index], 8, 0);
         lv_obj_set_style_pad_top(s_menu_rows[index], 2, 0);
         lv_obj_set_style_radius(s_menu_rows[index], 3, 0);
+        lv_label_set_long_mode(s_menu_rows[index], LV_LABEL_LONG_DOT);
     }
 
     // Not a key hint: the only thing this line ever says is why a source
@@ -519,7 +631,7 @@ static void ui_create_menu_screen(void)
     s_menu_notice = lv_label_create(s_menu_screen);
     lv_label_set_text(s_menu_notice, "");
     lv_obj_set_pos(s_menu_notice, 12, 220);
-    lv_obj_set_style_text_color(s_menu_notice, lv_color_hex(0xFFD54F), 0);
+    lv_obj_set_style_text_color(s_menu_notice, lv_color_hex(UI_COLOR_NOTICE), 0);
     ui_update_menu_highlight();
 }
 
@@ -558,6 +670,20 @@ static bool ui_list_row_text(size_t list_index, char *text, size_t text_size, bo
     return true;
 }
 
+/* Last element of a path, for the strip's left slot.
+ *
+ * The slot is 116 px, so "/usb0/Music/Jazz" would arrive ellipsised from the
+ * right - cutting off exactly the part that says where you are. The folder's
+ * own name is both shorter and the more useful half. */
+static const char *ui_path_leaf(const char *path)
+{
+    if (path == NULL || path[0] == '\0') return "USB";
+    const char *slash = strrchr(path, '/');
+    const char *leaf = slash != NULL ? slash + 1 : path;
+    // The mount point itself is not a folder anyone named; say what it is.
+    return leaf[0] == '\0' || strcmp(leaf, "usb0") == 0 ? "USB" : leaf;
+}
+
 static void ui_update_station_list(void)
 {
     size_t cursor_row = 0U;
@@ -577,15 +703,19 @@ static void ui_update_station_list(void)
         bool active = false;
         (void)ui_list_row_text((size_t)entry_index, text, sizeof(text), &active);
         const bool selected = row == cursor_row;
-        lv_obj_set_style_bg_color(s_station_list_rows[row], lv_color_hex(selected ? 0x1769AA : 0x101820), 0);
+        lv_obj_set_style_bg_color(s_station_list_rows[row],
+                                  lv_color_hex(selected ? UI_COLOR_SELECTED
+                                                        : UI_COLOR_GROUND), 0);
         lv_obj_set_style_bg_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(s_station_list_rows[row],
+                                    lv_color_hex(selected ? UI_COLOR_ACCENT : UI_COLOR_MUTED), 0);
         // Outline, not border: a border is drawn inside and takes 2 px off each
         // edge, which left 18 px of content for a 19 px line - so the playing
         // row overflowed vertically and LV_LABEL_LONG_MODE_SCROLL rolled it
         // up and down, even for names that fitted across. An outline is drawn
         // outside the object and costs the content nothing.
         lv_obj_set_style_outline_width(s_station_list_rows[row], active ? 2 : 0, 0);
-        lv_obj_set_style_outline_color(s_station_list_rows[row], lv_color_hex(0xFFD54F), 0);
+        lv_obj_set_style_outline_color(s_station_list_rows[row], lv_color_hex(UI_COLOR_ACCENT), 0);
         lv_obj_set_style_outline_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
         // Hug the row: the 2 px gap between rows is exactly where it goes.
         lv_obj_set_style_outline_pad(s_station_list_rows[row], 0, 0);
@@ -599,7 +729,7 @@ static void ui_update_station_list(void)
         lv_label_set_long_mode(s_station_list_rows[row],
                                selected ? LV_LABEL_LONG_MODE_SCROLL
                                         : LV_LABEL_LONG_MODE_DOTS);
-        lv_label_set_text_fmt(s_station_list_rows[row], "%c %s", selected ? '>' : ' ', text);
+        lv_label_set_text(s_station_list_rows[row], text);
     }
     // Hidden when there is nothing to scroll through at all - on the "no
     // drive" screen a full bar under an empty list would be nonsense.
@@ -617,7 +747,7 @@ static void ui_load_menu_screen(void);
 static void ui_create_settings_screen(void)
 {
     s_settings_screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_settings_screen, lv_color_hex(0x101820), 0);
+    lv_obj_set_style_bg_color(s_settings_screen, lv_color_hex(UI_COLOR_GROUND), 0);
     lv_obj_set_style_border_width(s_settings_screen, 0, 0);
     lv_obj_set_style_pad_all(s_settings_screen, 0, 0);
     // Set once here rather than on each label: text_font is inherited in LVGL,
@@ -629,7 +759,7 @@ static void ui_create_settings_screen(void)
     lv_obj_t *title = lv_label_create(s_settings_screen);
     lv_label_set_text(title, "Настройки");
     lv_obj_set_pos(title, 12, 8);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(UI_COLOR_TEXT), 0);
 
     for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
         s_settings_rows[row] = lv_label_create(s_settings_screen);
@@ -639,9 +769,9 @@ static void ui_create_settings_screen(void)
         lv_obj_set_style_pad_left(s_settings_rows[row], 6, 0);
         lv_obj_set_style_pad_top(s_settings_rows[row], 3, 0);
         lv_label_set_long_mode(s_settings_rows[row], LV_LABEL_LONG_DOT);
-        lv_obj_set_style_text_color(s_settings_rows[row], lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_text_color(s_settings_rows[row], lv_color_hex(UI_COLOR_TEXT), 0);
         lv_obj_set_style_bg_opa(s_settings_rows[row], LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(0x101820), 0);
+        lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(UI_COLOR_GROUND), 0);
         lv_label_set_text(s_settings_rows[row], "");
     }
     for (size_t index = 0; index < UI_SETTINGS_SWITCH_COUNT; ++index) {
@@ -651,7 +781,7 @@ static void ui_create_settings_screen(void)
         lv_obj_set_style_bg_color(s_settings_switches[index], lv_color_hex(0x26A69A),
                                   LV_PART_INDICATOR | LV_STATE_CHECKED);
         lv_obj_set_style_bg_color(s_settings_switches[index], lv_color_hex(0xECEFF1), LV_PART_KNOB);
-        lv_obj_set_style_bg_color(s_settings_switches[index], lv_color_hex(0xFFFFFF),
+        lv_obj_set_style_bg_color(s_settings_switches[index], lv_color_hex(UI_COLOR_TEXT),
                                   LV_PART_KNOB | LV_STATE_CHECKED);
         lv_obj_add_flag(s_settings_switches[index], LV_OBJ_FLAG_HIDDEN);
     }
@@ -661,7 +791,7 @@ static void ui_create_settings_screen(void)
     lv_label_set_long_mode(s_settings_notice, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_settings_notice, lv_color_hex(0xFFCC80), 0);
     lv_obj_set_style_bg_opa(s_settings_notice, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(s_settings_notice, lv_color_hex(0x101820), 0);
+    lv_obj_set_style_bg_color(s_settings_notice, lv_color_hex(UI_COLOR_GROUND), 0);
     lv_label_set_text(s_settings_notice, "");
 }
 
@@ -746,7 +876,7 @@ static void ui_update_settings(void)
     for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
         if (row >= row_count) {
             lv_label_set_text(s_settings_rows[row], "");
-            lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(0x101820), 0);
+            lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(UI_COLOR_GROUND), 0);
             continue;
         }
         const ui_settings_row_t item = ui_settings_model_row_at(&s_settings_model, row);
@@ -754,7 +884,7 @@ static void ui_update_settings(void)
         ui_settings_row_text(&item, text, sizeof(text));
         ui_set_label_text_if_changed(s_settings_rows[row], text);
         const bool selected_row = item.id == selected;
-        const uint32_t background = selected_row ? 0x1769AA :
+        const uint32_t background = selected_row ? UI_COLOR_SELECTED :
             item.kind == UI_SETTINGS_ROW_FIELD ? 0x263746 : 0x101820;
         size_t switch_index = 0U;
         bool enabled = false;
@@ -839,7 +969,7 @@ static void ui_settings_change_selected(void)
 static void ui_create_station_list_screen(void)
 {
     s_station_list_screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_station_list_screen, lv_color_hex(0x101820), 0);
+    lv_obj_set_style_bg_color(s_station_list_screen, lv_color_hex(UI_COLOR_GROUND), 0);
     lv_obj_set_style_border_width(s_station_list_screen, 0, 0);
     lv_obj_set_style_pad_all(s_station_list_screen, 0, 0);
     // Set once here rather than on each label: text_font is inherited in LVGL,
@@ -847,32 +977,45 @@ static void ui_create_station_list_screen(void)
     // default font has no Cyrillic and renders it as empty boxes, which is a
     // mistake that only shows up when a label first receives Russian text.
     lv_obj_set_style_text_font(s_station_list_screen, &ui_font_cyrillic_14, 0);
+    ui_status_strip_create(s_station_list_screen, &s_list_strip, "");
+    /* The heading moves into the strip's left slot instead of taking a line of
+     * its own - which is where the room for the rule and the position bar came
+     * from, without giving up a row of the list. */
+    s_station_list_title = s_list_strip.context;
+
     s_station_list_notice = lv_label_create(s_station_list_screen);
     lv_label_set_text(s_station_list_notice, "");
     lv_obj_set_pos(s_station_list_notice, 14, 100);
     lv_obj_set_width(s_station_list_notice, 292);
-    lv_obj_set_style_text_color(s_station_list_notice, lv_color_hex(0xFFD54F), 0);
-    s_station_list_title = lv_label_create(s_station_list_screen);
-    lv_label_set_text(s_station_list_title, "Internet radio | Stations");
-    lv_obj_set_pos(s_station_list_title, 12, 8);
-    lv_obj_set_width(s_station_list_title, 300);
-    lv_label_set_long_mode(s_station_list_title, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_station_list_title, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_color(s_station_list_notice, lv_color_hex(UI_COLOR_NOTICE), 0);
+
+    lv_obj_t *rule = lv_obj_create(s_station_list_screen);
+    lv_obj_set_pos(rule, 10, UI_LIST_RULE_Y);
+    lv_obj_set_size(rule, 300, 1);
+    lv_obj_set_style_bg_color(rule, lv_color_hex(UI_COLOR_RULE), 0);
+    lv_obj_set_style_border_width(rule, 0, 0);
+    lv_obj_set_style_pad_all(rule, 0, 0);
+    lv_obj_clear_flag(rule, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Same shape and colours as the track bar on the player screen: a thin
+    // full-width line whose filled part is the accent.
     s_station_list_progress = lv_bar_create(s_station_list_screen);
-    lv_obj_set_pos(s_station_list_progress, 12, 200);
-    lv_obj_set_size(s_station_list_progress, 296, 8);
+    lv_obj_set_pos(s_station_list_progress, 10, UI_LIST_PROGRESS_Y);
+    lv_obj_set_size(s_station_list_progress, 300, 4);
     lv_bar_set_range(s_station_list_progress, 0, 100);
-    lv_obj_set_style_bg_color(s_station_list_progress, lv_color_hex(0x263746), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_station_list_progress, lv_color_hex(0x1769AA),
+    lv_obj_set_style_radius(s_station_list_progress, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_station_list_progress, 2, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s_station_list_progress, lv_color_hex(0x23303C), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_station_list_progress, lv_color_hex(UI_COLOR_ACCENT),
                               LV_PART_INDICATOR);
     for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
         s_station_list_rows[row] = lv_label_create(s_station_list_screen);
-        lv_obj_set_pos(s_station_list_rows[row], 10, 34 + (int)row * 26);
+        lv_obj_set_pos(s_station_list_rows[row], 10,
+                       UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH);
         lv_obj_set_size(s_station_list_rows[row], 300, 24);
-        lv_obj_set_style_pad_left(s_station_list_rows[row], 6, 0);
+        lv_obj_set_style_pad_left(s_station_list_rows[row], 8, 0);
         lv_obj_set_style_pad_top(s_station_list_rows[row], 2, 0);
         lv_obj_set_style_radius(s_station_list_rows[row], 3, 0);
-        lv_obj_set_style_text_color(s_station_list_rows[row], lv_color_hex(0xFFFFFF), 0);
         lv_label_set_long_mode(s_station_list_rows[row], LV_LABEL_LONG_MODE_DOTS);
     }
 }
@@ -923,7 +1066,7 @@ static void ui_show_station_list(void);
 static void ui_create_source_screen(void)
 {
     s_source_screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_source_screen, lv_color_hex(0x101820), 0);
+    lv_obj_set_style_bg_color(s_source_screen, lv_color_hex(UI_COLOR_GROUND), 0);
     lv_obj_set_style_border_width(s_source_screen, 0, 0);
     lv_obj_set_style_pad_all(s_source_screen, 0, 0);
     // Set once here rather than on each label: text_font is inherited in LVGL,
@@ -932,51 +1075,16 @@ static void ui_create_source_screen(void)
     // mistake that only shows up when a label first receives Russian text.
     lv_obj_set_style_text_font(s_source_screen, &ui_font_cyrillic_14, 0);
 
-    lv_obj_t *status = lv_obj_create(s_source_screen);
-    lv_obj_set_pos(status, 0, 0);
-    lv_obj_set_size(status, 320, UI_SRC_STATUS_H);
-    // Lighter than the first attempt: at 0x16222C the strip sat only a few
-    // levels above the 0x101820 ground and barely read as a separate band.
-    lv_obj_set_style_bg_color(status, lv_color_hex(0x1E2C3A), 0);
-    lv_obj_set_style_border_width(status, 0, 0);
-    lv_obj_set_style_radius(status, 0, 0);
-    lv_obj_set_style_pad_all(status, 0, 0);
-    lv_obj_clear_flag(status, LV_OBJ_FLAG_SCROLLABLE);
-
-    // Centred rather than left-aligned: it is the one thing on the screen read
-    // from across the room, and the middle is where the eye goes first.
-    s_source_clock = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_clock, 130, 5);
-    lv_obj_set_width(s_source_clock, 60);
-    lv_obj_set_style_text_align(s_source_clock, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(s_source_clock, lv_color_hex(0xFFFFFF), 0);
-    lv_label_set_text(s_source_clock, "");
-
-    for (int bar = 0; bar < UI_WIFI_BARS; ++bar) {
-        lv_obj_t *block = lv_obj_create(s_source_screen);
-        const int height = 3 + bar * 3;
-        lv_obj_set_size(block, 3, height);
-        // Grown from a common baseline so the four read as one rising shape.
-        lv_obj_set_pos(block, 252 + bar * 5, 7 + (12 - height));
-        lv_obj_set_style_border_width(block, 0, 0);
-        lv_obj_set_style_radius(block, 1, 0);
-        lv_obj_set_style_pad_all(block, 0, 0);
-        lv_obj_clear_flag(block, LV_OBJ_FLAG_SCROLLABLE);
-        s_source_wifi_bars[bar] = block;
-    }
-    s_source_wifi = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_wifi, 275, 6);
-    lv_obj_set_style_text_color(s_source_wifi, lv_color_hex(0xB0BEC5), 0);
-    lv_label_set_text(s_source_wifi, "");
+    ui_status_strip_create(s_source_screen, &s_source_strip, "");
 
     // Stands in for the cover art that is not implemented yet. A symbol on a
     // tile keeps the composition; an empty square would read as a fault.
     s_source_art = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_art, UI_SRC_ART_X, UI_SRC_ART_Y);
     lv_obj_set_size(s_source_art, UI_SRC_ART_SIZE, UI_SRC_ART_SIZE);
-    lv_obj_set_style_bg_color(s_source_art, lv_color_hex(0x18242E), 0);
+    lv_obj_set_style_bg_color(s_source_art, lv_color_hex(UI_COLOR_TILE), 0);
     lv_obj_set_style_bg_opa(s_source_art, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(s_source_art, lv_color_hex(0x26343F), 0);
+    lv_obj_set_style_border_color(s_source_art, lv_color_hex(UI_COLOR_TILE_EDGE), 0);
     lv_obj_set_style_border_width(s_source_art, 1, 0);
     lv_obj_set_style_radius(s_source_art, 3, 0);
     lv_obj_set_style_text_color(s_source_art, lv_color_hex(0x3E5060), 0);
@@ -992,20 +1100,20 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_title, UI_SRC_TEXT_X, UI_SRC_ART_Y);
     lv_obj_set_size(s_source_title, UI_SRC_TEXT_W, UI_SRC_LINE_H);
     lv_label_set_long_mode(s_source_title, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_source_title, lv_color_hex(0xF2A33C), 0);
+    lv_obj_set_style_text_color(s_source_title, lv_color_hex(UI_COLOR_ACCENT), 0);
 
     s_source_detail = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_detail, UI_SRC_TEXT_X, UI_SRC_ROW_TRACK);
     lv_obj_set_size(s_source_detail, UI_SRC_TEXT_W, UI_SRC_TRACK_H);
     lv_obj_set_style_text_font(s_source_detail, &ui_font_cyrillic_20, 0);
     lv_label_set_long_mode(s_source_detail, LV_LABEL_LONG_SCROLL);
-    lv_obj_set_style_text_color(s_source_detail, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_color(s_source_detail, lv_color_hex(UI_COLOR_TEXT), 0);
 
     s_source_artist = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_artist, UI_SRC_TEXT_X, UI_SRC_ROW_ARTIST);
     lv_obj_set_size(s_source_artist, UI_SRC_TEXT_W, UI_SRC_LINE_H);
     lv_label_set_long_mode(s_source_artist, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_source_artist, lv_color_hex(0xB0BEC5), 0);
+    lv_obj_set_style_text_color(s_source_artist, lv_color_hex(UI_COLOR_MUTED), 0);
 
     // Shares the performer row rather than getting one of its own: the two are
     // never both set, and a separate row would have to come out of the codec
@@ -1014,13 +1122,13 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_status, UI_SRC_TEXT_X, UI_SRC_ROW_ARTIST);
     lv_obj_set_size(s_source_status, UI_SRC_TEXT_W, UI_SRC_LINE_H);
     lv_label_set_long_mode(s_source_status, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_source_status, lv_color_hex(0x78909C), 0);
+    lv_obj_set_style_text_color(s_source_status, lv_color_hex(UI_COLOR_DIM), 0);
 
     s_source_stream = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_stream, UI_SRC_TEXT_X, UI_SRC_ROW_STREAM);
     lv_obj_set_size(s_source_stream, UI_SRC_TEXT_W, UI_SRC_LINE_H);
     lv_label_set_long_mode(s_source_stream, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_source_stream, lv_color_hex(0x78909C), 0);
+    lv_obj_set_style_text_color(s_source_stream, lv_color_hex(UI_COLOR_DIM), 0);
 
     /* Brighter than the meter's own unlit blocks, which looks backwards for a
      * divider until you remember it is one pixel tall: a hairline loses far
@@ -1029,7 +1137,7 @@ static void ui_create_source_screen(void)
     lv_obj_t *rule_top = lv_obj_create(s_source_screen);
     lv_obj_set_pos(rule_top, 10, UI_SRC_RULE_TOP);
     lv_obj_set_size(rule_top, 300, 1);
-    lv_obj_set_style_bg_color(rule_top, lv_color_hex(0x334454), 0);
+    lv_obj_set_style_bg_color(rule_top, lv_color_hex(UI_COLOR_RULE), 0);
     lv_obj_set_style_border_width(rule_top, 0, 0);
     lv_obj_set_style_pad_all(rule_top, 0, 0);
     lv_obj_clear_flag(rule_top, LV_OBJ_FLAG_SCROLLABLE);
@@ -1052,13 +1160,13 @@ static void ui_create_source_screen(void)
         lv_obj_t *mark = lv_label_create(s_source_screen);
         lv_label_set_text(mark, channel == 0U ? "L" : "R");
         lv_obj_set_pos(mark, 12, UI_SRC_VU_Y - 3 + (int)channel * UI_SRC_VU_PITCH);
-        lv_obj_set_style_text_color(mark, lv_color_hex(0x78909C), 0);
+        lv_obj_set_style_text_color(mark, lv_color_hex(UI_COLOR_DIM), 0);
     }
 
     lv_obj_t *rule_bottom = lv_obj_create(s_source_screen);
     lv_obj_set_pos(rule_bottom, 10, UI_SRC_RULE_BOTTOM);
     lv_obj_set_size(rule_bottom, 300, 1);
-    lv_obj_set_style_bg_color(rule_bottom, lv_color_hex(0x334454), 0);
+    lv_obj_set_style_bg_color(rule_bottom, lv_color_hex(UI_COLOR_RULE), 0);
     lv_obj_set_style_border_width(rule_bottom, 0, 0);
     lv_obj_set_style_pad_all(rule_bottom, 0, 0);
     lv_obj_clear_flag(rule_bottom, LV_OBJ_FLAG_SCROLLABLE);
@@ -1079,7 +1187,7 @@ static void ui_create_source_screen(void)
     lv_obj_t *played = lv_obj_create(s_source_progress);
     lv_obj_set_pos(played, 0, 0);
     lv_obj_set_size(played, 1, 4);
-    lv_obj_set_style_bg_color(played, lv_color_hex(0xF2A33C), 0);
+    lv_obj_set_style_bg_color(played, lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_obj_set_style_border_width(played, 0, 0);
     lv_obj_set_style_radius(played, 2, 0);
     lv_obj_set_style_pad_all(played, 0, 0);
@@ -1088,7 +1196,7 @@ static void ui_create_source_screen(void)
 
     s_source_buffer = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_buffer, 10, UI_SRC_FOOT_Y);
-    lv_obj_set_style_text_color(s_source_buffer, lv_color_hex(0x78909C), 0);
+    lv_obj_set_style_text_color(s_source_buffer, lv_color_hex(UI_COLOR_DIM), 0);
 
     s_source_volume_bar = lv_obj_create(s_source_screen);
     lv_obj_set_pos(s_source_volume_bar, 200, UI_SRC_FOOT_Y + 5);
@@ -1101,7 +1209,7 @@ static void ui_create_source_screen(void)
     lv_obj_t *fill = lv_obj_create(s_source_volume_bar);
     lv_obj_set_pos(fill, 0, 0);
     lv_obj_set_size(fill, 60, 8);
-    lv_obj_set_style_bg_color(fill, lv_color_hex(0xB0BEC5), 0);
+    lv_obj_set_style_bg_color(fill, lv_color_hex(UI_COLOR_MUTED), 0);
     lv_obj_set_style_border_width(fill, 0, 0);
     lv_obj_set_style_radius(fill, 2, 0);
     lv_obj_set_style_pad_all(fill, 0, 0);
@@ -1109,7 +1217,7 @@ static void ui_create_source_screen(void)
 
     s_source_volume = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_volume, 266, UI_SRC_FOOT_Y);
-    lv_obj_set_style_text_color(s_source_volume, lv_color_hex(0xB0BEC5), 0);
+    lv_obj_set_style_text_color(s_source_volume, lv_color_hex(UI_COLOR_MUTED), 0);
     lv_label_set_text(s_source_volume, "");
 
     /* Pause badge, created last so it draws over everything else.
@@ -1126,7 +1234,7 @@ static void ui_create_source_screen(void)
     // Translucent rather than solid: the badge has to read as laid over the
     // screen, not as a hole punched in it.
     lv_obj_set_style_bg_opa(s_source_pause, LV_OPA_60, 0);
-    lv_obj_set_style_border_color(s_source_pause, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_border_color(s_source_pause, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_set_style_border_opa(s_source_pause, LV_OPA_30, 0);
     lv_obj_set_style_border_width(s_source_pause, 1, 0);
     lv_obj_set_style_pad_all(s_source_pause, 0, 0);
@@ -1141,7 +1249,7 @@ static void ui_create_source_screen(void)
         // The muted tone the rest of the screen uses for secondary text, not
         // pure white: the badge should read clearly without being the
         // brightest thing on a dark panel.
-        lv_obj_set_style_bg_color(stroke, lv_color_hex(0xB0BEC5), 0);
+        lv_obj_set_style_bg_color(stroke, lv_color_hex(UI_COLOR_MUTED), 0);
         lv_obj_set_style_bg_opa(stroke, LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(stroke, 0, 0);
         lv_obj_set_style_radius(stroke, 2, 0);
@@ -1284,10 +1392,10 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
         // The ".." row pushes every entry down, including the playing one.
         active_index = active_index == PLAYER_ITEM_NONE ? PLAYER_ITEM_NONE
                                                         : active_index + offset;
-        lv_label_set_text_fmt(s_station_list_title, "USB | %s", snapshot->context);
+        ui_set_label_text_if_changed(s_station_list_title, ui_path_leaf(snapshot->context));
     } else {
         s_usb_browser_has_parent_row = false;
-        ui_set_label_text_if_changed(s_station_list_title, "Internet radio | Stations");
+        ui_set_label_text_if_changed(s_station_list_title, "Станции");
     }
     const size_t initial_index = active_index < count ? active_index : 0U;
     station_list_init(&s_station_list, count, initial_index, active_index);
@@ -1765,6 +1873,17 @@ static void ui_task(void *arg)
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
+        // Only the strip on screen: the others are on parents LVGL is not
+        // drawing, so writing them would be work for nothing.
+        {
+            lv_obj_t *active = lv_screen_active();
+            ui_status_strip_t *strip = active == s_source_screen         ? &s_source_strip
+                                       : active == s_menu_screen         ? &s_menu_strip
+                                       : active == s_feed_screen         ? &s_feed_strip
+                                       : active == s_station_list_screen ? &s_list_strip
+                                                                         : NULL;
+            ui_status_strip_update(strip, &snapshot);
+        }
         ui_update_vu();
         ui_update_footer();
         if (s_settings_open) {

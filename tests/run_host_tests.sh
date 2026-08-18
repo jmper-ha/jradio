@@ -92,6 +92,7 @@ grep -Fq 'lv_display_set_buffers(s_display, buffer1, NULL,' components/ui/ui.c
 # settings.csv has two writer tasks; without this call the lock is never
 # created and every write runs unsynchronised again.
 grep -Fq 'settings_csv_init();' main/main.c
+run_test audio_volume tests/test_audio_volume.c components/board/audio_volume.c
 run_test audio_source tests/test_audio_source.c components/audio/audio_source_manager.c
 run_test board_audio_health tests/test_board_audio_health.c \
     components/board/board_audio_health.c
@@ -133,6 +134,7 @@ run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c 
     components/internet_radio/radio_stream_format.c
 run_test ui_settings_view tests/test_ui_settings_view.c components/ui/ui_settings_view.c
 run_test ui_settings_model tests/test_ui_settings_model.c components/ui/ui_settings_model.c
+run_test ui_status_bar tests/test_ui_status_bar.c components/ui/ui_status_bar.c
 run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c
 run_test ui_vu_meter tests/test_ui_vu_meter.c components/ui/ui_vu_meter.c
 run_test ui_usb_notice tests/test_ui_usb_notice.c components/ui/ui_usb_notice.c

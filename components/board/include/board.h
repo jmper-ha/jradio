@@ -28,3 +28,9 @@ esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal);
  * zeros when nothing has been written, which is what makes the meter fall to
  * silence on its own. */
 void board_audio_level_take(uint16_t *left, uint16_t *right);
+
+/* Playback volume, 0..100. The PCM5102 has no volume control, so this scales
+ * the samples on their way to I2S - see audio_volume.h for what that costs.
+ * 100 is bit-exact: the scaling is skipped rather than multiplied by one. */
+void board_audio_set_volume(uint8_t percent);
+uint8_t board_audio_volume(void);

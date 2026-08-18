@@ -3,6 +3,7 @@
 #include "settings_csv.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static bool read_value(const char *path, const char *key, char *value, size_t value_size)
@@ -36,6 +37,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     *settings = (device_settings_t){
         .language = DEVICE_LANGUAGE_RU,
         .home_screen = DEVICE_HOME_SCREEN_TEXT,
+        .volume = DEVICE_VOLUME_DEFAULT,
     };
     memcpy(settings->storage_path, path, strlen(path) + 1U);
 
@@ -56,6 +58,15 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     }
     if (read_value(path, "autoplay", value, sizeof(value))) {
         (void)parse_bool(value, &settings->autoplay);
+    }
+    if (read_value(path, "volume", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        /* A corrupt line leaves the default rather than silencing the device
+         * or blasting it. */
+        if (end != NULL && *end == '\0' && parsed >= 0 && parsed <= 100) {
+            settings->volume = (unsigned char)parsed;
+        }
     }
     if (read_value(path, "last_source", value, sizeof(value))) {
         if (strcmp(value, "internet_radio") == 0) {
@@ -122,6 +133,16 @@ bool device_settings_set_autoplay(device_settings_t *settings, bool enabled)
 {
     if (!save_value(settings, "autoplay", enabled ? "1" : "0")) return false;
     settings->autoplay = enabled;
+    return true;
+}
+
+bool device_settings_set_volume(device_settings_t *settings, unsigned char volume)
+{
+    if (volume > 100U) return false;
+    char text[8];
+    snprintf(text, sizeof(text), "%u", (unsigned int)volume);
+    if (!save_value(settings, "volume", text)) return false;
+    settings->volume = volume;
     return true;
 }
 

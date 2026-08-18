@@ -21,6 +21,7 @@
 #include "ui_click_gesture.h"
 #include "ui_draw_buffer.h"
 #include "ui_font_cyrillic_14.h"
+#include "ui_font_cyrillic_20.h"
 #include "ui_menu.h"
 #include "ui_feed_icons.h"
 #include "ui_feed_model.h"
@@ -28,6 +29,10 @@
 #include "ui_radio_text.h"
 #include "ui_settings_model.h"
 #include "ui_station_list.h"
+#include "ui_status_bar.h"
+
+#include "audio_volume.h"
+#include "device_clock.h"
 #include "ui_usb_notice.h"
 #include "ui_vu_meter.h"
 
@@ -61,6 +66,23 @@ static lv_obj_t *s_source_detail;
 static lv_obj_t *s_source_stream;
 static lv_obj_t *s_source_wifi;
 static lv_obj_t *s_source_buffer;
+static lv_obj_t *s_source_artist;
+static lv_obj_t *s_source_clock;
+static lv_obj_t *s_source_art;
+static lv_obj_t *s_source_volume;
+static lv_obj_t *s_source_volume_bar;
+/* Four rising bars. Drawn rather than taken from a font: LVGL's symbol set has
+ * one Wi-Fi glyph with no strength in it, and the strength is the half worth
+ * showing. */
+/* One encoder click. Five percent is 2 dB on this curve - a step you can hear
+ * without hunting, and 20 clicks from silence to full. */
+#define UI_VOLUME_STEP_PERCENT 5
+/* How long the knob has to be still before the setting is written to flash.
+ * Long enough to cover a whole gesture, short enough that a power cut right
+ * after adjusting is unlikely to lose it. */
+#define UI_VOLUME_SETTLE_MS 1500U
+#define UI_WIFI_BARS 4
+static lv_obj_t *s_source_wifi_bars[UI_WIFI_BARS];
 /* 20 blocks per channel: 20*11 + 19*3 = 277 px starting at x=30, so the row
  * ends at 307 on a 320 px panel. */
 #define UI_VU_SEGMENTS 20U
@@ -124,6 +146,10 @@ static size_t ui_usb_row_offset(void)
 }
 
 static uint32_t ui_tick_get_ms(void);
+/* Set when the volume has moved but not yet been saved; see
+ * ui_volume_commit_due() for why the two are separate. */
+static bool s_volume_save_pending;
+static uint32_t s_volume_changed_ms;
 
 static void ui_set_label_text_if_changed(lv_obj_t *label, const char *text)
 {
@@ -149,33 +175,89 @@ static const char *ui_radio_state_text(player_playback_state_t state)
     return "Unknown";
 }
 
+/* The status strip and the footer are the same for both sources, so they are
+ * filled from one place rather than duplicated per source. */
+static void ui_update_status_strip(const player_snapshot_t *snapshot)
+{
+    int hour = 0;
+    int minute = 0;
+    const bool have_time = device_clock_now(&hour, &minute);
+    char clock_text[8];
+    ui_status_clock_text(clock_text, sizeof(clock_text), have_time, hour, minute);
+    ui_set_label_text_if_changed(s_source_clock, clock_text);
+
+    const uint8_t bars = ui_status_wifi_bars(snapshot->wifi_rssi_valid,
+                                             snapshot->wifi_rssi_dbm);
+    for (int bar = 0; bar < UI_WIFI_BARS; ++bar) {
+        // Unlit bars stay visible in a dim shade rather than hiding, so the
+        // shape reads as a scale at rest instead of a missing icon.
+        lv_obj_set_style_bg_color(s_source_wifi_bars[bar],
+                                  lv_color_hex(bar < (int)bars ? 0xB0BEC5 : 0x2D3F4D), 0);
+    }
+    char wifi_text[8];
+    if (snapshot->wifi_rssi_valid) {
+        snprintf(wifi_text, sizeof(wifi_text), "%d", (int)snapshot->wifi_rssi_dbm);
+    } else {
+        snprintf(wifi_text, sizeof(wifi_text), "--");
+    }
+    ui_set_label_text_if_changed(s_source_wifi, wifi_text);
+}
+
+/* Runs every poll rather than only on a snapshot change: both readings here
+ * come straight from the owning subsystem and move far too often to belong in
+ * a structure the web diffs against. */
+static void ui_update_footer(void)
+{
+    if (lv_screen_active() != s_source_screen) return;
+    uint8_t fill = 0U;
+    char buffer_text[20];
+    if (player_control_input_fill(&fill)) {
+        snprintf(buffer_text, sizeof(buffer_text), "Буфер %u%%", (unsigned int)fill);
+    } else {
+        // Nothing playing, or a source with no backlog at all. A dash says
+        // that; a zero would claim the buffer had run dry.
+        snprintf(buffer_text, sizeof(buffer_text), "Буфер --");
+    }
+    ui_set_label_text_if_changed(s_source_buffer, buffer_text);
+
+    const uint8_t volume = board_audio_volume();
+    char volume_text[8];
+    snprintf(volume_text, sizeof(volume_text), "%u", (unsigned int)volume);
+    ui_set_label_text_if_changed(s_source_volume, volume_text);
+    lv_obj_t *fill_bar = lv_obj_get_child(s_source_volume_bar, 0);
+    if (fill_bar != NULL) {
+        const int32_t width = (int32_t)((60U * volume) / 100U);
+        lv_obj_set_width(fill_bar, width < 1 ? 1 : width);
+    }
+}
+
 static void ui_update_usb_status(const player_snapshot_t *snapshot)
 {
+    // The directory takes the place the radio gives the station name.
+    ui_set_label_text_if_changed(s_source_title, snapshot->context);
+    ui_set_label_text_if_changed(s_source_detail, snapshot->stream_title);
+    // No performer to show for a file; the state line takes the row instead.
+    ui_set_label_text_if_changed(s_source_artist, "");
     ui_set_label_text_if_changed(s_source_status,
                                  snapshot->playback_state == PLAYER_PLAYBACK_STOPPED
                                      ? "Выберите файл"
-                                     : ui_radio_state_text(snapshot->playback_state));
-    // The USB player puts the file name where the radio puts the ICY title.
-    ui_set_label_text_if_changed(s_source_detail, snapshot->stream_title);
+                                     : "");
     char stream_text[64];
     ui_radio_stream_text(stream_text, sizeof(stream_text), snapshot->codec,
                          snapshot->bitrate_kbps, snapshot->sample_rate_hz);
     ui_set_label_text_if_changed(s_source_stream, stream_text);
-    // Nothing on this screen depends on the network, so the Wi-Fi line would
-    // only be noise.
-    ui_set_label_text_if_changed(s_source_wifi, "");
 }
 
 static void ui_update_radio_status(const player_snapshot_t *snapshot)
 {
     if (snapshot == NULL) return;
+    ui_update_status_strip(snapshot);
     if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_USB) {
         ui_update_usb_status(snapshot);
         return;
     }
     if (ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_INTERNET_RADIO) return;
-    ui_set_label_text_if_changed(s_source_status,
-                                 ui_radio_state_text(snapshot->playback_state));
+
     // While a station switch is pending confirmation, snapshot->active_item_index
     // still reflects the previous station; keep showing the one the user just
     // picked instead of flipping back to the old one for the pending window.
@@ -186,28 +268,32 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
             : snapshot->active_item_index;
     const station_catalog_entry_t *entry =
         player_control_station_at(display_item_index);
-    const char *display_title = (entry != NULL && entry->flag == 0)
-                                    ? entry->name
-                                    : (snapshot->stream_title[0] == '\0'
-                                           ? snapshot->context
-                                           : snapshot->stream_title);
     if (entry != NULL) {
         ui_set_label_text_if_changed(s_source_title, entry->name);
     }
-    ui_set_label_text_if_changed(s_source_detail, display_title);
+
+    const char *icy = (entry != NULL && entry->flag == 0)
+                          ? entry->name
+                          : (snapshot->stream_title[0] == '\0' ? snapshot->context
+                                                               : snapshot->stream_title);
+    // Stations send one string; splitting it gives the track its own wide line
+    // instead of burying it in the middle of a run-on.
+    char artist[PLAYER_TITLE_MAX_LEN];
+    char track[PLAYER_TITLE_MAX_LEN];
+    (void)ui_radio_split_title(icy, artist, sizeof(artist), track, sizeof(track));
+    ui_set_label_text_if_changed(s_source_detail, track);
+    ui_set_label_text_if_changed(s_source_artist, artist);
+
+    // The performer row carries the state instead whenever there is no
+    // performer to show - which is exactly when the state matters.
+    const bool playing = snapshot->playback_state == PLAYER_PLAYBACK_PLAYING;
+    ui_set_label_text_if_changed(s_source_status,
+                                 playing ? "" : ui_radio_state_text(snapshot->playback_state));
+
     char stream_text[64];
     ui_radio_stream_text(stream_text, sizeof(stream_text), snapshot->codec,
                          snapshot->bitrate_kbps, snapshot->sample_rate_hz);
     ui_set_label_text_if_changed(s_source_stream, stream_text);
-
-    char wifi_text[32];
-    if (snapshot->wifi_rssi_valid) {
-        snprintf(wifi_text, sizeof(wifi_text), "Wi-Fi  %d dBm",
-                 (int)snapshot->wifi_rssi_dbm);
-    } else {
-        snprintf(wifi_text, sizeof(wifi_text), "Wi-Fi  -- dBm");
-    }
-    ui_set_label_text_if_changed(s_source_wifi, wifi_text);
 }
 
 static uint32_t ui_tick_get_ms(void)
@@ -704,6 +790,32 @@ static void ui_create_station_list_screen(void)
 
 static void ui_show_station_list(void);
 
+/* Player screen layout, in device pixels.
+ *
+ * 320x240 leaves no room for guessing, so the numbers live together here
+ * rather than scattered through the builder. A status strip carries what is
+ * not about the music - clock, signal - and everything below it is the
+ * playing item. The bottom row pairs the two things that answer "is it going
+ * to keep playing, and how loud": buffer on the left, volume on the right.
+ */
+#define UI_SRC_STATUS_H 26
+#define UI_SRC_ART_X 10
+#define UI_SRC_ART_Y 36
+#define UI_SRC_ART_SIZE 96
+#define UI_SRC_TEXT_X 118
+#define UI_SRC_TEXT_W 192
+/* One line of each face, from the generated fonts' own line_height. Rows are
+ * spaced by these rather than by eye, so nothing can overlap its neighbour. */
+#define UI_SRC_LINE_H 19
+#define UI_SRC_TRACK_H 23
+#define UI_SRC_ROW_TRACK 58
+#define UI_SRC_ROW_ARTIST 86
+#define UI_SRC_ROW_STREAM 108
+#define UI_SRC_RULE_TOP 144
+#define UI_SRC_VU_Y 155
+#define UI_SRC_RULE_BOTTOM 200
+#define UI_SRC_FOOT_Y 210
+
 static void ui_create_source_screen(void)
 {
     s_source_screen = lv_obj_create(NULL);
@@ -716,27 +828,101 @@ static void ui_create_source_screen(void)
     // mistake that only shows up when a label first receives Russian text.
     lv_obj_set_style_text_font(s_source_screen, &ui_font_cyrillic_14, 0);
 
-    s_source_title = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_title, 14, 32);
-    lv_obj_set_style_text_color(s_source_title, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_t *status = lv_obj_create(s_source_screen);
+    lv_obj_set_pos(status, 0, 0);
+    lv_obj_set_size(status, 320, UI_SRC_STATUS_H);
+    lv_obj_set_style_bg_color(status, lv_color_hex(0x16222C), 0);
+    lv_obj_set_style_border_width(status, 0, 0);
+    lv_obj_set_style_radius(status, 0, 0);
+    lv_obj_set_style_pad_all(status, 0, 0);
+    lv_obj_clear_flag(status, LV_OBJ_FLAG_SCROLLABLE);
 
-    s_source_status = lv_label_create(s_source_screen);
-    lv_label_set_text(s_source_status, "Not implemented");
-    lv_obj_set_pos(s_source_status, 14, 64);
-    // Carries Russian copy for the USB source; the built-in LVGL font has no
-    // Cyrillic and renders it as empty boxes.
-    lv_obj_set_style_text_color(s_source_status, lv_color_hex(0xB0BEC5), 0);
+    // Centred rather than left-aligned: it is the one thing on the screen read
+    // from across the room, and the middle is where the eye goes first.
+    s_source_clock = lv_label_create(s_source_screen);
+    lv_obj_set_pos(s_source_clock, 130, 5);
+    lv_obj_set_width(s_source_clock, 60);
+    lv_obj_set_style_text_align(s_source_clock, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(s_source_clock, lv_color_hex(0xFFFFFF), 0);
+    lv_label_set_text(s_source_clock, "");
+
+    for (int bar = 0; bar < UI_WIFI_BARS; ++bar) {
+        lv_obj_t *block = lv_obj_create(s_source_screen);
+        const int height = 3 + bar * 3;
+        lv_obj_set_size(block, 3, height);
+        // Grown from a common baseline so the four read as one rising shape.
+        lv_obj_set_pos(block, 252 + bar * 5, 7 + (12 - height));
+        lv_obj_set_style_border_width(block, 0, 0);
+        lv_obj_set_style_radius(block, 1, 0);
+        lv_obj_set_style_pad_all(block, 0, 0);
+        lv_obj_clear_flag(block, LV_OBJ_FLAG_SCROLLABLE);
+        s_source_wifi_bars[bar] = block;
+    }
+    s_source_wifi = lv_label_create(s_source_screen);
+    lv_obj_set_pos(s_source_wifi, 275, 6);
+    lv_obj_set_style_text_color(s_source_wifi, lv_color_hex(0xB0BEC5), 0);
+    lv_label_set_text(s_source_wifi, "");
+
+    // Stands in for the cover art that is not implemented yet. A symbol on a
+    // tile keeps the composition; an empty square would read as a fault.
+    s_source_art = lv_label_create(s_source_screen);
+    lv_obj_set_pos(s_source_art, UI_SRC_ART_X, UI_SRC_ART_Y);
+    lv_obj_set_size(s_source_art, UI_SRC_ART_SIZE, UI_SRC_ART_SIZE);
+    lv_obj_set_style_bg_color(s_source_art, lv_color_hex(0x18242E), 0);
+    lv_obj_set_style_bg_opa(s_source_art, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(s_source_art, lv_color_hex(0x26343F), 0);
+    lv_obj_set_style_border_width(s_source_art, 1, 0);
+    lv_obj_set_style_radius(s_source_art, 3, 0);
+    lv_obj_set_style_text_color(s_source_art, lv_color_hex(0x3E5060), 0);
+    lv_obj_set_style_text_font(s_source_art, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_align(s_source_art, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_pad_top(s_source_art, 24, 0);
+    lv_label_set_text(s_source_art, LV_SYMBOL_AUDIO);
+
+    // Every one of these gets an explicit height of exactly one line. Without
+    // it LV_LABEL_LONG_DOT wraps to a second line before it considers
+    // shortening, and a long station name grew downwards over the codec row.
+    s_source_title = lv_label_create(s_source_screen);
+    lv_obj_set_pos(s_source_title, UI_SRC_TEXT_X, UI_SRC_ART_Y);
+    lv_obj_set_size(s_source_title, UI_SRC_TEXT_W, UI_SRC_LINE_H);
+    lv_label_set_long_mode(s_source_title, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_color(s_source_title, lv_color_hex(0xF2A33C), 0);
 
     s_source_detail = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_detail, 14, 92);
-    lv_obj_set_width(s_source_detail, 290);
-    lv_obj_set_height(s_source_detail, 52);
-    lv_label_set_long_mode(s_source_detail, LV_LABEL_LONG_WRAP);
+    lv_obj_set_pos(s_source_detail, UI_SRC_TEXT_X, UI_SRC_ROW_TRACK);
+    lv_obj_set_size(s_source_detail, UI_SRC_TEXT_W, UI_SRC_TRACK_H);
+    lv_obj_set_style_text_font(s_source_detail, &ui_font_cyrillic_20, 0);
+    lv_label_set_long_mode(s_source_detail, LV_LABEL_LONG_SCROLL);
     lv_obj_set_style_text_color(s_source_detail, lv_color_hex(0xFFFFFF), 0);
 
+    s_source_artist = lv_label_create(s_source_screen);
+    lv_obj_set_pos(s_source_artist, UI_SRC_TEXT_X, UI_SRC_ROW_ARTIST);
+    lv_obj_set_size(s_source_artist, UI_SRC_TEXT_W, UI_SRC_LINE_H);
+    lv_label_set_long_mode(s_source_artist, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_color(s_source_artist, lv_color_hex(0xB0BEC5), 0);
+
+    // Shares the performer row rather than getting one of its own: the two are
+    // never both set, and a separate row would have to come out of the codec
+    // line - which is where it used to land, on top of it.
+    s_source_status = lv_label_create(s_source_screen);
+    lv_obj_set_pos(s_source_status, UI_SRC_TEXT_X, UI_SRC_ROW_ARTIST);
+    lv_obj_set_size(s_source_status, UI_SRC_TEXT_W, UI_SRC_LINE_H);
+    lv_label_set_long_mode(s_source_status, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_color(s_source_status, lv_color_hex(0x78909C), 0);
+
     s_source_stream = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_stream, 14, 154);
-    lv_obj_set_style_text_color(s_source_stream, lv_color_hex(0xB0BEC5), 0);
+    lv_obj_set_pos(s_source_stream, UI_SRC_TEXT_X, UI_SRC_ROW_STREAM);
+    lv_obj_set_size(s_source_stream, UI_SRC_TEXT_W, UI_SRC_LINE_H);
+    lv_label_set_long_mode(s_source_stream, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_color(s_source_stream, lv_color_hex(0x78909C), 0);
+
+    lv_obj_t *rule_top = lv_obj_create(s_source_screen);
+    lv_obj_set_pos(rule_top, 10, UI_SRC_RULE_TOP);
+    lv_obj_set_size(rule_top, 300, 1);
+    lv_obj_set_style_bg_color(rule_top, lv_color_hex(0x23303C), 0);
+    lv_obj_set_style_border_width(rule_top, 0, 0);
+    lv_obj_set_style_pad_all(rule_top, 0, 0);
+    lv_obj_clear_flag(rule_top, LV_OBJ_FLAG_SCROLLABLE);
 
     for (size_t channel = 0; channel < 2U; ++channel) {
         for (size_t segment = 0; segment < UI_VU_SEGMENTS; ++segment) {
@@ -744,7 +930,7 @@ static void ui_create_source_screen(void)
             lv_obj_set_size(block, UI_VU_SEGMENT_W, 10);
             lv_obj_set_pos(block,
                            30 + (int)segment * (UI_VU_SEGMENT_W + UI_VU_SEGMENT_GAP),
-                           204 + (int)channel * 14);
+                           UI_SRC_VU_Y + (int)channel * 18);
             lv_obj_set_style_border_width(block, 0, 0);
             lv_obj_set_style_radius(block, 1, 0);
             lv_obj_set_style_pad_all(block, 0, 0);
@@ -755,19 +941,43 @@ static void ui_create_source_screen(void)
         }
         lv_obj_t *mark = lv_label_create(s_source_screen);
         lv_label_set_text(mark, channel == 0U ? "L" : "R");
-        lv_obj_set_pos(mark, 14, 200 + (int)channel * 14);
-        lv_obj_set_style_text_color(mark, lv_color_hex(0xB0BEC5), 0);
+        lv_obj_set_pos(mark, 12, UI_SRC_VU_Y - 3 + (int)channel * 18);
+        lv_obj_set_style_text_color(mark, lv_color_hex(0x78909C), 0);
     }
-    s_source_wifi = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_wifi, 14, 180);
-    lv_obj_set_style_text_color(s_source_wifi, lv_color_hex(0xB0BEC5), 0);
 
-    // Shares the Wi-Fi row, which is the one line free in both sources: the
-    // USB player leaves it empty because nothing there depends on the network.
+    lv_obj_t *rule_bottom = lv_obj_create(s_source_screen);
+    lv_obj_set_pos(rule_bottom, 10, UI_SRC_RULE_BOTTOM);
+    lv_obj_set_size(rule_bottom, 300, 1);
+    lv_obj_set_style_bg_color(rule_bottom, lv_color_hex(0x23303C), 0);
+    lv_obj_set_style_border_width(rule_bottom, 0, 0);
+    lv_obj_set_style_pad_all(rule_bottom, 0, 0);
+    lv_obj_clear_flag(rule_bottom, LV_OBJ_FLAG_SCROLLABLE);
+
     s_source_buffer = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_buffer, 190, 180);
-    lv_obj_set_style_text_color(s_source_buffer, lv_color_hex(0xB0BEC5), 0);
+    lv_obj_set_pos(s_source_buffer, 10, UI_SRC_FOOT_Y);
+    lv_obj_set_style_text_color(s_source_buffer, lv_color_hex(0x78909C), 0);
 
+    s_source_volume_bar = lv_obj_create(s_source_screen);
+    lv_obj_set_pos(s_source_volume_bar, 200, UI_SRC_FOOT_Y + 5);
+    lv_obj_set_size(s_source_volume_bar, 60, 8);
+    lv_obj_set_style_bg_color(s_source_volume_bar, lv_color_hex(0x23303C), 0);
+    lv_obj_set_style_border_width(s_source_volume_bar, 0, 0);
+    lv_obj_set_style_radius(s_source_volume_bar, 2, 0);
+    lv_obj_set_style_pad_all(s_source_volume_bar, 0, 0);
+    lv_obj_clear_flag(s_source_volume_bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *fill = lv_obj_create(s_source_volume_bar);
+    lv_obj_set_pos(fill, 0, 0);
+    lv_obj_set_size(fill, 60, 8);
+    lv_obj_set_style_bg_color(fill, lv_color_hex(0xB0BEC5), 0);
+    lv_obj_set_style_border_width(fill, 0, 0);
+    lv_obj_set_style_radius(fill, 2, 0);
+    lv_obj_set_style_pad_all(fill, 0, 0);
+    lv_obj_clear_flag(fill, LV_OBJ_FLAG_SCROLLABLE);
+
+    s_source_volume = lv_label_create(s_source_screen);
+    lv_obj_set_pos(s_source_volume, 266, UI_SRC_FOOT_Y);
+    lv_obj_set_style_text_color(s_source_volume, lv_color_hex(0xB0BEC5), 0);
+    lv_label_set_text(s_source_volume, "");
 }
 
 static bool ui_submit_player_command(const player_command_t *command)
@@ -800,7 +1010,7 @@ static void ui_load_source_screen(audio_source_t selected_source)
         ui_set_label_text_if_changed(s_source_status, "Connecting...");
         ui_set_label_text_if_changed(s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
-        ui_set_label_text_if_changed(s_source_wifi, "");
+        ui_set_label_text_if_changed(s_source_artist, "");
         s_waiting_for_radio_station = true;
         s_radio_station_wait_started_ms = ui_tick_get_ms();
     } else if (selected_source == AUDIO_SOURCE_USB) {
@@ -810,13 +1020,13 @@ static void ui_load_source_screen(audio_source_t selected_source)
         ui_set_label_text_if_changed(s_source_status, "Выберите файл");
         ui_set_label_text_if_changed(s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
-        ui_set_label_text_if_changed(s_source_wifi, "");
+        ui_set_label_text_if_changed(s_source_artist, "");
     } else {
         s_waiting_for_radio_station = false;
         ui_set_label_text_if_changed(s_source_status, "Not implemented");
         ui_set_label_text_if_changed(s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
-        ui_set_label_text_if_changed(s_source_wifi, "");
+        ui_set_label_text_if_changed(s_source_artist, "");
     }
 }
 
@@ -1036,7 +1246,7 @@ static void ui_handle_input(board_input_action_t action)
             ui_set_label_text_if_changed(s_source_detail, entry.name);
             ui_set_label_text_if_changed(s_source_stream,
                                          usb_browser_format_name(entry.format));
-            ui_set_label_text_if_changed(s_source_wifi, "");
+            ui_set_label_text_if_changed(s_source_artist, "");
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             size_t index;
             if (!station_list_get_selection(&s_station_list, &index) ||
@@ -1057,7 +1267,7 @@ static void ui_handle_input(board_input_action_t action)
             ui_radio_stream_text_for_url(stream_text, sizeof(stream_text),
                                          entry == NULL ? NULL : entry->url);
             ui_set_label_text_if_changed(s_source_stream, stream_text);
-            ui_set_label_text_if_changed(s_source_wifi, "");
+            ui_set_label_text_if_changed(s_source_artist, "");
         }
         return;
     }
@@ -1079,6 +1289,22 @@ static void ui_handle_input(board_input_action_t action)
                 UI_CLICK_DOUBLE) {
                 ui_show_station_list();
             }
+        } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
+                   action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
+            // The encoder was unused on this screen, which is why volume gets
+            // it: no gesture has to be given up to make room.
+            const int step = action == BOARD_INPUT_ACTION_ENCODER_RIGHT
+                                 ? UI_VOLUME_STEP_PERCENT
+                                 : -UI_VOLUME_STEP_PERCENT;
+            const uint8_t volume = audio_volume_step(board_audio_volume(), step);
+            // Reaches the audio path at once - it is one atomic store, and the
+            // next PCM block is already attenuated. Saving is what has to wait:
+            // writing settings.csv per click stalled this task long enough that
+            // clicks queued up and then arrived in a burst.
+            board_audio_set_volume(volume);
+            s_volume_save_pending = true;
+            s_volume_changed_ms = ui_tick_get_ms();
+            ui_update_footer();
         } else if (has_list && action == BOARD_INPUT_ACTION_F3) {
             ui_toggle_playback();
         }
@@ -1303,24 +1529,6 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
 
 /* Runs every poll, not only when something changed: the meter is an animation,
  * and its whole job is to keep moving between the ~26 ms PCM blocks. */
-/* Fill of the decoder's input buffer. Read straight from player_control on
- * every pass rather than from the snapshot, like the level meter: it changes
- * far too often to belong in a structure the web diffs against. */
-static void ui_update_buffer(void)
-{
-    if (lv_screen_active() != s_source_screen) return;
-    uint8_t percent = 0U;
-    char text[16];
-    if (player_control_input_fill(&percent)) {
-        snprintf(text, sizeof(text), "Буфер %u%%", (unsigned int)percent);
-    } else {
-        // Nothing playing, or a source with no backlog at all. A dash says
-        // that; a zero would claim the buffer had run dry.
-        snprintf(text, sizeof(text), "Буфер --");
-    }
-    ui_set_label_text_if_changed(s_source_buffer, text);
-}
-
 static void ui_update_vu(void)
 {
     if (lv_screen_active() != s_source_screen) return;
@@ -1355,16 +1563,19 @@ static void ui_task(void *arg)
         if (xQueueReceive(s_input_queue, &action, pdMS_TO_TICKS(10)) == pdTRUE) {
             ui_handle_input(action);
         }
-        // A click held for the double-click window is delivered here, since
-        // nothing else runs while the UI waits for the second press.
         if (ui_click_gesture_poll(&s_player_click, ui_tick_get_ms()) == UI_CLICK_SINGLE) {
             ui_toggle_playback();
+        }
+        if (ui_volume_commit_due(s_volume_save_pending, s_volume_changed_ms,
+                                 ui_tick_get_ms(), UI_VOLUME_SETTLE_MS)) {
+            s_volume_save_pending = false;
+            (void)device_settings_set_volume(&s_device_settings, board_audio_volume());
         }
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
         ui_update_vu();
-        ui_update_buffer();
+        ui_update_footer();
         if (s_settings_open) {
             ui_update_settings();
         } else {
@@ -1437,6 +1648,10 @@ esp_err_t ui_init(void)
         (void)board_display_set_rotation(s_device_settings.flip_vertical,
                                          s_device_settings.flip_horizontal);
     }
+    // Before anything can play: the board defaults to full volume, and coming
+    // back from a power cut at full blast when the user had it at 20 is the
+    // kind of surprise a saved setting exists to prevent.
+    board_audio_set_volume(s_device_settings.volume);
     s_autoplay_pending = ui_autoplay_decide(&s_device_settings,
                                             USB_BROWSER_MEDIA_READY, true) !=
                          UI_AUTOPLAY_HOME;

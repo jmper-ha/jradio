@@ -1,5 +1,7 @@
 #include "ui_radio_text.h"
 
+#include <string.h>
+
 #include <stdio.h>
 
 #include "radio_stream_format.h"
@@ -30,4 +32,35 @@ void ui_radio_stream_text_for_url(char *text, size_t text_size, const char *url)
 {
     const radio_stream_format_t format = radio_stream_format_from_url(url);
     ui_radio_stream_text(text, text_size, radio_stream_format_codec_name(format), 0U, 0U);
+}
+
+bool ui_radio_split_title(const char *icy, char *artist, size_t artist_size, char *title,
+                          size_t title_size)
+{
+    if (artist == NULL || title == NULL || artist_size == 0U || title_size == 0U) {
+        return false;
+    }
+    artist[0] = '\0';
+    title[0] = '\0';
+    if (icy == NULL || icy[0] == '\0') return false;
+
+    const char *separator = strstr(icy, " - ");
+    if (separator == NULL || separator == icy || separator[3] == '\0') {
+        /* No separator, or nothing on one side of it: the whole string is the
+         * best title available. */
+        snprintf(title, title_size, "%s", icy);
+        return false;
+    }
+
+    const size_t artist_length = (size_t)(separator - icy);
+    if (artist_length >= artist_size) {
+        /* The performer alone does not fit, so a split would only truncate it
+         * into something misleading. */
+        snprintf(title, title_size, "%s", icy);
+        return false;
+    }
+    memcpy(artist, icy, artist_length);
+    artist[artist_length] = '\0';
+    snprintf(title, title_size, "%s", separator + 3);
+    return true;
 }

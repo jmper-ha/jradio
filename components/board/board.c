@@ -1,6 +1,7 @@
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
@@ -10,11 +11,13 @@
 #include "esp_err.h"
 #include "esp_lcd_ili9341.h"
 #include "esp_lcd_panel_io.h"
+#include "esp_heap_caps.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#include "audio_volume.h"
 #include "board.h"
 #include "board_audio_health.h"
 #include "board_audio_startup.h"
@@ -86,6 +89,12 @@ static uint32_t s_audio_sample_rate = AUDIO_DEFAULT_SAMPLE_RATE;
  * never block the audio path, nor be blocked by it. */
 static atomic_uint s_audio_level_left = ATOMIC_VAR_INIT(0U);
 static atomic_uint s_audio_level_right = ATOMIC_VAR_INIT(0U);
+/* Volume setting and the scratch the scaled samples go into. Full volume needs
+ * neither: the block is handed to I2S untouched, so the common case costs
+ * nothing and stays bit-exact. */
+static atomic_uint s_audio_volume = ATOMIC_VAR_INIT(AUDIO_VOLUME_MAX_PERCENT);
+static uint8_t *s_audio_gain_scratch;
+static size_t s_audio_gain_scratch_size;
 
 static void board_audio_level_note(unsigned int value, atomic_uint *slot)
 {
@@ -97,6 +106,17 @@ static void board_audio_level_note(unsigned int value, atomic_uint *slot)
                                                   memory_order_relaxed,
                                                   memory_order_relaxed)) {
     }
+}
+
+void board_audio_set_volume(uint8_t percent)
+{
+    if (percent > AUDIO_VOLUME_MAX_PERCENT) percent = AUDIO_VOLUME_MAX_PERCENT;
+    atomic_store_explicit(&s_audio_volume, percent, memory_order_relaxed);
+}
+
+uint8_t board_audio_volume(void)
+{
+    return (uint8_t)atomic_load_explicit(&s_audio_volume, memory_order_relaxed);
 }
 
 void board_audio_level_take(uint16_t *left, uint16_t *right)
@@ -343,7 +363,37 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
     bool mark_silence = false;
     bool mark_mute = false;
     if (s_audio_enabled) {
-        result = i2s_channel_write(s_i2s_tx, pcm, pcm_length, written,
+        /* Attenuate before the write, but measure after nothing: the meter
+         * below reads `pcm`, the decoder's own block, so it reports what the
+         * station is sending rather than how loud the listener set it. A meter
+         * that fell with the volume knob would look like a failing stream. */
+        const uint8_t volume = board_audio_volume();
+        const uint16_t gain = audio_volume_gain(volume);
+        const void *out = pcm;
+        if (gain != AUDIO_VOLUME_UNITY) {
+            if (s_audio_gain_scratch == NULL || s_audio_gain_scratch_size < pcm_length) {
+                // Grown once and kept: block sizes are fixed per source, so
+                // this allocates on the first quiet block after boot and never
+                // again. PSRAM first, like every other buffer here - internal
+                // memory is the scarce pool and I2S copies out of this anyway.
+                heap_caps_free(s_audio_gain_scratch);
+                s_audio_gain_scratch = heap_caps_malloc(pcm_length,
+                                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+                if (s_audio_gain_scratch == NULL) {
+                    s_audio_gain_scratch = heap_caps_malloc(pcm_length,
+                                                            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+                }
+                s_audio_gain_scratch_size = s_audio_gain_scratch != NULL ? pcm_length : 0U;
+            }
+            if (s_audio_gain_scratch != NULL) {
+                audio_volume_apply(pcm, s_audio_gain_scratch, pcm_length, gain);
+                out = s_audio_gain_scratch;
+            }
+            /* No scratch means no attenuation this block. Playing one block at
+             * full volume is wrong but recoverable; refusing to write would
+             * starve the DAC. */
+        }
+        result = i2s_channel_write(s_i2s_tx, out, pcm_length, written,
                                    pdMS_TO_TICKS(timeout_ms));
         if (result == ESP_OK) {
             uint16_t peak_left = 0U;
@@ -362,10 +412,15 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
             board_audio_level_note(level_right, &s_audio_level_right);
             board_audio_health_add(&s_audio_health, *written, pcm_length,
                                    peak_left > peak_right ? peak_left : peak_right);
+            // Measured on the bytes actually clocked out, not on the
+            // decoder's block: it is the DAC's zero-detect this tracks, and
+            // the DAC sees the attenuated samples.
             const uint32_t zero_run =
-                pcm_s16le_zero_frame_run(pcm, *written, &s_audio_zero_carry);
+                pcm_s16le_zero_frame_run(out, *written, &s_audio_zero_carry);
             board_audio_health_note_zero_run(&s_audio_health, zero_run);
-            if (!s_audio_mute_reported && zero_run >= AUDIO_ZERO_DETECT_FRAMES) {
+            // Silence the listener asked for is not a fault to report.
+            if (volume > 0U && !s_audio_mute_reported &&
+                zero_run >= AUDIO_ZERO_DETECT_FRAMES) {
                 s_audio_mute_reported = true;
                 mute_run = zero_run;
                 mark_mute = true;

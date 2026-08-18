@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "board.c" "board_audio_health.c" "board_audio_startup.c" "board_input.c"
+    SRCS "audio_volume.c" "board.c" "board_audio_health.c" "board_audio_startup.c" "board_input.c"
          "pcm_diagnostics.c"
     # The project root carries board_options.h, the single place every external
     # device's wiring is declared. It is public here so the components that

@@ -5,6 +5,7 @@
 
 #include "board.h"
 #include "board_input.h"
+#include "device_clock.h"
 #include "internet_radio.h"
 #include "player_control.h"
 #include "settings_csv.h"
@@ -36,6 +37,10 @@ void app_main(void)
     ESP_ERROR_CHECK(board_init());
     ESP_ERROR_CHECK(wifi_provisioning_init());
     ESP_ERROR_CHECK(wifi_provisioning_start());
+    // After Wi-Fi is up so the first query has somewhere to go, but it does
+    // not depend on being connected - SNTP retries on its own and the clock
+    // reads unset until an answer arrives.
+    device_clock_init();
     ESP_ERROR_CHECK(usb_storage_init());
     ESP_ERROR_CHECK(usb_player_init());
     ESP_ERROR_CHECK(internet_radio_init());

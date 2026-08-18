@@ -89,6 +89,10 @@ static lv_obj_t *s_source_wifi_bars[UI_WIFI_BARS];
 #define UI_VU_SEGMENT_W 11
 #define UI_VU_SEGMENT_GAP 3
 static lv_obj_t *s_source_vu[2][UI_VU_SEGMENTS];
+/* Colour last written to each block, so an unchanged one is left alone; see
+ * ui_update_vu() for why that matters so much. 0 is not a colour any block
+ * takes, so the first pass always paints. */
+static uint32_t s_vu_colour[2][UI_VU_SEGMENTS];
 static ui_vu_meter_t s_vu_state[2];
 static uint32_t s_vu_updated_ms;
 static lv_obj_t *s_settings_screen;
@@ -227,7 +231,10 @@ static void ui_update_footer(void)
     lv_obj_t *fill_bar = lv_obj_get_child(s_source_volume_bar, 0);
     if (fill_bar != NULL) {
         const int32_t width = (int32_t)((60U * volume) / 100U);
-        lv_obj_set_width(fill_bar, width < 1 ? 1 : width);
+        const int32_t clamped = width < 1 ? 1 : width;
+        // Same reason as the meter blocks: resizing invalidates, and this runs
+        // every pass while the volume changes only when the knob turns.
+        if (lv_obj_get_width(fill_bar) != clamped) lv_obj_set_width(fill_bar, clamped);
     }
 }
 
@@ -1549,6 +1556,19 @@ static void ui_update_vu(void)
                 segment >= lit ? 0x263746U
                 : ui_vu_segment_is_red(segment, UI_VU_SEGMENTS) ? 0xE53935U
                                                                 : 0x43A047U;
+            /* Only touch a block whose colour actually changed.
+             *
+             * lv_obj_set_style_bg_color() does not compare against the current
+             * value - it refreshes the style and invalidates the object every
+             * time. Forty blocks meant forty invalid areas per pass against
+             * LVGL's LV_INV_BUF_SIZE of 32, and on overflow it throws the list
+             * away and repaints the whole display instead. That is what made
+             * every pass repaint all 76800 pixels and took the loop from the
+             * ~10 ms it is meant to run at to 222 ms: input arrived in bursts,
+             * and the meter itself updated four times a second. In steady state
+             * only a block or two changes here. */
+            if (s_vu_colour[channel][segment] == colour) continue;
+            s_vu_colour[channel][segment] = colour;
             lv_obj_set_style_bg_color(s_source_vu[channel][segment],
                                       lv_color_hex(colour), 0);
         }
@@ -1562,6 +1582,18 @@ static void ui_task(void *arg)
         board_input_action_t action;
         if (xQueueReceive(s_input_queue, &action, pdMS_TO_TICKS(10)) == pdTRUE) {
             ui_handle_input(action);
+            /* Drain whatever else is already queued before rendering.
+             *
+             * Taking one event per pass capped input at one event per loop
+             * iteration, and an iteration also redraws the meter and runs
+             * lv_timer_handler(). The encoder is polled every 5 ms, so a quick
+             * turn produced events far faster than that cap and they drained
+             * afterwards - the knob appeared to keep turning by itself. There
+             * is nothing to gain from a redraw between two clicks of the same
+             * gesture; the queue holds 16, so this cannot spin for long. */
+            while (xQueueReceive(s_input_queue, &action, 0) == pdTRUE) {
+                ui_handle_input(action);
+            }
         }
         if (ui_click_gesture_poll(&s_player_click, ui_tick_get_ms()) == UI_CLICK_SINGLE) {
             ui_toggle_playback();

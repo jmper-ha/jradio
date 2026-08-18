@@ -61,7 +61,11 @@ static void test_control_pins_are_distinct(void)
             assert(pins[i] != pins[j]);
         }
     }
-    assert(INPUT_USE_INTERNAL_PULLUPS == 1);
+    /* Separate per group: the buttons need the internal pull-ups on top of
+     * the external ones, the encoder does not and only pays contact current
+     * for them. */
+    assert(BUTTONS_USE_INTERNAL_PULLUPS == 1);
+    assert(ENCODER_USE_INTERNAL_PULLUPS == 0);
 }
 
 static void test_debounce_is_a_whole_number_of_polls(void)

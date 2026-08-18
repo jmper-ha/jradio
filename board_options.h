@@ -75,9 +75,14 @@ at its use sites."
 #define BUTTON_F3_GPIO 46
 #define BUTTON_F4_GPIO 9
 
-/* External pull-ups are fitted, but GPIO 45, 46 and 21 were still unstable
- * without the internal ones enabled on top. */
-#define INPUT_USE_INTERNAL_PULLUPS 1
+/* Internal pull-ups, per group rather than for all seven pins at once.
+ *
+ * External pull-ups are fitted on the board. The buttons still needed the
+ * internal ones on top - GPIO 45, 46 and 21 were unstable without them - but
+ * the encoder never had that problem, and the two parallel pull-ups only add
+ * current through its contacts on every detent. */
+#define ENCODER_USE_INTERNAL_PULLUPS 0
+#define BUTTONS_USE_INTERNAL_PULLUPS 1
 /* There is no hardware debouncing, so the contacts are filtered in software:
  * a level must hold for INPUT_DEBOUNCE_MS across polls at INPUT_POLL_MS to
  * count. The encoder is polled rather than interrupt-driven at the same

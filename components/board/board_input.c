@@ -229,22 +229,32 @@ board_input_action_t board_encoder_decoder_update(board_encoder_decoder_t *decod
 #ifdef ESP_PLATFORM
 esp_err_t board_input_init(void)
 {
-    const uint64_t pin_mask = (1ULL << ENCODER_RIGHT_GPIO) |
-                              (1ULL << ENCODER_LEFT_GPIO) |
-                              (1ULL << ENCODER_BUTTON_GPIO) |
-                              (1ULL << BUTTON_F1_GPIO) |
-                              (1ULL << BUTTON_F2_GPIO) |
-                              (1ULL << BUTTON_F3_GPIO) |
-                              (1ULL << BUTTON_F4_GPIO);
-    const gpio_config_t config = {
-        .pin_bit_mask = pin_mask,
+    /* Two calls rather than one: the encoder and the buttons want different
+     * pull-up settings, and gpio_config() applies one setting to every pin in
+     * its mask. The encoder button belongs to the encoder here - it is the
+     * same part and the same external pull-up. */
+    const gpio_config_t encoder_config = {
+        .pin_bit_mask = (1ULL << ENCODER_RIGHT_GPIO) | (1ULL << ENCODER_LEFT_GPIO) |
+                        (1ULL << ENCODER_BUTTON_GPIO),
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = INPUT_USE_INTERNAL_PULLUPS ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+        .pull_up_en = ENCODER_USE_INTERNAL_PULLUPS ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    const gpio_config_t button_config = {
+        .pin_bit_mask = (1ULL << BUTTON_F1_GPIO) | (1ULL << BUTTON_F2_GPIO) |
+                        (1ULL << BUTTON_F3_GPIO) | (1ULL << BUTTON_F4_GPIO),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = BUTTONS_USE_INTERNAL_PULLUPS ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
 
-    esp_err_t result = gpio_config(&config);
+    esp_err_t result = gpio_config(&encoder_config);
+    if (result != ESP_OK) {
+        return result;
+    }
+    result = gpio_config(&button_config);
     if (result != ESP_OK) {
         return result;
     }

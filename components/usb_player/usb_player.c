@@ -13,7 +13,9 @@
 
 #include "board.h"
 #include "radio_decoder.h"
+#include "board_audio_format.h"
 #include "radio_prebuffer.h"
+#include "usb_track_progress.h"
 #include "radio_stream_format.h"
 #include "usb_wav.h"
 
@@ -39,6 +41,9 @@ static usb_player_status_t s_status;
  * status. Atomic rather than inside the status critical section: the loop runs
  * thousands of times a second and this is one byte of display. */
 static atomic_uint s_input_fill_percent = ATOMIC_VAR_INIT(0);
+/* Position and length in seconds, written per block by the playback task. */
+static atomic_uint s_elapsed_seconds = ATOMIC_VAR_INIT(0);
+static atomic_uint s_total_seconds = ATOMIC_VAR_INIT(0);
 static SemaphoreHandle_t s_control_lock;
 static TaskHandle_t s_task;
 static atomic_bool s_stop_requested = ATOMIC_VAR_INIT(false);
@@ -96,6 +101,13 @@ typedef struct {
     bool eof;
     bool output_started;
     uint32_t output_sample_rate;
+    /* For the position readout. `pcm_bytes` counts what reached the output,
+     * not what was read from the drive - the reader runs a whole buffer ahead
+     * of the speaker. `header_bytes` is what precedes the audio, so a short
+     * file is not reported as longer than it is. */
+    uint64_t pcm_bytes;
+    uint64_t file_bytes;
+    uint64_t header_bytes;
 } usb_player_context_t;
 
 static bool refill(usb_player_context_t *ctx)
@@ -121,6 +133,22 @@ static esp_err_t apply_info(usb_player_context_t *ctx, const radio_decoder_info_
     if (info->bitrate_kbps > 0U) s_status.bitrate_kbps = (uint16_t)info->bitrate_kbps;
     if (info->sample_rate > 0U) s_status.sample_rate_hz = info->sample_rate;
     taskEXIT_CRITICAL(&s_status_lock);
+    // The first frame is what reveals the bitrate, and the bitrate is what
+    // turns a file size into a duration.
+    if (info->bitrate_kbps > 0U) {
+        const uint32_t total = usb_track_total_seconds(ctx->file_bytes, ctx->header_bytes,
+                                                        (uint16_t)info->bitrate_kbps);
+        const uint32_t previous =
+            atomic_exchange_explicit(&s_total_seconds, total, memory_order_relaxed);
+        // Once per track, when the length first becomes known: it is the only
+        // place the estimate can be checked against the file it came from.
+        if (previous == 0U && total > 0U) {
+            ESP_LOGI(TAG, "track length: %us from %llu bytes at %u kbps (header %llu)",
+                     (unsigned int)total, (unsigned long long)ctx->file_bytes,
+                     (unsigned int)info->bitrate_kbps,
+                     (unsigned long long)ctx->header_bytes);
+        }
+    }
 
     if (info->sample_rate == 0U || info->sample_rate == ctx->output_sample_rate) {
         return ESP_OK;
@@ -164,6 +192,13 @@ static esp_err_t write_pcm(usb_player_context_t *ctx, const uint8_t *pcm, size_t
                  esp_err_to_name(result), (unsigned int)written, (unsigned int)length);
         return ESP_FAIL;
     }
+    ctx->pcm_bytes += written;
+    // The output slot is fixed 16-bit stereo whatever the file was, so the
+    // board's own format converts these bytes to seconds - not the file's.
+    atomic_store_explicit(&s_elapsed_seconds,
+                          usb_track_elapsed_seconds(ctx->pcm_bytes, ctx->output_sample_rate,
+                                                    AUDIO_CHANNEL_COUNT, AUDIO_BITS_PER_SAMPLE),
+                          memory_order_relaxed);
     return ESP_OK;
 }
 
@@ -209,6 +244,9 @@ static bool play_wav(usb_player_context_t *ctx, unsigned int *pcm_blocks)
         ESP_LOGE(TAG, "cannot configure output for %u Hz", (unsigned int)wav.sample_rate);
         return true;
     }
+    // Known exactly here, unlike a compressed file where a leading ID3 tag is
+    // simply counted as audio and costs a percent or so on the estimate.
+    ctx->header_bytes = wav.data_offset;
     if (fseek(ctx->file, (long)wav.data_offset, SEEK_SET) != 0) {
         ESP_LOGE(TAG, "cannot seek to the WAV sample data");
         return true;
@@ -259,6 +297,10 @@ static void usb_player_task(void *arg)
     atomic_store_explicit(&s_task_running, true, memory_order_release);
 
     usb_player_context_t ctx = {0};
+    // Cleared before anything can read them, so the previous track's position
+    // is never shown against this one.
+    atomic_store_explicit(&s_elapsed_seconds, 0U, memory_order_relaxed);
+    atomic_store_explicit(&s_total_seconds, 0U, memory_order_relaxed);
     radio_decoder_t *decoder = NULL;
     radio_stream_format_t stream_format = RADIO_STREAM_FORMAT_MP3;
     const bool is_wav = s_request.format == USB_BROWSER_FORMAT_WAV;
@@ -273,6 +315,11 @@ static void usb_player_task(void *arg)
         ctx.compressed = alloc_buffer(USB_PLAYER_INPUT_SIZE);
         ctx.pcm = alloc_buffer(USB_PLAYER_PCM_SIZE);
         ctx.file = fopen(s_request.path, "rb");
+        if (ctx.file != NULL && fseek(ctx.file, 0, SEEK_END) == 0) {
+            const long end = ftell(ctx.file);
+            if (end > 0) ctx.file_bytes = (uint64_t)end;
+            rewind(ctx.file);
+        }
         if (!is_wav) decoder = radio_decoder_create(stream_format);
         if (ctx.compressed == NULL || ctx.pcm == NULL || (!is_wav && decoder == NULL)) {
             ESP_LOGE(TAG, "allocation failed for %s", s_request.path);
@@ -494,4 +541,6 @@ void usb_player_get_status(usb_player_status_t *status)
     taskEXIT_CRITICAL(&s_status_lock);
     status->buffer_percent =
         (uint8_t)atomic_load_explicit(&s_input_fill_percent, memory_order_relaxed);
+    status->elapsed_seconds = atomic_load_explicit(&s_elapsed_seconds, memory_order_relaxed);
+    status->total_seconds = atomic_load_explicit(&s_total_seconds, memory_order_relaxed);
 }

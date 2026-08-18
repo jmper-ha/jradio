@@ -309,6 +309,17 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     snapshot->active_source =
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
 
+    /* Filled for every source, not just the radio. It used to live in the
+     * radio branch on the grounds that nothing on the USB screen depends on
+     * the network - but the player screen now carries one status strip for
+     * both, and a strip reporting no signal while the device is plainly
+     * connected is worse than one reporting nothing at all. */
+    player_refresh_rssi_if_due();
+    snapshot->wifi_rssi_valid =
+        atomic_load_explicit(&s_rssi_valid, memory_order_acquire);
+    snapshot->wifi_rssi_dbm =
+        (int8_t)atomic_load_explicit(&s_rssi_dbm, memory_order_relaxed);
+
     if (snapshot->active_source == AUDIO_SOURCE_USB) {
         usb_player_status_t usb_status;
         usb_player_get_status(&usb_status);
@@ -341,11 +352,6 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     snprintf(snapshot->codec, sizeof(snapshot->codec), "%s", radio_status.codec);
     snapshot->bitrate_kbps = radio_status.bitrate_kbps;
     snapshot->sample_rate_hz = radio_status.sample_rate_hz;
-    player_refresh_rssi_if_due();
-    snapshot->wifi_rssi_valid =
-        atomic_load_explicit(&s_rssi_valid, memory_order_acquire);
-    snapshot->wifi_rssi_dbm =
-        (int8_t)atomic_load_explicit(&s_rssi_dbm, memory_order_relaxed);
     if (radio_status.state == INTERNET_RADIO_STATE_ERROR) {
         snprintf(snapshot->error, sizeof(snapshot->error),
                  "Не удалось подключиться к станции");
@@ -379,6 +385,23 @@ bool player_control_input_fill(uint8_t *percent)
     }
     if (reported == RADIO_PREBUFFER_PERCENT_NONE) return false;
     *percent = reported;
+    return true;
+}
+
+bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_seconds)
+{
+    if (elapsed_seconds == NULL || total_seconds == NULL) return false;
+    const audio_source_t source =
+        (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
+    if (source != AUDIO_SOURCE_USB) return false;
+
+    usb_player_status_t status;
+    usb_player_get_status(&status);
+    if (status.state != USB_PLAYER_STATE_PLAYING && status.state != USB_PLAYER_STATE_PAUSED) {
+        return false;
+    }
+    *elapsed_seconds = status.elapsed_seconds;
+    *total_seconds = status.total_seconds;
     return true;
 }
 

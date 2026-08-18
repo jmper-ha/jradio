@@ -23,6 +23,11 @@ typedef struct {
      * healthy track: unlike the network path, this one refills to the brim on
      * every pass because a file always has the next bytes ready. */
     uint8_t buffer_percent;
+    /* Position and length of the track, in seconds. `total_seconds` is 0 until
+     * the first frame reveals the bitrate, and stays an estimate on a
+     * variable-bitrate file - see usb_track_progress.h. */
+    uint32_t elapsed_seconds;
+    uint32_t total_seconds;
 } usb_player_status_t;
 
 // Called from the playback task once a track ends *by itself* - not after a

@@ -40,6 +40,15 @@ unsigned int player_control_usb_listing_revision(void);
  * a number only the local screen shows. */
 bool player_control_input_fill(uint8_t *percent);
 
+/* Position and length of the playing track, in seconds. False when the idea
+ * does not apply - a radio stream has no end, and a file's length is unknown
+ * until its first frame is decoded.
+ *
+ * Outside player_snapshot_t for the same reason as the buffer fill: the web
+ * transport sends a diff whenever the snapshot differs, and a value that ticks
+ * would push a frame a second for something only the local screen shows. */
+bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_seconds);
+
 /* Reopens the directory holding `path` and starts that file, for resuming what
  * was playing before a restart. Runs on the caller's task and reads a
  * directory off the drive, so it stalls that task for as long as the read

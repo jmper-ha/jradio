@@ -139,6 +139,8 @@ run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_l
 run_test ui_vu_meter tests/test_ui_vu_meter.c components/ui/ui_vu_meter.c
 run_test ui_usb_notice tests/test_ui_usb_notice.c components/ui/ui_usb_notice.c
 run_test usb_browser tests/test_usb_browser.c components/usb_storage/usb_browser.c
+run_test usb_track_progress tests/test_usb_track_progress.c \
+    components/usb_player/usb_track_progress.c
 run_test usb_wav tests/test_usb_wav.c components/usb_player/usb_wav.c
 run_test wifi_provisioning tests/test_wifi_provisioning.c \
     components/jradio_wifi_provisioning/wifi_provisioning.c

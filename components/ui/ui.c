@@ -30,6 +30,7 @@
 #include "ui_settings_model.h"
 #include "ui_station_list.h"
 #include "ui_status_bar.h"
+#include "usb_track_progress.h"
 
 #include "audio_volume.h"
 #include "device_clock.h"
@@ -72,6 +73,7 @@ static lv_obj_t *s_source_art;
 static lv_obj_t *s_source_volume;
 static lv_obj_t *s_source_volume_bar;
 static lv_obj_t *s_source_pause;
+static lv_obj_t *s_source_progress;
 /* Four rising bars. Drawn rather than taken from a font: LVGL's symbol set has
  * one Wi-Fi glyph with no strength in it, and the strength is the half worth
  * showing. */
@@ -214,16 +216,57 @@ static void ui_update_status_strip(const player_snapshot_t *snapshot)
 static void ui_update_footer(void)
 {
     if (lv_screen_active() != s_source_screen) return;
-    uint8_t fill = 0U;
-    char buffer_text[20];
-    if (player_control_input_fill(&fill)) {
-        snprintf(buffer_text, sizeof(buffer_text), "Буфер %u%%", (unsigned int)fill);
+
+    /* A file has a position, a stream does not, so the left of the footer says
+     * different things for each. Where a track is matters more than how full
+     * the buffer is - reading a file, the buffer sits at the brim and never
+     * moves. */
+    uint32_t elapsed = 0U;
+    uint32_t total = 0U;
+    // Two hour-long times and a separator: 12 + 3 + 12 and room to spare, so
+    // the compiler can see it never truncates.
+    char left_text[32];
+    uint8_t played_percent = 0U;
+    const bool have_track = player_control_track_progress(&elapsed, &total);
+    const bool have_bar = have_track && usb_track_progress_percent(elapsed, total,
+                                                                  &played_percent);
+    if (have_track) {
+        char elapsed_text[12];
+        usb_track_time_text(elapsed_text, sizeof(elapsed_text), elapsed);
+        if (total > 0U) {
+            char total_text[12];
+            usb_track_time_text(total_text, sizeof(total_text), total);
+            snprintf(left_text, sizeof(left_text), "%s / %s", elapsed_text, total_text);
+        } else {
+            // The length is not known until the first frame is decoded; the
+            // position already is, and is worth showing on its own.
+            snprintf(left_text, sizeof(left_text), "%s", elapsed_text);
+        }
     } else {
-        // Nothing playing, or a source with no backlog at all. A dash says
-        // that; a zero would claim the buffer had run dry.
-        snprintf(buffer_text, sizeof(buffer_text), "Буфер --");
+        uint8_t fill = 0U;
+        if (player_control_input_fill(&fill)) {
+            snprintf(left_text, sizeof(left_text), "Буфер %u%%", (unsigned int)fill);
+        } else {
+            // Nothing playing, or a source with no backlog at all. A dash says
+            // that; a zero would claim the buffer had run dry.
+            snprintf(left_text, sizeof(left_text), "Буфер --");
+        }
     }
-    ui_set_label_text_if_changed(s_source_buffer, buffer_text);
+    ui_set_label_text_if_changed(s_source_buffer, left_text);
+
+    if (have_bar) {
+        lv_obj_clear_flag(s_source_progress, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_t *played = lv_obj_get_child(s_source_progress, 0);
+        if (played != NULL) {
+            const int32_t width = (int32_t)((300U * played_percent) / 100U);
+            const int32_t clamped = width < 1 ? 1 : width;
+            // Written only on a change, like every other value in this loop:
+            // a resize invalidates, and this runs every pass.
+            if (lv_obj_get_width(played) != clamped) lv_obj_set_width(played, clamped);
+        }
+    } else {
+        lv_obj_add_flag(s_source_progress, LV_OBJ_FLAG_HIDDEN);
+    }
 
     const uint8_t volume = board_audio_volume();
     char volume_text[8];
@@ -854,8 +897,19 @@ static void ui_show_station_list(void);
 #define UI_SRC_ROW_STREAM 108
 #define UI_SRC_RULE_TOP 144
 #define UI_SRC_VU_Y 155
-#define UI_SRC_RULE_BOTTOM 200
-#define UI_SRC_FOOT_Y 210
+#define UI_SRC_VU_BLOCK_H 10
+#define UI_SRC_VU_PITCH 18
+/* The two rules frame the meter, so the gap below is derived from the gap
+ * above instead of being typed in again. Written out by hand they drifted to
+ * 10 and 17 px, which read as the meter having slipped upwards. */
+#define UI_SRC_VU_GAP (UI_SRC_VU_Y - (UI_SRC_RULE_TOP + 1))
+#define UI_SRC_VU_BOTTOM (UI_SRC_VU_Y + UI_SRC_VU_PITCH + UI_SRC_VU_BLOCK_H)
+#define UI_SRC_RULE_BOTTOM (UI_SRC_VU_BOTTOM + UI_SRC_VU_GAP)
+/* Equalising the frame freed seven pixels; they go into the space around the
+ * progress bar, which was pressed against the rule above it and the times
+ * below. */
+#define UI_SRC_PROGRESS_Y (UI_SRC_RULE_BOTTOM + 8)
+#define UI_SRC_FOOT_Y 214
 #define UI_SRC_PAUSE_SIZE 76
 #define UI_SRC_PAUSE_BAR_W 10
 #define UI_SRC_PAUSE_BAR_H 34
@@ -978,10 +1032,10 @@ static void ui_create_source_screen(void)
     for (size_t channel = 0; channel < 2U; ++channel) {
         for (size_t segment = 0; segment < UI_VU_SEGMENTS; ++segment) {
             lv_obj_t *block = lv_obj_create(s_source_screen);
-            lv_obj_set_size(block, UI_VU_SEGMENT_W, 10);
+            lv_obj_set_size(block, UI_VU_SEGMENT_W, UI_SRC_VU_BLOCK_H);
             lv_obj_set_pos(block,
                            30 + (int)segment * (UI_VU_SEGMENT_W + UI_VU_SEGMENT_GAP),
-                           UI_SRC_VU_Y + (int)channel * 18);
+                           UI_SRC_VU_Y + (int)channel * UI_SRC_VU_PITCH);
             lv_obj_set_style_border_width(block, 0, 0);
             lv_obj_set_style_radius(block, 1, 0);
             lv_obj_set_style_pad_all(block, 0, 0);
@@ -992,7 +1046,7 @@ static void ui_create_source_screen(void)
         }
         lv_obj_t *mark = lv_label_create(s_source_screen);
         lv_label_set_text(mark, channel == 0U ? "L" : "R");
-        lv_obj_set_pos(mark, 12, UI_SRC_VU_Y - 3 + (int)channel * 18);
+        lv_obj_set_pos(mark, 12, UI_SRC_VU_Y - 3 + (int)channel * UI_SRC_VU_PITCH);
         lv_obj_set_style_text_color(mark, lv_color_hex(0x78909C), 0);
     }
 
@@ -1003,6 +1057,29 @@ static void ui_create_source_screen(void)
     lv_obj_set_style_border_width(rule_bottom, 0, 0);
     lv_obj_set_style_pad_all(rule_bottom, 0, 0);
     lv_obj_clear_flag(rule_bottom, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* Track position. Sits under the bottom rule rather than in the footer
+     * row: it belongs to what is playing, not to the system readouts beside
+     * it, and a full-width line reads as a distance travelled in a way a short
+     * one squeezed between two labels does not. Hidden for radio, which has no
+     * end to be a fraction of. */
+    s_source_progress = lv_obj_create(s_source_screen);
+    lv_obj_set_pos(s_source_progress, 10, UI_SRC_PROGRESS_Y);
+    lv_obj_set_size(s_source_progress, 300, 4);
+    lv_obj_set_style_bg_color(s_source_progress, lv_color_hex(0x23303C), 0);
+    lv_obj_set_style_border_width(s_source_progress, 0, 0);
+    lv_obj_set_style_radius(s_source_progress, 2, 0);
+    lv_obj_set_style_pad_all(s_source_progress, 0, 0);
+    lv_obj_clear_flag(s_source_progress, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *played = lv_obj_create(s_source_progress);
+    lv_obj_set_pos(played, 0, 0);
+    lv_obj_set_size(played, 1, 4);
+    lv_obj_set_style_bg_color(played, lv_color_hex(0xF2A33C), 0);
+    lv_obj_set_style_border_width(played, 0, 0);
+    lv_obj_set_style_radius(played, 2, 0);
+    lv_obj_set_style_pad_all(played, 0, 0);
+    lv_obj_clear_flag(played, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_source_progress, LV_OBJ_FLAG_HIDDEN);
 
     s_source_buffer = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_buffer, 10, UI_SRC_FOOT_Y);

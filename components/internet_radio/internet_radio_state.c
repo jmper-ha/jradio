@@ -80,3 +80,11 @@ bool internet_radio_input_buffer_stalled(bool need_input, size_t available, size
 {
     return need_input && capacity > 0U && available >= capacity;
 }
+
+bool internet_radio_decode_stalled(uint32_t elapsed_ms, size_t available, uint32_t limit_ms)
+{
+    /* No input is ordinary starvation, which the backlog accounting already
+     * covers; only a decoder that had something to work on and still produced
+     * nothing counts as stalled. A zero limit disables the check outright. */
+    return available > 0U && limit_ms > 0U && elapsed_ms >= limit_ms;
+}

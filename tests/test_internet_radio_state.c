@@ -77,6 +77,27 @@ static void test_full_input_buffer_is_fatal_only_when_decoder_needs_more_data(vo
     assert(!internet_radio_input_buffer_stalled(true, 8192U, 16384U));
 }
 
+static void test_a_decoder_that_eats_input_without_producing_is_a_stall(void)
+{
+    /* The failure this exists for: a station whose intro is spliced onto the
+     * live stream leaves the MP3 bit reservoir broken across the join, so every
+     * following frame is rejected. The decoder keeps consuming a frame per call
+     * and emitting nothing, which reads as healthy from the buffer's point of
+     * view and sounds like permanent silence. */
+    assert(internet_radio_decode_stalled(2000U, 65536U, 2000U));
+    assert(internet_radio_decode_stalled(5000U, 208U, 2000U));
+
+    /* Below the limit is just a decoder between frames. */
+    assert(!internet_radio_decode_stalled(1999U, 65536U, 2000U));
+
+    /* Nothing to decode is ordinary starvation, counted elsewhere; calling it a
+     * decoder stall would blame the decoder for a slow network. */
+    assert(!internet_radio_decode_stalled(60000U, 0U, 2000U));
+
+    /* A zero limit turns the check off rather than firing on every pass. */
+    assert(!internet_radio_decode_stalled(60000U, 65536U, 0U));
+}
+
 int main(void)
 {
     test_start_pause_resume_stop();
@@ -86,6 +107,7 @@ int main(void)
     test_running_output_restarts_when_decoder_sample_rate_changes();
     test_http_read_results_are_classified();
     test_full_input_buffer_is_fatal_only_when_decoder_needs_more_data();
+    test_a_decoder_that_eats_input_without_producing_is_a_stall();
     puts("internet_radio_state tests passed");
     return 0;
 }

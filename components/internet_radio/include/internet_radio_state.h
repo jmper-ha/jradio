@@ -39,3 +39,9 @@ bool internet_radio_output_needs_restart(uint32_t current_sample_rate,
                                          bool output_started);
 internet_radio_read_action_t internet_radio_read_classify(int result, int try_again_result);
 bool internet_radio_input_buffer_stalled(bool need_input, size_t available, size_t capacity);
+
+/* True when the decoder has had data to work with and produced no samples for
+ * `limit_ms`. Separate from the buffer-full check above: a decoder can consume
+ * input steadily and still emit nothing, which looks like healthy progress
+ * from every other angle and sounds like silence. */
+bool internet_radio_decode_stalled(uint32_t elapsed_ms, size_t available, uint32_t limit_ms);

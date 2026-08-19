@@ -57,6 +57,23 @@
 #define RADIO_DIRECT_PCM_SIZE 16384U
 #define RADIO_DIRECT_STOP_TIMEOUT_MS 12000U
 #define RADIO_STARVATION_REPORT_MS 10000U
+/* How long the decoder may consume input without producing a single sample
+ * before the stream is treated as unplayable rather than slow.
+ *
+ * It has to be a timeout rather than an error count because a decoder does not
+ * have to report an error to make no progress: micro_mp3 answers a corrupt
+ * frame with MP3_DECODE_ERROR, which maps to "need more data" so that one bad
+ * frame is skipped instead of killing the station - and a stream that turns
+ * permanently unparseable then produces that answer forever. Measured on a
+ * station that does it: every pass consumed one 208-byte frame and returned
+ * need-more-data for as long as it was left running, with the input buffer
+ * full, the player still reporting "playing", and nothing in the log.
+ *
+ * Two seconds is far past any legitimate gap - the I2S DMA holds ~93 ms, and
+ * while data is buffered the decoder should answer in milliseconds - and still
+ * short enough that the listener hears an interruption rather than a station
+ * that never comes back. */
+#define RADIO_DIRECT_DECODE_STALL_MS 2000U
 /* Room for one HLS playlist. Relax FM's is 653 bytes; the ceiling is a master
  * playlist listing many variants, which is still text and still small. */
 #define RADIO_HLS_TEXT_SIZE 8192U
@@ -437,12 +454,21 @@ static void radio_direct_task(void *arg)
     // used to play with its rate and channel count never printed at all - and
     // the channel count is what tells a mono source apart from a stereo one.
     radio_decoder_info_t logged_info = {0};
+    /* When the decoder last produced anything, for RADIO_DIRECT_DECODE_STALL_MS.
+     * `decode_stalls` is reported so a station that keeps doing this is visible
+     * in the health line instead of only as silence. */
+    TickType_t last_pcm_tick = xTaskGetTickCount();
+    unsigned int decode_stalls = 0U;
+    bool decoder_reset_tried = false;
     TickType_t next_report = xTaskGetTickCount() + pdMS_TO_TICKS(RADIO_STARVATION_REPORT_MS);
 
     while (!fatal &&
            !atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire)) {
         if (atomic_load_explicit(&radio->direct_paused, memory_order_acquire)) {
             vTaskDelay(pdMS_TO_TICKS(20));
+            /* A pause decodes nothing by design, so it must not age into a
+             * stall the moment playback resumes. */
+            last_pcm_tick = xTaskGetTickCount();
             continue;
         }
 
@@ -478,15 +504,16 @@ static void radio_direct_task(void *arg)
             bitrate = radio->status.bitrate_kbps;
             taskEXIT_CRITICAL(&s_status_lock);
             ESP_LOGI(TAG,
-                     "stream health: i2s_underruns=%u starvations=%u min_backlog=%u/%u "
-                     "(%ums) pcm=%u%% of realtime",
-                     underruns - last_underruns, starvations,
+                     "stream health: i2s_underruns=%u starvations=%u decode_stalls=%u "
+                     "min_backlog=%u/%u (%ums) pcm=%u%% of realtime",
+                     underruns - last_underruns, starvations, decode_stalls,
                      (unsigned int)min_available, (unsigned int)RADIO_DIRECT_INPUT_SIZE,
                      (unsigned int)radio_prebuffer_millis(min_available, bitrate),
                      expected > 0U ? (unsigned int)((pcm_delta * 100U) / expected) : 0U);
             last_pcm_bytes = radio->pcm_bytes;
             last_underruns = underruns;
             starvations = 0U;
+            decode_stalls = 0U;
             min_available = RADIO_DIRECT_INPUT_SIZE;
             next_report = xTaskGetTickCount() + pdMS_TO_TICKS(RADIO_STARVATION_REPORT_MS);
         }
@@ -568,6 +595,48 @@ static void radio_direct_task(void *arg)
                          (unsigned int)pcm_bytes);
                 fatal = true;
                 break;
+            }
+
+            if (pcm_bytes > 0U) {
+                last_pcm_tick = xTaskGetTickCount();
+                decoder_reset_tried = false;
+            } else if (internet_radio_decode_stalled(
+                           (uint32_t)((xTaskGetTickCount() - last_pcm_tick) * portTICK_PERIOD_MS),
+                           available, RADIO_DIRECT_DECODE_STALL_MS)) {
+                ++decode_stalls;
+                if (!decoder_reset_tried) {
+                    // Try the decoder before the network, because the decoder is
+                    // what this usually is. An MP3 frame can carry part of its
+                    // main data in earlier frames, so once a frame is skipped the
+                    // ones referring back to it fail too, and skipping those keeps
+                    // the reservoir broken - the failure feeds itself and never
+                    // ends. Clearing the decoder's state is enough to break that,
+                    // and costs a fraction of what reopening the stream costs.
+                    ESP_LOGW(TAG,
+                             "decoder produced nothing for %ums with %u bytes buffered; "
+                             "resetting the decoder",
+                             (unsigned int)RADIO_DIRECT_DECODE_STALL_MS,
+                             (unsigned int)available);
+                    decoder_reset_tried = true;
+                    radio_decoder_reset(radio->decoder);
+                    last_pcm_tick = xTaskGetTickCount();
+                    continue;
+                }
+                // The decoder was already given a clean start and still produces
+                // nothing, so the fault is in what it is being fed. Reconnecting
+                // reopens the stream and resets the decoder again with it.
+                ESP_LOGW(TAG, "decoder still silent after a reset; reconnecting");
+                if (!radio_direct_reconnect(radio)) {
+                    fatal = !atomic_load_explicit(&radio->direct_stop_requested,
+                                                  memory_order_acquire);
+                    break;
+                }
+                available = 0U;
+                compressed_offset = 0U;
+                decode_error_retries = 0U;
+                decoder_reset_tried = false;
+                last_pcm_tick = xTaskGetTickCount();
+                continue;
             }
         }
 

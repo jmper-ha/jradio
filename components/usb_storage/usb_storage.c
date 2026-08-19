@@ -33,6 +33,7 @@ static usb_browser_entry_t *s_entries;
 static usb_browser_dir_t s_listing;
 static SemaphoreHandle_t s_listing_lock;
 static volatile usb_browser_media_t s_media = USB_BROWSER_MEDIA_ABSENT;
+static usb_storage_media_removing_cb_t s_media_removing_callback;
 
 // How long to wait for a drive to announce itself before assuming it is a
 // stale one left plugged in across a reset, and how many times to try.
@@ -320,10 +321,22 @@ static void usb_app_task(void *arg)
                                      USB_BROWSER_ROOT_PATH);
                 listing_unlock();
             }
+            // Everything that reads the drive has to be stopped before the
+            // mount goes, not after: the player runs on its own task and can
+            // be inside fread(), and msc_host_vfs_unregister() frees the FATFS
+            // state that read is standing on. This blocks until the player has
+            // closed its file.
+            if (s_media_removing_callback != NULL) s_media_removing_callback();
             if (s_vfs) { msc_host_vfs_unregister(s_vfs); s_vfs = NULL; }
             msc_host_uninstall_device(s_device); s_device = NULL;
+            ESP_LOGI(TAG, "USB storage released");
         }
     }
+}
+
+void usb_storage_set_media_removing_callback(usb_storage_media_removing_cb_t callback)
+{
+    s_media_removing_callback = callback;
 }
 
 esp_err_t usb_storage_init(void)

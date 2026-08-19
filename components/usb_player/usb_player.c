@@ -18,6 +18,7 @@
 #include "radio_prebuffer.h"
 #include "usb_track_progress.h"
 #include "radio_stream_format.h"
+#include "usb_storage.h"
 #include "usb_wav.h"
 
 static const char *TAG = "usb_player";
@@ -483,6 +484,11 @@ esp_err_t usb_player_play(const char *path, const char *display_name,
     if (format != USB_BROWSER_FORMAT_WAV && !stream_format_for(format, &decoded)) {
         return ESP_ERR_NOT_SUPPORTED;
     }
+
+    // The drive can be pulled while a play is on its way in. usb_storage marks
+    // the media absent before it tears the mount down, so this is what keeps a
+    // track from being opened on a filesystem that is already going.
+    if (!usb_storage_is_mounted()) return ESP_ERR_NOT_FOUND;
 
     xSemaphoreTake(s_control_lock, portMAX_DELAY);
     if (!wait_for_task_exit()) {

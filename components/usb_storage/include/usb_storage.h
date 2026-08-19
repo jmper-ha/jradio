@@ -8,6 +8,18 @@
 
 esp_err_t usb_storage_init(void);
 
+/* Called from the USB host task when a drive is going away, before its
+ * filesystem is torn down.
+ *
+ * The teardown cannot be deferred - msc_host_vfs_unregister() and
+ * msc_host_uninstall_device() run the moment this returns - so the callback
+ * must not post the work somewhere and come back. It has to have stopped
+ * everything that reads from the drive, and closed the files, before it
+ * returns; anything still inside fread() when the mount goes is reading freed
+ * FATFS state. */
+typedef void (*usb_storage_media_removing_cb_t)(void);
+void usb_storage_set_media_removing_callback(usb_storage_media_removing_cb_t callback);
+
 // True between a successful mount and the drive being pulled. The UI polls
 // this rather than being called back, matching how it polls the player
 // snapshot.

@@ -143,6 +143,27 @@ static void player_usb_track_finished(void)
     }
 }
 
+// Runs on the USB host task, which unmounts the filesystem the moment this
+// returns - see usb_storage_set_media_removing_callback(). So unlike the track
+// callback above, this one cannot hand the work to the queue: it has to have
+// released the drive before it comes back.
+//
+// usb_player_stop() is called unconditionally rather than only when USB is the
+// active source. What matters is that nothing is left reading the drive, and
+// stopping a player that is already stopped costs one atomic read - trusting
+// this task's bookkeeping instead would turn any drift in it into a read of
+// freed FATFS state.
+static void player_usb_media_removing(void)
+{
+    const esp_err_t result = usb_player_stop();
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "usb player did not release the drive: %s", esp_err_to_name(result));
+    }
+    // The active source is deliberately left alone: it belongs to this task,
+    // and the snapshot is rebuilt on demand from the player's own state and
+    // usb_storage_media(), which both already say the drive is gone.
+}
+
 static bool player_stop_active_source(audio_source_t source)
 {
     if (source == AUDIO_SOURCE_INTERNET_RADIO) {
@@ -283,6 +304,7 @@ esp_err_t player_control_init(void)
         return ESP_ERR_NO_MEM;
     }
     usb_player_set_finished_callback(player_usb_track_finished);
+    usb_storage_set_media_removing_callback(player_usb_media_removing);
     return ESP_OK;
 }
 

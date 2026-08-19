@@ -758,9 +758,13 @@ static void radio_direct_task(void *arg)
     heap_caps_free(network);
     heap_caps_free(audio);
     heap_caps_free(pcm);
-    taskENTER_CRITICAL(&s_status_lock);
-    radio->direct_task = NULL;
-    taskEXIT_CRITICAL(&s_status_lock);
+    /* The handle belongs to whoever started this task, and clearing it here
+     * raced with them writing it: the store happens after xTaskCreate returns,
+     * so a task that failed early cleared a handle that had not been published
+     * yet and the creator then restored a dead one. internet_radio_stop() owns
+     * it now and clears it once this semaphore says the task is gone. Every
+     * reader is really asking whether the session is live, which is what the
+     * control side knows anyway. */
     if (radio->direct_done != NULL) {
         xSemaphoreGive(radio->direct_done);
     }
@@ -1797,6 +1801,10 @@ esp_err_t internet_radio_stop(void)
     taskENTER_CRITICAL(&s_status_lock);
     (void)internet_radio_state_apply(&s_radio.status.state, INTERNET_RADIO_EVENT_STOP);
     s_radio.status.station_index = SIZE_MAX;
+    /* Cleared only here, and only once the task has confirmed it is gone -
+     * including when it had already ended on its own, in which case the
+     * semaphore was waiting and the take above returned at once. */
+    s_radio.direct_task = NULL;
     taskEXIT_CRITICAL(&s_status_lock);
     const esp_err_t output_result = radio_sync_output(&s_radio);
     radio_http_close(&s_radio);

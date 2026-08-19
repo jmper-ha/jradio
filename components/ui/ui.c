@@ -637,6 +637,13 @@ static void ui_create_menu_screen(void)
 
 // Fills `text` with what the row at `list_index` should read, and reports
 // whether that row is the one currently playing.
+/* Longest row either list can produce: a full-length USB name behind the
+ * directory glyph, which is three UTF-8 bytes plus its space. Station rows are
+ * far shorter - a three-digit ordinal and a 96-byte name. Sized from the parts
+ * because it was one byte short of this, and the last character of the longest
+ * directory name was being dropped. */
+#define UI_LIST_ROW_TEXT_MAX (USB_BROWSER_NAME_MAX_LEN + sizeof(LV_SYMBOL_DIRECTORY " "))
+
 static bool ui_list_row_text(size_t list_index, char *text, size_t text_size, bool *active)
 {
     *active = false;
@@ -699,7 +706,7 @@ static void ui_update_station_list(void)
             continue;
         }
         lv_obj_clear_flag(s_station_list_rows[row], LV_OBJ_FLAG_HIDDEN);
-        char text[USB_BROWSER_NAME_MAX_LEN + 3U];
+        char text[UI_LIST_ROW_TEXT_MAX];
         bool active = false;
         (void)ui_list_row_text((size_t)entry_index, text, sizeof(text), &active);
         const bool selected = row == cursor_row;

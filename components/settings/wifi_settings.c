@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef ESP_PLATFORM
@@ -18,6 +19,25 @@
 #define WIFI_SETTINGS_CONFIG_DIR WIFI_SETTINGS_MOUNT_PATH "/config"
 #define WIFI_SETTINGS_CONFIG_PATH WIFI_SETTINGS_CONFIG_DIR "/wifi.json"
 #define WIFI_SETTINGS_TEMP_PATH WIFI_SETTINGS_CONFIG_DIR "/wifi.tmp"
+
+/* Enough for the largest file the writer below can produce: the wrapper, plus
+ * every network at its maximum length with every single character escaped as
+ * \uXXXX - six bytes each, which is what cJSON does for a control character
+ * and nothing rejects one on the way in.
+ *
+ * Derived from the limits rather than picked, because a file that does not fit
+ * is worse than unreadable. A truncated read fails to parse, the device then
+ * reports that no networks are saved, and the first save afterwards overwrites
+ * the file with that - the credentials are gone without anything having said
+ * so. The previous fixed 1024 bytes was under the worst case for five
+ * networks. */
+#define WIFI_SETTINGS_JSON_ESCAPE_MAX 6U
+#define WIFI_SETTINGS_JSON_MAX_LEN                                                 \
+    (sizeof("{\"version\":1,\"networks\":[]}") +                                  \
+     (size_t)WIFI_SETTINGS_MAX_NETWORKS *                                          \
+         (sizeof("{\"ssid\":\"\",\"password\":\"\"},") +                           \
+          ((size_t)WIFI_SETTINGS_SSID_MAX_LEN + (size_t)WIFI_SETTINGS_PASSWORD_MAX_LEN) * \
+              WIFI_SETTINGS_JSON_ESCAPE_MAX))
 
 static const char *TAG = "wifi_settings";
 static bool s_storage_mounted;
@@ -138,10 +158,29 @@ esp_err_t wifi_settings_load(wifi_settings_t *settings)
     if (file == NULL) {
         return ESP_OK;
     }
-    char buffer[1024];
-    const size_t bytes_read = fread(buffer, 1, sizeof(buffer) - 1, file);
+    /* On the heap, not the stack: this runs from app_main before any task has
+     * spare depth, and the buffer is now several kilobytes. */
+    char *buffer = malloc(WIFI_SETTINGS_JSON_MAX_LEN);
+    if (buffer == NULL) {
+        fclose(file);
+        return ESP_ERR_NO_MEM;
+    }
+    const size_t bytes_read = fread(buffer, 1, WIFI_SETTINGS_JSON_MAX_LEN - 1U, file);
+    const bool truncated = bytes_read == WIFI_SETTINGS_JSON_MAX_LEN - 1U;
     fclose(file);
     buffer[bytes_read] = '\0';
+
+    if (truncated) {
+        /* Larger than anything this component can write, so the file is damaged
+         * or foreign. Say so loudly and distinctly from "no networks yet": the
+         * two look identical from the outside and lead to very different
+         * conclusions about where the credentials went. */
+        ESP_LOGE(TAG, "wifi.json is larger than %u bytes; it will be treated as empty",
+                 (unsigned int)(WIFI_SETTINGS_JSON_MAX_LEN - 1U));
+        wifi_settings_secure_zero(buffer, WIFI_SETTINGS_JSON_MAX_LEN);
+        free(buffer);
+        return ESP_OK;
+    }
 
     cJSON *root = cJSON_Parse(buffer);
     const cJSON *version = root == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(root, "version");
@@ -149,7 +188,8 @@ esp_err_t wifi_settings_load(wifi_settings_t *settings)
     if (!cJSON_IsNumber(version) || version->valueint != 1 || !cJSON_IsArray(networks)) {
         ESP_LOGW(TAG, "invalid wifi.json; using empty settings");
         wifi_settings_delete_json(root);
-        wifi_settings_secure_zero(buffer, sizeof(buffer));
+        wifi_settings_secure_zero(buffer, WIFI_SETTINGS_JSON_MAX_LEN);
+        free(buffer);
         return ESP_OK;
     }
     const cJSON *network = NULL;
@@ -170,7 +210,8 @@ esp_err_t wifi_settings_load(wifi_settings_t *settings)
         }
     }
     wifi_settings_delete_json(root);
-    wifi_settings_secure_zero(buffer, sizeof(buffer));
+    wifi_settings_secure_zero(buffer, WIFI_SETTINGS_JSON_MAX_LEN);
+    free(buffer);
     return ESP_OK;
 }
 

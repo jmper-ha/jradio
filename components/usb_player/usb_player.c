@@ -46,9 +46,14 @@ static atomic_uint s_input_fill_percent = ATOMIC_VAR_INIT(0);
 static atomic_uint s_elapsed_seconds = ATOMIC_VAR_INIT(0);
 static atomic_uint s_total_seconds = ATOMIC_VAR_INIT(0);
 static SemaphoreHandle_t s_control_lock;
-static TaskHandle_t s_task;
 static atomic_bool s_stop_requested = ATOMIC_VAR_INIT(false);
 static atomic_bool s_paused = ATOMIC_VAR_INIT(false);
+/* True from just before the playback task is created until it has finished.
+ * Set by the starter rather than by the task itself: the task is pinned to the
+ * other core and need not have run by the time usb_player_play() returns, so a
+ * stop() or a second play() arriving in that window would sail straight through
+ * wait_for_task_exit() and leave two tasks sharing s_request and the I2S
+ * output. */
 static atomic_bool s_task_running = ATOMIC_VAR_INIT(false);
 
 typedef struct {
@@ -293,8 +298,6 @@ static bool play_wav(usb_player_context_t *ctx, unsigned int *pcm_blocks)
 static void usb_player_task(void *arg)
 {
     (void)arg;
-    atomic_store_explicit(&s_task_running, true, memory_order_release);
-
     usb_player_context_t ctx = {0};
     // Cleared before anything can read them, so the previous track's position
     // is never shown against this one.
@@ -431,13 +434,16 @@ static void usb_player_task(void *arg)
     // Clear the running flag and the handle before notifying, so the listener
     // can start the next track without waiting out this task's stop timeout.
     atomic_store_explicit(&s_task_running, false, memory_order_release);
-    s_task = NULL;
     const usb_player_finished_cb_t callback = s_finished_callback;
     if (ended_by_itself && callback != NULL) callback();
     vTaskDelete(NULL);
 }
 
-static void wait_for_task_exit(void)
+/* Waits for the playback task to finish. False means it is still running after
+ * USB_PLAYER_STOP_TIMEOUT_MS, and the stop request is deliberately left
+ * standing in that case: clearing it would withdraw the only instruction the
+ * task has to stop, and the caller would then start a second one on top of it. */
+static bool wait_for_task_exit(void)
 {
     atomic_store_explicit(&s_stop_requested, true, memory_order_release);
     // Unpause too: a paused task never reaches the stop check otherwise.
@@ -448,7 +454,13 @@ static void wait_for_task_exit(void)
          waited += 10U) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+    if (atomic_load_explicit(&s_task_running, memory_order_acquire)) {
+        ESP_LOGE(TAG, "playback task still running after %ums",
+                 (unsigned int)USB_PLAYER_STOP_TIMEOUT_MS);
+        return false;
+    }
     atomic_store_explicit(&s_stop_requested, false, memory_order_release);
+    return true;
 }
 
 esp_err_t usb_player_init(void)
@@ -473,7 +485,12 @@ esp_err_t usb_player_play(const char *path, const char *display_name,
     }
 
     xSemaphoreTake(s_control_lock, portMAX_DELAY);
-    wait_for_task_exit();
+    if (!wait_for_task_exit()) {
+        // Starting now would hand a second task the same request and the same
+        // I2S channel; the caller logs and leaves the old track playing.
+        xSemaphoreGive(s_control_lock);
+        return ESP_ERR_TIMEOUT;
+    }
 
     snprintf(s_request.path, sizeof(s_request.path), "%s", path);
     s_request.format = format;
@@ -484,11 +501,14 @@ esp_err_t usb_player_play(const char *path, const char *display_name,
              display_name != NULL ? display_name : path);
     taskEXIT_CRITICAL(&s_status_lock);
 
+    // Claimed before the task exists, so the window where it has been created
+    // but has not yet run is already covered.
+    atomic_store_explicit(&s_task_running, true, memory_order_release);
     const BaseType_t created =
         xTaskCreatePinnedToCore(usb_player_task, "usb_play", USB_PLAYER_TASK_STACK, NULL,
-                                USB_PLAYER_TASK_PRIORITY, &s_task, USB_PLAYER_TASK_CORE);
+                                USB_PLAYER_TASK_PRIORITY, NULL, USB_PLAYER_TASK_CORE);
     if (created != pdPASS) {
-        s_task = NULL;
+        atomic_store_explicit(&s_task_running, false, memory_order_release);
         status_set_state(USB_PLAYER_STATE_ERROR);
         xSemaphoreGive(s_control_lock);
         return ESP_ERR_NO_MEM;
@@ -501,10 +521,12 @@ esp_err_t usb_player_stop(void)
 {
     if (s_control_lock == NULL) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(s_control_lock, portMAX_DELAY);
-    wait_for_task_exit();
-    status_set_state(USB_PLAYER_STATE_STOPPED);
+    const bool stopped = wait_for_task_exit();
+    // Only claim STOPPED when it is: a caller told the track had stopped while
+    // it is still writing audio has no way to notice, and acts on the lie.
+    if (stopped) status_set_state(USB_PLAYER_STATE_STOPPED);
     xSemaphoreGive(s_control_lock);
-    return ESP_OK;
+    return stopped ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
 esp_err_t usb_player_pause(void)

@@ -1,5 +1,5 @@
 idf_component_register(
     SRCS "main.c"
     INCLUDE_DIRS "."
-    REQUIRES board internet_radio jradio_wifi_provisioning player_control settings ui usb_player usb_storage web_server
+    REQUIRES board diagnostics internet_radio jradio_wifi_provisioning player_control settings ui usb_player usb_storage web_server
 )

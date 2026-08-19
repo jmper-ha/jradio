@@ -9,6 +9,7 @@
 #include "internet_radio.h"
 #include "player_control.h"
 #include "settings_csv.h"
+#include "system_report.h"
 #include "ui.h"
 #include "usb_player.h"
 #include "usb_storage.h"
@@ -45,6 +46,9 @@ static void input_log_task(void *arg)
 
 void app_main(void)
 {
+    // First, so the reset reason is the first thing in the log after a crash,
+    // and before anything allocates, so the boot heap figure means something.
+    system_report_boot();
     // Before anything that could write settings: the lock it creates has to
     // exist by the time player_control and ui are running, and app_main is
     // still the only task at this point.

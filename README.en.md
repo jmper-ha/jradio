@@ -163,7 +163,25 @@ A healthy picture is `realtime` at 99-100% with every other counter at zero. If
 there is still no sound, the fault is past the handover to DMA - in the DAC's
 wiring, not in the firmware. Separate `audio gap`, `audio silence` and
 `audio zero-run` warnings pin the moment an event happened, and `slow repaint`
-reports a display pass that took longer than 400 ms.
+reports a display pass that took longer than 400 ms. `decode_stalls` counts the
+times the decoder consumed input without producing audio: two seconds of that
+and the stream is restarted, because otherwise the device sits silent behind a
+stream that looks perfectly alive.
+
+Once a minute it reports the resources that run out quietly:
+
+```
+health: reset reason: power-on
+health: uptime=120s internal_free=23027/min 22999 largest=9728/min 9728 dma_largest=9728 psram_free=8186180
+health: stack headroom, least seen: player_control=3732 ui=2552 usb_play=5892 usb_msc=2724 ...
+```
+
+The minima are the point, not the current values: a stack that has been
+shrinking for months overflows the first time the compiler inlines a little
+more, and internal memory runs out as "HTTPS will not connect" rather than as
+anything about memory. The reason for the last restart is the first line
+printed - after a reboot loop that is the difference between someone pulling
+the power and a panic.
 
 ## Data on the device
 

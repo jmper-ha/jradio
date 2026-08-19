@@ -373,7 +373,13 @@ esp_err_t usb_storage_init(void)
     }
     usb_browser_dir_init(&s_listing, s_entries, USB_STORAGE_MAX_ENTRIES, USB_BROWSER_ROOT_PATH);
     TaskHandle_t app_task = NULL;
-    if (xTaskCreate(usb_app_task, "usb_msc", 4096, NULL, 4, &app_task) != pdPASS) {
+    // 6144, not 4096: the periodic health report caught this task down to 500
+    // bytes of headroom. Mounting the filesystem and listing a directory is
+    // the deep part - FATFS, the MSC transfers under it, and a kilobyte path
+    // buffer per entry. Moving that buffer off the stack was tried first and
+    // returned only 80 bytes while costing a kilobyte of .bss, so the stack is
+    // simply the right size for the work.
+    if (xTaskCreate(usb_app_task, "usb_msc", 6144, NULL, 4, &app_task) != pdPASS) {
         vEventGroupDelete(s_events);
         vQueueDelete(s_queue);
         s_events = NULL;

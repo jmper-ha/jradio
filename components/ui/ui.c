@@ -12,6 +12,8 @@
 #include "freertos/task.h"
 #include "lvgl.h"
 
+#include "system_report.h"
+
 #include "board.h"
 #include "board_display_profile.h"
 #include "device_settings.h"
@@ -40,7 +42,11 @@
 #define UI_DRAW_BUFFER_LINES 20
 #define UI_DRAW_BUFFER_SIZE ui_rgb565_draw_buffer_size(TFT_WIDTH, UI_DRAW_BUFFER_LINES)
 #define UI_INPUT_QUEUE_LENGTH 16
-#define UI_TASK_STACK_SIZE 6144
+/* Measured, not guessed: at 6144 the periodic health report found this task
+ * down to 504 bytes of headroom - LVGL's rendering plus a logging call, with
+ * an interrupt frame able to land on top at any moment. The peak draw is
+ * around 5.6 KB, so this leaves roughly 2.5 KB of margin. */
+#define UI_TASK_STACK_SIZE 8192
 #define UI_TASK_PRIORITY 4
 /* Six rows, not seven: the bottom strip belongs to the scroll bar. */
 #define UI_STATION_LIST_MAX_ROWS 6U
@@ -1898,6 +1904,10 @@ static void ui_task(void *arg)
         } else {
             ui_sync_player_snapshot(&snapshot);
         }
+        /* Driven from here because this is the one task that is always
+         * running and has stack to spare; it reports on its own schedule and
+         * is a few comparisons in between. */
+        system_report_tick(ui_tick_get_ms());
         /* A repaint this slow is a fault, not a slow frame: the loop is meant
          * to run in tens of milliseconds, and the display task holds a core
          * while it draws. Kept because the fault that motivated it - LVGL

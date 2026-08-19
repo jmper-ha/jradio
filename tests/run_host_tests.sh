@@ -19,6 +19,7 @@ include_flags=(
     -I"${project_dir}"
     -I"${project_dir}/components/audio/include"
     -I"${project_dir}/components/board/include"
+    -I"${project_dir}/components/diagnostics/include"
     -I"${project_dir}/components/internet_radio/include"
     -I"${project_dir}/components/jradio_wifi_provisioning/include"
     -I"${project_dir}/components/player_control/include"
@@ -123,6 +124,7 @@ run_test device_settings tests/test_device_settings.c components/settings/device
 run_test station_catalog tests/test_station_catalog.c components/internet_radio/station_catalog.c
 run_test station_resume tests/test_station_resume.c components/internet_radio/station_resume.c \
     components/settings/settings_csv.c
+run_test system_health tests/test_system_health.c components/diagnostics/system_health.c
 run_test ui_autoplay tests/test_ui_autoplay.c components/ui/ui_autoplay.c \
     components/settings/device_settings.c components/settings/settings_csv.c
 run_test ui_click_gesture tests/test_ui_click_gesture.c components/ui/ui_click_gesture.c

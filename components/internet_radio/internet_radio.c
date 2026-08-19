@@ -359,6 +359,32 @@ static esp_err_t radio_direct_update_info(internet_radio_context_t *radio,
     return result;
 }
 
+/* Reports what the decoder is producing, on the first block and on every
+ * change afterwards. `logged` holds the last line's contents, so calling this
+ * per block costs a comparison.
+ *
+ * Driven from the PCM itself rather than from a header event because the
+ * simple decoder can reach its first samples without ever reporting a header,
+ * and an AAC stream then played with nothing about its format in the log. The
+ * channel count is the value worth having: it is what distinguishes a source
+ * that decodes to mono, which the output stage cannot take as it stands. */
+static void radio_log_decoder_info(radio_stream_format_t format,
+                                   const radio_decoder_info_t *info,
+                                   radio_decoder_info_t *logged)
+{
+    /* An unpopulated info block is not a format change, just a decoder that
+     * had nothing to say on this pass. */
+    if (info->sample_rate == 0U) return;
+    if (info->sample_rate == logged->sample_rate && info->channels == logged->channels &&
+        info->bits_per_sample == logged->bits_per_sample) {
+        return;
+    }
+    *logged = *info;
+    ESP_LOGI(TAG, "direct decoder ready: codec=%s rate=%u channels=%u bits=%u",
+             radio_stream_format_codec_name(format), (unsigned int)info->sample_rate,
+             (unsigned int)info->channels, (unsigned int)info->bits_per_sample);
+}
+
 static void radio_direct_task(void *arg)
 {
     internet_radio_context_t *radio = arg;
@@ -405,6 +431,12 @@ static void radio_direct_task(void *arg)
     unsigned int last_underruns = board_audio_underrun_count();
     size_t last_pcm_bytes = 0U;
     bool report_armed = false;
+    // What the decoder says it is producing. Logged on the first block and on
+    // every change rather than only from a header event: the simple decoder
+    // reaches its first PCM without ever reporting a header, so an AAC stream
+    // used to play with its rate and channel count never printed at all - and
+    // the channel count is what tells a mono source apart from a stereo one.
+    radio_decoder_info_t logged_info = {0};
     TickType_t next_report = xTaskGetTickCount() + pdMS_TO_TICKS(RADIO_STARVATION_REPORT_MS);
 
     while (!fatal &&
@@ -497,10 +529,7 @@ static void radio_direct_task(void *arg)
                     fatal = true;
                     break;
                 }
-                ESP_LOGI(TAG, "direct decoder ready: codec=%s rate=%u channels=%u bits=%u",
-                         radio_stream_format_codec_name(radio->stream_format),
-                         (unsigned int)info.sample_rate, (unsigned int)info.channels,
-                         (unsigned int)info.bits_per_sample);
+                radio_log_decoder_info(radio->stream_format, &info, &logged_info);
             } else if (result == RADIO_DECODER_PCM_READY) {
                 decode_error_retries = 0U;
                 if (radio_direct_update_info(radio, &info) != ESP_OK) {
@@ -509,6 +538,7 @@ static void radio_direct_task(void *arg)
                     fatal = true;
                     break;
                 }
+                radio_log_decoder_info(radio->stream_format, &info, &logged_info);
                 xSemaphoreTake(radio->direct_io_mutex, portMAX_DELAY);
                 const bool output_allowed =
                     !atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire) &&

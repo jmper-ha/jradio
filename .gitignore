@@ -30,3 +30,6 @@ docs/
 
 # Local photos and scratch images of the device
 img/
+
+# External audit reports and idea drafts
+audit/

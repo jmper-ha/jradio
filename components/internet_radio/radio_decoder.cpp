@@ -4,6 +4,7 @@
 #include <cstring>
 #include <new>
 
+#include "audio_pcm_convert.h"
 #include "esp_heap_caps.h"
 #include "decoder/impl/esp_aac_dec.h"
 #include "decoder/impl/esp_flac_dec.h"
@@ -323,13 +324,40 @@ extern "C" radio_decoder_result_t radio_decoder_decode(
             return RADIO_DECODER_ERROR;
         }
         if (frame.decoded_size > 0U) {
-            if (decode_buffer != pcm_output) {
-                if (frame.decoded_size > pcm_capacity || pcm_output == nullptr) {
+            // Mono has to be duplicated here for the same reason as on the MP3
+            // path: the output stage only takes stereo. Measured, because the
+            // reported channel count was not obviously trustworthy: a mono AAC
+            // frame decodes to 2048 bytes and a stereo one to 4096, both at
+            // 1024 frames, and `channel` matched the size in each case.
+            //
+            // A mono stream whose server runs ahead of realtime hides this
+            // completely - the decoder simply keeps up with the doubled drain,
+            // every counter reads healthy, and only the pitch is wrong. That
+            // is why the fault has to be reasoned about rather than looked for
+            // in the health log.
+            if (decoder->info.channels == 1U) {
+                const bool expanded =
+                    decode_buffer == pcm_output
+                        ? audio_pcm_mono_to_stereo_inplace_s16(pcm_output, frame.decoded_size,
+                                                               pcm_capacity, pcm_bytes)
+                        : (pcm_output != nullptr &&
+                           audio_pcm_to_stereo_s16(decode_buffer, frame.decoded_size, 1U,
+                                                   pcm_output, pcm_capacity, pcm_bytes));
+                if (!expanded) {
                     return RADIO_DECODER_ERROR;
                 }
-                memcpy(pcm_output, decode_buffer, frame.decoded_size);
+            } else {
+                // Anything else is passed through as it always was, including
+                // the channel counts no station here has ever produced: a
+                // guess at how to fold them would be worse than the noise.
+                if (decode_buffer != pcm_output) {
+                    if (frame.decoded_size > pcm_capacity || pcm_output == nullptr) {
+                        return RADIO_DECODER_ERROR;
+                    }
+                    memcpy(pcm_output, decode_buffer, frame.decoded_size);
+                }
+                *pcm_bytes = frame.decoded_size;
             }
-            *pcm_bytes = frame.decoded_size;
             decoder->simple_info_ready = decoder->simple_info_ready || have_info;
             return RADIO_DECODER_PCM_READY;
         }
@@ -376,11 +404,16 @@ extern "C" radio_decoder_result_t radio_decoder_decode(
         }
         update_mp3_info(decoder);
         const size_t pcm_size = mp3_samples * sizeof(int16_t) * decoder->info.channels;
-        if (pcm_size > pcm_capacity || pcm_output == nullptr) {
+        // A mono MP3 decodes to mono PCM - there is no parametric stereo in
+        // MP3 to hide it - and the output stage only takes stereo, so the
+        // duplication has to happen here. Handing mono over untouched played
+        // the station at double speed and starved I2S; see audio_pcm_convert.h.
+        if (pcm_output == nullptr ||
+            !audio_pcm_to_stereo_s16(reinterpret_cast<const uint8_t *>(decoder->mp3_pcm),
+                                     pcm_size, decoder->info.channels, pcm_output,
+                                     pcm_capacity, pcm_bytes)) {
             return RADIO_DECODER_ERROR;
         }
-        memcpy(pcm_output, decoder->mp3_pcm, pcm_size);
-        *pcm_bytes = pcm_size;
         if (info != nullptr) {
             *info = decoder->info;
         }

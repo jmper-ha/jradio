@@ -11,6 +11,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 
+#include "audio_pcm_convert.h"
 #include "board.h"
 #include "radio_decoder.h"
 #include "board_audio_format.h"
@@ -275,15 +276,13 @@ static bool play_wav(usb_player_context_t *ctx, unsigned int *pcm_blocks)
         if (wav.channels == 1U) {
             // The I2S channel is fixed at 16-bit stereo slots, so a mono file
             // has to be duplicated into both channels rather than reconfigured.
-            const int16_t *source = (const int16_t *)(const void *)ctx->compressed;
-            int16_t *target = (int16_t *)(void *)ctx->pcm;
-            const size_t samples = usable / 2U;
-            for (size_t i = 0U; i < samples; ++i) {
-                target[2U * i] = source[i];
-                target[2U * i + 1U] = source[i];
+            if (!audio_pcm_to_stereo_s16(ctx->compressed, usable, 1U, ctx->pcm,
+                                         USB_PLAYER_PCM_SIZE, &out_length)) {
+                ESP_LOGE(TAG, "cannot expand %u mono bytes to stereo",
+                         (unsigned int)usable);
+                return true;
             }
             out = ctx->pcm;
-            out_length = usable * 2U;
         }
         if (write_pcm(ctx, out, out_length) != ESP_OK) return true;
         ++(*pcm_blocks);

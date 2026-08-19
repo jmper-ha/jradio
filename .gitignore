@@ -17,6 +17,8 @@ __pycache__/
 *.py[cod]
 .vscode/.ropeproject/
 .vscode/.history/
+# The ESP-IDF extension writes an absolute path to the local install into this
+.vscode/settings.json
 .DS_Store
 
 # Internal session notes and agent planning

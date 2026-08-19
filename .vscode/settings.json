@@ -1,9 +1,0 @@
-{
-  "idf.adapterTargetName": "esp32s3",
-  "idf.buildPath": "${workspaceFolder}/build",
-  "idf.monitorBaudRate": 115200,
-  "files.associations": {
-    "*.c": "c",
-    "*.h": "c"
-  }
-}

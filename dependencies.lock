@@ -53,25 +53,6 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.2.0
-  espressif/esp_new_jpeg:
-    component_hash: e1e7e6991193c41ed6c9fc386702aa7821433319e7aa9c3147cd3236310cd69c
-    dependencies: []
-    source:
-      registry_url: https://components.espressif.com/
-      type: service
-    targets:
-    - esp32
-    - esp32s2
-    - esp32s3
-    - esp32s31
-    - esp32p4
-    - esp32c2
-    - esp32c3
-    - esp32c5
-    - esp32c6
-    - esp32c61
-    - esp32h4
-    version: 1.0.2
   espressif/usb_host_msc:
     component_hash: a7330d2bc4f81c21fd335df073405085bbad5cdf084a1be79fb52383d0d0d6fd
     dependencies:
@@ -122,11 +103,10 @@ direct_dependencies:
 - esphome/micro-mp3
 - espressif/esp_audio_codec
 - espressif/esp_lcd_ili9341
-- espressif/esp_new_jpeg
 - espressif/usb_host_msc
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: e1844477e2da4d50ecfb4d0b23ccfd187c8588b9da42fbe8adf359e2d3ce5785
+manifest_hash: 93c9f754ec27c429011729953826a67e9e0992a000b0eaaf239ba8defcca4396
 target: esp32s3
 version: 2.0.0

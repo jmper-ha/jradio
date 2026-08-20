@@ -5,20 +5,24 @@
 #include <string.h>
 
 #include "esp_heap_caps.h"
-#include "esp_jpeg_dec.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
 #include "image_scale.h"
+#include "tjpgd.h"
 
 static const char *TAG = "album_art";
 
-/* Anything larger is refused rather than decoded. The result is 96 pixels
- * across either way, while a 1000x1000 cover costs two megabytes of PSRAM and
- * most of a second of the playback task - which is time the first sample of
- * the track is waiting for. */
-#define ALBUM_ART_SOURCE_PIXELS_MAX (800U * 800U)
+/* TJpgDec's scratch: the huffman and dequantiser tables plus one MCU. ChaN
+ * puts the requirement near three kilobytes at this optimisation level, and
+ * the spare one costs nothing where it is allocated. */
+#define ALBUM_ART_WORK_POOL 4096U
+/* The decoder descales by halves, so it stops one halving above the tile and
+ * the intermediate is normally under 192 pixels a side. A source large enough
+ * to exceed this even after 1/8 is refused rather than decoded: the answer
+ * would still be 96 pixels across, and the track's first sample is waiting. */
+#define ALBUM_ART_DECODED_PIXELS_MAX (256U * 256U)
 
 static uint16_t *s_cover;
 static SemaphoreHandle_t s_lock;
@@ -44,13 +48,15 @@ static uint32_t checksum_of(const uint8_t *data, size_t length)
     return hash;
 }
 
-static void *alloc_aligned(size_t size)
+static uint8_t *alloc_buffer(size_t size)
 {
-    // PSRAM first for the same reason as the audio buffers: internal SRAM is
-    // the scarce one, and a full-size cover is over a hundred kilobytes.
-    void *buffer = heap_caps_aligned_alloc(16U, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    /* PSRAM first for the same reason as the audio buffers, and here it is not
+     * only about size: the largest contiguous *internal* block is what mbedtls
+     * needs for AES, and a cover that ate into it would take HTTPS stations
+     * down with it. */
+    uint8_t *buffer = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (buffer == NULL) {
-        buffer = heap_caps_aligned_alloc(16U, size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        buffer = heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
     return buffer;
 }
@@ -141,72 +147,120 @@ bool album_art_copy(uint16_t *destination, size_t capacity_pixels, uint16_t *wid
     return usable;
 }
 
+typedef struct {
+    const uint8_t *data;
+    size_t length;
+    size_t offset;
+    uint16_t *pixels;
+    uint16_t width;
+    uint16_t height;
+} album_art_decode_t;
+
+static size_t decode_input(JDEC *decoder, uint8_t *buffer, size_t length)
+{
+    album_art_decode_t *context = decoder->device;
+    const size_t remaining = context->length - context->offset;
+    const size_t take = length < remaining ? length : remaining;
+    /* A null buffer means seek rather than read, which is how the decoder
+     * steps over what a tagger leaves in front of the image - the covers this
+     * was built for carry 34 KB of Exif and colour profile there. */
+    if (buffer != NULL) memcpy(buffer, context->data + context->offset, take);
+    context->offset += take;
+    return take;
+}
+
+static int decode_output(JDEC *decoder, void *bitmap, JRECT *rect)
+{
+    album_art_decode_t *context = decoder->device;
+    const uint16_t *source = bitmap;
+    const size_t row_pixels = (size_t)(rect->right - rect->left) + 1U;
+
+    for (uint16_t y = rect->top; y <= rect->bottom; ++y) {
+        if (y >= context->height) break;
+        size_t width = row_pixels;
+        // Clipped rather than trusted. The decoder's own arithmetic keeps
+        // every rectangle inside the descaled image, and a version that got
+        // that wrong would write past this buffer rather than draw badly.
+        if ((size_t)rect->left + width > context->width) {
+            width = context->width > rect->left ? (size_t)(context->width - rect->left) : 0U;
+        }
+        if (width == 0U) break;
+        memcpy(context->pixels + (size_t)y * context->width + rect->left,
+               source + (size_t)(y - rect->top) * row_pixels, width * sizeof(uint16_t));
+    }
+    return 1;
+}
+
+/* How far to let the decoder descale. It halves, so this stops at the last
+ * halving that still leaves both sides at or above the tile: the averaging
+ * pass that follows needs something left to average, and going further would
+ * mean enlarging a picture whose detail had just been discarded. */
+static uint8_t scale_for(uint16_t width, uint16_t height)
+{
+    uint8_t scale = 0U;
+    while (scale < 3U && (width >> (scale + 1U)) >= ALBUM_ART_SIZE &&
+           (height >> (scale + 1U)) >= ALBUM_ART_SIZE) {
+        ++scale;
+    }
+    return scale;
+}
+
 static bool decode_and_publish(const uint8_t *data, size_t length)
 {
-    jpeg_dec_config_t config = DEFAULT_JPEG_DEC_CONFIG();
-    /* Little-endian RGB565 is what the display takes and what LVGL is built
-     * for here, so the decoder writes the final pixel format directly and
-     * nothing converts a second time. Scaling is left to us: the decoder can
-     * only scale by whole eighths and only when both sides are multiples of
-     * eight, which a 250-pixel cover is not. */
-    config.output_type = JPEG_PIXEL_FORMAT_RGB565_LE;
-
-    jpeg_dec_handle_t decoder = NULL;
-    if (jpeg_dec_open(&config, &decoder) != JPEG_ERR_OK) {
-        ESP_LOGW(TAG, "cannot open the JPEG decoder");
+    uint8_t *pool = alloc_buffer(ALBUM_ART_WORK_POOL);
+    if (pool == NULL) {
+        ESP_LOGW(TAG, "no memory for the decoder's work pool");
         return false;
     }
 
-    // The decoder takes a writable pointer but only reads through it; the
-    // bytes belong to the caller's read buffer.
-    jpeg_dec_io_t io = {
-        .inbuf = (uint8_t *)data,
-        .inbuf_len = (int)length,
-        .inbuf_remain = 0,
-        .outbuf = NULL,
-        .out_size = 0,
+    album_art_decode_t context = {
+        .data = data,
+        .length = length,
+        .offset = 0U,
+        .pixels = NULL,
+        .width = 0U,
+        .height = 0U,
     };
-    jpeg_dec_header_info_t info = {0};
+    JDEC decoder;
     bool published = false;
-    uint8_t *pixels = NULL;
 
-    if (jpeg_dec_parse_header(decoder, &io, &info) != JPEG_ERR_OK) {
-        // Progressive JPEG lands here: the decoder is baseline only, and a
-        // tagger that saved one is not a fault worth logging as an error.
-        ESP_LOGI(TAG, "cover is not a baseline JPEG");
-    } else if (info.width == 0U || info.height == 0U ||
-               (uint32_t)info.width * info.height > ALBUM_ART_SOURCE_PIXELS_MAX) {
-        ESP_LOGW(TAG, "cover %ux%u is outside what is worth decoding",
-                 (unsigned int)info.width, (unsigned int)info.height);
+    JRESULT result = jd_prepare(&decoder, decode_input, pool, ALBUM_ART_WORK_POOL, &context);
+    if (result != JDR_OK) {
+        // Progressive JPEG arrives here: this decoder is baseline only, and a
+        // tagger that saved one is not a fault worth reporting as an error.
+        ESP_LOGI(TAG, "cover cannot be decoded: tjpgd result=%d", (int)result);
     } else {
-        int output_length = 0;
-        if (jpeg_dec_get_outbuf_len(decoder, &output_length) == JPEG_ERR_OK &&
-            output_length > 0) {
-            pixels = alloc_aligned((size_t)output_length);
-        }
-        if (pixels == NULL) {
-            ESP_LOGW(TAG, "no memory for a %ux%u cover", (unsigned int)info.width,
-                     (unsigned int)info.height);
+        const uint8_t scale = scale_for(decoder.width, decoder.height);
+        context.width = (uint16_t)(decoder.width >> scale);
+        context.height = (uint16_t)(decoder.height >> scale);
+        const uint32_t pixels = (uint32_t)context.width * context.height;
+
+        if (pixels == 0U || pixels > ALBUM_ART_DECODED_PIXELS_MAX) {
+            ESP_LOGW(TAG, "cover %ux%u is outside what is worth decoding",
+                     (unsigned int)decoder.width, (unsigned int)decoder.height);
+        } else if ((context.pixels = (uint16_t *)alloc_buffer(pixels * sizeof(uint16_t))) ==
+                   NULL) {
+            ESP_LOGW(TAG, "no memory for a %ux%u cover", (unsigned int)context.width,
+                     (unsigned int)context.height);
         } else {
-            io.outbuf = pixels;
-            if (jpeg_dec_process(decoder, &io) != JPEG_ERR_OK) {
-                ESP_LOGW(TAG, "cover failed to decode");
+            result = jd_decomp(&decoder, decode_output, scale);
+            if (result != JDR_OK) {
+                ESP_LOGW(TAG, "cover failed to decode: tjpgd result=%d", (int)result);
             } else {
                 const image_rect_t rect =
-                    image_fit_square(info.width, info.height, (uint16_t)ALBUM_ART_SIZE);
-                if (reduce_into_cover((const uint16_t *)pixels, info.width, info.height,
-                                      &rect)) {
+                    image_fit_square(context.width, context.height, (uint16_t)ALBUM_ART_SIZE);
+                if (reduce_into_cover(context.pixels, context.width, context.height, &rect)) {
                     published = true;
-                    ESP_LOGI(TAG, "cover %ux%u shown as %ux%u", (unsigned int)info.width,
-                             (unsigned int)info.height, (unsigned int)rect.width,
-                             (unsigned int)rect.height);
+                    ESP_LOGI(TAG, "cover %ux%u decoded at 1/%u and shown as %ux%u",
+                             (unsigned int)decoder.width, (unsigned int)decoder.height,
+                             1U << scale, (unsigned int)rect.width, (unsigned int)rect.height);
                 }
             }
+            heap_caps_free(context.pixels);
         }
     }
 
-    heap_caps_free(pixels);
-    (void)jpeg_dec_close(decoder);
+    heap_caps_free(pool);
     return published;
 }
 

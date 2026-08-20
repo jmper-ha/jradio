@@ -22,7 +22,12 @@
 #include "wifi_provisioning.h"
 
 #define PLAYER_COMMAND_QUEUE_LENGTH 8U
-#define PLAYER_CONTROL_TASK_STACK_SIZE 6144U
+/* Measured, not guessed. The deep path is not playback but browsing: opening a
+ * directory runs on this task and descends through FATFS into the MSC
+ * transfers, and it left 1368 bytes of 6144. That is the thinnest margin in the
+ * system, and this is the task that overflowed the one time the build was
+ * compiled at -O2, where inlining costs more stack again. */
+#define PLAYER_CONTROL_TASK_STACK_SIZE 8192U
 #define PLAYER_CONTROL_TASK_PRIORITY 5U
 
 static const char *TAG = "player_control";

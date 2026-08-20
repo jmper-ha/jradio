@@ -164,6 +164,21 @@ size_t usb_storage_next_file(size_t from)
     return index;
 }
 
+bool usb_storage_entry_path(size_t index, usb_browser_entry_t *entry, char *path,
+                            size_t capacity)
+{
+    if (entry == NULL || path == NULL || capacity == 0U || !listing_lock()) return false;
+    const usb_browser_entry_t *found = usb_browser_dir_entry(&s_listing, index);
+    bool built = false;
+    if (found != NULL) {
+        *entry = *found;
+        // Pure string work, so the lock is held for no longer than a copy.
+        built = usb_browser_path_child(s_listing.path, found->name, path, capacity);
+    }
+    listing_unlock();
+    return built;
+}
+
 bool usb_storage_current_path(char *out, size_t out_size)
 {
     if (out == NULL || out_size == 0U || !listing_lock()) return false;

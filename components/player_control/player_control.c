@@ -79,15 +79,11 @@ static void player_refresh_rssi_if_due(void)
 static void player_usb_select_item(size_t index)
 {
     usb_browser_entry_t entry;
-    if (!usb_storage_entry_at(index, &entry)) {
-        ESP_LOGW(TAG, "usb item %u is not in the current listing", (unsigned int)index);
-        return;
-    }
     char path[USB_BROWSER_PATH_MAX_LEN];
-    char current[USB_BROWSER_PATH_MAX_LEN];
-    if (!usb_storage_current_path(current, sizeof(current)) ||
-        !usb_browser_path_child(current, entry.name, path, sizeof(path))) {
-        ESP_LOGW(TAG, "cannot build a path for usb item %u", (unsigned int)index);
+    // Name and path together, so a listing replaced mid-selection cannot pair
+    // one directory's file with another directory's path.
+    if (!usb_storage_entry_path(index, &entry, path, sizeof(path))) {
+        ESP_LOGW(TAG, "usb item %u is not in the current listing", (unsigned int)index);
         return;
     }
     if (entry.kind == USB_BROWSER_ENTRY_DIRECTORY) {

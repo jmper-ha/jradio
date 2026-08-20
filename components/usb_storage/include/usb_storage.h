@@ -39,6 +39,17 @@ esp_err_t usb_storage_read_directory(const char *path);
 size_t usb_storage_entry_count(void);
 bool usb_storage_entry_at(size_t index, usb_browser_entry_t *out);
 
+/* Copies one row of the listing together with the full path that row opens,
+ * both taken under a single hold of the listing lock.
+ *
+ * The two used to be fetched by separate calls, and a listing replaced in
+ * between joined a name from the directory that was open to the path of the
+ * one that had just replaced it. The player then opened a file that never
+ * existed, reported the track as failed, and the screen fell back to the
+ * browser - which reads as the browser reopening itself. */
+bool usb_storage_entry_path(size_t index, usb_browser_entry_t *entry, char *path,
+                            size_t capacity);
+
 // Index of `name` in the current listing, or the entry count when it is absent
 // or unreadable. Used to find a remembered track after a restart.
 size_t usb_storage_find_entry(const char *name);

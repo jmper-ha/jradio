@@ -119,6 +119,9 @@ typedef struct {
     uint64_t pcm_bytes;
     uint64_t file_bytes;
     uint64_t header_bytes;
+    // How many frames claimed a sample rate the file does not have. Reported
+    // once at the end of the track rather than as it happens - see apply_info().
+    unsigned int bogus_rate_reports;
 } usb_player_context_t;
 
 /* Reads the tags before a single frame is decoded, so the screen is right from
@@ -177,6 +180,33 @@ static bool refill(usb_player_context_t *ctx)
 
 static esp_err_t apply_info(usb_player_context_t *ctx, const radio_decoder_info_t *info)
 {
+    /* Once the output is running, its rate is the file's rate: a frame that
+     * disagrees is one the decoder mis-synced on, not a change.
+     *
+     * The decoder resyncs on any byte pattern that looks like a frame header,
+     * and inside 320 kbps audio that happens often enough to matter. On one
+     * perfectly uniform file - 5172 frames, every one MPEG1 44.1 kHz - it
+     * claimed 8000, 22050, 32000 and 48000 Hz across 42 frames of a
+     * three-minute track. Each claim stopped the I2S channel and started it
+     * again behind a 93 ms silent pre-roll, which is what the bubbling was,
+     * and a pause landing in that window was undone by the restart.
+     *
+     * Asking for the same rate twice in a row does not filter this: a
+     * mis-synced frame is announced once as a header and once again with its
+     * PCM, so it agrees with itself. Locking is what works, and it costs
+     * nothing real - a file has one sample rate. A concatenated one would play
+     * its second half at the first half's speed, which is a trade worth making
+     * against a clean file bubbling forty times.
+     *
+     * The whole of `info` is dropped, not only the rate: such a frame's
+     * bitrate is invented too, and that is what the track length is computed
+     * from. */
+    if (ctx->output_started && info->sample_rate != 0U &&
+        info->sample_rate != ctx->output_sample_rate) {
+        ++ctx->bogus_rate_reports;
+        return ESP_OK;
+    }
+
     taskENTER_CRITICAL(&s_status_lock);
     if (info->bitrate_kbps > 0U) s_status.bitrate_kbps = (uint16_t)info->bitrate_kbps;
     if (info->sample_rate > 0U) s_status.sample_rate_hz = info->sample_rate;
@@ -217,6 +247,13 @@ static esp_err_t apply_info(usb_player_context_t *ctx, const radio_decoder_info_
 
 static esp_err_t write_pcm(usb_player_context_t *ctx, const uint8_t *pcm, size_t length)
 {
+    /* A pause that arrives between the decoder producing this block and the
+     * write below would otherwise be undone here: starting the output turns
+     * the DAC back on and reports PLAYING again, and the loop only tests the
+     * pause flag on its next pass. Dropping the block costs 26 ms that nobody
+     * was going to hear - the user has just pressed pause. */
+    if (atomic_load_explicit(&s_paused, memory_order_acquire)) return ESP_OK;
+
     size_t written = 0U;
     esp_err_t result;
     if (!ctx->output_started) {
@@ -471,8 +508,8 @@ static void usb_player_task(void *arg)
     free(ctx.pcm);
 
     const bool ended_by_itself = !failed && !should_stop();
-    ESP_LOGI(TAG, "playback finished: blocks=%u failed=%d natural_end=%d", pcm_blocks,
-             (int)failed, (int)ended_by_itself);
+    ESP_LOGI(TAG, "playback finished: blocks=%u failed=%d natural_end=%d bogus_rates=%u",
+             pcm_blocks, (int)failed, (int)ended_by_itself, ctx.bogus_rate_reports);
     status_set_state(failed ? USB_PLAYER_STATE_ERROR : USB_PLAYER_STATE_STOPPED);
     // Clear the running flag and the handle before notifying, so the listener
     // can start the next track without waiting out this task's stop timeout.

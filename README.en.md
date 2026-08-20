@@ -11,7 +11,7 @@ buttons on the device, or from a browser on the local network.
 | Mode | State |
 |---|---|
 | Internet radio | MP3, AAC, FLAC, Ogg FLAC, HLS (`.m3u8`); HTTP and HTTPS; ICY metadata; playlist; reconnection |
-| USB player | Directory browser; MP3, AAC, FLAC, Ogg FLAC, WAV; advances to the next track; track position |
+| USB player | Directory browser; MP3, AAC, FLAC, Ogg FLAC, WAV; tags and cover art; advances to the next track; track position |
 | Volume | Digital, on the encoder, saved across restarts |
 | Clock | SNTP, on every screen |
 | Wi-Fi | Set up through a temporary access point, up to five saved networks |
@@ -31,9 +31,26 @@ A status strip along the top: clock centred, Wi-Fi strength on the right as
 four bars with the figure in dBm. Until SNTP has answered the clock reads
 `--:--` — the device has no real-time clock of its own.
 
-Below it, room for cover art, the station name, a large track line and the
+Below it, the cover art, the station name, a large track line and the
 performer: an ICY title is split at the first dash with spaces on both sides,
 and left whole whenever that is ambiguous.
+
+Playing from the drive, those same three lines come out of the file's tags -
+the album where the station name goes, then the track title and the performer -
+and each falls back on its own to what is known without any tags: the directory
+instead of the album, the file name instead of the title. ID3v2.2 to 2.4 are
+read (with ID3v1 as a last resort) along with Vorbis comments in FLAC; text is
+converted to UTF-8 from Latin-1, UTF-16 and UTF-8, and Windows-1251 stored
+under a Latin-1 label is recognised from the byte range it uses - without that,
+half the Russian files on a drive would read as "Áàëòèéñêîå ìîðå".
+
+The cover comes from an `APIC` frame or a `PICTURE` block - baseline JPEG only -
+and is reduced to 96x96 by averaging rather than sampling: at that size a cover
+is mostly lettering, and sampling it reads as noise. A picture that is not
+square is fitted inside the square rather than stretched to it. One cover
+shared by a whole album is decoded once, so moving to the next track does not
+blink the tile. Where there is no cover, or it is not a JPEG, or it fails to
+decode, the tile keeps its placeholder symbol.
 
 Along the bottom, the decoder's input buffer fill (for a file, the elapsed time
 and a position bar) and the volume, with a per-channel level meter between

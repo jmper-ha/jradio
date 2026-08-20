@@ -11,7 +11,9 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 
+#include "album_art.h"
 #include "audio_pcm_convert.h"
+#include "audio_tags_reader.h"
 #include "board.h"
 #include "radio_decoder.h"
 #include "board_audio_format.h"
@@ -39,6 +41,8 @@ static const char *TAG = "usb_player";
 
 static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
 static usb_player_status_t s_status;
+// Under the same lock as the status, but kept out of it - see usb_player.h.
+static audio_tags_t s_tags;
 /* Written by the playback task on every pass and read by whoever asks for
  * status. Atomic rather than inside the status critical section: the loop runs
  * thousands of times a second and this is one byte of display. */
@@ -116,6 +120,43 @@ typedef struct {
     uint64_t file_bytes;
     uint64_t header_bytes;
 } usb_player_context_t;
+
+/* Reads the tags before a single frame is decoded, so the screen is right from
+ * the moment the track appears on it rather than a second into playback. It
+ * costs one read of the tag - 68 KB on the album this was built for - and a
+ * JPEG decode, both of which finish long before the first sample is due. */
+static void load_tags(usb_player_context_t *ctx)
+{
+    uint8_t *scratch = alloc_buffer(AUDIO_TAGS_SCRATCH_SIZE);
+    audio_tags_t tags;
+    audio_tags_clear(&tags);
+    if (scratch == NULL) {
+        ESP_LOGW(TAG, "no memory to read tags");
+    } else {
+        (void)audio_tags_read_file(ctx->file, scratch, AUDIO_TAGS_SCRATCH_SIZE, &tags);
+    }
+    // The tag reader seeks about the file; the decoder needs it back at zero.
+    rewind(ctx->file);
+
+    if (audio_tags_have_text(&tags)) {
+        taskENTER_CRITICAL(&s_status_lock);
+        s_tags = tags;
+        taskEXIT_CRITICAL(&s_status_lock);
+        ESP_LOGI(TAG, "tags: title=\"%s\" artist=\"%s\" album=\"%s\"", tags.title,
+                 tags.artist, tags.album);
+    }
+
+    /* A cover in a format nothing here decodes is the same as no cover as far
+     * as the screen is concerned, and leaving the previous track's picture up
+     * would be worse than the placeholder. */
+    if (scratch != NULL && tags.picture_format == AUDIO_TAGS_PICTURE_JPEG &&
+        tags.picture_length > 0U) {
+        (void)album_art_set_jpeg(scratch + tags.picture_offset, tags.picture_length);
+    } else {
+        album_art_clear();
+    }
+    free(scratch);
+}
 
 static bool refill(usb_player_context_t *ctx)
 {
@@ -338,6 +379,7 @@ static void usb_player_task(void *arg)
         snprintf(s_status.codec, sizeof(s_status.codec), "%s",
                  is_wav ? "WAV" : radio_stream_format_codec_name(stream_format));
         taskEXIT_CRITICAL(&s_status_lock);
+        load_tags(&ctx);
         ESP_LOGI(TAG, "playing %s", s_request.path);
     }
 
@@ -469,6 +511,9 @@ esp_err_t usb_player_init(void)
     if (s_control_lock != NULL) return ESP_OK;
     s_control_lock = xSemaphoreCreateMutex();
     if (s_control_lock == NULL) return ESP_ERR_NO_MEM;
+    // Owned here because this is what fills it; the screen only ever reads.
+    const esp_err_t art = album_art_init();
+    if (art != ESP_OK) return art;
     memset(&s_status, 0, sizeof(s_status));
     return ESP_OK;
 }
@@ -502,6 +547,9 @@ esp_err_t usb_player_play(const char *path, const char *display_name,
     s_request.format = format;
     taskENTER_CRITICAL(&s_status_lock);
     memset(&s_status, 0, sizeof(s_status));
+    // Cleared here rather than when the previous track ended, so nothing ever
+    // reads the last track's performer against this one's file name.
+    audio_tags_clear(&s_tags);
     s_status.state = USB_PLAYER_STATE_STARTING;
     snprintf(s_status.track, sizeof(s_status.track), "%s",
              display_name != NULL ? display_name : path);
@@ -558,6 +606,14 @@ esp_err_t usb_player_resume(void)
     atomic_store_explicit(&s_paused, false, memory_order_release);
     status_set_state(USB_PLAYER_STATE_PLAYING);
     return ESP_OK;
+}
+
+void usb_player_get_tags(audio_tags_t *tags)
+{
+    if (tags == NULL) return;
+    taskENTER_CRITICAL(&s_status_lock);
+    *tags = s_tags;
+    taskEXIT_CRITICAL(&s_status_lock);
 }
 
 void usb_player_get_status(usb_player_status_t *status)

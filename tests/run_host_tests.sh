@@ -18,6 +18,7 @@ common_flags=(
 include_flags=(
     -I"${project_dir}"
     -I"${project_dir}/components/audio/include"
+    -I"${project_dir}/components/audio_tags/include"
     -I"${project_dir}/components/board/include"
     -I"${project_dir}/components/diagnostics/include"
     -I"${project_dir}/components/internet_radio/include"
@@ -29,6 +30,9 @@ include_flags=(
     -I"${project_dir}/components/usb_storage/include"
     -I"${project_dir}/components/web_server"
     -I"${project_dir}/components/web_server/include"
+    # For the fixture the tag tests read: real bytes out of a real file, kept
+    # next to the tests that assert on them.
+    -I"${project_dir}/tests"
 )
 
 find_idf_path() {
@@ -96,6 +100,15 @@ grep -Fq 'settings_csv_init();' main/main.c
 run_test audio_pcm_convert tests/test_audio_pcm_convert.c components/board/audio_pcm_convert.c
 run_test audio_volume tests/test_audio_volume.c components/board/audio_volume.c
 run_test audio_source tests/test_audio_source.c components/audio/audio_source_manager.c
+run_test audio_tags_text tests/test_audio_tags_text.c components/audio_tags/audio_tags_text.c
+run_test audio_tags_reader tests/test_audio_tags_reader.c \
+    components/audio_tags/audio_tags_reader.c components/audio_tags/id3v2.c \
+    components/audio_tags/flac_tags.c components/audio_tags/audio_tags_text.c
+run_test id3v2 tests/test_id3v2.c components/audio_tags/id3v2.c \
+    components/audio_tags/audio_tags_text.c
+run_test flac_tags tests/test_flac_tags.c components/audio_tags/flac_tags.c \
+    components/audio_tags/audio_tags_text.c
+run_test image_scale tests/test_image_scale.c components/audio_tags/image_scale.c
 run_test board_audio_health tests/test_board_audio_health.c \
     components/board/board_audio_health.c
 run_test board_audio_startup tests/test_board_audio_startup.c \

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "audio_tags.h"
 #include "player_control_types.h"
 #include "station_catalog.h"
 #include "usb_player_state.h"
@@ -48,6 +49,16 @@ bool player_control_input_fill(uint8_t *percent);
  * transport sends a diff whenever the snapshot differs, and a value that ticks
  * would push a frame a second for something only the local screen shows. */
 bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_seconds);
+
+/* Title, performer and album of the playing file, as its own tags gave them.
+ * False for a source that has no such thing: a stream carries one ICY line and
+ * no performer field at all.
+ *
+ * Outside player_snapshot_t for the same reason as the position above - the
+ * snapshot is what the web transport diffs and sends on every change, and
+ * three more strings would not fit a frame that is capped at 512 bytes. The
+ * cover is not here either; it is published by album_art. */
+bool player_control_track_tags(audio_tags_t *tags);
 
 /* Reopens the directory holding `path` and starts that file, for resuming what
  * was playing before a restart. Runs on the caller's task and reads a

@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "audio_tags.h"
 #include "esp_err.h"
 #include "usb_browser.h"
 #include "usb_player_state.h"
@@ -48,3 +49,13 @@ esp_err_t usb_player_stop(void);
 esp_err_t usb_player_pause(void);
 esp_err_t usb_player_resume(void);
 void usb_player_get_status(usb_player_status_t *status);
+
+/* What the playing file's own tags say, all empty when it has none.
+ *
+ * Deliberately not part of usb_player_status_t: that structure is copied onto
+ * the stack of every task that polls the player, and three more strings would
+ * cost 384 bytes on each of them - for something one screen reads. The file
+ * name in `track` stays where it is for the same reason it always was: it is
+ * what identifies the track on the drive and what gets written down as the
+ * resume point, which a tag title could never lead back to. */
+void usb_player_get_tags(audio_tags_t *tags);

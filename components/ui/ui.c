@@ -37,6 +37,7 @@
 #include "audio_volume.h"
 #include "device_clock.h"
 #include "ui_usb_notice.h"
+#include "album_art.h"
 #include "ui_vu_meter.h"
 
 #define UI_DRAW_BUFFER_LINES 20
@@ -130,6 +131,16 @@ static ui_status_strip_t s_menu_strip;
 static ui_status_strip_t s_feed_strip;
 static ui_status_strip_t s_list_strip;
 static lv_obj_t *s_source_art;
+/* The cover sits on top of the placeholder tile rather than replacing it. The
+ * two change over often - every track, and back to nothing the moment the
+ * radio is selected - and showing or hiding one object is steadier than
+ * rebuilding the other. */
+static lv_obj_t *s_source_cover;
+static lv_image_dsc_t s_source_cover_dsc;
+/* The screen's own copy of the pixels, so LVGL can draw from them whenever it
+ * likes without the playback task writing underneath it. */
+static uint16_t *s_source_cover_pixels;
+static unsigned int s_source_cover_generation;
 static lv_obj_t *s_source_volume;
 static lv_obj_t *s_source_volume_bar;
 static lv_obj_t *s_source_pause;
@@ -430,13 +441,22 @@ static void ui_set_state_line(const char *state, const char *artist)
 
 static void ui_update_usb_status(const player_snapshot_t *snapshot)
 {
-    // The directory takes the place the radio gives the station name.
-    ui_set_label_text_if_changed(s_source_title, snapshot->context);
-    ui_set_label_text_if_changed(s_source_detail, snapshot->stream_title);
-    // A file has no performer to show, so the row is the state line's whenever
-    // there is a state worth naming. Pause is not one - the badge says it.
+    audio_tags_t tags;
+    const bool tagged = player_control_track_tags(&tags);
+    /* Each row falls back on its own: a file can name its album and not its
+     * performer, and half a set of tags is still better than none. The album
+     * takes the place the radio gives the station name, and the directory
+     * stands in where the file did not name one. */
+    ui_set_label_text_if_changed(s_source_title,
+                                 tagged && tags.album[0] != '\0' ? tags.album
+                                                                 : snapshot->context);
+    ui_set_label_text_if_changed(s_source_detail, tagged && tags.title[0] != '\0'
+                                                      ? tags.title
+                                                      : snapshot->stream_title);
+    // The performer row is the state line's whenever there is a state worth
+    // naming. Pause is not one - the badge says it.
     ui_set_state_line(snapshot->playback_state == PLAYER_PLAYBACK_STOPPED ? "Выберите файл" : "",
-                      "");
+                      tagged ? tags.artist : "");
     char stream_text[64];
     ui_radio_stream_text(stream_text, sizeof(stream_text), snapshot->codec,
                          snapshot->bitrate_kbps, snapshot->sample_rate_hz);
@@ -1076,6 +1096,47 @@ static void ui_show_station_list(void);
 #define UI_SRC_PAUSE_BAR_H 34
 #define UI_SRC_PAUSE_GAP 10
 
+/* Picks up whatever cover album_art has published.
+ *
+ * Runs on the poll loop but costs one comparison until the generation moves,
+ * which happens once per track at most. The pixels are copied rather than
+ * pointed at: LVGL redraws the image whenever the area is invalidated, long
+ * after this returns, and the playback task owns the other copy. */
+static void ui_update_cover(void)
+{
+    if (s_source_cover == NULL || s_source_cover_pixels == NULL) return;
+    const album_art_status_t status = album_art_status();
+    if (status.generation == s_source_cover_generation) return;
+
+    uint16_t width = 0U;
+    uint16_t height = 0U;
+    const bool shown =
+        status.present && album_art_copy(s_source_cover_pixels, ALBUM_ART_PIXELS, &width, &height);
+    s_source_cover_generation = status.generation;
+    if (!shown) {
+        // Back to the placeholder, which is what the tile shows for a file
+        // with no cover and for the radio.
+        lv_obj_add_flag(s_source_cover, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    s_source_cover_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+    s_source_cover_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
+    s_source_cover_dsc.header.w = width;
+    s_source_cover_dsc.header.h = height;
+    s_source_cover_dsc.header.stride = (uint32_t)width * sizeof(uint16_t);
+    s_source_cover_dsc.data_size = (uint32_t)width * height * sizeof(uint16_t);
+    s_source_cover_dsc.data = (const uint8_t *)s_source_cover_pixels;
+    // Re-set even when the pointer has not changed: this is what makes LVGL
+    // re-read the header, and the size in it changes with the picture.
+    lv_image_set_src(s_source_cover, &s_source_cover_dsc);
+    /* Centred on the tile. A picture that is not square is fitted inside the
+     * square rather than stretched to it, so the margins are uneven. */
+    lv_obj_set_pos(s_source_cover, UI_SRC_ART_X + (int)(UI_SRC_ART_SIZE - width) / 2,
+                   UI_SRC_ART_Y + (int)(UI_SRC_ART_SIZE - height) / 2);
+    lv_obj_clear_flag(s_source_cover, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void ui_create_source_screen(void)
 {
     s_source_screen = lv_obj_create(NULL);
@@ -1105,6 +1166,11 @@ static void ui_create_source_screen(void)
     lv_obj_set_style_text_align(s_source_art, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_pad_top(s_source_art, 24, 0);
     lv_label_set_text(s_source_art, LV_SYMBOL_AUDIO);
+
+    // Created here and left empty: it is given a source the first time a file
+    // with a cover is opened, and hidden again whenever there is none.
+    s_source_cover = lv_image_create(s_source_screen);
+    lv_obj_add_flag(s_source_cover, LV_OBJ_FLAG_HIDDEN);
 
     // Every one of these gets an explicit height of exactly one line. Without
     // it LV_LABEL_LONG_DOT wraps to a second line before it considers
@@ -1899,6 +1965,7 @@ static void ui_task(void *arg)
         }
         ui_update_vu();
         ui_update_footer();
+        ui_update_cover();
         if (s_settings_open) {
             ui_update_settings();
         } else {
@@ -1957,6 +2024,13 @@ esp_err_t ui_init(void)
     ui_vu_meter_init(&s_vu_state[1]);
     s_vu_updated_ms = ui_tick_get_ms();
     s_waiting_for_radio_station = false;
+    /* PSRAM, and not fatal if it fails: without it the tile keeps showing its
+     * placeholder and everything else on the screen still works. */
+    s_source_cover_pixels = heap_caps_malloc(ALBUM_ART_PIXELS * sizeof(uint16_t),
+                                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (s_source_cover_pixels == NULL) {
+        ESP_LOGW(TAG, "no memory for the cover; the placeholder tile stays");
+    }
     lv_init();
     lv_tick_set_cb(ui_tick_get_ms);
 

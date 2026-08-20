@@ -1,0 +1,6 @@
+dependencies:
+  # Baseline JPEG only, which is what a cover embedded by a tagger is. The
+  # alternative in tree - LVGL's TJpgDec - is compiled with descaling disabled
+  # and RGB888 output, so it cannot reduce a 250x250 cover to a 96x96 tile
+  # without a full-size intermediate three bytes per pixel wide.
+  espressif/esp_new_jpeg: "^1.0.2"

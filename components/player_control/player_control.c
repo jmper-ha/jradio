@@ -13,6 +13,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 
+#include "album_art.h"
 #include "audio_source.h"
 #include "internet_radio.h"
 #include "usb_browser.h"
@@ -159,6 +160,9 @@ static void player_usb_media_removing(void)
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "usb player did not release the drive: %s", esp_err_to_name(result));
     }
+    // The drive that the cover came from is on its way out; leaving the
+    // picture up would outlast the file it belongs to.
+    album_art_clear();
     // The active source is deliberately left alone: it belongs to this task,
     // and the snapshot is rebuilt on demand from the player's own state and
     // usb_storage_media(), which both already say the drive is gone.
@@ -178,6 +182,10 @@ static bool player_stop_active_source(audio_source_t source)
             ESP_LOGW(TAG, "usb player stop failed: %s", esp_err_to_name(result));
             return false;
         }
+        /* Only on a real stop, never between tracks: advancing goes straight
+         * to the next play(), so a cover shared by a whole album stays on the
+         * screen instead of being decoded again for every track. */
+        album_art_clear();
     }
 
     const audio_source_result_t result = audio_source_manager_stop(&s_manager, source);
@@ -425,6 +433,21 @@ bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_se
     *elapsed_seconds = status.elapsed_seconds;
     *total_seconds = status.total_seconds;
     return true;
+}
+
+bool player_control_track_tags(audio_tags_t *tags)
+{
+    if (tags == NULL) return false;
+    audio_tags_clear(tags);
+    const audio_source_t source =
+        (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
+    if (source != AUDIO_SOURCE_USB) return false;
+
+    usb_player_get_tags(tags);
+    // False for an untagged file, so the caller falls back to the file name
+    // rather than clearing three rows it has nothing to put in. The player
+    // clears these when it starts a track, so they never outlive their file.
+    return audio_tags_have_text(tags);
 }
 
 const station_catalog_entry_t *player_control_station_at(size_t index)

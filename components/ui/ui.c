@@ -1503,9 +1503,25 @@ static void ui_show_station_list(void)
     ui_load_station_list_screen();
 }
 
+/* Leaves the browser for the player, in the view state as well as on screen.
+ *
+ * Dropping the deferred list-open is the load-bearing part. ui_show_source()
+ * arms it for USB and then opens the list itself, and the block that consumes
+ * it only runs while the view is SOURCE - which, until a file could move the
+ * view out of the list, never happened during browsing. So the request sat
+ * armed for the whole session, harmless only because nothing looked at it.
+ * The moment the player screen takes over it would fire on the listing
+ * revision the user's own directory change produced, throw the player screen
+ * away and put the browser back, until the idle timeout undid that too. */
+static void ui_leave_station_list(void)
+{
+    s_usb_list_open_requested = false;
+    ui_player_state_close_station_list(&s_player_ui);
+}
+
 static void ui_close_station_list_to_source(void)
 {
-    ui_player_state_close_station_list(&s_player_ui);
+    ui_leave_station_list();
     lv_screen_load(s_source_screen);
 }
 
@@ -1596,6 +1612,15 @@ static void ui_handle_input(board_input_action_t action)
             // arrives through the snapshot poll. Only a file switches to the
             // player.
             if (entry.kind == USB_BROWSER_ENTRY_DIRECTORY) return;
+            // Leave the list in the view state too, not just on screen. The
+            // automatic list-to-player transition in
+            // ui_player_state_apply_snapshot() only fires for the radio, so USB
+            // used to sit in the list view behind the player screen until the
+            // 10 s idle timeout - and while it did, the encoder was still bound
+            // to "select this row", so a press meant as pause restarted the
+            // track and F3 did nothing. Every press also refreshed the idle
+            // timer, so pressing again pushed the recovery further away.
+            ui_leave_station_list();
             ui_load_source_screen(AUDIO_SOURCE_USB);
             lv_label_set_text(s_source_title, ui_menu_item_label(UI_MENU_ITEM_USB_FILES));
             ui_set_state_line("Открытие файла", "");

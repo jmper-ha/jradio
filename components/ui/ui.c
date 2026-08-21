@@ -49,8 +49,10 @@
  * around 5.6 KB, so this leaves roughly 2.5 KB of margin. */
 #define UI_TASK_STACK_SIZE 8192
 #define UI_TASK_PRIORITY 4
-/* Six rows, not seven: the bottom strip belongs to the scroll bar. */
-#define UI_STATION_LIST_MAX_ROWS 6U
+/* Five rows of 20 px text. The count follows from the size: at 14 px six rows
+ * fitted, but a name read from across the room did not, and the row pitch a
+ * legible face needs leaves room for five above the scroll bar. */
+#define UI_STATION_LIST_MAX_ROWS 5U
 
 /* The screens share one palette, stated here rather than repeated as literals.
  * The player screen defined it by accretion; the others were on a different
@@ -68,6 +70,9 @@
 #define UI_COLOR_DIM 0x78909C
 /* Only ever a warning; never decoration, so it stays out of the ramp above. */
 #define UI_COLOR_NOTICE 0xFFD54F
+/* Folder rows in the USB browser. Deliberately duller than the accent, which
+ * means "this is the one playing" - a folder is a place, not a state. */
+#define UI_COLOR_FOLDER 0xC08A1E
 /* A raised step rather than a colour of its own: the row under the cursor is
  * lifted off the ground and its text takes the accent, which is how the player
  * screen marks the thing being played. */
@@ -79,7 +84,11 @@
 /* List screens: rows start straight under the strip, and a rule and the
  * position bar close the screen the way they close the player's. */
 #define UI_LIST_ROW_Y (UI_STRIP_H + 6)
-#define UI_LIST_ROW_PITCH 26
+#define UI_LIST_ROW_PITCH 36
+#define UI_LIST_ROW_H 30
+/* Width the folder glyph reserves at the left of a row: 24 px of Montserrat 24
+ * (its adv_w) plus the gap before the name. */
+#define UI_LIST_ICON_W 30
 #define UI_LIST_RULE_Y (UI_LIST_ROW_Y + (int)UI_STATION_LIST_MAX_ROWS * UI_LIST_ROW_PITCH + 6)
 #define UI_LIST_PROGRESS_Y (UI_LIST_RULE_Y + 8)
 
@@ -179,6 +188,10 @@ static lv_obj_t *s_station_list_screen;
 static lv_obj_t *s_station_list_title;
 static lv_obj_t *s_station_list_notice;
 static lv_obj_t *s_station_list_rows[UI_STATION_LIST_MAX_ROWS];
+/* The folder mark is a label of its own rather than a glyph inside the row's
+ * text: inline it would take the row's font and colour, and it has to be
+ * bigger than the name beside it and in its own colour. */
+static lv_obj_t *s_station_list_icons[UI_STATION_LIST_MAX_ROWS];
 static lv_obj_t *s_station_list_progress;
 static station_list_state_t s_station_list;
 static ui_player_state_t s_player_ui;
@@ -668,17 +681,16 @@ static void ui_create_menu_screen(void)
 }
 
 // Fills `text` with what the row at `list_index` should read, and reports
-// whether that row is the one currently playing.
-/* Longest row either list can produce: a full-length USB name behind the
- * directory glyph, which is three UTF-8 bytes plus its space. Station rows are
- * far shorter - a three-digit ordinal and a 96-byte name. Sized from the parts
- * because it was one byte short of this, and the last character of the longest
- * directory name was being dropped. */
-#define UI_LIST_ROW_TEXT_MAX (USB_BROWSER_NAME_MAX_LEN + sizeof(LV_SYMBOL_DIRECTORY " "))
+// whether that row is the one currently playing and whether it is a directory.
+/* Longest row either list can produce: a full-length USB name. Station rows
+ * are far shorter - a three-digit ordinal, a space and a 96-byte name. */
+#define UI_LIST_ROW_TEXT_MAX (USB_BROWSER_NAME_MAX_LEN + 8U)
 
-static bool ui_list_row_text(size_t list_index, char *text, size_t text_size, bool *active)
+static bool ui_list_row_text(size_t list_index, char *text, size_t text_size,
+                             bool *active, bool *directory)
 {
     *active = false;
+    *directory = false;
     if (!ui_list_shows_usb()) {
         const station_catalog_entry_t *entry = player_control_station_at(list_index);
         // Ordinal, so the first station reads 001 rather than 000.
@@ -697,14 +709,10 @@ static bool ui_list_row_text(size_t list_index, char *text, size_t text_size, bo
         return false;
     }
     // Directories are marked rather than merely sorted first, so the row tells
-    // you what the encoder click will do before you press it. The glyph comes
-    // from Montserrat through the Cyrillic font's fallback, so it can sit
-    // inline here instead of needing a label of its own.
-    if (entry.kind == USB_BROWSER_ENTRY_DIRECTORY) {
-        snprintf(text, text_size, LV_SYMBOL_DIRECTORY " %s", entry.name);
-    } else {
-        snprintf(text, text_size, "%s", entry.name);
-    }
+    // you what the encoder click will do before you press it. The mark itself
+    // is drawn by the caller, from its own label - see s_station_list_icons.
+    *directory = entry.kind == USB_BROWSER_ENTRY_DIRECTORY;
+    snprintf(text, text_size, "%s", entry.name);
     *active = list_index == station_list_active_index(&s_station_list);
     return true;
 }
@@ -735,12 +743,25 @@ static void ui_update_station_list(void)
             // Padding: the cursor stays on the middle row, so the rows beyond
             // either end of the catalogue are simply blank.
             lv_obj_add_flag(s_station_list_rows[row], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_station_list_icons[row], LV_OBJ_FLAG_HIDDEN);
             continue;
         }
         lv_obj_clear_flag(s_station_list_rows[row], LV_OBJ_FLAG_HIDDEN);
         char text[UI_LIST_ROW_TEXT_MAX];
         bool active = false;
-        (void)ui_list_row_text((size_t)entry_index, text, sizeof(text), &active);
+        bool directory = false;
+        (void)ui_list_row_text((size_t)entry_index, text, sizeof(text), &active,
+                               &directory);
+        // The name starts after the folder mark on a directory row and at the
+        // edge everywhere else, so the two never overlap and a file's name is
+        // not indented for a mark it does not have.
+        if (directory) {
+            lv_obj_clear_flag(s_station_list_icons[row], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_station_list_icons[row], LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_set_style_pad_left(s_station_list_rows[row],
+                                  directory ? 8 + UI_LIST_ICON_W : 8, 0);
         const bool selected = row == cursor_row;
         lv_obj_set_style_bg_color(s_station_list_rows[row],
                                   lv_color_hex(selected ? UI_COLOR_SELECTED
@@ -1051,11 +1072,32 @@ static void ui_create_station_list_screen(void)
         s_station_list_rows[row] = lv_label_create(s_station_list_screen);
         lv_obj_set_pos(s_station_list_rows[row], 10,
                        UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH);
-        lv_obj_set_size(s_station_list_rows[row], 300, 24);
+        lv_obj_set_size(s_station_list_rows[row], 300, UI_LIST_ROW_H);
+        // Bigger than the rest of the screen on purpose: this is the text the
+        // user reads from a distance while turning the encoder. The 23 px line
+        // it needs is what set the row height and the pitch above.
+        lv_obj_set_style_text_font(s_station_list_rows[row], &ui_font_cyrillic_20, 0);
         lv_obj_set_style_pad_left(s_station_list_rows[row], 8, 0);
-        lv_obj_set_style_pad_top(s_station_list_rows[row], 2, 0);
+        lv_obj_set_style_pad_top(s_station_list_rows[row], 3, 0);
         lv_obj_set_style_radius(s_station_list_rows[row], 3, 0);
         lv_label_set_long_mode(s_station_list_rows[row], LV_LABEL_LONG_MODE_DOTS);
+    }
+    /* Created after every row, so each mark is drawn over the row background
+     * rather than under it - LVGL paints children in creation order, and the
+     * rows are opaque. */
+    for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
+        s_station_list_icons[row] = lv_label_create(s_station_list_screen);
+        // 2 px down from the row: the glyph sits 4 px below the top of its own
+        // line box and is 18 px tall, which centres it in the 30 px row.
+        // x lines the mark up with where a file's name starts, so the two
+        // kinds of row share a left edge instead of stepping in and out.
+        lv_obj_set_pos(s_station_list_icons[row], 18,
+                       UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH + 2);
+        lv_obj_set_style_text_font(s_station_list_icons[row], &lv_font_montserrat_24, 0);
+        lv_obj_set_style_text_color(s_station_list_icons[row],
+                                    lv_color_hex(UI_COLOR_FOLDER), 0);
+        lv_label_set_text(s_station_list_icons[row], LV_SYMBOL_DIRECTORY);
+        lv_obj_add_flag(s_station_list_icons[row], LV_OBJ_FLAG_HIDDEN);
     }
 }
 

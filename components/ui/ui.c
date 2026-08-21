@@ -1544,10 +1544,32 @@ static void ui_load_station_list_screen(void)
     lv_screen_load(s_station_list_screen);
 }
 
+/* Opening the browser should show the file that is playing, not wherever
+ * browsing last stopped. Walking out of the playing file's directory and then
+ * letting the idle timeout return to the player screen used to leave the
+ * listing there for good: the browser reopened on that directory, with no row
+ * marked, and the way back to the current album was to walk it again.
+ *
+ * Posted rather than done here: the listing belongs to the player_control
+ * task, and reading a directory from this one would stall the poll loop that
+ * drives LVGL. The new listing arrives through the revision the poll already
+ * watches, which is the same path a directory change takes. */
+static void ui_request_usb_reveal(void)
+{
+    if (!ui_list_shows_usb()) return;
+    const player_command_t reveal = {
+        .kind = PLAYER_COMMAND_BROWSE_REVEAL,
+        .source = AUDIO_SOURCE_USB,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    (void)ui_submit_player_command(&reveal);
+}
+
 static void ui_show_station_list(void)
 {
     if (!ui_player_state_show_station_list(&s_player_ui)) return;
     s_waiting_for_radio_station = false;
+    ui_request_usb_reveal();
     ui_load_station_list_screen();
 }
 

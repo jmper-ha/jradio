@@ -75,7 +75,8 @@ static bool ui_player_state_is_usb_browse(const player_command_t *command)
 {
     return command->source == AUDIO_SOURCE_USB &&
            (command->kind == PLAYER_COMMAND_SELECT_ITEM ||
-            command->kind == PLAYER_COMMAND_BROWSE_UP);
+            command->kind == PLAYER_COMMAND_BROWSE_UP ||
+            command->kind == PLAYER_COMMAND_BROWSE_REVEAL);
 }
 
 bool ui_player_state_can_post(const ui_player_state_t *state,

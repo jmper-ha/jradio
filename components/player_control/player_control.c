@@ -42,6 +42,11 @@ static atomic_size_t s_usb_item_index = ATOMIC_VAR_INIT(PLAYER_ITEM_NONE);
 // reset its cursor: the path itself is truncated to PLAYER_NAME_MAX_LEN in the
 // snapshot, so two deep directories can look identical there.
 static atomic_uint s_usb_listing_revision = ATOMIC_VAR_INIT(0U);
+/* Full path of the file the drive is playing. Written and read only by this
+ * task, so it needs no atomics; it is here rather than in the snapshot because
+ * the browser wants it once, when it opens, and a path this long would not fit
+ * the 512-byte frame the snapshot is diffed into for the web. */
+static char s_usb_playing_path[USB_BROWSER_PATH_MAX_LEN];
 static atomic_bool s_rssi_seen = ATOMIC_VAR_INIT(false);
 static atomic_uint s_rssi_updated_ms = ATOMIC_VAR_INIT(0U);
 static atomic_bool s_rssi_valid = ATOMIC_VAR_INIT(false);
@@ -101,9 +106,45 @@ static void player_usb_select_item(size_t index)
     const esp_err_t result = usb_player_play(path, entry.name, entry.format);
     if (result != ESP_OK) {
         ESP_LOGW(TAG, "cannot play %s: %s", path, esp_err_to_name(result));
+        s_usb_playing_path[0] = '\0';
         return;
     }
+    snprintf(s_usb_playing_path, sizeof(s_usb_playing_path), "%s", path);
     atomic_store_explicit(&s_usb_item_index, index, memory_order_release);
+}
+
+/* Puts the browser back on the file that is playing.
+ *
+ * Browsing moves the listing wherever the user goes, including out of the
+ * directory the current track lives in, and nothing ever moved it back - so
+ * once the idle timeout returned to the player screen, the next trip into the
+ * browser opened on a directory unrelated to what was coming out of the
+ * speakers.
+ *
+ * The directory is reopened even when the listing never left it, rather than
+ * comparing paths first: the comparison needs a second 1 KB path buffer on a
+ * task whose stack is already the tightest on the device, and the read costs
+ * the same as stepping into any folder, which this task does on a keypress
+ * anyway. */
+static void player_usb_reveal_playing(void)
+{
+    if (s_usb_playing_path[0] == '\0') return;
+    char parent[USB_BROWSER_PATH_MAX_LEN];
+    if (!usb_browser_path_parent(s_usb_playing_path, parent, sizeof(parent))) return;
+    if (usb_storage_read_directory(parent) != ESP_OK) {
+        ESP_LOGW(TAG, "cannot reopen %s", parent);
+        return;
+    }
+    const char *name = strrchr(s_usb_playing_path, '/');
+    name = name == NULL ? s_usb_playing_path : name + 1;
+    const size_t index = usb_storage_find_entry(name);
+    // The file can have been deleted from another machine since it was opened;
+    // the directory is still the right one to show, just without a cursor to
+    // put on the playing row.
+    atomic_store_explicit(&s_usb_item_index,
+                          index < usb_storage_entry_count() ? index : PLAYER_ITEM_NONE,
+                          memory_order_release);
+    atomic_fetch_add_explicit(&s_usb_listing_revision, 1U, memory_order_release);
 }
 
 static void player_usb_advance(void)
@@ -116,6 +157,7 @@ static void player_usb_advance(void)
     if (next >= usb_storage_entry_count()) {
         ESP_LOGI(TAG, "usb: last track in the directory, stopping");
         atomic_store_explicit(&s_usb_item_index, PLAYER_ITEM_NONE, memory_order_release);
+        s_usb_playing_path[0] = '\0';
         return;
     }
     player_usb_select_item(next);
@@ -187,6 +229,8 @@ static bool player_stop_active_source(audio_source_t source)
          * to the next play(), so a cover shared by a whole album stays on the
          * screen instead of being decoded again for every track. */
         album_art_clear();
+        // Nothing is playing any more, so there is no directory to reveal.
+        s_usb_playing_path[0] = '\0';
     }
 
     const audio_source_result_t result = audio_source_manager_stop(&s_manager, source);
@@ -275,6 +319,9 @@ static void player_control_task(void *arg)
             break;
         case PLAYER_OPERATION_BROWSE_UP:
             player_usb_browse_up();
+            break;
+        case PLAYER_OPERATION_BROWSE_REVEAL:
+            player_usb_reveal_playing();
             break;
         case PLAYER_OPERATION_STOP:
             (void)player_stop_active_source(snapshot.active_source);

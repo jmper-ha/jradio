@@ -131,6 +131,31 @@ static void test_track_finished_advances_only_on_usb(void)
     assert(player_control_decide(&idle, &command) == PLAYER_OPERATION_NONE);
 }
 
+static void test_reveal_needs_usb_with_something_playing(void)
+{
+    /* Opening the browser asks for the playing file's directory. Paused counts
+     * as playing here - the track is still the one on screen. */
+    player_snapshot_t usb = {.active_source = AUDIO_SOURCE_USB,
+                             .playback_state = PLAYER_PLAYBACK_PLAYING};
+    player_command_t command = {.kind = PLAYER_COMMAND_BROWSE_REVEAL,
+                                .source = AUDIO_SOURCE_USB};
+    assert(player_control_decide(&usb, &command) == PLAYER_OPERATION_BROWSE_REVEAL);
+    usb.playback_state = PLAYER_PLAYBACK_PAUSED;
+    assert(player_control_decide(&usb, &command) == PLAYER_OPERATION_BROWSE_REVEAL);
+
+    /* Stopped, or failed: the listing stays where the user left it rather than
+     * jumping back to a file the drive is no longer playing. */
+    usb.playback_state = PLAYER_PLAYBACK_STOPPED;
+    assert(player_control_decide(&usb, &command) == PLAYER_OPERATION_NONE);
+    usb.playback_state = PLAYER_PLAYBACK_ERROR;
+    assert(player_control_decide(&usb, &command) == PLAYER_OPERATION_NONE);
+
+    /* The station list is flat and has no directory to reveal. */
+    player_snapshot_t radio = {.active_source = AUDIO_SOURCE_INTERNET_RADIO,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING};
+    assert(player_control_decide(&radio, &command) == PLAYER_OPERATION_INVALID);
+}
+
 static void test_usb_state_maps_to_public_playback_state(void)
 {
     assert(player_playback_from_usb(USB_PLAYER_STATE_STOPPED) == PLAYER_PLAYBACK_STOPPED);
@@ -146,6 +171,7 @@ int main(void)
     test_usb_source_requires_a_mounted_drive();
     test_usb_reselecting_the_same_entry_still_acts();
     test_track_finished_advances_only_on_usb();
+    test_reveal_needs_usb_with_something_playing();
     test_usb_state_maps_to_public_playback_state();
     test_active_station_is_not_restarted();
     test_failed_active_station_can_be_retried();

@@ -430,6 +430,15 @@ static void test_usb_browsing_does_not_go_pending(void)
     assert(ui_player_state_apply_post_result(&state, &up, true, 30));
     assert(!ui_player_state_is_pending(&state));
 
+    /* Same for the reveal the browser posts as it opens: it moves the listing,
+     * which no snapshot field the pending machinery watches would confirm. */
+    player_command_t reveal = command(PLAYER_COMMAND_BROWSE_REVEAL, AUDIO_SOURCE_USB,
+                                      PLAYER_ITEM_NONE);
+    assert(ui_player_state_can_post(&state, &reveal));
+    assert(ui_player_state_apply_post_result(&state, &reveal, true, 40));
+    assert(!ui_player_state_is_pending(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
+
     /* The radio keeps its pending window: a station switch blocks for seconds
      * while the decoder task stops. */
     ui_player_state_init(&state);

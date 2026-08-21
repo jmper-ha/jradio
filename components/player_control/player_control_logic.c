@@ -139,6 +139,15 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
         // function cannot see; the executor refuses at the mount root.
         return state->active_source == AUDIO_SOURCE_USB ? PLAYER_OPERATION_BROWSE_UP
                                                         : PLAYER_OPERATION_INVALID;
+    case PLAYER_COMMAND_BROWSE_REVEAL:
+        if (state->active_source != AUDIO_SOURCE_USB) return PLAYER_OPERATION_INVALID;
+        // With nothing playing there is nothing to reveal, and the file the
+        // drive played last is not it: after a stop, or a drive pulled and put
+        // back, the browser belongs wherever it already is.
+        return state->playback_state == PLAYER_PLAYBACK_STOPPED ||
+                       state->playback_state == PLAYER_PLAYBACK_ERROR
+                   ? PLAYER_OPERATION_NONE
+                   : PLAYER_OPERATION_BROWSE_REVEAL;
     case PLAYER_COMMAND_TRACK_FINISHED:
         // Only USB has tracks that end. A radio stream that stops has failed
         // and must not silently jump to another station.

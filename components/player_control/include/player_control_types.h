@@ -50,6 +50,10 @@ typedef enum {
     // Leaves the directory being browsed. Only USB has a hierarchy; the radio
     // list is flat.
     PLAYER_COMMAND_BROWSE_UP,
+    // Reopens the directory the playing file lives in, so that opening the
+    // browser shows what is playing rather than wherever browsing last
+    // stopped. Nothing starts or stops; only the listing moves.
+    PLAYER_COMMAND_BROWSE_REVEAL,
 } player_command_kind_t;
 
 typedef struct {
@@ -95,6 +99,7 @@ typedef enum {
     PLAYER_OPERATION_RESUME,
     PLAYER_OPERATION_ADVANCE_ITEM,
     PLAYER_OPERATION_BROWSE_UP,
+    PLAYER_OPERATION_BROWSE_REVEAL,
 } player_operation_t;
 
 player_operation_t player_control_decide(const player_snapshot_t *state,

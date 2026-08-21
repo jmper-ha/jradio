@@ -439,6 +439,17 @@ static void test_usb_browsing_does_not_go_pending(void)
     assert(!ui_player_state_is_pending(&state));
     assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
 
+    /* And for the seek the player screen posts: it changes where the file is
+     * playing from, not what is playing, so nothing in a snapshot moves to
+     * confirm it and it must not occupy the pending slot while the screen
+     * waits for an answer that never comes. */
+    player_command_t seek = command(PLAYER_COMMAND_SEEK, AUDIO_SOURCE_USB,
+                                    PLAYER_ITEM_NONE);
+    seek.position_seconds = 75U;
+    assert(ui_player_state_can_post(&state, &seek));
+    assert(ui_player_state_apply_post_result(&state, &seek, true, 50));
+    assert(!ui_player_state_is_pending(&state));
+
     /* The radio keeps its pending window: a station switch blocks for seconds
      * while the decoder task stops. */
     ui_player_state_init(&state);

@@ -314,6 +314,18 @@ static void player_control_task(void *arg)
                 (void)internet_radio_resume();
             }
             break;
+        case PLAYER_OPERATION_SEEK:
+            /* Resumed here rather than left to the caller, and in this order.
+             * The UI pauses the file before scrubbing so the listener is not
+             * hearing one place while pointing at another, which makes the
+             * press that commits a target mean "carry on from here" - two
+             * steps for the player, one gesture for the user. Requesting the
+             * jump first is what gets it applied on the pass that resumes:
+             * the playback task is asleep in its pause loop until then. */
+            if (usb_player_seek(command.position_seconds) == ESP_OK) {
+                (void)usb_player_resume();
+            }
+            break;
         case PLAYER_OPERATION_ADVANCE_ITEM:
             player_usb_advance();
             break;

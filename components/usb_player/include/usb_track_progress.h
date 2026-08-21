@@ -44,6 +44,29 @@ uint32_t usb_track_total_seconds(uint64_t file_bytes, uint64_t header_bytes,
  * the end does not. */
 bool usb_track_progress_percent(uint32_t elapsed_s, uint32_t total_s, uint8_t *percent);
 
+/* Where in the file the audio for `target_seconds` starts, as an offset from
+ * the start of the file.
+ *
+ * The inverse of usb_track_total_seconds(), and inexact in exactly the same
+ * way: on a variable-bitrate file the landing point drifts from the time asked
+ * for by however much the average bitrate misses the local one. That is the
+ * same estimate the progress bar is already drawn from, so the bar and the
+ * jump agree with each other even where both are approximate.
+ *
+ * Returns `header_bytes` when the bitrate is not known yet - the start of the
+ * audio is the only offset that is certainly safe to seek to. Never lands past
+ * the end of the file: a seek beyond the last byte would end the track, which
+ * is a jump nobody asked for. */
+uint64_t usb_track_seek_offset(uint64_t file_bytes, uint64_t header_bytes,
+                               uint16_t bitrate_kbps, uint32_t target_seconds);
+
+/* How much PCM the output has to have produced to be `seconds` into a track -
+ * the inverse of usb_track_elapsed_seconds(), so that after a jump the
+ * position readout carries on from where the listener actually is instead of
+ * counting up from zero again. */
+uint64_t usb_track_pcm_bytes(uint32_t seconds, uint32_t sample_rate_hz,
+                             uint8_t channels, uint8_t bits_per_sample);
+
 /* "2:41", or "1:02:03" once a track passes the hour. Minutes are not padded
  * below ten but seconds always are, which is how every player writes it. */
 void usb_track_time_text(char *text, size_t text_size, uint32_t seconds);

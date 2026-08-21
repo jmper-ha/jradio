@@ -119,6 +119,44 @@ static void test_a_long_track_grows_an_hours_field(void)
     usb_track_time_text(text, 0U, 10U);
 }
 
+static void test_a_seek_lands_where_the_length_estimate_says_it_should(void)
+{
+    /* The inverse of the total: 128 kbps is 16000 bytes a second, so a minute
+     * in is 960000 bytes past the start of the audio. */
+    assert(usb_track_seek_offset(4000000U, 0U, 128U, 60U) == 960000U);
+    /* The header is not audio, so it is added on rather than seeked into. */
+    assert(usb_track_seek_offset(4000000U, 2048U, 128U, 60U) == 960000U + 2048U);
+    /* The start of the track is the start of the audio, whatever precedes it. */
+    assert(usb_track_seek_offset(4000000U, 2048U, 128U, 0U) == 2048U);
+}
+
+static void test_a_seek_never_leaves_the_file(void)
+{
+    /* Past the end lands on the end: the track then finishes, which is at
+     * least a place the player knows what to do with. */
+    assert(usb_track_seek_offset(500000U, 0U, 128U, 600U) == 500000U);
+    /* Before the bitrate is known there is no way to convert a time to an
+     * offset, so the only safe answer is where the audio starts. */
+    assert(usb_track_seek_offset(4000000U, 2048U, 0U, 60U) == 2048U);
+    /* A file smaller than its own header is corrupt; do not seek into it. */
+    assert(usb_track_seek_offset(1024U, 2048U, 128U, 60U) == 2048U);
+}
+
+static void test_the_position_carries_on_from_where_the_seek_landed(void)
+{
+    /* The counter the elapsed reading is derived from has to be moved with the
+     * file, or the display would count up from zero again after a jump. Round
+     * trip through the reading that reads it: 16-bit stereo at 44.1 kHz. */
+    const uint64_t bytes = usb_track_pcm_bytes(90U, 44100U, 2U, 16U);
+    assert(bytes == 90ULL * 44100U * 4U);
+    assert(usb_track_elapsed_seconds(bytes, 44100U, 2U, 16U) == 90U);
+
+    /* Nothing known about the format yet means no byte count to aim for. */
+    assert(usb_track_pcm_bytes(90U, 0U, 2U, 16U) == 0U);
+    assert(usb_track_pcm_bytes(90U, 44100U, 0U, 16U) == 0U);
+    assert(usb_track_pcm_bytes(90U, 44100U, 2U, 4U) == 0U);
+}
+
 int main(void)
 {
     test_elapsed_counts_what_was_played_not_what_was_read();
@@ -132,6 +170,9 @@ int main(void)
     test_the_bar_cannot_overshoot_its_track();
     test_times_are_written_the_way_players_write_them();
     test_a_long_track_grows_an_hours_field();
+    test_a_seek_lands_where_the_length_estimate_says_it_should();
+    test_a_seek_never_leaves_the_file();
+    test_the_position_carries_on_from_where_the_seek_landed();
     puts("usb_track_progress tests passed");
     return 0;
 }

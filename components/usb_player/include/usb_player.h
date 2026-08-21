@@ -48,6 +48,16 @@ esp_err_t usb_player_play(const char *path, const char *display_name,
 esp_err_t usb_player_stop(void);
 esp_err_t usb_player_pause(void);
 esp_err_t usb_player_resume(void);
+
+/* Moves the playing track to `seconds` from its start. The jump is applied by
+ * the playback task on its next pass, so this returns before the audio has
+ * moved - and does nothing at all if the track ends first.
+ *
+ * Where the file lands is exact for WAV and an estimate from the average
+ * bitrate for everything else; see usb_track_seek_offset(). A track that is
+ * paused stays paused at the new position, which is what lets the caller
+ * scrub against a silent player and resume once. */
+esp_err_t usb_player_seek(uint32_t seconds);
 void usb_player_get_status(usb_player_status_t *status);
 
 /* What the playing file's own tags say, all empty when it has none.

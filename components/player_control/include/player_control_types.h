@@ -54,12 +54,20 @@ typedef enum {
     // browser shows what is playing rather than wherever browsing last
     // stopped. Nothing starts or stops; only the listing moves.
     PLAYER_COMMAND_BROWSE_REVEAL,
+    // Jumps the playing file to `position_seconds` and keeps playing from
+    // there. Only a file can be seeked: a stream has no position to move to.
+    PLAYER_COMMAND_SEEK,
 } player_command_kind_t;
 
 typedef struct {
     player_command_kind_t kind;
     audio_source_t source;
     size_t item_index;
+    // Only PLAYER_COMMAND_SEEK reads this. Kept out of item_index rather than
+    // borrowed from it: the two are different quantities, and a command that
+    // lies about which one it carries is the kind of thing that survives a
+    // rename.
+    uint32_t position_seconds;
 } player_command_t;
 
 typedef struct {
@@ -100,6 +108,7 @@ typedef enum {
     PLAYER_OPERATION_ADVANCE_ITEM,
     PLAYER_OPERATION_BROWSE_UP,
     PLAYER_OPERATION_BROWSE_REVEAL,
+    PLAYER_OPERATION_SEEK,
 } player_operation_t;
 
 player_operation_t player_control_decide(const player_snapshot_t *state,

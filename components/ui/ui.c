@@ -29,6 +29,7 @@
 #include "ui_feed_model.h"
 #include "ui_player_state.h"
 #include "ui_radio_text.h"
+#include "ui_seek.h"
 #include "ui_settings_model.h"
 #include "ui_station_list.h"
 #include "ui_status_bar.h"
@@ -198,6 +199,11 @@ static ui_player_state_t s_player_ui;
 // Only the player screen tells a single click from a double one, so only
 // there does a click wait out the window; every other screen acts at once.
 static ui_click_gesture_t s_player_click;
+/* Open only while the encoder is scrubbing the playing file. It takes over
+ * both the knob and the progress bar, so everything that leaves the player
+ * screen has to close it - a thick bar left behind would be a mode with no way
+ * back into it. */
+static ui_seek_t s_player_seek;
 static bool s_waiting_for_radio_station;
 static uint32_t s_radio_station_wait_started_ms;
 // The USB browser reuses this list screen. Outside the drive's root it shows a
@@ -364,8 +370,17 @@ static void ui_update_footer(void)
     char left_text[32];
     uint8_t played_percent = 0U;
     const bool have_track = player_control_track_progress(&elapsed, &total);
-    const bool have_bar = have_track && usb_track_progress_percent(elapsed, total,
-                                                                  &played_percent);
+    bool have_bar = have_track && usb_track_progress_percent(elapsed, total,
+                                                             &played_percent);
+    if (ui_seek_is_active(&s_player_seek)) {
+        /* Both readouts follow the knob rather than the file while the mode is
+         * open. Playback is paused where it was, so the real position says
+         * nothing about the place the user is pointing at - and the number
+         * under the bar is how that place is read exactly. */
+        elapsed = ui_seek_target(&s_player_seek);
+        played_percent = ui_seek_percent(&s_player_seek);
+        have_bar = true;
+    }
     if (have_track) {
         char elapsed_text[12];
         usb_track_time_text(elapsed_text, sizeof(elapsed_text), elapsed);
@@ -1101,6 +1116,9 @@ static void ui_create_station_list_screen(void)
 }
 
 static void ui_show_station_list(void);
+// Defined with the rest of the scrubbing mode, below the command helpers it
+// needs; every way off the player screen has to close the mode first.
+static void ui_end_seek(bool resume);
 
 /* Player screen layout, in device pixels.
  *
@@ -1137,6 +1155,11 @@ static void ui_show_station_list(void);
  * progress bar, which was pressed against the rule above it and the times
  * below. */
 #define UI_SRC_PROGRESS_Y (UI_SRC_RULE_BOTTOM + 8)
+/* A hairline while it only reports, three times that while it is being aimed:
+ * the bar is the control in scrubbing mode, and a 4 px target is not one. It
+ * grows about its own centre line, so the row it lives on does not shift. */
+#define UI_SRC_PROGRESS_H 4
+#define UI_SRC_PROGRESS_SEEK_H 12
 #define UI_SRC_FOOT_Y 214
 #define UI_SRC_PAUSE_SIZE 76
 #define UI_SRC_PAUSE_BAR_W 10
@@ -1304,7 +1327,7 @@ static void ui_create_source_screen(void)
      * end to be a fraction of. */
     s_source_progress = lv_obj_create(s_source_screen);
     lv_obj_set_pos(s_source_progress, 10, UI_SRC_PROGRESS_Y);
-    lv_obj_set_size(s_source_progress, 300, 4);
+    lv_obj_set_size(s_source_progress, 300, UI_SRC_PROGRESS_H);
     lv_obj_set_style_bg_color(s_source_progress, lv_color_hex(0x23303C), 0);
     lv_obj_set_style_border_width(s_source_progress, 0, 0);
     lv_obj_set_style_radius(s_source_progress, 2, 0);
@@ -1312,7 +1335,7 @@ static void ui_create_source_screen(void)
     lv_obj_clear_flag(s_source_progress, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *played = lv_obj_create(s_source_progress);
     lv_obj_set_pos(played, 0, 0);
-    lv_obj_set_size(played, 1, 4);
+    lv_obj_set_size(played, 1, UI_SRC_PROGRESS_H);
     lv_obj_set_style_bg_color(played, lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_obj_set_style_border_width(played, 0, 0);
     lv_obj_set_style_radius(played, 2, 0);
@@ -1477,6 +1500,8 @@ static void ui_load_menu_screen(void)
 
 static void ui_show_menu(void)
 {
+    // The source is about to be stopped, so there is nothing to resume to.
+    ui_end_seek(false);
     s_usb_unavailable = false;
     const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
     const audio_source_t old_source = ui_player_state_source(&s_player_ui);
@@ -1566,6 +1591,9 @@ static void ui_request_usb_reveal(void)
 
 static void ui_show_station_list(void)
 {
+    // Reachable from the poll loop as well as from a press, so the mode is
+    // closed here rather than at each caller.
+    ui_end_seek(true);
     if (!ui_player_state_show_station_list(&s_player_ui)) return;
     s_waiting_for_radio_station = false;
     ui_request_usb_reveal();
@@ -1607,6 +1635,85 @@ static void ui_render_player_state(void)
         ui_load_station_list_screen();
         break;
     }
+}
+
+/* Grows the progress bar into a control and back. Called only on the two
+ * transitions, not per pass: a resize invalidates the area, and this loop runs
+ * every 10 ms. */
+static void ui_apply_seek_visual(bool seeking)
+{
+    const int32_t height = seeking ? UI_SRC_PROGRESS_SEEK_H : UI_SRC_PROGRESS_H;
+    lv_obj_set_pos(s_source_progress, 10,
+                   UI_SRC_PROGRESS_Y - (height - UI_SRC_PROGRESS_H) / 2);
+    lv_obj_set_size(s_source_progress, 300, height);
+    lv_obj_t *played = lv_obj_get_child(s_source_progress, 0);
+    if (played != NULL) lv_obj_set_height(played, height);
+}
+
+/* True when the file could be scrubbed right now. The length is the part that
+ * can be missing: it is estimated from the first frame's bitrate, so for the
+ * first moments of a track - and for the whole of one whose bitrate never
+ * became known - there is no scale to aim along. */
+static bool ui_seek_available(void)
+{
+    if (ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_USB) return false;
+    if (ui_player_state_playback(&s_player_ui) != PLAYER_PLAYBACK_PLAYING) return false;
+    uint32_t elapsed = 0U;
+    uint32_t total = 0U;
+    return player_control_track_progress(&elapsed, &total) && total > 0U;
+}
+
+static void ui_begin_seek(void)
+{
+    uint32_t elapsed = 0U;
+    uint32_t total = 0U;
+    if (!player_control_track_progress(&elapsed, &total)) return;
+    if (!ui_seek_begin(&s_player_seek, elapsed, total)) return;
+    /* Paused for the duration, so the listener is not hearing one part of the
+     * track while pointing at another - and so the position on screen is only
+     * ever the one being chosen. The press that commits the target starts it
+     * again from there. */
+    const player_command_t pause = {
+        .kind = PLAYER_COMMAND_PAUSE,
+        .source = AUDIO_SOURCE_USB,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    (void)ui_submit_player_command(&pause);
+    ui_apply_seek_visual(true);
+    ui_update_footer();
+}
+
+/* Leaves scrubbing without jumping. `resume` says whether the file should be
+ * started again where it was: it should whenever the player screen stays up,
+ * and must not when the caller is about to stop the source anyway. */
+static void ui_end_seek(bool resume)
+{
+    if (!ui_seek_is_active(&s_player_seek)) return;
+    ui_seek_reset(&s_player_seek);
+    ui_apply_seek_visual(false);
+    if (resume) {
+        const player_command_t play = {
+            .kind = PLAYER_COMMAND_PLAY,
+            .source = AUDIO_SOURCE_USB,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        (void)ui_submit_player_command(&play);
+    }
+    ui_update_footer();
+}
+
+static void ui_commit_seek(void)
+{
+    const player_command_t seek = {
+        .kind = PLAYER_COMMAND_SEEK,
+        .source = AUDIO_SOURCE_USB,
+        .item_index = PLAYER_ITEM_NONE,
+        .position_seconds = ui_seek_target(&s_player_seek),
+    };
+    (void)ui_submit_player_command(&seek);
+    // player_control resumes as part of the jump, so asking again here would
+    // race the seek and could restart the file before it has moved.
+    ui_end_seek(false);
 }
 
 static void ui_toggle_playback(void)
@@ -1723,6 +1830,32 @@ static void ui_handle_input(board_input_action_t action)
         const audio_source_t source = ui_player_state_source(&s_player_ui);
         const bool has_list = source == AUDIO_SOURCE_INTERNET_RADIO ||
                               source == AUDIO_SOURCE_USB;
+        if (ui_seek_is_active(&s_player_seek)) {
+            // Scrubbing owns the knob and the press while it is open, so the
+            // volume and the play/pause click are unreachable and cannot be
+            // triggered by accident by the gesture that chooses a position.
+            if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
+                action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
+                if (ui_seek_move(&s_player_seek,
+                                 action == BOARD_INPUT_ACTION_ENCODER_RIGHT ? 1 : -1)) {
+                    ui_update_footer();
+                }
+                return;
+            }
+            if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
+                ui_commit_seek();
+                return;
+            }
+            /* Every other button abandons the scrub rather than doing its own
+             * job on top of it: a mode with only one way out is a trap, and
+             * the file is paused while this one is open. Leaving the screen is
+             * the exception that must not resume - it stops the source on the
+             * next line anyway. */
+            const bool leaving = action == BOARD_INPUT_ACTION_F2 ||
+                                 action == BOARD_INPUT_ACTION_ENCODER_LONG;
+            ui_end_seek(!leaving);
+            if (!leaving) return;
+        }
         if (action == BOARD_INPUT_ACTION_F2 ||
             action == BOARD_INPUT_ACTION_ENCODER_LONG) {
             // Leaving the screen entirely, so a click waiting out its window
@@ -1730,12 +1863,20 @@ static void ui_handle_input(board_input_action_t action)
             ui_click_gesture_cancel(&s_player_click);
             ui_show_menu();
         } else if (has_list && action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
-            // Double click opens the list and leaves playback alone; the
-            // single click that toggles play/pause is delivered later, from
-            // the poll loop, once no second press has arrived.
-            if (ui_click_gesture_press(&s_player_click, ui_tick_get_ms()) ==
-                UI_CLICK_DOUBLE) {
+            // Double click opens the list, triple click starts scrubbing, and
+            // both leave playback alone; the single click that toggles
+            // play/pause is delivered later, from the poll loop, once no
+            // further press has arrived.
+            switch (ui_click_gesture_press(&s_player_click, ui_tick_get_ms(),
+                                           ui_seek_available())) {
+            case UI_CLICK_DOUBLE:
                 ui_show_station_list();
+                break;
+            case UI_CLICK_TRIPLE:
+                ui_begin_seek();
+                break;
+            default:
+                break;
             }
         } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
                    action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
@@ -1853,6 +1994,17 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
             s_usb_list_open_revision = player_control_usb_listing_revision();
             s_usb_list_open_requested = true;
         }
+    }
+    /* The file can stop under the mode - it ended, it failed, the drive was
+     * pulled - and then there is nothing left to scrub and nothing to resume.
+     * Only those states, not "anything but paused": the pause this mode asks
+     * for takes a poll or two to appear in a snapshot, and closing the mode on
+     * the way there would make the gesture look like it had never worked. */
+    if (ui_seek_is_active(&s_player_seek) &&
+        (snapshot->active_source != AUDIO_SOURCE_USB ||
+         snapshot->playback_state == PLAYER_PLAYBACK_STOPPED ||
+         snapshot->playback_state == PLAYER_PLAYBACK_ERROR)) {
+        ui_end_seek(false);
     }
     ui_player_state_apply_snapshot(&s_player_ui, snapshot, ui_tick_get_ms());
     if (old_view != ui_player_state_view(&s_player_ui) ||
@@ -2036,8 +2188,18 @@ static void ui_task(void *arg)
                 ui_handle_input(action);
             }
         }
-        if (ui_click_gesture_poll(&s_player_click, ui_tick_get_ms()) == UI_CLICK_SINGLE) {
+        switch (ui_click_gesture_poll(&s_player_click, ui_tick_get_ms())) {
+        case UI_CLICK_SINGLE:
             ui_toggle_playback();
+            break;
+        // Only reachable where a third press was worth waiting for: with
+        // scrubbing available the double has to outlast its own window before
+        // it can be told from the start of a triple.
+        case UI_CLICK_DOUBLE:
+            ui_show_station_list();
+            break;
+        default:
+            break;
         }
         if (ui_volume_commit_due(s_volume_save_pending, s_volume_changed_ms,
                                  ui_tick_get_ms(), UI_VOLUME_SETTLE_MS)) {

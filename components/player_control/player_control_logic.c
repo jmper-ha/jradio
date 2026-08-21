@@ -148,6 +148,16 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
                        state->playback_state == PLAYER_PLAYBACK_ERROR
                    ? PLAYER_OPERATION_NONE
                    : PLAYER_OPERATION_BROWSE_REVEAL;
+    case PLAYER_COMMAND_SEEK:
+        // A stream has no length and no position to move to, and a track that
+        // is stopped or failed has no decoder to move. Paused counts: the UI
+        // pauses the file first and scrubs against a silent player, so by the
+        // time the target is committed this is the state it is in.
+        if (state->active_source != AUDIO_SOURCE_USB) return PLAYER_OPERATION_INVALID;
+        return state->playback_state == PLAYER_PLAYBACK_PLAYING ||
+                       state->playback_state == PLAYER_PLAYBACK_PAUSED
+                   ? PLAYER_OPERATION_SEEK
+                   : PLAYER_OPERATION_INVALID;
     case PLAYER_COMMAND_TRACK_FINISHED:
         // Only USB has tracks that end. A radio stream that stops has failed
         // and must not silently jump to another station.

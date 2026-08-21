@@ -97,6 +97,10 @@ bool ui_player_state_can_post(const ui_player_state_t *state,
     case PLAYER_COMMAND_PLAY:
     case PLAYER_COMMAND_PAUSE:
     case PLAYER_COMMAND_TOGGLE:
+    // A seek changes where the file is playing from, not what is playing, so
+    // no snapshot field ever moves to confirm it - the same reason USB
+    // browsing stays out of the pending machinery.
+    case PLAYER_COMMAND_SEEK:
         return true;
     default:
         return false;
@@ -111,6 +115,7 @@ bool ui_player_state_apply_post_result(ui_player_state_t *state,
     if (command->kind == PLAYER_COMMAND_PLAY ||
         command->kind == PLAYER_COMMAND_PAUSE ||
         command->kind == PLAYER_COMMAND_TOGGLE ||
+        command->kind == PLAYER_COMMAND_SEEK ||
         ui_player_state_is_usb_browse(command)) return true;
 
     const bool superseding_stop =
@@ -274,6 +279,11 @@ audio_source_t ui_player_state_source(const ui_player_state_t *state)
 size_t ui_player_state_active_item(const ui_player_state_t *state)
 {
     return state == NULL ? PLAYER_ITEM_NONE : state->confirmed_item_index;
+}
+
+player_playback_state_t ui_player_state_playback(const ui_player_state_t *state)
+{
+    return state == NULL ? PLAYER_PLAYBACK_STOPPED : state->confirmed_playback_state;
 }
 
 bool ui_player_state_is_pending(const ui_player_state_t *state)

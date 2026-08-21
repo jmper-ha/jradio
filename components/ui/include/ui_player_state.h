@@ -50,5 +50,8 @@ bool ui_player_state_can_select_item(const ui_player_state_t *state,
 ui_player_view_t ui_player_state_view(const ui_player_state_t *state);
 audio_source_t ui_player_state_source(const ui_player_state_t *state);
 size_t ui_player_state_active_item(const ui_player_state_t *state);
+/* The playback state the last snapshot carried. What the screen shows can be
+ * ahead of it while a command is pending; this is what has been confirmed. */
+player_playback_state_t ui_player_state_playback(const ui_player_state_t *state);
 bool ui_player_state_is_pending(const ui_player_state_t *state);
 bool ui_player_state_pending_item(const ui_player_state_t *state, size_t *item_index);

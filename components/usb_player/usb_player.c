@@ -1,5 +1,6 @@
 #include "usb_player.h"
 
+#include <limits.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -50,6 +51,12 @@ static atomic_uint s_input_fill_percent = ATOMIC_VAR_INIT(0);
 /* Position and length in seconds, written per block by the playback task. */
 static atomic_uint s_elapsed_seconds = ATOMIC_VAR_INIT(0);
 static atomic_uint s_total_seconds = ATOMIC_VAR_INIT(0);
+/* Where the listener has asked the track to jump to, in seconds, or
+ * USB_PLAYER_SEEK_NONE. Handed to the playback task rather than acted on by
+ * the caller: only that task owns the file handle, the decoder and the byte
+ * counters a jump has to move together. */
+#define USB_PLAYER_SEEK_NONE UINT32_MAX
+static atomic_uint s_seek_request = ATOMIC_VAR_INIT(USB_PLAYER_SEEK_NONE);
 static SemaphoreHandle_t s_control_lock;
 static atomic_bool s_stop_requested = ATOMIC_VAR_INIT(false);
 static atomic_bool s_paused = ATOMIC_VAR_INIT(false);
@@ -301,6 +308,65 @@ static bool wait_while_paused(void)
     return true;
 }
 
+/* Takes the pending jump, if there is one. USB_PLAYER_SEEK_NONE means there is
+ * not; the exchange makes sure one request is acted on once, even if a second
+ * arrives while this one is being applied. */
+static uint32_t take_seek_request(void)
+{
+    return atomic_exchange_explicit(&s_seek_request, USB_PLAYER_SEEK_NONE,
+                                    memory_order_acq_rel);
+}
+
+/* Moves the position counters to `target_seconds` after the file has been
+ * repositioned. The elapsed reading is published here rather than waiting for
+ * the next block, so the screen shows the new position from the moment the
+ * jump lands instead of falling back to the old one for a poll or two. */
+static void seek_reset_position(usb_player_context_t *ctx, uint32_t target_seconds)
+{
+    ctx->pcm_bytes = usb_track_pcm_bytes(target_seconds, ctx->output_sample_rate,
+                                         AUDIO_CHANNEL_COUNT, AUDIO_BITS_PER_SAMPLE);
+    atomic_store_explicit(&s_elapsed_seconds, target_seconds, memory_order_relaxed);
+}
+
+/* Applies a pending jump on the compressed path.
+ *
+ * The decoder has to be reset, not just fed from the new offset: landing
+ * mid-frame leaves it holding a partial frame and, for MP3, a bit reservoir
+ * that refers to bytes that are now behind the read head - the same state that
+ * produced the silent stall this player was already taught to recover from.
+ * After the reset it resyncs on the first frame header it finds, which costs
+ * at most one frame of audio.
+ *
+ * A failed seek is not a failed track: the file is left where it was and
+ * playback carries on from there. */
+static void apply_seek(usb_player_context_t *ctx, radio_decoder_t *decoder)
+{
+    const uint32_t target = take_seek_request();
+    if (target == USB_PLAYER_SEEK_NONE) return;
+
+    uint16_t bitrate_kbps;
+    taskENTER_CRITICAL(&s_status_lock);
+    bitrate_kbps = s_status.bitrate_kbps;
+    taskEXIT_CRITICAL(&s_status_lock);
+    const uint64_t offset = usb_track_seek_offset(ctx->file_bytes, ctx->header_bytes,
+                                                  bitrate_kbps, target);
+    if (offset > LONG_MAX || fseek(ctx->file, (long)offset, SEEK_SET) != 0) {
+        ESP_LOGW(TAG, "cannot seek to %us (offset %llu)", (unsigned int)target,
+                 (unsigned long long)offset);
+        return;
+    }
+    // Everything already read belongs to the old position, including the
+    // end-of-file mark: a seek backwards from the last block has more to read.
+    ctx->available = 0U;
+    ctx->offset = 0U;
+    ctx->eof = false;
+    radio_decoder_reset(decoder);
+    seek_reset_position(ctx, target);
+    ESP_LOGI(TAG, "seek to %us: offset=%llu of %llu at %ukbps", (unsigned int)target,
+             (unsigned long long)offset, (unsigned long long)ctx->file_bytes,
+             (unsigned int)bitrate_kbps);
+}
+
 // WAV carries finished PCM, so there is no decoder in this path at all - only
 // the header parse, an optional mono-to-stereo expansion, and I2S.
 static bool play_wav(usb_player_context_t *ctx, unsigned int *pcm_blocks)
@@ -341,9 +407,29 @@ static bool play_wav(usb_player_context_t *ctx, unsigned int *pcm_blocks)
     // A declared length of zero means the writer never finished the header, so
     // play to the end of the file instead of stopping immediately.
     size_t remaining = wav.data_length > 0U ? wav.data_length : SIZE_MAX;
+    // Exact here, unlike the compressed path: PCM has a fixed number of bytes
+    // per second, so a WAV seek lands on the sample that was asked for.
+    const uint64_t bytes_per_second = (uint64_t)wav.sample_rate * frame_bytes;
     for (;;) {
         if (should_stop()) return false;
         if (wait_while_paused()) continue;
+
+        const uint32_t target = take_seek_request();
+        if (target != USB_PLAYER_SEEK_NONE) {
+            uint64_t skip = (uint64_t)target * bytes_per_second;
+            const uint64_t audio_bytes =
+                wav.data_length > 0U ? (uint64_t)wav.data_length : ctx->file_bytes;
+            if (skip > audio_bytes) skip = audio_bytes - (audio_bytes % frame_bytes);
+            const uint64_t offset = (uint64_t)wav.data_offset + skip;
+            if (offset > LONG_MAX || fseek(ctx->file, (long)offset, SEEK_SET) != 0) {
+                ESP_LOGW(TAG, "cannot seek to %us in the WAV data", (unsigned int)target);
+            } else {
+                remaining = wav.data_length > 0U ? (size_t)(audio_bytes - skip) : SIZE_MAX;
+                seek_reset_position(ctx, target);
+                ESP_LOGI(TAG, "seek to %us: offset=%llu", (unsigned int)target,
+                         (unsigned long long)offset);
+            }
+        }
 
         size_t want = USB_PLAYER_READ_CHUNK < remaining ? USB_PLAYER_READ_CHUNK : remaining;
         want -= want % frame_bytes;
@@ -382,6 +468,9 @@ static void usb_player_task(void *arg)
     // is never shown against this one.
     atomic_store_explicit(&s_elapsed_seconds, 0U, memory_order_relaxed);
     atomic_store_explicit(&s_total_seconds, 0U, memory_order_relaxed);
+    // A jump asked for a moment before the track changed belongs to the track
+    // that is gone; applying it to this one would open it in the middle.
+    atomic_store_explicit(&s_seek_request, USB_PLAYER_SEEK_NONE, memory_order_relaxed);
     radio_decoder_t *decoder = NULL;
     radio_stream_format_t stream_format = RADIO_STREAM_FORMAT_MP3;
     const bool is_wav = s_request.format == USB_BROWSER_FORMAT_WAV;
@@ -431,6 +520,10 @@ static void usb_player_task(void *arg)
     while (!failed && !is_wav) {
         if (should_stop()) break;
         if (wait_while_paused()) continue;
+        // After the pause check, so a jump requested while the file is paused
+        // for scrubbing is applied on the pass that resumes it rather than
+        // being swallowed by the pause loop.
+        apply_seek(&ctx, decoder);
 
         bool need_input = ctx.available == 0U;
         atomic_store_explicit(&s_input_fill_percent,
@@ -630,6 +723,16 @@ esp_err_t usb_player_pause(void)
     // same reason the radio disables output on pause.
     (void)board_audio_set_enabled(false);
     status_set_state(USB_PLAYER_STATE_PAUSED);
+    return ESP_OK;
+}
+
+esp_err_t usb_player_seek(uint32_t seconds)
+{
+    if (!atomic_load_explicit(&s_task_running, memory_order_acquire)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (seconds == USB_PLAYER_SEEK_NONE) return ESP_ERR_INVALID_ARG;
+    atomic_store_explicit(&s_seek_request, seconds, memory_order_release);
     return ESP_OK;
 }
 

@@ -23,6 +23,22 @@ uint32_t usb_track_total_seconds(uint64_t file_bytes, uint64_t header_bytes,
     return (uint32_t)((audio_bytes * 8U) / ((uint64_t)bitrate_kbps * 1000U));
 }
 
+uint64_t usb_track_seek_offset(uint64_t file_bytes, uint64_t header_bytes,
+                               uint16_t bitrate_kbps, uint32_t target_seconds)
+{
+    if (bitrate_kbps == 0U || file_bytes <= header_bytes) return header_bytes;
+    const uint64_t audio_bytes = file_bytes - header_bytes;
+    const uint64_t wanted = ((uint64_t)target_seconds * bitrate_kbps * 1000U) / 8U;
+    return header_bytes + (wanted < audio_bytes ? wanted : audio_bytes);
+}
+
+uint64_t usb_track_pcm_bytes(uint32_t seconds, uint32_t sample_rate_hz,
+                             uint8_t channels, uint8_t bits_per_sample)
+{
+    if (sample_rate_hz == 0U || channels == 0U || bits_per_sample < 8U) return 0U;
+    return (uint64_t)seconds * sample_rate_hz * channels * (bits_per_sample / 8U);
+}
+
 bool usb_track_progress_percent(uint32_t elapsed_s, uint32_t total_s, uint8_t *percent)
 {
     if (percent == NULL || total_s == 0U) return false;

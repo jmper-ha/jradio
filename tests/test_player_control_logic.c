@@ -156,6 +156,35 @@ static void test_reveal_needs_usb_with_something_playing(void)
     assert(player_control_decide(&radio, &command) == PLAYER_OPERATION_INVALID);
 }
 
+static void test_seek_belongs_to_a_file_that_is_running(void)
+{
+    /* Paused is the state a seek normally arrives in: the screen pauses the
+     * file before scrubbing so the listener is not hearing one place while
+     * pointing at another. */
+    player_snapshot_t usb = {.active_source = AUDIO_SOURCE_USB,
+                             .playback_state = PLAYER_PLAYBACK_PAUSED};
+    player_command_t command = {.kind = PLAYER_COMMAND_SEEK,
+                                .source = AUDIO_SOURCE_USB,
+                                .position_seconds = 90U};
+    assert(player_control_decide(&usb, &command) == PLAYER_OPERATION_SEEK);
+    usb.playback_state = PLAYER_PLAYBACK_PLAYING;
+    assert(player_control_decide(&usb, &command) == PLAYER_OPERATION_SEEK);
+
+    /* Nothing is decoding, so there is no position to move. Refused rather
+     * than treated as a no-op: a seek that silently did nothing would leave
+     * the screen showing a place the file never went to. */
+    usb.playback_state = PLAYER_PLAYBACK_STOPPED;
+    assert(player_control_decide(&usb, &command) == PLAYER_OPERATION_INVALID);
+    usb.playback_state = PLAYER_PLAYBACK_ERROR;
+    assert(player_control_decide(&usb, &command) == PLAYER_OPERATION_INVALID);
+
+    /* A stream has no length and no position - seeking one is meaningless
+     * whatever it is doing. */
+    player_snapshot_t radio = {.active_source = AUDIO_SOURCE_INTERNET_RADIO,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING};
+    assert(player_control_decide(&radio, &command) == PLAYER_OPERATION_INVALID);
+}
+
 static void test_usb_state_maps_to_public_playback_state(void)
 {
     assert(player_playback_from_usb(USB_PLAYER_STATE_STOPPED) == PLAYER_PLAYBACK_STOPPED);
@@ -172,6 +201,7 @@ int main(void)
     test_usb_reselecting_the_same_entry_still_acts();
     test_track_finished_advances_only_on_usb();
     test_reveal_needs_usb_with_something_playing();
+    test_seek_belongs_to_a_file_that_is_running();
     test_usb_state_maps_to_public_playback_state();
     test_active_station_is_not_restarted();
     test_failed_active_station_can_be_retried();

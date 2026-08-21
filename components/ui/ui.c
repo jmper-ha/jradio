@@ -767,18 +767,17 @@ static void ui_update_station_list(void)
                                   lv_color_hex(selected ? UI_COLOR_SELECTED
                                                         : UI_COLOR_GROUND), 0);
         lv_obj_set_style_bg_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
-        lv_obj_set_style_text_color(s_station_list_rows[row],
-                                    lv_color_hex(selected ? UI_COLOR_ACCENT : UI_COLOR_MUTED), 0);
-        // Outline, not border: a border is drawn inside and takes 2 px off each
-        // edge, which left 18 px of content for a 19 px line - so the playing
-        // row overflowed vertically and LV_LABEL_LONG_MODE_SCROLL rolled it
-        // up and down, even for names that fitted across. An outline is drawn
-        // outside the object and costs the content nothing.
-        lv_obj_set_style_outline_width(s_station_list_rows[row], active ? 2 : 0, 0);
-        lv_obj_set_style_outline_color(s_station_list_rows[row], lv_color_hex(UI_COLOR_ACCENT), 0);
-        lv_obj_set_style_outline_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
-        // Hug the row: the 2 px gap between rows is exactly where it goes.
-        lv_obj_set_style_outline_pad(s_station_list_rows[row], 0, 0);
+        /* Three states, and each one is a brightness rather than a shape. The
+         * cursor takes the accent, the row that is playing is the brightest of
+         * the rest, everything else stays muted.
+         *
+         * The playing row used to be ringed with an outline instead. Two marks
+         * of different kinds competed for the same glance - a rectangle and a
+         * lit row - and the rectangle was the one that had to be decoded. */
+        const uint32_t row_colour = selected ? UI_COLOR_ACCENT
+                                    : active ? UI_COLOR_TEXT
+                                             : UI_COLOR_MUTED;
+        lv_obj_set_style_text_color(s_station_list_rows[row], lv_color_hex(row_colour), 0);
         // Only the row under the cursor scrolls: a screen of six marquees at
         // once is unreadable, and the row being pointed at is the one whose
         // full name the user is actually after. The others keep the ellipsis.

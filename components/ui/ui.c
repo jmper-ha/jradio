@@ -1431,6 +1431,12 @@ static bool ui_submit_player_command(const player_command_t *command)
 static void ui_load_source_screen(audio_source_t selected_source)
 {
     (void)ui_menu_select_source(&s_menu, selected_source);
+    /* And the same for the other home screen. Leaving the player should land
+     * on the icon it was started from, whoever started it - a press on the
+     * feed, autoplay at boot, or the web UI. Done here rather than at the
+     * press that started it because those last two never touch this screen,
+     * and this is the one place every route to the player passes through. */
+    (void)ui_feed_model_select_source(&s_feed_model, selected_source);
     const uint8_t index = ui_menu_selected_index(&s_menu);
     lv_label_set_text(s_source_title, ui_menu_item_label((ui_menu_item_t)index));
     lv_screen_load(s_source_screen);

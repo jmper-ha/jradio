@@ -43,3 +43,19 @@ bool ui_feed_model_activate(ui_feed_item_t item, audio_source_t *source_out)
         return false;
     }
 }
+
+bool ui_feed_model_select_source(ui_feed_model_t *model, audio_source_t source)
+{
+    if (model == NULL || source == AUDIO_SOURCE_NONE) return false;
+    // Asks the mapping above rather than carrying a second copy of it, so the
+    // two directions cannot drift apart as items are added.
+    for (uint8_t index = 0U; index < UI_FEED_ITEM_COUNT; ++index) {
+        audio_source_t item_source = AUDIO_SOURCE_NONE;
+        if (ui_feed_model_activate((ui_feed_item_t)index, &item_source) &&
+            item_source == source) {
+            model->selected = index;
+            return true;
+        }
+    }
+    return false;
+}

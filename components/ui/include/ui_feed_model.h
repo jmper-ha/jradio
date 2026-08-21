@@ -24,3 +24,13 @@ void ui_feed_model_init(ui_feed_model_t *model, uint8_t initial_index);
 void ui_feed_model_move(ui_feed_model_t *model, int direction);
 ui_feed_item_t ui_feed_model_selected(const ui_feed_model_t *model);
 bool ui_feed_model_activate(ui_feed_item_t item, audio_source_t *source_out);
+
+/* Puts the cursor on the item that starts `source` - the inverse of
+ * ui_feed_model_activate(). False, and the cursor left alone, when nothing on
+ * the feed starts it.
+ *
+ * This is what makes leaving the player land on the icon it was started from.
+ * The cursor cannot simply be remembered from the press that started it: a
+ * source also starts from autoplay at boot and from the web UI, and neither
+ * goes anywhere near this screen. */
+bool ui_feed_model_select_source(ui_feed_model_t *model, audio_source_t source);

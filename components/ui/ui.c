@@ -365,6 +365,12 @@ static void ui_update_footer(void)
             // position already is, and is worth showing on its own.
             snprintf(left_text, sizeof(left_text), "%s", elapsed_text);
         }
+    } else if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_USB) {
+        /* A file's buffer sits at the brim from the first block, so the
+         * reading says nothing; and until the decoder has found its first
+         * frame there is no position to show either. The slot stays empty
+         * rather than opening the screen with a number about nothing. */
+        left_text[0] = '\0';
     } else {
         uint8_t fill = 0U;
         if (player_control_input_fill(&fill)) {

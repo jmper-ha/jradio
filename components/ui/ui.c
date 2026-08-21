@@ -1476,7 +1476,8 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
         s_usb_browser_has_parent_row = false;
         ui_set_label_text_if_changed(s_station_list_title, "Станции");
     }
-    const size_t initial_index = active_index < count ? active_index : 0U;
+    const size_t initial_index =
+        station_list_initial_index(count, active_index, ui_usb_row_offset());
     station_list_init(&s_station_list, count, initial_index, active_index);
     station_list_note_activity(&s_station_list, ui_tick_get_ms());
     ui_update_station_list();

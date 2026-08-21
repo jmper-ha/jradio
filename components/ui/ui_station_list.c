@@ -95,6 +95,13 @@ uint8_t station_list_progress_percent(const station_list_state_t *state)
     return (uint8_t)((index * 100U) / last);
 }
 
+size_t station_list_initial_index(size_t count, size_t active_index,
+                                  size_t first_entry_row)
+{
+    if (active_index < count) return active_index;
+    return first_entry_row < count ? first_entry_row : 0U;
+}
+
 void station_list_note_activity(station_list_state_t *state, uint32_t now_ms)
 {
     if (state == NULL) return;

@@ -4,6 +4,30 @@
 #include "ui_station_list.h"
 
 
+static void test_initial_index_skips_the_parent_row(void)
+{
+    /* Nothing playing in a USB directory: the cursor belongs on the first
+     * entry, not on the ".." row that leads back out of it. */
+    assert(station_list_initial_index(5U, 5U, 1U) == 1U);
+
+    /* A playing row wins over the parent row wherever it sits, including on
+     * the parent row itself - that is the caller's business, not this one's. */
+    assert(station_list_initial_index(5U, 3U, 1U) == 3U);
+    assert(station_list_initial_index(5U, 0U, 1U) == 0U);
+
+    /* A directory with only ".." in it has no entry to prefer. */
+    assert(station_list_initial_index(1U, 1U, 1U) == 0U);
+    assert(station_list_initial_index(0U, 0U, 1U) == 0U);
+
+    /* The station list has no parent row, so nothing is skipped there. */
+    assert(station_list_initial_index(4U, 4U, 0U) == 0U);
+    assert(station_list_initial_index(4U, 2U, 0U) == 2U);
+
+    /* An active index past the end is "nothing is playing here" - the same
+     * PLAYER_ITEM_NONE the snapshot carries after a directory change. */
+    assert(station_list_initial_index(4U, (size_t)-1, 1U) == 1U);
+}
+
 static void test_progress_percent_tracks_the_cursor(void)
 {
     station_list_state_t state;
@@ -144,6 +168,7 @@ int main(void)
     station_list_note_activity(&state, 1000 + 9999);
     assert(!station_list_idle_timeout_elapsed(&state, 1000 + 9999 + 9999, 10000));
 
+    test_initial_index_skips_the_parent_row();
     test_progress_percent_tracks_the_cursor();
     test_progress_percent_handles_lists_that_cannot_scroll();
     test_progress_percent_clamps_a_cursor_past_the_end();

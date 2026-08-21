@@ -40,6 +40,16 @@ bool station_list_sync_counts(station_list_state_t *state, size_t count, size_t 
  * longer". */
 uint8_t station_list_progress_percent(const station_list_state_t *state);
 
+/* Where the cursor belongs when a listing is (re)opened. `active_index` is the
+ * row that is playing, or `count` when nothing in this listing is. On USB the
+ * first row is ".." rather than an entry, and landing there made every freshly
+ * opened directory start with the cursor on the way out of it - so with
+ * nothing playing the cursor goes to `first_entry_row`, which callers set to 0
+ * when the list has no parent row. A directory holding only ".." has no entry
+ * to prefer and falls back to 0. */
+size_t station_list_initial_index(size_t count, size_t active_index,
+                                  size_t first_entry_row);
+
 void station_list_note_activity(station_list_state_t *state, uint32_t now_ms);
 bool station_list_idle_timeout_elapsed(const station_list_state_t *state, uint32_t now_ms,
                                        uint32_t timeout_ms);

@@ -53,6 +53,21 @@ player_playback_state_t player_playback_from_usb(usb_player_state_t state)
     }
 }
 
+bool player_usb_same_file_playing(const char *path, const char *playing_path,
+                                  player_playback_state_t state)
+{
+    if (path == NULL || playing_path == NULL || playing_path[0] == '\0') return false;
+    /* Only while the file is actually up. A track that failed has to stay
+     * restartable - the path is still remembered after the decoder gave up,
+     * and refusing to start it again would leave the user pressing a row that
+     * does nothing. */
+    if (state != PLAYER_PLAYBACK_PLAYING && state != PLAYER_PLAYBACK_PAUSED &&
+        state != PLAYER_PLAYBACK_CONNECTING) {
+        return false;
+    }
+    return strcmp(path, playing_path) == 0;
+}
+
 bool player_snapshot_equal(const player_snapshot_t *left,
                            const player_snapshot_t *right)
 {

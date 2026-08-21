@@ -81,7 +81,11 @@ static void player_refresh_rssi_if_due(void)
 // Selecting a directory browses into it instead of playing; selecting a file
 // starts it. Both arrive as PLAYER_COMMAND_SELECT_ITEM because the cursor does
 // not know which kind of entry it is on until the listing is consulted.
-static void player_usb_select_item(size_t index)
+/* `playback_state` is what the snapshot said when the command was taken off
+ * the queue; it is the only thing here that decides whether the file under the
+ * cursor is already running. Passed in rather than read again so that the
+ * whole of one command is decided from one view of the player. */
+static void player_usb_select_item(size_t index, player_playback_state_t playback_state)
 {
     usb_browser_entry_t entry;
     char path[USB_BROWSER_PATH_MAX_LEN];
@@ -101,6 +105,15 @@ static void player_usb_select_item(size_t index)
         // point at an unrelated file in the new directory.
         atomic_store_explicit(&s_usb_item_index, PLAYER_ITEM_NONE, memory_order_release);
         atomic_fetch_add_explicit(&s_usb_listing_revision, 1U, memory_order_release);
+        return;
+    }
+    /* Choosing the file that is already playing is how the user gets back to
+     * the player screen from the browser, so it must not start the track over.
+     * The row is remembered again on the way out: browsing clears it, and
+     * without it the list would not mark the playing file and the track that
+     * ends would have no position to advance from. */
+    if (player_usb_same_file_playing(path, s_usb_playing_path, playback_state)) {
+        atomic_store_explicit(&s_usb_item_index, index, memory_order_release);
         return;
     }
     const esp_err_t result = usb_player_play(path, entry.name, entry.format);
@@ -160,7 +173,9 @@ static void player_usb_advance(void)
         s_usb_playing_path[0] = '\0';
         return;
     }
-    player_usb_select_item(next);
+    // A track that ended is no longer playing, so nothing here can be mistaken
+    // for the file that is - but say so explicitly rather than relying on it.
+    player_usb_select_item(next, PLAYER_PLAYBACK_STOPPED);
 }
 
 static void player_usb_browse_up(void)
@@ -290,7 +305,7 @@ static void player_control_task(void *arg)
         }
         case PLAYER_OPERATION_START_ITEM:
             if (snapshot.active_source == AUDIO_SOURCE_USB) {
-                player_usb_select_item(command.item_index);
+                player_usb_select_item(command.item_index, snapshot.playback_state);
             } else {
                 (void)internet_radio_start_station_index(command.item_index);
             }
@@ -540,7 +555,8 @@ bool player_control_usb_resume_path(const char *path)
         entry.kind == USB_BROWSER_ENTRY_DIRECTORY) {
         return false;
     }
-    player_usb_select_item(index);
+    // Nothing is playing at start-up, so this can only be a fresh start.
+    player_usb_select_item(index, PLAYER_PLAYBACK_STOPPED);
     return true;
 }
 

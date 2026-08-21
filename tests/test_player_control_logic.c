@@ -185,6 +185,35 @@ static void test_seek_belongs_to_a_file_that_is_running(void)
     assert(player_control_decide(&radio, &command) == PLAYER_OPERATION_INVALID);
 }
 
+static void test_choosing_the_playing_file_again_does_not_restart_it(void)
+{
+    /* How the user gets back to the player from the browser: press the row the
+     * track is on. Starting it over there loses the position they were at. */
+    const char *playing = "/usb0/Album/03 track.mp3";
+    assert(player_usb_same_file_playing(playing, playing, PLAYER_PLAYBACK_PLAYING));
+    assert(player_usb_same_file_playing(playing, playing, PLAYER_PLAYBACK_PAUSED));
+    /* Still opening counts too - a second press must not restart what has not
+     * finished starting. */
+    assert(player_usb_same_file_playing(playing, playing, PLAYER_PLAYBACK_CONNECTING));
+
+    /* A different file in the same directory is a different file. */
+    assert(!player_usb_same_file_playing("/usb0/Album/04 track.mp3", playing,
+                                         PLAYER_PLAYBACK_PLAYING));
+    /* And so is the same name in another directory. */
+    assert(!player_usb_same_file_playing("/usb0/Other/03 track.mp3", playing,
+                                         PLAYER_PLAYBACK_PLAYING));
+
+    /* A failed track has to stay restartable: the path outlives the decoder
+     * that gave up on it. */
+    assert(!player_usb_same_file_playing(playing, playing, PLAYER_PLAYBACK_ERROR));
+    assert(!player_usb_same_file_playing(playing, playing, PLAYER_PLAYBACK_STOPPED));
+
+    /* Nothing has played yet, so nothing can be the file that is playing. */
+    assert(!player_usb_same_file_playing(playing, "", PLAYER_PLAYBACK_PLAYING));
+    assert(!player_usb_same_file_playing(NULL, playing, PLAYER_PLAYBACK_PLAYING));
+    assert(!player_usb_same_file_playing(playing, NULL, PLAYER_PLAYBACK_PLAYING));
+}
+
 static void test_usb_state_maps_to_public_playback_state(void)
 {
     assert(player_playback_from_usb(USB_PLAYER_STATE_STOPPED) == PLAYER_PLAYBACK_STOPPED);
@@ -202,6 +231,7 @@ int main(void)
     test_track_finished_advances_only_on_usb();
     test_reveal_needs_usb_with_something_playing();
     test_seek_belongs_to_a_file_that_is_running();
+    test_choosing_the_playing_file_again_does_not_restart_it();
     test_usb_state_maps_to_public_playback_state();
     test_active_station_is_not_restarted();
     test_failed_active_station_can_be_retried();

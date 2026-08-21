@@ -15,6 +15,15 @@ bool player_snapshot_equal(const player_snapshot_t *left,
                            const player_snapshot_t *right);
 bool player_rssi_refresh_due(bool seen, uint32_t last_update_ms,
                              uint32_t now_ms);
+/* True when `path` is the file the drive is already running, so choosing it
+ * again means "take me back to it" rather than "start it over".
+ *
+ * Kept out of player_control_decide() because it needs the path, and the
+ * decision cannot be made from the index the command carries: the browser can
+ * be re-read between the press and the command being handled, and an index
+ * that survives that no longer names the same file. */
+bool player_usb_same_file_playing(const char *path, const char *playing_path,
+                                  player_playback_state_t state);
 
 #ifdef ESP_PLATFORM
 #include "esp_err.h"

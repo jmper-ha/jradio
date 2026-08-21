@@ -373,10 +373,10 @@ static void ui_update_footer(void)
     bool have_bar = have_track && usb_track_progress_percent(elapsed, total,
                                                              &played_percent);
     if (ui_seek_is_active(&s_player_seek)) {
-        /* Both readouts follow the knob rather than the file while the mode is
-         * open. Playback is paused where it was, so the real position says
-         * nothing about the place the user is pointing at - and the number
-         * under the bar is how that place is read exactly. */
+        /* Both readouts follow the knob rather than the file while the mode
+         * is open: the bar is being aimed, not reported, and the number
+         * beside it is how the place being aimed at is read exactly. The
+         * track plays on underneath, a second or two away from either. */
         elapsed = ui_seek_target(&s_player_seek);
         played_percent = ui_seek_percent(&s_player_seek);
         have_bar = true;
@@ -1118,7 +1118,7 @@ static void ui_create_station_list_screen(void)
 static void ui_show_station_list(void);
 // Defined with the rest of the scrubbing mode, below the command helpers it
 // needs; every way off the player screen has to close the mode first.
-static void ui_end_seek(bool resume);
+static void ui_end_seek(void);
 
 /* Player screen layout, in device pixels.
  *
@@ -1155,11 +1155,11 @@ static void ui_end_seek(bool resume);
  * progress bar, which was pressed against the rule above it and the times
  * below. */
 #define UI_SRC_PROGRESS_Y (UI_SRC_RULE_BOTTOM + 8)
-/* A hairline while it only reports, three times that while it is being aimed:
- * the bar is the control in scrubbing mode, and a 4 px target is not one. It
- * grows about its own centre line, so the row it lives on does not shift. */
+/* A hairline while it only reports, twice that while it is being aimed: the
+ * bar is the control in scrubbing mode, and a 4 px target is not one. It grows
+ * about its own centre line, so the row it lives on does not shift. */
 #define UI_SRC_PROGRESS_H 4
-#define UI_SRC_PROGRESS_SEEK_H 12
+#define UI_SRC_PROGRESS_SEEK_H 8
 #define UI_SRC_FOOT_Y 214
 #define UI_SRC_PAUSE_SIZE 76
 #define UI_SRC_PAUSE_BAR_W 10
@@ -1500,8 +1500,7 @@ static void ui_load_menu_screen(void)
 
 static void ui_show_menu(void)
 {
-    // The source is about to be stopped, so there is nothing to resume to.
-    ui_end_seek(false);
+    ui_end_seek();
     s_usb_unavailable = false;
     const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
     const audio_source_t old_source = ui_player_state_source(&s_player_ui);
@@ -1593,7 +1592,7 @@ static void ui_show_station_list(void)
 {
     // Reachable from the poll loop as well as from a press, so the mode is
     // closed here rather than at each caller.
-    ui_end_seek(true);
+    ui_end_seek();
     if (!ui_player_state_show_station_list(&s_player_ui)) return;
     s_waiting_for_radio_station = false;
     ui_request_usb_reveal();
@@ -1663,42 +1662,28 @@ static bool ui_seek_available(void)
     return player_control_track_progress(&elapsed, &total) && total > 0U;
 }
 
+/* Opens the mode. Playback is deliberately left running: an earlier version
+ * paused the file for the duration, on the theory that hearing one part of the
+ * track while pointing at another was confusing - but the break in the music,
+ * and the pause badge that came with it, read as a fault rather than as a
+ * mode. The track carries on; only the readout follows the knob. */
 static void ui_begin_seek(void)
 {
     uint32_t elapsed = 0U;
     uint32_t total = 0U;
     if (!player_control_track_progress(&elapsed, &total)) return;
     if (!ui_seek_begin(&s_player_seek, elapsed, total)) return;
-    /* Paused for the duration, so the listener is not hearing one part of the
-     * track while pointing at another - and so the position on screen is only
-     * ever the one being chosen. The press that commits the target starts it
-     * again from there. */
-    const player_command_t pause = {
-        .kind = PLAYER_COMMAND_PAUSE,
-        .source = AUDIO_SOURCE_USB,
-        .item_index = PLAYER_ITEM_NONE,
-    };
-    (void)ui_submit_player_command(&pause);
     ui_apply_seek_visual(true);
     ui_update_footer();
 }
 
-/* Leaves scrubbing without jumping. `resume` says whether the file should be
- * started again where it was: it should whenever the player screen stays up,
- * and must not when the caller is about to stop the source anyway. */
-static void ui_end_seek(bool resume)
+// Leaves scrubbing without jumping. Nothing to undo - the file has been
+// playing the whole time - so this is only the target and the bar.
+static void ui_end_seek(void)
 {
     if (!ui_seek_is_active(&s_player_seek)) return;
     ui_seek_reset(&s_player_seek);
     ui_apply_seek_visual(false);
-    if (resume) {
-        const player_command_t play = {
-            .kind = PLAYER_COMMAND_PLAY,
-            .source = AUDIO_SOURCE_USB,
-            .item_index = PLAYER_ITEM_NONE,
-        };
-        (void)ui_submit_player_command(&play);
-    }
     ui_update_footer();
 }
 
@@ -1711,9 +1696,7 @@ static void ui_commit_seek(void)
         .position_seconds = ui_seek_target(&s_player_seek),
     };
     (void)ui_submit_player_command(&seek);
-    // player_control resumes as part of the jump, so asking again here would
-    // race the seek and could restart the file before it has moved.
-    ui_end_seek(false);
+    ui_end_seek();
 }
 
 static void ui_toggle_playback(void)
@@ -1847,14 +1830,14 @@ static void ui_handle_input(board_input_action_t action)
                 return;
             }
             /* Every other button abandons the scrub rather than doing its own
-             * job on top of it: a mode with only one way out is a trap, and
-             * the file is paused while this one is open. Leaving the screen is
-             * the exception that must not resume - it stops the source on the
-             * next line anyway. */
-            const bool leaving = action == BOARD_INPUT_ACTION_F2 ||
-                                 action == BOARD_INPUT_ACTION_ENCODER_LONG;
-            ui_end_seek(!leaving);
-            if (!leaving) return;
+             * job on top of it: a mode with only one way out is a trap. The
+             * two that leave the screen go on to do that as well, since
+             * closing the mode changes nothing about what is playing. */
+            ui_end_seek();
+            if (action != BOARD_INPUT_ACTION_F2 &&
+                action != BOARD_INPUT_ACTION_ENCODER_LONG) {
+                return;
+            }
         }
         if (action == BOARD_INPUT_ACTION_F2 ||
             action == BOARD_INPUT_ACTION_ENCODER_LONG) {
@@ -1996,15 +1979,14 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
         }
     }
     /* The file can stop under the mode - it ended, it failed, the drive was
-     * pulled - and then there is nothing left to scrub and nothing to resume.
-     * Only those states, not "anything but paused": the pause this mode asks
-     * for takes a poll or two to appear in a snapshot, and closing the mode on
-     * the way there would make the gesture look like it had never worked. */
+     * pulled - and then there is nothing left to scrub. Paused is not one of
+     * those: it can only arrive from the web UI while this screen is open, and
+     * the position it stopped at is still worth aiming at. */
     if (ui_seek_is_active(&s_player_seek) &&
         (snapshot->active_source != AUDIO_SOURCE_USB ||
          snapshot->playback_state == PLAYER_PLAYBACK_STOPPED ||
          snapshot->playback_state == PLAYER_PLAYBACK_ERROR)) {
-        ui_end_seek(false);
+        ui_end_seek();
     }
     ui_player_state_apply_snapshot(&s_player_ui, snapshot, ui_tick_get_ms());
     if (old_view != ui_player_state_view(&s_player_ui) ||

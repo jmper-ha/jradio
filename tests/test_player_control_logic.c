@@ -158,9 +158,9 @@ static void test_reveal_needs_usb_with_something_playing(void)
 
 static void test_seek_belongs_to_a_file_that_is_running(void)
 {
-    /* Paused is the state a seek normally arrives in: the screen pauses the
-     * file before scrubbing so the listener is not hearing one place while
-     * pointing at another. */
+    /* Playing is the state a seek normally arrives in - the file keeps
+     * playing while the encoder scrubs it. Paused is accepted too: the file is
+     * still open at a position, and the jump waits for the resume. */
     player_snapshot_t usb = {.active_source = AUDIO_SOURCE_USB,
                              .playback_state = PLAYER_PLAYBACK_PAUSED};
     player_command_t command = {.kind = PLAYER_COMMAND_SEEK,

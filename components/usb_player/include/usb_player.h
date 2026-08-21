@@ -54,9 +54,9 @@ esp_err_t usb_player_resume(void);
  * moved - and does nothing at all if the track ends first.
  *
  * Where the file lands is exact for WAV and an estimate from the average
- * bitrate for everything else; see usb_track_seek_offset(). A track that is
- * paused stays paused at the new position, which is what lets the caller
- * scrub against a silent player and resume once. */
+ * bitrate for everything else; see usb_track_seek_offset(). A paused track
+ * stays paused: the request is held and applied on the pass that resumes it,
+ * since the playback task sleeps in its pause loop until then. */
 esp_err_t usb_player_seek(uint32_t seconds);
 void usb_player_get_status(usb_player_status_t *status);
 

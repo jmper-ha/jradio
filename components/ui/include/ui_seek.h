@@ -7,9 +7,9 @@
  *
  * Scrubbing is a mode: a triple click opens it, the encoder moves a target
  * that is shown instead of the real position, and a press commits the target
- * and hands the knob back to the volume. That target is all this holds - the
- * jump itself is a command to player_control, and the pause and resume around
- * it are the player's business, not this one's.
+ * and hands the knob back to the volume. The track keeps playing throughout -
+ * only the readout follows the knob. That target is all this holds; the jump
+ * itself is a command to player_control.
  *
  * The length is copied in when the mode opens rather than re-read per turn.
  * It is an estimate from the bitrate for everything but WAV, so it can move

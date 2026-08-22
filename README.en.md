@@ -11,19 +11,40 @@ buttons on the device, or from a browser on the local network.
 | Mode | State |
 |---|---|
 | Internet radio | MP3, AAC, FLAC, Ogg FLAC, HLS (`.m3u8`); HTTP and HTTPS; ICY metadata; playlist; reconnection |
-| USB player | Directory browser; MP3, AAC, FLAC, Ogg FLAC, WAV; tags and cover art; advances to the next track; track position |
+| USB player | Directory browser; MP3, AAC, FLAC, Ogg FLAC, WAV; tags and cover art; advances to the next track; track position and scrubbing |
 | Volume | Digital, on the encoder, saved across restarts |
 | Clock | SNTP, on every screen |
 | Wi-Fi | Set up through a temporary access point, up to five saved networks |
 | Web interface | Player, drive browser, settings, playlist editor; live state over WebSocket |
 | Screens | Home (list or carousel), player, station and file lists, settings |
 | Autoplay | Restores the station or file that was playing at power-off |
-| DLNA, FM, Bluetooth, RTC, OTA | Not implemented |
+| DLNA, FM, Bluetooth, SD card, RTC, OTA | Not implemented |
 
 Settings (`Language`, `General`, `Display`) apply at once and are saved to
 `/littlefs/config/settings.csv`: language, home screen style, autoplay,
 independent vertical and horizontal display flips, volume. The language switch
-currently relabels **the settings screen only**.
+currently relabels **the settings screen only**. A band along the bottom of the
+settings screen carries the web interface's address: it is the only place the
+device says where to reach itself, and without it the address was known only to
+whoever was watching the UART log. In Wi-Fi setup mode it reads
+`http://192.168.4.1`, the device's own access point.
+
+## Home screen
+
+Two styles, chosen in the settings: a list of entries and a carousel of large
+icons. Every source - internet radio, the drive, an SD card, Bluetooth, FM,
+DLNA, Yandex Music, settings - has an icon of its own; the list puts it in
+front of the label, the carousel gives it a tile. The icons are A8 bitmaps and
+are recoloured to suit their state, so one file serves both the selected entry
+and its neighbours.
+
+Sources that are not implemented stay on the screen and answer with a line
+saying so: what is intended stays visible, and nobody has to guess why a press
+did nothing. Choosing the drive when there is none opens not an empty
+browser but a screen with a drive on it and the reason spelled out - insert one,
+it cannot be read (FAT32 is needed), or it holds no files. Those are different
+things, and telling somebody to insert a drive they have already inserted is
+worse than saying nothing.
 
 ## Player screen
 
@@ -44,13 +65,40 @@ converted to UTF-8 from Latin-1, UTF-16 and UTF-8, and Windows-1251 stored
 under a Latin-1 label is recognised from the byte range it uses - without that,
 half the Russian files on a drive would read as "Áàëòèéñêîå ìîðå".
 
-The cover comes from an `APIC` frame or a `PICTURE` block - baseline JPEG only -
-and is reduced to 96x96 by averaging rather than sampling: at that size a cover
-is mostly lettering, and sampling it reads as noise. A picture that is not
-square is fitted inside the square rather than stretched to it. One cover
-shared by a whole album is decoded once, so moving to the next track does not
-blink the tile. Where there is no cover, or it is not a JPEG, or it fails to
-decode, the tile keeps its placeholder symbol.
+The cover comes from an `APIC` frame or a `PICTURE` block. Where the file
+carries none, `cover.jpg`, `cover.jpeg` or `cover.png` beside the track is used
+instead, in any case. Other names (`folder.jpg`, `front.jpg`) are not guessed
+at: they are the conventions of particular players, and accepting them means
+opening some unrelated file on every track of every album that has no cover. A
+file's own picture always wins over the folder's - it belongs to the track,
+while the folder's belongs to everything filed with it.
+
+Baseline JPEG is decoded by tjpgd, which needs four kilobytes of working
+memory. Progressive JPEG and PNG it cannot read - and both turn up in
+ordinary files, progressive being what several taggers write by default - so
+those go to stb_image, which holds the whole picture
+at once: about 13 bytes per pixel for JPEG and 6 for PNG. Two things follow.
+The decode runs **on a task of its own with its stack in PSRAM** (its inflate
+wants six kilobytes of stack, which no player task has to spare, and task
+stacks come out of internal RAM where some 18 KB is free); and the size limit
+is measured against free PSRAM rather than fixed, because a folder cover is a
+full-size scan rather than the thumbnail a tag carries.
+
+The picture is then reduced to 96x96 by averaging rather than sampling: at that
+size a cover is mostly lettering, and sampling it reads as noise. One that is
+not square is fitted inside the square rather than stretched to it. A cover
+shared by a whole album is decoded once - a folder cover is read off the drive
+once as well - so moving to the next track does not blink the tile. Where there
+is no cover anywhere, or it fails to decode, the tile keeps its placeholder
+symbol.
+
+Every format has an elapsed time and a position bar, but they are arrived at
+differently. An MP3's length comes from its bitrate and the size of the file;
+FLAC states no bitrate - its frames are as large as the music in them needs -
+so the length is read exactly out of STREAMINFO, where the encoder wrote the
+sample count. A jump through a FLAC is additionally aligned to a frame boundary
+and hands the decoder a stream header: it cannot start in the middle of a frame
+and answers an attempt to with an error.
 
 Along the bottom, the decoder's input buffer fill (for a file, the elapsed time
 and a position bar) and the volume, with a per-channel level meter between
@@ -69,10 +117,19 @@ Every screen shares one palette and one status strip.
 | Turn the encoder | Volume on the player screen, movement through lists |
 | Short press | Play / pause |
 | Double press | Station or file list, playback continues |
+| Triple press | Scrub the track: the knob moves the bar, a press applies it |
 | Long press (0.8 s) | Home screen, playback stops |
+| F2 | Back: to the home screen from the player, and out of the lists |
+| F3 | Play / pause on the player screen |
 
 A single press lands after 350 ms - before that it cannot be told from the
 first half of a double press. The delay applies on the player screen only.
+
+Scrubbing owns both the knob and the press while it is open, so the volume and
+the play/pause click cannot be triggered by accident by the gesture that
+chooses a position. Any other button leaves the mode without changing anything:
+a mode with only one way out is too easy to be stuck in. The music plays on
+throughout - only the readout follows the knob.
 
 ## Hardware
 
@@ -143,7 +200,7 @@ Compare the live state first: `curl http://<ip>/api/playlist`.
 bash tests/run_host_tests.sh
 ```
 
-44 suites, no ESP-IDF activation needed. They compile the real component
+58 suites, no ESP-IDF activation needed. They compile the real component
 sources rather than mocks, with `-Werror` and the address and undefined
 behaviour sanitizers. That is why format parsing, state machines and view
 derivation live in files with no ESP-IDF dependencies - new logic belongs

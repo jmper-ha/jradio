@@ -2339,7 +2339,8 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
 }
 
 /* Runs every poll, not only when something changed: the meter is an animation,
- * and its whole job is to keep moving between the ~26 ms PCM blocks. */
+ * and its whole job is to keep moving between PCM blocks - 26 ms of MP3, 93 ms
+ * of FLAC, against a 10 ms loop. */
 static void ui_update_vu(void)
 {
     if (lv_screen_active() != s_source_screen) return;
@@ -2348,10 +2349,10 @@ static void ui_update_vu(void)
     s_vu_updated_ms = now;
 
     uint16_t peak[2] = {0U, 0U};
-    board_audio_level_take(&peak[0], &peak[1]);
+    const bool fresh = board_audio_level_take(&peak[0], &peak[1]);
     for (size_t channel = 0; channel < 2U; ++channel) {
-        const uint8_t target = ui_vu_percent_from_level(peak[channel]);
-        const uint8_t value = ui_vu_meter_step(&s_vu_state[channel], target, elapsed);
+        const uint8_t value =
+            ui_vu_meter_advance(&s_vu_state[channel], fresh, peak[channel], elapsed);
         const uint8_t lit = ui_vu_lit_segments(value, UI_VU_SEGMENTS);
         for (uint8_t segment = 0U; segment < UI_VU_SEGMENTS; ++segment) {
             // Unlit blocks stay visible in a dim shade rather than hiding, so

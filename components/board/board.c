@@ -89,6 +89,10 @@ static uint32_t s_audio_sample_rate = AUDIO_DEFAULT_SAMPLE_RATE;
  * never block the audio path, nor be blocked by it. */
 static atomic_uint s_audio_level_left = ATOMIC_VAR_INIT(0U);
 static atomic_uint s_audio_level_right = ATOMIC_VAR_INIT(0U);
+/* Whether a block was measured at all since the last take. A level of zero is
+ * a real reading - a silent passage - and the UI has to tell it from having
+ * looked between two blocks, which is what most of its passes do. */
+static atomic_bool s_audio_level_fresh = ATOMIC_VAR_INIT(false);
 /* Volume setting and the scratch the scaled samples go into. Full volume needs
  * neither: the block is handed to I2S untouched, so the common case costs
  * nothing and stays bit-exact. */
@@ -119,8 +123,12 @@ uint8_t board_audio_volume(void)
     return (uint8_t)atomic_load_explicit(&s_audio_volume, memory_order_relaxed);
 }
 
-void board_audio_level_take(uint16_t *left, uint16_t *right)
+bool board_audio_level_take(uint16_t *left, uint16_t *right)
 {
+    /* Cleared before the levels are read, so a block landing in between is
+     * reported by this call rather than being dropped with its flag. */
+    const bool fresh = atomic_exchange_explicit(&s_audio_level_fresh, false,
+                                                memory_order_relaxed);
     if (left != NULL) {
         *left = (uint16_t)atomic_exchange_explicit(&s_audio_level_left, 0U,
                                                    memory_order_relaxed);
@@ -129,6 +137,7 @@ void board_audio_level_take(uint16_t *left, uint16_t *right)
         *right = (uint16_t)atomic_exchange_explicit(&s_audio_level_right, 0U,
                                                     memory_order_relaxed);
     }
+    return fresh;
 }
 
 typedef struct {
@@ -410,6 +419,7 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
                                  &level_right);
             board_audio_level_note(level_left, &s_audio_level_left);
             board_audio_level_note(level_right, &s_audio_level_right);
+            atomic_store_explicit(&s_audio_level_fresh, true, memory_order_relaxed);
             board_audio_health_add(&s_audio_health, *written, pcm_length,
                                    peak_left > peak_right ? peak_left : peak_right);
             // Measured on the bytes actually clocked out, not on the

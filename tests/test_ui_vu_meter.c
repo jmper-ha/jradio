@@ -173,6 +173,78 @@ static void test_the_meter_tolerates_being_handed_nothing(void)
 }
 
 
+/* A block-rate reading against a 10 ms loop: the passes in between have
+ * nothing to report, and used to be drawn as silence. */
+static uint8_t run_loop(uint32_t block_ms, uint16_t level, uint32_t total_ms)
+{
+    ui_vu_meter_t meter;
+    ui_vu_meter_init(&meter);
+    uint8_t value = 0U;
+    uint32_t since_block = block_ms;
+    for (uint32_t elapsed = 0U; elapsed < total_ms; elapsed += 10U) {
+        const bool fresh = since_block >= block_ms;
+        if (fresh) since_block = 0U;
+        since_block += 10U;
+        value = ui_vu_meter_advance(&meter, fresh, fresh ? level : 0U, 10U);
+    }
+    return value;
+}
+
+static void test_the_bar_reaches_the_level_whatever_the_block_rate(void)
+{
+    /* The failure this was written for: a FLAC block is 93 ms, so eight of
+     * every nine passes had no reading. Taken as silence they pulled the bar
+     * back down faster than the ninth could raise it, and music sitting at
+     * three fifths of the scale was displayed in the bottom tenth. */
+    const uint16_t level = 7338U;  /* -13 dBFS, 60% of the bar */
+    assert(run_loop(26U, level, 2000U) == 60U);
+    assert(run_loop(93U, level, 2000U) == 60U);
+    assert(run_loop(200U, level, 2000U) == 60U);
+}
+
+static void test_a_gap_between_blocks_is_not_silence(void)
+{
+    ui_vu_meter_t meter;
+    ui_vu_meter_init(&meter);
+    ui_vu_meter_advance(&meter, true, 7338U, 10U);
+    for (uint32_t elapsed = 10U; elapsed < UI_VU_READING_GAP_MS; elapsed += 10U) {
+        assert(ui_vu_meter_advance(&meter, false, 0U, 10U) > 0U);
+    }
+    assert(meter.target == 60U);
+}
+
+static void test_audio_that_stops_empties_the_bar(void)
+{
+    /* Held only as long as a block could plausibly explain the gap. Playback
+     * that ends - a track finishing, a stream stalling - has to fall to rest
+     * rather than freezing at whatever was playing. */
+    ui_vu_meter_t meter;
+    ui_vu_meter_init(&meter);
+    ui_vu_meter_advance(&meter, true, 18426U, 10U);
+    uint8_t value = 100U;
+    for (uint32_t elapsed = 0U; elapsed < 2000U; elapsed += 10U) {
+        value = ui_vu_meter_advance(&meter, false, 0U, 10U);
+    }
+    assert(value == 0U);
+}
+
+static void test_a_silent_block_empties_the_bar_at_once(void)
+{
+    /* A reading of zero is a real measurement, not a missing one: a quiet
+     * passage should fall on the release curve, not sit out the hold. */
+    ui_vu_meter_t meter;
+    ui_vu_meter_init(&meter);
+    ui_vu_meter_advance(&meter, true, 18426U, 10U);
+    const uint8_t after_one = ui_vu_meter_advance(&meter, true, 0U, 10U);
+    assert(meter.target == 0U);
+    assert(after_one < 100U);
+}
+
+static void test_advance_tolerates_being_handed_nothing(void)
+{
+    assert(ui_vu_meter_advance(NULL, true, 18426U, 10U) == 0U);
+}
+
 static void test_segment_count_is_exact_at_both_ends(void)
 {
     /* Silence must light nothing and full scale everything - a meter that
@@ -228,6 +300,11 @@ int main(void)
     test_a_long_gap_shows_the_reading_rather_than_wrapping();
     test_a_target_above_the_scale_is_clamped();
     test_the_meter_tolerates_being_handed_nothing();
+    test_the_bar_reaches_the_level_whatever_the_block_rate();
+    test_a_gap_between_blocks_is_not_silence();
+    test_audio_that_stops_empties_the_bar();
+    test_a_silent_block_empties_the_bar_at_once();
+    test_advance_tolerates_being_handed_nothing();
     test_segment_count_is_exact_at_both_ends();
     test_segment_count_rounds_to_nearest();
     test_a_faint_signal_still_lights_one_segment();

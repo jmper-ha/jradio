@@ -52,7 +52,10 @@ static const ui_vu_point_t s_curve[] = {
 
 void ui_vu_meter_init(ui_vu_meter_t *meter)
 {
-    if (meter != NULL) meter->percent = 0U;
+    if (meter == NULL) return;
+    meter->percent = 0U;
+    meter->target = 0U;
+    meter->idle_ms = 0U;
 }
 
 uint8_t ui_vu_percent_from_level(uint16_t level)
@@ -105,6 +108,23 @@ uint8_t ui_vu_meter_step(ui_vu_meter_t *meter, uint8_t target_percent,
                                 : (uint8_t)(meter->percent - move);
     }
     return meter->percent;
+}
+
+uint8_t ui_vu_meter_advance(ui_vu_meter_t *meter, bool have_reading, uint16_t level,
+                            uint32_t elapsed_ms)
+{
+    if (meter == NULL) return 0U;
+    if (have_reading) {
+        meter->target = ui_vu_percent_from_level(level);
+        meter->idle_ms = 0U;
+    } else {
+        // Saturating, because the meter is not stepped at all while another
+        // screen is up and the gap since the last block can be minutes.
+        const uint32_t idle = meter->idle_ms + elapsed_ms;
+        meter->idle_ms = idle < meter->idle_ms ? UINT32_MAX : idle;
+        if (meter->idle_ms >= UI_VU_READING_GAP_MS) meter->target = 0U;
+    }
+    return ui_vu_meter_step(meter, meter->target, elapsed_ms);
 }
 
 uint8_t ui_vu_lit_segments(uint8_t percent, uint8_t count)

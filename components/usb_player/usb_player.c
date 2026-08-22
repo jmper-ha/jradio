@@ -1,8 +1,10 @@
 #include "usb_player.h"
 
+#include <dirent.h>
 #include <limits.h>
 #include <stdatomic.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
@@ -16,6 +18,7 @@
 #include "audio_pcm_convert.h"
 #include "audio_tags_reader.h"
 #include "board.h"
+#include "cover_file.h"
 #include "radio_decoder.h"
 #include "board_audio_format.h"
 #include "radio_prebuffer.h"
@@ -131,6 +134,99 @@ typedef struct {
     unsigned int bogus_rate_reports;
 } usb_player_context_t;
 
+/* How large a folder cover this will read off the drive.
+ *
+ * The decoder refuses anything past 600x600 anyway, and a picture that big is
+ * comfortably inside a megabyte in either format; past that the file is
+ * something else - a scan of the sleeve, a booklet page - and reading it would
+ * only delay the first sample to reach the same 96-pixel tile. */
+#define USB_PLAYER_COVER_MAX_BYTES (2048U * 1024U)
+
+/* What the cover on screen currently is, so an album's picture is read off the
+ * drive once rather than for every track on it. Reading the 621 KB cover this
+ * was built for costs about a second and a half, and it sits between choosing
+ * a track and hearing it.
+ *
+ * Both fields are written only from the player task, in load_tags(). The flag
+ * is what makes the path enough to compare: the published cover has to be this
+ * folder's picture, not a previous track's own, or a file with a cover of its
+ * own would lend it to the next file that has none. */
+static char s_folder_cover_directory[USB_BROWSER_PATH_MAX_LEN];
+static bool s_folder_cover_published;
+
+// Fills `out` with the path of the folder's cover picture, if it has one.
+static bool find_folder_cover(const char *directory, char *out, size_t out_size)
+{
+    DIR *dir = opendir(directory);
+    if (dir == NULL) return false;
+    bool found = false;
+    const struct dirent *entry;
+    while (!found && (entry = readdir(dir)) != NULL) {
+        // FATFS fills d_type, but a directory named cover.png would open and
+        // read as nothing; the name test alone is not enough.
+        if (entry->d_type == DT_DIR) continue;
+        if (!cover_file_name_matches(entry->d_name)) continue;
+        found = usb_browser_path_child(directory, entry->d_name, out, out_size);
+    }
+    closedir(dir);
+    return found;
+}
+
+/* Publishes the picture the folder keeps, for a track whose own tags have
+ * none. Returns false when there is nothing to show, which is the ordinary
+ * case and not worth a log line of its own.
+ *
+ * The whole file is read into memory because that is what the decoders take -
+ * and it is read again for every track of the album, which sounds wasteful but
+ * is not: album_art recognises the same bytes and skips the decode, so the
+ * cost is one file read, and the alternative is remembering which directory
+ * the last track came from and getting that wrong when the drive changes. */
+static bool load_folder_cover(void)
+{
+    char directory[USB_BROWSER_PATH_MAX_LEN];
+    char path[USB_BROWSER_PATH_MAX_LEN];
+    if (!usb_browser_path_parent(s_request.path, directory, sizeof(directory))) return false;
+    // Still the same album, and its picture is still the one on screen.
+    if (s_folder_cover_published && album_art_status().present &&
+        strcmp(directory, s_folder_cover_directory) == 0) {
+        return true;
+    }
+    s_folder_cover_published = false;
+    if (!find_folder_cover(directory, path, sizeof(path))) return false;
+
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) return false;
+    size_t length = 0U;
+    if (fseek(file, 0, SEEK_END) == 0) {
+        const long end = ftell(file);
+        if (end > 0) length = (size_t)end;
+        rewind(file);
+    }
+    if (length == 0U || length > USB_PLAYER_COVER_MAX_BYTES) {
+        ESP_LOGW(TAG, "%s is %u bytes, too large for a cover", path, (unsigned int)length);
+        fclose(file);
+        return false;
+    }
+    uint8_t *picture = alloc_buffer(length);
+    if (picture == NULL) {
+        ESP_LOGW(TAG, "no memory to read %s", path);
+        fclose(file);
+        return false;
+    }
+    const size_t read = fread(picture, 1U, length, file);
+    fclose(file);
+    const bool published = read == length && album_art_set_image(picture, length);
+    if (published) {
+        ESP_LOGI(TAG, "cover from %s", path);
+        snprintf(s_folder_cover_directory, sizeof(s_folder_cover_directory), "%s", directory);
+        s_folder_cover_published = true;
+    } else {
+        ESP_LOGW(TAG, "%s could not be shown", path);
+    }
+    free(picture);
+    return published;
+}
+
 /* Reads the tags before a single frame is decoded, so the screen is right from
  * the moment the track appears on it rather than a second into playback. It
  * costs one read of the tag - 68 KB on the album this was built for - and a
@@ -156,14 +252,26 @@ static void load_tags(usb_player_context_t *ctx)
                  tags.artist, tags.album);
     }
 
-    /* A cover in a format nothing here decodes is the same as no cover as far
-     * as the screen is concerned, and leaving the previous track's picture up
-     * would be worse than the placeholder. */
-    if (scratch != NULL && tags.picture_format == AUDIO_TAGS_PICTURE_JPEG &&
-        tags.picture_length > 0U) {
-        (void)album_art_set_jpeg(scratch + tags.picture_offset, tags.picture_length);
-    } else {
+    /* The track's own picture wins: it belongs to this file, while the one in
+     * the folder belongs to whatever else is filed with it. The folder is
+     * tried when the tag has no picture - and also when it has one that will
+     * not decode, because from the listener's side those are the same thing,
+     * and the placeholder is the worse answer of the two.
+     *
+     * When neither turns anything up the cover is cleared rather than left
+     * alone: the previous track's picture over this one is worse than none. */
+    const bool embedded = scratch != NULL && tags.picture_length > 0U &&
+                          (tags.picture_format == AUDIO_TAGS_PICTURE_JPEG ||
+                           tags.picture_format == AUDIO_TAGS_PICTURE_PNG) &&
+                          album_art_set_image(scratch + tags.picture_offset,
+                                              tags.picture_length);
+    if (embedded) {
+        // The tile now holds this track's own picture, so the next track in
+        // this folder cannot assume the folder's is still up.
+        s_folder_cover_published = false;
+    } else if (!load_folder_cover()) {
         album_art_clear();
+        s_folder_cover_published = false;
     }
     free(scratch);
 }

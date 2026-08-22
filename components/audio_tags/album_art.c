@@ -10,7 +10,7 @@
 #include "freertos/semphr.h"
 
 #include "image_scale.h"
-#include "jpeg_progressive.h"
+#include "image_decode.h"
 #include "tjpgd.h"
 
 static const char *TAG = "album_art";
@@ -206,31 +206,36 @@ static uint8_t scale_for(uint16_t width, uint16_t height)
     return scale;
 }
 
-/* The other decoder's whole job, in the one case tjpgd cannot serve.
+/* The other decoder's whole job, in the two cases tjpgd cannot serve.
  *
  * It has no descaling, so the picture arrives at its own size and the reducer
  * does all of the work - which is fine, since it is the same reducer the
  * baseline path ends with and the size limit is enforced before any of it is
  * allocated. */
-static bool decode_progressive_and_publish(const uint8_t *data, size_t length)
+static bool decode_with_stb_and_publish(const uint8_t *data, size_t length)
 {
     uint16_t *pixels = NULL;
     uint16_t width = 0U;
     uint16_t height = 0U;
-    if (!jpeg_progressive_decode(data, length, &pixels, &width, &height)) return false;
+    if (!image_decode_rgb565(data, length, &pixels, &width, &height)) return false;
 
     const image_rect_t rect = image_fit_square(width, height, (uint16_t)ALBUM_ART_SIZE);
     const bool published = reduce_into_cover(pixels, width, height, &rect);
     if (published) {
-        ESP_LOGI(TAG, "progressive cover %ux%u shown as %ux%u", (unsigned int)width,
-                 (unsigned int)height, (unsigned int)rect.width, (unsigned int)rect.height);
+        ESP_LOGI(TAG, "cover %ux%u shown as %ux%u", (unsigned int)width, (unsigned int)height,
+                 (unsigned int)rect.width, (unsigned int)rect.height);
     }
-    jpeg_progressive_free(pixels);
+    image_decode_free(pixels);
     return published;
 }
 
 static bool decode_and_publish(const uint8_t *data, size_t length)
 {
+    // PNG never had a decoder here, so there is nothing to try first.
+    if (image_decode_is_png(data, length)) {
+        return decode_with_stb_and_publish(data, length);
+    }
+
     uint8_t *pool = alloc_buffer(ALBUM_ART_WORK_POOL);
     if (pool == NULL) {
         ESP_LOGW(TAG, "no memory for the decoder's work pool");
@@ -256,9 +261,9 @@ static bool decode_and_publish(const uint8_t *data, size_t length)
          * decoder is asked only now and only for that one reason: it needs
          * megabytes where this one needs four kilobytes. */
         ESP_LOGI(TAG, "cover cannot be decoded: tjpgd result=%d", (int)result);
-        if (jpeg_is_progressive(data, length)) {
+        if (image_decode_is_progressive_jpeg(data, length)) {
             heap_caps_free(pool);
-            return decode_progressive_and_publish(data, length);
+            return decode_with_stb_and_publish(data, length);
         }
     } else {
         const uint8_t scale = scale_for(decoder.width, decoder.height);
@@ -295,7 +300,7 @@ static bool decode_and_publish(const uint8_t *data, size_t length)
     return published;
 }
 
-bool album_art_set_jpeg(const uint8_t *data, size_t length)
+bool album_art_set_image(const uint8_t *data, size_t length)
 {
     if (s_lock == NULL || data == NULL || length == 0U) return false;
 

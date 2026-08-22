@@ -30,13 +30,18 @@ typedef struct {
 
 esp_err_t album_art_init(void);
 
-/* Decodes a JPEG and publishes it as the current cover. Decoding the same
- * bytes twice is free: every track of an album carries the same picture, and
- * re-decoding it would blank the tile for a moment on each change.
+/* Decodes a picture and publishes it as the current cover. JPEG, baseline or
+ * progressive, and PNG - the caller hands over bytes and does not care which,
+ * because a cover out of a tag and a cover out of a file beside the track are
+ * the same thing by the time they reach here.
+ *
+ * Decoding the same bytes twice is free: every track of an album carries the
+ * same picture - and a folder cover is literally the same file - so re-reading
+ * it would blank the tile for a moment on each track change.
  *
  * Runs on the caller's task and takes tens of milliseconds, so it belongs
  * where a track is being opened, not where one is being drawn. */
-bool album_art_set_jpeg(const uint8_t *data, size_t length);
+bool album_art_set_image(const uint8_t *data, size_t length);
 
 void album_art_clear(void);
 album_art_status_t album_art_status(void);

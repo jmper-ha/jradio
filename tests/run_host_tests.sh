@@ -112,10 +112,10 @@ run_test id3v2 tests/test_id3v2.c components/audio_tags/id3v2.c \
 run_test flac_tags tests/test_flac_tags.c components/audio_tags/flac_tags.c \
     components/audio_tags/audio_tags_text.c
 run_test image_scale tests/test_image_scale.c components/audio_tags/image_scale.c
-# The second JPEG decoder builds on the host too: it is the one piece of the
-# cover path that is not device-specific, and the fixture is 541 bytes.
-run_test jpeg_progressive tests/test_jpeg_progressive.c \
-    components/audio_tags/jpeg_progressive.c
+# The second picture decoder builds on the host too: it is the one piece of the
+# cover path that is not device-specific, and the fixtures are under 1.5 KB.
+run_test image_decode tests/test_image_decode.c components/audio_tags/image_decode.c
+run_test cover_file tests/test_cover_file.c components/audio_tags/cover_file.c
 run_test board_audio_health tests/test_board_audio_health.c \
     components/board/board_audio_health.c
 run_test board_audio_startup tests/test_board_audio_startup.c \

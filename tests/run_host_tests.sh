@@ -148,6 +148,7 @@ run_test station_resume tests/test_station_resume.c components/internet_radio/st
     components/settings/settings_csv.c
 run_test system_health tests/test_system_health.c components/diagnostics/system_health.c
 run_test ui_autoplay tests/test_ui_autoplay.c components/ui/ui_autoplay.c \
+    components/file_storage/file_browser.c \
     components/settings/device_settings.c components/settings/settings_csv.c
 run_test ui_click_gesture tests/test_ui_click_gesture.c components/ui/ui_click_gesture.c
 run_test ui_deferred_start tests/test_ui_deferred_start.c components/ui/ui_deferred_start.c

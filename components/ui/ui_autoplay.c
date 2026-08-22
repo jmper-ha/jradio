@@ -7,8 +7,22 @@ audio_source_t ui_autoplay_source(const device_settings_t *settings)
     if (settings == NULL) return AUDIO_SOURCE_NONE;
     switch (settings->last_source) {
     case DEVICE_LAST_SOURCE_INTERNET_RADIO: return AUDIO_SOURCE_INTERNET_RADIO;
-    case DEVICE_LAST_SOURCE_USB: return AUDIO_SOURCE_USB;
-    case DEVICE_LAST_SOURCE_SD: return AUDIO_SOURCE_SD;
+    case DEVICE_LAST_SOURCE_USB:
+    case DEVICE_LAST_SOURCE_SD:
+        /* The path wins over the remembered source, because the two are
+         * written at different moments and can disagree: leave a playing card
+         * for the drive's browser without starting anything there, and the
+         * source is saved as the drive while the path still names a file on
+         * the card. Resuming that pair selected the drive and then played from
+         * the card - one source active, the other one's directory on screen.
+         * Whichever volume the file is on is the one that has to be opened. */
+        if (settings->last_file[0] != '\0') {
+            return file_browser_path_on_volume(settings->last_file, FILE_BROWSER_SD_ROOT)
+                       ? AUDIO_SOURCE_SD
+                       : AUDIO_SOURCE_USB;
+        }
+        return settings->last_source == DEVICE_LAST_SOURCE_SD ? AUDIO_SOURCE_SD
+                                                              : AUDIO_SOURCE_USB;
     case DEVICE_LAST_SOURCE_NONE:
     default: return AUDIO_SOURCE_NONE;
     }
@@ -29,8 +43,10 @@ ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
         return UI_AUTOPLAY_RADIO;
     case DEVICE_LAST_SOURCE_USB:
     case DEVICE_LAST_SOURCE_SD: {
+        // Asked of the volume that will actually be opened - see
+        // ui_autoplay_source(), which the remembered path can override.
         const file_browser_media_t media =
-            settings->last_source == DEVICE_LAST_SOURCE_SD ? sd_media : usb_media;
+            ui_autoplay_source(settings) == AUDIO_SOURCE_SD ? sd_media : usb_media;
         if (media != FILE_BROWSER_MEDIA_READY) return UI_AUTOPLAY_FILE_UNAVAILABLE;
         /* An empty remembered path means the volume was the last source but
          * nothing had been played from it - the browser is where that left

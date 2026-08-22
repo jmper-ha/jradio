@@ -66,14 +66,15 @@ bool ui_player_state_can_select_item(const ui_player_state_t *state,
            item_index < state->item_count;
 }
 
-// USB browsing stays outside the pending machinery. That machinery exists for
-// the radio, where switching stations blocks for seconds while the decoder
-// task exits and the UI must not accept a second command meanwhile. Opening a
-// directory changes the listing rather than the active item, so no snapshot
-// could ever confirm it, and it would sit pending until the timeout.
+/* Browsing a filesystem stays outside the pending machinery. That machinery
+ * exists for the radio, where switching stations blocks for seconds while the
+ * decoder task exits and the UI must not accept a second command meanwhile.
+ * Opening a directory changes the listing rather than the active item, so no
+ * snapshot could ever confirm it, and it would sit pending until the timeout -
+ * with every further press refused for as long as it did. */
 static bool ui_player_state_is_files_browse(const player_command_t *command)
 {
-    return command->source == AUDIO_SOURCE_USB &&
+    return audio_source_is_files(command->source) &&
            (command->kind == PLAYER_COMMAND_SELECT_ITEM ||
             command->kind == PLAYER_COMMAND_BROWSE_UP ||
             command->kind == PLAYER_COMMAND_BROWSE_REVEAL);
@@ -236,10 +237,10 @@ void ui_player_state_apply_snapshot(ui_player_state_t *state,
 
 bool ui_player_state_show_station_list(ui_player_state_t *state)
 {
-    // Both sources that have a list share this view: stations for the radio,
-    // the current directory for USB.
+    // Every source that has a list shares this view: stations for the radio,
+    // the current directory for the drive and the card.
     if (state == NULL || (state->source != AUDIO_SOURCE_INTERNET_RADIO &&
-                          state->source != AUDIO_SOURCE_USB)) {
+                          !audio_source_is_files(state->source))) {
         return false;
     }
     state->view = UI_PLAYER_VIEW_STATION_LIST;

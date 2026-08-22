@@ -8,7 +8,7 @@
 
 // Where the drive is mounted. The card is at SD_STORAGE_ROOT_PATH; the two are
 // the only FAT volumes the build has room for.
-#define USB_STORAGE_ROOT_PATH "/usb0"
+#define USB_STORAGE_ROOT_PATH FILE_BROWSER_USB_ROOT
 
 esp_err_t usb_storage_init(void);
 

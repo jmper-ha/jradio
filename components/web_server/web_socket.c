@@ -204,7 +204,7 @@ static void write_list(web_json_writer_t *writer, const player_snapshot_t *playe
                        web_socket_station_label_fn station_label,
                        void *station_context)
 {
-    if (player->active_source == AUDIO_SOURCE_USB) {
+    if (audio_source_is_files(player->active_source)) {
         write_usb_list(writer, player);
         return;
     }

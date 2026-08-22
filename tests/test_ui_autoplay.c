@@ -102,6 +102,27 @@ static void test_the_card_is_judged_by_its_own_state(void)
                               false) == UI_AUTOPLAY_FILE_BROWSER);
 }
 
+static void test_the_path_decides_which_volume_is_resumed(void)
+{
+    /* The source and the path are written at different moments and can
+     * disagree: leaving a playing card for the drive's browser saves the drive
+     * as the source while the path still names a file on the card. Resuming
+     * that pair used to select the drive and play from the card. */
+    const device_settings_t mismatched = settings(true, DEVICE_LAST_SOURCE_USB,
+                                                  "/sd0/dir/a.mp3");
+    assert(ui_autoplay_source(&mismatched) == AUDIO_SOURCE_SD);
+    assert(ui_autoplay_decide(&mismatched, FILE_BROWSER_MEDIA_ABSENT,
+                              FILE_BROWSER_MEDIA_READY, true) == UI_AUTOPLAY_FILE);
+
+    const device_settings_t other_way = settings(true, DEVICE_LAST_SOURCE_SD,
+                                                 "/usb0/dir/a.mp3");
+    assert(ui_autoplay_source(&other_way) == AUDIO_SOURCE_USB);
+
+    // With no path there is nothing to check against, so the source stands.
+    const device_settings_t no_file = settings(true, DEVICE_LAST_SOURCE_SD, "");
+    assert(ui_autoplay_source(&no_file) == AUDIO_SOURCE_SD);
+}
+
 static void test_the_remembered_source_comes_back_as_an_audio_source(void)
 {
     const device_settings_t sd = settings(true, DEVICE_LAST_SOURCE_SD, "/sd0/a.mp3");
@@ -131,6 +152,7 @@ int main(void)
     test_no_drive_says_so_rather_than_opening_an_empty_browser();
     test_the_drive_check_comes_before_the_file_check();
     test_the_card_is_judged_by_its_own_state();
+    test_the_path_decides_which_volume_is_resumed();
     test_the_remembered_source_comes_back_as_an_audio_source();
     test_a_missing_settings_struct_opens_the_home_screen();
     puts("ui_autoplay tests passed");

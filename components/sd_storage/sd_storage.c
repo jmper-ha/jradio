@@ -73,6 +73,15 @@ static esp_err_t sd_transaction(int slot, sdmmc_command_t *cmd)
     return err;
 }
 
+/* Mounting registers /sd0 with the VFS and unmounting unregisters it, which
+ * this does on every visit to the source - and that turns out to depend on
+ * CONFIG_VFS_MAX_COUNT having headroom above the peak number of registered
+ * paths. esp_vfs_register_fs() refuses on `s_vfs_count >= VFS_MAX_COUNT`
+ * before it looks for a free slot, and s_vfs_count is a high-water mark that
+ * unregistering never lowers; at the default of 8 this firmware peaked at
+ * exactly 8 with the drive and the card both mounted, and from then on every
+ * mount returned ESP_ERR_NO_MEM - reported one level up as "no card answered",
+ * which sends you to the wiring. See sdkconfig.defaults. */
 static esp_err_t sd_mount(void)
 {
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();

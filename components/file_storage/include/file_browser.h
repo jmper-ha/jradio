@@ -7,6 +7,16 @@
 extern "C" {
 #endif
 
+/* Where each volume is mounted.
+ *
+ * These live in the pure layer, not with the drivers that mount them, because
+ * a path is the only thing that says which volume something is on - and the
+ * resume point, which is nothing but a path, has to be mapped back to a source
+ * without any of the mounting code in reach. usb_storage.h and sd_storage.h
+ * re-export them under their own names. */
+#define FILE_BROWSER_USB_ROOT "/usb0"
+#define FILE_BROWSER_SD_ROOT "/sd0"
+
 // FATFS is configured with MAX_LFN=255 and UTF-8 API encoding, so a Cyrillic
 // name can reach ~510 bytes. Names are stored whole and never truncated: a
 // truncated name still has to open as a path, and a half-name silently opens
@@ -111,6 +121,10 @@ bool file_browser_path_is_root(const char *path);
  * still has to open somewhere on that same volume. False rather than a
  * truncated root - a truncated root names a volume that does not exist. */
 bool file_browser_path_volume_root(const char *path, char *out, size_t out_size);
+
+// True when `path` names something on `root` - "/sd0" matches "/sd0" and
+// "/sd0/Music/1.mp3", and never "/sd00".
+bool file_browser_path_on_volume(const char *path, const char *root);
 // Both return false rather than truncating: a truncated path is a path to the
 // wrong file, and silently opening the wrong file is worse than refusing.
 bool file_browser_path_child(const char *path, const char *name, char *out, size_t out_size);

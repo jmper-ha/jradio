@@ -466,8 +466,42 @@ static void test_usb_browsing_does_not_go_pending(void)
     assert(!ui_player_state_can_post(&state, &radio_up));
 }
 
+static void test_the_card_gets_the_same_views_as_the_drive(void)
+{
+    /* Both file sources share the browser view and the browse commands. When
+     * this file still named AUDIO_SOURCE_USB, entering the card left the view
+     * on the player screen while the home screen stayed on the display, and
+     * every press after that went to a handler for a screen that was not
+     * showing - the device looked frozen. */
+    ui_player_state_t state;
+    ui_player_state_init(&state);
+    state.source = AUDIO_SOURCE_SD;
+    assert(ui_player_state_show_station_list(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
+
+    state.source = AUDIO_SOURCE_BLUETOOTH;
+    assert(!ui_player_state_show_station_list(&state));
+
+    /* Browsing the card must stay out of the pending machinery for the same
+     * reason as the drive: no snapshot field moves to confirm a directory
+     * change, so it would sit pending until the timeout with every further
+     * press refused meanwhile. */
+    ui_player_state_init(&state);
+    const player_command_t browse = {.kind = PLAYER_COMMAND_BROWSE_UP,
+                                     .source = AUDIO_SOURCE_SD,
+                                     .item_index = PLAYER_ITEM_NONE};
+    assert(ui_player_state_apply_post_result(&state, &browse, true, 0U));
+    assert(!state.pending);
+    const player_command_t select = {.kind = PLAYER_COMMAND_SELECT_ITEM,
+                                     .source = AUDIO_SOURCE_SD,
+                                     .item_index = 3U};
+    assert(ui_player_state_apply_post_result(&state, &select, true, 0U));
+    assert(!state.pending);
+}
+
 int main(void)
 {
+    test_the_card_gets_the_same_views_as_the_drive();
     test_rejected_commands_preserve_current_view();
     test_list_view_opens_for_both_sources_with_a_list();
     test_usb_browsing_does_not_go_pending();

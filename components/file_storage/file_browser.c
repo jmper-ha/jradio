@@ -192,6 +192,14 @@ bool file_browser_path_volume_root(const char *path, char *out, size_t out_size)
     return true;
 }
 
+bool file_browser_path_on_volume(const char *path, const char *root)
+{
+    if (path == NULL || root == NULL) return false;
+    const size_t length = strlen(root);
+    return strncmp(path, root, length) == 0 &&
+           (path[length] == '\0' || path[length] == '/');
+}
+
 bool file_browser_path_child(const char *path, const char *name, char *out, size_t out_size)
 {
     if (path == NULL || name == NULL || out == NULL || out_size == 0U) return false;

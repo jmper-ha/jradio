@@ -71,7 +71,7 @@ static atomic_bool s_paused = ATOMIC_VAR_INIT(false);
  * Set by the starter rather than by the task itself: the task is pinned to the
  * other core and need not have run by the time file_player_play() returns, so a
  * stop() or a second play() arriving in that window would sail straight through
- * wait_for_task_exit() and leave two tasks sharing s_request and the I2S
+ * wait_for_track_end() and leave two tasks sharing s_request and the I2S
  * output. */
 static atomic_bool s_task_running = ATOMIC_VAR_INIT(false);
 
@@ -760,9 +760,10 @@ static bool grow_pcm_buffer(file_player_context_t *ctx, const radio_decoder_info
     return true;
 }
 
-static void file_player_task(void *arg)
+// One track, start to finish. The task below is created for it and exits
+// with it.
+static void file_player_run_track(void)
 {
-    (void)arg;
     file_player_context_t ctx = {0};
     // Cleared before anything can read them, so the previous track's position
     // is never shown against this one.
@@ -917,14 +918,21 @@ static void file_player_task(void *arg)
     atomic_store_explicit(&s_task_running, false, memory_order_release);
     const file_player_finished_cb_t callback = s_finished_callback;
     if (ended_by_itself && callback != NULL) callback();
+}
+
+static void file_player_task(void *arg)
+{
+    (void)arg;
+    file_player_run_track();
     vTaskDelete(NULL);
 }
 
-/* Waits for the playback task to finish. False means it is still running after
- * FILE_PLAYER_STOP_TIMEOUT_MS, and the stop request is deliberately left
- * standing in that case: clearing it would withdraw the only instruction the
- * task has to stop, and the caller would then start a second one on top of it. */
-static bool wait_for_task_exit(void)
+/* Waits for the worker to finish whatever track it is on. False means it is
+ * still going after FILE_PLAYER_STOP_TIMEOUT_MS, and the stop request is
+ * deliberately left standing in that case: clearing it would withdraw the only
+ * instruction the worker has to stop, and the caller would then hand it a
+ * second track on top of the first. */
+static bool wait_for_track_end(void)
 {
     atomic_store_explicit(&s_stop_requested, true, memory_order_release);
     // Unpause too: a paused task never reaches the stop check otherwise.
@@ -975,7 +983,7 @@ esp_err_t file_player_play(const char *path, const char *display_name,
     if (!file_storage_path_mounted(path)) return ESP_ERR_NOT_FOUND;
 
     xSemaphoreTake(s_control_lock, portMAX_DELAY);
-    if (!wait_for_task_exit()) {
+    if (!wait_for_track_end()) {
         // Starting now would hand a second task the same request and the same
         // I2S channel; the caller logs and leaves the old track playing.
         xSemaphoreGive(s_control_lock);
@@ -1001,6 +1009,15 @@ esp_err_t file_player_play(const char *path, const char *display_name,
         xTaskCreatePinnedToCore(file_player_task, "usb_play", FILE_PLAYER_TASK_STACK, NULL,
                                 FILE_PLAYER_TASK_PRIORITY, NULL, FILE_PLAYER_TASK_CORE);
     if (created != pdPASS) {
+        /* Not a shortage of memory but of *contiguous* memory: the stack has to
+         * be one block, and internal SRAM here fragments as the radio, cover
+         * art and mounts come and go. The region breakdown says which heap ran
+         * out, which the free/largest pair alone does not. */
+        ESP_LOGE(TAG, "no room for the playback task: internal_free=%u largest=%u",
+                 (unsigned int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
+                                                                MALLOC_CAP_8BIT));
+        heap_caps_print_heap_info(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
         atomic_store_explicit(&s_task_running, false, memory_order_release);
         status_set_state(FILE_PLAYER_STATE_ERROR);
         xSemaphoreGive(s_control_lock);
@@ -1014,7 +1031,7 @@ esp_err_t file_player_stop(void)
 {
     if (s_control_lock == NULL) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(s_control_lock, portMAX_DELAY);
-    const bool stopped = wait_for_task_exit();
+    const bool stopped = wait_for_track_end();
     // Only claim STOPPED when it is: a caller told the track had stopped while
     // it is still writing audio has no way to notice, and acts on the lie.
     if (stopped) status_set_state(FILE_PLAYER_STATE_STOPPED);

@@ -7,7 +7,7 @@
 
 // The card's own mount point, alongside the USB drive's /usb0. FATFS is built
 // with two volumes, which these two exactly fill.
-#define SD_STORAGE_ROOT_PATH "/sd0"
+#define SD_STORAGE_ROOT_PATH FILE_BROWSER_SD_ROOT
 
 /* Brings up the card's SPI bus, then mounts the card once to see whether one is
  * there, lists its root into the log, and unmounts it again.

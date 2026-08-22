@@ -79,11 +79,9 @@ bool file_storage_path_mounted(const char *path)
 {
     if (path == NULL) return false;
     for (size_t index = 0U; index < s_volume_count; ++index) {
-        const size_t length = strlen(s_volumes[index].root);
-        if (strncmp(path, s_volumes[index].root, length) != 0) continue;
-        // "/sd0" and "/sd0/x" belong to the volume; "/sd00" does not.
-        if (path[length] != '\0' && path[length] != '/') continue;
-        return s_volumes[index].mounted();
+        if (file_browser_path_on_volume(path, s_volumes[index].root)) {
+            return s_volumes[index].mounted();
+        }
     }
     return false;
 }
@@ -144,9 +142,7 @@ esp_err_t file_storage_read_directory(const char *path)
 bool file_storage_listing_is_on(const char *root)
 {
     if (s_entries == NULL || root == NULL || !listing_lock()) return false;
-    const size_t length = strlen(root);
-    const bool same = strncmp(s_listing.path, root, length) == 0 &&
-                      (s_listing.path[length] == '\0' || s_listing.path[length] == '/');
+    const bool same = file_browser_path_on_volume(s_listing.path, root);
     listing_unlock();
     return same;
 }

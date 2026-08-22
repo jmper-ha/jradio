@@ -51,6 +51,15 @@ CONFIG_LWIP_MAX_SOCKETS=16
 # before. Note this also fixes TCP_MSS at 1440: that value is the IPv6 ceiling
 # (1500 - 40 - 20), and only an IPv4-only build may raise it to 1460.
 # CONFIG_LWIP_IPV6 is not set
+# VFS slots. The default is 8, and this firmware peaks at exactly that:
+# /dev/uart and friends, /littlefs, /usb0 and /sd0. That is one too few,
+# because esp_vfs_register_fs() refuses on `s_vfs_count >= VFS_MAX_COUNT`
+# before it ever looks for a free slot - and s_vfs_count is a high-water mark
+# that esp_vfs_unregister() never lowers. So once the peak touches the limit,
+# every later registration fails with ESP_ERR_NO_MEM even though slots are
+# free, and the SD card - which registers and unregisters on every visit to
+# its source - never mounts again until a reboot.
+CONFIG_VFS_MAX_COUNT=12
 # Two FAT volumes: the USB flash drive at /usb0 and the SD card at /sd0. Two is
 # also the IDF default, so this line only pins it - dropping it to one would
 # leave whichever mounted second with nowhere to go.

@@ -82,6 +82,45 @@
 /* Height of the status strip every screen carries. */
 #define UI_STRIP_H 26
 
+/* Home screen carousel. Every icon is a 24x24 design scaled to one of three
+ * sizes, so a single axis is enough - the old row needed a per-glyph vertical
+ * inset because each FontAwesome symbol had its own height, and the inset only
+ * ever fitted one of them.
+ *
+ * The five centres are symmetric about 160 with 16 px of margin at both ends;
+ * the row used to start 4 px from the left and 30 from the right, which read
+ * as the whole thing sliding off the screen. */
+#define UI_FEED_AXIS_Y 138
+#define UI_FEED_CENTER_X 160
+#define UI_FEED_INNER_DX 68
+#define UI_FEED_OUTER_DX 132
+#define UI_FEED_TILE 84
+#define UI_FEED_ICON_LARGE_PX 48
+#define UI_FEED_ICON_MEDIUM_PX 32
+#define UI_FEED_ICON_SMALL_PX 24
+/* Depth is carried by brightness as well as size: without it the middle icon
+ * reads as the only lit one rather than as the middle of a ring. */
+#define UI_COLOR_FEED_NEAR 0x8FA8BC
+#define UI_COLOR_FEED_FAR 0x46586A
+/* The other home screen: the same items as a list. Eight rows of 24 px start
+ * right under the strip and end at 222, which is every pixel the screen has -
+ * the previous 27 px pitch fitted seven items and ran off the bottom as soon
+ * as the SD card row appeared. The icon column is the carousel's 24 px bitmap,
+ * so both home screens name an item the same way. */
+#define UI_MENU_ROW_Y (UI_STRIP_H + 4)
+#define UI_MENU_ROW_PITCH 24
+#define UI_MENU_ROW_H 24
+#define UI_MENU_ROW_X 6
+#define UI_MENU_ROW_W 308
+#define UI_MENU_ICON_X 12
+#define UI_MENU_TEXT_PAD 38
+
+/* One dot per item, so a ring of eight does not feel endless. */
+#define UI_FEED_DOT 6
+#define UI_FEED_DOT_PITCH 10
+#define UI_FEED_DOT_Y 200
+#define UI_COLOR_FEED_DOT 0x33445A
+
 /* List screens: rows start straight under the strip, and a rule and the
  * position bar close the screen the way they close the player's. */
 #define UI_LIST_ROW_Y (UI_STRIP_H + 6)
@@ -104,11 +143,13 @@ static lv_display_t *s_display;
 static lv_obj_t *s_menu_screen;
 static lv_obj_t *s_source_screen;
 static lv_obj_t *s_menu_rows[UI_MENU_ITEM_COUNT];
+static lv_obj_t *s_menu_icons[UI_MENU_ITEM_COUNT];
 static lv_obj_t *s_menu_notice;
 static lv_obj_t *s_feed_screen;
 static lv_obj_t *s_feed_title;
 static lv_obj_t *s_feed_notice;
 static lv_obj_t *s_feed_icons[5];
+static lv_obj_t *s_feed_dots[UI_FEED_ITEM_COUNT];
 static ui_feed_model_t s_feed_model;
 static lv_obj_t *s_source_title;
 static lv_obj_t *s_source_status;
@@ -559,36 +600,54 @@ static void ui_update_feed_screen(void)
 {
     const ui_feed_item_t selected = ui_feed_model_selected(&s_feed_model);
     const int offsets[5] = {-2, -1, 0, 1, 2};
-    const int positions[5] = {4, 54, 108, 214, 264};
+    const int centers[5] = {
+        UI_FEED_CENTER_X - UI_FEED_OUTER_DX, UI_FEED_CENTER_X - UI_FEED_INNER_DX,
+        UI_FEED_CENTER_X,
+        UI_FEED_CENTER_X + UI_FEED_INNER_DX, UI_FEED_CENTER_X + UI_FEED_OUTER_DX,
+    };
+    const ui_feed_icon_size_t sizes[5] = {
+        UI_FEED_ICON_SMALL, UI_FEED_ICON_MEDIUM, UI_FEED_ICON_LARGE,
+        UI_FEED_ICON_MEDIUM, UI_FEED_ICON_SMALL,
+    };
+    const int pixels[5] = {
+        UI_FEED_ICON_SMALL_PX, UI_FEED_ICON_MEDIUM_PX, UI_FEED_ICON_LARGE_PX,
+        UI_FEED_ICON_MEDIUM_PX, UI_FEED_ICON_SMALL_PX,
+    };
+    const uint32_t colors[5] = {
+        UI_COLOR_FEED_FAR, UI_COLOR_FEED_NEAR, UI_COLOR_ACCENT,
+        UI_COLOR_FEED_NEAR, UI_COLOR_FEED_FAR,
+    };
     for (size_t slot = 0; slot < 5U; ++slot) {
         int index = (int)selected + offsets[slot];
         while (index < 0) index += UI_FEED_ITEM_COUNT;
         index %= UI_FEED_ITEM_COUNT;
         const ui_feed_item_t item = (ui_feed_item_t)index;
         const bool center = slot == 2U;
-        lv_label_set_text(s_feed_icons[slot], ui_feed_icon_symbol(item));
-        // Shifted down with the title to clear the status strip.
-        lv_obj_set_pos(s_feed_icons[slot], positions[slot], center ? 88 : 118);
-        lv_obj_set_size(s_feed_icons[slot], center ? 104 : 52, center ? 104 : 52);
-        lv_obj_set_style_text_font(s_feed_icons[slot],
-                                   center ? &lv_font_montserrat_48 : &lv_font_montserrat_24, 0);
-        /* Keep the tile mathematically centered and use a small vertical
-         * inset so the visible FontAwesome shape, not its line box, is centered. */
-        lv_obj_set_style_pad_left(s_feed_icons[slot], 0, 0);
-        lv_obj_set_style_pad_right(s_feed_icons[slot], 0, 0);
-        lv_obj_set_style_pad_top(s_feed_icons[slot], center ? 20 : 0, 0);
-        lv_obj_set_style_pad_bottom(s_feed_icons[slot], 0, 0);
-        lv_obj_set_style_text_color(s_feed_icons[slot],
-                                    lv_color_hex(center ? UI_COLOR_ACCENT : UI_COLOR_DIM), 0);
-        lv_obj_set_style_text_align(s_feed_icons[slot], LV_TEXT_ALIGN_CENTER, 0);
+        lv_image_set_src(s_feed_icons[slot], ui_feed_icon_image(item, sizes[slot]));
+        /* The tile is bigger than the icon inside it, so the object is placed
+         * by its own box and the image centred within it. Everything else is
+         * exactly icon-sized. */
+        const int box = center ? UI_FEED_TILE : pixels[slot];
+        lv_obj_set_size(s_feed_icons[slot], box, box);
+        lv_obj_set_pos(s_feed_icons[slot], centers[slot] - box / 2, UI_FEED_AXIS_Y - box / 2);
+        /* An A8 bitmap has no colour of its own: LVGL blends it with the
+         * recolour, which is what lets one image serve every slot. */
+        lv_obj_set_style_image_recolor(s_feed_icons[slot], lv_color_hex(colors[slot]), 0);
+        lv_obj_set_style_image_recolor_opa(s_feed_icons[slot], LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(s_feed_icons[slot], center ? 2 : 0, 0);
         lv_obj_set_style_border_color(s_feed_icons[slot], lv_color_hex(UI_COLOR_ACCENT), 0);
         lv_obj_set_style_border_opa(s_feed_icons[slot], LV_OPA_COVER, 0);
-        lv_obj_set_style_radius(s_feed_icons[slot], 8, 0);
-        lv_obj_set_style_bg_color(s_feed_icons[slot],
-                                  center ? lv_color_hex(UI_COLOR_SELECTED)
-                                         : lv_color_hex(UI_COLOR_GROUND), 0);
+        /* Only the tile is rounded: an lv_image clips its bitmap to the widget
+         * radius, and 14 px on a 24 px neighbour would round the icon itself
+         * into a circle. */
+        lv_obj_set_style_radius(s_feed_icons[slot], center ? 14 : 0, 0);
+        lv_obj_set_style_bg_color(s_feed_icons[slot], lv_color_hex(UI_COLOR_SELECTED), 0);
         lv_obj_set_style_bg_opa(s_feed_icons[slot], center ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    }
+    for (uint8_t index = 0; index < UI_FEED_ITEM_COUNT; ++index) {
+        lv_obj_set_style_bg_color(s_feed_dots[index],
+                                  lv_color_hex(index == (uint8_t)selected ? UI_COLOR_ACCENT
+                                                                          : UI_COLOR_FEED_DOT), 0);
     }
     lv_label_set_text(s_feed_title, ui_feed_item_title(selected));
 }
@@ -624,9 +683,23 @@ static void ui_create_feed_screen(void)
     lv_obj_set_style_text_color(s_feed_notice, lv_color_hex(0xFFCC80), 0);
     lv_label_set_text(s_feed_notice, "");
     for (size_t index = 0; index < 5U; ++index) {
-        s_feed_icons[index] = lv_label_create(s_feed_screen);
-        lv_obj_set_style_text_font(s_feed_icons[index], &lv_font_montserrat_24, 0);
+        s_feed_icons[index] = lv_image_create(s_feed_screen);
         lv_obj_set_style_pad_all(s_feed_icons[index], 0, 0);
+        // Centres the bitmap inside the tile, which is larger than it.
+        lv_image_set_inner_align(s_feed_icons[index], LV_IMAGE_ALIGN_CENTER);
+    }
+    /* Centred as a group: eight dots at a pitch of 10 span 74 px, the last one
+     * being a dot rather than a gap. */
+    const int dots_left = UI_FEED_CENTER_X -
+                          (UI_FEED_ITEM_COUNT * UI_FEED_DOT_PITCH - UI_FEED_DOT) / 2;
+    for (uint8_t index = 0; index < UI_FEED_ITEM_COUNT; ++index) {
+        s_feed_dots[index] = lv_obj_create(s_feed_screen);
+        lv_obj_remove_style_all(s_feed_dots[index]);
+        lv_obj_set_size(s_feed_dots[index], UI_FEED_DOT, UI_FEED_DOT);
+        lv_obj_set_pos(s_feed_dots[index], dots_left + index * UI_FEED_DOT_PITCH,
+                       UI_FEED_DOT_Y);
+        lv_obj_set_style_radius(s_feed_dots[index], UI_FEED_DOT / 2, 0);
+        lv_obj_set_style_bg_opa(s_feed_dots[index], LV_OPA_COVER, 0);
     }
     ui_feed_model_init(&s_feed_model, 0U);
     ui_update_feed_screen();
@@ -658,6 +731,12 @@ static void ui_update_menu_highlight(void)
                                     lv_color_hex(is_selected ? UI_COLOR_ACCENT
                                                              : UI_COLOR_MUTED), 0);
         lv_label_set_text(s_menu_rows[index], ui_menu_item_label((ui_menu_item_t)index));
+        // The icon follows the text rather than staying lit: a row that is not
+        // under the cursor should read as one thing, not as a bright mark with
+        // dim writing next to it.
+        lv_obj_set_style_image_recolor(s_menu_icons[index],
+                                       lv_color_hex(is_selected ? UI_COLOR_ACCENT
+                                                                : UI_COLOR_DIM), 0);
     }
 }
 
@@ -671,26 +750,43 @@ static void ui_create_menu_screen(void)
     // so this covers every label on the screen including any added later. The
     // default font has no Cyrillic and renders it as empty boxes, which is a
     // mistake that only shows up when a label first receives Russian text.
-    lv_obj_set_style_text_font(s_menu_screen, &ui_font_cyrillic_14, 0);
+    lv_obj_set_style_text_font(s_menu_screen, &ui_font_cyrillic_20, 0);
 
     ui_status_strip_create(s_menu_screen, &s_menu_strip, "jradio");
 
     for (uint8_t index = 0; index < UI_MENU_ITEM_COUNT; ++index) {
         s_menu_rows[index] = lv_label_create(s_menu_screen);
         lv_label_set_text(s_menu_rows[index], ui_menu_item_label((ui_menu_item_t)index));
-        lv_obj_set_pos(s_menu_rows[index], 10, UI_STRIP_H + 10 + index * 27);
-        lv_obj_set_size(s_menu_rows[index], 300, 24);
-        lv_obj_set_style_pad_left(s_menu_rows[index], 8, 0);
-        lv_obj_set_style_pad_top(s_menu_rows[index], 2, 0);
+        lv_obj_set_pos(s_menu_rows[index], UI_MENU_ROW_X,
+                       UI_MENU_ROW_Y + index * UI_MENU_ROW_PITCH);
+        lv_obj_set_size(s_menu_rows[index], UI_MENU_ROW_W, UI_MENU_ROW_H);
+        // Left padding, not a second object: the text starts past the icon
+        // column so a long name is shortened against the right edge only.
+        lv_obj_set_style_pad_left(s_menu_rows[index], UI_MENU_TEXT_PAD, 0);
+        lv_obj_set_style_pad_top(s_menu_rows[index], 1, 0);
         lv_obj_set_style_radius(s_menu_rows[index], 3, 0);
         lv_label_set_long_mode(s_menu_rows[index], LV_LABEL_LONG_DOT);
+    }
+    /* Created after every row so they sit above the highlighted background:
+     * LVGL draws children in creation order and the row tile is opaque. */
+    for (uint8_t index = 0; index < UI_MENU_ITEM_COUNT; ++index) {
+        s_menu_icons[index] = lv_image_create(s_menu_screen);
+        lv_obj_remove_style_all(s_menu_icons[index]);
+        lv_image_set_src(s_menu_icons[index],
+                         ui_feed_icon_image((ui_feed_item_t)index, UI_FEED_ICON_SMALL));
+        lv_obj_set_size(s_menu_icons[index], UI_FEED_ICON_SMALL_PX, UI_FEED_ICON_SMALL_PX);
+        lv_obj_set_pos(s_menu_icons[index], UI_MENU_ICON_X,
+                       UI_MENU_ROW_Y + index * UI_MENU_ROW_PITCH +
+                           (UI_MENU_ROW_H - UI_FEED_ICON_SMALL_PX) / 2);
+        lv_obj_set_style_image_recolor_opa(s_menu_icons[index], LV_OPA_COVER, 0);
     }
 
     // Not a key hint: the only thing this line ever says is why a source
     // refused to open, and it is empty the rest of the time.
     s_menu_notice = lv_label_create(s_menu_screen);
     lv_label_set_text(s_menu_notice, "");
-    lv_obj_set_pos(s_menu_notice, 12, 220);
+    lv_obj_set_style_text_font(s_menu_notice, &ui_font_cyrillic_14, 0);
+    lv_obj_set_pos(s_menu_notice, 12, 221);
     lv_obj_set_style_text_color(s_menu_notice, lv_color_hex(UI_COLOR_NOTICE), 0);
     ui_update_menu_highlight();
 }

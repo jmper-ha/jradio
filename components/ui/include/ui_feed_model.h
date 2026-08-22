@@ -8,6 +8,7 @@
 typedef enum {
     UI_FEED_INTERNET_RADIO = 0,
     UI_FEED_USB,
+    UI_FEED_SD_CARD,
     UI_FEED_BLUETOOTH,
     UI_FEED_FM,
     UI_FEED_DLNA,

@@ -23,6 +23,24 @@ uint32_t usb_track_total_seconds(uint64_t file_bytes, uint64_t header_bytes,
     return (uint32_t)((audio_bytes * 8U) / ((uint64_t)bitrate_kbps * 1000U));
 }
 
+uint32_t usb_track_sampled_seconds(uint64_t total_samples, uint32_t sample_rate_hz)
+{
+    // Zero samples is what an encoder writes when it was fed a stream and
+    // could not know; there is no length to show, and no bar to draw.
+    if (sample_rate_hz == 0U || total_samples == 0U) return 0U;
+    return (uint32_t)(total_samples / sample_rate_hz);
+}
+
+uint16_t usb_track_average_bitrate_kbps(uint64_t file_bytes, uint64_t header_bytes,
+                                        uint32_t seconds)
+{
+    if (seconds == 0U || file_bytes <= header_bytes) return 0U;
+    const uint64_t kbps = ((file_bytes - header_bytes) * 8U) / ((uint64_t)seconds * 1000U);
+    // Clamped rather than wrapped: the field is 16 bits, and a rate past that
+    // is not a music file.
+    return kbps > UINT16_MAX ? UINT16_MAX : (uint16_t)kbps;
+}
+
 uint64_t usb_track_seek_offset(uint64_t file_bytes, uint64_t header_bytes,
                                uint16_t bitrate_kbps, uint32_t target_seconds)
 {

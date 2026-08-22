@@ -54,6 +54,44 @@ static void test_the_header_is_not_counted_as_audio(void)
     assert(usb_track_total_seconds(10U, 44U, 1411U) == 0U);
 }
 
+static void test_a_flac_gets_its_length_from_its_sample_count(void)
+{
+    /* The case that had no bar at all. FLAC frames are as large as the music
+     * needs, so size and bitrate say nothing; STREAMINFO's sample count is
+     * exact. The album this was built for: 8:19 of 44.1 kHz. */
+    assert(usb_track_sampled_seconds(22050000U, 44100U) == 500U);
+    assert(usb_track_sampled_seconds(21987648U, 44100U) == 498U);
+    // 96 kHz is the same arithmetic and must not be assumed away.
+    assert(usb_track_sampled_seconds(9600000U, 96000U) == 100U);
+}
+
+static void test_a_stream_written_to_a_file_has_no_length(void)
+{
+    // What an encoder writes when it was fed a pipe: it never knew the total.
+    assert(usb_track_sampled_seconds(0U, 44100U) == 0U);
+    assert(usb_track_sampled_seconds(22050000U, 0U) == 0U);
+}
+
+static void test_a_format_with_no_stated_rate_gets_an_average(void)
+{
+    /* Needed for the jump arithmetic and the codec line, and only ever an
+     * average - which for a 500-second file of 62.5 MB is 1000 kbps. */
+    assert(usb_track_average_bitrate_kbps(62500000U, 0U, 500U) == 1000U);
+    // The header is not audio, here as everywhere else.
+    assert(usb_track_average_bitrate_kbps(62500000U + 8000U, 8000U, 500U) == 1000U);
+    // And it has to round-trip with the seek: an average is what turns
+    // seconds back into an offset.
+    assert(usb_track_seek_offset(62500000U, 0U, 1000U, 250U) == 31250000U);
+}
+
+static void test_an_average_of_nothing_is_not_reported(void)
+{
+    assert(usb_track_average_bitrate_kbps(62500000U, 0U, 0U) == 0U);
+    assert(usb_track_average_bitrate_kbps(100U, 200U, 10U) == 0U);
+    // Clamped to the field rather than wrapped inside it.
+    assert(usb_track_average_bitrate_kbps(UINT64_C(1) << 40, 0U, 1U) == UINT16_MAX);
+}
+
 static void test_an_unknown_bitrate_gives_no_duration(void)
 {
     /* Normal for the first moments of a track. Returning 0 lets the caller
@@ -164,6 +202,10 @@ int main(void)
     test_elapsed_is_zero_until_the_format_is_known();
     test_total_comes_from_size_and_bitrate();
     test_the_header_is_not_counted_as_audio();
+    test_a_flac_gets_its_length_from_its_sample_count();
+    test_a_stream_written_to_a_file_has_no_length();
+    test_a_format_with_no_stated_rate_gets_an_average();
+    test_an_average_of_nothing_is_not_reported();
     test_an_unknown_bitrate_gives_no_duration();
     test_the_bar_is_hidden_when_there_is_nothing_to_show();
     test_the_bar_tracks_the_position();

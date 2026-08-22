@@ -34,6 +34,24 @@ uint32_t usb_track_elapsed_seconds(uint64_t pcm_bytes, uint32_t sample_rate_hz,
 uint32_t usb_track_total_seconds(uint64_t file_bytes, uint64_t header_bytes,
                                  uint16_t bitrate_kbps);
 
+/* Length of a FLAC track, which cannot be had the way the line above has it.
+ * The format is variable rate: its frames are as large as the music in them
+ * needs, so a file size and an average say nothing about where in the track a
+ * given byte falls. STREAMINFO carries the exact sample count instead, and
+ * this is the division that turns it into seconds. */
+uint32_t usb_track_sampled_seconds(uint64_t total_samples, uint32_t sample_rate_hz);
+
+/* The rate the file works out to over its whole length, for a format that
+ * never states one.
+ *
+ * Wanted for two things, neither of which needs it to be exact: the codec line
+ * on screen, where an average is the usual way to describe a FLAC, and the
+ * jump arithmetic, which turns seconds into a byte offset. A jump lands
+ * wherever the local rate differs from the average, and the decoder resyncs on
+ * the next frame header regardless - so this is an aim, not a promise. */
+uint16_t usb_track_average_bitrate_kbps(uint64_t file_bytes, uint64_t header_bytes,
+                                        uint32_t seconds);
+
 /* Position as 0..100 for a progress bar. False when there is nothing
  * meaningful to draw - no duration estimate yet, or an empty track - so the
  * caller can leave the bar alone instead of drawing a full or empty one that

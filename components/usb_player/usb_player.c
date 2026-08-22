@@ -19,6 +19,7 @@
 #include "audio_tags_reader.h"
 #include "board.h"
 #include "cover_file.h"
+#include "flac_tags.h"
 #include "radio_decoder.h"
 #include "board_audio_format.h"
 #include "radio_prebuffer.h"
@@ -132,6 +133,23 @@ typedef struct {
     // How many frames claimed a sample rate the file does not have. Reported
     // once at the end of the track rather than as it happens - see apply_info().
     unsigned int bogus_rate_reports;
+    // Set when the length came from the file's own header rather than from a
+    // bitrate, which is FLAC. An exact figure must not be replaced by an
+    // estimate if the decoder ever starts reporting a rate for it.
+    bool length_from_header;
+    /* What a jump into the middle of a FLAC needs, and what it is worth
+     * carrying 76 bytes for.
+     *
+     * The decoder cannot be dropped into the middle of a stream. Reset, it
+     * waits for a stream to start - magic number, then STREAMINFO - and
+     * answers frames with SYNC_NOT_FOUND; left alone, it is somewhere inside a
+     * frame that is no longer there. So a jump hands it a stream that begins
+     * where the jump landed: these 42 bytes, which are the file's own header
+     * with the metadata after STREAMINFO left out, and then audio from a real
+     * frame boundary - which `info` is what recognises. */
+    flac_streaminfo_t flac_info;
+    uint8_t flac_priming[FLAC_SIGNATURE_SIZE + FLAC_BLOCK_HEADER_SIZE + FLAC_STREAMINFO_SIZE];
+    bool flac_ready;
 } usb_player_context_t;
 
 /* How large a folder cover this will read off the drive.
@@ -225,6 +243,84 @@ static bool load_folder_cover(void)
     }
     free(picture);
     return published;
+}
+
+/* Walks a FLAC file's metadata blocks for the two numbers the rest of the
+ * player cannot work out for itself.
+ *
+ * MP3 states a bitrate in every frame, and a bitrate plus a file size is a
+ * length. FLAC states nothing of the kind: its frames are as large as the
+ * music in them needs, so the first frame says nothing about the last, and the
+ * player had no length to draw a progress bar from - a FLAC track played with
+ * an empty footer where every other format has a position. What FLAC does
+ * carry is STREAMINFO, written by the encoder with the exact sample count.
+ *
+ * The walk also lands on the first audio byte, which is what a jump has to be
+ * measured from. Blocks are stepped over rather than read: one of them is the
+ * cover, and it is hundreds of kilobytes.
+ */
+static void read_flac_layout(usb_player_context_t *ctx)
+{
+    uint8_t header[FLAC_BLOCK_HEADER_SIZE];
+    uint8_t signature[FLAC_SIGNATURE_SIZE];
+    rewind(ctx->file);
+    if (fread(signature, 1U, sizeof(signature), ctx->file) != sizeof(signature) ||
+        !flac_signature_matches(signature, sizeof(signature))) {
+        return;
+    }
+
+    flac_streaminfo_t info = {0};
+    bool have_info = false;
+    bool last = false;
+    while (!last && fread(header, 1U, sizeof(header), ctx->file) == sizeof(header)) {
+        uint8_t type = 0U;
+        size_t block_length = 0U;
+        if (!flac_block_header_parse(header, sizeof(header), &last, &type, &block_length)) {
+            return;
+        }
+        if (type == FLAC_BLOCK_STREAMINFO && block_length >= FLAC_STREAMINFO_SIZE) {
+            uint8_t block[FLAC_STREAMINFO_SIZE];
+            if (fread(block, 1U, sizeof(block), ctx->file) != sizeof(block)) return;
+            have_info = flac_streaminfo_parse(block, sizeof(block), &info);
+            block_length -= FLAC_STREAMINFO_SIZE;
+            if (have_info) {
+                // The same block again with the "last metadata block" bit set,
+                // so a decoder fed this goes straight from it to the audio.
+                memcpy(ctx->flac_priming, signature, FLAC_SIGNATURE_SIZE);
+                ctx->flac_priming[4] = 0x80U | FLAC_BLOCK_STREAMINFO;
+                ctx->flac_priming[5] = 0x00U;
+                ctx->flac_priming[6] = 0x00U;
+                ctx->flac_priming[7] = (uint8_t)FLAC_STREAMINFO_SIZE;
+                memcpy(ctx->flac_priming + 8, block, sizeof(block));
+            }
+        }
+        if (block_length > 0U && fseek(ctx->file, (long)block_length, SEEK_CUR) != 0) return;
+    }
+
+    const long audio_start = ftell(ctx->file);
+    if (!have_info || audio_start < 0) return;
+    ctx->header_bytes = (uint64_t)audio_start;
+    ctx->length_from_header = true;
+    ctx->flac_info = info;
+    ctx->flac_ready = true;
+
+    const uint32_t seconds =
+        usb_track_sampled_seconds(info.total_samples, info.sample_rate_hz);
+    if (seconds == 0U) return;
+    atomic_store_explicit(&s_total_seconds, seconds, memory_order_relaxed);
+
+    /* The average is the only rate a FLAC has. It is what the codec line
+     * shows, and what a jump is measured with - the decoder has nothing else
+     * to go on, and lands within a frame of where it aimed. */
+    const uint16_t bitrate =
+        usb_track_average_bitrate_kbps(ctx->file_bytes, ctx->header_bytes, seconds);
+    taskENTER_CRITICAL(&s_status_lock);
+    s_status.bitrate_kbps = bitrate;
+    taskEXIT_CRITICAL(&s_status_lock);
+    ESP_LOGI(TAG, "track length: %us from %llu samples at %u Hz (header %llu, %u kbps)",
+             (unsigned int)seconds, (unsigned long long)info.total_samples,
+             (unsigned int)info.sample_rate_hz, (unsigned long long)ctx->header_bytes,
+             (unsigned int)bitrate);
 }
 
 /* Reads the tags before a single frame is decoded, so the screen is right from
@@ -327,8 +423,9 @@ static esp_err_t apply_info(usb_player_context_t *ctx, const radio_decoder_info_
     if (info->sample_rate > 0U) s_status.sample_rate_hz = info->sample_rate;
     taskEXIT_CRITICAL(&s_status_lock);
     // The first frame is what reveals the bitrate, and the bitrate is what
-    // turns a file size into a duration.
-    if (info->bitrate_kbps > 0U) {
+    // turns a file size into a duration - for the formats that have no better
+    // answer of their own.
+    if (info->bitrate_kbps > 0U && !ctx->length_from_header) {
         const uint32_t total = usb_track_total_seconds(ctx->file_bytes, ctx->header_bytes,
                                                         (uint16_t)info->bitrate_kbps);
         const uint32_t previous =
@@ -447,6 +544,40 @@ static void seek_reset_position(usb_player_context_t *ctx, uint32_t target_secon
  *
  * A failed seek is not a failed track: the file is left where it was and
  * playback carries on from there. */
+/* How far past the estimate to look for a frame to start on.
+ *
+ * The estimate comes from an average bitrate, so it lands inside a frame
+ * rather than on one, and the next boundary is at most one frame away - which
+ * at 4096 samples and this album's rate is about ten kilobytes. Two frames'
+ * worth of room, and it has never needed a tenth of it. */
+#define USB_PLAYER_FLAC_SYNC_WINDOW 32768U
+
+/* Turns a byte offset that landed anywhere into one that lands on a frame.
+ *
+ * Returns the file to where it was and reports failure if there is no frame
+ * header to be found, which leaves the caller free to abandon the jump rather
+ * than feed the decoder a position it cannot start from. */
+static bool align_to_flac_frame(usb_player_context_t *ctx, uint64_t *offset)
+{
+    const long previous = ftell(ctx->file);
+    if (*offset > LONG_MAX || fseek(ctx->file, (long)*offset, SEEK_SET) != 0) return false;
+    const size_t window = USB_PLAYER_INPUT_SIZE < USB_PLAYER_FLAC_SYNC_WINDOW
+                              ? USB_PLAYER_INPUT_SIZE
+                              : USB_PLAYER_FLAC_SYNC_WINDOW;
+    // Read into the input buffer rather than a second one: it is about to be
+    // emptied for the jump anyway.
+    const size_t read = fread(ctx->compressed, 1U, window, ctx->file);
+    size_t found = 0U;
+    const bool aligned =
+        read > 0U && flac_frame_find_sync(ctx->compressed, read, &ctx->flac_info, &found);
+    if (aligned) {
+        *offset += found;
+    } else if (previous >= 0) {
+        (void)fseek(ctx->file, previous, SEEK_SET);
+    }
+    return aligned;
+}
+
 static void apply_seek(usb_player_context_t *ctx, radio_decoder_t *decoder)
 {
     const uint32_t target = take_seek_request();
@@ -456,8 +587,13 @@ static void apply_seek(usb_player_context_t *ctx, radio_decoder_t *decoder)
     taskENTER_CRITICAL(&s_status_lock);
     bitrate_kbps = s_status.bitrate_kbps;
     taskEXIT_CRITICAL(&s_status_lock);
-    const uint64_t offset = usb_track_seek_offset(ctx->file_bytes, ctx->header_bytes,
-                                                  bitrate_kbps, target);
+    uint64_t offset = usb_track_seek_offset(ctx->file_bytes, ctx->header_bytes,
+                                            bitrate_kbps, target);
+    if (ctx->flac_ready && !align_to_flac_frame(ctx, &offset)) {
+        ESP_LOGW(TAG, "no frame to start from near %llu; staying put",
+                 (unsigned long long)offset);
+        return;
+    }
     if (offset > LONG_MAX || fseek(ctx->file, (long)offset, SEEK_SET) != 0) {
         ESP_LOGW(TAG, "cannot seek to %us (offset %llu)", (unsigned int)target,
                  (unsigned long long)offset);
@@ -469,6 +605,12 @@ static void apply_seek(usb_player_context_t *ctx, radio_decoder_t *decoder)
     ctx->offset = 0U;
     ctx->eof = false;
     radio_decoder_reset(decoder);
+    if (ctx->flac_ready) {
+        // The decoder starts again on a stream that begins here; MP3 needs no
+        // such thing, since one of its frames says everything about itself.
+        memcpy(ctx->compressed, ctx->flac_priming, sizeof(ctx->flac_priming));
+        ctx->available = sizeof(ctx->flac_priming);
+    }
     seek_reset_position(ctx, target);
     ESP_LOGI(TAG, "seek to %us: offset=%llu of %llu at %ukbps", (unsigned int)target,
              (unsigned long long)offset, (unsigned long long)ctx->file_bytes,
@@ -614,6 +756,9 @@ static void usb_player_task(void *arg)
                  is_wav ? "WAV" : radio_stream_format_codec_name(stream_format));
         taskEXIT_CRITICAL(&s_status_lock);
         load_tags(&ctx);
+        if (s_request.format == USB_BROWSER_FORMAT_FLAC) read_flac_layout(&ctx);
+        // Whatever the reads above left behind: the decoder starts at zero.
+        rewind(ctx.file);
         ESP_LOGI(TAG, "playing %s", s_request.path);
     }
 

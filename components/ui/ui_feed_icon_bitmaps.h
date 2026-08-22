@@ -33,3 +33,4 @@ extern const lv_image_dsc_t ui_feed_icon_spark_48;
 extern const lv_image_dsc_t ui_feed_icon_settings_24;
 extern const lv_image_dsc_t ui_feed_icon_settings_32;
 extern const lv_image_dsc_t ui_feed_icon_settings_48;
+extern const lv_image_dsc_t ui_feed_icon_volume_16;

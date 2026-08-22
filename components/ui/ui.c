@@ -25,6 +25,7 @@
 #include "ui_font_cyrillic_14.h"
 #include "ui_font_cyrillic_20.h"
 #include "ui_menu.h"
+#include "ui_feed_icon_bitmaps.h"
 #include "ui_feed_icons.h"
 #include "ui_feed_model.h"
 #include "ui_player_state.h"
@@ -33,6 +34,7 @@
 #include "ui_settings_model.h"
 #include "ui_station_list.h"
 #include "ui_status_bar.h"
+#include "ui_web_address.h"
 #include "usb_track_progress.h"
 
 #include "audio_volume.h"
@@ -102,6 +104,18 @@
  * reads as the only lit one rather than as the middle of a ring. */
 #define UI_COLOR_FEED_NEAR 0x8FA8BC
 #define UI_COLOR_FEED_FAR 0x46586A
+/* Settings screen. Group headings carry the 20 px face and the fields under
+ * them stay at 14, so the three groups read as the structure of the screen
+ * rather than as five rows of equal weight. The pitch has to clear the taller
+ * heading; at most five rows are ever visible, since only one group is open. */
+#define UI_SET_ROW_Y 40
+#define UI_SET_ROW_PITCH 28
+#define UI_SET_ROW_H 26
+/* The band along the bottom is the only place the device says how to reach its
+ * web UI. It sits below everything else and never scrolls away. */
+#define UI_SET_BAND_Y 210
+#define UI_SET_BAND_H 30
+
 /* The other home screen: the same items as a list. Eight rows of 24 px start
  * right under the strip and end at 222, which is every pixel the screen has -
  * the previous 27 px pitch fitted seven items and ran off the bottom as soon
@@ -194,6 +208,7 @@ static uint16_t *s_source_cover_pixels;
 static unsigned int s_source_cover_generation;
 static lv_obj_t *s_source_volume;
 static lv_obj_t *s_source_volume_bar;
+static lv_obj_t *s_source_volume_icon;
 static lv_obj_t *s_source_pause;
 static lv_obj_t *s_source_progress;
 /* Four rising bars. Drawn rather than taken from a font: LVGL's symbol set has
@@ -222,6 +237,8 @@ static lv_obj_t *s_settings_screen;
 static lv_obj_t *s_settings_rows[UI_SETTINGS_MAX_ROWS];
 #define UI_SETTINGS_SWITCH_COUNT 3U
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
+static lv_obj_t *s_settings_web_band;
+static lv_obj_t *s_settings_web_address;
 static lv_obj_t *s_settings_notice;
 static ui_settings_model_t s_settings_model;
 static device_settings_t s_device_settings;
@@ -929,15 +946,18 @@ static void ui_create_settings_screen(void)
     lv_obj_t *title = lv_label_create(s_settings_screen);
     lv_label_set_text(title, "Настройки");
     lv_obj_set_pos(title, 12, 8);
+    // Matches the group headings under it: a heading smaller than the rows it
+    // introduces reads as a mistake.
+    lv_obj_set_style_text_font(title, &ui_font_cyrillic_20, 0);
     lv_obj_set_style_text_color(title, lv_color_hex(UI_COLOR_TEXT), 0);
 
     for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
         s_settings_rows[row] = lv_label_create(s_settings_screen);
-        lv_obj_set_pos(s_settings_rows[row], 10, 36 + (int)row * 26);
+        lv_obj_set_pos(s_settings_rows[row], 10, UI_SET_ROW_Y + (int)row * UI_SET_ROW_PITCH);
         lv_obj_set_width(s_settings_rows[row], 300);
-        lv_obj_set_height(s_settings_rows[row], 24);
+        lv_obj_set_height(s_settings_rows[row], UI_SET_ROW_H);
         lv_obj_set_style_pad_left(s_settings_rows[row], 6, 0);
-        lv_obj_set_style_pad_top(s_settings_rows[row], 3, 0);
+        lv_obj_set_style_pad_top(s_settings_rows[row], 2, 0);
         lv_label_set_long_mode(s_settings_rows[row], LV_LABEL_LONG_DOT);
         lv_obj_set_style_text_color(s_settings_rows[row], lv_color_hex(UI_COLOR_TEXT), 0);
         lv_obj_set_style_bg_opa(s_settings_rows[row], LV_OPA_COVER, 0);
@@ -948,7 +968,10 @@ static void ui_create_settings_screen(void)
         s_settings_switches[index] = lv_switch_create(s_settings_screen);
         lv_obj_set_size(s_settings_switches[index], 42, 20);
         lv_obj_set_style_bg_color(s_settings_switches[index], lv_color_hex(0x546E7A), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(s_settings_switches[index], lv_color_hex(0x26A69A),
+        // On is the accent, the same colour the selected icon and the playing
+        // row use. The teal it replaced was the only colour on the device that
+        // meant nothing anywhere else.
+        lv_obj_set_style_bg_color(s_settings_switches[index], lv_color_hex(UI_COLOR_ACCENT),
                                   LV_PART_INDICATOR | LV_STATE_CHECKED);
         lv_obj_set_style_bg_color(s_settings_switches[index], lv_color_hex(0xECEFF1), LV_PART_KNOB);
         lv_obj_set_style_bg_color(s_settings_switches[index], lv_color_hex(UI_COLOR_TEXT),
@@ -956,13 +979,34 @@ static void ui_create_settings_screen(void)
         lv_obj_add_flag(s_settings_switches[index], LV_OBJ_FLAG_HIDDEN);
     }
     s_settings_notice = lv_label_create(s_settings_screen);
-    lv_obj_set_pos(s_settings_notice, 10, 218);
+    lv_obj_set_pos(s_settings_notice, 10, UI_SET_BAND_Y - 24);
     lv_obj_set_width(s_settings_notice, 300);
     lv_label_set_long_mode(s_settings_notice, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_settings_notice, lv_color_hex(0xFFCC80), 0);
     lv_obj_set_style_bg_opa(s_settings_notice, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(s_settings_notice, lv_color_hex(UI_COLOR_GROUND), 0);
     lv_label_set_text(s_settings_notice, "");
+
+    /* Its own band rather than another row: the address is not a setting, and
+     * a row would scroll with the groups and could be covered by the notice. */
+    s_settings_web_band = lv_obj_create(s_settings_screen);
+    lv_obj_remove_style_all(s_settings_web_band);
+    lv_obj_set_pos(s_settings_web_band, 0, UI_SET_BAND_Y);
+    lv_obj_set_size(s_settings_web_band, 320, UI_SET_BAND_H);
+    lv_obj_set_style_bg_color(s_settings_web_band, lv_color_hex(UI_COLOR_STRIP), 0);
+    lv_obj_set_style_bg_opa(s_settings_web_band, LV_OPA_COVER, 0);
+
+    lv_obj_t *web_tag = lv_label_create(s_settings_web_band);
+    lv_label_set_text(web_tag, "web");
+    lv_obj_set_pos(web_tag, 12, (UI_SET_BAND_H - 19) / 2);
+    lv_obj_set_style_text_color(web_tag, lv_color_hex(UI_COLOR_ACCENT), 0);
+
+    s_settings_web_address = lv_label_create(s_settings_web_band);
+    lv_obj_set_pos(s_settings_web_address, 52, (UI_SET_BAND_H - 19) / 2);
+    lv_obj_set_width(s_settings_web_address, 256);
+    lv_label_set_long_mode(s_settings_web_address, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_color(s_settings_web_address, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_label_set_text(s_settings_web_address, "");
 }
 
 static const char *ui_settings_group_text(ui_settings_group_t group, bool english)
@@ -1035,9 +1079,20 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     }
 }
 
+static void ui_update_settings_web_band(void)
+{
+    const wifi_provisioning_status_t status = wifi_provisioning_status();
+    char text[64];
+    ui_web_address_text(status.mode, status.ipv4,
+                        s_device_settings.language == DEVICE_LANGUAGE_EN,
+                        text, sizeof(text));
+    ui_set_label_text_if_changed(s_settings_web_address, text);
+}
+
 static void ui_update_settings(void)
 {
     if (!s_settings_open) return;
+    ui_update_settings_web_band();
     const size_t row_count = ui_settings_model_row_count(&s_settings_model);
     const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
     for (size_t index = 0; index < UI_SETTINGS_SWITCH_COUNT; ++index) {
@@ -1045,14 +1100,23 @@ static void ui_update_settings(void)
     }
     for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
         if (row >= row_count) {
+            /* Hidden, not merely blanked: a row's background is opaque, and
+             * with the taller pitch an unused row reaches into the web band. */
             lv_label_set_text(s_settings_rows[row], "");
-            lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(UI_COLOR_GROUND), 0);
+            lv_obj_add_flag(s_settings_rows[row], LV_OBJ_FLAG_HIDDEN);
             continue;
         }
+        lv_obj_clear_flag(s_settings_rows[row], LV_OBJ_FLAG_HIDDEN);
         const ui_settings_row_t item = ui_settings_model_row_at(&s_settings_model, row);
         char text[96];
         ui_settings_row_text(&item, text, sizeof(text));
         ui_set_label_text_if_changed(s_settings_rows[row], text);
+        const bool is_group = item.kind == UI_SETTINGS_ROW_GROUP;
+        // Set per row rather than at creation: which row is a heading changes
+        // as groups open and close.
+        lv_obj_set_style_text_font(s_settings_rows[row],
+                                   is_group ? &ui_font_cyrillic_20 : &ui_font_cyrillic_14, 0);
+        lv_obj_set_style_pad_top(s_settings_rows[row], is_group ? 1 : 4, 0);
         const bool selected_row = item.id == selected;
         const uint32_t background = selected_row ? UI_COLOR_SELECTED :
             item.kind == UI_SETTINGS_ROW_FIELD ? 0x263746 : 0x101820;
@@ -1066,7 +1130,8 @@ static void ui_update_settings(void)
             lv_obj_t *toggle = s_settings_switches[switch_index];
             if (enabled) lv_obj_add_state(toggle, LV_STATE_CHECKED);
             else lv_obj_clear_state(toggle, LV_STATE_CHECKED);
-            lv_obj_set_pos(toggle, 10, 38 + (int)row * 26);
+            lv_obj_set_pos(toggle, 10,
+                           UI_SET_ROW_Y + (int)row * UI_SET_ROW_PITCH + (UI_SET_ROW_H - 20) / 2);
             lv_obj_clear_flag(toggle, LV_OBJ_FLAG_HIDDEN);
         }
     }
@@ -1442,6 +1507,17 @@ static void ui_create_source_screen(void)
     s_source_buffer = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_buffer, 10, UI_SRC_FOOT_Y);
     lv_obj_set_style_text_color(s_source_buffer, lv_color_hex(UI_COLOR_DIM), 0);
+
+    /* Names the bar next to it. Without it the strip was just a rectangle in
+     * the footer, indistinguishable from the progress bar above. Centred on
+     * the bar's own middle line rather than on the footer row. */
+    s_source_volume_icon = lv_image_create(s_source_screen);
+    lv_obj_remove_style_all(s_source_volume_icon);
+    lv_image_set_src(s_source_volume_icon, &ui_feed_icon_volume_16);
+    lv_obj_set_size(s_source_volume_icon, 16, 16);
+    lv_obj_set_pos(s_source_volume_icon, 178, UI_SRC_FOOT_Y + 1);
+    lv_obj_set_style_image_recolor(s_source_volume_icon, lv_color_hex(UI_COLOR_MUTED), 0);
+    lv_obj_set_style_image_recolor_opa(s_source_volume_icon, LV_OPA_COVER, 0);
 
     s_source_volume_bar = lv_obj_create(s_source_screen);
     lv_obj_set_pos(s_source_volume_bar, 200, UI_SRC_FOOT_Y + 5);

@@ -149,7 +149,7 @@ run_test ui_player_state tests/test_ui_player_state.c components/ui/ui_player_st
 run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c \
     components/internet_radio/radio_stream_format.c
 run_test ui_seek tests/test_ui_seek.c components/ui/ui_seek.c
-run_test ui_settings_view tests/test_ui_settings_view.c components/ui/ui_settings_view.c
+run_test ui_web_address tests/test_ui_web_address.c components/ui/ui_web_address.c
 run_test ui_settings_model tests/test_ui_settings_model.c components/ui/ui_settings_model.c
 run_test ui_status_bar tests/test_ui_status_bar.c components/ui/ui_status_bar.c
 run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c

@@ -10,6 +10,7 @@
 #include "freertos/semphr.h"
 
 #include "image_scale.h"
+#include "jpeg_progressive.h"
 #include "tjpgd.h"
 
 static const char *TAG = "album_art";
@@ -205,6 +206,29 @@ static uint8_t scale_for(uint16_t width, uint16_t height)
     return scale;
 }
 
+/* The other decoder's whole job, in the one case tjpgd cannot serve.
+ *
+ * It has no descaling, so the picture arrives at its own size and the reducer
+ * does all of the work - which is fine, since it is the same reducer the
+ * baseline path ends with and the size limit is enforced before any of it is
+ * allocated. */
+static bool decode_progressive_and_publish(const uint8_t *data, size_t length)
+{
+    uint16_t *pixels = NULL;
+    uint16_t width = 0U;
+    uint16_t height = 0U;
+    if (!jpeg_progressive_decode(data, length, &pixels, &width, &height)) return false;
+
+    const image_rect_t rect = image_fit_square(width, height, (uint16_t)ALBUM_ART_SIZE);
+    const bool published = reduce_into_cover(pixels, width, height, &rect);
+    if (published) {
+        ESP_LOGI(TAG, "progressive cover %ux%u shown as %ux%u", (unsigned int)width,
+                 (unsigned int)height, (unsigned int)rect.width, (unsigned int)rect.height);
+    }
+    jpeg_progressive_free(pixels);
+    return published;
+}
+
 static bool decode_and_publish(const uint8_t *data, size_t length)
 {
     uint8_t *pool = alloc_buffer(ALBUM_ART_WORK_POOL);
@@ -226,9 +250,16 @@ static bool decode_and_publish(const uint8_t *data, size_t length)
 
     JRESULT result = jd_prepare(&decoder, decode_input, pool, ALBUM_ART_WORK_POOL, &context);
     if (result != JDR_OK) {
-        // Progressive JPEG arrives here: this decoder is baseline only, and a
-        // tagger that saved one is not a fault worth reporting as an error.
+        /* Progressive JPEG arrives here - this decoder is baseline only - and
+         * used to end the attempt, which left whole albums showing the
+         * placeholder over a cover their files really carried. The second
+         * decoder is asked only now and only for that one reason: it needs
+         * megabytes where this one needs four kilobytes. */
         ESP_LOGI(TAG, "cover cannot be decoded: tjpgd result=%d", (int)result);
+        if (jpeg_is_progressive(data, length)) {
+            heap_caps_free(pool);
+            return decode_progressive_and_publish(data, length);
+        }
     } else {
         const uint8_t scale = scale_for(decoder.width, decoder.height);
         context.width = (uint16_t)(decoder.width >> scale);

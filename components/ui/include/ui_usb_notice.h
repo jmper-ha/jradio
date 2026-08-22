@@ -24,3 +24,11 @@ const char *ui_usb_notice(usb_browser_media_t media, size_t entry_count);
 // NULL. Kept as its own predicate so callers read as intent rather than as a
 // NULL check.
 bool ui_usb_can_open(usb_browser_media_t media, size_t entry_count);
+
+// True while a drive is mounted and readable, whatever is on it.
+//
+// Deliberately not ui_usb_can_open(): an empty directory still has a ".."
+// row leading out of it, so it stays browsable, while a drive that has been
+// pulled leaves the browser with nothing to show and no way to refill it.
+// This is the question the open browser asks on every poll.
+bool ui_usb_media_present(usb_browser_media_t media);

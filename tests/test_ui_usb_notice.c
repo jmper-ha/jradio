@@ -61,6 +61,18 @@ static void test_each_state_gets_its_own_wording(void)
     assert(strcmp(unreadable, empty) != 0);
 }
 
+static void test_media_presence_is_not_the_same_question_as_openability(void)
+{
+    /* What the open browser polls. An empty directory is still browsable - the
+     * ".." row leads out of it - so it must not be mistaken for a drive that
+     * has been pulled, which leaves the rows with nothing to refill them. */
+    assert(ui_usb_media_present(USB_BROWSER_MEDIA_READY));
+    assert(ui_usb_media_present(USB_BROWSER_MEDIA_READY) &&
+           !ui_usb_can_open(USB_BROWSER_MEDIA_READY, 0U));
+    assert(!ui_usb_media_present(USB_BROWSER_MEDIA_ABSENT));
+    assert(!ui_usb_media_present(USB_BROWSER_MEDIA_UNREADABLE));
+}
+
 int main(void)
 {
     test_a_readable_drive_with_files_opens_without_a_notice();
@@ -69,6 +81,7 @@ int main(void)
     test_an_unreadable_drive_stays_unreadable_whatever_the_count();
     test_an_empty_drive_says_so_rather_than_showing_a_blank_list();
     test_each_state_gets_its_own_wording();
+    test_media_presence_is_not_the_same_question_as_openability();
     puts("ui_usb_notice tests passed");
     return 0;
 }

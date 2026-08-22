@@ -21,3 +21,8 @@ bool ui_usb_can_open(usb_browser_media_t media, size_t entry_count)
 {
     return ui_usb_notice(media, entry_count) == NULL;
 }
+
+bool ui_usb_media_present(usb_browser_media_t media)
+{
+    return media == USB_BROWSER_MEDIA_READY;
+}

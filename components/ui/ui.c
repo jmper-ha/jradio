@@ -145,6 +145,11 @@
 #define UI_LIST_ICON_W 30
 #define UI_LIST_RULE_Y (UI_LIST_ROW_Y + (int)UI_STATION_LIST_MAX_ROWS * UI_LIST_ROW_PITCH + 6)
 #define UI_LIST_PROGRESS_Y (UI_LIST_RULE_Y + 8)
+/* The empty-browser screen: a drive above the sentence that says what is wrong
+ * with it, together in the middle of the space the rows leave behind. */
+#define UI_LIST_NOTICE_ICON 48
+#define UI_LIST_NOTICE_ICON_Y 84
+#define UI_LIST_NOTICE_TEXT_Y 148
 
 #define UI_RADIO_EMPTY_LIST_DELAY_MS 250U
 #define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
@@ -246,6 +251,11 @@ static bool s_settings_open;
 static lv_obj_t *s_station_list_screen;
 static lv_obj_t *s_station_list_title;
 static lv_obj_t *s_station_list_notice;
+/* The notice replaces the list rather than sitting above it, so the two parts
+ * that only make sense with rows behind them - the rule and the drive picture
+ * that stands in for them - are held to be shown and hidden together with it. */
+static lv_obj_t *s_station_list_notice_icon;
+static lv_obj_t *s_station_list_rule;
 static lv_obj_t *s_station_list_rows[UI_STATION_LIST_MAX_ROWS];
 /* The folder mark is a label of its own rather than a glyph inside the row's
  * text: inline it would take the row's font and colour, and it has to be
@@ -1218,19 +1228,13 @@ static void ui_create_station_list_screen(void)
      * from, without giving up a row of the list. */
     s_station_list_title = s_list_strip.context;
 
-    s_station_list_notice = lv_label_create(s_station_list_screen);
-    lv_label_set_text(s_station_list_notice, "");
-    lv_obj_set_pos(s_station_list_notice, 14, 100);
-    lv_obj_set_width(s_station_list_notice, 292);
-    lv_obj_set_style_text_color(s_station_list_notice, lv_color_hex(UI_COLOR_NOTICE), 0);
-
-    lv_obj_t *rule = lv_obj_create(s_station_list_screen);
-    lv_obj_set_pos(rule, 10, UI_LIST_RULE_Y);
-    lv_obj_set_size(rule, 300, 1);
-    lv_obj_set_style_bg_color(rule, lv_color_hex(UI_COLOR_RULE), 0);
-    lv_obj_set_style_border_width(rule, 0, 0);
-    lv_obj_set_style_pad_all(rule, 0, 0);
-    lv_obj_clear_flag(rule, LV_OBJ_FLAG_SCROLLABLE);
+    s_station_list_rule = lv_obj_create(s_station_list_screen);
+    lv_obj_set_pos(s_station_list_rule, 10, UI_LIST_RULE_Y);
+    lv_obj_set_size(s_station_list_rule, 300, 1);
+    lv_obj_set_style_bg_color(s_station_list_rule, lv_color_hex(UI_COLOR_RULE), 0);
+    lv_obj_set_style_border_width(s_station_list_rule, 0, 0);
+    lv_obj_set_style_pad_all(s_station_list_rule, 0, 0);
+    lv_obj_clear_flag(s_station_list_rule, LV_OBJ_FLAG_SCROLLABLE);
 
     // Same shape and colours as the track bar on the player screen: a thin
     // full-width line whose filled part is the accent.
@@ -1274,6 +1278,33 @@ static void ui_create_station_list_screen(void)
         lv_label_set_text(s_station_list_icons[row], LV_SYMBOL_DIRECTORY);
         lv_obj_add_flag(s_station_list_icons[row], LV_OBJ_FLAG_HIDDEN);
     }
+
+    /* Created last, after every row, for the same reason the folder marks are:
+     * the rows are opaque, and LVGL paints children in creation order. The
+     * notice used to be created first and was drawn underneath them - which is
+     * how "insert a drive" ended up invisible behind a screen of blank rows. */
+    s_station_list_notice_icon = lv_image_create(s_station_list_screen);
+    lv_obj_remove_style_all(s_station_list_notice_icon);
+    lv_image_set_src(s_station_list_notice_icon, &ui_feed_icon_usb_stick_48);
+    lv_obj_set_size(s_station_list_notice_icon, UI_LIST_NOTICE_ICON, UI_LIST_NOTICE_ICON);
+    lv_image_set_inner_align(s_station_list_notice_icon, LV_IMAGE_ALIGN_CENTER);
+    lv_obj_set_pos(s_station_list_notice_icon, (320 - UI_LIST_NOTICE_ICON) / 2,
+                   UI_LIST_NOTICE_ICON_Y);
+    lv_obj_set_style_image_recolor(s_station_list_notice_icon,
+                                   lv_color_hex(UI_COLOR_NOTICE), 0);
+    lv_obj_set_style_image_recolor_opa(s_station_list_notice_icon, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
+
+    s_station_list_notice = lv_label_create(s_station_list_screen);
+    lv_label_set_text(s_station_list_notice, "");
+    lv_obj_set_pos(s_station_list_notice, 10, UI_LIST_NOTICE_TEXT_Y);
+    lv_obj_set_width(s_station_list_notice, 300);
+    // Centred under the drive, and wrapped rather than ellipsised: the
+    // unreadable-drive line is two lines wide and its second half - the format
+    // to use - is the half worth reading.
+    lv_obj_set_style_text_align(s_station_list_notice, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(s_station_list_notice, &ui_font_cyrillic_20, 0);
+    lv_obj_set_style_text_color(s_station_list_notice, lv_color_hex(UI_COLOR_NOTICE), 0);
 }
 
 static void ui_show_station_list(void);
@@ -1702,17 +1733,22 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
     size_t active_index = snapshot->active_item_index;
     if (s_usb_unavailable) {
         // Nothing to list and nothing to scroll: the screen exists only to say
-        // why, and to be left with F2 or a long press.
+        // why, and to be left with F2 or a long press. The rule marks the
+        // bottom of a list that is not there, so it goes with the rows.
         ui_set_label_text_if_changed(s_station_list_title, "USB");
         ui_set_label_text_if_changed(
             s_station_list_notice,
             ui_usb_notice(s_last_usb_media, s_last_usb_entry_count));
+        lv_obj_clear_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_station_list_rule, LV_OBJ_FLAG_HIDDEN);
         s_usb_browser_has_parent_row = false;
         station_list_init(&s_station_list, 0U, 0U, PLAYER_ITEM_NONE);
         ui_update_station_list();
         return;
     }
     ui_set_label_text_if_changed(s_station_list_notice, "");
+    lv_obj_add_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(s_station_list_rule, LV_OBJ_FLAG_HIDDEN);
     if (ui_list_shows_usb()) {
         s_usb_browser_has_parent_row = !usb_browser_path_is_root(snapshot->context);
         const size_t offset = ui_usb_row_offset();
@@ -2194,19 +2230,34 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
 
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
         const unsigned int revision = player_control_usb_listing_revision();
-        if (ui_list_shows_usb() && revision != s_usb_listing_revision) {
+        if (ui_list_shows_usb() && !s_usb_unavailable &&
+            !ui_usb_media_present(snapshot->usb_media)) {
+            /* The drive left while its own listing was on screen. Nothing
+             * refills the rows afterwards - the listing simply empties - so
+             * without this the browser stays up as a blank screen. */
+            s_usb_unavailable = true;
+            s_usb_listing_revision = revision;
+            ui_reset_list_from_snapshot(snapshot);
+        } else if (ui_list_shows_usb() && revision != s_usb_listing_revision) {
             // A directory was opened or left: the rows now describe different
             // files, so the cursor cannot keep its position.
             s_usb_listing_revision = revision;
             ui_reset_list_from_snapshot(snapshot);
-        } else if (station_list_sync_counts(&s_station_list,
+        } else if (!s_usb_unavailable &&
+                   station_list_sync_counts(&s_station_list,
                                             snapshot->item_count + ui_usb_row_offset(),
                                             snapshot->active_item_index == PLAYER_ITEM_NONE
                                                 ? PLAYER_ITEM_NONE
                                                 : snapshot->active_item_index +
                                                       ui_usb_row_offset())) {
-            // The playlist can be replaced from the web UI while this screen is
-            // open, so the count captured at open time may be stale.
+            /* The playlist can be replaced from the web UI while this screen is
+             * open, so the count captured at open time may be stale.
+             *
+             * Never on the notice screen, and that is the load-bearing part:
+             * no source is selected there, so the snapshot still describes the
+             * radio catalogue. Syncing to its count filled the screen with as
+             * many blank rows as there are stations, cursor bar and all, and
+             * drew them over the message the screen exists for. */
             ui_update_station_list();
         }
         // The timeout exists to return to something worth looking at. With

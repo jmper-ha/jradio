@@ -102,6 +102,15 @@ size_t file_browser_dir_next_file(const file_browser_dir_t *dir, size_t from);
 size_t file_browser_dir_find(const file_browser_dir_t *dir, const char *name);
 
 bool file_browser_path_is_root(const char *path);
+
+/* Copies the volume root out of a path: "/sd0/Music/1.mp3" gives "/sd0", and a
+ * path that is already a root gives itself back.
+ *
+ * What it is for: a remembered path is the only thing that says which volume a
+ * resume point lives on, and when the directory it named is gone the browser
+ * still has to open somewhere on that same volume. False rather than a
+ * truncated root - a truncated root names a volume that does not exist. */
+bool file_browser_path_volume_root(const char *path, char *out, size_t out_size);
 // Both return false rather than truncating: a truncated path is a path to the
 // wrong file, and silently opening the wrong file is worse than refusing.
 bool file_browser_path_child(const char *path, const char *name, char *out, size_t out_size);

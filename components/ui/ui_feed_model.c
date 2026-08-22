@@ -38,6 +38,9 @@ bool ui_feed_model_activate(ui_feed_item_t item, audio_source_t *source_out)
     case UI_FEED_USB:
         *source_out = AUDIO_SOURCE_USB;
         return true;
+    case UI_FEED_SD_CARD:
+        *source_out = AUDIO_SOURCE_SD;
+        return true;
     default:
         *source_out = AUDIO_SOURCE_NONE;
         return false;

@@ -73,6 +73,8 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
             settings->last_source = DEVICE_LAST_SOURCE_INTERNET_RADIO;
         } else if (strcmp(value, "usb") == 0) {
             settings->last_source = DEVICE_LAST_SOURCE_USB;
+        } else if (strcmp(value, "sd") == 0) {
+            settings->last_source = DEVICE_LAST_SOURCE_SD;
         }
     }
     /* Read into its own buffer: a path is far longer than the little `value`
@@ -154,8 +156,9 @@ bool device_settings_set_last_source(device_settings_t *settings,
 {
     const char *text = source == DEVICE_LAST_SOURCE_INTERNET_RADIO ? "internet_radio"
                      : source == DEVICE_LAST_SOURCE_USB           ? "usb"
+                     : source == DEVICE_LAST_SOURCE_SD            ? "sd"
                                                                    : "none";
-    if (settings == NULL || source > DEVICE_LAST_SOURCE_USB) return false;
+    if (settings == NULL || source > DEVICE_LAST_SOURCE_SD) return false;
     /* Skip the write when nothing changed: this is called as playback starts,
      * and settings.csv lives on flash with a finite erase budget. */
     if (settings->last_source == source) return true;

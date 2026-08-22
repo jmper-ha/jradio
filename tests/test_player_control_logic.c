@@ -223,8 +223,56 @@ static void test_usb_state_maps_to_public_playback_state(void)
     assert(player_playback_from_file(FILE_PLAYER_STATE_ERROR) == PLAYER_PLAYBACK_ERROR);
 }
 
+static void test_each_volume_answers_for_itself(void)
+{
+    /* A mounted drive says nothing about the card slot, and one capability for
+     * both would have let the card be selected whenever a stick happened to be
+     * plugged in - and refused it whenever one was not. */
+    player_snapshot_t state = {.capabilities = PLAYER_CAP_INTERNET_RADIO | PLAYER_CAP_USB,
+                               .active_source = AUDIO_SOURCE_NONE};
+    player_command_t card = {.kind = PLAYER_COMMAND_SELECT_SOURCE,
+                             .source = AUDIO_SOURCE_SD};
+    assert(player_control_decide(&state, &card) == PLAYER_OPERATION_INVALID);
+
+    state.capabilities |= PLAYER_CAP_SD;
+    assert(player_control_decide(&state, &card) == PLAYER_OPERATION_SELECT_SOURCE);
+
+    // And the other way round: the card slot does not stand in for a drive.
+    player_snapshot_t no_drive = {.capabilities = PLAYER_CAP_SD,
+                                  .active_source = AUDIO_SOURCE_NONE};
+    player_command_t drive = {.kind = PLAYER_COMMAND_SELECT_SOURCE,
+                              .source = AUDIO_SOURCE_USB};
+    assert(player_control_decide(&no_drive, &drive) == PLAYER_OPERATION_INVALID);
+}
+
+static void test_every_file_operation_works_on_the_card_too(void)
+{
+    /* The browser, track advance and seeking are one implementation for both
+     * volumes; these used to name AUDIO_SOURCE_USB and would have silently
+     * refused everything on the card. */
+    player_snapshot_t card = {.active_source = AUDIO_SOURCE_SD,
+                              .playback_state = PLAYER_PLAYBACK_PLAYING,
+                              .active_item_index = 1, .item_count = 5};
+    player_command_t up = {.kind = PLAYER_COMMAND_BROWSE_UP};
+    assert(player_control_decide(&card, &up) == PLAYER_OPERATION_BROWSE_UP);
+
+    player_command_t reveal = {.kind = PLAYER_COMMAND_BROWSE_REVEAL};
+    assert(player_control_decide(&card, &reveal) == PLAYER_OPERATION_BROWSE_REVEAL);
+
+    player_command_t seek = {.kind = PLAYER_COMMAND_SEEK, .position_seconds = 30U};
+    assert(player_control_decide(&card, &seek) == PLAYER_OPERATION_SEEK);
+
+    player_snapshot_t ended = {.active_source = AUDIO_SOURCE_SD,
+                               .playback_state = PLAYER_PLAYBACK_STOPPED,
+                               .item_count = 5};
+    player_command_t finished = {.kind = PLAYER_COMMAND_TRACK_FINISHED};
+    assert(player_control_decide(&ended, &finished) == PLAYER_OPERATION_ADVANCE_ITEM);
+}
+
 int main(void)
 {
+    test_each_volume_answers_for_itself();
+    test_every_file_operation_works_on_the_card_too();
     test_toggle_maps_playing_to_pause();
     test_usb_source_requires_a_mounted_drive();
     test_usb_reselecting_the_same_entry_still_acts();

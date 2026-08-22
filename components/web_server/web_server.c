@@ -27,7 +27,6 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "internet_radio.h"
 #include "player_control.h"
 #include "file_storage.h"
-#include "usb_storage.h"
 #include "web_json.h"
 
 #define WEB_SERVER_MOUNT_PATH "/littlefs"
@@ -397,15 +396,17 @@ static esp_err_t web_server_wifi_post(httpd_req_t *request)
  * would overwrite the second on screen. */
 static esp_err_t web_server_files_get(httpd_req_t *request)
 {
-    if (!usb_storage_is_mounted()) {
-        httpd_resp_send_err(request, HTTPD_404_NOT_FOUND, "No USB drive");
-        return ESP_FAIL;
-    }
-
     char path[FILE_BROWSER_PATH_MAX_LEN];
     if (!file_storage_current_path(path, sizeof(path))) {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
                             "Listing unavailable");
+        return ESP_FAIL;
+    }
+    /* Asked of the volume the listing is actually on rather than of the drive:
+     * the same listing serves the card, and a mounted stick is no reason to
+     * hand out a directory of a card that has been released. */
+    if (!file_storage_path_mounted(path)) {
+        httpd_resp_send_err(request, HTTPD_404_NOT_FOUND, "No media");
         return ESP_FAIL;
     }
 

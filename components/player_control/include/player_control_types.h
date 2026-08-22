@@ -22,6 +22,16 @@
 // Set only while a drive is mounted: selecting the USB source with nothing
 // plugged in should be refused, not left showing an empty player screen.
 #define PLAYER_CAP_USB (1U << 1)
+/* The card slot, which is a different kind of statement: it is always set.
+ *
+ * A drive announces itself, so "mounted" is a fact worth gating on. Nothing
+ * announces a card - no card-detect line is wired - so the only way to find
+ * out is to mount it, and gating the source on the last attempt would make a
+ * card inserted after boot unreachable: it would never be selectable, so it
+ * would never be tried, so it would never be found. The source is therefore
+ * always offered and the answer comes from the attempt, as sd_media in the
+ * snapshot and as a line on the browser screen. */
+#define PLAYER_CAP_SD (1U << 2)
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,12 +53,12 @@ typedef enum {
     PLAYER_COMMAND_PAUSE,
     PLAYER_COMMAND_TOGGLE,
     PLAYER_COMMAND_SELECT_ITEM,
-    // Posted by the USB player itself when a track ends on its own, never by
+    // Posted by the file player itself when a track ends on its own, never by
     // the UI or the web client. A stopped or failed track does not produce it,
     // so pressing stop cannot be mistaken for "play the next one".
     PLAYER_COMMAND_TRACK_FINISHED,
-    // Leaves the directory being browsed. Only USB has a hierarchy; the radio
-    // list is flat.
+    // Leaves the directory being browsed. Only a filesystem has a hierarchy;
+    // the radio list is flat.
     PLAYER_COMMAND_BROWSE_UP,
     // Reopens the directory the playing file lives in, so that opening the
     // browser shows what is playing rather than wherever browsing last
@@ -81,7 +91,11 @@ typedef struct {
      * this struct distinguishes one directory from another - and the web needs
      * that to know when to re-fetch the listing over REST. */
     unsigned int listing_revision;
-    file_browser_media_t files_media;
+    /* One per volume rather than one for "the files source": the menu asks
+     * about a source before selecting it, and for the card the answer has to
+     * survive the card being unmounted between visits. */
+    file_browser_media_t usb_media;
+    file_browser_media_t sd_media;
     /* Separate from item_count, which describes whatever source is active: in
      * the menu that is the station catalog, so it says nothing about the
      * drive. This is what the "drive is empty" notice has to read. */

@@ -10,10 +10,7 @@ typedef struct {
 static const ui_menu_item_config_t s_items[UI_MENU_ITEM_COUNT] = {
     [UI_MENU_ITEM_INTERNET_RADIO] = {.label = "Internet radio", .source = AUDIO_SOURCE_INTERNET_RADIO},
     [UI_MENU_ITEM_USB_FILES] = {.label = "USB files", .source = AUDIO_SOURCE_USB},
-    /* No SD driver yet: the row exists so the slot on the home screen has a
-       name, and activating it falls through to the "not implemented" notice
-       exactly like FM and DLNA. */
-    [UI_MENU_ITEM_SD_CARD] = {.label = "SD card", .source = AUDIO_SOURCE_NONE},
+    [UI_MENU_ITEM_SD_CARD] = {.label = "SD card", .source = AUDIO_SOURCE_SD},
     [UI_MENU_ITEM_BLUETOOTH] = {.label = "Bluetooth", .source = AUDIO_SOURCE_BLUETOOTH},
     [UI_MENU_ITEM_FM_RADIO] = {.label = "FM radio", .source = AUDIO_SOURCE_FM},
     [UI_MENU_ITEM_DLNA] = {.label = "DLNA", .source = AUDIO_SOURCE_DLNA},

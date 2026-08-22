@@ -160,6 +160,16 @@ static void test_paths(void)
     assert(!file_browser_path_is_root("/"));
     assert(!file_browser_path_is_root("usb0"));
 
+    char root[64];
+    assert(file_browser_path_volume_root("/sd0/Music/1.mp3", root, sizeof(root)));
+    assert(strcmp(root, "/sd0") == 0);
+    assert(file_browser_path_volume_root("/usb0", root, sizeof(root)));
+    assert(strcmp(root, "/usb0") == 0);
+    // Refused rather than truncated: "/usb" is a volume nobody has.
+    assert(!file_browser_path_volume_root("/usb0/x", root, 5U));
+    assert(!file_browser_path_volume_root("relative/path", root, sizeof(root)));
+    assert(!file_browser_path_volume_root("/", root, sizeof(root)));
+
     assert(file_browser_path_child("/usb0", "Album", path, sizeof(path)));
     assert(strcmp(path, "/usb0/Album") == 0);
 

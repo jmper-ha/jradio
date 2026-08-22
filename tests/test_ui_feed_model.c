@@ -34,6 +34,8 @@ static void test_activation_maps_only_the_implemented_sources(void)
 
     assert(ui_feed_model_activate(UI_FEED_INTERNET_RADIO, &source));
     assert(source == AUDIO_SOURCE_INTERNET_RADIO);
+    assert(ui_feed_model_activate(UI_FEED_SD_CARD, &source));
+    assert(source == AUDIO_SOURCE_SD);
     assert(ui_feed_model_activate(UI_FEED_USB, &source));
     assert(source == AUDIO_SOURCE_USB);
 

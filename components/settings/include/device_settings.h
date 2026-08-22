@@ -17,11 +17,14 @@ typedef enum {
     DEVICE_LAST_SOURCE_NONE = 0,
     DEVICE_LAST_SOURCE_INTERNET_RADIO,
     DEVICE_LAST_SOURCE_USB,
+    DEVICE_LAST_SOURCE_SD,
 } device_last_source_t;
 
 #define DEVICE_SETTINGS_PATH "/littlefs/config/settings.csv"
 #define DEVICE_SETTINGS_PATH_MAX 128
-/* Long enough for a full path on the drive; the CSV value field caps at 256. */
+/* Long enough for a full path on either volume; the CSV value field caps at
+ * 256. The volume is part of the path, which is what tells a resume point on
+ * the card from one on the drive. */
 #define DEVICE_LAST_FILE_MAX 256
 /* Loud enough to be obviously working, quiet enough that a fresh flash does
  * not startle anyone. */

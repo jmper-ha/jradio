@@ -8,6 +8,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include "esp_log.h"
@@ -19,6 +20,7 @@
 #include "file_browser.h"
 #include "file_storage.h"
 #include "file_player.h"
+#include "sd_storage.h"
 #include "usb_storage.h"
 #include "wifi_provisioning.h"
 
@@ -43,11 +45,36 @@ static atomic_size_t s_files_item_index = ATOMIC_VAR_INIT(PLAYER_ITEM_NONE);
 // reset its cursor: the path itself is truncated to PLAYER_NAME_MAX_LEN in the
 // snapshot, so two deep directories can look identical there.
 static atomic_uint s_files_listing_revision = ATOMIC_VAR_INIT(0U);
-/* Full path of the file the drive is playing. Written and read only by this
- * task, so it needs no atomics; it is here rather than in the snapshot because
- * the browser wants it once, when it opens, and a path this long would not fit
- * the 512-byte frame the snapshot is diffed into for the web. */
+/* Full path of the file being played. It is here rather than in the snapshot
+ * because a path this long would not fit the 512-byte frame the snapshot is
+ * diffed into for the web.
+ *
+ * Written by this task and read by the UI task, which writes the resume point
+ * down, so it is held under a lock rather than by convention - a torn read
+ * would be half of one path and half of another, and get saved as the file to
+ * come back to. */
 static char s_files_playing_path[FILE_BROWSER_PATH_MAX_LEN];
+static SemaphoreHandle_t s_playing_path_lock;
+
+static void player_set_playing_path(const char *path)
+{
+    if (s_playing_path_lock == NULL) return;
+    xSemaphoreTake(s_playing_path_lock, portMAX_DELAY);
+    snprintf(s_files_playing_path, sizeof(s_files_playing_path), "%s",
+             path == NULL ? "" : path);
+    xSemaphoreGive(s_playing_path_lock);
+}
+
+bool player_control_playing_file_path(char *out, size_t out_size)
+{
+    if (out == NULL || out_size == 0U || s_playing_path_lock == NULL) return false;
+    xSemaphoreTake(s_playing_path_lock, portMAX_DELAY);
+    const size_t length = strlen(s_files_playing_path);
+    const bool fits = length < out_size;
+    if (fits) memcpy(out, s_files_playing_path, length + 1U);
+    xSemaphoreGive(s_playing_path_lock);
+    return fits && length > 0U;
+}
 static atomic_bool s_rssi_seen = ATOMIC_VAR_INIT(false);
 static atomic_uint s_rssi_updated_ms = ATOMIC_VAR_INIT(0U);
 static atomic_bool s_rssi_valid = ATOMIC_VAR_INIT(false);
@@ -120,10 +147,10 @@ static void player_file_select_item(size_t index, player_playback_state_t playba
     const esp_err_t result = file_player_play(path, entry.name, entry.format);
     if (result != ESP_OK) {
         ESP_LOGW(TAG, "cannot play %s: %s", path, esp_err_to_name(result));
-        s_files_playing_path[0] = '\0';
+        player_set_playing_path("");
         return;
     }
-    snprintf(s_files_playing_path, sizeof(s_files_playing_path), "%s", path);
+    player_set_playing_path(path);
     atomic_store_explicit(&s_files_item_index, index, memory_order_release);
 }
 
@@ -171,7 +198,7 @@ static void player_file_advance(void)
     if (next >= file_storage_entry_count()) {
         ESP_LOGI(TAG, "usb: last track in the directory, stopping");
         atomic_store_explicit(&s_files_item_index, PLAYER_ITEM_NONE, memory_order_release);
-        s_files_playing_path[0] = '\0';
+        player_set_playing_path("");
         return;
     }
     // A track that ended is no longer playing, so nothing here can be mistaken
@@ -235,10 +262,10 @@ static bool player_stop_active_source(audio_source_t source)
             ESP_LOGW(TAG, "internet radio stop failed: %s", esp_err_to_name(result));
             return false;
         }
-    } else if (source == AUDIO_SOURCE_USB) {
+    } else if (audio_source_is_files(source)) {
         const esp_err_t result = file_player_stop();
         if (result != ESP_OK) {
-            ESP_LOGW(TAG, "usb player stop failed: %s", esp_err_to_name(result));
+            ESP_LOGW(TAG, "file player stop failed: %s", esp_err_to_name(result));
             return false;
         }
         /* Only on a real stop, never between tracks: advancing goes straight
@@ -246,7 +273,18 @@ static bool player_stop_active_source(audio_source_t source)
          * screen instead of being decoded again for every track. */
         album_art_clear();
         // Nothing is playing any more, so there is no directory to reveal.
-        s_files_playing_path[0] = '\0';
+        player_set_playing_path("");
+        /* And the card goes back in its box. The order is the whole point:
+         * file_player_stop() has returned, so nothing is inside fread() on the
+         * volume this is about to tear down - the same contract the USB
+         * removal callback has to honour, only here we choose the moment.
+         *
+         * Unmounting rather than holding it is what keeps the ~2.4 KB of
+         * internal SRAM a mount costs out of the radio's way; see
+         * sd_storage_mount(). */
+        if (source == AUDIO_SOURCE_SD) {
+            (void)sd_storage_unmount();
+        }
     }
 
     const audio_source_result_t result = audio_source_manager_stop(&s_manager, source);
@@ -293,11 +331,35 @@ static void player_control_task(void *arg)
             atomic_store_explicit(&s_active_source, command.source, memory_order_release);
             if (command.source == AUDIO_SOURCE_INTERNET_RADIO) {
                 (void)internet_radio_start_saved_station();
-            } else if (command.source == AUDIO_SOURCE_USB) {
-                // Selecting the source only opens the drive's root; nothing
-                // plays until an entry is chosen, because there is no
-                // equivalent of the radio's "last station".
-                (void)file_storage_read_directory(USB_STORAGE_ROOT_PATH);
+            } else if (audio_source_is_files(command.source)) {
+                /* The card is mounted here and nowhere else. It is the only
+                 * moment that can: nothing detects it being inserted, so the
+                 * user asking for it *is* the detection - and mounting costs
+                 * internal SRAM that the radio wants back the moment this
+                 * source is left again. */
+                if (command.source == AUDIO_SOURCE_SD) {
+                    const esp_err_t mounted = sd_storage_mount();
+                    if (mounted != ESP_OK) {
+                        // Not an error to recover from here: the snapshot now
+                        // reports what the slot holds, and the browser screen
+                        // turns that into a line the user can act on.
+                        ESP_LOGW(TAG, "sd card not available: %s", esp_err_to_name(mounted));
+                    }
+                }
+                /* Selecting the source only opens the volume's root; nothing
+                 * plays until an entry is chosen, because there is no
+                 * equivalent of the radio's "last station".
+                 *
+                 * A root that will not open leaves the listing pointing at it
+                 * and empty, rather than at whatever was browsed last: the
+                 * browser screen would otherwise show the drive's files under
+                 * the card's name. */
+                const char *root = command.source == AUDIO_SOURCE_SD
+                                       ? SD_STORAGE_ROOT_PATH
+                                       : USB_STORAGE_ROOT_PATH;
+                if (file_storage_read_directory(root) != ESP_OK) {
+                    file_storage_open_empty(root);
+                }
                 atomic_store_explicit(&s_files_item_index, PLAYER_ITEM_NONE,
                                       memory_order_release);
                 atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
@@ -305,26 +367,26 @@ static void player_control_task(void *arg)
             break;
         }
         case PLAYER_OPERATION_START_ITEM:
-            if (snapshot.active_source == AUDIO_SOURCE_USB) {
+            if (audio_source_is_files(snapshot.active_source)) {
                 player_file_select_item(command.item_index, snapshot.playback_state);
             } else {
                 (void)internet_radio_start_station_index(command.item_index);
             }
             break;
         case PLAYER_OPERATION_START_SAVED:
-            if (snapshot.active_source != AUDIO_SOURCE_USB) {
+            if (!audio_source_is_files(snapshot.active_source)) {
                 (void)internet_radio_start_saved_station();
             }
             break;
         case PLAYER_OPERATION_PAUSE:
-            if (snapshot.active_source == AUDIO_SOURCE_USB) {
+            if (audio_source_is_files(snapshot.active_source)) {
                 (void)file_player_pause();
             } else {
                 (void)internet_radio_pause();
             }
             break;
         case PLAYER_OPERATION_RESUME:
-            if (snapshot.active_source == AUDIO_SOURCE_USB) {
+            if (audio_source_is_files(snapshot.active_source)) {
                 (void)file_player_resume();
             } else {
                 (void)internet_radio_resume();
@@ -370,16 +432,24 @@ esp_err_t player_control_init(void)
     atomic_store_explicit(&s_rssi_valid, false, memory_order_release);
     atomic_store_explicit(&s_rssi_dbm, 0, memory_order_relaxed);
     atomic_flag_clear_explicit(&s_rssi_refreshing, memory_order_release);
+    s_playing_path_lock = xSemaphoreCreateMutex();
+    if (s_playing_path_lock == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
     s_command_queue = xQueueCreate(PLAYER_COMMAND_QUEUE_LENGTH,
                                    sizeof(player_command_t));
     if (s_command_queue == NULL) {
+        vSemaphoreDelete(s_playing_path_lock);
+        s_playing_path_lock = NULL;
         return ESP_ERR_NO_MEM;
     }
     if (xTaskCreate(player_control_task, "player_control",
                     PLAYER_CONTROL_TASK_STACK_SIZE, NULL,
                     PLAYER_CONTROL_TASK_PRIORITY, NULL) != pdPASS) {
         vQueueDelete(s_command_queue);
+        vSemaphoreDelete(s_playing_path_lock);
         s_command_queue = NULL;
+        s_playing_path_lock = NULL;
         return ESP_ERR_NO_MEM;
     }
     file_player_set_finished_callback(player_file_track_finished);
@@ -401,12 +471,15 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
 
     memset(snapshot, 0, sizeof(*snapshot));
     snapshot->capabilities = PLAYER_CAP_INTERNET_RADIO;
-    snapshot->files_media = usb_storage_media();
+    snapshot->usb_media = usb_storage_media();
+    snapshot->sd_media = sd_storage_media();
     snapshot->listing_revision = player_control_listing_revision();
     snapshot->files_entry_count = file_storage_entry_count();
     if (usb_storage_is_mounted()) {
         snapshot->capabilities |= PLAYER_CAP_USB;
     }
+    // Always: see PLAYER_CAP_SD. What is actually in the slot is sd_media.
+    snapshot->capabilities |= PLAYER_CAP_SD;
     snapshot->active_source =
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
 
@@ -421,7 +494,7 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     snapshot->wifi_rssi_dbm =
         (int8_t)atomic_load_explicit(&s_rssi_dbm, memory_order_relaxed);
 
-    if (snapshot->active_source == AUDIO_SOURCE_USB) {
+    if (audio_source_is_files(snapshot->active_source)) {
         file_player_status_t usb_status;
         file_player_get_status(&usb_status);
         snapshot->playback_state = player_playback_from_file(usb_status.state);
@@ -465,7 +538,7 @@ bool player_control_input_fill(uint8_t *percent)
     const audio_source_t source =
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
     uint8_t reported;
-    if (source == AUDIO_SOURCE_USB) {
+    if (audio_source_is_files(source)) {
         file_player_status_t status;
         file_player_get_status(&status);
         if (status.state != FILE_PLAYER_STATE_PLAYING &&
@@ -494,7 +567,7 @@ bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_se
     if (elapsed_seconds == NULL || total_seconds == NULL) return false;
     const audio_source_t source =
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
-    if (source != AUDIO_SOURCE_USB) return false;
+    if (!audio_source_is_files(source)) return false;
 
     file_player_status_t status;
     file_player_get_status(&status);
@@ -512,7 +585,7 @@ bool player_control_track_tags(audio_tags_t *tags)
     audio_tags_clear(tags);
     const audio_source_t source =
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
-    if (source != AUDIO_SOURCE_USB) return false;
+    if (!audio_source_is_files(source)) return false;
 
     file_player_get_tags(tags);
     // False for an untagged file, so the caller falls back to the file name
@@ -534,13 +607,26 @@ bool player_control_file_entry_at(size_t index, file_browser_entry_t *entry)
 bool player_control_file_resume_path(const char *path)
 {
     char parent[FILE_BROWSER_PATH_MAX_LEN];
-    if (path == NULL || path[0] == '\0' || !usb_storage_is_mounted()) return false;
+    if (path == NULL || path[0] == '\0') return false;
     if (!file_browser_path_parent(path, parent, sizeof(parent))) return false;
+    /* Which volume the remembered path is on is in the path itself. The card
+     * has to be mounted before it can be searched, and this is the one caller
+     * that reaches it without going through a source selection - autoplay at
+     * boot resumes the file directly. Mounting is idempotent, so a card that
+     * a select has already brought up costs nothing here. */
+    if (strncmp(path, SD_STORAGE_ROOT_PATH "/", sizeof(SD_STORAGE_ROOT_PATH)) == 0) {
+        (void)sd_storage_mount();
+    }
+    if (!file_storage_path_mounted(path)) return false;
 
     /* Open the directory first: the remembered name is only meaningful inside
      * it, and if that fails there is nothing to search. */
     if (file_storage_read_directory(parent) != ESP_OK) {
-        (void)file_storage_read_directory(USB_STORAGE_ROOT_PATH);
+        // Back to the volume's own root, whichever it is: the browser has to
+        // open somewhere, and the root is the one directory always there.
+        char root[FILE_BROWSER_PATH_MAX_LEN];
+        (void)file_browser_path_volume_root(path, root, sizeof(root));
+        (void)file_storage_read_directory(root);
         atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
         return false;
     }

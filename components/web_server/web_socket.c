@@ -104,8 +104,11 @@ static void write_capabilities(web_json_writer_t *writer,
                        "\"Интернет-радио\",\"list_kind\":\"stations\"}");
         written = true;
     }
-    // USB only appears while a drive is mounted, so this list is what tells the
-    // browser whether to offer the source at all.
+    /* A volume only appears while there is something to browse on it, so this
+     * list is what tells the browser whether to offer the source at all. The
+     * card is offered on the strength of the last look at the slot - it is not
+     * held mounted, and mounting it to answer a status frame would take the
+     * SRAM the radio is using. */
     if ((player->capabilities & PLAYER_CAP_USB) != 0U) {
         if (written) {
             web_json_literal(writer, ",");
@@ -113,6 +116,15 @@ static void write_capabilities(web_json_writer_t *writer,
         web_json_literal(writer,
                        "{\"id\":\"usb\",\"label\":"
                        "\"USB-накопитель\",\"list_kind\":\"files\"}");
+        written = true;
+    }
+    if ((player->capabilities & PLAYER_CAP_SD) != 0U) {
+        if (written) {
+            web_json_literal(writer, ",");
+        }
+        web_json_literal(writer,
+                       "{\"id\":\"sd\",\"label\":"
+                       "\"SD-карта\",\"list_kind\":\"files\"}");
     }
     web_json_literal(writer, "]");
 }
@@ -165,7 +177,7 @@ static void write_active_index(web_json_writer_t *writer,
 }
 
 /* The USB listing is a header only: the entries themselves go over REST.
- * A directory may hold up to USB_STORAGE_MAX_ENTRIES names of up to
+ * A directory may hold up to FILE_STORAGE_MAX_ENTRIES names of up to
  * FILE_BROWSER_NAME_MAX_LEN bytes each, which is far past the
  * WEB_PROTOCOL_EVENT_MAX frame this serializer writes into, and growing that
  * static buffer is the wrong trade in a firmware already short of internal

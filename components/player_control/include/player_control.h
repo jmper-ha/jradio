@@ -69,6 +69,18 @@ bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_se
  * cover is not here either; it is published by album_art. */
 bool player_control_track_tags(audio_tags_t *tags);
 
+/* The full path of the file being played, for writing the resume point down.
+ * False when nothing is playing, and when the buffer is too short - never a
+ * truncated path, which names a file that does not exist.
+ *
+ * It has to come from here rather than be assembled from the snapshot's
+ * directory and track name: browsing moves that directory while the track goes
+ * on playing, and the pair then describes a file that was never opened. That
+ * is exactly what used to be saved - walk into another album while something
+ * plays, and the resume point pointed at the playing track's name inside the
+ * album you had walked into. */
+bool player_control_playing_file_path(char *out, size_t out_size);
+
 /* Reopens the directory holding `path` and starts that file, for resuming what
  * was playing before a restart. Runs on the caller's task and reads a
  * directory off the drive, so it stalls that task for as long as the read

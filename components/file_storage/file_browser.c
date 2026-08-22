@@ -178,6 +178,20 @@ bool file_browser_path_is_root(const char *path)
            strchr(path + 1, '/') == NULL;
 }
 
+bool file_browser_path_volume_root(const char *path, char *out, size_t out_size)
+{
+    if (path == NULL || out == NULL || out_size == 0U || path[0] != '/' ||
+        path[1] == '\0') {
+        return false;
+    }
+    const char *slash = strchr(path + 1, '/');
+    const size_t length = slash == NULL ? strlen(path) : (size_t)(slash - path);
+    if (length + 1U > out_size) return false;
+    memcpy(out, path, length);
+    out[length] = '\0';
+    return true;
+}
+
 bool file_browser_path_child(const char *path, const char *name, char *out, size_t out_size)
 {
     if (path == NULL || name == NULL || out == NULL || out_size == 0U) return false;

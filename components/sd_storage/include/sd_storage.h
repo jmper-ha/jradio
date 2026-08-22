@@ -3,6 +3,7 @@
 #include <stdbool.h>
 
 #include "esp_err.h"
+#include "file_browser.h"
 
 // The card's own mount point, alongside the USB drive's /usb0. FATFS is built
 // with two volumes, which these two exactly fill.
@@ -48,3 +49,12 @@ esp_err_t sd_storage_mount(void);
 esp_err_t sd_storage_unmount(void);
 
 bool sd_storage_is_mounted(void);
+
+/* What the last mount attempt found, which is not the same question as
+ * "mounted right now": the card is released as soon as its source is left, and
+ * that is the firmware letting go, not the card leaving.
+ *
+ * READY therefore means "a card was there and readable the last time anyone
+ * looked", which is what the menu needs to decide whether offering the source
+ * is honest, and what the browser needs to say why it is empty. */
+file_browser_media_t sd_storage_media(void);

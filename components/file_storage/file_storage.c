@@ -141,11 +141,20 @@ esp_err_t file_storage_read_directory(const char *path)
     return ESP_OK;
 }
 
-void file_storage_clear(const char *root)
+bool file_storage_listing_is_on(const char *root)
 {
-    if (s_entries == NULL || !listing_lock()) return;
-    file_browser_dir_init(&s_listing, s_entries, FILE_STORAGE_MAX_ENTRIES,
-                          root == NULL ? "" : root);
+    if (s_entries == NULL || root == NULL || !listing_lock()) return false;
+    const size_t length = strlen(root);
+    const bool same = strncmp(s_listing.path, root, length) == 0 &&
+                      (s_listing.path[length] == '\0' || s_listing.path[length] == '/');
+    listing_unlock();
+    return same;
+}
+
+void file_storage_open_empty(const char *root)
+{
+    if (s_entries == NULL || root == NULL || !listing_lock()) return;
+    file_browser_dir_init(&s_listing, s_entries, FILE_STORAGE_MAX_ENTRIES, root);
     listing_unlock();
 }
 

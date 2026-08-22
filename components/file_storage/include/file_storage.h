@@ -39,10 +39,18 @@ bool file_storage_path_mounted(const char *path);
 // Reads `path` into the shared listing, replacing what was there.
 esp_err_t file_storage_read_directory(const char *path);
 
-// Empties the listing and points it at `root`. Used when a volume goes away:
-// its entries name files that are no longer reachable, and the UI polls the
-// listing independently of the mount.
-void file_storage_clear(const char *root);
+/* True while the listing is showing `root` or something inside it.
+ *
+ * Asked by a volume on its way out, because with two of them the listing can
+ * be on the other one - browsing the card while the drive is pulled - and
+ * emptying that would blank a browser whose files are all still there. */
+bool file_storage_listing_is_on(const char *root);
+
+// Points the listing at `root` with no entries in it. Used when a volume goes
+// away, and when a source is selected whose root will not open: the browser
+// polls the listing independently of any mount, and it must not be left
+// showing another volume's files under this one's name.
+void file_storage_open_empty(const char *root);
 
 // Accessors copy out under the listing lock: a volume can be unmounted, and
 // the listing cleared, while the UI task is walking it.

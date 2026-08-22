@@ -104,11 +104,15 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
         const bool already_healthy = command->source == state->active_source &&
             state->playback_state != PLAYER_PLAYBACK_ERROR;
         if (already_healthy) return PLAYER_OPERATION_NONE;
-        const bool supported =
-            (command->source == AUDIO_SOURCE_INTERNET_RADIO &&
-             (state->capabilities & PLAYER_CAP_INTERNET_RADIO) != 0U) ||
-            (command->source == AUDIO_SOURCE_USB &&
-             (state->capabilities & PLAYER_CAP_USB) != 0U);
+        /* Each volume answers for itself: a mounted drive says nothing about
+         * what is in the card slot, and one capability for both would have let
+         * the card be selected whenever a stick happened to be plugged in. */
+        const uint32_t needed = command->source == AUDIO_SOURCE_INTERNET_RADIO
+                                    ? PLAYER_CAP_INTERNET_RADIO
+                                : command->source == AUDIO_SOURCE_USB ? PLAYER_CAP_USB
+                                : command->source == AUDIO_SOURCE_SD  ? PLAYER_CAP_SD
+                                                                      : 0U;
+        const bool supported = needed != 0U && (state->capabilities & needed) != 0U;
         return supported ? PLAYER_OPERATION_SELECT_SOURCE : PLAYER_OPERATION_INVALID;
     }
     case PLAYER_COMMAND_STOP_SOURCE:
@@ -136,7 +140,7 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
                    ? PLAYER_OPERATION_NONE : PLAYER_OPERATION_INVALID;
     case PLAYER_COMMAND_SELECT_ITEM: {
         if ((state->active_source != AUDIO_SOURCE_INTERNET_RADIO &&
-             state->active_source != AUDIO_SOURCE_USB) ||
+             !audio_source_is_files(state->active_source)) ||
             command->item_index >= state->item_count) return PLAYER_OPERATION_INVALID;
         // On USB an entry can be a directory, and re-selecting the directory
         // the cursor is already in still has to navigate; only the radio can
@@ -152,10 +156,10 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
     case PLAYER_COMMAND_BROWSE_UP:
         // Whether there is anywhere to go depends on the path, which this pure
         // function cannot see; the executor refuses at the mount root.
-        return state->active_source == AUDIO_SOURCE_USB ? PLAYER_OPERATION_BROWSE_UP
+        return audio_source_is_files(state->active_source) ? PLAYER_OPERATION_BROWSE_UP
                                                         : PLAYER_OPERATION_INVALID;
     case PLAYER_COMMAND_BROWSE_REVEAL:
-        if (state->active_source != AUDIO_SOURCE_USB) return PLAYER_OPERATION_INVALID;
+        if (!audio_source_is_files(state->active_source)) return PLAYER_OPERATION_INVALID;
         // With nothing playing there is nothing to reveal, and the file the
         // drive played last is not it: after a stop, or a drive pulled and put
         // back, the browser belongs wherever it already is.
@@ -168,7 +172,7 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
         // is stopped or failed has no decoder to move. Paused counts because
         // the file is still open at a position: the jump is held until
         // playback resumes.
-        if (state->active_source != AUDIO_SOURCE_USB) return PLAYER_OPERATION_INVALID;
+        if (!audio_source_is_files(state->active_source)) return PLAYER_OPERATION_INVALID;
         return state->playback_state == PLAYER_PLAYBACK_PLAYING ||
                        state->playback_state == PLAYER_PLAYBACK_PAUSED
                    ? PLAYER_OPERATION_SEEK
@@ -176,7 +180,7 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
     case PLAYER_COMMAND_TRACK_FINISHED:
         // Only USB has tracks that end. A radio stream that stops has failed
         // and must not silently jump to another station.
-        return state->active_source == AUDIO_SOURCE_USB ? PLAYER_OPERATION_ADVANCE_ITEM
+        return audio_source_is_files(state->active_source) ? PLAYER_OPERATION_ADVANCE_ITEM
                                                         : PLAYER_OPERATION_NONE;
     default:
         return PLAYER_OPERATION_INVALID;

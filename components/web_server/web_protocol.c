@@ -702,6 +702,8 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
             parsed->player.source = AUDIO_SOURCE_INTERNET_RADIO;
         } else if (strcmp(source->valuestring, "usb") == 0) {
             parsed->player.source = AUDIO_SOURCE_USB;
+        } else if (strcmp(source->valuestring, "sd") == 0) {
+            parsed->player.source = AUDIO_SOURCE_SD;
         } else {
             return false;
         }

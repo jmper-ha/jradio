@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 
+#include "audio_source.h"
 #include "device_settings.h"
 #include "file_browser.h"
 
@@ -19,20 +20,26 @@ typedef enum {
     /* Resume the radio. The station itself comes from station_resume, which
      * has always kept the last URL. */
     UI_AUTOPLAY_RADIO,
-    /* Drive is there and so is the remembered file: play it. */
+    /* The volume is there and so is the remembered file: play it. */
     UI_AUTOPLAY_FILE,
-    /* Drive is there but the file is not - a different stick, or it was
-     * deleted. Open the browser rather than an error: there is music here,
-     * just not that track. */
+    /* The volume is there but the file is not - a different stick or card, or
+     * it was deleted. Open the browser rather than an error: there is music
+     * here, just not that track. */
     UI_AUTOPLAY_FILE_BROWSER,
-    /* No drive, or one that will not read. */
+    /* Nothing in the slot, or something that will not read. */
     UI_AUTOPLAY_FILE_UNAVAILABLE,
 } ui_autoplay_action_t;
 
-/* `media` and `entry_count` describe the drive as the snapshot last saw it.
- * `file_present` says whether settings->last_file is still on it; the
- * caller answers that, since it needs the filesystem. It is only consulted
- * when the drive is usable. */
+/* `usb_media` and `sd_media` describe the two volumes as the snapshot last saw
+ * them; which one is consulted follows settings->last_source. `file_present`
+ * says whether settings->last_file is still there; the caller answers that,
+ * since it needs the filesystem, and it is only consulted when the volume is
+ * usable. */
 ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
-                                        file_browser_media_t media,
+                                        file_browser_media_t usb_media,
+                                        file_browser_media_t sd_media,
                                         bool file_present);
+
+// Which source the decision was about, so the caller can select it without
+// reading last_source a second time and getting the mapping wrong.
+audio_source_t ui_autoplay_source(const device_settings_t *settings);

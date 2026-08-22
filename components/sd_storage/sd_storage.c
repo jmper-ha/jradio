@@ -1,6 +1,5 @@
 #include "sd_storage.h"
 
-#include <dirent.h>
 #include <stdint.h>
 
 #include "driver/gpio.h"
@@ -8,6 +7,7 @@
 #include "driver/spi_common.h"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
+#include "file_storage.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "sd_protocol_defs.h"
@@ -27,11 +27,12 @@ static const char *TAG = "sd";
 #error "SDC_SPI_PERIPHERAL must select SPI2 or SPI3"
 #endif
 
-#define SD_ROOT_LOG_MAX_ROWS 32
-
 static sdmmc_card_t *s_card;
 static bool s_bus_ready;
 static volatile bool s_mounted;
+/* Not cleared on unmount, deliberately - see sd_storage_media(). It changes
+ * only when a mount attempt tells us something new about the slot. */
+static volatile file_browser_media_t s_media = FILE_BROWSER_MEDIA_ABSENT;
 // Mount and unmount can be asked for from different tasks - the browser opening
 // the source, the player letting it go - and neither may run while the other is
 // halfway through.
@@ -42,34 +43,9 @@ bool sd_storage_is_mounted(void)
     return s_mounted;
 }
 
-/* Proves the filesystem reads, and no more than that: the browser gets its own
- * listing later. Capped because the root of a card can hold thousands of
- * files, and the whole log goes out of a 115200 baud UART. */
-static void log_root(void)
+file_browser_media_t sd_storage_media(void)
 {
-    DIR *dir = opendir(SD_STORAGE_ROOT_PATH);
-    if (dir == NULL) {
-        ESP_LOGE(TAG, "%s mounted but will not open", SD_STORAGE_ROOT_PATH);
-        return;
-    }
-    ESP_LOGI(TAG, "files on %s:", SD_STORAGE_ROOT_PATH);
-    unsigned int shown = 0U;
-    unsigned int total = 0U;
-    const struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        ++total;
-        if (shown < SD_ROOT_LOG_MAX_ROWS) {
-            // d_type is trusted here and nowhere else: this line is a report,
-            // not a decision about what can be opened or played.
-            ESP_LOGI(TAG, "  %s%s", entry->d_type == DT_DIR ? "[dir] " : "      ",
-                     entry->d_name);
-            ++shown;
-        }
-    }
-    closedir(dir);
-    if (total > shown) {
-        ESP_LOGI(TAG, "  ... and %u more", total - shown);
-    }
+    return s_media;
 }
 
 static esp_err_t (*s_card_transaction)(int slot, sdmmc_command_t *cmd);
@@ -164,8 +140,13 @@ esp_err_t sd_storage_mount(void)
         err = sd_mount();
         if (err == ESP_OK) {
             s_mounted = true;
+            s_media = FILE_BROWSER_MEDIA_READY;
             log_card();
         } else {
+            // ESP_FAIL means a card answered and its filesystem did not mount;
+            // anything else means nothing answered at all.
+            s_media = err == ESP_FAIL ? FILE_BROWSER_MEDIA_UNREADABLE
+                                      : FILE_BROWSER_MEDIA_ABSENT;
             log_mount_failure(err);
         }
     }
@@ -187,6 +168,11 @@ esp_err_t sd_storage_unmount(void)
         // whoever was reading it has already stopped - that is the caller's
         // half of the contract.
         s_mounted = false;
+        // The listing may still be showing the card's directory; its files are
+        // about to become unreachable.
+        if (file_storage_listing_is_on(SD_STORAGE_ROOT_PATH)) {
+            file_storage_open_empty(SD_STORAGE_ROOT_PATH);
+        }
         err = esp_vfs_fat_sdcard_unmount(SD_STORAGE_ROOT_PATH, s_card);
         s_card = NULL;
         if (err != ESP_OK) {
@@ -210,6 +196,13 @@ esp_err_t sd_storage_init(void)
     if (s_lock == NULL) {
         return ESP_ERR_NO_MEM;
     }
+    const esp_err_t listing = file_storage_init();
+    if (listing != ESP_OK) {
+        vSemaphoreDelete(s_lock);
+        s_lock = NULL;
+        return listing;
+    }
+    (void)file_storage_register_volume(SD_STORAGE_ROOT_PATH, sd_storage_is_mounted);
     const spi_bus_config_t bus = {
         .mosi_io_num = SDC_MOSI_GPIO,
         .miso_io_num = SDC_MISO_GPIO,
@@ -240,7 +233,11 @@ esp_err_t sd_storage_init(void)
      * is worth 110 ms - the alternative is finding out only when someone opens
      * the source and gets an error with no history behind it. */
     if (sd_storage_mount() == ESP_OK) {
-        log_root();
+        // Through the shared listing rather than readdir() here: it prints
+        // what the browser would show, which is the useful thing to see.
+        if (file_storage_read_directory(SD_STORAGE_ROOT_PATH) == ESP_OK) {
+            file_storage_log_listing();
+        }
         (void)sd_storage_unmount();
     }
     // The mount is a feature; the bus being up is what this call promises.

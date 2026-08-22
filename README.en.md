@@ -1,7 +1,7 @@
 # jradio
 
 Firmware for a desktop audio player built on the ESP32-S3 (ESP-IDF 5.5.x):
-internet radio and files from a USB drive. Driven by a rotary encoder and four
+internet radio and files from a USB drive or an SD card. Driven by a rotary encoder and four
 buttons on the device, or from a browser on the local network.
 
 *[Русская версия](README.md)*
@@ -11,14 +11,14 @@ buttons on the device, or from a browser on the local network.
 | Mode | State |
 |---|---|
 | Internet radio | MP3, AAC, FLAC, Ogg FLAC, HLS (`.m3u8`); HTTP and HTTPS; ICY metadata; playlist; reconnection |
-| USB player | Directory browser; MP3, AAC, FLAC, Ogg FLAC, WAV; tags and cover art; advances to the next track; track position and scrubbing |
+| File player | USB drive and SD card; directory browser; MP3, AAC, FLAC, Ogg FLAC, WAV; tags and cover art; advances to the next track; track position and scrubbing |
 | Volume | Digital, on the encoder, saved across restarts |
 | Clock | SNTP, on every screen |
 | Wi-Fi | Set up through a temporary access point, up to five saved networks |
 | Web interface | Player, drive browser, settings, playlist editor; live state over WebSocket |
 | Screens | Home (list or carousel), player, station and file lists, settings |
 | Autoplay | Restores the station or file that was playing at power-off |
-| DLNA, FM, Bluetooth, SD card, RTC, OTA | Not implemented |
+| DLNA, FM, Bluetooth, RTC, OTA | Not implemented |
 
 Settings (`Language`, `General`, `Display`) apply at once and are saved to
 `/littlefs/config/settings.csv`: language, home screen style, autoplay,
@@ -136,7 +136,7 @@ throughout - only the readout follows the knob.
 ESP32-S3 in a QFN56 package, 16 MB flash, 8 MB PSRAM; an ILI9341 320x240
 display over SPI; a rotary encoder with a push button and four buttons; a
 PCM5102 DAC over I2S with a line output; a USB host port for a FAT-formatted
-drive.
+drive; a microSD slot over SPI.
 
 The wiring lives in [`board_options.h`](board_options.h), which is the source
 of truth; the table below is for convenience. Options are grouped by device,
@@ -162,7 +162,9 @@ build rather than producing a device that misbehaves.
 | Encoder right | 5 | | PCM5102 DOUT | 16 |
 | Encoder left | 7 | | PCM5102 BCLK | 18 |
 | USB D- | 19 | | PCM5102 LRCK | 17 |
-| USB D+ | 20 | | | |
+| USB D+ | 20 | | microSD CS | 1 |
+| microSD SCK | 41 | | microSD MISO | 40 |
+| microSD MOSI | 42 | | | |
 
 The display's RST is tied to the ESP32's reset and takes no GPIO.
 
@@ -179,7 +181,14 @@ Worth knowing if you build the board:
   (GPIO 45, 46 and 21 are unstable without them) and disabled for the encoder,
   where the external ones suffice;
 - USB VBUS is permanently powered; a drive left on the bus across a reboot is
-  re-enumerated by a logical power cycle of the root port.
+  re-enumerated by a logical power cycle of the root port;
+- the microSD slot has an SPI bus of its own, SPI3: the display has no MISO
+  wired, which a card cannot work without. GPIO 40, 41 and 42 are the external
+  JTAG pins, and the card takes them over;
+- the slot has no card-detect line, so an inserted card can only be found by
+  trying to mount it. The card is mounted when its source is entered and
+  released when it is left: held mounted it costs some 2.4 KB of internal SRAM,
+  which the radio's decoder task needs. FAT16/FAT32 only, no exFAT.
 
 ## Building and flashing
 
@@ -214,14 +223,14 @@ no npm and no bundler.
 | `GET /api/status` | Wi-Fi and player state in one snapshot |
 | `GET /api/playlist` | Station list as CSV |
 | `POST /api/playlist` | Replaces the station list wholesale |
-| `GET /api/usb` | Contents of the drive's current directory |
+| `GET /api/files` | Contents of the current directory on the active medium |
 | `POST /api/wifi` | Saves a network |
 | `/ws` | Commands and live updates |
 
 WebSocket commands: `player.play`, `player.pause`, `player.toggle`,
 `source.select`, `list.select`, `browse.up`, `wifi.save`. Live state arrives as
-diffs; anything large - the playlist, USB directories - goes over REST, because
-it does not fit in a frame and must not spend internal SRAM.
+diffs; anything large - the playlist, media directories - goes over REST,
+because it does not fit in a frame and must not spend internal SRAM.
 
 ## Diagnostics
 

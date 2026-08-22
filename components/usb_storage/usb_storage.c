@@ -170,7 +170,9 @@ static void usb_app_task(void *arg)
             // Clear the listing before tearing the mount down: it names files
             // that are no longer reachable, and the UI polls it independently.
             s_media = FILE_BROWSER_MEDIA_ABSENT;
-            file_storage_clear(USB_STORAGE_ROOT_PATH);
+            if (file_storage_listing_is_on(USB_STORAGE_ROOT_PATH)) {
+                file_storage_open_empty(USB_STORAGE_ROOT_PATH);
+            }
             // Everything that reads the drive has to be stopped before the
             // mount goes, not after: the player runs on its own task and can
             // be inside fread(), and msc_host_vfs_unregister() frees the FATFS

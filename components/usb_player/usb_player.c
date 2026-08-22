@@ -180,6 +180,37 @@ typedef struct {
 static char s_folder_cover_directory[USB_BROWSER_PATH_MAX_LEN];
 static bool s_folder_cover_published;
 
+/* Reads a picture out of a file and publishes it as the cover.
+ *
+ * The one place either kind of cover is read - the file beside the track, and
+ * the block inside it - because both are the same job: a length that has to be
+ * worth reading, a buffer that has to come from PSRAM, and bytes the decoders
+ * take whole. `what` only names the source in the log.
+ */
+static bool publish_cover_bytes(FILE *file, size_t offset, size_t length, const char *what)
+{
+    if (file == NULL || length == 0U) return false;
+    if (length > USB_PLAYER_COVER_MAX_BYTES) {
+        ESP_LOGW(TAG, "%s: %u bytes is too large for a cover", what, (unsigned int)length);
+        return false;
+    }
+    if (offset > LONG_MAX || fseek(file, (long)offset, SEEK_SET) != 0) return false;
+    uint8_t *picture = alloc_buffer(length);
+    if (picture == NULL) {
+        ESP_LOGW(TAG, "no memory to read the cover of %s", what);
+        return false;
+    }
+    const size_t read = fread(picture, 1U, length, file);
+    const bool published = read == length && album_art_set_image(picture, length);
+    if (published) {
+        ESP_LOGI(TAG, "cover from %s", what);
+    } else {
+        ESP_LOGW(TAG, "%s: the cover could not be shown", what);
+    }
+    free(picture);
+    return published;
+}
+
 // Fills `out` with the path of the folder's cover picture, if it has one.
 static bool find_folder_cover(const char *directory, char *out, size_t out_size)
 {
@@ -226,30 +257,13 @@ static bool load_folder_cover(void)
     if (fseek(file, 0, SEEK_END) == 0) {
         const long end = ftell(file);
         if (end > 0) length = (size_t)end;
-        rewind(file);
     }
-    if (length == 0U || length > USB_PLAYER_COVER_MAX_BYTES) {
-        ESP_LOGW(TAG, "%s is %u bytes, too large for a cover", path, (unsigned int)length);
-        fclose(file);
-        return false;
-    }
-    uint8_t *picture = alloc_buffer(length);
-    if (picture == NULL) {
-        ESP_LOGW(TAG, "no memory to read %s", path);
-        fclose(file);
-        return false;
-    }
-    const size_t read = fread(picture, 1U, length, file);
+    const bool published = publish_cover_bytes(file, 0U, length, path);
     fclose(file);
-    const bool published = read == length && album_art_set_image(picture, length);
     if (published) {
-        ESP_LOGI(TAG, "cover from %s", path);
         snprintf(s_folder_cover_directory, sizeof(s_folder_cover_directory), "%s", directory);
         s_folder_cover_published = true;
-    } else {
-        ESP_LOGW(TAG, "%s could not be shown", path);
     }
-    free(picture);
     return published;
 }
 
@@ -364,11 +378,19 @@ static void load_tags(usb_player_context_t *ctx)
      *
      * When neither turns anything up the cover is cleared rather than left
      * alone: the previous track's picture over this one is worse than none. */
-    const bool embedded = scratch != NULL && tags.picture_length > 0U &&
-                          (tags.picture_format == AUDIO_TAGS_PICTURE_JPEG ||
-                           tags.picture_format == AUDIO_TAGS_PICTURE_PNG) &&
-                          album_art_set_image(scratch + tags.picture_offset,
-                                              tags.picture_length);
+    const bool readable = tags.picture_format == AUDIO_TAGS_PICTURE_JPEG ||
+                          tags.picture_format == AUDIO_TAGS_PICTURE_PNG;
+    bool embedded = false;
+    if (readable && scratch != NULL && tags.picture_length > 0U) {
+        embedded = album_art_set_image(scratch + tags.picture_offset, tags.picture_length);
+    } else if (readable && tags.picture_file_length > 0U) {
+        /* Too large to have been kept in the tag buffer - 140 KB of cover in a
+         * file read through 128 KB is an ordinary album, not a strange one -
+         * so it is read on its own, exactly the picture and nothing else. The
+         * reader knows where it lies without having read it. */
+        embedded = publish_cover_bytes(ctx->file, tags.picture_file_offset,
+                                       tags.picture_file_length, s_request.path);
+    }
     if (embedded) {
         // The tile now holds this track's own picture, so the next track in
         // this folder cannot assume the folder's is still up.

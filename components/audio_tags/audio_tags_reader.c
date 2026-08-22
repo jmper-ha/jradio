@@ -107,13 +107,20 @@ static bool read_flac(FILE *file, uint8_t *scratch, size_t capacity, audio_tags_
         offset = body + (long)length;
     }
 
-    if (picture_length > 0U && picture_length <= capacity &&
-        read_at(file, picture_offset, scratch, picture_length, &received) &&
-        received == picture_length) {
+    if (picture_length > 0U) {
+        /* Reported whether or not it fits: a picture too large for this
+         * buffer is still a picture, and the caller can read it where it
+         * lies. Only the copy into the scratch is conditional. */
         tags->picture_format = picture_format;
-        tags->picture_offset = 0U;
-        tags->picture_length = picture_length;
+        tags->picture_file_offset = (size_t)picture_offset;
+        tags->picture_file_length = picture_length;
         found_any = true;
+        if (picture_length <= capacity &&
+            read_at(file, picture_offset, scratch, picture_length, &received) &&
+            received == picture_length) {
+            tags->picture_offset = 0U;
+            tags->picture_length = picture_length;
+        }
     }
     return found_any;
 }

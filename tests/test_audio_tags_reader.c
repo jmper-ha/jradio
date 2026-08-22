@@ -178,6 +178,73 @@ static void test_a_flac_file_walks_its_metadata_blocks(void)
     fclose(file);
 }
 
+static void test_a_cover_too_large_for_the_scratch_is_still_found(void)
+{
+    /* The case that showed the placeholder over a picture the file was
+     * carrying: a 140 KB cover read through a 128 KB buffer. Here the same
+     * shape in miniature - a picture larger than the scratch - and what
+     * matters is that it is not given up on, but pointed at where it lies. */
+    builder_t picture = {.length = 0U};
+    put_be32(&picture, 3U);
+    put_be32(&picture, (uint32_t)strlen("image/jpeg"));
+    put(&picture, "image/jpeg", strlen("image/jpeg"));
+    put_be32(&picture, 0U);
+    put_be32(&picture, 250U);
+    put_be32(&picture, 250U);
+    put_be32(&picture, 24U);
+    put_be32(&picture, 0U);
+    const size_t image_length = 2048U;
+    put_be32(&picture, (uint32_t)image_length);
+    const size_t image_at = picture.length;
+    for (size_t index = 0U; index < image_length; ++index) {
+        const uint8_t byte = (uint8_t)(index & 0xFFU);
+        put(&picture, &byte, 1U);
+    }
+
+    builder_t builder = {.length = 0U};
+    put(&builder, "fLaC", 4U);
+    const uint8_t picture_header[4] = {0x80U | FLAC_BLOCK_PICTURE,
+                                       (uint8_t)(picture.length >> 16),
+                                       (uint8_t)(picture.length >> 8), (uint8_t)picture.length};
+    put(&builder, picture_header, sizeof(picture_header));
+    put(&builder, picture.data, picture.length);
+
+    FILE *file = file_of(builder.data, builder.length);
+    // Deliberately smaller than the picture, the way the device's buffer is
+    // smaller than the cover that motivated this.
+    uint8_t scratch[1024];
+    audio_tags_t tags;
+    assert(audio_tags_read_file(file, scratch, sizeof(scratch), &tags));
+    assert(tags.picture_format == AUDIO_TAGS_PICTURE_JPEG);
+    // Not in the scratch - it never fitted - but locatable in the file.
+    assert(tags.picture_length == 0U);
+    assert(tags.picture_file_length == image_length);
+    assert(tags.picture_file_offset == 4U + 4U + image_at);
+
+    // And the bytes there really are the picture.
+    uint8_t first[4];
+    assert(fseek(file, (long)tags.picture_file_offset, SEEK_SET) == 0);
+    assert(fread(first, 1U, sizeof(first), file) == sizeof(first));
+    assert(first[0] == 0x00U && first[1] == 0x01U && first[2] == 0x02U && first[3] == 0x03U);
+    fclose(file);
+}
+
+static void test_a_tag_cut_off_inside_its_picture_reports_none(void)
+{
+    /* The new fields must not turn "no picture" into a picture at offset
+     * zero: a caller that trusts a length of zero to mean nothing is there
+     * would otherwise read the front of the file as an image. */
+    FILE *file = file_of(id3v2_sample_tag, ID3V2_SAMPLE_TAG_LENGTH);
+    uint8_t scratch[SCRATCH_SIZE];
+    audio_tags_t tags;
+    (void)audio_tags_read_file(file, scratch, sizeof(scratch), &tags);
+    // The fixture's tag is cut off inside its APIC frame, so this file has no
+    // usable picture at all - which must not read as one at offset zero.
+    assert(tags.picture_length == 0U);
+    assert(tags.picture_file_length == 0U);
+    fclose(file);
+}
+
 static void test_id3v1_at_the_end_is_read_when_nothing_else_is_there(void)
 {
     builder_t builder = {.length = 0U};
@@ -220,6 +287,8 @@ int main(void)
     test_a_buffer_too_small_for_all_the_frames_keeps_the_early_ones();
     test_a_cover_that_fits_comes_back_in_the_scratch();
     test_a_flac_file_walks_its_metadata_blocks();
+    test_a_cover_too_large_for_the_scratch_is_still_found();
+    test_a_tag_cut_off_inside_its_picture_reports_none();
     test_id3v1_at_the_end_is_read_when_nothing_else_is_there();
     test_an_untagged_file_reports_nothing_rather_than_leftovers();
     printf("audio_tags_reader tests passed\n");

@@ -30,9 +30,26 @@ typedef struct {
     audio_tags_picture_format_t picture_format;
     /* Where the picture sits inside the buffer that was parsed. The parsers
      * never copy it: a cover is two orders of magnitude larger than the text
-     * around it, and the caller already holds those bytes. */
+     * around it, and the caller already holds those bytes.
+     *
+     * Zero length means the picture is not in that buffer - either there is
+     * none, or it did not fit, which the two fields below tell apart. */
     size_t picture_offset;
     size_t picture_length;
+    /* Where the same picture is in the file, for a caller with somewhere else
+     * to put it.
+     *
+     * A cover of 140 KB in a file whose reader was given 128 KB used to be
+     * given up on, and a whole album then played with the placeholder over a
+     * picture the file was carrying. Nothing has to be read to fill these in -
+     * the block walk already knows where the picture lies - so the caller can
+     * read exactly it and nothing else.
+     *
+     * Filled by the FLAC reader. ID3v2 keeps its picture inside the body the
+     * caller's buffer holds, and a tag larger than that buffer is truncated
+     * before the frame is ever seen, so there is nothing to point at. */
+    size_t picture_file_offset;
+    size_t picture_file_length;
 } audio_tags_t;
 
 void audio_tags_clear(audio_tags_t *tags);

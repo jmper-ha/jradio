@@ -23,6 +23,7 @@
 #include "board_audio_startup.h"
 #include "board_audio_format.h"
 #include "board_display_profile.h"
+#include "boot_splash.h"
 #include "board_options.h"
 #include "board_input.h"
 #include "pcm_diagnostics.h"
@@ -688,16 +689,39 @@ esp_err_t board_display_draw_rgb565(int x1, int y1, int x2, int y2, const uint16
     return ESP_OK;
 }
 
-static esp_err_t board_display_fill(uint16_t rgb565)
+/* The splash replaces the solid fill this used to draw, and keeps its job: a
+ * picture on the panel proves the SPI link, the panel init and the backlight
+ * as well as a flat colour did, and it stays up until ui_init() builds the
+ * LVGL screens a second or two later.
+ *
+ * Decoded a band at a time straight into the fill buffer, so the picture
+ * needs no buffer of its own - the runs arrive in raster order, which is the
+ * order the bands are drawn in. */
+static esp_err_t board_display_splash(void)
 {
-    for (size_t index = 0; index < TFT_WIDTH * LCD_DRAW_LINES; ++index) {
-        s_fill_buffer[index] = rgb565;
-    }
+    size_t pair = 0;
+    uint16_t remaining = 0;
+    uint16_t colour = 0;
+
     for (int y = 0; y < TFT_HEIGHT; y += LCD_DRAW_LINES) {
         const int y_end = (y + LCD_DRAW_LINES < TFT_HEIGHT) ?
                               y + LCD_DRAW_LINES : TFT_HEIGHT;
+        const size_t count = (size_t)TFT_WIDTH * (size_t)(y_end - y);
+        for (size_t index = 0; index < count; ++index) {
+            if (remaining == 0) {
+                if (pair >= boot_splash_rle_pairs) {
+                    ESP_LOGE(TAG, "boot splash ran out of runs at row %d", y);
+                    return ESP_ERR_INVALID_SIZE;
+                }
+                remaining = boot_splash_rle[pair * 2U];
+                colour = boot_splash_rle[pair * 2U + 1U];
+                ++pair;
+            }
+            s_fill_buffer[index] = colour;
+            --remaining;
+        }
         ESP_RETURN_ON_ERROR(board_display_draw_rgb565(0, y, TFT_WIDTH, y_end, s_fill_buffer), TAG,
-                            "draw display test pattern failed");
+                            "draw boot splash failed");
     }
     return ESP_OK;
 }
@@ -753,7 +777,7 @@ static esp_err_t board_display_init(void)
                         "set LCD mirror failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(panel, true), TAG, "turn LCD on failed");
     s_panel = panel;
-    return board_display_fill(0x001F);
+    return board_display_splash();
 }
 
 /* The argument order looks transposed and is not: with TFT_SWAP_XY set, MADCTL
@@ -780,6 +804,6 @@ esp_err_t board_init(void)
     ESP_RETURN_ON_ERROR(board_audio_init(), TAG, "initialize PCM5102 I2S output failed");
     ESP_RETURN_ON_ERROR(board_display_init(), TAG, "initialize ILI9341 failed");
     ESP_RETURN_ON_ERROR(board_backlight_set(50), TAG, "set initial backlight failed");
-    ESP_LOGI(TAG, "board initialized; display shows solid blue test screen");
+    ESP_LOGI(TAG, "board initialized; display shows the boot splash");
     return ESP_OK;
 }

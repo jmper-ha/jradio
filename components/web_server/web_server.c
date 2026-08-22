@@ -26,6 +26,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "wifi_provisioning.h"
 #include "internet_radio.h"
 #include "player_control.h"
+#include "file_storage.h"
 #include "usb_storage.h"
 #include "web_json.h"
 
@@ -385,7 +386,7 @@ static esp_err_t web_server_wifi_post(httpd_req_t *request)
 }
 
 /* The USB listing goes over REST rather than the WebSocket because a directory
- * of up to USB_STORAGE_MAX_ENTRIES names, each up to USB_BROWSER_NAME_MAX_LEN
+ * of up to FILE_STORAGE_MAX_ENTRIES names, each up to FILE_BROWSER_NAME_MAX_LEN
  * bytes, dwarfs WEB_PROTOCOL_EVENT_MAX - and growing that static frame buffer
  * is the wrong trade in a firmware already short of internal SRAM. Entries are
  * streamed one at a time through the shared chunk buffer, so the response size
@@ -394,15 +395,15 @@ static esp_err_t web_server_wifi_post(httpd_req_t *request)
  * The path and revision are echoed back deliberately: the browser can open two
  * directories in quick succession, and without them a late reply for the first
  * would overwrite the second on screen. */
-static esp_err_t web_server_usb_get(httpd_req_t *request)
+static esp_err_t web_server_files_get(httpd_req_t *request)
 {
     if (!usb_storage_is_mounted()) {
         httpd_resp_send_err(request, HTTPD_404_NOT_FOUND, "No USB drive");
         return ESP_FAIL;
     }
 
-    char path[USB_BROWSER_PATH_MAX_LEN];
-    if (!usb_storage_current_path(path, sizeof(path))) {
+    char path[FILE_BROWSER_PATH_MAX_LEN];
+    if (!file_storage_current_path(path, sizeof(path))) {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
                             "Listing unavailable");
         return ESP_FAIL;
@@ -414,9 +415,9 @@ static esp_err_t web_server_usb_get(httpd_req_t *request)
     web_json_literal(&writer, "{\"path\":");
     web_json_string(&writer, path);
     web_json_literal(&writer, ",\"revision\":");
-    web_json_format(&writer, "%u", player_control_usb_listing_revision());
+    web_json_format(&writer, "%u", player_control_listing_revision());
     web_json_literal(&writer, ",\"has_parent\":");
-    web_json_literal(&writer, usb_browser_path_is_root(path) ? "false" : "true");
+    web_json_literal(&writer, file_browser_path_is_root(path) ? "false" : "true");
     web_json_literal(&writer, ",\"items\":[");
     if (!web_json_valid(&writer)) {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
@@ -428,10 +429,10 @@ static esp_err_t web_server_usb_get(httpd_req_t *request)
     // directory the device has already left.
     httpd_resp_set_hdr(request, "Cache-Control", "no-store");
 
-    const size_t count = usb_storage_entry_count();
+    const size_t count = file_storage_entry_count();
     for (size_t index = 0U; index < count; ++index) {
-        usb_browser_entry_t entry;
-        if (!usb_storage_entry_at(index, &entry)) {
+        file_browser_entry_t entry;
+        if (!file_storage_entry_at(index, &entry)) {
             // The drive was pulled mid-walk. Stop cleanly rather than emit a
             // document that claims more entries than it carries.
             break;
@@ -442,11 +443,11 @@ static esp_err_t web_server_usb_get(httpd_req_t *request)
         web_json_string(&writer, entry.name);
         web_json_literal(&writer, ",\"kind\":");
         web_json_literal(&writer,
-                         entry.kind == USB_BROWSER_ENTRY_DIRECTORY ? "\"dir\""
+                         entry.kind == FILE_BROWSER_ENTRY_DIRECTORY ? "\"dir\""
                                                                    : "\"file\"");
-        if (entry.kind != USB_BROWSER_ENTRY_DIRECTORY) {
+        if (entry.kind != FILE_BROWSER_ENTRY_DIRECTORY) {
             web_json_literal(&writer, ",\"format\":");
-            web_json_string(&writer, usb_browser_format_name(entry.format));
+            web_json_string(&writer, file_browser_format_name(entry.format));
         }
         web_json_literal(&writer, "}");
         if (!web_json_valid(&writer)) {
@@ -456,7 +457,7 @@ static esp_err_t web_server_usb_get(httpd_req_t *request)
         }
         // Flush whenever the next entry might not fit, so one buffer serves a
         // directory of any size.
-        if (web_json_length(&writer) + sizeof(usb_browser_entry_t) >
+        if (web_json_length(&writer) + sizeof(file_browser_entry_t) >
             sizeof(s_file_chunk_buffer)) {
             const esp_err_t err = httpd_resp_send_chunk(request, s_file_chunk_buffer,
                                                         web_json_length(&writer));
@@ -615,7 +616,7 @@ esp_err_t web_server_start(void)
             {.uri = "/playlist.js", .method = HTTP_GET, .handler = web_server_playlist_js_get},
             {.uri = "/api/status", .method = HTTP_GET, .handler = web_server_status_get},
             {.uri = "/api/wifi", .method = HTTP_POST, .handler = web_server_wifi_post},
-            {.uri = "/api/usb", .method = HTTP_GET, .handler = web_server_usb_get},
+            {.uri = "/api/files", .method = HTTP_GET, .handler = web_server_files_get},
             {.uri = "/api/playlist", .method = HTTP_GET, .handler = web_server_playlist_get},
             {.uri = "/api/playlist", .method = HTTP_POST, .handler = web_server_playlist_post},
         };

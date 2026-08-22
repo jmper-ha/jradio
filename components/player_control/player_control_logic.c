@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#include "usb_player_state.h"
+#include "file_player_state.h"
 
 #define PLAYER_RSSI_REFRESH_MS 1000U
 
@@ -33,27 +33,27 @@ player_playback_state_t player_playback_from_radio(internet_radio_state_t state)
     }
 }
 
-player_playback_state_t player_playback_from_usb(usb_player_state_t state)
+player_playback_state_t player_playback_from_file(file_player_state_t state)
 {
     switch (state) {
-    case USB_PLAYER_STATE_STOPPED:
+    case FILE_PLAYER_STATE_STOPPED:
         return PLAYER_PLAYBACK_STOPPED;
     // A local file has nothing to connect to, but the decoder still has to
     // find its first frame, so the UI gets the same "working on it" state it
     // already knows how to render.
-    case USB_PLAYER_STATE_STARTING:
+    case FILE_PLAYER_STATE_STARTING:
         return PLAYER_PLAYBACK_CONNECTING;
-    case USB_PLAYER_STATE_PLAYING:
+    case FILE_PLAYER_STATE_PLAYING:
         return PLAYER_PLAYBACK_PLAYING;
-    case USB_PLAYER_STATE_PAUSED:
+    case FILE_PLAYER_STATE_PAUSED:
         return PLAYER_PLAYBACK_PAUSED;
-    case USB_PLAYER_STATE_ERROR:
+    case FILE_PLAYER_STATE_ERROR:
     default:
         return PLAYER_PLAYBACK_ERROR;
     }
 }
 
-bool player_usb_same_file_playing(const char *path, const char *playing_path,
+bool player_file_same_file_playing(const char *path, const char *playing_path,
                                   player_playback_state_t state)
 {
     if (path == NULL || playing_path == NULL || playing_path[0] == '\0') return false;

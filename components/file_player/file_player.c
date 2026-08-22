@@ -1,4 +1,4 @@
-#include "usb_player.h"
+#include "file_player.h"
 
 #include <dirent.h>
 #include <limits.h>
@@ -23,33 +23,33 @@
 #include "radio_decoder.h"
 #include "board_audio_format.h"
 #include "radio_prebuffer.h"
-#include "usb_track_progress.h"
+#include "file_track_progress.h"
 #include "radio_stream_format.h"
-#include "usb_storage.h"
-#include "usb_wav.h"
+#include "file_storage.h"
+#include "file_wav.h"
 
-static const char *TAG = "usb_player";
+static const char *TAG = "file_player";
 
 // A local file never stalls the way a network stream does, so none of the
 // radio's prebuffering applies here. The input buffer only has to hold one
 // worst-case compressed frame plus slack; FLAC frames are the large ones.
-#define USB_PLAYER_INPUT_SIZE 32768U
-#define USB_PLAYER_READ_CHUNK 4096U
+#define FILE_PLAYER_INPUT_SIZE 32768U
+#define FILE_PLAYER_READ_CHUNK 4096U
 /* Where the output buffer starts, not where it stays: enough for a 4096-sample
  * stereo frame, which is what most files decode to, and grown to fit when a
  * header asks for more - see grow_pcm_buffer(). */
-#define USB_PLAYER_PCM_SIZE 16384U
-#define USB_PLAYER_STOP_TIMEOUT_MS 5000U
+#define FILE_PLAYER_PCM_SIZE 16384U
+#define FILE_PLAYER_STOP_TIMEOUT_MS 5000U
 // Pinned to core 1 for the same reason as the radio decoder: core 0 carries
 // Wi-Fi, lwIP, the HTTP server and LVGL, and lwIP at priority 18 preempts the
 // decoder mid-frame when it shares a core.
-#define USB_PLAYER_TASK_CORE 1
-#define USB_PLAYER_TASK_PRIORITY 6
-#define USB_PLAYER_TASK_STACK 8192
+#define FILE_PLAYER_TASK_CORE 1
+#define FILE_PLAYER_TASK_PRIORITY 6
+#define FILE_PLAYER_TASK_STACK 8192
 
 static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
-static usb_player_status_t s_status;
-// Under the same lock as the status, but kept out of it - see usb_player.h.
+static file_player_status_t s_status;
+// Under the same lock as the status, but kept out of it - see file_player.h.
 static audio_tags_t s_tags;
 /* Written by the playback task on every pass and read by whoever asks for
  * status. Atomic rather than inside the status critical section: the loop runs
@@ -59,49 +59,49 @@ static atomic_uint s_input_fill_percent = ATOMIC_VAR_INIT(0);
 static atomic_uint s_elapsed_seconds = ATOMIC_VAR_INIT(0);
 static atomic_uint s_total_seconds = ATOMIC_VAR_INIT(0);
 /* Where the listener has asked the track to jump to, in seconds, or
- * USB_PLAYER_SEEK_NONE. Handed to the playback task rather than acted on by
+ * FILE_PLAYER_SEEK_NONE. Handed to the playback task rather than acted on by
  * the caller: only that task owns the file handle, the decoder and the byte
  * counters a jump has to move together. */
-#define USB_PLAYER_SEEK_NONE UINT32_MAX
-static atomic_uint s_seek_request = ATOMIC_VAR_INIT(USB_PLAYER_SEEK_NONE);
+#define FILE_PLAYER_SEEK_NONE UINT32_MAX
+static atomic_uint s_seek_request = ATOMIC_VAR_INIT(FILE_PLAYER_SEEK_NONE);
 static SemaphoreHandle_t s_control_lock;
 static atomic_bool s_stop_requested = ATOMIC_VAR_INIT(false);
 static atomic_bool s_paused = ATOMIC_VAR_INIT(false);
 /* True from just before the playback task is created until it has finished.
  * Set by the starter rather than by the task itself: the task is pinned to the
- * other core and need not have run by the time usb_player_play() returns, so a
+ * other core and need not have run by the time file_player_play() returns, so a
  * stop() or a second play() arriving in that window would sail straight through
  * wait_for_task_exit() and leave two tasks sharing s_request and the I2S
  * output. */
 static atomic_bool s_task_running = ATOMIC_VAR_INIT(false);
 
 typedef struct {
-    char path[USB_BROWSER_PATH_MAX_LEN];
-    usb_browser_format_t format;
-} usb_player_request_t;
+    char path[FILE_BROWSER_PATH_MAX_LEN];
+    file_browser_format_t format;
+} file_player_request_t;
 
-static usb_player_request_t s_request;
-static usb_player_finished_cb_t s_finished_callback;
+static file_player_request_t s_request;
+static file_player_finished_cb_t s_finished_callback;
 
-void usb_player_set_finished_callback(usb_player_finished_cb_t callback)
+void file_player_set_finished_callback(file_player_finished_cb_t callback)
 {
     s_finished_callback = callback;
 }
 
-static void status_set_state(usb_player_state_t state)
+static void status_set_state(file_player_state_t state)
 {
     taskENTER_CRITICAL(&s_status_lock);
     s_status.state = state;
     taskEXIT_CRITICAL(&s_status_lock);
 }
 
-static bool stream_format_for(usb_browser_format_t format, radio_stream_format_t *out)
+static bool stream_format_for(file_browser_format_t format, radio_stream_format_t *out)
 {
     switch (format) {
-    case USB_BROWSER_FORMAT_MP3: *out = RADIO_STREAM_FORMAT_MP3; return true;
-    case USB_BROWSER_FORMAT_AAC: *out = RADIO_STREAM_FORMAT_AAC; return true;
-    case USB_BROWSER_FORMAT_FLAC: *out = RADIO_STREAM_FORMAT_FLAC; return true;
-    case USB_BROWSER_FORMAT_OGG_FLAC: *out = RADIO_STREAM_FORMAT_OGG_FLAC; return true;
+    case FILE_BROWSER_FORMAT_MP3: *out = RADIO_STREAM_FORMAT_MP3; return true;
+    case FILE_BROWSER_FORMAT_AAC: *out = RADIO_STREAM_FORMAT_AAC; return true;
+    case FILE_BROWSER_FORMAT_FLAC: *out = RADIO_STREAM_FORMAT_FLAC; return true;
+    case FILE_BROWSER_FORMAT_OGG_FLAC: *out = RADIO_STREAM_FORMAT_OGG_FLAC; return true;
     default: return false;
     }
 }
@@ -158,7 +158,7 @@ typedef struct {
     flac_streaminfo_t flac_info;
     uint8_t flac_priming[FLAC_SIGNATURE_SIZE + FLAC_BLOCK_HEADER_SIZE + FLAC_STREAMINFO_SIZE];
     bool flac_ready;
-} usb_player_context_t;
+} file_player_context_t;
 
 /* How large a folder cover this will read off the drive.
  *
@@ -166,7 +166,7 @@ typedef struct {
  * comfortably inside a megabyte in either format; past that the file is
  * something else - a scan of the sleeve, a booklet page - and reading it would
  * only delay the first sample to reach the same 96-pixel tile. */
-#define USB_PLAYER_COVER_MAX_BYTES (2048U * 1024U)
+#define FILE_PLAYER_COVER_MAX_BYTES (2048U * 1024U)
 
 /* What the cover on screen currently is, so an album's picture is read off the
  * drive once rather than for every track on it. Reading the 621 KB cover this
@@ -177,7 +177,7 @@ typedef struct {
  * is what makes the path enough to compare: the published cover has to be this
  * folder's picture, not a previous track's own, or a file with a cover of its
  * own would lend it to the next file that has none. */
-static char s_folder_cover_directory[USB_BROWSER_PATH_MAX_LEN];
+static char s_folder_cover_directory[FILE_BROWSER_PATH_MAX_LEN];
 static bool s_folder_cover_published;
 
 /* Reads a picture out of a file and publishes it as the cover.
@@ -190,7 +190,7 @@ static bool s_folder_cover_published;
 static bool publish_cover_bytes(FILE *file, size_t offset, size_t length, const char *what)
 {
     if (file == NULL || length == 0U) return false;
-    if (length > USB_PLAYER_COVER_MAX_BYTES) {
+    if (length > FILE_PLAYER_COVER_MAX_BYTES) {
         ESP_LOGW(TAG, "%s: %u bytes is too large for a cover", what, (unsigned int)length);
         return false;
     }
@@ -223,7 +223,7 @@ static bool find_folder_cover(const char *directory, char *out, size_t out_size)
         // read as nothing; the name test alone is not enough.
         if (entry->d_type == DT_DIR) continue;
         if (!cover_file_name_matches(entry->d_name)) continue;
-        found = usb_browser_path_child(directory, entry->d_name, out, out_size);
+        found = file_browser_path_child(directory, entry->d_name, out, out_size);
     }
     closedir(dir);
     return found;
@@ -240,9 +240,9 @@ static bool find_folder_cover(const char *directory, char *out, size_t out_size)
  * the last track came from and getting that wrong when the drive changes. */
 static bool load_folder_cover(void)
 {
-    char directory[USB_BROWSER_PATH_MAX_LEN];
-    char path[USB_BROWSER_PATH_MAX_LEN];
-    if (!usb_browser_path_parent(s_request.path, directory, sizeof(directory))) return false;
+    char directory[FILE_BROWSER_PATH_MAX_LEN];
+    char path[FILE_BROWSER_PATH_MAX_LEN];
+    if (!file_browser_path_parent(s_request.path, directory, sizeof(directory))) return false;
     // Still the same album, and its picture is still the one on screen.
     if (s_folder_cover_published && album_art_status().present &&
         strcmp(directory, s_folder_cover_directory) == 0) {
@@ -281,7 +281,7 @@ static bool load_folder_cover(void)
  * measured from. Blocks are stepped over rather than read: one of them is the
  * cover, and it is hundreds of kilobytes.
  */
-static void read_flac_layout(usb_player_context_t *ctx)
+static void read_flac_layout(file_player_context_t *ctx)
 {
     uint8_t header[FLAC_BLOCK_HEADER_SIZE];
     uint8_t signature[FLAC_SIGNATURE_SIZE];
@@ -327,7 +327,7 @@ static void read_flac_layout(usb_player_context_t *ctx)
     ctx->flac_ready = true;
 
     const uint32_t seconds =
-        usb_track_sampled_seconds(info.total_samples, info.sample_rate_hz);
+        file_track_sampled_seconds(info.total_samples, info.sample_rate_hz);
     if (seconds == 0U) return;
     atomic_store_explicit(&s_total_seconds, seconds, memory_order_relaxed);
 
@@ -335,7 +335,7 @@ static void read_flac_layout(usb_player_context_t *ctx)
      * shows, and what a jump is measured with - the decoder has nothing else
      * to go on, and lands within a frame of where it aimed. */
     const uint16_t bitrate =
-        usb_track_average_bitrate_kbps(ctx->file_bytes, ctx->header_bytes, seconds);
+        file_track_average_bitrate_kbps(ctx->file_bytes, ctx->header_bytes, seconds);
     taskENTER_CRITICAL(&s_status_lock);
     s_status.bitrate_kbps = bitrate;
     taskEXIT_CRITICAL(&s_status_lock);
@@ -349,7 +349,7 @@ static void read_flac_layout(usb_player_context_t *ctx)
  * the moment the track appears on it rather than a second into playback. It
  * costs one read of the tag - 68 KB on the album this was built for - and a
  * JPEG decode, both of which finish long before the first sample is due. */
-static void load_tags(usb_player_context_t *ctx)
+static void load_tags(file_player_context_t *ctx)
 {
     uint8_t *scratch = alloc_buffer(AUDIO_TAGS_SCRATCH_SIZE);
     audio_tags_t tags;
@@ -402,7 +402,7 @@ static void load_tags(usb_player_context_t *ctx)
     free(scratch);
 }
 
-static bool refill(usb_player_context_t *ctx)
+static bool refill(file_player_context_t *ctx)
 {
     if (ctx->offset > 0U) {
         // Files are cheap to read, so compact on every refill rather than
@@ -410,16 +410,16 @@ static bool refill(usb_player_context_t *ctx)
         memmove(ctx->compressed, ctx->compressed + ctx->offset, ctx->available);
         ctx->offset = 0U;
     }
-    const size_t room = USB_PLAYER_INPUT_SIZE - ctx->available;
+    const size_t room = FILE_PLAYER_INPUT_SIZE - ctx->available;
     if (room == 0U) return false;
-    const size_t want = room < USB_PLAYER_READ_CHUNK ? room : USB_PLAYER_READ_CHUNK;
+    const size_t want = room < FILE_PLAYER_READ_CHUNK ? room : FILE_PLAYER_READ_CHUNK;
     const size_t received = fread(ctx->compressed + ctx->available, 1U, want, ctx->file);
     ctx->available += received;
     if (received < want) ctx->eof = true;
     return received > 0U;
 }
 
-static esp_err_t apply_info(usb_player_context_t *ctx, const radio_decoder_info_t *info)
+static esp_err_t apply_info(file_player_context_t *ctx, const radio_decoder_info_t *info)
 {
     /* Once the output is running, its rate is the file's rate: a frame that
      * disagrees is one the decoder mis-synced on, not a change.
@@ -456,7 +456,7 @@ static esp_err_t apply_info(usb_player_context_t *ctx, const radio_decoder_info_
     // turns a file size into a duration - for the formats that have no better
     // answer of their own.
     if (info->bitrate_kbps > 0U && !ctx->length_from_header) {
-        const uint32_t total = usb_track_total_seconds(ctx->file_bytes, ctx->header_bytes,
+        const uint32_t total = file_track_total_seconds(ctx->file_bytes, ctx->header_bytes,
                                                         (uint16_t)info->bitrate_kbps);
         const uint32_t previous =
             atomic_exchange_explicit(&s_total_seconds, total, memory_order_relaxed);
@@ -487,7 +487,7 @@ static esp_err_t apply_info(usb_player_context_t *ctx, const radio_decoder_info_
     return result;
 }
 
-static esp_err_t write_pcm(usb_player_context_t *ctx, const uint8_t *pcm, size_t length)
+static esp_err_t write_pcm(file_player_context_t *ctx, const uint8_t *pcm, size_t length)
 {
     /* A pause that arrives between the decoder producing this block and the
      * write below would otherwise be undone here: starting the output turns
@@ -507,7 +507,7 @@ static esp_err_t write_pcm(usb_player_context_t *ctx, const uint8_t *pcm, size_t
         }
         if (result == ESP_OK) {
             ctx->output_started = true;
-            status_set_state(USB_PLAYER_STATE_PLAYING);
+            status_set_state(FILE_PLAYER_STATE_PLAYING);
             ESP_LOGI(TAG, "PCM output started: rate=%u block=%u",
                      (unsigned int)ctx->output_sample_rate, (unsigned int)length);
         }
@@ -523,7 +523,7 @@ static esp_err_t write_pcm(usb_player_context_t *ctx, const uint8_t *pcm, size_t
     // The output slot is fixed 16-bit stereo whatever the file was, so the
     // board's own format converts these bytes to seconds - not the file's.
     atomic_store_explicit(&s_elapsed_seconds,
-                          usb_track_elapsed_seconds(ctx->pcm_bytes, ctx->output_sample_rate,
+                          file_track_elapsed_seconds(ctx->pcm_bytes, ctx->output_sample_rate,
                                                     AUDIO_CHANNEL_COUNT, AUDIO_BITS_PER_SAMPLE),
                           memory_order_relaxed);
     return ESP_OK;
@@ -543,12 +543,12 @@ static bool wait_while_paused(void)
     return true;
 }
 
-/* Takes the pending jump, if there is one. USB_PLAYER_SEEK_NONE means there is
+/* Takes the pending jump, if there is one. FILE_PLAYER_SEEK_NONE means there is
  * not; the exchange makes sure one request is acted on once, even if a second
  * arrives while this one is being applied. */
 static uint32_t take_seek_request(void)
 {
-    return atomic_exchange_explicit(&s_seek_request, USB_PLAYER_SEEK_NONE,
+    return atomic_exchange_explicit(&s_seek_request, FILE_PLAYER_SEEK_NONE,
                                     memory_order_acq_rel);
 }
 
@@ -556,9 +556,9 @@ static uint32_t take_seek_request(void)
  * repositioned. The elapsed reading is published here rather than waiting for
  * the next block, so the screen shows the new position from the moment the
  * jump lands instead of falling back to the old one for a poll or two. */
-static void seek_reset_position(usb_player_context_t *ctx, uint32_t target_seconds)
+static void seek_reset_position(file_player_context_t *ctx, uint32_t target_seconds)
 {
-    ctx->pcm_bytes = usb_track_pcm_bytes(target_seconds, ctx->output_sample_rate,
+    ctx->pcm_bytes = file_track_pcm_bytes(target_seconds, ctx->output_sample_rate,
                                          AUDIO_CHANNEL_COUNT, AUDIO_BITS_PER_SAMPLE);
     atomic_store_explicit(&s_elapsed_seconds, target_seconds, memory_order_relaxed);
 }
@@ -580,20 +580,20 @@ static void seek_reset_position(usb_player_context_t *ctx, uint32_t target_secon
  * rather than on one, and the next boundary is at most one frame away - which
  * at 4096 samples and this album's rate is about ten kilobytes. Two frames'
  * worth of room, and it has never needed a tenth of it. */
-#define USB_PLAYER_FLAC_SYNC_WINDOW 32768U
+#define FILE_PLAYER_FLAC_SYNC_WINDOW 32768U
 
 /* Turns a byte offset that landed anywhere into one that lands on a frame.
  *
  * Returns the file to where it was and reports failure if there is no frame
  * header to be found, which leaves the caller free to abandon the jump rather
  * than feed the decoder a position it cannot start from. */
-static bool align_to_flac_frame(usb_player_context_t *ctx, uint64_t *offset)
+static bool align_to_flac_frame(file_player_context_t *ctx, uint64_t *offset)
 {
     const long previous = ftell(ctx->file);
     if (*offset > LONG_MAX || fseek(ctx->file, (long)*offset, SEEK_SET) != 0) return false;
-    const size_t window = USB_PLAYER_INPUT_SIZE < USB_PLAYER_FLAC_SYNC_WINDOW
-                              ? USB_PLAYER_INPUT_SIZE
-                              : USB_PLAYER_FLAC_SYNC_WINDOW;
+    const size_t window = FILE_PLAYER_INPUT_SIZE < FILE_PLAYER_FLAC_SYNC_WINDOW
+                              ? FILE_PLAYER_INPUT_SIZE
+                              : FILE_PLAYER_FLAC_SYNC_WINDOW;
     // Read into the input buffer rather than a second one: it is about to be
     // emptied for the jump anyway.
     const size_t read = fread(ctx->compressed, 1U, window, ctx->file);
@@ -608,16 +608,16 @@ static bool align_to_flac_frame(usb_player_context_t *ctx, uint64_t *offset)
     return aligned;
 }
 
-static void apply_seek(usb_player_context_t *ctx, radio_decoder_t *decoder)
+static void apply_seek(file_player_context_t *ctx, radio_decoder_t *decoder)
 {
     const uint32_t target = take_seek_request();
-    if (target == USB_PLAYER_SEEK_NONE) return;
+    if (target == FILE_PLAYER_SEEK_NONE) return;
 
     uint16_t bitrate_kbps;
     taskENTER_CRITICAL(&s_status_lock);
     bitrate_kbps = s_status.bitrate_kbps;
     taskEXIT_CRITICAL(&s_status_lock);
-    uint64_t offset = usb_track_seek_offset(ctx->file_bytes, ctx->header_bytes,
+    uint64_t offset = file_track_seek_offset(ctx->file_bytes, ctx->header_bytes,
                                             bitrate_kbps, target);
     if (ctx->flac_ready && !align_to_flac_frame(ctx, &offset)) {
         ESP_LOGW(TAG, "no frame to start from near %llu; staying put",
@@ -649,15 +649,15 @@ static void apply_seek(usb_player_context_t *ctx, radio_decoder_t *decoder)
 
 // WAV carries finished PCM, so there is no decoder in this path at all - only
 // the header parse, an optional mono-to-stereo expansion, and I2S.
-static bool play_wav(usb_player_context_t *ctx, unsigned int *pcm_blocks)
+static bool play_wav(file_player_context_t *ctx, unsigned int *pcm_blocks)
 {
-    usb_wav_info_t wav = {0};
-    usb_wav_result_t parsed = usb_wav_parse_header(ctx->compressed, ctx->available, &wav);
-    while (parsed == USB_WAV_NEED_MORE_DATA && !ctx->eof) {
-        if (!refill(ctx) && ctx->available == USB_PLAYER_INPUT_SIZE) break;
-        parsed = usb_wav_parse_header(ctx->compressed, ctx->available, &wav);
+    file_wav_info_t wav = {0};
+    file_wav_result_t parsed = file_wav_parse_header(ctx->compressed, ctx->available, &wav);
+    while (parsed == FILE_WAV_NEED_MORE_DATA && !ctx->eof) {
+        if (!refill(ctx) && ctx->available == FILE_PLAYER_INPUT_SIZE) break;
+        parsed = file_wav_parse_header(ctx->compressed, ctx->available, &wav);
     }
-    if (parsed != USB_WAV_OK) {
+    if (parsed != FILE_WAV_OK) {
         ESP_LOGE(TAG, "unusable WAV header: result=%d", (int)parsed);
         return true;
     }
@@ -695,7 +695,7 @@ static bool play_wav(usb_player_context_t *ctx, unsigned int *pcm_blocks)
         if (wait_while_paused()) continue;
 
         const uint32_t target = take_seek_request();
-        if (target != USB_PLAYER_SEEK_NONE) {
+        if (target != FILE_PLAYER_SEEK_NONE) {
             uint64_t skip = (uint64_t)target * bytes_per_second;
             const uint64_t audio_bytes =
                 wav.data_length > 0U ? (uint64_t)wav.data_length : ctx->file_bytes;
@@ -711,7 +711,7 @@ static bool play_wav(usb_player_context_t *ctx, unsigned int *pcm_blocks)
             }
         }
 
-        size_t want = USB_PLAYER_READ_CHUNK < remaining ? USB_PLAYER_READ_CHUNK : remaining;
+        size_t want = FILE_PLAYER_READ_CHUNK < remaining ? FILE_PLAYER_READ_CHUNK : remaining;
         want -= want % frame_bytes;
         if (want == 0U) return false;
         const size_t received = fread(ctx->compressed, 1U, want, ctx->file);
@@ -744,7 +744,7 @@ static bool play_wav(usb_player_context_t *ctx, unsigned int *pcm_blocks)
  * one is. Returns false only when there is no memory for it, which ends the
  * track - a frame that does not fit is never delivered at all, so playing on
  * would mean playing silence. */
-static bool grow_pcm_buffer(usb_player_context_t *ctx, const radio_decoder_info_t *info)
+static bool grow_pcm_buffer(file_player_context_t *ctx, const radio_decoder_info_t *info)
 {
     if (info->pcm_frame_bytes <= ctx->pcm_capacity) return true;
     uint8_t *grown = alloc_buffer(info->pcm_frame_bytes);
@@ -760,20 +760,20 @@ static bool grow_pcm_buffer(usb_player_context_t *ctx, const radio_decoder_info_
     return true;
 }
 
-static void usb_player_task(void *arg)
+static void file_player_task(void *arg)
 {
     (void)arg;
-    usb_player_context_t ctx = {0};
+    file_player_context_t ctx = {0};
     // Cleared before anything can read them, so the previous track's position
     // is never shown against this one.
     atomic_store_explicit(&s_elapsed_seconds, 0U, memory_order_relaxed);
     atomic_store_explicit(&s_total_seconds, 0U, memory_order_relaxed);
     // A jump asked for a moment before the track changed belongs to the track
     // that is gone; applying it to this one would open it in the middle.
-    atomic_store_explicit(&s_seek_request, USB_PLAYER_SEEK_NONE, memory_order_relaxed);
+    atomic_store_explicit(&s_seek_request, FILE_PLAYER_SEEK_NONE, memory_order_relaxed);
     radio_decoder_t *decoder = NULL;
     radio_stream_format_t stream_format = RADIO_STREAM_FORMAT_MP3;
-    const bool is_wav = s_request.format == USB_BROWSER_FORMAT_WAV;
+    const bool is_wav = s_request.format == FILE_BROWSER_FORMAT_WAV;
     bool failed = false;
 
     if (!is_wav && !stream_format_for(s_request.format, &stream_format)) {
@@ -782,9 +782,9 @@ static void usb_player_task(void *arg)
     }
 
     if (!failed) {
-        ctx.compressed = alloc_buffer(USB_PLAYER_INPUT_SIZE);
-        ctx.pcm = alloc_buffer(USB_PLAYER_PCM_SIZE);
-        ctx.pcm_capacity = ctx.pcm != NULL ? USB_PLAYER_PCM_SIZE : 0U;
+        ctx.compressed = alloc_buffer(FILE_PLAYER_INPUT_SIZE);
+        ctx.pcm = alloc_buffer(FILE_PLAYER_PCM_SIZE);
+        ctx.pcm_capacity = ctx.pcm != NULL ? FILE_PLAYER_PCM_SIZE : 0U;
         ctx.file = fopen(s_request.path, "rb");
         if (ctx.file != NULL && fseek(ctx.file, 0, SEEK_END) == 0) {
             const long end = ftell(ctx.file);
@@ -807,7 +807,7 @@ static void usb_player_task(void *arg)
                  is_wav ? "WAV" : radio_stream_format_codec_name(stream_format));
         taskEXIT_CRITICAL(&s_status_lock);
         load_tags(&ctx);
-        if (s_request.format == USB_BROWSER_FORMAT_FLAC) read_flac_layout(&ctx);
+        if (s_request.format == FILE_BROWSER_FORMAT_FLAC) read_flac_layout(&ctx);
         // Whatever the reads above left behind: the decoder starts at zero.
         rewind(ctx.file);
         ESP_LOGI(TAG, "playing %s", s_request.path);
@@ -831,7 +831,7 @@ static void usb_player_task(void *arg)
 
         bool need_input = ctx.available == 0U;
         atomic_store_explicit(&s_input_fill_percent,
-                              radio_prebuffer_percent(ctx.available, USB_PLAYER_INPUT_SIZE),
+                              radio_prebuffer_percent(ctx.available, FILE_PLAYER_INPUT_SIZE),
                               memory_order_relaxed);
         if (!need_input) {
             size_t consumed = 0U;
@@ -890,9 +890,9 @@ static void usb_player_task(void *arg)
             // in the buffer is a partial frame or a trailing tag, so this is a
             // normal end of track rather than a corrupt file.
             if (ctx.eof) break;
-            if (!refill(&ctx) && ctx.available == USB_PLAYER_INPUT_SIZE) {
+            if (!refill(&ctx) && ctx.available == FILE_PLAYER_INPUT_SIZE) {
                 ESP_LOGE(TAG, "compressed frame larger than the %u byte input buffer",
-                         (unsigned int)USB_PLAYER_INPUT_SIZE);
+                         (unsigned int)FILE_PLAYER_INPUT_SIZE);
                 failed = true;
                 break;
             }
@@ -911,17 +911,17 @@ static void usb_player_task(void *arg)
     const bool ended_by_itself = !failed && !should_stop();
     ESP_LOGI(TAG, "playback finished: blocks=%u failed=%d natural_end=%d bogus_rates=%u",
              pcm_blocks, (int)failed, (int)ended_by_itself, ctx.bogus_rate_reports);
-    status_set_state(failed ? USB_PLAYER_STATE_ERROR : USB_PLAYER_STATE_STOPPED);
+    status_set_state(failed ? FILE_PLAYER_STATE_ERROR : FILE_PLAYER_STATE_STOPPED);
     // Clear the running flag and the handle before notifying, so the listener
     // can start the next track without waiting out this task's stop timeout.
     atomic_store_explicit(&s_task_running, false, memory_order_release);
-    const usb_player_finished_cb_t callback = s_finished_callback;
+    const file_player_finished_cb_t callback = s_finished_callback;
     if (ended_by_itself && callback != NULL) callback();
     vTaskDelete(NULL);
 }
 
 /* Waits for the playback task to finish. False means it is still running after
- * USB_PLAYER_STOP_TIMEOUT_MS, and the stop request is deliberately left
+ * FILE_PLAYER_STOP_TIMEOUT_MS, and the stop request is deliberately left
  * standing in that case: clearing it would withdraw the only instruction the
  * task has to stop, and the caller would then start a second one on top of it. */
 static bool wait_for_task_exit(void)
@@ -931,20 +931,20 @@ static bool wait_for_task_exit(void)
     atomic_store_explicit(&s_paused, false, memory_order_release);
     for (unsigned int waited = 0U;
          atomic_load_explicit(&s_task_running, memory_order_acquire) &&
-         waited < USB_PLAYER_STOP_TIMEOUT_MS;
+         waited < FILE_PLAYER_STOP_TIMEOUT_MS;
          waited += 10U) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
     if (atomic_load_explicit(&s_task_running, memory_order_acquire)) {
         ESP_LOGE(TAG, "playback task still running after %ums",
-                 (unsigned int)USB_PLAYER_STOP_TIMEOUT_MS);
+                 (unsigned int)FILE_PLAYER_STOP_TIMEOUT_MS);
         return false;
     }
     atomic_store_explicit(&s_stop_requested, false, memory_order_release);
     return true;
 }
 
-esp_err_t usb_player_init(void)
+esp_err_t file_player_init(void)
 {
     if (s_control_lock != NULL) return ESP_OK;
     s_control_lock = xSemaphoreCreateMutex();
@@ -956,22 +956,23 @@ esp_err_t usb_player_init(void)
     return ESP_OK;
 }
 
-esp_err_t usb_player_play(const char *path, const char *display_name,
-                          usb_browser_format_t format)
+esp_err_t file_player_play(const char *path, const char *display_name,
+                          file_browser_format_t format)
 {
     if (path == NULL || s_control_lock == NULL) return ESP_ERR_INVALID_ARG;
     if (strlen(path) >= sizeof(s_request.path)) return ESP_ERR_INVALID_SIZE;
     radio_stream_format_t decoded;
     // WAV bypasses radio_decoder entirely, so it has no stream format of its
     // own and must be admitted separately.
-    if (format != USB_BROWSER_FORMAT_WAV && !stream_format_for(format, &decoded)) {
+    if (format != FILE_BROWSER_FORMAT_WAV && !stream_format_for(format, &decoded)) {
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    // The drive can be pulled while a play is on its way in. usb_storage marks
-    // the media absent before it tears the mount down, so this is what keeps a
-    // track from being opened on a filesystem that is already going.
-    if (!usb_storage_is_mounted()) return ESP_ERR_NOT_FOUND;
+    /* The volume can go while a play is on its way in - a drive pulled, a card
+     * released when its source is left. Both mark themselves unmounted before
+     * the mount is torn down, so this is what keeps a track from being opened
+     * on a filesystem that is already going. */
+    if (!file_storage_path_mounted(path)) return ESP_ERR_NOT_FOUND;
 
     xSemaphoreTake(s_control_lock, portMAX_DELAY);
     if (!wait_for_task_exit()) {
@@ -988,7 +989,7 @@ esp_err_t usb_player_play(const char *path, const char *display_name,
     // Cleared here rather than when the previous track ended, so nothing ever
     // reads the last track's performer against this one's file name.
     audio_tags_clear(&s_tags);
-    s_status.state = USB_PLAYER_STATE_STARTING;
+    s_status.state = FILE_PLAYER_STATE_STARTING;
     snprintf(s_status.track, sizeof(s_status.track), "%s",
              display_name != NULL ? display_name : path);
     taskEXIT_CRITICAL(&s_status_lock);
@@ -997,11 +998,11 @@ esp_err_t usb_player_play(const char *path, const char *display_name,
     // but has not yet run is already covered.
     atomic_store_explicit(&s_task_running, true, memory_order_release);
     const BaseType_t created =
-        xTaskCreatePinnedToCore(usb_player_task, "usb_play", USB_PLAYER_TASK_STACK, NULL,
-                                USB_PLAYER_TASK_PRIORITY, NULL, USB_PLAYER_TASK_CORE);
+        xTaskCreatePinnedToCore(file_player_task, "usb_play", FILE_PLAYER_TASK_STACK, NULL,
+                                FILE_PLAYER_TASK_PRIORITY, NULL, FILE_PLAYER_TASK_CORE);
     if (created != pdPASS) {
         atomic_store_explicit(&s_task_running, false, memory_order_release);
-        status_set_state(USB_PLAYER_STATE_ERROR);
+        status_set_state(FILE_PLAYER_STATE_ERROR);
         xSemaphoreGive(s_control_lock);
         return ESP_ERR_NO_MEM;
     }
@@ -1009,19 +1010,19 @@ esp_err_t usb_player_play(const char *path, const char *display_name,
     return ESP_OK;
 }
 
-esp_err_t usb_player_stop(void)
+esp_err_t file_player_stop(void)
 {
     if (s_control_lock == NULL) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(s_control_lock, portMAX_DELAY);
     const bool stopped = wait_for_task_exit();
     // Only claim STOPPED when it is: a caller told the track had stopped while
     // it is still writing audio has no way to notice, and acts on the lie.
-    if (stopped) status_set_state(USB_PLAYER_STATE_STOPPED);
+    if (stopped) status_set_state(FILE_PLAYER_STATE_STOPPED);
     xSemaphoreGive(s_control_lock);
     return stopped ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
-esp_err_t usb_player_pause(void)
+esp_err_t file_player_pause(void)
 {
     if (!atomic_load_explicit(&s_task_running, memory_order_acquire)) {
         return ESP_ERR_INVALID_STATE;
@@ -1030,21 +1031,21 @@ esp_err_t usb_player_pause(void)
     // Silence the DAC rather than letting the DMA repeat its last buffer, the
     // same reason the radio disables output on pause.
     (void)board_audio_set_enabled(false);
-    status_set_state(USB_PLAYER_STATE_PAUSED);
+    status_set_state(FILE_PLAYER_STATE_PAUSED);
     return ESP_OK;
 }
 
-esp_err_t usb_player_seek(uint32_t seconds)
+esp_err_t file_player_seek(uint32_t seconds)
 {
     if (!atomic_load_explicit(&s_task_running, memory_order_acquire)) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (seconds == USB_PLAYER_SEEK_NONE) return ESP_ERR_INVALID_ARG;
+    if (seconds == FILE_PLAYER_SEEK_NONE) return ESP_ERR_INVALID_ARG;
     atomic_store_explicit(&s_seek_request, seconds, memory_order_release);
     return ESP_OK;
 }
 
-esp_err_t usb_player_resume(void)
+esp_err_t file_player_resume(void)
 {
     if (!atomic_load_explicit(&s_task_running, memory_order_acquire)) {
         return ESP_ERR_INVALID_STATE;
@@ -1052,11 +1053,11 @@ esp_err_t usb_player_resume(void)
     const esp_err_t result = board_audio_set_enabled(true);
     if (result != ESP_OK) return result;
     atomic_store_explicit(&s_paused, false, memory_order_release);
-    status_set_state(USB_PLAYER_STATE_PLAYING);
+    status_set_state(FILE_PLAYER_STATE_PLAYING);
     return ESP_OK;
 }
 
-void usb_player_get_tags(audio_tags_t *tags)
+void file_player_get_tags(audio_tags_t *tags)
 {
     if (tags == NULL) return;
     taskENTER_CRITICAL(&s_status_lock);
@@ -1064,7 +1065,7 @@ void usb_player_get_tags(audio_tags_t *tags)
     taskEXIT_CRITICAL(&s_status_lock);
 }
 
-void usb_player_get_status(usb_player_status_t *status)
+void file_player_get_status(file_player_status_t *status)
 {
     if (status == NULL) return;
     taskENTER_CRITICAL(&s_status_lock);

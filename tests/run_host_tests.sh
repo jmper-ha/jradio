@@ -29,7 +29,9 @@ include_flags=(
     -I"${project_dir}/components/player_control/include"
     -I"${project_dir}/components/settings/include"
     -I"${project_dir}/components/ui/include"
-    -I"${project_dir}/components/usb_player/include"
+    -I"${project_dir}/components/file_player/include"
+    -I"${project_dir}/components/file_storage/include"
+    -I"${project_dir}/components/sd_storage/include"
     -I"${project_dir}/components/usb_storage/include"
     -I"${project_dir}/components/web_server"
     -I"${project_dir}/components/web_server/include"
@@ -161,11 +163,11 @@ run_test ui_settings_model tests/test_ui_settings_model.c components/ui/ui_setti
 run_test ui_status_bar tests/test_ui_status_bar.c components/ui/ui_status_bar.c
 run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c
 run_test ui_vu_meter tests/test_ui_vu_meter.c components/ui/ui_vu_meter.c
-run_test ui_usb_notice tests/test_ui_usb_notice.c components/ui/ui_usb_notice.c
-run_test usb_browser tests/test_usb_browser.c components/usb_storage/usb_browser.c
-run_test usb_track_progress tests/test_usb_track_progress.c \
-    components/usb_player/usb_track_progress.c
-run_test usb_wav tests/test_usb_wav.c components/usb_player/usb_wav.c
+run_test ui_files_notice tests/test_ui_files_notice.c components/ui/ui_files_notice.c
+run_test file_browser tests/test_file_browser.c components/file_storage/file_browser.c
+run_test file_track_progress tests/test_file_track_progress.c \
+    components/file_player/file_track_progress.c
+run_test file_wav tests/test_file_wav.c components/file_player/file_wav.c
 run_test wifi_provisioning tests/test_wifi_provisioning.c \
     components/jradio_wifi_provisioning/wifi_provisioning.c
 run_test wifi_settings tests/test_wifi_settings.c components/settings/wifi_settings.c
@@ -173,7 +175,7 @@ run_test web_server -I"${cjson_include}" tests/test_web_server.c \
     components/web_server/web_server.c components/web_server/web_socket.c \
     components/web_server/web_view_model.c components/web_server/web_json.c \
     components/settings/wifi_settings.c \
-    components/usb_storage/usb_browser.c "${cjson_source}"
+    components/file_storage/file_browser.c "${cjson_source}"
 run_test web_json tests/test_web_json.c components/web_server/web_json.c
 run_test web_protocol -I"${cjson_include}" tests/test_web_protocol.c \
     components/web_server/web_protocol.c "${cjson_source}"
@@ -187,6 +189,6 @@ fi
 node tests/test_web_player.js
 node tests/test_web_settings.js
 node tests/test_web_playlist.js
-node tests/test_web_usb.js
+node tests/test_web_files.js
 
 printf 'All host tests passed.\n'

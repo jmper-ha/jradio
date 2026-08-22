@@ -12,7 +12,7 @@
 #include "settings_csv.h"
 #include "system_report.h"
 #include "ui.h"
-#include "usb_player.h"
+#include "file_player.h"
 #include "usb_storage.h"
 #include "web_server.h"
 #include "wifi_provisioning.h"
@@ -68,7 +68,7 @@ void app_main(void)
     // what the internal-SRAM heap does if the mount lands after them.
     start_optional("SD card", sd_storage_init());
     start_optional("USB storage", usb_storage_init());
-    start_optional("USB player", usb_player_init());
+    start_optional("USB player", file_player_init());
     ESP_ERROR_CHECK(internet_radio_init());
     ESP_ERROR_CHECK(player_control_init());
     ESP_ERROR_CHECK(ui_init());

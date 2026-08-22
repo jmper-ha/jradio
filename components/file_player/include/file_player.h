@@ -6,18 +6,18 @@
 
 #include "audio_tags.h"
 #include "esp_err.h"
-#include "usb_browser.h"
-#include "usb_player_state.h"
+#include "file_browser.h"
+#include "file_player_state.h"
 
-#define USB_PLAYER_TRACK_MAX_LEN 128
-#define USB_PLAYER_CODEC_MAX_LEN 8
+#define FILE_PLAYER_TRACK_MAX_LEN 128
+#define FILE_PLAYER_CODEC_MAX_LEN 8
 
 typedef struct {
-    usb_player_state_t state;
+    file_player_state_t state;
     // File name only, not the full path: this is what the player screen shows
     // where the radio shows a station name.
-    char track[USB_PLAYER_TRACK_MAX_LEN];
-    char codec[USB_PLAYER_CODEC_MAX_LEN];
+    char track[FILE_PLAYER_TRACK_MAX_LEN];
+    char codec[FILE_PLAYER_CODEC_MAX_LEN];
     uint32_t sample_rate_hz;
     uint16_t bitrate_kbps;
     /* How full the decoder's input buffer is, 0..100. Reads near 100 on a
@@ -26,46 +26,46 @@ typedef struct {
     uint8_t buffer_percent;
     /* Position and length of the track, in seconds. `total_seconds` is 0 until
      * the first frame reveals the bitrate, and stays an estimate on a
-     * variable-bitrate file - see usb_track_progress.h. */
+     * variable-bitrate file - see file_track_progress.h. */
     uint32_t elapsed_seconds;
     uint32_t total_seconds;
-} usb_player_status_t;
+} file_player_status_t;
 
 // Called from the playback task once a track ends *by itself* - not after a
 // stop and not after a failure. It runs on the playback task as it exits, so
-// it must not call back into usb_player_play(): post the intent somewhere and
+// it must not call back into file_player_play(): post the intent somewhere and
 // return.
-typedef void (*usb_player_finished_cb_t)(void);
-void usb_player_set_finished_callback(usb_player_finished_cb_t callback);
+typedef void (*file_player_finished_cb_t)(void);
+void file_player_set_finished_callback(file_player_finished_cb_t callback);
 
-esp_err_t usb_player_init(void);
+esp_err_t file_player_init(void);
 
 // Starts `path`, replacing whatever was playing. Blocks until the previous
 // track's task has released the I2S output, so the caller must not be the task
 // that owns a short poll deadline.
-esp_err_t usb_player_play(const char *path, const char *display_name,
-                          usb_browser_format_t format);
-esp_err_t usb_player_stop(void);
-esp_err_t usb_player_pause(void);
-esp_err_t usb_player_resume(void);
+esp_err_t file_player_play(const char *path, const char *display_name,
+                          file_browser_format_t format);
+esp_err_t file_player_stop(void);
+esp_err_t file_player_pause(void);
+esp_err_t file_player_resume(void);
 
 /* Moves the playing track to `seconds` from its start. The jump is applied by
  * the playback task on its next pass, so this returns before the audio has
  * moved - and does nothing at all if the track ends first.
  *
  * Where the file lands is exact for WAV and an estimate from the average
- * bitrate for everything else; see usb_track_seek_offset(). A paused track
+ * bitrate for everything else; see file_track_seek_offset(). A paused track
  * stays paused: the request is held and applied on the pass that resumes it,
  * since the playback task sleeps in its pause loop until then. */
-esp_err_t usb_player_seek(uint32_t seconds);
-void usb_player_get_status(usb_player_status_t *status);
+esp_err_t file_player_seek(uint32_t seconds);
+void file_player_get_status(file_player_status_t *status);
 
 /* What the playing file's own tags say, all empty when it has none.
  *
- * Deliberately not part of usb_player_status_t: that structure is copied onto
+ * Deliberately not part of file_player_status_t: that structure is copied onto
  * the stack of every task that polls the player, and three more strings would
  * cost 384 bytes on each of them - for something one screen reads. The file
  * name in `track` stays where it is for the same reason it always was: it is
  * what identifies the track on the drive and what gets written down as the
  * resume point, which a tag title could never lead back to. */
-void usb_player_get_tags(audio_tags_t *tags);
+void file_player_get_tags(audio_tags_t *tags);

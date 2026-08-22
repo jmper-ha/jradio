@@ -35,11 +35,11 @@
 #include "ui_station_list.h"
 #include "ui_status_bar.h"
 #include "ui_web_address.h"
-#include "usb_track_progress.h"
+#include "file_track_progress.h"
 
 #include "audio_volume.h"
 #include "device_clock.h"
-#include "ui_usb_notice.h"
+#include "ui_files_notice.h"
 #include "album_art.h"
 #include "ui_vu_meter.h"
 
@@ -276,8 +276,8 @@ static bool s_waiting_for_radio_station;
 static uint32_t s_radio_station_wait_started_ms;
 // The USB browser reuses this list screen. Outside the drive's root it shows a
 // ".." row above the entries, so every listing index is one below its row.
-static bool s_usb_browser_has_parent_row;
-static unsigned int s_usb_listing_revision;
+static bool s_file_browser_has_parent_row;
+static unsigned int s_files_listing_revision;
 // The USB source screen has nothing to show until a file is picked, so
 // selecting the source jumps straight to the browser. The jump waits for the
 // listing revision to move, otherwise the list would open on the previous
@@ -285,27 +285,27 @@ static unsigned int s_usb_listing_revision;
 // The USB screen can be opened with no usable drive: it then shows the reason
 // instead of rows. Kept from the last snapshot because ui_show_source() runs
 // on a key press, not on the poll that carries the snapshot.
-static bool s_usb_unavailable;
-static usb_browser_media_t s_last_usb_media = USB_BROWSER_MEDIA_ABSENT;
+static bool s_files_unavailable;
+static file_browser_media_t s_last_usb_media = FILE_BROWSER_MEDIA_ABSENT;
 static size_t s_last_usb_entry_count;
 // Autoplay runs once, and only after the drive has had time to appear: USB
 // mounts around five seconds in, later still when the root port needs
 // re-enumerating, so deciding "no drive" any earlier would be deciding it
 // before the answer exists.
-#define UI_AUTOPLAY_USB_WAIT_MS 12000U
+#define UI_AUTOPLAY_FILE_WAIT_MS 12000U
 static bool s_autoplay_pending;
 static uint32_t s_autoplay_started_ms;
-static bool s_usb_list_open_requested;
-static unsigned int s_usb_list_open_revision;
+static bool s_files_list_open_requested;
+static unsigned int s_files_list_open_revision;
 
-static bool ui_list_shows_usb(void)
+static bool ui_list_shows_files(void)
 {
     return ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_USB;
 }
 
-static size_t ui_usb_row_offset(void)
+static size_t ui_files_row_offset(void)
 {
-    return s_usb_browser_has_parent_row ? 1U : 0U;
+    return s_file_browser_has_parent_row ? 1U : 0U;
 }
 
 static uint32_t ui_tick_get_ms(void);
@@ -438,7 +438,7 @@ static void ui_update_footer(void)
     char left_text[32];
     uint8_t played_percent = 0U;
     const bool have_track = player_control_track_progress(&elapsed, &total);
-    bool have_bar = have_track && usb_track_progress_percent(elapsed, total,
+    bool have_bar = have_track && file_track_progress_percent(elapsed, total,
                                                              &played_percent);
     if (ui_seek_is_active(&s_player_seek)) {
         /* Both readouts follow the knob rather than the file while the mode
@@ -451,10 +451,10 @@ static void ui_update_footer(void)
     }
     if (have_track) {
         char elapsed_text[12];
-        usb_track_time_text(elapsed_text, sizeof(elapsed_text), elapsed);
+        file_track_time_text(elapsed_text, sizeof(elapsed_text), elapsed);
         if (total > 0U) {
             char total_text[12];
-            usb_track_time_text(total_text, sizeof(total_text), total);
+            file_track_time_text(total_text, sizeof(total_text), total);
             snprintf(left_text, sizeof(left_text), "%s / %s", elapsed_text, total_text);
         } else {
             // The length is not known until the first frame is decoded; the
@@ -541,7 +541,7 @@ static void ui_set_state_line(const char *state, const char *artist)
     }
 }
 
-static void ui_update_usb_status(const player_snapshot_t *snapshot)
+static void ui_update_files_status(const player_snapshot_t *snapshot)
 {
     audio_tags_t tags;
     const bool tagged = player_control_track_tags(&tags);
@@ -570,7 +570,7 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
     if (snapshot == NULL) return;
     ui_update_playback_marks(snapshot);
     if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_USB) {
-        ui_update_usb_status(snapshot);
+        ui_update_files_status(snapshot);
         return;
     }
     if (ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_INTERNET_RADIO) return;
@@ -822,14 +822,14 @@ static void ui_create_menu_screen(void)
 // whether that row is the one currently playing and whether it is a directory.
 /* Longest row either list can produce: a full-length USB name. Station rows
  * are far shorter - a three-digit ordinal, a space and a 96-byte name. */
-#define UI_LIST_ROW_TEXT_MAX (USB_BROWSER_NAME_MAX_LEN + 8U)
+#define UI_LIST_ROW_TEXT_MAX (FILE_BROWSER_NAME_MAX_LEN + 8U)
 
 static bool ui_list_row_text(size_t list_index, char *text, size_t text_size,
                              bool *active, bool *directory)
 {
     *active = false;
     *directory = false;
-    if (!ui_list_shows_usb()) {
+    if (!ui_list_shows_files()) {
         const station_catalog_entry_t *entry = player_control_station_at(list_index);
         // Ordinal, so the first station reads 001 rather than 000.
         snprintf(text, text_size, "%03u %s", (unsigned)(list_index + 1U),
@@ -837,19 +837,19 @@ static bool ui_list_row_text(size_t list_index, char *text, size_t text_size,
         *active = list_index == station_list_active_index(&s_station_list);
         return true;
     }
-    if (s_usb_browser_has_parent_row && list_index == 0U) {
+    if (s_file_browser_has_parent_row && list_index == 0U) {
         snprintf(text, text_size, "..");
         return true;
     }
-    usb_browser_entry_t entry;
-    if (!player_control_usb_entry_at(list_index - ui_usb_row_offset(), &entry)) {
+    file_browser_entry_t entry;
+    if (!player_control_file_entry_at(list_index - ui_files_row_offset(), &entry)) {
         text[0] = '\0';
         return false;
     }
     // Directories are marked rather than merely sorted first, so the row tells
     // you what the encoder click will do before you press it. The mark itself
     // is drawn by the caller, from its own label - see s_station_list_icons.
-    *directory = entry.kind == USB_BROWSER_ENTRY_DIRECTORY;
+    *directory = entry.kind == FILE_BROWSER_ENTRY_DIRECTORY;
     snprintf(text, text_size, "%s", entry.name);
     *active = list_index == station_list_active_index(&s_station_list);
     return true;
@@ -1671,23 +1671,23 @@ static void ui_show_source(void)
     // A drive that cannot be browsed still opens its screen - the list, empty,
     // saying why. Refusing to leave the menu left the user pressing a working
     // button with nothing happening but a line of small print.
-    s_usb_unavailable = selected_source == AUDIO_SOURCE_USB &&
-                        !ui_usb_can_open(s_last_usb_media, s_last_usb_entry_count);
+    s_files_unavailable = selected_source == AUDIO_SOURCE_USB &&
+                        !ui_files_can_open(s_last_usb_media, s_last_usb_entry_count);
     ui_set_label_text_if_changed(s_menu_notice, "");
     const player_command_t command = {
         .kind = PLAYER_COMMAND_SELECT_SOURCE,
         .source = selected_source,
         .item_index = PLAYER_ITEM_NONE,
     };
-    if (s_usb_unavailable) {
+    if (s_files_unavailable) {
         // No source to select, so drive the screen directly.
         s_player_ui.source = AUDIO_SOURCE_USB;
         ui_show_station_list();
         return;
     }
     if (selected_source == AUDIO_SOURCE_USB) {
-        s_usb_list_open_revision = player_control_usb_listing_revision();
-        s_usb_list_open_requested = true;
+        s_files_list_open_revision = player_control_listing_revision();
+        s_files_list_open_requested = true;
     }
     if (!ui_submit_player_command(&command)) return;
     // Both sources open on their list rather than the player: there is nothing
@@ -1710,7 +1710,7 @@ static void ui_load_menu_screen(void)
 static void ui_show_menu(void)
 {
     ui_end_seek();
-    s_usb_unavailable = false;
+    s_files_unavailable = false;
     const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
     const audio_source_t old_source = ui_player_state_source(&s_player_ui);
     const player_command_t command = {
@@ -1731,17 +1731,17 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
 {
     size_t count = snapshot->item_count;
     size_t active_index = snapshot->active_item_index;
-    if (s_usb_unavailable) {
+    if (s_files_unavailable) {
         // Nothing to list and nothing to scroll: the screen exists only to say
         // why, and to be left with F2 or a long press. The rule marks the
         // bottom of a list that is not there, so it goes with the rows.
         ui_set_label_text_if_changed(s_station_list_title, "USB");
         ui_set_label_text_if_changed(
             s_station_list_notice,
-            ui_usb_notice(s_last_usb_media, s_last_usb_entry_count));
+            ui_files_notice(s_last_usb_media, s_last_usb_entry_count));
         lv_obj_clear_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_station_list_rule, LV_OBJ_FLAG_HIDDEN);
-        s_usb_browser_has_parent_row = false;
+        s_file_browser_has_parent_row = false;
         station_list_init(&s_station_list, 0U, 0U, PLAYER_ITEM_NONE);
         ui_update_station_list();
         return;
@@ -1749,20 +1749,20 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
     ui_set_label_text_if_changed(s_station_list_notice, "");
     lv_obj_add_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_station_list_rule, LV_OBJ_FLAG_HIDDEN);
-    if (ui_list_shows_usb()) {
-        s_usb_browser_has_parent_row = !usb_browser_path_is_root(snapshot->context);
-        const size_t offset = ui_usb_row_offset();
+    if (ui_list_shows_files()) {
+        s_file_browser_has_parent_row = !file_browser_path_is_root(snapshot->context);
+        const size_t offset = ui_files_row_offset();
         count += offset;
         // The ".." row pushes every entry down, including the playing one.
         active_index = active_index == PLAYER_ITEM_NONE ? PLAYER_ITEM_NONE
                                                         : active_index + offset;
         ui_set_label_text_if_changed(s_station_list_title, ui_path_leaf(snapshot->context));
     } else {
-        s_usb_browser_has_parent_row = false;
+        s_file_browser_has_parent_row = false;
         ui_set_label_text_if_changed(s_station_list_title, "Станции");
     }
     const size_t initial_index =
-        station_list_initial_index(count, active_index, ui_usb_row_offset());
+        station_list_initial_index(count, active_index, ui_files_row_offset());
     station_list_init(&s_station_list, count, initial_index, active_index);
     station_list_note_activity(&s_station_list, ui_tick_get_ms());
     ui_update_station_list();
@@ -1776,7 +1776,7 @@ static void ui_load_station_list_screen(void)
              (int)snapshot.active_source, (int)snapshot.playback_state,
              (unsigned int)snapshot.active_item_index);
     s_waiting_for_radio_station = false;
-    s_usb_listing_revision = player_control_usb_listing_revision();
+    s_files_listing_revision = player_control_listing_revision();
     ui_reset_list_from_snapshot(&snapshot);
     lv_screen_load(s_station_list_screen);
 }
@@ -1791,9 +1791,9 @@ static void ui_load_station_list_screen(void)
  * task, and reading a directory from this one would stall the poll loop that
  * drives LVGL. The new listing arrives through the revision the poll already
  * watches, which is the same path a directory change takes. */
-static void ui_request_usb_reveal(void)
+static void ui_request_files_reveal(void)
 {
-    if (!ui_list_shows_usb()) return;
+    if (!ui_list_shows_files()) return;
     const player_command_t reveal = {
         .kind = PLAYER_COMMAND_BROWSE_REVEAL,
         .source = AUDIO_SOURCE_USB,
@@ -1809,7 +1809,7 @@ static void ui_show_station_list(void)
     ui_end_seek();
     if (!ui_player_state_show_station_list(&s_player_ui)) return;
     s_waiting_for_radio_station = false;
-    ui_request_usb_reveal();
+    ui_request_files_reveal();
     ui_load_station_list_screen();
 }
 
@@ -1825,7 +1825,7 @@ static void ui_show_station_list(void)
  * away and put the browser back, until the idle timeout undid that too. */
 static void ui_leave_station_list(void)
 {
-    s_usb_list_open_requested = false;
+    s_files_list_open_requested = false;
     ui_player_state_close_station_list(&s_player_ui);
 }
 
@@ -1960,10 +1960,10 @@ static void ui_handle_input(board_input_action_t action)
         } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
                    action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
             if (station_list_handle_input(&s_station_list, action)) ui_update_station_list();
-        } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON && ui_list_shows_usb()) {
+        } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON && ui_list_shows_files()) {
             size_t row;
             if (!station_list_get_selection(&s_station_list, &row)) return;
-            if (s_usb_browser_has_parent_row && row == 0U) {
+            if (s_file_browser_has_parent_row && row == 0U) {
                 const player_command_t up = {
                     .kind = PLAYER_COMMAND_BROWSE_UP,
                     .source = AUDIO_SOURCE_USB,
@@ -1972,9 +1972,9 @@ static void ui_handle_input(board_input_action_t action)
                 (void)ui_submit_player_command(&up);
                 return;
             }
-            const size_t index = row - ui_usb_row_offset();
-            usb_browser_entry_t entry;
-            if (!player_control_usb_entry_at(index, &entry)) return;
+            const size_t index = row - ui_files_row_offset();
+            file_browser_entry_t entry;
+            if (!player_control_file_entry_at(index, &entry)) return;
             const player_command_t command = {
                 .kind = PLAYER_COMMAND_SELECT_ITEM,
                 .source = AUDIO_SOURCE_USB,
@@ -1984,7 +1984,7 @@ static void ui_handle_input(board_input_action_t action)
             // Opening a directory keeps the browser on screen; the new listing
             // arrives through the snapshot poll. Only a file switches to the
             // player.
-            if (entry.kind == USB_BROWSER_ENTRY_DIRECTORY) return;
+            if (entry.kind == FILE_BROWSER_ENTRY_DIRECTORY) return;
             // Leave the list in the view state too, not just on screen. The
             // automatic list-to-player transition in
             // ui_player_state_apply_snapshot() only fires for the radio, so USB
@@ -1999,7 +1999,7 @@ static void ui_handle_input(board_input_action_t action)
             ui_set_state_line("Открытие файла", "");
             ui_set_label_text_if_changed(s_source_detail, entry.name);
             ui_set_label_text_if_changed(s_source_stream,
-                                         usb_browser_format_name(entry.format));
+                                         file_browser_format_name(entry.format));
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             size_t index;
             if (!station_list_get_selection(&s_station_list, &index) ||
@@ -2158,10 +2158,10 @@ static void ui_remember_playing(const player_snapshot_t *snapshot)
         // Only remember a track once one is actually playing, or leaving the
         // browser would erase the previous resume point.
         if (snapshot->stream_title[0] == '\0') return;
-        char path[USB_BROWSER_PATH_MAX_LEN];
-        if (usb_browser_path_child(snapshot->context, snapshot->stream_title, path,
+        char path[FILE_BROWSER_PATH_MAX_LEN];
+        if (file_browser_path_child(snapshot->context, snapshot->stream_title, path,
                                    sizeof(path))) {
-            (void)device_settings_set_last_usb_file(&s_device_settings, path);
+            (void)device_settings_set_last_file(&s_device_settings, path);
         }
         return;
     }
@@ -2175,21 +2175,21 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     if (snapshot == NULL) return;
     const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
     const audio_source_t old_source = ui_player_state_source(&s_player_ui);
-    s_last_usb_media = snapshot->usb_media;
-    s_last_usb_entry_count = snapshot->usb_entry_count;
+    s_last_usb_media = snapshot->files_media;
+    s_last_usb_entry_count = snapshot->files_entry_count;
     ui_remember_playing(snapshot);
-    if (s_usb_unavailable && ui_usb_can_open(s_last_usb_media, s_last_usb_entry_count)) {
+    if (s_files_unavailable && ui_files_can_open(s_last_usb_media, s_last_usb_entry_count)) {
         // A drive appeared while its "unavailable" screen was open: pick the
         // source up rather than making the user back out and re-enter.
-        s_usb_unavailable = false;
+        s_files_unavailable = false;
         const player_command_t select = {
             .kind = PLAYER_COMMAND_SELECT_SOURCE,
             .source = AUDIO_SOURCE_USB,
             .item_index = PLAYER_ITEM_NONE,
         };
         if (ui_submit_player_command(&select)) {
-            s_usb_list_open_revision = player_control_usb_listing_revision();
-            s_usb_list_open_requested = true;
+            s_files_list_open_revision = player_control_listing_revision();
+            s_files_list_open_requested = true;
         }
     }
     /* The file can stop under the mode - it ended, it failed, the drive was
@@ -2211,11 +2211,11 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
         ui_render_player_state();
     }
 
-    if (s_usb_list_open_requested &&
+    if (s_files_list_open_requested &&
         ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_USB &&
         ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_SOURCE &&
-        player_control_usb_listing_revision() != s_usb_list_open_revision) {
-        s_usb_list_open_requested = false;
+        player_control_listing_revision() != s_files_list_open_revision) {
+        s_files_list_open_requested = false;
         ui_show_station_list();
     }
 
@@ -2229,27 +2229,27 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     }
 
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
-        const unsigned int revision = player_control_usb_listing_revision();
-        if (ui_list_shows_usb() && !s_usb_unavailable &&
-            !ui_usb_media_present(snapshot->usb_media)) {
+        const unsigned int revision = player_control_listing_revision();
+        if (ui_list_shows_files() && !s_files_unavailable &&
+            !ui_files_media_present(snapshot->files_media)) {
             /* The drive left while its own listing was on screen. Nothing
              * refills the rows afterwards - the listing simply empties - so
              * without this the browser stays up as a blank screen. */
-            s_usb_unavailable = true;
-            s_usb_listing_revision = revision;
+            s_files_unavailable = true;
+            s_files_listing_revision = revision;
             ui_reset_list_from_snapshot(snapshot);
-        } else if (ui_list_shows_usb() && revision != s_usb_listing_revision) {
+        } else if (ui_list_shows_files() && revision != s_files_listing_revision) {
             // A directory was opened or left: the rows now describe different
             // files, so the cursor cannot keep its position.
-            s_usb_listing_revision = revision;
+            s_files_listing_revision = revision;
             ui_reset_list_from_snapshot(snapshot);
-        } else if (!s_usb_unavailable &&
+        } else if (!s_files_unavailable &&
                    station_list_sync_counts(&s_station_list,
-                                            snapshot->item_count + ui_usb_row_offset(),
+                                            snapshot->item_count + ui_files_row_offset(),
                                             snapshot->active_item_index == PLAYER_ITEM_NONE
                                                 ? PLAYER_ITEM_NONE
                                                 : snapshot->active_item_index +
-                                                      ui_usb_row_offset())) {
+                                                      ui_files_row_offset())) {
             /* The playlist can be replaced from the web UI while this screen is
              * open, so the count captured at open time may be stale.
              *
@@ -2281,12 +2281,12 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
 {
     if (!s_autoplay_pending) return;
     const ui_autoplay_action_t action =
-        ui_autoplay_decide(&s_device_settings, snapshot->usb_media, false);
+        ui_autoplay_decide(&s_device_settings, snapshot->files_media, false);
     const bool waited =
-        (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_USB_WAIT_MS;
+        (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_FILE_WAIT_MS;
     // Hold off only while the answer could still change: a drive that has not
     // shown up yet may still mount.
-    if (action == UI_AUTOPLAY_USB_UNAVAILABLE && !waited) return;
+    if (action == UI_AUTOPLAY_FILE_UNAVAILABLE && !waited) return;
     s_autoplay_pending = false;
 
     switch (action) {
@@ -2308,12 +2308,12 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         s_waiting_for_radio_station = false;
         return;
     }
-    case UI_AUTOPLAY_USB_UNAVAILABLE:
+    case UI_AUTOPLAY_FILE_UNAVAILABLE:
         (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_USB);
         ui_show_source();
         return;
-    case UI_AUTOPLAY_USB_FILE:
-    case UI_AUTOPLAY_USB_BROWSER: {
+    case UI_AUTOPLAY_FILE:
+    case UI_AUTOPLAY_FILE_BROWSER: {
         const player_command_t select = {
             .kind = PLAYER_COMMAND_SELECT_SOURCE,
             .source = AUDIO_SOURCE_USB,
@@ -2323,12 +2323,12 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         // Whether the remembered file is still there is only knowable by
         // looking, so the attempt itself is the test: it opens the file's
         // directory either way, leaving the browser somewhere useful.
-        if (player_control_usb_resume_path(s_device_settings.last_usb_file)) {
+        if (player_control_file_resume_path(s_device_settings.last_file)) {
             ui_load_source_screen(AUDIO_SOURCE_USB);
             return;
         }
-        s_usb_list_open_revision = player_control_usb_listing_revision();
-        s_usb_list_open_requested = true;
+        s_files_list_open_revision = player_control_listing_revision();
+        s_files_list_open_requested = true;
         ui_show_station_list();
         return;
     }
@@ -2545,7 +2545,7 @@ esp_err_t ui_init(void)
     // kind of surprise a saved setting exists to prevent.
     board_audio_set_volume(s_device_settings.volume);
     s_autoplay_pending = ui_autoplay_decide(&s_device_settings,
-                                            USB_BROWSER_MEDIA_READY, true) !=
+                                            FILE_BROWSER_MEDIA_READY, true) !=
                          UI_AUTOPLAY_HOME;
     s_autoplay_started_ms = ui_tick_get_ms();
     if (s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED) {

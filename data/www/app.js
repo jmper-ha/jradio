@@ -53,13 +53,13 @@
     list: {kind: '', active_index: null, items: [], path: '', revision: null, has_parent: false},
   };
 
-  // The USB listing does not travel over the socket: a directory of long
+  // The file listing does not travel over the socket: a directory of long
   // names dwarfs the frame budget, so the socket carries only a revision and
-  // the entries come from GET /api/usb. Tracked here so a reply for a
+  // the entries come from GET /api/files. Tracked here so a reply for a
   // directory the user has already left can be discarded - opening two folders
   // quickly is enough to make the replies arrive out of order.
-  let usbFetchRevision = null;
-  let usbShownRevision = null;
+  let listFetchRevision = null;
+  let listShownRevision = null;
 
   let socket = null;
   let reconnectTimer = null;
@@ -233,38 +233,38 @@
     return {kind, active_index, items, path: '', revision: null, has_parent: false};
   }
 
-  function usbEntryLabel(entry) {
+  function fileEntryLabel(entry) {
     if (entry.kind === 'dir') return `${entry.name}/`;
     return entry.format ? `${entry.name} · ${entry.format}` : entry.name;
   }
 
-  function normalizeUsbEntries(payload) {
+  function normalizeFileEntries(payload) {
     if (!isObject(payload) || !Array.isArray(payload.items)) return null;
     return payload.items
       .filter((item) => isObject(item) && Number.isSafeInteger(item.index) && typeof item.name === 'string')
       .map((item) => ({
         index: item.index,
-        label: usbEntryLabel(item),
+        label: fileEntryLabel(item),
         isDirectory: item.kind === 'dir',
       }));
   }
 
-  async function loadUsbListing(revision) {
+  async function loadFileListing(revision) {
     // Guard against the same revision being fetched twice: player updates
     // arrive far more often than the listing changes.
-    if (usbFetchRevision === revision || usbShownRevision === revision) return;
-    usbFetchRevision = revision;
+    if (listFetchRevision === revision || listShownRevision === revision) return;
+    listFetchRevision = revision;
     try {
-      const response = await fetch('/api/usb', {cache: 'no-store'});
+      const response = await fetch('/api/files', {cache: 'no-store'});
       if (!response.ok) throw new Error(`status ${response.status}`);
       const payload = await response.json();
-      const entries = normalizeUsbEntries(payload);
+      const entries = normalizeFileEntries(payload);
       if (!entries) throw new Error('unexpected payload');
       // The device may have moved on while this was in flight. Trust the
       // revision the response carries, not the one that triggered the fetch.
       if (state.list.kind !== 'files') return;
-      if (usbShownRevision !== null && Number.isSafeInteger(payload.revision) &&
-          payload.revision < usbShownRevision) {
+      if (listShownRevision !== null && Number.isSafeInteger(payload.revision) &&
+          payload.revision < listShownRevision) {
         return;
       }
       const previousList = state.list;
@@ -274,23 +274,23 @@
         path: safeString(payload.path, state.list.path),
         has_parent: payload.has_parent === true,
       };
-      usbShownRevision = Number.isSafeInteger(payload.revision) ? payload.revision : revision;
+      listShownRevision = Number.isSafeInteger(payload.revision) ? payload.revision : revision;
       renderList(previousList);
     } catch (error) {
       commandStatus.textContent = 'Не удалось прочитать флешку';
       commandStatus.classList.add('is-error');
     } finally {
-      if (usbFetchRevision === revision) usbFetchRevision = null;
+      if (listFetchRevision === revision) listFetchRevision = null;
     }
   }
 
-  function syncUsbListing() {
+  function syncFileListing() {
     if (state.list.kind !== 'files') {
-      usbShownRevision = null;
+      listShownRevision = null;
       return;
     }
     if (state.list.revision === null) return;
-    if (state.list.revision !== usbShownRevision) loadUsbListing(state.list.revision);
+    if (state.list.revision !== listShownRevision) loadFileListing(state.list.revision);
   }
 
   function focusedListIndex() {
@@ -406,7 +406,7 @@
 
     // Every path that changes the list ends here, so this is the single place
     // the REST fetch needs to be triggered from.
-    syncUsbListing();
+    syncFileListing();
   }
 
   function applySnapshot(message) {

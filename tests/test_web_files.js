@@ -2,7 +2,7 @@
 
 // The USB listing is the one list the browser does not receive over the
 // socket: the frame budget cannot hold a directory of long names, so the
-// socket carries a revision and the entries arrive from GET /api/usb. That
+// socket carries a revision and the entries arrive from GET /api/files. That
 // split is what these tests cover - especially the ordering hazard it creates,
 // where a reply can land after the device has already moved to another folder.
 
@@ -257,7 +257,7 @@ socket.emit('open');
   });
 
   assert.equal(fetchCalls.length, 1, 'a files listing must trigger a fetch');
-  assert.equal(fetchCalls[0].url, '/api/usb');
+  assert.equal(fetchCalls[0].url, '/api/files');
   assert.equal(fetchCalls[0].options.cache, 'no-store',
     'a cached listing would show a directory the device has already left');
 

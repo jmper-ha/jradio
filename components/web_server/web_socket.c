@@ -166,7 +166,7 @@ static void write_active_index(web_json_writer_t *writer,
 
 /* The USB listing is a header only: the entries themselves go over REST.
  * A directory may hold up to USB_STORAGE_MAX_ENTRIES names of up to
- * USB_BROWSER_NAME_MAX_LEN bytes each, which is far past the
+ * FILE_BROWSER_NAME_MAX_LEN bytes each, which is far past the
  * WEB_PROTOCOL_EVENT_MAX frame this serializer writes into, and growing that
  * static buffer is the wrong trade in a firmware already short of internal
  * SRAM. The revision is what tells the browser to re-fetch: opening a sibling
@@ -179,12 +179,12 @@ static void write_usb_list(web_json_writer_t *writer, const player_snapshot_t *p
     web_json_literal(writer, ",\"path\":");
     web_json_string(writer, player->context);
     web_json_literal(writer, ",\"revision\":");
-    web_json_format(writer, "%u", player->usb_listing_revision);
+    web_json_format(writer, "%u", player->listing_revision);
     web_json_literal(writer, ",\"count\":");
     web_json_format(writer, "%u", (unsigned)player->item_count);
     web_json_literal(writer, ",\"has_parent\":");
     web_json_literal(writer,
-                   usb_browser_path_is_root(player->context) ? "false" : "true");
+                   file_browser_path_is_root(player->context) ? "false" : "true");
     web_json_literal(writer, "}");
 }
 

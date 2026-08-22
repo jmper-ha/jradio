@@ -1,8 +1,8 @@
-#include "usb_track_progress.h"
+#include "file_track_progress.h"
 
 #include <stdio.h>
 
-uint32_t usb_track_elapsed_seconds(uint64_t pcm_bytes, uint32_t sample_rate_hz,
+uint32_t file_track_elapsed_seconds(uint64_t pcm_bytes, uint32_t sample_rate_hz,
                                    uint8_t channels, uint8_t bits_per_sample)
 {
     if (sample_rate_hz == 0U || channels == 0U || bits_per_sample < 8U) return 0U;
@@ -12,7 +12,7 @@ uint32_t usb_track_elapsed_seconds(uint64_t pcm_bytes, uint32_t sample_rate_hz,
     return (uint32_t)(pcm_bytes / bytes_per_second);
 }
 
-uint32_t usb_track_total_seconds(uint64_t file_bytes, uint64_t header_bytes,
+uint32_t file_track_total_seconds(uint64_t file_bytes, uint64_t header_bytes,
                                  uint16_t bitrate_kbps)
 {
     if (bitrate_kbps == 0U) return 0U;
@@ -23,7 +23,7 @@ uint32_t usb_track_total_seconds(uint64_t file_bytes, uint64_t header_bytes,
     return (uint32_t)((audio_bytes * 8U) / ((uint64_t)bitrate_kbps * 1000U));
 }
 
-uint32_t usb_track_sampled_seconds(uint64_t total_samples, uint32_t sample_rate_hz)
+uint32_t file_track_sampled_seconds(uint64_t total_samples, uint32_t sample_rate_hz)
 {
     // Zero samples is what an encoder writes when it was fed a stream and
     // could not know; there is no length to show, and no bar to draw.
@@ -31,7 +31,7 @@ uint32_t usb_track_sampled_seconds(uint64_t total_samples, uint32_t sample_rate_
     return (uint32_t)(total_samples / sample_rate_hz);
 }
 
-uint16_t usb_track_average_bitrate_kbps(uint64_t file_bytes, uint64_t header_bytes,
+uint16_t file_track_average_bitrate_kbps(uint64_t file_bytes, uint64_t header_bytes,
                                         uint32_t seconds)
 {
     if (seconds == 0U || file_bytes <= header_bytes) return 0U;
@@ -41,7 +41,7 @@ uint16_t usb_track_average_bitrate_kbps(uint64_t file_bytes, uint64_t header_byt
     return kbps > UINT16_MAX ? UINT16_MAX : (uint16_t)kbps;
 }
 
-uint64_t usb_track_seek_offset(uint64_t file_bytes, uint64_t header_bytes,
+uint64_t file_track_seek_offset(uint64_t file_bytes, uint64_t header_bytes,
                                uint16_t bitrate_kbps, uint32_t target_seconds)
 {
     if (bitrate_kbps == 0U || file_bytes <= header_bytes) return header_bytes;
@@ -50,14 +50,14 @@ uint64_t usb_track_seek_offset(uint64_t file_bytes, uint64_t header_bytes,
     return header_bytes + (wanted < audio_bytes ? wanted : audio_bytes);
 }
 
-uint64_t usb_track_pcm_bytes(uint32_t seconds, uint32_t sample_rate_hz,
+uint64_t file_track_pcm_bytes(uint32_t seconds, uint32_t sample_rate_hz,
                              uint8_t channels, uint8_t bits_per_sample)
 {
     if (sample_rate_hz == 0U || channels == 0U || bits_per_sample < 8U) return 0U;
     return (uint64_t)seconds * sample_rate_hz * channels * (bits_per_sample / 8U);
 }
 
-bool usb_track_progress_percent(uint32_t elapsed_s, uint32_t total_s, uint8_t *percent)
+bool file_track_progress_percent(uint32_t elapsed_s, uint32_t total_s, uint8_t *percent)
 {
     if (percent == NULL || total_s == 0U) return false;
     if (elapsed_s >= total_s) {
@@ -68,7 +68,7 @@ bool usb_track_progress_percent(uint32_t elapsed_s, uint32_t total_s, uint8_t *p
     return true;
 }
 
-void usb_track_time_text(char *text, size_t text_size, uint32_t seconds)
+void file_track_time_text(char *text, size_t text_size, uint32_t seconds)
 {
     if (text == NULL || text_size == 0U) return;
     const uint32_t hours = seconds / 3600U;

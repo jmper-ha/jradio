@@ -3,14 +3,14 @@
 #include "audio_tags.h"
 #include "player_control_types.h"
 #include "station_catalog.h"
-#include "usb_player_state.h"
+#include "file_player_state.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 player_playback_state_t player_playback_from_radio(internet_radio_state_t state);
-player_playback_state_t player_playback_from_usb(usb_player_state_t state);
+player_playback_state_t player_playback_from_file(file_player_state_t state);
 bool player_snapshot_equal(const player_snapshot_t *left,
                            const player_snapshot_t *right);
 bool player_rssi_refresh_due(bool seen, uint32_t last_update_ms,
@@ -22,12 +22,12 @@ bool player_rssi_refresh_due(bool seen, uint32_t last_update_ms,
  * decision cannot be made from the index the command carries: the browser can
  * be re-read between the press and the command being handled, and an index
  * that survives that no longer names the same file. */
-bool player_usb_same_file_playing(const char *path, const char *playing_path,
+bool player_file_same_file_playing(const char *path, const char *playing_path,
                                   player_playback_state_t state);
 
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
-#include "usb_browser.h"
+#include "file_browser.h"
 
 esp_err_t player_control_init(void);
 bool player_control_post(const player_command_t *command);
@@ -35,10 +35,10 @@ void player_control_get_snapshot(player_snapshot_t *snapshot);
 const station_catalog_entry_t *player_control_station_at(size_t index);
 // Copies out a row of the USB listing; false when the row is gone, which
 // happens when the drive is pulled while the browser screen is open.
-bool player_control_usb_entry_at(size_t index, usb_browser_entry_t *entry);
+bool player_control_file_entry_at(size_t index, file_browser_entry_t *entry);
 // Changes every time the listing is replaced, so a screen can tell "the same
 // directory changed" from "this is a different directory".
-unsigned int player_control_usb_listing_revision(void);
+unsigned int player_control_listing_revision(void);
 
 /* How full the active source's decoder input buffer is, 0..100. False when
  * there is nothing to report - no source playing, or a WAV file, which is read
@@ -75,7 +75,7 @@ bool player_control_track_tags(audio_tags_t *tags);
  * takes - fine once at startup, not per poll. Returns false when the drive, the
  * directory or the file is gone; the listing is then left on whatever did
  * open, so the browser has somewhere to show. */
-bool player_control_usb_resume_path(const char *path);
+bool player_control_file_resume_path(const char *path);
 #endif
 
 #ifdef __cplusplus

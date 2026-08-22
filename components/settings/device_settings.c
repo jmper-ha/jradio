@@ -77,8 +77,11 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     }
     /* Read into its own buffer: a path is far longer than the little `value`
      * the other keys share. */
-    (void)settings_csv_get(path, "last_usb_file", settings->last_usb_file,
-                           sizeof(settings->last_usb_file));
+    /* The key on disk is still "last_file": the field was renamed when the
+     * SD card joined the USB drive, and settings.csv on devices in the field
+     * was not. */
+    (void)settings_csv_get(path, "last_usb_file", settings->last_file,
+                           sizeof(settings->last_file));
     return true;
 }
 
@@ -161,13 +164,13 @@ bool device_settings_set_last_source(device_settings_t *settings,
     return true;
 }
 
-bool device_settings_set_last_usb_file(device_settings_t *settings, const char *path)
+bool device_settings_set_last_file(device_settings_t *settings, const char *path)
 {
     if (settings == NULL || path == NULL ||
-        strlen(path) >= sizeof(settings->last_usb_file)) return false;
-    if (strcmp(settings->last_usb_file, path) == 0) return true;
+        strlen(path) >= sizeof(settings->last_file)) return false;
+    if (strcmp(settings->last_file, path) == 0) return true;
     if (!save_value(settings, "last_usb_file", path)) return false;
-    memcpy(settings->last_usb_file, path, strlen(path) + 1U);
+    memcpy(settings->last_file, path, strlen(path) + 1U);
     return true;
 }
 

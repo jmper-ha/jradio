@@ -22,7 +22,7 @@ typedef enum {
 #define DEVICE_SETTINGS_PATH "/littlefs/config/settings.csv"
 #define DEVICE_SETTINGS_PATH_MAX 128
 /* Long enough for a full path on the drive; the CSV value field caps at 256. */
-#define DEVICE_LAST_USB_FILE_MAX 256
+#define DEVICE_LAST_FILE_MAX 256
 /* Loud enough to be obviously working, quiet enough that a fresh flash does
  * not startle anyone. */
 #define DEVICE_VOLUME_DEFAULT 80
@@ -40,7 +40,7 @@ typedef struct {
      * flash should not be at maximum. */
     unsigned char volume;
     device_last_source_t last_source;
-    char last_usb_file[DEVICE_LAST_USB_FILE_MAX];
+    char last_file[DEVICE_LAST_FILE_MAX];
     char storage_path[DEVICE_SETTINGS_PATH_MAX];
 } device_settings_t;
 
@@ -61,5 +61,5 @@ bool device_settings_set_volume(device_settings_t *settings, unsigned char volum
  * behind. Writing "none" clears the resume point. */
 bool device_settings_set_last_source(device_settings_t *settings,
                                      device_last_source_t source);
-bool device_settings_set_last_usb_file(device_settings_t *settings, const char *path);
+bool device_settings_set_last_file(device_settings_t *settings, const char *path);
 bool device_settings_get(const device_settings_t *settings, device_settings_t *copy);

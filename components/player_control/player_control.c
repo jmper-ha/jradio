@@ -16,8 +16,9 @@
 #include "album_art.h"
 #include "audio_source.h"
 #include "internet_radio.h"
-#include "usb_browser.h"
-#include "usb_player.h"
+#include "file_browser.h"
+#include "file_storage.h"
+#include "file_player.h"
 #include "usb_storage.h"
 #include "wifi_provisioning.h"
 
@@ -37,16 +38,16 @@ static audio_source_manager_t s_manager;
 static atomic_int s_active_source = ATOMIC_VAR_INIT(AUDIO_SOURCE_NONE);
 // Which listing row the USB player is on. Unlike the radio, the player itself
 // has no notion of an index - it only knows a path - so the controller keeps it.
-static atomic_size_t s_usb_item_index = ATOMIC_VAR_INIT(PLAYER_ITEM_NONE);
+static atomic_size_t s_files_item_index = ATOMIC_VAR_INIT(PLAYER_ITEM_NONE);
 // Bumped whenever the listing is replaced. The browser screen watches this to
 // reset its cursor: the path itself is truncated to PLAYER_NAME_MAX_LEN in the
 // snapshot, so two deep directories can look identical there.
-static atomic_uint s_usb_listing_revision = ATOMIC_VAR_INIT(0U);
+static atomic_uint s_files_listing_revision = ATOMIC_VAR_INIT(0U);
 /* Full path of the file the drive is playing. Written and read only by this
  * task, so it needs no atomics; it is here rather than in the snapshot because
  * the browser wants it once, when it opens, and a path this long would not fit
  * the 512-byte frame the snapshot is diffed into for the web. */
-static char s_usb_playing_path[USB_BROWSER_PATH_MAX_LEN];
+static char s_files_playing_path[FILE_BROWSER_PATH_MAX_LEN];
 static atomic_bool s_rssi_seen = ATOMIC_VAR_INIT(false);
 static atomic_uint s_rssi_updated_ms = ATOMIC_VAR_INIT(0U);
 static atomic_bool s_rssi_valid = ATOMIC_VAR_INIT(false);
@@ -85,26 +86,26 @@ static void player_refresh_rssi_if_due(void)
  * the queue; it is the only thing here that decides whether the file under the
  * cursor is already running. Passed in rather than read again so that the
  * whole of one command is decided from one view of the player. */
-static void player_usb_select_item(size_t index, player_playback_state_t playback_state)
+static void player_file_select_item(size_t index, player_playback_state_t playback_state)
 {
-    usb_browser_entry_t entry;
-    char path[USB_BROWSER_PATH_MAX_LEN];
+    file_browser_entry_t entry;
+    char path[FILE_BROWSER_PATH_MAX_LEN];
     // Name and path together, so a listing replaced mid-selection cannot pair
     // one directory's file with another directory's path.
-    if (!usb_storage_entry_path(index, &entry, path, sizeof(path))) {
+    if (!file_storage_entry_path(index, &entry, path, sizeof(path))) {
         ESP_LOGW(TAG, "usb item %u is not in the current listing", (unsigned int)index);
         return;
     }
-    if (entry.kind == USB_BROWSER_ENTRY_DIRECTORY) {
-        const esp_err_t result = usb_storage_read_directory(path);
+    if (entry.kind == FILE_BROWSER_ENTRY_DIRECTORY) {
+        const esp_err_t result = file_storage_read_directory(path);
         if (result != ESP_OK) {
             ESP_LOGW(TAG, "cannot open %s: %s", path, esp_err_to_name(result));
             return;
         }
         // The listing under the cursor is gone, so the remembered row would
         // point at an unrelated file in the new directory.
-        atomic_store_explicit(&s_usb_item_index, PLAYER_ITEM_NONE, memory_order_release);
-        atomic_fetch_add_explicit(&s_usb_listing_revision, 1U, memory_order_release);
+        atomic_store_explicit(&s_files_item_index, PLAYER_ITEM_NONE, memory_order_release);
+        atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
         return;
     }
     /* Choosing the file that is already playing is how the user gets back to
@@ -112,18 +113,18 @@ static void player_usb_select_item(size_t index, player_playback_state_t playbac
      * The row is remembered again on the way out: browsing clears it, and
      * without it the list would not mark the playing file and the track that
      * ends would have no position to advance from. */
-    if (player_usb_same_file_playing(path, s_usb_playing_path, playback_state)) {
-        atomic_store_explicit(&s_usb_item_index, index, memory_order_release);
+    if (player_file_same_file_playing(path, s_files_playing_path, playback_state)) {
+        atomic_store_explicit(&s_files_item_index, index, memory_order_release);
         return;
     }
-    const esp_err_t result = usb_player_play(path, entry.name, entry.format);
+    const esp_err_t result = file_player_play(path, entry.name, entry.format);
     if (result != ESP_OK) {
         ESP_LOGW(TAG, "cannot play %s: %s", path, esp_err_to_name(result));
-        s_usb_playing_path[0] = '\0';
+        s_files_playing_path[0] = '\0';
         return;
     }
-    snprintf(s_usb_playing_path, sizeof(s_usb_playing_path), "%s", path);
-    atomic_store_explicit(&s_usb_item_index, index, memory_order_release);
+    snprintf(s_files_playing_path, sizeof(s_files_playing_path), "%s", path);
+    atomic_store_explicit(&s_files_item_index, index, memory_order_release);
 }
 
 /* Puts the browser back on the file that is playing.
@@ -139,62 +140,62 @@ static void player_usb_select_item(size_t index, player_playback_state_t playbac
  * task whose stack is already the tightest on the device, and the read costs
  * the same as stepping into any folder, which this task does on a keypress
  * anyway. */
-static void player_usb_reveal_playing(void)
+static void player_file_reveal_playing(void)
 {
-    if (s_usb_playing_path[0] == '\0') return;
-    char parent[USB_BROWSER_PATH_MAX_LEN];
-    if (!usb_browser_path_parent(s_usb_playing_path, parent, sizeof(parent))) return;
-    if (usb_storage_read_directory(parent) != ESP_OK) {
+    if (s_files_playing_path[0] == '\0') return;
+    char parent[FILE_BROWSER_PATH_MAX_LEN];
+    if (!file_browser_path_parent(s_files_playing_path, parent, sizeof(parent))) return;
+    if (file_storage_read_directory(parent) != ESP_OK) {
         ESP_LOGW(TAG, "cannot reopen %s", parent);
         return;
     }
-    const char *name = strrchr(s_usb_playing_path, '/');
-    name = name == NULL ? s_usb_playing_path : name + 1;
-    const size_t index = usb_storage_find_entry(name);
+    const char *name = strrchr(s_files_playing_path, '/');
+    name = name == NULL ? s_files_playing_path : name + 1;
+    const size_t index = file_storage_find_entry(name);
     // The file can have been deleted from another machine since it was opened;
     // the directory is still the right one to show, just without a cursor to
     // put on the playing row.
-    atomic_store_explicit(&s_usb_item_index,
-                          index < usb_storage_entry_count() ? index : PLAYER_ITEM_NONE,
+    atomic_store_explicit(&s_files_item_index,
+                          index < file_storage_entry_count() ? index : PLAYER_ITEM_NONE,
                           memory_order_release);
-    atomic_fetch_add_explicit(&s_usb_listing_revision, 1U, memory_order_release);
+    atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
 }
 
-static void player_usb_advance(void)
+static void player_file_advance(void)
 {
-    const size_t played = atomic_load_explicit(&s_usb_item_index, memory_order_acquire);
+    const size_t played = atomic_load_explicit(&s_files_item_index, memory_order_acquire);
     // A track that was started before the listing changed leaves no usable
     // position to advance from, so stop rather than guess.
     if (played == PLAYER_ITEM_NONE) return;
-    const size_t next = usb_storage_next_file(played + 1U);
-    if (next >= usb_storage_entry_count()) {
+    const size_t next = file_storage_next_file(played + 1U);
+    if (next >= file_storage_entry_count()) {
         ESP_LOGI(TAG, "usb: last track in the directory, stopping");
-        atomic_store_explicit(&s_usb_item_index, PLAYER_ITEM_NONE, memory_order_release);
-        s_usb_playing_path[0] = '\0';
+        atomic_store_explicit(&s_files_item_index, PLAYER_ITEM_NONE, memory_order_release);
+        s_files_playing_path[0] = '\0';
         return;
     }
     // A track that ended is no longer playing, so nothing here can be mistaken
     // for the file that is - but say so explicitly rather than relying on it.
-    player_usb_select_item(next, PLAYER_PLAYBACK_STOPPED);
+    player_file_select_item(next, PLAYER_PLAYBACK_STOPPED);
 }
 
-static void player_usb_browse_up(void)
+static void player_file_browse_up(void)
 {
-    char current[USB_BROWSER_PATH_MAX_LEN];
-    char parent[USB_BROWSER_PATH_MAX_LEN];
-    if (!usb_storage_current_path(current, sizeof(current)) ||
-        !usb_browser_path_parent(current, parent, sizeof(parent))) {
+    char current[FILE_BROWSER_PATH_MAX_LEN];
+    char parent[FILE_BROWSER_PATH_MAX_LEN];
+    if (!file_storage_current_path(current, sizeof(current)) ||
+        !file_browser_path_parent(current, parent, sizeof(parent))) {
         // Already at the mount root: there is nothing above it to browse.
         return;
     }
-    if (usb_storage_read_directory(parent) != ESP_OK) return;
-    atomic_store_explicit(&s_usb_item_index, PLAYER_ITEM_NONE, memory_order_release);
-    atomic_fetch_add_explicit(&s_usb_listing_revision, 1U, memory_order_release);
+    if (file_storage_read_directory(parent) != ESP_OK) return;
+    atomic_store_explicit(&s_files_item_index, PLAYER_ITEM_NONE, memory_order_release);
+    atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
 }
 
 // Runs on the USB playback task as it exits, so it may only hand the intent
-// over to this task's queue - see usb_player_set_finished_callback().
-static void player_usb_track_finished(void)
+// over to this task's queue - see file_player_set_finished_callback().
+static void player_file_track_finished(void)
 {
     const player_command_t command = {.kind = PLAYER_COMMAND_TRACK_FINISHED};
     if (!player_control_post(&command)) {
@@ -207,14 +208,14 @@ static void player_usb_track_finished(void)
 // callback above, this one cannot hand the work to the queue: it has to have
 // released the drive before it comes back.
 //
-// usb_player_stop() is called unconditionally rather than only when USB is the
+// file_player_stop() is called unconditionally rather than only when USB is the
 // active source. What matters is that nothing is left reading the drive, and
 // stopping a player that is already stopped costs one atomic read - trusting
 // this task's bookkeeping instead would turn any drift in it into a read of
 // freed FATFS state.
-static void player_usb_media_removing(void)
+static void player_file_media_removing(void)
 {
-    const esp_err_t result = usb_player_stop();
+    const esp_err_t result = file_player_stop();
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "usb player did not release the drive: %s", esp_err_to_name(result));
     }
@@ -235,7 +236,7 @@ static bool player_stop_active_source(audio_source_t source)
             return false;
         }
     } else if (source == AUDIO_SOURCE_USB) {
-        const esp_err_t result = usb_player_stop();
+        const esp_err_t result = file_player_stop();
         if (result != ESP_OK) {
             ESP_LOGW(TAG, "usb player stop failed: %s", esp_err_to_name(result));
             return false;
@@ -245,7 +246,7 @@ static bool player_stop_active_source(audio_source_t source)
          * screen instead of being decoded again for every track. */
         album_art_clear();
         // Nothing is playing any more, so there is no directory to reveal.
-        s_usb_playing_path[0] = '\0';
+        s_files_playing_path[0] = '\0';
     }
 
     const audio_source_result_t result = audio_source_manager_stop(&s_manager, source);
@@ -296,16 +297,16 @@ static void player_control_task(void *arg)
                 // Selecting the source only opens the drive's root; nothing
                 // plays until an entry is chosen, because there is no
                 // equivalent of the radio's "last station".
-                (void)usb_storage_read_directory(USB_BROWSER_ROOT_PATH);
-                atomic_store_explicit(&s_usb_item_index, PLAYER_ITEM_NONE,
+                (void)file_storage_read_directory(USB_STORAGE_ROOT_PATH);
+                atomic_store_explicit(&s_files_item_index, PLAYER_ITEM_NONE,
                                       memory_order_release);
-                atomic_fetch_add_explicit(&s_usb_listing_revision, 1U, memory_order_release);
+                atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
             }
             break;
         }
         case PLAYER_OPERATION_START_ITEM:
             if (snapshot.active_source == AUDIO_SOURCE_USB) {
-                player_usb_select_item(command.item_index, snapshot.playback_state);
+                player_file_select_item(command.item_index, snapshot.playback_state);
             } else {
                 (void)internet_radio_start_station_index(command.item_index);
             }
@@ -317,14 +318,14 @@ static void player_control_task(void *arg)
             break;
         case PLAYER_OPERATION_PAUSE:
             if (snapshot.active_source == AUDIO_SOURCE_USB) {
-                (void)usb_player_pause();
+                (void)file_player_pause();
             } else {
                 (void)internet_radio_pause();
             }
             break;
         case PLAYER_OPERATION_RESUME:
             if (snapshot.active_source == AUDIO_SOURCE_USB) {
-                (void)usb_player_resume();
+                (void)file_player_resume();
             } else {
                 (void)internet_radio_resume();
             }
@@ -334,16 +335,16 @@ static void player_control_task(void *arg)
             // a jump is only a jump. Asked for on a paused file - which only
             // the web UI can arrange - the request waits and lands on the pass
             // that resumes it.
-            (void)usb_player_seek(command.position_seconds);
+            (void)file_player_seek(command.position_seconds);
             break;
         case PLAYER_OPERATION_ADVANCE_ITEM:
-            player_usb_advance();
+            player_file_advance();
             break;
         case PLAYER_OPERATION_BROWSE_UP:
-            player_usb_browse_up();
+            player_file_browse_up();
             break;
         case PLAYER_OPERATION_BROWSE_REVEAL:
-            player_usb_reveal_playing();
+            player_file_reveal_playing();
             break;
         case PLAYER_OPERATION_STOP:
             (void)player_stop_active_source(snapshot.active_source);
@@ -381,8 +382,8 @@ esp_err_t player_control_init(void)
         s_command_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
-    usb_player_set_finished_callback(player_usb_track_finished);
-    usb_storage_set_media_removing_callback(player_usb_media_removing);
+    file_player_set_finished_callback(player_file_track_finished);
+    usb_storage_set_media_removing_callback(player_file_media_removing);
     return ESP_OK;
 }
 
@@ -400,9 +401,9 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
 
     memset(snapshot, 0, sizeof(*snapshot));
     snapshot->capabilities = PLAYER_CAP_INTERNET_RADIO;
-    snapshot->usb_media = usb_storage_media();
-    snapshot->usb_listing_revision = player_control_usb_listing_revision();
-    snapshot->usb_entry_count = usb_storage_entry_count();
+    snapshot->files_media = usb_storage_media();
+    snapshot->listing_revision = player_control_listing_revision();
+    snapshot->files_entry_count = file_storage_entry_count();
     if (usb_storage_is_mounted()) {
         snapshot->capabilities |= PLAYER_CAP_USB;
     }
@@ -421,21 +422,21 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
         (int8_t)atomic_load_explicit(&s_rssi_dbm, memory_order_relaxed);
 
     if (snapshot->active_source == AUDIO_SOURCE_USB) {
-        usb_player_status_t usb_status;
-        usb_player_get_status(&usb_status);
-        snapshot->playback_state = player_playback_from_usb(usb_status.state);
+        file_player_status_t usb_status;
+        file_player_get_status(&usb_status);
+        snapshot->playback_state = player_playback_from_file(usb_status.state);
         snapshot->active_item_index =
-            atomic_load_explicit(&s_usb_item_index, memory_order_acquire);
-        snapshot->item_count = usb_storage_entry_count();
+            atomic_load_explicit(&s_files_item_index, memory_order_acquire);
+        snapshot->item_count = file_storage_entry_count();
         // The directory being browsed takes the place the radio gives the
         // station name, and the file name the place of the ICY title.
-        (void)usb_storage_current_path(snapshot->context, sizeof(snapshot->context));
+        (void)file_storage_current_path(snapshot->context, sizeof(snapshot->context));
         snprintf(snapshot->stream_title, sizeof(snapshot->stream_title), "%s",
                  usb_status.track);
         snprintf(snapshot->codec, sizeof(snapshot->codec), "%s", usb_status.codec);
         snapshot->bitrate_kbps = usb_status.bitrate_kbps;
         snapshot->sample_rate_hz = usb_status.sample_rate_hz;
-        if (usb_status.state == USB_PLAYER_STATE_ERROR) {
+        if (usb_status.state == FILE_PLAYER_STATE_ERROR) {
             snprintf(snapshot->error, sizeof(snapshot->error), "Не удалось воспроизвести файл");
         }
         return;
@@ -465,10 +466,10 @@ bool player_control_input_fill(uint8_t *percent)
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
     uint8_t reported;
     if (source == AUDIO_SOURCE_USB) {
-        usb_player_status_t status;
-        usb_player_get_status(&status);
-        if (status.state != USB_PLAYER_STATE_PLAYING &&
-            status.state != USB_PLAYER_STATE_PAUSED) {
+        file_player_status_t status;
+        file_player_get_status(&status);
+        if (status.state != FILE_PLAYER_STATE_PLAYING &&
+            status.state != FILE_PLAYER_STATE_PAUSED) {
             return false;
         }
         reported = status.buffer_percent;
@@ -495,9 +496,9 @@ bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_se
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
     if (source != AUDIO_SOURCE_USB) return false;
 
-    usb_player_status_t status;
-    usb_player_get_status(&status);
-    if (status.state != USB_PLAYER_STATE_PLAYING && status.state != USB_PLAYER_STATE_PAUSED) {
+    file_player_status_t status;
+    file_player_get_status(&status);
+    if (status.state != FILE_PLAYER_STATE_PLAYING && status.state != FILE_PLAYER_STATE_PAUSED) {
         return false;
     }
     *elapsed_seconds = status.elapsed_seconds;
@@ -513,7 +514,7 @@ bool player_control_track_tags(audio_tags_t *tags)
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
     if (source != AUDIO_SOURCE_USB) return false;
 
-    usb_player_get_tags(tags);
+    file_player_get_tags(tags);
     // False for an untagged file, so the caller falls back to the file name
     // rather than clearing three rows it has nothing to put in. The player
     // clears these when it starts a track, so they never outlive their file.
@@ -525,42 +526,42 @@ const station_catalog_entry_t *player_control_station_at(size_t index)
     return internet_radio_station_at(index);
 }
 
-bool player_control_usb_entry_at(size_t index, usb_browser_entry_t *entry)
+bool player_control_file_entry_at(size_t index, file_browser_entry_t *entry)
 {
-    return usb_storage_entry_at(index, entry);
+    return file_storage_entry_at(index, entry);
 }
 
-bool player_control_usb_resume_path(const char *path)
+bool player_control_file_resume_path(const char *path)
 {
-    char parent[USB_BROWSER_PATH_MAX_LEN];
+    char parent[FILE_BROWSER_PATH_MAX_LEN];
     if (path == NULL || path[0] == '\0' || !usb_storage_is_mounted()) return false;
-    if (!usb_browser_path_parent(path, parent, sizeof(parent))) return false;
+    if (!file_browser_path_parent(path, parent, sizeof(parent))) return false;
 
     /* Open the directory first: the remembered name is only meaningful inside
      * it, and if that fails there is nothing to search. */
-    if (usb_storage_read_directory(parent) != ESP_OK) {
-        (void)usb_storage_read_directory(USB_BROWSER_ROOT_PATH);
-        atomic_fetch_add_explicit(&s_usb_listing_revision, 1U, memory_order_release);
+    if (file_storage_read_directory(parent) != ESP_OK) {
+        (void)file_storage_read_directory(USB_STORAGE_ROOT_PATH);
+        atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
         return false;
     }
-    atomic_fetch_add_explicit(&s_usb_listing_revision, 1U, memory_order_release);
+    atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
 
     const char *name = strrchr(path, '/');
     name = name == NULL ? path : name + 1;
-    const size_t index = usb_storage_find_entry(name);
-    if (index >= usb_storage_entry_count()) return false;
-    usb_browser_entry_t entry;
+    const size_t index = file_storage_find_entry(name);
+    if (index >= file_storage_entry_count()) return false;
+    file_browser_entry_t entry;
     /* A directory that took the file's name is not the track we remembered. */
-    if (!usb_storage_entry_at(index, &entry) ||
-        entry.kind == USB_BROWSER_ENTRY_DIRECTORY) {
+    if (!file_storage_entry_at(index, &entry) ||
+        entry.kind == FILE_BROWSER_ENTRY_DIRECTORY) {
         return false;
     }
     // Nothing is playing at start-up, so this can only be a fresh start.
-    player_usb_select_item(index, PLAYER_PLAYBACK_STOPPED);
+    player_file_select_item(index, PLAYER_PLAYBACK_STOPPED);
     return true;
 }
 
-unsigned int player_control_usb_listing_revision(void)
+unsigned int player_control_listing_revision(void)
 {
-    return atomic_load_explicit(&s_usb_listing_revision, memory_order_acquire);
+    return atomic_load_explicit(&s_files_listing_revision, memory_order_acquire);
 }

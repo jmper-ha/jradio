@@ -1,4 +1,4 @@
-#include "usb_browser.h"
+#include "file_browser.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -33,40 +33,40 @@ static bool extension_equals(const char *extension, const char *expected)
     return compare_names(extension, expected) == 0;
 }
 
-usb_browser_format_t usb_browser_format_from_name(const char *name)
+file_browser_format_t file_browser_format_from_name(const char *name)
 {
-    if (name == NULL) return USB_BROWSER_FORMAT_NONE;
+    if (name == NULL) return FILE_BROWSER_FORMAT_NONE;
     const char *extension = extension_of(name);
-    if (extension == NULL) return USB_BROWSER_FORMAT_NONE;
-    if (extension_equals(extension, "mp3")) return USB_BROWSER_FORMAT_MP3;
-    if (extension_equals(extension, "aac")) return USB_BROWSER_FORMAT_AAC;
-    if (extension_equals(extension, "adts")) return USB_BROWSER_FORMAT_AAC;
-    if (extension_equals(extension, "flac")) return USB_BROWSER_FORMAT_FLAC;
-    if (extension_equals(extension, "ogg")) return USB_BROWSER_FORMAT_OGG_FLAC;
-    if (extension_equals(extension, "oga")) return USB_BROWSER_FORMAT_OGG_FLAC;
-    if (extension_equals(extension, "wav")) return USB_BROWSER_FORMAT_WAV;
-    return USB_BROWSER_FORMAT_NONE;
+    if (extension == NULL) return FILE_BROWSER_FORMAT_NONE;
+    if (extension_equals(extension, "mp3")) return FILE_BROWSER_FORMAT_MP3;
+    if (extension_equals(extension, "aac")) return FILE_BROWSER_FORMAT_AAC;
+    if (extension_equals(extension, "adts")) return FILE_BROWSER_FORMAT_AAC;
+    if (extension_equals(extension, "flac")) return FILE_BROWSER_FORMAT_FLAC;
+    if (extension_equals(extension, "ogg")) return FILE_BROWSER_FORMAT_OGG_FLAC;
+    if (extension_equals(extension, "oga")) return FILE_BROWSER_FORMAT_OGG_FLAC;
+    if (extension_equals(extension, "wav")) return FILE_BROWSER_FORMAT_WAV;
+    return FILE_BROWSER_FORMAT_NONE;
 }
 
-const char *usb_browser_format_name(usb_browser_format_t format)
+const char *file_browser_format_name(file_browser_format_t format)
 {
     switch (format) {
-    case USB_BROWSER_FORMAT_MP3: return "MP3";
-    case USB_BROWSER_FORMAT_AAC: return "AAC";
-    case USB_BROWSER_FORMAT_FLAC: return "FLAC";
-    case USB_BROWSER_FORMAT_OGG_FLAC: return "OGG";
-    case USB_BROWSER_FORMAT_WAV: return "WAV";
-    case USB_BROWSER_FORMAT_NONE:
+    case FILE_BROWSER_FORMAT_MP3: return "MP3";
+    case FILE_BROWSER_FORMAT_AAC: return "AAC";
+    case FILE_BROWSER_FORMAT_FLAC: return "FLAC";
+    case FILE_BROWSER_FORMAT_OGG_FLAC: return "OGG";
+    case FILE_BROWSER_FORMAT_WAV: return "WAV";
+    case FILE_BROWSER_FORMAT_NONE:
     default: return "";
     }
 }
 
-bool usb_browser_name_is_hidden(const char *name)
+bool file_browser_name_is_hidden(const char *name)
 {
     return name == NULL || name[0] == '\0' || name[0] == '.';
 }
 
-void usb_browser_dir_init(usb_browser_dir_t *dir, usb_browser_entry_t *storage,
+void file_browser_dir_init(file_browser_dir_t *dir, file_browser_entry_t *storage,
                           size_t capacity, const char *path)
 {
     if (dir == NULL) return;
@@ -83,19 +83,19 @@ void usb_browser_dir_init(usb_browser_dir_t *dir, usb_browser_entry_t *storage,
     }
 }
 
-bool usb_browser_dir_add(usb_browser_dir_t *dir, const char *name,
-                         usb_browser_entry_kind_t kind)
+bool file_browser_dir_add(file_browser_dir_t *dir, const char *name,
+                         file_browser_entry_kind_t kind)
 {
-    if (dir == NULL || dir->entries == NULL || usb_browser_name_is_hidden(name)) {
+    if (dir == NULL || dir->entries == NULL || file_browser_name_is_hidden(name)) {
         return false;
     }
-    usb_browser_format_t format = USB_BROWSER_FORMAT_NONE;
-    if (kind == USB_BROWSER_ENTRY_FILE) {
-        format = usb_browser_format_from_name(name);
-        if (format == USB_BROWSER_FORMAT_NONE) return false;
+    file_browser_format_t format = FILE_BROWSER_FORMAT_NONE;
+    if (kind == FILE_BROWSER_ENTRY_FILE) {
+        format = file_browser_format_from_name(name);
+        if (format == FILE_BROWSER_FORMAT_NONE) return false;
     }
     const size_t length = strlen(name);
-    if (length >= USB_BROWSER_NAME_MAX_LEN) {
+    if (length >= FILE_BROWSER_NAME_MAX_LEN) {
         ++dir->dropped_long_name;
         return false;
     }
@@ -103,7 +103,7 @@ bool usb_browser_dir_add(usb_browser_dir_t *dir, const char *name,
         ++dir->dropped_full;
         return false;
     }
-    usb_browser_entry_t *entry = &dir->entries[dir->count];
+    file_browser_entry_t *entry = &dir->entries[dir->count];
     memcpy(entry->name, name, length + 1U);
     entry->kind = kind;
     entry->format = format;
@@ -113,10 +113,10 @@ bool usb_browser_dir_add(usb_browser_dir_t *dir, const char *name,
 
 static int compare_entries(const void *left, const void *right)
 {
-    const usb_browser_entry_t *a = (const usb_browser_entry_t *)left;
-    const usb_browser_entry_t *b = (const usb_browser_entry_t *)right;
+    const file_browser_entry_t *a = (const file_browser_entry_t *)left;
+    const file_browser_entry_t *b = (const file_browser_entry_t *)right;
     if (a->kind != b->kind) {
-        return a->kind == USB_BROWSER_ENTRY_DIRECTORY ? -1 : 1;
+        return a->kind == FILE_BROWSER_ENTRY_DIRECTORY ? -1 : 1;
     }
     const int by_name = compare_names(a->name, b->name);
     // Case-insensitive comparison makes "Track.mp3" and "track.mp3" equal, and
@@ -125,29 +125,29 @@ static int compare_entries(const void *left, const void *right)
     return by_name != 0 ? by_name : strcmp(a->name, b->name);
 }
 
-void usb_browser_dir_sort(usb_browser_dir_t *dir)
+void file_browser_dir_sort(file_browser_dir_t *dir)
 {
     if (dir == NULL || dir->entries == NULL || dir->count < 2U) return;
     qsort(dir->entries, dir->count, sizeof(dir->entries[0]), compare_entries);
 }
 
-size_t usb_browser_dir_count(const usb_browser_dir_t *dir)
+size_t file_browser_dir_count(const file_browser_dir_t *dir)
 {
     return dir == NULL ? 0U : dir->count;
 }
 
-const usb_browser_entry_t *usb_browser_dir_entry(const usb_browser_dir_t *dir, size_t index)
+const file_browser_entry_t *file_browser_dir_entry(const file_browser_dir_t *dir, size_t index)
 {
     if (dir == NULL || dir->entries == NULL || index >= dir->count) return NULL;
     return &dir->entries[index];
 }
 
-size_t usb_browser_dir_find(const usb_browser_dir_t *dir, const char *name)
+size_t file_browser_dir_find(const file_browser_dir_t *dir, const char *name)
 {
-    const size_t count = usb_browser_dir_count(dir);
+    const size_t count = file_browser_dir_count(dir);
     if (name == NULL || name[0] == '\0') return count;
     for (size_t index = 0U; index < count; ++index) {
-        const usb_browser_entry_t *entry = usb_browser_dir_entry(dir, index);
+        const file_browser_entry_t *entry = file_browser_dir_entry(dir, index);
         /* Exact match, not the case-insensitive compare the sort uses: this
          * answers "is the very same file still here", and on a FAT volume two
          * names differing only in case are the same file anyway. */
@@ -156,26 +156,34 @@ size_t usb_browser_dir_find(const usb_browser_dir_t *dir, const char *name)
     return count;
 }
 
-size_t usb_browser_dir_next_file(const usb_browser_dir_t *dir, size_t from)
+size_t file_browser_dir_next_file(const file_browser_dir_t *dir, size_t from)
 {
     if (dir == NULL) return 0U;
     for (size_t i = from; i < dir->count; ++i) {
-        if (dir->entries[i].kind == USB_BROWSER_ENTRY_FILE) return i;
+        if (dir->entries[i].kind == FILE_BROWSER_ENTRY_FILE) return i;
     }
     return dir->count;
 }
 
-bool usb_browser_path_is_root(const char *path)
+/* A path is a mount root when it names a volume and nothing inside it:
+ * "/usb0" and "/sd0" are roots, "/usb0/Music" is not.
+ *
+ * Written as "one slash, at the front" rather than compared against a list of
+ * mount points, so that nothing here has to know which volumes the device has.
+ * Browsing up out of a root then fails for the right reason - there is no
+ * second slash to cut the path at. */
+bool file_browser_path_is_root(const char *path)
 {
-    return path != NULL && strcmp(path, USB_BROWSER_ROOT_PATH) == 0;
+    return path != NULL && path[0] == '/' && path[1] != '\0' &&
+           strchr(path + 1, '/') == NULL;
 }
 
-bool usb_browser_path_child(const char *path, const char *name, char *out, size_t out_size)
+bool file_browser_path_child(const char *path, const char *name, char *out, size_t out_size)
 {
     if (path == NULL || name == NULL || out == NULL || out_size == 0U) return false;
-    // "." and ".." would walk out of the mount point; nothing above /usb0 is
-    // ours to browse.
-    if (usb_browser_name_is_hidden(name) || strchr(name, '/') != NULL) return false;
+    // "." and ".." would walk out of the mount point; nothing above a volume
+    // root is ours to browse.
+    if (file_browser_name_is_hidden(name) || strchr(name, '/') != NULL) return false;
     const size_t path_length = strlen(path);
     const size_t name_length = strlen(name);
     if (path_length + 1U + name_length + 1U > out_size) return false;
@@ -185,9 +193,9 @@ bool usb_browser_path_child(const char *path, const char *name, char *out, size_
     return true;
 }
 
-bool usb_browser_path_parent(const char *path, char *out, size_t out_size)
+bool file_browser_path_parent(const char *path, char *out, size_t out_size)
 {
-    if (path == NULL || out == NULL || out_size == 0U || usb_browser_path_is_root(path)) {
+    if (path == NULL || out == NULL || out_size == 0U || file_browser_path_is_root(path)) {
         return false;
     }
     const char *slash = strrchr(path, '/');

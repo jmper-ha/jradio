@@ -26,7 +26,8 @@
 
 #if defined(TFT_CS_GPIO) || defined(I2S_DOUT_GPIO) || defined(USB_DP_GPIO) || \
     defined(ENCODER_LEFT_GPIO) || defined(BACKLIGHT_PWM_HZ) ||                \
-    defined(INPUT_POLL_MS) || defined(DISPLAY) || defined(AUDIO_DAC)
+    defined(INPUT_POLL_MS) || defined(DISPLAY) || defined(AUDIO_DAC) ||       \
+    defined(SDC_CS_GPIO)
 #error "board_options.h: a name here is already defined elsewhere - most likely \
 an ESP-IDF header now uses it. Re-prefix the affected option in this file and \
 at its use sites."
@@ -113,3 +114,34 @@ at its use sites."
  * logically (usb_host_lib_set_root_port_power), which toggles the controller's
  * PRTPWR bit and needs no GPIO of its own. */
 #define USB_VBUS_SWITCHED 0
+
+/* ======================================================================
+ * SD card - microSD in SPI mode, on its own bus
+ * ====================================================================== */
+
+/* A second SPI peripheral rather than a share of the display's. The panel bus
+ * has no MISO wired at all, which a card cannot work without, and the display
+ * driver owns its bus with its own transactions - a card on it would have to
+ * interleave with every frame. SPI2 is the panel's, so this is SPI3. */
+#define SDC_SPI_PERIPHERAL 3
+
+#define SDC_CS_GPIO 1
+#define SDC_SCK_GPIO 41
+#define SDC_MISO_GPIO 40
+#define SDC_MOSI_GPIO 42
+/* GPIO 40, 41 and 42 are MTDO/MTDI/MTMS, so the bus takes over the external
+ * JTAG header. No loss in practice: the built-in USB Serial/JTAG shares its
+ * pins with the USB host port, which is already wired to the drive socket. */
+
+/* The sdmmc driver's own default (SDMMC_FREQ_DEFAULT, 20 MHz), which is also
+ * the fastest a card is required to accept in SPI mode. Probing higher needs a
+ * scope on this board's wiring, not a guess. Card enumeration always starts at
+ * 400 kHz regardless; the driver steps up to this once the card answers.
+ *
+ * The sdspi host config wants kHz, so it divides this by 1000. */
+#define SDC_CLOCK_HZ (20 * 1000 * 1000)
+
+/* No card-detect or write-protect line is wired: the socket's switch pins are
+ * unconnected, so a card that appears after boot cannot announce itself the
+ * way a USB drive does. Insertion has to be found by trying to mount. */
+#define SDC_HAS_CARD_DETECT 0

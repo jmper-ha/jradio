@@ -51,7 +51,11 @@ CONFIG_LWIP_MAX_SOCKETS=16
 # before. Note this also fixes TCP_MSS at 1440: that value is the IPv6 ceiling
 # (1500 - 40 - 20), and only an IPv4-only build may raise it to 1460.
 # CONFIG_LWIP_IPV6 is not set
-# The USB flash drive is the only FAT volume. Without long-file-name support
+# Two FAT volumes: the USB flash drive at /usb0 and the SD card at /sd0. Two is
+# also the IDF default, so this line only pins it - dropping it to one would
+# leave whichever mounted second with nowhere to go.
+CONFIG_FATFS_VOLUME_COUNT=2
+# Without long-file-name support
 # readdir() returns 8.3 aliases, which makes a music browser useless: a track
 # named in Russian comes back as "______~1.MP3", identical for every such file.
 # UTF-8 API encoding hands those names straight to LVGL and the web UI, and

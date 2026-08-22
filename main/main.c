@@ -8,6 +8,7 @@
 #include "device_clock.h"
 #include "internet_radio.h"
 #include "player_control.h"
+#include "sd_storage.h"
 #include "settings_csv.h"
 #include "system_report.h"
 #include "ui.h"
@@ -63,6 +64,9 @@ void app_main(void)
     // not depend on being connected - SNTP retries on its own and the clock
     // reads unset until an answer arrives.
     device_clock_init();
+    // Before the UI and the radio, deliberately: sd_storage_init() explains
+    // what the internal-SRAM heap does if the mount lands after them.
+    start_optional("SD card", sd_storage_init());
     start_optional("USB storage", usb_storage_init());
     start_optional("USB player", usb_player_init());
     ESP_ERROR_CHECK(internet_radio_init());

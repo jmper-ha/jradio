@@ -35,6 +35,9 @@ static const char *TAG = "usb_player";
 // worst-case compressed frame plus slack; FLAC frames are the large ones.
 #define USB_PLAYER_INPUT_SIZE 32768U
 #define USB_PLAYER_READ_CHUNK 4096U
+/* Where the output buffer starts, not where it stays: enough for a 4096-sample
+ * stereo frame, which is what most files decode to, and grown to fit when a
+ * header asks for more - see grow_pcm_buffer(). */
 #define USB_PLAYER_PCM_SIZE 16384U
 #define USB_PLAYER_STOP_TIMEOUT_MS 5000U
 // Pinned to core 1 for the same reason as the radio decoder: core 0 carries
@@ -118,6 +121,11 @@ typedef struct {
     FILE *file;
     uint8_t *compressed;
     uint8_t *pcm;
+    /* Not a constant, because a FLAC frame is not: the encoder chooses the
+     * block size, and a buffer sized for the common 4096 samples rejects every
+     * frame of a file written with 4608 - the decoder delivers a frame whole
+     * or not at all. Grown to fit once the header says how much it needs. */
+    size_t pcm_capacity;
     size_t available;
     size_t offset;
     bool eof;
@@ -697,7 +705,7 @@ static bool play_wav(usb_player_context_t *ctx, unsigned int *pcm_blocks)
             // The I2S channel is fixed at 16-bit stereo slots, so a mono file
             // has to be duplicated into both channels rather than reconfigured.
             if (!audio_pcm_to_stereo_s16(ctx->compressed, usable, 1U, ctx->pcm,
-                                         USB_PLAYER_PCM_SIZE, &out_length)) {
+                                         ctx->pcm_capacity, &out_length)) {
                 ESP_LOGE(TAG, "cannot expand %u mono bytes to stereo",
                          (unsigned int)usable);
                 return true;
@@ -708,6 +716,26 @@ static bool play_wav(usb_player_context_t *ctx, unsigned int *pcm_blocks)
         ++(*pcm_blocks);
         if (received < want) return false;
     }
+}
+
+/* Makes room for a whole decoded frame, now that the header has said how big
+ * one is. Returns false only when there is no memory for it, which ends the
+ * track - a frame that does not fit is never delivered at all, so playing on
+ * would mean playing silence. */
+static bool grow_pcm_buffer(usb_player_context_t *ctx, const radio_decoder_info_t *info)
+{
+    if (info->pcm_frame_bytes <= ctx->pcm_capacity) return true;
+    uint8_t *grown = alloc_buffer(info->pcm_frame_bytes);
+    if (grown == NULL) {
+        ESP_LOGE(TAG, "no memory for a %u byte frame", (unsigned int)info->pcm_frame_bytes);
+        return false;
+    }
+    ESP_LOGI(TAG, "output buffer grown from %u to %u bytes for this file",
+             (unsigned int)ctx->pcm_capacity, (unsigned int)info->pcm_frame_bytes);
+    free(ctx->pcm);
+    ctx->pcm = grown;
+    ctx->pcm_capacity = info->pcm_frame_bytes;
+    return true;
 }
 
 static void usb_player_task(void *arg)
@@ -734,6 +762,7 @@ static void usb_player_task(void *arg)
     if (!failed) {
         ctx.compressed = alloc_buffer(USB_PLAYER_INPUT_SIZE);
         ctx.pcm = alloc_buffer(USB_PLAYER_PCM_SIZE);
+        ctx.pcm_capacity = ctx.pcm != NULL ? USB_PLAYER_PCM_SIZE : 0U;
         ctx.file = fopen(s_request.path, "rb");
         if (ctx.file != NULL && fseek(ctx.file, 0, SEEK_END) == 0) {
             const long end = ftell(ctx.file);
@@ -788,7 +817,7 @@ static void usb_player_task(void *arg)
             radio_decoder_info_t info = {0};
             const radio_decoder_result_t result =
                 radio_decoder_decode(decoder, ctx.compressed + ctx.offset, ctx.available,
-                                     ctx.pcm, USB_PLAYER_PCM_SIZE, &consumed, &pcm_bytes,
+                                     ctx.pcm, ctx.pcm_capacity, &consumed, &pcm_bytes,
                                      &info);
             if (consumed > ctx.available) {
                 ESP_LOGE(TAG, "decoder consumed %u of %u available", (unsigned int)consumed,
@@ -803,6 +832,10 @@ static void usb_player_task(void *arg)
                 if (apply_info(&ctx, &info) != ESP_OK) {
                     ESP_LOGE(TAG, "cannot configure output for %u Hz",
                              (unsigned int)info.sample_rate);
+                    failed = true;
+                    break;
+                }
+                if (result == RADIO_DECODER_HEADER_READY && !grow_pcm_buffer(&ctx, &info)) {
                     failed = true;
                     break;
                 }

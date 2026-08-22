@@ -429,6 +429,11 @@ static void radio_direct_task(void *arg)
         pcm = heap_caps_malloc(RADIO_DIRECT_PCM_SIZE,
                                MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
+    /* Where the output buffer starts rather than where it stays. A FLAC
+     * station chooses its own block size, and a frame is delivered whole or
+     * not at all, so a buffer one sample short of a frame rejects every frame
+     * the station sends. The header says how much is needed. */
+    size_t pcm_capacity = pcm != NULL ? RADIO_DIRECT_PCM_SIZE : 0U;
     size_t available = 0U;
     size_t compressed_offset = 0U;
     unsigned int decode_error_retries = 0U;
@@ -534,7 +539,7 @@ static void radio_direct_task(void *arg)
             radio_decoder_info_t info = {0};
             const radio_decoder_result_t result = radio_decoder_decode(
                 radio->decoder, compressed + compressed_offset, available, pcm,
-                RADIO_DIRECT_PCM_SIZE, &consumed, &pcm_bytes, &info);
+                pcm_capacity, &consumed, &pcm_bytes, &info);
             if (consumed > available) {
                 fatal = true;
                 break;
@@ -550,6 +555,25 @@ static void radio_direct_task(void *arg)
             }
             if (result == RADIO_DECODER_HEADER_READY) {
                 decode_error_retries = 0U;
+                if (info.pcm_frame_bytes > pcm_capacity) {
+                    uint8_t *grown = heap_caps_malloc(info.pcm_frame_bytes,
+                                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+                    if (grown == NULL) {
+                        grown = heap_caps_malloc(info.pcm_frame_bytes,
+                                                 MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+                    }
+                    if (grown == NULL) {
+                        ESP_LOGE(TAG, "no memory for a %u byte frame",
+                                 (unsigned int)info.pcm_frame_bytes);
+                        fatal = true;
+                        break;
+                    }
+                    ESP_LOGI(TAG, "output buffer grown from %u to %u bytes for this stream",
+                             (unsigned int)pcm_capacity, (unsigned int)info.pcm_frame_bytes);
+                    heap_caps_free(pcm);
+                    pcm = grown;
+                    pcm_capacity = info.pcm_frame_bytes;
+                }
                 if (radio_direct_update_info(radio, &info) != ESP_OK) {
                     ESP_LOGE(TAG, "failed to configure audio output for %u Hz",
                              (unsigned int)info.sample_rate);

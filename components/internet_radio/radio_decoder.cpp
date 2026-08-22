@@ -118,6 +118,9 @@ static void update_flac_info(radio_decoder_t *decoder)
     decoder->info.channels = static_cast<uint8_t>(stream_info.num_channels());
     decoder->info.bits_per_sample = static_cast<uint8_t>(stream_info.bits_per_sample());
     decoder->info.bitrate_kbps = 0U;
+    // Whatever the file's channel count, the output is stereo 16-bit.
+    decoder->info.pcm_frame_bytes =
+        static_cast<uint32_t>(stream_info.max_block_size()) * 2U * sizeof(int16_t);
 }
 
 static void update_mp3_info(radio_decoder_t *decoder)
@@ -126,6 +129,8 @@ static void update_mp3_info(radio_decoder_t *decoder)
     decoder->info.channels = decoder->mp3.get_channels();
     decoder->info.bits_per_sample = 16U;
     decoder->info.bitrate_kbps = decoder->mp3.get_bitrate();
+    // An MPEG frame is 1152 samples at most, well inside any caller's buffer.
+    decoder->info.pcm_frame_bytes = 0U;
 }
 
 static bool normalize_pcm(const int32_t *input, size_t sample_count, uint8_t channels,

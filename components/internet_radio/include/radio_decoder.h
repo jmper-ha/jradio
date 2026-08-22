@@ -26,6 +26,16 @@ typedef struct {
     uint8_t channels;
     uint8_t bits_per_sample;
     uint32_t bitrate_kbps;
+    /* Most 16-bit stereo PCM one decoded frame can produce, which the caller's
+     * output buffer has to hold in one piece - a frame is delivered whole or
+     * not at all.
+     *
+     * Filled for FLAC, where it is not a constant: the block size is chosen by
+     * the encoder, and the two values in ordinary use, 4096 and 4608 samples,
+     * differ by exactly enough that a buffer sized for the first rejects every
+     * frame of the second. Zero for the formats whose frames are small and
+     * fixed, meaning the caller's usual buffer will do. */
+    uint32_t pcm_frame_bytes;
 } radio_decoder_info_t;
 
 radio_decoder_t *radio_decoder_create(radio_stream_format_t format);

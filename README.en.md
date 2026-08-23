@@ -13,20 +13,41 @@ output.
 
 # What it does
 
-| Feature | Details |
-|---|---|
-| **Internet radio** | Your own station list, the track name straight off the air, reconnection when a stream drops |
-| **Music from a drive or card** | Walk through folders, cover art and tags, scrubbing, moves on to the next track |
-| **Yandex Music** | "My wave" and your account's stations, album art, a next-track button |
-| **Web interface** | All of it from a phone: player, station list, files, settings |
-| **Clock** | Time from the internet, on every screen |
-| **Volume** | On the knob, remembered across restarts |
-| **Autoplay** | Starts whatever was playing when the power went off |
+| Feature | State | Details |
+|---|---|---|
+| **Internet radio** | works | Your own list of up to 32 stations, the track name straight off the air, reconnection when a stream drops |
+| **Music from a USB drive** | works | Walk through folders, tags, cover art, scrubbing, moves on to the next track |
+| **Music from an SD card** | works | The same; the card is recognised when its source is entered |
+| **Yandex Music** | works | "My wave" and your account's stations, album art, a next-track button |
+| **Web interface** | works | Player, station-list editor, file browsing, Wi-Fi, linking Yandex Music. No volume and no scrubbing on the web |
+| **Clock** | works | Time from the internet, on every screen |
+| **Volume** | works | On the knob, remembered across restarts |
+| **Autoplay** | works | Starts whatever was playing when the power went off |
+| **Cover art** | works | From the file's tag, from a `cover.jpg` beside the music, from Yandex |
+| **Interface language** | partly | The switch is there, but it only changes the labels on the settings screen itself |
+| **Likes in Yandex Music** | not built | There are no like and dislike buttons yet |
+| **Yandex Music categories** | not built | Only the account's own stations are shown; there is no general catalogue of genres, moods and epochs |
+| **Bluetooth, FM, DLNA** | not built | Their menu entries are there, but they answer "not available yet" |
 
-Formats: MP3, AAC, FLAC, Ogg FLAC, WAV. Radio over both HTTP and HTTPS.
+## Formats
 
-Bluetooth, FM and DLNA are not built yet - their menu entries are there, but
-they answer "not available yet".
+| Format | Radio | Files | Notes |
+|---|:---:|:---:|---|
+| MP3 | yes | `.mp3` | |
+| AAC | yes | `.aac`, `.adts` | Raw ADTS only. `.m4a` is AAC in an MP4 container and cannot be read |
+| FLAC | yes | `.flac` | |
+| FLAC in Ogg | yes | `.ogg`, `.oga` | Vorbis under the same extensions will not play |
+| WAV | - | `.wav` | 16-bit, mono or stereo |
+| HLS (`.m3u8`) | yes | - | Segments in MP3 or AAC. A stream wrapped in MPEG-TS is not demuxed |
+
+Radio works over both HTTP and HTTPS. A station whose address ends in `.m3u8`
+is not a stream but an index of short files; the device handles such an index
+by itself, with nothing to configure.
+
+Only files can be scrubbed: neither a radio stream nor a Yandex station has a
+length or a position to move to. Track length is worked out from the file size
+and the bitrate - exact for WAV and for constant bitrate, taken from the header
+for FLAC, and drifting a little on a variable-bitrate file.
 
 ## First run
 

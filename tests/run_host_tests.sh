@@ -35,6 +35,7 @@ include_flags=(
     -I"${project_dir}/components/usb_storage/include"
     -I"${project_dir}/components/web_server"
     -I"${project_dir}/components/web_server/include"
+    -I"${project_dir}/components/yandex_music/include"
     # For the fixture the tag tests read: real bytes out of a real file, kept
     # next to the tests that assert on them.
     -I"${project_dir}/tests"
@@ -182,6 +183,13 @@ run_test web_protocol -I"${cjson_include}" tests/test_web_protocol.c \
     components/web_server/web_protocol.c "${cjson_source}"
 run_test web_view_model tests/test_web_view_model.c \
     components/web_server/web_view_model.c
+run_test yandex_auth_flow tests/test_yandex_auth_flow.c \
+    components/yandex_music/yandex_auth_flow.c
+run_test yandex_auth_json -I"${cjson_include}" tests/test_yandex_auth_json.c \
+    components/yandex_music/yandex_auth_json.c \
+    components/yandex_music/yandex_auth_flow.c "${cjson_source}"
+run_test yandex_token_store tests/test_yandex_token_store.c \
+    components/yandex_music/yandex_token_store.c
 
 if ! command -v node >/dev/null 2>&1; then
     printf 'node is required for web player regression tests.\n' >&2

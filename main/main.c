@@ -16,6 +16,7 @@
 #include "usb_storage.h"
 #include "web_server.h"
 #include "wifi_provisioning.h"
+#include "yandex_auth.h"
 
 static const char *TAG = "jradio";
 
@@ -64,6 +65,9 @@ void app_main(void)
     // not depend on being connected - SNTP retries on its own and the clock
     // reads unset until an answer arrives.
     device_clock_init();
+    // After Wi-Fi, because that is what mounts LittleFS, and before the UI so
+    // the menu already knows whether an account is linked when it first draws.
+    start_optional("Yandex Music", yandex_auth_init());
     // Before the UI and the radio, deliberately: sd_storage_init() explains
     // what the internal-SRAM heap does if the mount lands after them.
     start_optional("SD card", sd_storage_init());

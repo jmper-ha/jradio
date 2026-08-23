@@ -100,6 +100,9 @@ static atomic_bool s_audio_level_fresh = ATOMIC_VAR_INIT(false);
 static atomic_uint s_audio_volume = ATOMIC_VAR_INIT(AUDIO_VOLUME_MAX_PERCENT);
 static uint8_t *s_audio_gain_scratch;
 static size_t s_audio_gain_scratch_size;
+/* Frames clocked out since output was last enabled, counted only as far as the
+ * fade needs. Guarded by s_audio_mutex like the scratch. */
+static uint32_t s_audio_fade_frames;
 
 static void board_audio_level_note(unsigned int value, atomic_uint *slot)
 {
@@ -348,6 +351,56 @@ static esp_err_t board_audio_preload_silence(void)
     return ESP_OK;
 }
 
+_Static_assert(AUDIO_VOLUME_FRAME_BYTES == I2S_BYTES_PER_FRAME,
+               "volume ramp and I2S disagree about the size of a frame");
+
+/* Returns the block to hand I2S: `pcm` itself when it needs no change, or the
+ * scratch holding an attenuated copy. Advances the fade.
+ *
+ * Both the first block and every one after it come through here. They used not
+ * to: the first was written straight to I2S, at full volume whatever the
+ * listener had set, which is the click that started playback on a box turned
+ * down.
+ *
+ * Call with s_audio_mutex held - the scratch and the fade counter are shared
+ * between the radio's task and the file player's. */
+static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
+{
+    const uint16_t gain = audio_volume_gain(board_audio_volume());
+    const uint32_t frames = (uint32_t)(pcm_length / AUDIO_VOLUME_FRAME_BYTES);
+    const uint16_t gain_start =
+        audio_volume_fade_gain(gain, s_audio_fade_frames, AUDIO_VOLUME_FADE_FRAMES);
+    const uint16_t gain_end = audio_volume_fade_gain(gain, s_audio_fade_frames + frames,
+                                                     AUDIO_VOLUME_FADE_FRAMES);
+    if (s_audio_fade_frames < AUDIO_VOLUME_FADE_FRAMES) {
+        s_audio_fade_frames += frames;
+    }
+    if (gain_start == AUDIO_VOLUME_UNITY && gain_end == AUDIO_VOLUME_UNITY) {
+        // Full volume, fade over: bit-exact, and no copy.
+        return pcm;
+    }
+    if (s_audio_gain_scratch == NULL || s_audio_gain_scratch_size < pcm_length) {
+        // Grown once and kept: block sizes are fixed per source, so this
+        // allocates on the first quiet block after boot and never again. PSRAM
+        // first, like every other buffer here - internal memory is the scarce
+        // pool and I2S copies out of this anyway.
+        heap_caps_free(s_audio_gain_scratch);
+        s_audio_gain_scratch = heap_caps_malloc(pcm_length,
+                                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (s_audio_gain_scratch == NULL) {
+            s_audio_gain_scratch = heap_caps_malloc(pcm_length,
+                                                    MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        }
+        s_audio_gain_scratch_size = s_audio_gain_scratch != NULL ? pcm_length : 0U;
+    }
+    /* No scratch means no attenuation this block. Playing one block at full
+     * volume is wrong but recoverable; refusing to write would starve the
+     * DAC. */
+    if (s_audio_gain_scratch == NULL) return pcm;
+    audio_volume_apply_ramp(pcm, s_audio_gain_scratch, pcm_length, gain_start, gain_end);
+    return s_audio_gain_scratch;
+}
+
 esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
                             uint32_t timeout_ms)
 {
@@ -378,31 +431,7 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
          * station is sending rather than how loud the listener set it. A meter
          * that fell with the volume knob would look like a failing stream. */
         const uint8_t volume = board_audio_volume();
-        const uint16_t gain = audio_volume_gain(volume);
-        const void *out = pcm;
-        if (gain != AUDIO_VOLUME_UNITY) {
-            if (s_audio_gain_scratch == NULL || s_audio_gain_scratch_size < pcm_length) {
-                // Grown once and kept: block sizes are fixed per source, so
-                // this allocates on the first quiet block after boot and never
-                // again. PSRAM first, like every other buffer here - internal
-                // memory is the scarce pool and I2S copies out of this anyway.
-                heap_caps_free(s_audio_gain_scratch);
-                s_audio_gain_scratch = heap_caps_malloc(pcm_length,
-                                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-                if (s_audio_gain_scratch == NULL) {
-                    s_audio_gain_scratch = heap_caps_malloc(pcm_length,
-                                                            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-                }
-                s_audio_gain_scratch_size = s_audio_gain_scratch != NULL ? pcm_length : 0U;
-            }
-            if (s_audio_gain_scratch != NULL) {
-                audio_volume_apply(pcm, s_audio_gain_scratch, pcm_length, gain);
-                out = s_audio_gain_scratch;
-            }
-            /* No scratch means no attenuation this block. Playing one block at
-             * full volume is wrong but recoverable; refusing to write would
-             * starve the DAC. */
-        }
+        const void *out = board_audio_shaped_block(pcm, pcm_length);
         result = i2s_channel_write(s_i2s_tx, out, pcm_length, written,
                                    pdMS_TO_TICKS(timeout_ms));
         if (result == ESP_OK) {
@@ -512,7 +541,11 @@ esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloade
         if (result == ESP_OK) {
             s_audio_enabled = true;
             board_audio_health_rearm();
-            result = i2s_channel_write(s_i2s_tx, pcm, pcm_length, preloaded,
+            // The DAC has been fed silence up to this instant, so this block
+            // is the step the fade exists for.
+            s_audio_fade_frames = 0U;
+            const void *out = board_audio_shaped_block(pcm, pcm_length);
+            result = i2s_channel_write(s_i2s_tx, out, pcm_length, preloaded,
                                        pdMS_TO_TICKS(1000));
         }
         if (result == ESP_OK && *preloaded == pcm_length) {
@@ -552,6 +585,7 @@ esp_err_t board_audio_set_enabled(bool enabled)
             s_audio_enabled = enabled;
             if (enabled) {
                 board_audio_health_rearm();
+                s_audio_fade_frames = 0U;
             }
             ESP_LOGI(TAG, "PCM5102 I2S output %s", enabled ? "enabled" : "disabled");
         }

@@ -1,5 +1,7 @@
 #include "audio_volume.h"
 
+#include <stdbool.h>
+
 /* Breakpoints of the volume curve: setting and the multiplier it maps to,
  * every ten percent worth 4 dB. Interpolated linearly in amplitude between
  * neighbours, which is close enough for a control read in whole percent.
@@ -43,13 +45,31 @@ uint16_t audio_volume_gain(uint8_t percent)
     return s_curve[count - 1U].gain;
 }
 
-void audio_volume_apply(const uint8_t *source, uint8_t *destination, size_t length,
-                        uint16_t gain)
+uint16_t audio_volume_fade_gain(uint16_t gain, uint32_t frames_done, uint32_t fade_frames)
+{
+    if (fade_frames == 0U || frames_done >= fade_frames) return gain;
+    return (uint16_t)(((uint32_t)gain * frames_done) / fade_frames);
+}
+
+void audio_volume_apply_ramp(const uint8_t *source, uint8_t *destination, size_t length,
+                             uint16_t gain_start, uint16_t gain_end)
 {
     if (source == NULL || destination == NULL) return;
 
+    /* Frames, not samples: the two channels of one frame must be scaled by the
+     * same value or the ramp itself becomes a moving balance. */
+    const size_t frames = length / AUDIO_VOLUME_FRAME_BYTES;
+    const int32_t span = (int32_t)gain_end - (int32_t)gain_start;
+    // The flat case is every block that is not part of a fade, which is nearly
+    // all of them; it must not pay for a division per sample.
+    const bool ramping = span != 0 && frames != 0U;
     size_t offset = 0U;
     for (; offset + 1U < length; offset += 2U) {
+        const size_t frame = offset / AUDIO_VOLUME_FRAME_BYTES;
+        const uint16_t gain =
+            ramping ? (uint16_t)((int32_t)gain_start +
+                                 (span * (int32_t)frame) / (int32_t)frames)
+                    : gain_end;
         const int16_t sample = (int16_t)((uint16_t)source[offset] |
                                          ((uint16_t)source[offset + 1U] << 8U));
         /* Round to nearest by adding half a step before the shift, away from
@@ -67,6 +87,12 @@ void audio_volume_apply(const uint8_t *source, uint8_t *destination, size_t leng
     /* An odd trailing byte is half a sample; dropping it would shift every
      * following block by one byte and swap the channels. */
     if (offset < length) destination[offset] = source[offset];
+}
+
+void audio_volume_apply(const uint8_t *source, uint8_t *destination, size_t length,
+                        uint16_t gain)
+{
+    audio_volume_apply_ramp(source, destination, length, gain, gain);
 }
 
 uint8_t audio_volume_step(uint8_t percent, int step)

@@ -136,6 +136,67 @@ static void test_stepping_stops_at_the_ends(void)
     assert(audio_volume_step(0U, 1) == 1U);
 }
 
+static void test_the_fade_starts_at_silence_and_ends_at_the_setting(void)
+{
+    const uint16_t gain = audio_volume_gain(100U);
+    // The first frame after silence is the one that clicks, so it is the one
+    // that has to be zero.
+    assert(audio_volume_fade_gain(gain, 0U, AUDIO_VOLUME_FADE_FRAMES) == 0U);
+    assert(audio_volume_fade_gain(gain, AUDIO_VOLUME_FADE_FRAMES / 2U,
+                                  AUDIO_VOLUME_FADE_FRAMES) == gain / 2U);
+    assert(audio_volume_fade_gain(gain, AUDIO_VOLUME_FADE_FRAMES,
+                                  AUDIO_VOLUME_FADE_FRAMES) == gain);
+    /* Past the end it stays at the setting, so the caller can keep counting
+     * frames without a separate "done" flag. */
+    assert(audio_volume_fade_gain(gain, AUDIO_VOLUME_FADE_FRAMES * 100U,
+                                  AUDIO_VOLUME_FADE_FRAMES) == gain);
+    // No fade asked for is not the same as a fade of length zero divided by.
+    assert(audio_volume_fade_gain(gain, 0U, 0U) == gain);
+    // The fade scales whatever the listener set, rather than overriding it.
+    const uint16_t quiet = audio_volume_gain(40U);
+    assert(audio_volume_fade_gain(quiet, AUDIO_VOLUME_FADE_FRAMES,
+                                  AUDIO_VOLUME_FADE_FRAMES) == quiet);
+    assert(audio_volume_fade_gain(quiet, AUDIO_VOLUME_FADE_FRAMES / 4U,
+                                  AUDIO_VOLUME_FADE_FRAMES) < quiet);
+}
+
+static void test_a_ramp_moves_within_the_block_not_between_blocks(void)
+{
+    /* Four frames of full-scale left, silent right. A per-block fade would
+     * scale all four the same and leave a step at the block edge; the point of
+     * the ramp is that the step is spread across the frames. */
+    uint8_t source[4U * AUDIO_VOLUME_FRAME_BYTES];
+    uint8_t destination[sizeof(source)];
+    for (size_t frame = 0; frame < 4U; ++frame) {
+        const size_t offset = frame * AUDIO_VOLUME_FRAME_BYTES;
+        source[offset] = 0x00U;
+        source[offset + 1U] = 0x40U; /* 16384 */
+        source[offset + 2U] = 0x00U;
+        source[offset + 3U] = 0x40U;
+    }
+    audio_volume_apply_ramp(source, destination, sizeof(source), 0U,
+                            (uint16_t)AUDIO_VOLUME_UNITY);
+    int16_t previous = -1;
+    for (size_t frame = 0; frame < 4U; ++frame) {
+        const size_t offset = frame * AUDIO_VOLUME_FRAME_BYTES;
+        const int16_t left = (int16_t)((uint16_t)destination[offset] |
+                                       ((uint16_t)destination[offset + 1U] << 8U));
+        const int16_t right = (int16_t)((uint16_t)destination[offset + 2U] |
+                                        ((uint16_t)destination[offset + 3U] << 8U));
+        // Both channels of a frame share the gain, or the ramp would swing the
+        // stereo image as it runs.
+        assert(left == right);
+        assert(left > previous);
+        previous = left;
+    }
+    assert(previous < 16384);
+    // A flat "ramp" is the plain scaling every other block gets.
+    uint8_t flat[sizeof(source)];
+    audio_volume_apply_ramp(source, flat, sizeof(source), (uint16_t)AUDIO_VOLUME_UNITY,
+                            (uint16_t)AUDIO_VOLUME_UNITY);
+    assert(memcmp(flat, source, sizeof(source)) == 0);
+}
+
 int main(void)
 {
     test_full_volume_is_bit_exact();
@@ -147,6 +208,8 @@ int main(void)
     test_the_negative_limit_cannot_overflow();
     test_an_odd_trailing_byte_is_carried_through();
     test_stepping_stops_at_the_ends();
+    test_the_fade_starts_at_silence_and_ends_at_the_setting();
+    test_a_ramp_moves_within_the_block_not_between_blocks();
     puts("audio_volume tests passed");
     return 0;
 }

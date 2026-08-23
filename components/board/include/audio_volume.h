@@ -28,6 +28,35 @@
  * curve, so the knob has a real off position. */
 uint16_t audio_volume_gain(uint8_t percent);
 
+/* Frames of fade-in when output starts, and the multiplier that fade is at
+ * after `frames_done` of them.
+ *
+ * The DAC is handed silence until a source starts, so the first block is a
+ * step from zero to wherever the decoder's first samples sit - and MP3 in
+ * particular starts with a DC offset that the encoder never intended to be
+ * heard. That step is the click at the start of playback. Twenty-odd
+ * milliseconds of ramp removes it and is short enough that no one hears the
+ * music arrive quietly.
+ *
+ * `frames_done` past the end of the fade returns `gain` unchanged, so the
+ * caller can keep counting without a separate "still fading" flag. */
+#define AUDIO_VOLUME_FADE_FRAMES 1024U /* 23 ms at 44.1 kHz */
+/* 16-bit stereo, so four bytes to a frame. Stated here rather than taken from
+ * the board options because these functions are pure and host-tested; the
+ * board asserts the two agree. */
+#define AUDIO_VOLUME_FRAME_BYTES 4U
+uint16_t audio_volume_fade_gain(uint16_t gain, uint32_t frames_done, uint32_t fade_frames);
+
+/* Scales interleaved 16-bit samples, moving the gain from `gain_start` to
+ * `gain_end` across the block.
+ *
+ * The ramp is per frame rather than per block on purpose: a fade applied one
+ * block at a time is a staircase, and each of its steps is the same
+ * discontinuity the fade exists to remove - smaller, but a click is a click.
+ */
+void audio_volume_apply_ramp(const uint8_t *source, uint8_t *destination, size_t length,
+                             uint16_t gain_start, uint16_t gain_end);
+
 /* Scales interleaved 16-bit samples from `source` into `destination`.
  *
  * Separate buffers on purpose: the caller's block belongs to the decoder, and

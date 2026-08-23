@@ -51,16 +51,6 @@ CONFIG_LWIP_MAX_SOCKETS=16
 # before. Note this also fixes TCP_MSS at 1440: that value is the IPv6 ceiling
 # (1500 - 40 - 20), and only an IPv4-only build may raise it to 1460.
 # CONFIG_LWIP_IPV6 is not set
-# Wi-Fi buffers, trimmed. The defaults reserve some 41 KB of internal DRAM -
-# 10 static RX and 16 static TX buffers at ~1.6 KB each - on a device that
-# receives one 320 kbps stream and sends almost nothing. Internal DRAM is the
-# scarce resource here: with the defaults the web server intermittently failed
-# to start at boot (ESP_ERR_NO_MEM), and it has started on every boot since.
-# The stream buffer that actually absorbs network jitter is 64 KB in PSRAM.
-CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
-CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=16
-CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
-CONFIG_ESP_WIFI_RX_BA_WIN=4
 # VFS slots. The default is 8, and this firmware peaks at exactly that:
 # /dev/uart and friends, /littlefs, /usb0 and /sd0. That is one too few,
 # because esp_vfs_register_fs() refuses on `s_vfs_count >= VFS_MAX_COUNT`

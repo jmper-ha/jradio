@@ -25,3 +25,18 @@ add_custom_target(littlefs_stage
 )
 
 littlefs_create_partition_image(littlefs "${littlefs_stage_dir}" DEPENDS littlefs_stage)
+
+# LVGL's heap moves to PSRAM - see components/lvgl_pool/include/lvgl_pool.h for
+# why, and for what it costs. Only the pool's *address* changes; LVGL keeps its
+# own allocator inside it.
+#
+# The allocator sits in a component of its own so that lvgl can be linked
+# against it without a cycle: lvgl cannot depend on ui, which depends on lvgl.
+idf_component_get_property(lvgl_lib lvgl__lvgl COMPONENT_LIB)
+idf_component_get_property(lvgl_pool_lib lvgl_pool COMPONENT_LIB)
+target_include_directories(${lvgl_lib} PRIVATE "${CMAKE_SOURCE_DIR}/components/lvgl_pool/include")
+target_link_libraries(${lvgl_lib} PRIVATE ${lvgl_pool_lib})
+target_compile_definitions(${lvgl_lib} PRIVATE
+    "LV_MEM_POOL_INCLUDE=\"lvgl_pool.h\""
+    LV_MEM_POOL_ALLOC=lvgl_pool_alloc
+)

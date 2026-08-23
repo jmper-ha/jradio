@@ -138,14 +138,31 @@ size_t image_decode_working_bytes(size_t pixels, bool png)
  * playing, and a fixed pixel limit would be either too mean for a normal
  * folder cover or too generous on a busy device. The reserve is what is left
  * alone - a decode that took the last of PSRAM would be paid for by whatever
- * asked next. */
-#define IMAGE_DECODE_RESERVE_BYTES (1024U * 1024U)
+ * asked next.
+ *
+ * Half a megabyte, not the whole one it started as. A 1076x978 PNG - the size
+ * a CD rip actually produces - needs 6.3 MB to decode, and against 8 MB of
+ * PSRAM the old reserve left it passing only while nothing else was using
+ * any: the moment LVGL's heap moved into PSRAM and a FLAC station took its
+ * buffers there too, that cover started coming back as "not enough free
+ * memory" and the tile kept its placeholder. What the reserve has to protect
+ * is the next allocation after this one, and the largest of those is a decoder
+ * buffer of a few hundred kilobytes. */
+#define IMAGE_DECODE_RESERVE_BYTES (512U * 1024U)
 
 static bool enough_memory_for(size_t pixels, bool png)
 {
 #ifdef ESP_PLATFORM
     const size_t needed = image_decode_working_bytes(pixels, png) + IMAGE_DECODE_RESERVE_BYTES;
-    return heap_caps_get_free_size(MALLOC_CAP_SPIRAM) >= needed;
+    const size_t free_bytes = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    if (free_bytes < needed) {
+        // Both numbers, because "not enough memory" alone says nothing about
+        // whether the picture is too big or the device is too busy.
+        IMAGE_DECODE_LOGW("cover needs %u bytes of PSRAM, %u free",
+                          (unsigned int)needed, (unsigned int)free_bytes);
+        return false;
+    }
+    return true;
 #else
     // The host has an ordinary heap and no reason to guess at it.
     (void)pixels;

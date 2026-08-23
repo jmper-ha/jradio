@@ -40,11 +40,13 @@ and its neighbours.
 
 Sources that are not implemented stay on the screen and answer with a line
 saying so: what is intended stays visible, and nobody has to guess why a press
-did nothing. Choosing the drive when there is none opens not an empty
-browser but a screen with a drive on it and the reason spelled out - insert one,
-it cannot be read (FAT32 is needed), or it holds no files. Those are different
-things, and telling somebody to insert a drive they have already inserted is
-worse than saying nothing.
+did nothing. Choosing the drive or the card when there is none opens not an
+empty browser but a screen with a picture of the right medium and the reason
+spelled out - insert one, it cannot be read (FAT32 is needed), or it holds no
+files. Those are different things, and telling somebody to insert something
+they have already inserted is worse than saying nothing. Both the picture and
+the wording follow the source: a memory card is neither called nor drawn as a
+flash drive, or the reader goes to the wrong socket.
 
 ## Player screen
 
@@ -56,7 +58,7 @@ Below it, the cover art, the station name, a large track line and the
 performer: an ICY title is split at the first dash with spaces on both sides,
 and left whole whenever that is ambiguous.
 
-Playing from the drive, those same three lines come out of the file's tags -
+Playing from either medium, those same three lines come out of the file's tags -
 the album where the station name goes, then the track title and the performer -
 and each falls back on its own to what is known without any tags: the directory
 instead of the album, the file name instead of the title. ID3v2.2 to 2.4 are
@@ -87,8 +89,8 @@ full-size scan rather than the thumbnail a tag carries.
 The picture is then reduced to 96x96 by averaging rather than sampling: at that
 size a cover is mostly lettering, and sampling it reads as noise. One that is
 not square is fitted inside the square rather than stretched to it. A cover
-shared by a whole album is decoded once - a folder cover is read off the drive
-once as well - so moving to the next track does not blink the tile. Where there
+shared by a whole album is decoded once - a folder cover is read off the
+medium once as well - so moving to the next track does not blink the tile. Where there
 is no cover anywhere, or it fails to decode, the tile keeps its placeholder
 symbol.
 
@@ -186,9 +188,8 @@ Worth knowing if you build the board:
   wired, which a card cannot work without. GPIO 40, 41 and 42 are the external
   JTAG pins, and the card takes them over;
 - the slot has no card-detect line, so an inserted card can only be found by
-  trying to mount it. The card is mounted when its source is entered and
-  released when it is left: held mounted it costs some 2.4 KB of internal SRAM,
-  which the radio's decoder task needs. FAT16/FAT32 only, no exFAT.
+  trying to mount it - which is also why the card is not held mounted, see
+  "Limits". FAT16/FAT32 only, no exFAT.
 
 ## Building and flashing
 
@@ -255,16 +256,22 @@ Once a minute it reports the resources that run out quietly:
 
 ```
 health: reset reason: power-on
-health: uptime=120s internal_free=23027/min 22999 largest=9728/min 9728 dma_largest=9728 psram_free=8186180
-health: stack headroom, least seen: player_control=3732 ui=2552 usb_play=5892 usb_msc=2724 ...
+health: uptime=120s internal_free=52027/min 52027 largest=30720/min 30720 dma_largest=30720 psram_free=8053800
+health: stack headroom, least seen: player_control=3780 ui=2524 usb_play=5184 usb_msc=2692 ...
 ```
 
 The minima are the point, not the current values: a stack that has been
 shrinking for months overflows the first time the compiler inlines a little
-more, and internal memory runs out as "HTTPS will not connect" rather than as
-anything about memory. The reason for the last restart is the first line
-printed - after a reboot loop that is the difference between someone pulling
-the power and a panic.
+more, and internal memory runs out as "HTTPS will not connect" or "the file
+will not play" rather than as anything about memory. The reason for the last
+restart is the first line printed - after a reboot loop that is the difference
+between someone pulling the power and a panic.
+
+`largest` is the biggest contiguous block, and it cannot be read on its own: it
+may well be sitting in RTC RAM, which a task stack cannot be allocated from. If
+something fails with `ESP_ERR_NO_MEM` while `internal_free` looks ample, get
+the breakdown by region - `heap_caps_print_heap_info()` says which piece of
+memory actually ran out.
 
 ## Data on the device
 
@@ -275,14 +282,24 @@ and which is not in Git. Do not commit passwords or keys.
 
 ## Limits
 
-- **At most 256 entries per directory on the drive.** The rest are dropped with
-  a warning; each entry costs about 264 bytes of PSRAM.
-- **FAT32 or FAT16 only.** exFAT is not built in, and drives of 64 GB and up
+- **At most 256 entries per directory.** The rest are dropped with a warning;
+  each entry costs about 264 bytes of PSRAM. The listing is one for both
+  volumes - only one directory is on screen anyway, and a second copy would
+  cost another 68 KB.
+- **FAT32 or FAT16 only.** exFAT is not built in, and media of 64 GB and up
   usually ship formatted that way.
+- **The card is not held mounted.** It is mounted when its source is entered
+  (about 110 ms) and released when it is left: a mount costs some 2.4 KB of
+  internal SRAM, and there is no reason to hold one that is not being used. The
+  larger point is the missing card-detect line - a card inserted later is found
+  only by the next attempt to enter the source, and that attempt is the
+  detection.
 - **The web interface assumes a trusted local network.** There is no
   authentication and `Origin` is not checked. Do not expose the device.
-- Free internal SRAM is scarce. Large buffers are allocated in PSRAM with a
-  fallback to internal memory - keep that fallback when adding new ones.
+- Internal SRAM is the board's scarcest resource, and most of the large buffers
+  live in PSRAM: the stream buffer, the directory listing, LVGL's heap. Each of
+  those allocations keeps a fallback to internal memory so that a board without
+  PSRAM still works - keep that fallback in new ones too.
 
 `.vscode/tasks.json` carries build, flash and monitor tasks; they take `idf.py`
 from the terminal's environment.

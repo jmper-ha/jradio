@@ -315,6 +315,18 @@ static file_browser_media_t ui_media_for_source(audio_source_t source)
     return source == AUDIO_SOURCE_SD ? s_last_sd_media : s_last_usb_media;
 }
 
+/* The icon that goes with a source, for the screen that explains why its
+ * browser is empty. Asked of the feed's own mapping rather than kept as a
+ * second table: a card drawn as a flash drive sends the user to the wrong
+ * socket, which is the same mistake the notice text exists to avoid. */
+static const lv_image_dsc_t *ui_source_icon(audio_source_t source)
+{
+    ui_feed_model_t model;
+    ui_feed_model_init(&model, 0U);
+    if (!ui_feed_model_select_source(&model, source)) return NULL;
+    return ui_feed_icon_image(ui_feed_model_selected(&model), UI_FEED_ICON_LARGE);
+}
+
 // Short name for the strip and the list title.
 static const char *ui_source_short_name(audio_source_t source)
 {
@@ -1770,6 +1782,8 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
             ui_files_notice(s_files_unavailable_source,
                             ui_media_for_source(s_files_unavailable_source),
                             s_last_files_entry_count));
+        const lv_image_dsc_t *icon = ui_source_icon(s_files_unavailable_source);
+        if (icon != NULL) lv_image_set_src(s_station_list_notice_icon, icon);
         lv_obj_clear_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_station_list_rule, LV_OBJ_FLAG_HIDDEN);
         s_file_browser_has_parent_row = false;

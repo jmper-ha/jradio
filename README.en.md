@@ -15,7 +15,7 @@ output.
 
 | Feature | State | Details |
 |---|---|---|
-| **Internet radio** | works | Your own list of up to 32 stations, the track name straight off the air, reconnection when a stream drops |
+| **Internet radio** | works | Your own station list, the track name straight off the air, reconnection when a stream drops |
 | **Music from a USB drive** | works | Walk through folders, tags, cover art, scrubbing, moves on to the next track |
 | **Music from an SD card** | works | The same; the card is recognised when its source is entered |
 | **Yandex Music** | works | "My wave" and your account's stations, album art, a next-track button |

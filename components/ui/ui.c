@@ -1131,7 +1131,7 @@ static void ui_update_settings_web_band(void)
 {
     const wifi_provisioning_status_t status = wifi_provisioning_status();
     char text[64];
-    ui_web_address_text(status.mode, status.ipv4,
+    ui_web_address_text(status.mode, status.ipv4, status.active_ssid,
                         s_device_settings.language == DEVICE_LANGUAGE_EN,
                         text, sizeof(text));
     ui_set_label_text_if_changed(s_settings_web_address, text);

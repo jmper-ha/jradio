@@ -19,6 +19,10 @@
   const yandexLink = document.querySelector('#yandex-link');
   const yandexCancel = document.querySelector('#yandex-cancel');
   const yandexForget = document.querySelector('#yandex-forget');
+  const yandexRefresh = document.querySelector('#yandex-refresh');
+  const yandexStationsBlock = document.querySelector('#yandex-stations-block');
+  const yandexStations = document.querySelector('#yandex-stations');
+  const yandexStationsEmpty = document.querySelector('#yandex-stations-empty');
 
   const reconnectDelays = Object.freeze([500, 1000, 2000, 4000, 8000]);
   const passwordErrors = new Set([2, 15, 202, 204]);
@@ -261,7 +265,24 @@
       userCode: safeString(status.user_code),
       verificationUrl: safeString(status.verification_url),
       secondsLeft: Number.isSafeInteger(status.seconds_left) ? status.seconds_left : 0,
+      catalog: safeString(status.catalog, 'empty'),
+      stations: Array.isArray(status.stations)
+        ? status.stations
+            .filter((item) => isObject(item) && typeof item.name === 'string')
+            .map((item) => ({id: safeString(item.id), name: item.name}))
+        : [],
     };
+  }
+
+  function renderYandexStations(stations) {
+    const rows = stations.map((station) => {
+      const row = document.createElement('li');
+      row.textContent = station.name;
+      return row;
+    });
+    yandexStations.replaceChildren(...rows);
+    yandexStations.hidden = rows.length === 0;
+    yandexStationsEmpty.hidden = rows.length !== 0;
   }
 
   function applyYandex(value) {
@@ -287,14 +308,32 @@
         ? `Код действителен ещё ${status.secondsLeft} с` : '';
     }
 
+    const linked = status.state === 'authorized';
     const busyState = status.state === 'requesting' || status.state === 'waiting';
-    yandexLink.hidden = busyState || status.state === 'authorized';
+    yandexLink.hidden = busyState || linked;
     yandexCancel.hidden = !busyState;
-    yandexForget.hidden = status.state !== 'authorized';
+    yandexForget.hidden = !linked;
+    yandexRefresh.hidden = !linked;
     yandexLink.disabled = yandexBusy;
     yandexCancel.disabled = yandexBusy;
     yandexForget.disabled = yandexBusy;
-    return busyState;
+    yandexRefresh.disabled = yandexBusy || status.catalog === 'loading';
+
+    // Stations belong to the account that is linked right now; after an
+    // unlink the block goes away rather than showing a stale list.
+    yandexStationsBlock.hidden = !linked;
+    if (linked) {
+      renderYandexStations(status.stations);
+      if (status.catalog === 'loading') {
+        yandexStatus.textContent = 'Загрузка станций…';
+      } else if (status.catalog === 'failed') {
+        yandexStatus.textContent = 'Не удалось получить станции';
+        yandexStatus.classList.add('is-error');
+        yandexStatus.classList.remove('is-success');
+      }
+    }
+    // Keep polling while a fetch is in the air, so the list appears on its own.
+    return busyState || (linked && status.catalog === 'loading');
   }
 
   function scheduleYandexRefresh(fast) {
@@ -327,6 +366,7 @@
     yandexLink.disabled = true;
     yandexCancel.disabled = true;
     yandexForget.disabled = true;
+    yandexRefresh.disabled = true;
     return window.fetch('/api/yandex', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -348,6 +388,7 @@
   yandexLink.addEventListener('click', () => sendYandexAction('begin'));
   yandexCancel.addEventListener('click', () => sendYandexAction('cancel'));
   yandexForget.addEventListener('click', () => sendYandexAction('forget'));
+  yandexRefresh.addEventListener('click', () => sendYandexAction('refresh'));
   setConnected(false);
   connect();
   refreshYandex();

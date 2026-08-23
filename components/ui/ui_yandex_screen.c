@@ -20,10 +20,49 @@ static const char *ui_yandex_failure_text(yandex_auth_error_t error)
     }
 }
 
-void ui_yandex_view_build(const yandex_auth_status_t *status, ui_yandex_view_t *view)
+/* Linked, so the screen is about stations from here on. */
+static void ui_yandex_build_catalog(yandex_catalog_state_t catalog_state,
+                                    size_t station_count, ui_yandex_view_t *view)
+{
+    if (catalog_state == YANDEX_CATALOG_READY && station_count > 0U) {
+        view->mode = UI_YANDEX_MODE_LIST;
+        view->status = "";
+        /* No "OK - слушать" yet: promising playback the firmware cannot do
+         * would be worse than saying nothing about that button. */
+        view->hint = "F2 - назад, F4 - отвязать";
+        return;
+    }
+    view->mode = UI_YANDEX_MODE_MESSAGE;
+    switch (catalog_state) {
+    case YANDEX_CATALOG_LOADING:
+        view->status = "Загрузка станций...";
+        view->hint = "F2 - назад";
+        break;
+    case YANDEX_CATALOG_FAILED:
+        view->status = "Не удалось получить станции";
+        view->hint = "OK - повторить, F2 - назад";
+        break;
+    case YANDEX_CATALOG_READY:
+        /* Linked, answered, and empty. Not a failure, and retrying is still
+         * the only thing that could change it. */
+        view->status = "Станций нет";
+        view->hint = "OK - обновить, F2 - назад";
+        break;
+    case YANDEX_CATALOG_EMPTY:
+    default:
+        view->status = "Аккаунт привязан";
+        view->hint = "OK - обновить, F2 - назад, F4 - отвязать";
+        break;
+    }
+}
+
+void ui_yandex_view_build(const yandex_auth_status_t *status,
+                          yandex_catalog_state_t catalog_state, size_t station_count,
+                          ui_yandex_view_t *view)
 {
     if (view == NULL) return;
     *view = (ui_yandex_view_t){
+        .mode = UI_YANDEX_MODE_PAIRING,
         .status = "Аккаунт не привязан",
         .code = "",
         .url = "",
@@ -56,8 +95,7 @@ void ui_yandex_view_build(const yandex_auth_status_t *status, ui_yandex_view_t *
         }
         break;
     case YANDEX_AUTH_AUTHORIZED:
-        view->status = "Аккаунт привязан";
-        view->hint = "F4 - отвязать, F2 - назад";
+        ui_yandex_build_catalog(catalog_state, station_count, view);
         break;
     case YANDEX_AUTH_FAILED:
         view->status = ui_yandex_failure_text(status->error);

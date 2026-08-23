@@ -36,6 +36,7 @@
 #include "ui_status_bar.h"
 #include "ui_web_address.h"
 #include "ui_yandex_screen.h"
+#include "yandex_catalog.h"
 #include "file_track_progress.h"
 
 #include "audio_volume.h"
@@ -257,6 +258,27 @@ static lv_obj_t *s_yandex_url;
 static lv_obj_t *s_yandex_countdown;
 static lv_obj_t *s_yandex_hint;
 static bool s_yandex_open;
+/* Five rows at a 33-pixel pitch fit between the title and the hint, and the
+ * dashboard has been four stations every time it was fetched - so the usual
+ * case needs no scrolling at all. */
+#define UI_YANDEX_LIST_ROWS 5U
+#define UI_YANDEX_ROW_Y 44
+#define UI_YANDEX_ROW_PITCH 33
+#define UI_YANDEX_ROW_H 28
+/* Long enough to read, short enough that the button hints come back before
+ * the next press. */
+#define UI_YANDEX_NOTICE_MS 3000U
+static lv_obj_t *s_yandex_rows[UI_YANDEX_LIST_ROWS];
+static station_list_state_t s_yandex_list;
+/* What the rows were last drawn from. Setting a label's text restarts its
+ * scroll animation, so the rows are redrawn only when one of these moved -
+ * never on every pass of the poll loop. */
+static unsigned int s_yandex_drawn_revision;
+static size_t s_yandex_drawn_selected;
+static size_t s_yandex_drawn_count;
+static bool s_yandex_rows_drawn;
+static uint32_t s_yandex_notice_until_ms;
+static const char *s_yandex_notice;
 static lv_obj_t *s_station_list_screen;
 static lv_obj_t *s_station_list_title;
 static lv_obj_t *s_station_list_notice;
@@ -1228,7 +1250,7 @@ static void ui_create_yandex_screen(void)
     lv_obj_set_style_text_font(s_yandex_screen, &ui_font_cyrillic_14, 0);
 
     lv_obj_t *title = lv_label_create(s_yandex_screen);
-    lv_label_set_text(title, "Яндекс Музыка");
+    lv_label_set_text(title, "ЯМузыка");
     lv_obj_set_pos(title, 12, 8);
     lv_obj_set_style_text_font(title, &ui_font_cyrillic_20, 0);
     lv_obj_set_style_text_color(title, lv_color_hex(UI_COLOR_TEXT), 0);
@@ -1246,7 +1268,7 @@ static void ui_create_yandex_screen(void)
     s_yandex_code_panel = lv_obj_create(s_yandex_screen);
     lv_obj_remove_style_all(s_yandex_code_panel);
     lv_obj_set_pos(s_yandex_code_panel, 12, 70);
-    lv_obj_set_size(s_yandex_code_panel, 296, 124);
+    lv_obj_set_size(s_yandex_code_panel, 296, 122);
     lv_obj_set_style_bg_color(s_yandex_code_panel, lv_color_hex(UI_COLOR_STRIP), 0);
     lv_obj_set_style_bg_opa(s_yandex_code_panel, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(s_yandex_code_panel, 8, 0);
@@ -1259,7 +1281,7 @@ static void ui_create_yandex_screen(void)
      * spills if a code is ever longer than the eight characters Yandex
      * issues. */
     s_yandex_code = lv_label_create(s_yandex_code_panel);
-    lv_obj_set_pos(s_yandex_code, 0, 10);
+    lv_obj_set_pos(s_yandex_code, 0, 6);
     lv_obj_set_width(s_yandex_code, 296);
     lv_label_set_long_mode(s_yandex_code, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(s_yandex_code, LV_TEXT_ALIGN_CENTER, 0);
@@ -1267,20 +1289,39 @@ static void ui_create_yandex_screen(void)
     lv_obj_set_style_text_color(s_yandex_code, lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_label_set_text(s_yandex_code, "");
 
+    /* Bigger than the body text, smaller than the code. The address is ASCII
+     * too, so it takes the same Montserrat family - and both sizes are already
+     * linked, so neither costs flash. */
     s_yandex_url = lv_label_create(s_yandex_code_panel);
-    lv_obj_set_pos(s_yandex_url, 0, 74);
+    lv_obj_set_pos(s_yandex_url, 0, 66);
     lv_obj_set_width(s_yandex_url, 296);
     lv_label_set_long_mode(s_yandex_url, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(s_yandex_url, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(s_yandex_url, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(s_yandex_url, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_label_set_text(s_yandex_url, "");
 
     s_yandex_countdown = lv_label_create(s_yandex_code_panel);
     lv_obj_set_pos(s_yandex_countdown, 0, 98);
+    lv_obj_set_style_text_font(s_yandex_countdown, &ui_font_cyrillic_14, 0);
     lv_obj_set_width(s_yandex_countdown, 296);
     lv_obj_set_style_text_align(s_yandex_countdown, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(s_yandex_countdown, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_yandex_countdown, "");
+
+    for (size_t row = 0; row < UI_YANDEX_LIST_ROWS; ++row) {
+        s_yandex_rows[row] = lv_label_create(s_yandex_screen);
+        lv_obj_set_pos(s_yandex_rows[row], 10,
+                       UI_YANDEX_ROW_Y + (int)row * UI_YANDEX_ROW_PITCH);
+        lv_obj_set_size(s_yandex_rows[row], 300, UI_YANDEX_ROW_H);
+        lv_obj_set_style_pad_left(s_yandex_rows[row], 8, 0);
+        lv_obj_set_style_pad_top(s_yandex_rows[row], 2, 0);
+        lv_obj_set_style_text_font(s_yandex_rows[row], &ui_font_cyrillic_20, 0);
+        lv_obj_set_style_bg_opa(s_yandex_rows[row], LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(s_yandex_rows[row], lv_color_hex(UI_COLOR_GROUND), 0);
+        lv_label_set_text(s_yandex_rows[row], "");
+        lv_obj_add_flag(s_yandex_rows[row], LV_OBJ_FLAG_HIDDEN);
+    }
 
     s_yandex_hint = lv_label_create(s_yandex_screen);
     lv_obj_set_pos(s_yandex_hint, 12, 212);
@@ -1290,15 +1331,73 @@ static void ui_create_yandex_screen(void)
     lv_label_set_text(s_yandex_hint, "");
 }
 
+/* Draws the station rows. Separate from the update below because setting a
+ * label's text restarts its scroll animation: called every pass of the poll
+ * loop, the selected row would never finish scrolling its name. */
+static void ui_update_yandex_rows(void)
+{
+    size_t cursor_row = 0U;
+    const int count = (int)s_yandex_list.count;
+    const int window_top = station_list_window_top(&s_yandex_list, UI_YANDEX_LIST_ROWS,
+                                                   &cursor_row);
+    for (size_t row = 0; row < UI_YANDEX_LIST_ROWS; ++row) {
+        const int entry_index = window_top + (int)row;
+        yandex_station_t station;
+        if (entry_index < 0 || entry_index >= count ||
+            !yandex_catalog_station_at((size_t)entry_index, &station)) {
+            lv_obj_add_flag(s_yandex_rows[row], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_obj_remove_flag(s_yandex_rows[row], LV_OBJ_FLAG_HIDDEN);
+        const bool selected = row == cursor_row;
+        lv_obj_set_style_bg_color(s_yandex_rows[row],
+                                  lv_color_hex(selected ? UI_COLOR_SELECTED
+                                                        : UI_COLOR_GROUND), 0);
+        lv_obj_set_style_text_color(s_yandex_rows[row],
+                                    lv_color_hex(selected ? UI_COLOR_ACCENT
+                                                          : UI_COLOR_MUTED), 0);
+        // Only the row being pointed at scrolls its full name; a screen of
+        // marquees is unreadable, which is the same call the station list made.
+        lv_label_set_long_mode(s_yandex_rows[row], selected ? LV_LABEL_LONG_MODE_SCROLL
+                                                            : LV_LABEL_LONG_MODE_DOTS);
+        lv_label_set_text(s_yandex_rows[row], station.name);
+    }
+}
+
+static void ui_hide_yandex_rows(void)
+{
+    for (size_t row = 0; row < UI_YANDEX_LIST_ROWS; ++row) {
+        lv_obj_add_flag(s_yandex_rows[row], LV_OBJ_FLAG_HIDDEN);
+    }
+    s_yandex_rows_drawn = false;
+}
+
+static void ui_yandex_show_notice(const char *text)
+{
+    s_yandex_notice = text;
+    s_yandex_notice_until_ms = ui_tick_get_ms() + UI_YANDEX_NOTICE_MS;
+}
+
 static void ui_update_yandex(void)
 {
     if (!s_yandex_open) return;
     const yandex_auth_status_t status = yandex_auth_get_status();
+    const yandex_catalog_state_t catalog_state = yandex_catalog_get_state();
+    const size_t count = yandex_catalog_count();
     ui_yandex_view_t view;
-    ui_yandex_view_build(&status, &view);
+    ui_yandex_view_build(&status, catalog_state, count, &view);
+
+    /* A transient answer to a press - "that button does nothing yet" - takes
+     * the hint line for a few seconds, because there is nowhere else on this
+     * screen that a message belongs while the rows fill it. */
+    const uint32_t now_ms = ui_tick_get_ms();
+    const bool notice_live = s_yandex_notice != NULL &&
+                             (int32_t)(s_yandex_notice_until_ms - now_ms) > 0;
+    if (!notice_live) s_yandex_notice = NULL;
 
     ui_set_label_text_if_changed(s_yandex_status, view.status);
-    ui_set_label_text_if_changed(s_yandex_hint, view.hint);
+    ui_set_label_text_if_changed(s_yandex_hint, notice_live ? s_yandex_notice : view.hint);
+
     if (view.show_code) {
         ui_set_label_text_if_changed(s_yandex_code, view.code);
         ui_set_label_text_if_changed(s_yandex_url, view.url);
@@ -1307,16 +1406,43 @@ static void ui_update_yandex(void)
     } else {
         lv_obj_add_flag(s_yandex_code_panel, LV_OBJ_FLAG_HIDDEN);
     }
+
+    if (view.mode != UI_YANDEX_MODE_LIST) {
+        if (s_yandex_rows_drawn) ui_hide_yandex_rows();
+        return;
+    }
+    (void)station_list_sync_counts(&s_yandex_list, count, count);
+    const unsigned int revision = yandex_catalog_revision();
+    const size_t selected = station_list_selected_index(&s_yandex_list);
+    if (s_yandex_rows_drawn && revision == s_yandex_drawn_revision &&
+        selected == s_yandex_drawn_selected && count == s_yandex_drawn_count) {
+        return;
+    }
+    s_yandex_drawn_revision = revision;
+    s_yandex_drawn_selected = selected;
+    s_yandex_drawn_count = count;
+    s_yandex_rows_drawn = true;
+    ui_update_yandex_rows();
 }
 
 static void ui_show_yandex(void)
 {
     s_yandex_open = true;
+    s_yandex_notice = NULL;
+    ui_hide_yandex_rows();
     /* Opening the screen with no account starts the exchange straight away:
      * the alternative is a screen that says "not linked" and needs a second
      * press to do the only thing it offers. */
     if (!yandex_auth_is_authorized()) {
         (void)yandex_auth_begin();
+    } else {
+        /* Fetched on every visit rather than cached for the session: the
+         * dashboard is personalised and the device may have been sitting on
+         * this screen's stale copy for days. It costs one request, and an
+         * answer that changed nothing does not disturb the rows. */
+        const size_t count = yandex_catalog_count();
+        station_list_init(&s_yandex_list, count, 0U, count);
+        (void)yandex_catalog_request_refresh();
     }
     ui_update_yandex();
     lv_screen_load(s_yandex_screen);
@@ -2109,18 +2235,31 @@ static void ui_handle_input(board_input_action_t action)
     if (s_yandex_open) {
         if (action == BOARD_INPUT_ACTION_F2 || action == BOARD_INPUT_ACTION_ENCODER_LONG) {
             ui_close_yandex();
-        } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
-            const yandex_auth_status_t status = yandex_auth_get_status();
-            /* Only a retry: pressing OK during an attempt would do nothing,
-             * and pressing it while linked must not silently re-link. */
-            if (!ui_yandex_view_is_busy(&status) && status.state != YANDEX_AUTH_AUTHORIZED) {
-                (void)yandex_auth_begin();
+        } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
+                   action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
+            if (station_list_handle_input(&s_yandex_list, action)) {
                 ui_update_yandex();
             }
-        } else if (action == BOARD_INPUT_ACTION_F4) {
+        } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             const yandex_auth_status_t status = yandex_auth_get_status();
-            if (status.state == YANDEX_AUTH_AUTHORIZED) {
+            ui_yandex_view_t view;
+            ui_yandex_view_build(&status, yandex_catalog_get_state(),
+                                 yandex_catalog_count(), &view);
+            if (view.mode == UI_YANDEX_MODE_PAIRING) {
+                /* Only a retry: pressing OK during an attempt would do
+                 * nothing, and there is no account to re-link here. */
+                if (!ui_yandex_view_is_busy(&status)) (void)yandex_auth_begin();
+            } else if (view.mode == UI_YANDEX_MODE_LIST) {
+                ui_yandex_show_notice("Воспроизведение появится позже");
+            } else if (yandex_catalog_get_state() != YANDEX_CATALOG_LOADING) {
+                (void)yandex_catalog_request_refresh();
+            }
+            ui_update_yandex();
+        } else if (action == BOARD_INPUT_ACTION_F4) {
+            if (yandex_auth_is_authorized()) {
                 (void)yandex_auth_forget();
+                station_list_init(&s_yandex_list, 0U, 0U, 0U);
+                ui_hide_yandex_rows();
                 ui_update_yandex();
             }
         }

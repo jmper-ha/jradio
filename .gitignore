@@ -10,6 +10,7 @@ sdkconfig.*.old
 # Runtime/user data in LittleFS
 data/config/wifi.json
 data/config/wifi.tmp
+data/config/yandex.json
 data/config/*.tmp
 
 # Python, editor and OS files

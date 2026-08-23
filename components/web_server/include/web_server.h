@@ -17,6 +17,7 @@ typedef enum {
     WEB_SERVER_YANDEX_ACTION_BEGIN,
     WEB_SERVER_YANDEX_ACTION_CANCEL,
     WEB_SERVER_YANDEX_ACTION_FORGET,
+    WEB_SERVER_YANDEX_ACTION_REFRESH,
 } web_server_yandex_action_t;
 
 web_server_yandex_action_t web_server_parse_yandex_action(const char *request);

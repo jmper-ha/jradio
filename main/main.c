@@ -17,6 +17,7 @@
 #include "web_server.h"
 #include "wifi_provisioning.h"
 #include "yandex_auth.h"
+#include "yandex_catalog.h"
 
 static const char *TAG = "jradio";
 
@@ -68,6 +69,7 @@ void app_main(void)
     // After Wi-Fi, because that is what mounts LittleFS, and before the UI so
     // the menu already knows whether an account is linked when it first draws.
     start_optional("Yandex Music", yandex_auth_init());
+    start_optional("Yandex Music catalog", yandex_catalog_init());
     // Before the UI and the radio, deliberately: sd_storage_init() explains
     // what the internal-SRAM heap does if the mount lands after them.
     start_optional("SD card", sd_storage_init());

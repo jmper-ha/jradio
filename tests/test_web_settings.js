@@ -40,6 +40,8 @@ const ids = [
   'saved-networks-empty',
   'yandex-status', 'yandex-code-block', 'yandex-url', 'yandex-code',
   'yandex-countdown', 'yandex-link', 'yandex-cancel', 'yandex-forget',
+  'yandex-refresh', 'yandex-stations-block', 'yandex-stations',
+  'yandex-stations-empty',
 ];
 const elements = Object.fromEntries(ids.map((id) => [`#${id}`, new Element()]));
 elements['#wifi-form'].elements = {
@@ -281,6 +283,66 @@ function lastYandexTimer() {
   assert.equal(elements['#yandex-link'].hidden, true);
   assert.equal(elements['#yandex-cancel'].hidden, true);
   assert.equal(elements['#yandex-code-block'].hidden, true);
+
+  // Linked, and the dashboard is on its way.
+  yandexReply = {
+    state: 'authorized', error: 'none', user_code: '', verification_url: '',
+    seconds_left: 0, catalog: 'loading', stations: [],
+  };
+  lastYandexTimer().callback();
+  await settle();
+  assert.equal(elements['#yandex-status'].textContent, 'Загрузка станций…');
+  assert.equal(elements['#yandex-refresh'].disabled, true);
+  // Polls quickly, so the list appears without the visitor doing anything.
+  assert.equal(lastYandexTimer().delay, 2000);
+
+  yandexReply = {
+    state: 'authorized', error: 'none', user_code: '', verification_url: '',
+    seconds_left: 0, catalog: 'ready',
+    stations: [
+      {id: 'user:onyourwave', name: 'Моя волна'},
+      {id: 'genre:jazz', name: 'Джаз'},
+      {id: 'micro-genre:swing', name: 'Свинг'},
+    ],
+  };
+  lastYandexTimer().callback();
+  await settle();
+  assert.equal(elements['#yandex-stations-block'].hidden, false);
+  assert.equal(elements['#yandex-stations'].children.length, 3);
+  assert.equal(elements['#yandex-stations'].children[0].textContent, 'Моя волна');
+  assert.equal(elements['#yandex-stations-empty'].hidden, true);
+  assert.equal(elements['#yandex-refresh'].hidden, false);
+  assert.equal(elements['#yandex-refresh'].disabled, false);
+  // Nothing left to wait for, so back to the slow poll.
+  assert.equal(lastYandexTimer().delay, 15000);
+
+  elements['#yandex-refresh'].emit('click');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.options && call.options.method === 'POST')
+      .at(-1).options.body),
+    {action: 'refresh'});
+
+  // Junk in the stations array must not reach the page.
+  yandexReply = {
+    state: 'authorized', error: 'none', user_code: '', verification_url: '',
+    seconds_left: 0, catalog: 'ready',
+    stations: [{name: 'Джаз'}, {id: 'x'}, 'not an object', null, {name: 42}],
+  };
+  lastYandexTimer().callback();
+  await settle();
+  assert.equal(elements['#yandex-stations'].children.length, 1);
+  assert.equal(elements['#yandex-stations'].children[0].textContent, 'Джаз');
+
+  // Unlinked: the stations belonged to that account and go with it.
+  yandexReply = {
+    state: 'idle', error: 'none', user_code: '', verification_url: '',
+    seconds_left: 0, catalog: 'empty', stations: [],
+  };
+  lastYandexTimer().callback();
+  await settle();
+  assert.equal(elements['#yandex-stations-block'].hidden, true);
+  assert.equal(elements['#yandex-refresh'].hidden, true);
 
   yandexReply = {
     state: 'failed', error: 'timeout', user_code: '', verification_url: '',

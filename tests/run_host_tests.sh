@@ -184,6 +184,8 @@ run_test web_protocol -I"${cjson_include}" tests/test_web_protocol.c \
     components/web_server/web_protocol.c "${cjson_source}"
 run_test web_view_model tests/test_web_view_model.c \
     components/web_server/web_view_model.c
+run_test yandex_catalog tests/test_yandex_catalog.c \
+    components/yandex_music/yandex_catalog_parse.c
 run_test yandex_auth_flow tests/test_yandex_auth_flow.c \
     components/yandex_music/yandex_auth_flow.c
 run_test yandex_auth_json -I"${cjson_include}" tests/test_yandex_auth_json.c \

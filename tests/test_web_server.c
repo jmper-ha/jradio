@@ -73,6 +73,8 @@ static void test_yandex_action_accepts_only_the_three_it_implements(void)
            WEB_SERVER_YANDEX_ACTION_CANCEL);
     assert(web_server_parse_yandex_action("{\"action\":\"forget\"}") ==
            WEB_SERVER_YANDEX_ACTION_FORGET);
+    assert(web_server_parse_yandex_action("{\"action\":\"refresh\"}") ==
+           WEB_SERVER_YANDEX_ACTION_REFRESH);
 }
 
 static void test_yandex_action_rejects_anything_else(void)

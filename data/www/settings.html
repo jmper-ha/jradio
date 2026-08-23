@@ -71,7 +71,7 @@
       <div class="settings-section-heading">
         <div>
           <p class="eyebrow">Аккаунт</p>
-          <h2 id="yandex-title">Яндекс Музыка</h2>
+          <h2 id="yandex-title">ЯМузыка</h2>
         </div>
         <span id="yandex-status" class="settings-status" role="status" aria-live="polite">Проверка…</span>
       </div>
@@ -83,11 +83,18 @@
         <p id="yandex-countdown" class="field-note"></p>
       </div>
 
+      <div id="yandex-stations-block" hidden>
+        <h3>Станции</h3>
+        <ul id="yandex-stations" class="saved-networks"></ul>
+        <p id="yandex-stations-empty" class="empty-state">Список пуст</p>
+      </div>
+
       <p class="field-note">Пароль от Яндекса устройству не нужен: код подтверждается на сайте Яндекса, сюда возвращается только токен доступа.</p>
 
       <div class="settings-actions">
         <button id="yandex-link" class="primary-button" type="button">Привязать аккаунт</button>
         <button id="yandex-cancel" class="secondary-button" type="button" hidden>Отменить</button>
+        <button id="yandex-refresh" class="secondary-button" type="button" hidden>Обновить станции</button>
         <button id="yandex-forget" class="secondary-button" type="button" hidden>Отвязать</button>
       </div>
     </section>

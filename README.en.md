@@ -201,8 +201,11 @@ idf.py -p PORT littlefs-flash     # overwrites the whole data partition
 idf.py -p PORT monitor
 ```
 
-`littlefs-flash` **destroys user data** - playlist edits and saved networks.
-Compare the live state first: `curl http://<ip>/api/playlist`.
+`littlefs-flash` **destroys user data** - playlist edits, saved networks,
+device settings and the Yandex Music account link: all of it lives on that one
+partition. Compare the live state first: `curl http://<ip>/api/playlist` and
+`curl http://<ip>/api/yandex`. There is nothing that can read the settings
+back - they return to their defaults, and the account has to be linked again.
 
 ## Tests
 

@@ -29,6 +29,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "file_storage.h"
 #include "web_json.h"
 #include "yandex_auth.h"
+#include "yandex_catalog.h"
 
 #define WEB_SERVER_MOUNT_PATH "/littlefs"
 #define WEB_SERVER_WEB_ROOT "www"
@@ -212,6 +213,7 @@ web_server_yandex_action_t web_server_parse_yandex_action(const char *request)
     if (strcmp(action, "begin") == 0) return WEB_SERVER_YANDEX_ACTION_BEGIN;
     if (strcmp(action, "cancel") == 0) return WEB_SERVER_YANDEX_ACTION_CANCEL;
     if (strcmp(action, "forget") == 0) return WEB_SERVER_YANDEX_ACTION_FORGET;
+    if (strcmp(action, "refresh") == 0) return WEB_SERVER_YANDEX_ACTION_REFRESH;
     return WEB_SERVER_YANDEX_ACTION_INVALID;
 }
 
@@ -482,6 +484,21 @@ static const char *web_server_yandex_error_name(yandex_auth_error_t error)
     }
 }
 
+static const char *web_server_yandex_catalog_name(yandex_catalog_state_t state)
+{
+    switch (state) {
+    case YANDEX_CATALOG_LOADING:
+        return "loading";
+    case YANDEX_CATALOG_READY:
+        return "ready";
+    case YANDEX_CATALOG_FAILED:
+        return "failed";
+    case YANDEX_CATALOG_EMPTY:
+    default:
+        return "empty";
+    }
+}
+
 static esp_err_t web_server_yandex_get(httpd_req_t *request)
 {
     const yandex_auth_status_t status = yandex_auth_get_status();
@@ -498,6 +515,29 @@ static esp_err_t web_server_yandex_get(httpd_req_t *request)
     cJSON_AddStringToObject(root, "user_code", status.user_code);
     cJSON_AddStringToObject(root, "verification_url", status.verification_url);
     cJSON_AddNumberToObject(root, "seconds_left", status.seconds_left);
+    cJSON_AddStringToObject(root, "catalog",
+                            web_server_yandex_catalog_name(yandex_catalog_get_state()));
+
+    /* Over REST, like the rest of this endpoint: a dozen station names are far
+     * past the 512-byte WebSocket frame, and the list changes once per visit
+     * rather than continuously. */
+    cJSON *stations = cJSON_AddArrayToObject(root, "stations");
+    if (stations == NULL) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_FAIL;
+    }
+    const size_t count = yandex_catalog_count();
+    for (size_t index = 0; index < count; ++index) {
+        yandex_station_t station;
+        if (!yandex_catalog_station_at(index, &station)) break;
+        cJSON *item = cJSON_CreateObject();
+        if (item == NULL) break;
+        cJSON_AddStringToObject(item, "id", station.id);
+        cJSON_AddStringToObject(item, "name", station.name);
+        cJSON_AddItemToArray(stations, item);
+    }
+
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (json == NULL) {
@@ -539,12 +579,22 @@ static esp_err_t web_server_yandex_post(httpd_req_t *request)
     case WEB_SERVER_YANDEX_ACTION_FORGET:
         result = yandex_auth_forget();
         break;
+    case WEB_SERVER_YANDEX_ACTION_REFRESH:
+        result = yandex_catalog_request_refresh();
+        break;
     case WEB_SERVER_YANDEX_ACTION_INVALID:
     default:
         break;
     }
     if (result == ESP_ERR_INVALID_ARG) {
         httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Unknown action");
+        return ESP_FAIL;
+    }
+    if (result == ESP_ERR_INVALID_STATE) {
+        /* Asking for stations with no account linked is a request that does
+         * not apply, not a device that is struggling - and "busy" would send
+         * whoever reads it looking for the wrong problem. */
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Account is not linked");
         return ESP_FAIL;
     }
     if (result != ESP_OK) {

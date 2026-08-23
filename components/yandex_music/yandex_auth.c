@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "yandex_catalog.h"
 #include "yandex_token_store.h"
 
 /* Public OAuth credentials of the official Yandex Music Android application.
@@ -476,6 +477,10 @@ esp_err_t yandex_auth_forget(void)
     s_status.state = YANDEX_AUTH_IDLE;
     s_flow.state = YANDEX_AUTH_IDLE;
     yandex_auth_unlock();
+    /* Here rather than in the screen that pressed the button: the web UI can
+     * unlink too, and leaving one account's stations listed after the other
+     * surface logged out would be a small betrayal. */
+    yandex_catalog_clear();
     ESP_LOGI(TAG, "token forgotten");
     return err;
 }

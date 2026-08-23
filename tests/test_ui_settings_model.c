@@ -132,6 +132,84 @@ static void test_brightness_steps_and_stops_at_the_ends(void)
     }
 }
 
+static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
+{
+    /* The list outgrew the screen, and before the window existed the rows past
+     * the fifth were drawn underneath an opaque label - present, invisible,
+     * and unreachable. */
+    const size_t visible = 5U;
+    ui_settings_model_t model;
+    ui_settings_model_init(&model);
+
+    /* Collapsed, everything fits: no window movement and nothing to indicate. */
+    assert(ui_settings_model_row_count(&model) <= visible);
+    assert(ui_settings_model_window_top(&model, visible) == 0U);
+    assert(!ui_settings_model_has_rows_above(&model));
+    assert(!ui_settings_model_has_rows_below(&model, visible));
+
+    /* Open Display, the group that overflows: 3 headings + 3 fields. */
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
+    const size_t count = ui_settings_model_row_count(&model);
+    assert(count == 6U);
+    /* The cursor is still on the heading at row 2, which is on screen, so the
+     * window has not moved. */
+    assert(ui_settings_model_window_top(&model, visible) == 0U);
+    assert(ui_settings_model_has_rows_below(&model, visible));
+    assert(!ui_settings_model_has_rows_above(&model));
+
+    /* The cursor sits on the Display heading at row 2, so the two fields under
+     * it are still on screen and the window holds. */
+    for (size_t step = 0U; step < 2U; ++step) {
+        assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+        assert(ui_settings_model_window_top(&model, visible) == 0U);
+    }
+    /* The last field is the one that does not fit, and it pulls the window by
+     * exactly one row - enough to show the cursor, and no more. */
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(model.cursor == count - 1U);
+    assert(ui_settings_model_window_top(&model, visible) == count - visible);
+    assert(ui_settings_model_has_rows_above(&model));
+    assert(!ui_settings_model_has_rows_below(&model, visible));
+
+    /* Coming back up, the window holds rather than snapping back: every row
+     * of the open group is still visible from where it is, and a list that
+     * scrolled on each step would move under a cursor that never left the
+     * screen. */
+    while (ui_settings_model_move(&model, -1) == UI_SETTINGS_MODEL_CHANGED) {
+        assert(ui_settings_model_window_top(&model, visible) == count - visible);
+    }
+    /* The cursor is back on the Display heading, which is the top of what the
+     * group can reach - so this is the whole group seen without the window
+     * moving again. */
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DISPLAY_GROUP);
+
+    /* Collapsing the group shrinks the list under a scrolled window: it has to
+     * come back rather than leave the screen showing blank rows. */
+    model.window_top = 1U;
+    while (ui_settings_model_move(&model, -1) == UI_SETTINGS_MODEL_CHANGED) { }
+    assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_window_top(&model, visible) == 0U);
+
+    /* Every reachable cursor position is inside its own window - the property
+     * the whole thing exists for. */
+    ui_settings_model_init(&model);
+    for (ui_settings_group_t group = UI_SETTINGS_GROUP_LANGUAGE;
+         group < UI_SETTINGS_GROUP_COUNT; ++group) {
+        ui_settings_model_init(&model);
+        while (ui_settings_model_row_at(&model, model.cursor).group != group ||
+               ui_settings_model_row_at(&model, model.cursor).kind != UI_SETTINGS_ROW_GROUP) {
+            if (ui_settings_model_move(&model, 1) != UI_SETTINGS_MODEL_CHANGED) break;
+        }
+        (void)ui_settings_model_activate(&model);
+        do {
+            const size_t top = ui_settings_model_window_top(&model, visible);
+            assert(model.cursor >= top && model.cursor < top + visible);
+        } while (ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    }
+}
+
 int main(void)
 {
     test_collapsed_groups_and_cursor();
@@ -139,6 +217,7 @@ int main(void)
     test_each_group_has_expected_fields();
     test_the_display_group_holds_a_number_the_knob_edits();
     test_brightness_steps_and_stops_at_the_ends();
+    test_the_window_follows_the_cursor_and_otherwise_holds_still();
     puts("ui_settings_model tests passed");
     return 0;
 }

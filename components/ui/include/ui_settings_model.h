@@ -47,6 +47,9 @@ typedef enum {
 typedef struct {
     int expanded_group;
     size_t cursor;
+    /* First row drawn, so the list can be longer than the screen. Adjusted by
+     * ui_settings_model_window_top() rather than set directly. */
+    size_t window_top;
     /* Armed by a click on a number field: the encoder then changes the value
      * instead of moving the cursor. One knob does both jobs, so which job it
      * is doing has to be a state, and one the screen can show. */
@@ -76,6 +79,17 @@ bool ui_settings_model_is_editing(const ui_settings_model_t *model);
  * that holds no number, which is what keeps the click a toggle everywhere
  * else. */
 ui_settings_model_result_t ui_settings_model_toggle_edit(ui_settings_model_t *model);
+
+/* First model row to draw, given how many rows fit. Moves as little as it can:
+ * the window follows the cursor off either edge and otherwise stays put, so
+ * the list does not jump under a cursor that is already visible. Takes a
+ * mutable model because scrolling is a change to remember, not a view derived
+ * fresh each frame. */
+size_t ui_settings_model_window_top(ui_settings_model_t *model, size_t visible_count);
+/* True when there are rows above or below the window - what the screen needs
+ * to say the list continues. */
+bool ui_settings_model_has_rows_above(const ui_settings_model_t *model);
+bool ui_settings_model_has_rows_below(const ui_settings_model_t *model, size_t visible_count);
 
 /* One detent, clamped to the range. Separate from the model because the value
  * lives in settings.csv, not here: the screen owns how it is reached, the

@@ -160,7 +160,11 @@
 
 #define UI_RADIO_EMPTY_LIST_DELAY_MS 250U
 #define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
-#define UI_SETTINGS_MAX_ROWS 7U
+/* What actually fits between the title and the notice line above the web band:
+ * UI_SET_ROW_Y + 5 * UI_SET_ROW_PITCH is the last row that clears it. The list
+ * outgrew this once already and drew two rows underneath the notice, which is
+ * opaque and painted afterwards - they were not clipped, they were covered. */
+#define UI_SETTINGS_MAX_ROWS 5U
 
 static const char *TAG = "ui";
 static QueueHandle_t s_input_queue;
@@ -250,6 +254,8 @@ static ui_vu_meter_t s_vu_state[2];
 static uint32_t s_vu_updated_ms;
 static lv_obj_t *s_settings_screen;
 static lv_obj_t *s_settings_rows[UI_SETTINGS_MAX_ROWS];
+static lv_obj_t *s_settings_more_above;
+static lv_obj_t *s_settings_more_below;
 /* One per boolean setting, not per row on screen: only one group is open at
  * a time, so at most three are ever visible, but each keeps its own object. */
 #define UI_SETTINGS_SWITCH_COUNT 4U
@@ -1123,6 +1129,19 @@ static void ui_create_settings_screen(void)
         lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(UI_COLOR_GROUND), 0);
         lv_label_set_text(s_settings_rows[row], "");
     }
+    /* In the right margin, clear of the rows: the text column ends at 300 and
+     * a row with a switch starts at 58, so nothing here overlaps either. */
+    s_settings_more_above = lv_label_create(s_settings_screen);
+    lv_obj_set_pos(s_settings_more_above, 302, UI_SET_ROW_Y - 16);
+    lv_obj_set_style_text_color(s_settings_more_above, lv_color_hex(UI_COLOR_DIM), 0);
+    lv_label_set_text(s_settings_more_above, "");
+
+    s_settings_more_below = lv_label_create(s_settings_screen);
+    lv_obj_set_pos(s_settings_more_below, 302,
+                   UI_SET_ROW_Y + UI_SETTINGS_MAX_ROWS * UI_SET_ROW_PITCH);
+    lv_obj_set_style_text_color(s_settings_more_below, lv_color_hex(UI_COLOR_DIM), 0);
+    lv_label_set_text(s_settings_more_below, "");
+
     for (size_t index = 0; index < UI_SETTINGS_SWITCH_COUNT; ++index) {
         s_settings_switches[index] = lv_switch_create(s_settings_screen);
         lv_obj_set_size(s_settings_switches[index], 42, 20);
@@ -1270,11 +1289,24 @@ static void ui_update_settings(void)
     ui_update_settings_web_band();
     const size_t row_count = ui_settings_model_row_count(&s_settings_model);
     const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
+    const size_t window_top = ui_settings_model_window_top(&s_settings_model,
+                                                           UI_SETTINGS_MAX_ROWS);
     for (size_t index = 0; index < UI_SETTINGS_SWITCH_COUNT; ++index) {
         lv_obj_add_flag(s_settings_switches[index], LV_OBJ_FLAG_HIDDEN);
     }
+    /* Arrows rather than a scroll bar: the rows already reach both edges, and
+     * the one thing the user needs to know is that the list continues. */
+    ui_set_label_text_if_changed(s_settings_more_above,
+                                 ui_settings_model_has_rows_above(&s_settings_model) ? LV_SYMBOL_UP
+                                                                                     : "");
+    ui_set_label_text_if_changed(s_settings_more_below,
+                                 ui_settings_model_has_rows_below(&s_settings_model,
+                                                                  UI_SETTINGS_MAX_ROWS)
+                                     ? LV_SYMBOL_DOWN
+                                     : "");
     for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
-        if (row >= row_count) {
+        const size_t model_row = window_top + row;
+        if (model_row >= row_count) {
             /* Hidden, not merely blanked: a row's background is opaque, and
              * with the taller pitch an unused row reaches into the web band. */
             lv_label_set_text(s_settings_rows[row], "");
@@ -1282,7 +1314,7 @@ static void ui_update_settings(void)
             continue;
         }
         lv_obj_clear_flag(s_settings_rows[row], LV_OBJ_FLAG_HIDDEN);
-        const ui_settings_row_t item = ui_settings_model_row_at(&s_settings_model, row);
+        const ui_settings_row_t item = ui_settings_model_row_at(&s_settings_model, model_row);
         char text[96];
         ui_settings_row_text(&item, text, sizeof(text));
         ui_set_label_text_if_changed(s_settings_rows[row], text);

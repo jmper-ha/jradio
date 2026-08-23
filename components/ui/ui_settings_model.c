@@ -118,7 +118,37 @@ void ui_settings_model_init(ui_settings_model_t *model)
     if (model == NULL) return;
     model->expanded_group = -1;
     model->cursor = 0U;
+    model->window_top = 0U;
     model->editing = false;
+}
+
+size_t ui_settings_model_window_top(ui_settings_model_t *model, size_t visible_count)
+{
+    if (!valid_model(model) || visible_count == 0U) return 0U;
+    const size_t count = total_row_count(model->expanded_group);
+    /* Clamped first: expanding a group above the window, or collapsing one,
+     * changes the row count under a window that was valid a moment ago. */
+    size_t top = model->window_top;
+    if (count <= visible_count) {
+        top = 0U;
+    } else {
+        if (top > count - visible_count) top = count - visible_count;
+        if (model->cursor < top) top = model->cursor;
+        if (model->cursor >= top + visible_count) top = model->cursor - visible_count + 1U;
+    }
+    model->window_top = top;
+    return top;
+}
+
+bool ui_settings_model_has_rows_above(const ui_settings_model_t *model)
+{
+    return valid_model(model) && model->window_top > 0U;
+}
+
+bool ui_settings_model_has_rows_below(const ui_settings_model_t *model, size_t visible_count)
+{
+    if (!valid_model(model) || visible_count == 0U) return false;
+    return model->window_top + visible_count < total_row_count(model->expanded_group);
 }
 
 bool ui_settings_row_is_number(ui_settings_row_id_t id)

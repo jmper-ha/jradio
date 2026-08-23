@@ -716,7 +716,7 @@ static void ui_create_feed_screen(void)
     lv_obj_set_style_border_width(s_feed_screen, 0, 0);
     lv_obj_set_style_pad_all(s_feed_screen, 0, 0);
     lv_obj_set_style_text_font(s_feed_screen, &ui_font_cyrillic_14, 0);
-    ui_status_strip_create(s_feed_screen, &s_feed_strip, "jradio");
+    ui_status_strip_create(s_feed_screen, &s_feed_strip, "jRadio");
 
     s_feed_title = lv_label_create(s_feed_screen);
     lv_obj_set_pos(s_feed_title, 0, UI_STRIP_H + 8);
@@ -809,7 +809,7 @@ static void ui_create_menu_screen(void)
     // mistake that only shows up when a label first receives Russian text.
     lv_obj_set_style_text_font(s_menu_screen, &ui_font_cyrillic_20, 0);
 
-    ui_status_strip_create(s_menu_screen, &s_menu_strip, "jradio");
+    ui_status_strip_create(s_menu_screen, &s_menu_strip, "jRadio");
 
     for (uint8_t index = 0; index < UI_MENU_ITEM_COUNT; ++index) {
         s_menu_rows[index] = lv_label_create(s_menu_screen);

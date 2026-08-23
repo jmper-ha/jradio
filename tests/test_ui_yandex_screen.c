@@ -76,10 +76,12 @@ static void test_a_linked_account_with_stations_shows_the_list(void)
      * them down to say nothing. */
     assert(view.status[0] == '\0');
     assert(!view.show_code);
-    /* Deliberately silent about OK: this build cannot play a station yet, and
-     * a hint that promises it would be a lie the user acts on. */
-    assert(strstr(view.hint, "OK") == NULL);
+    /* OK plays the row under the cursor, so the hint has to say so - this is
+     * the only screen from which a Yandex station can be started. */
+    assert(strstr(view.hint, "OK") != NULL);
+    assert(strstr(view.hint, "слушать") != NULL);
     assert(strstr(view.hint, "назад") != NULL);
+    assert(strstr(view.hint, "отвязать") != NULL);
 }
 
 static void test_the_wait_for_stations_says_what_it_is_waiting_for(void)

@@ -704,10 +704,17 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
             parsed->player.source = AUDIO_SOURCE_USB;
         } else if (strcmp(source->valuestring, "sd") == 0) {
             parsed->player.source = AUDIO_SOURCE_SD;
+        } else if (strcmp(source->valuestring, "yandex") == 0) {
+            parsed->player.source = AUDIO_SOURCE_YANDEX;
         } else {
             return false;
         }
         parsed->player.kind = PLAYER_COMMAND_SELECT_SOURCE;
+        return true;
+    }
+    if (strcmp(action, "player.next") == 0) {
+        if (fields != COMMON_FIELDS) return false;
+        parsed->player.kind = PLAYER_COMMAND_NEXT_TRACK;
         return true;
     }
     if (strcmp(action, "browse.up") == 0) {

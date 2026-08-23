@@ -118,6 +118,22 @@ static void test_accepts_exact_player_commands(void)
     assert(command.player.kind == PLAYER_COMMAND_PLAY);
 }
 
+/* Skipping a track carries nothing but the action: which track is playing is
+ * the device's business, and an index here would be a second opinion about it
+ * that could already be stale by the time it arrives. */
+static void test_accepts_the_next_track_command(void)
+{
+    web_command_t command;
+    const char *next = "{\"type\":\"command\",\"id\":\"n1\",\"action\":\"player.next\"}";
+    assert(parse(next, &command) == WEB_PROTOCOL_OK);
+    assert(command.kind == WEB_COMMAND_PLAYER);
+    assert(command.player.kind == PLAYER_COMMAND_NEXT_TRACK);
+
+    const char *extra =
+        "{\"type\":\"command\",\"id\":\"n2\",\"action\":\"player.next\",\"index\":1}";
+    assert(parse(extra, &command) != WEB_PROTOCOL_OK);
+}
+
 static void test_accepts_source_and_station_selection(void)
 {
     web_command_t command;
@@ -136,6 +152,14 @@ static void test_accepts_source_and_station_selection(void)
     assert(command.kind == WEB_COMMAND_PLAYER);
     assert(command.player.kind == PLAYER_COMMAND_SELECT_SOURCE);
     assert(command.player.source == AUDIO_SOURCE_USB);
+
+    const char *yandex =
+        "{\"type\":\"command\",\"id\":\"source-3\","
+        "\"action\":\"source.select\",\"source\":\"yandex\"}";
+    assert(parse(yandex, &command) == WEB_PROTOCOL_OK);
+    assert(command.kind == WEB_COMMAND_PLAYER);
+    assert(command.player.kind == PLAYER_COMMAND_SELECT_SOURCE);
+    assert(command.player.source == AUDIO_SOURCE_YANDEX);
 
     const char *station =
         "{\"type\":\"command\",\"id\":\"43\",\"action\":\"list.select\",\"index\":3}";
@@ -485,6 +509,7 @@ int main(void)
 {
     test_accepts_exact_player_commands();
     test_accepts_source_and_station_selection();
+    test_accepts_the_next_track_command();
     test_accepts_bounded_wifi_credentials();
     test_rejects_bad_envelope_and_exact_schema_violations();
     test_rejects_invalid_request_ids();

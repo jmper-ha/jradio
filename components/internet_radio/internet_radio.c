@@ -33,6 +33,12 @@
 #include "station_resume.h"
 
 #define RADIO_HTTP_BUFFER_SIZE 2048
+/* esp_http_client builds the whole request line and its headers inside this
+ * buffer, and its default is 512 bytes. A station URL never comes close, but a
+ * signed Yandex track link is 1108 characters of one opaque path segment, and
+ * the client answers a request that does not fit with "Out of buffer" - which
+ * looks like a network failure and is not one. */
+#define RADIO_HTTP_TX_BUFFER_SIZE 2048
 #define RADIO_CATALOG_BUFFER_SIZE 16384
 #define RADIO_HTTP_MAX_REDIRECTS 5U
 #define RADIO_HTTP_CONNECT_RETRIES 3U
@@ -136,6 +142,11 @@ typedef struct {
     TaskHandle_t direct_task;
     SemaphoreHandle_t direct_done;
     SemaphoreHandle_t direct_io_mutex;
+    /* Set while the source hands out one finite track at a time. The end of a
+     * body is then the end of a track, not a dropped connection. */
+    bool track_chain;
+    internet_radio_track_source_fn track_source;
+    atomic_bool skip_requested;
     atomic_bool direct_stop_requested;
     atomic_bool direct_paused;
     /* Written by the decode task on every pass and read by whoever asks for
@@ -149,6 +160,7 @@ static internet_radio_context_t s_radio;
 static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static bool radio_direct_reconnect(internet_radio_context_t *radio);
+static bool radio_direct_advance(internet_radio_context_t *radio);
 /* Defined below, past the HLS layer they dispatch to. */
 static esp_err_t radio_stream_open(internet_radio_context_t *radio, const char *url);
 static void radio_stream_close(internet_radio_context_t *radio);
@@ -286,7 +298,7 @@ static void radio_set_title(void *context, const char *title)
     taskENTER_CRITICAL(&s_status_lock);
     snprintf(radio->status.title, sizeof(radio->status.title), "%s", title);
     taskEXIT_CRITICAL(&s_status_lock);
-    ESP_LOGI(TAG, "ICY title: %s", title);
+    ESP_LOGI(TAG, "title: %s", title);
 }
 
 static esp_err_t radio_pcm_output(internet_radio_context_t *radio, const uint8_t *data,
@@ -465,6 +477,9 @@ static void radio_direct_task(void *arg)
     TickType_t last_pcm_tick = xTaskGetTickCount();
     unsigned int decode_stalls = 0U;
     bool decoder_reset_tried = false;
+    /* Set on a chain source when the body ran out; cleared once the next track
+     * is open. Nothing is read from the network while it is set. */
+    bool track_ended = false;
     TickType_t next_report = xTaskGetTickCount() + pdMS_TO_TICKS(RADIO_STARVATION_REPORT_MS);
 
     while (!fatal &&
@@ -523,7 +538,34 @@ static void radio_direct_task(void *arg)
             next_report = xTaskGetTickCount() + pdMS_TO_TICKS(RADIO_STARVATION_REPORT_MS);
         }
 
+        if (radio->track_chain &&
+            atomic_exchange_explicit(&radio->skip_requested, false, memory_order_acq_rel)) {
+            /* A skip has to be immediate, and the backlog is a second of the
+             * track being skipped - so unlike the end of a track, this throws
+             * it away rather than playing it out. */
+            available = 0U;
+            compressed_offset = 0U;
+            track_ended = true;
+        }
         bool need_input = available == 0U;
+        /* The current track's body has ended. Its bytes are still in the
+         * backlog, so the next link is not opened until the decoder has
+         * finished them: opening earlier would hand the tail of one track to a
+         * decoder that has just been reset for the next one, which sounds like
+         * a burst of noise and loses the end of the track. */
+        if (track_ended && need_input) {
+            if (!radio_direct_advance(radio)) {
+                fatal = !atomic_load_explicit(&radio->direct_stop_requested,
+                                              memory_order_acquire);
+                break;
+            }
+            track_ended = false;
+            compressed_offset = 0U;
+            decode_error_retries = 0U;
+            decoder_reset_tried = false;
+            last_pcm_tick = xTaskGetTickCount();
+            continue;
+        }
         if (available < min_available) {
             min_available = available;
         }
@@ -670,7 +712,7 @@ static void radio_direct_task(void *arg)
         // time, leaving the 93 ms of I2S DMA as the only real cushion.
         const radio_prebuffer_plan_t plan =
             radio_prebuffer_plan(&prebuffer, available, need_input);
-        if (plan.should_read) {
+        if (plan.should_read && !track_ended) {
             const size_t room = plan.max_bytes;
             const int request_length = (int)(room < RADIO_DIRECT_NETWORK_CHUNK
                                                  ? room
@@ -692,6 +734,17 @@ static void radio_direct_task(void *arg)
                     break;
                 }
                 if (atomic_load_explicit(&radio->direct_paused, memory_order_acquire)) {
+                    continue;
+                }
+                if (radio->track_chain) {
+                    /* Complete or not, this track is over. A connection that
+                     * died mid-track costs its tail and no more: the chain
+                     * moves on, where reconnecting to a link that expires
+                     * after a minute would usually fail anyway. */
+                    if (!esp_http_client_is_complete_data_received(radio->http)) {
+                        ESP_LOGW(TAG, "track ended early; moving to the next one");
+                    }
+                    track_ended = true;
                     continue;
                 }
                 if (radio_direct_reconnect(radio)) {
@@ -840,6 +893,7 @@ static esp_err_t radio_http_connect(internet_radio_context_t *radio, const char 
     const esp_http_client_config_t config = {
         .url = url,
         .buffer_size = RADIO_HTTP_BUFFER_SIZE,
+        .buffer_size_tx = RADIO_HTTP_TX_BUFFER_SIZE,
         .timeout_ms = 10000,
         .keep_alive_enable = false,
         .user_agent = "VLC/3.0",
@@ -1504,6 +1558,68 @@ static bool radio_direct_reconnect(internet_radio_context_t *radio)
     return false;
 }
 
+/* Moves a chain source on to its next track: ask for a link, reset the
+ * decoder, open it. Unlike a reconnect this is not a failure, so the state
+ * stays PLAYING and the screen shows a new title rather than "reconnecting".
+ *
+ * The link is fetched here, on the decode task, because it expires in about a
+ * minute - fetching it in advance would mean holding a link that dies while
+ * the previous track is still playing. It costs three API calls, which the
+ * backlog this runs at the end of is there to cover. */
+static bool radio_direct_advance(internet_radio_context_t *radio)
+{
+    if (radio->track_source == NULL) return false;
+
+    for (unsigned int attempt = 0U; attempt < RADIO_HTTP_CONNECT_RETRIES; ++attempt) {
+        if (atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire)) {
+            return false;
+        }
+        if (attempt > 0U && !radio_delay_interruptible(radio, RADIO_HTTP_RECONNECT_DELAY_MS)) {
+            return false;
+        }
+        char title[INTERNET_RADIO_TITLE_MAX_LEN];
+        title[0] = '\0';
+        const char *url = radio->track_source(title, sizeof(title));
+        if (url == NULL) {
+            ESP_LOGW(TAG, "no next track on attempt %u/%u", attempt + 1U,
+                     RADIO_HTTP_CONNECT_RETRIES);
+            continue;
+        }
+        radio_stream_close(radio);
+        radio_decoder_reset(radio->decoder);
+        /* Opening a stream resets what the output has done so far, which is
+         * right for a new station and wrong here: the I2S channel is still
+         * running and must keep running, or there would be a gap between
+         * every pair of tracks. Starting an already-started channel fails
+         * with ESP_ERR_INVALID_STATE, and the decode task treats a failed
+         * PCM write as fatal - so this is not cosmetic, it is the difference
+         * between a chain that plays on and one that dies on track two. */
+        const bool output_was_started = radio->output_started;
+        const bool output_was_logged = radio->output_logged;
+        const uint32_t output_rate = radio->output_sample_rate;
+        const size_t played_bytes = radio->pcm_bytes;
+        const size_t played_blocks = radio->pcm_blocks;
+        const esp_err_t err = radio_stream_open(radio, url);
+        radio->output_started = output_was_started;
+        radio->output_logged = output_was_logged;
+        radio->output_sample_rate = output_rate;
+        /* Kept for the same reason: the health report measures PCM against
+         * elapsed time, and a counter that restarts mid-window underflows
+         * into a meaningless percentage. */
+        radio->pcm_bytes = played_bytes;
+        radio->pcm_blocks = played_blocks;
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "next track did not open on attempt %u/%u: %s", attempt + 1U,
+                     RADIO_HTTP_CONNECT_RETRIES, esp_err_to_name(err));
+            continue;
+        }
+        /* After the open, which resets the status line the stream reports. */
+        radio_set_title(radio, title);
+        return true;
+    }
+    return false;
+}
+
 static void radio_load_catalog(internet_radio_context_t *radio)
 {
     FILE *file = fopen(STATION_CATALOG_PATH, "r");
@@ -1707,45 +1823,59 @@ bool internet_radio_saved_station_index(size_t *index)
            station_catalog_find_by_url(&s_radio.catalog, url, index);
 }
 
-bool internet_radio_start_station_index(size_t index)
+/* Brings whatever was playing to a halt before something else starts. Both
+ * branches exist because a source can be stopped without its task ever having
+ * been created - a station that failed to open leaves the state machine out of
+ * STOPPED with nothing running. */
+static bool radio_stop_previous(void)
 {
-    if (!s_radio.initialized) return false;
-    if (index >= s_radio.catalog.count) return false;
     taskENTER_CRITICAL(&s_status_lock);
     const bool have_direct_task = s_radio.direct_task != NULL;
     taskEXIT_CRITICAL(&s_status_lock);
     if (have_direct_task) {
         const esp_err_t stop_result = internet_radio_stop();
         if (stop_result != ESP_OK) {
-            ESP_LOGE(TAG, "cannot start station %u: previous decoder did not stop (%s)",
-                     (unsigned int)index, esp_err_to_name(stop_result));
+            ESP_LOGE(TAG, "cannot start: previous decoder did not stop (%s)",
+                     esp_err_to_name(stop_result));
             return false;
         }
-    } else {
-        internet_radio_status_t previous_status;
-        internet_radio_get_status(&previous_status);
-        if (previous_status.state != INTERNET_RADIO_STATE_STOPPED) {
-            if (internet_radio_stop() != ESP_OK) {
-                ESP_LOGE(TAG, "cannot start station %u: previous stream did not stop",
-                         (unsigned int)index);
-                return false;
-            }
+        return true;
+    }
+    internet_radio_status_t previous_status;
+    internet_radio_get_status(&previous_status);
+    if (previous_status.state != INTERNET_RADIO_STATE_STOPPED) {
+        if (internet_radio_stop() != ESP_OK) {
+            ESP_LOGE(TAG, "cannot start: previous stream did not stop");
+            return false;
         }
     }
-    const radio_stream_format_t stream_format =
-        radio_stream_format_from_url(s_radio.catalog.entries[index].url);
+    return true;
+}
+
+/* The half of starting that is the same for a catalog station and for a chain
+ * of tracks: open the URL, create the decoder the answer calls for, and hand
+ * both to the decode task.
+ *
+ * `station_index` is SIZE_MAX for a chain, which has no place in the catalog -
+ * and that is also what keeps radio_direct_reconnect() from trying to reopen a
+ * chain by index. */
+static bool radio_start_stream(const char *url, const char *name, size_t station_index,
+                               bool track_chain)
+{
+    const radio_stream_format_t stream_format = radio_stream_format_from_url(url);
     taskENTER_CRITICAL(&s_status_lock);
     const bool started = internet_radio_state_apply(&s_radio.status.state,
                                                      INTERNET_RADIO_EVENT_START);
     if (started) {
-        s_radio.status.station_index = index;
+        s_radio.status.station_index = station_index;
         snprintf(s_radio.status.station, sizeof(s_radio.status.station), "%.*s",
-                 (int)sizeof(s_radio.status.station) - 1,
-                 s_radio.catalog.entries[index].name);
+                 (int)sizeof(s_radio.status.station) - 1, name);
         s_radio.status.title[0] = '\0';
     }
     taskEXIT_CRITICAL(&s_status_lock);
     if (!started) return false;
+    s_radio.track_chain = track_chain;
+    atomic_store_explicit(&s_radio.skip_requested, false, memory_order_release);
     s_radio.stream_format = stream_format;
     // Clear the stop flag before opening, not after. internet_radio_stop() has
     // already waited for the previous task to exit, so what is left here is a
@@ -1755,7 +1885,7 @@ bool internet_radio_start_station_index(size_t index)
     atomic_store_explicit(&s_radio.direct_paused, false, memory_order_release);
     esp_err_t err = ESP_FAIL;
     for (unsigned int attempt = 0U; attempt < RADIO_HTTP_CONNECT_RETRIES; ++attempt) {
-        err = radio_stream_open(&s_radio, s_radio.catalog.entries[index].url);
+        err = radio_stream_open(&s_radio, url);
         if (err == ESP_OK) break;
         if (attempt + 1U < RADIO_HTTP_CONNECT_RETRIES) {
             ESP_LOGW(TAG, "HTTP connect retry %u/%u after %s",
@@ -1789,7 +1919,11 @@ bool internet_radio_start_station_index(size_t index)
              (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
                                                             MALLOC_CAP_8BIT));
     TaskHandle_t direct_task_handle = NULL;
-    if (xTaskCreatePinnedToCore(radio_direct_task, "radio_decode", 8192, &s_radio, 6,
+    /* 10 KB rather than 8: a chain source resolves its next track on this very
+     * task, and that is three TLS handshakes deep inside the decode loop.
+     * Measured least-seen headroom fell from 5660 to 2676 bytes the first time
+     * a chain advanced, and a stack overflow here is a reboot, not a glitch. */
+    if (xTaskCreatePinnedToCore(radio_direct_task, "radio_decode", 10240, &s_radio, 6,
                                 &direct_task_handle, 1) != pdPASS) {
         ESP_LOGE(TAG, "failed to create direct decoder task");
         radio_decoder_destroy(s_radio.decoder);
@@ -1802,6 +1936,59 @@ bool internet_radio_start_station_index(size_t index)
     taskENTER_CRITICAL(&s_status_lock);
     s_radio.direct_task = direct_task_handle;
     taskEXIT_CRITICAL(&s_status_lock);
+    return true;
+}
+
+bool internet_radio_skip_track(void)
+{
+    if (!s_radio.initialized || !s_radio.track_chain) return false;
+    internet_radio_status_t status;
+    internet_radio_get_status(&status);
+    /* Only while something is running. A skip on a stopped or failed chain
+     * would set a flag no task is left to read, and the next start would then
+     * throw away its own first track. */
+    if (status.state != INTERNET_RADIO_STATE_PLAYING &&
+        status.state != INTERNET_RADIO_STATE_PAUSED) {
+        return false;
+    }
+    atomic_store_explicit(&s_radio.skip_requested, true, memory_order_release);
+    return true;
+}
+
+void internet_radio_set_track_source(internet_radio_track_source_fn source)
+{
+    s_radio.track_source = source;
+}
+
+bool internet_radio_start_track_chain(const char *display_name)
+{
+    if (!s_radio.initialized || s_radio.track_source == NULL) return false;
+    if (!radio_stop_previous()) return false;
+
+    /* The first link is fetched before anything is opened, so a station that
+     * cannot produce a track fails here rather than after the screen has
+     * already switched to a player that will never start. */
+    char title[INTERNET_RADIO_TITLE_MAX_LEN];
+    title[0] = '\0';
+    const char *url = s_radio.track_source(title, sizeof(title));
+    if (url == NULL) {
+        ESP_LOGE(TAG, "station %s produced no first track", display_name);
+        return false;
+    }
+    if (!radio_start_stream(url, display_name, SIZE_MAX, true)) return false;
+    radio_set_title(&s_radio, title);
+    return true;
+}
+
+bool internet_radio_start_station_index(size_t index)
+{
+    if (!s_radio.initialized) return false;
+    if (index >= s_radio.catalog.count) return false;
+    if (!radio_stop_previous()) return false;
+    if (!radio_start_stream(s_radio.catalog.entries[index].url,
+                            s_radio.catalog.entries[index].name, index, false)) {
+        return false;
+    }
     (void)station_resume_save_last_url(STATION_SETTINGS_PATH,
                                        s_radio.catalog.entries[index].url);
     return true;

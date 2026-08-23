@@ -14,7 +14,7 @@ static const ui_menu_item_config_t s_items[UI_MENU_ITEM_COUNT] = {
     [UI_MENU_ITEM_BLUETOOTH] = {.label = "Bluetooth", .source = AUDIO_SOURCE_BLUETOOTH},
     [UI_MENU_ITEM_FM_RADIO] = {.label = "FM radio", .source = AUDIO_SOURCE_FM},
     [UI_MENU_ITEM_DLNA] = {.label = "DLNA", .source = AUDIO_SOURCE_DLNA},
-    [UI_MENU_ITEM_YANDEX_MUSIC] = {.label = "Yandex Music", .source = AUDIO_SOURCE_NONE},
+    [UI_MENU_ITEM_YANDEX_MUSIC] = {.label = "Yandex Music", .source = AUDIO_SOURCE_YANDEX},
     [UI_MENU_ITEM_SETTINGS] = {.label = "Настройки", .source = AUDIO_SOURCE_NONE},
 };
 

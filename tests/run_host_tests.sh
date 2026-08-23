@@ -35,6 +35,7 @@ include_flags=(
     -I"${project_dir}/components/usb_storage/include"
     -I"${project_dir}/components/web_server"
     -I"${project_dir}/components/web_server/include"
+    -I"${project_dir}/components/yandex_music"
     -I"${project_dir}/components/yandex_music/include"
     # For the fixture the tag tests read: real bytes out of a real file, kept
     # next to the tests that assert on them.
@@ -185,7 +186,15 @@ run_test web_protocol -I"${cjson_include}" tests/test_web_protocol.c \
 run_test web_view_model tests/test_web_view_model.c \
     components/web_server/web_view_model.c
 run_test yandex_catalog tests/test_yandex_catalog.c \
-    components/yandex_music/yandex_catalog_parse.c
+    components/yandex_music/yandex_catalog_parse.c \
+    components/yandex_music/yandex_json_reader.c
+run_test yandex_tracks tests/test_yandex_tracks.c \
+    components/yandex_music/yandex_tracks_parse.c \
+    components/yandex_music/yandex_json_reader.c
+run_test yandex_link tests/test_yandex_link.c \
+    components/yandex_music/yandex_link.c \
+    components/yandex_music/yandex_md5.c \
+    components/yandex_music/yandex_json_reader.c
 run_test yandex_auth_flow tests/test_yandex_auth_flow.c \
     components/yandex_music/yandex_auth_flow.c
 run_test yandex_auth_json -I"${cjson_include}" tests/test_yandex_auth_json.c \

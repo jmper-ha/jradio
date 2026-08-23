@@ -1009,6 +1009,9 @@ static void ui_update_station_list(void)
 }
 
 static void ui_load_menu_screen(void);
+/* Defined with the rest of the player plumbing, further down; the Yandex
+ * screen needs it before that, to select its source on the way in. */
+static bool ui_submit_player_command(const player_command_t *command);
 
 static void ui_create_settings_screen(void)
 {
@@ -1443,6 +1446,17 @@ static void ui_show_yandex(void)
         const size_t count = yandex_catalog_count();
         station_list_init(&s_yandex_list, count, 0U, count);
         (void)yandex_catalog_request_refresh();
+        /* This screen is the Yandex source's station list, so entering it
+         * selects the source - the same thing opening the radio list does.
+         * It has to happen here rather than at the press that starts a
+         * station: a SELECT_ITEM is only accepted once the snapshot confirms
+         * the source, and the two cannot be posted back to back. */
+        const player_command_t select_source = {
+            .kind = PLAYER_COMMAND_SELECT_SOURCE,
+            .source = AUDIO_SOURCE_YANDEX,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        (void)ui_submit_player_command(&select_source);
     }
     ui_update_yandex();
     lv_screen_load(s_yandex_screen);
@@ -1938,6 +1952,13 @@ static void ui_load_source_screen(audio_source_t selected_source)
         ui_set_label_text_if_changed(s_source_stream, "");
         s_waiting_for_radio_station = true;
         s_radio_station_wait_started_ms = ui_tick_get_ms();
+    } else if (selected_source == AUDIO_SOURCE_YANDEX) {
+        /* Connecting like a station, but without the wait that falls back to
+         * the radio list: this source has its own screen to fall back to, and
+         * its station name is known before the first byte arrives. */
+        ui_set_state_line("Connecting...", "");
+        ui_set_label_text_if_changed(s_source_stream, "");
+        s_waiting_for_radio_station = false;
     } else if (audio_source_is_files(selected_source)) {
         s_waiting_for_radio_station = false;
         // Nothing plays until a file is chosen, so this screen opens idle
@@ -1957,6 +1978,12 @@ static void ui_show_source(void)
 {
     const audio_source_t selected_source = ui_menu_activate(&s_menu);
     if (selected_source == AUDIO_SOURCE_NONE) return;
+    /* Yandex has its own list screen rather than the shared one: it is fetched
+     * from the account, not read from the catalog file. */
+    if (selected_source == AUDIO_SOURCE_YANDEX) {
+        ui_show_yandex();
+        return;
+    }
     // A drive that cannot be browsed still opens its screen - the list, empty,
     // saying why. Refusing to leave the menu left the user pressing a working
     // button with nothing happening but a line of small print.
@@ -2226,6 +2253,38 @@ static void ui_toggle_playback(void)
     (void)ui_submit_player_command(&command);
 }
 
+/* Starts the station under the cursor and leaves for the player screen.
+ *
+ * The source was selected when this screen opened, so all that is posted here
+ * is the row - which is what makes it work at all, since a SELECT_ITEM is only
+ * accepted once a snapshot has confirmed the source and its item count. */
+static void ui_yandex_start_selected(void)
+{
+    size_t row;
+    if (!station_list_get_selection(&s_yandex_list, &row)) return;
+    yandex_station_t station;
+    const bool named = yandex_catalog_station_at(row, &station);
+    const player_command_t command = {
+        .kind = PLAYER_COMMAND_SELECT_ITEM,
+        .source = AUDIO_SOURCE_YANDEX,
+        .item_index = row,
+    };
+    if (!ui_submit_player_command(&command)) {
+        /* Refused because the source has not been confirmed yet, or because
+         * something else is still pending. Saying so beats a dead button. */
+        ui_yandex_show_notice("Ещё не готово, повторите");
+        ui_update_yandex();
+        return;
+    }
+    s_yandex_open = false;
+    s_yandex_notice = NULL;
+    ui_load_source_screen(AUDIO_SOURCE_YANDEX);
+    if (named) {
+        lv_label_set_text(s_source_title, station.name);
+        ui_set_label_text_if_changed(s_source_detail, station.name);
+    }
+}
+
 static void ui_handle_input(board_input_action_t action)
 {
     // Settings sits outside the player's view state: it shows no source and
@@ -2250,7 +2309,8 @@ static void ui_handle_input(board_input_action_t action)
                  * nothing, and there is no account to re-link here. */
                 if (!ui_yandex_view_is_busy(&status)) (void)yandex_auth_begin();
             } else if (view.mode == UI_YANDEX_MODE_LIST) {
-                ui_yandex_show_notice("Воспроизведение появится позже");
+                ui_yandex_start_selected();
+                return;
             } else if (yandex_catalog_get_state() != YANDEX_CATALOG_LOADING) {
                 (void)yandex_catalog_request_refresh();
             }

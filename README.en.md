@@ -12,6 +12,7 @@ buttons on the device, or from a browser on the local network.
 |---|---|
 | Internet radio | MP3, AAC, FLAC, Ogg FLAC, HLS (`.m3u8`); HTTP and HTTPS; ICY metadata; playlist; reconnection |
 | File player | USB drive and SD card; directory browser; MP3, AAC, FLAC, Ogg FLAC, WAV; tags and cover art; advances to the next track; track position and scrubbing |
+| Yandex Music | Account linked by code, no password typed on the device; the account's own dashboard stations; MP3 320 kbps playback; a next-track button on the web page |
 | Volume | Digital, on the encoder, saved across restarts |
 | Clock | SNTP, on every screen |
 | Wi-Fi | Set up through a temporary access point, up to five saved networks |
@@ -111,6 +112,34 @@ down would look exactly like a failing stream. Pause shows as a badge in the
 middle of the screen.
 
 Every screen shares one palette and one status strip.
+
+## Yandex Music
+
+A source of its own rather than a set of rows in the shared catalog: its list
+comes from the account, not from a file.
+
+**Linking** is done by code. The device shows an address and six characters,
+which are entered on a phone or a computer - no password is typed on the device
+and none is transmitted. The token that comes back lives in
+`/littlefs/config/yandex.json` and is never printed, never logged and never
+served over the network: `GET /api/yandex` does not carry it.
+
+**Stations** are the four or five Yandex itself offers on the account
+dashboard ("My wave" and its recommendations). That is the server's choice
+rather than a limit of ours: the list is personal and the API offers no way to
+configure it.
+
+**Playback.** A rotor station is not a stream but a chain of tracks: the server
+hands out a batch of five, and the next batch is asked for by naming the track
+just played. A track link is valid for about a minute and takes three requests
+and an MD5 signature to build, so it is fetched when the track is about to
+play. Those three requests take under a second and fit inside the decoder's
+backlog, so a track change is inaudible; an explicit skip is audible, because
+it deliberately throws that backlog away.
+
+Rotor feedback - what was listened to, what was skipped - is deliberately not
+sent. The chain moves on regardless, but the device teaches Yandex nothing
+about your taste: the dashboard is shaped by what you play in other apps.
 
 ## Controls
 

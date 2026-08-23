@@ -81,12 +81,12 @@ class Element {
 
 const ids = [
   'socket-state', 'playlist-link', 'source-tabs', 'mode-label', 'playback-state',
-  'track-title', 'track-artist', 'track-context', 'play-toggle',
+  'track-title', 'track-artist', 'track-context', 'play-toggle', 'next-track',
   'stream-meta', 'player-error', 'command-status', 'media-list',
   'list-title', 'list-count', 'list-items', 'list-empty',
 ];
 const elements = Object.fromEntries(ids.map((id) => [
-  `#${id}`, new Element(id === 'play-toggle' ? 'button' : 'div'),
+  `#${id}`, new Element(id === 'play-toggle' || id === 'next-track' ? 'button' : 'div'),
 ]));
 const body = new Element('body');
 body.append(...Object.values(elements));
@@ -239,6 +239,8 @@ assert.match(elements['#stream-meta'].textContent, /128 кбит\/с/);
 assert.match(elements['#stream-meta'].textContent, /44100 Гц/);
 assert.equal(elements['#playlist-link'].hidden, false);
 
+
+
 sendEvent(first, {
   type: 'player.update', revision: 1,
   active_source: 'internet_radio', player: player('Старое'),
@@ -284,6 +286,41 @@ elements['#play-toggle'].emit('click');
 assert.deepEqual(JSON.parse(second.sent.at(-1)), {
   type: 'command', id: 'web-2', action: 'player.toggle',
 });
+
+/* The skip button belongs to the rotor alone: a station has no next track,
+   and a file list advances by itself when one ends. */
+assert.equal(elements['#next-track'].hidden, true);
+sendEvent(second, {
+  type: 'player.update', revision: 2, active_source: 'yandex',
+  player: {state: 'playing', mode: 'ЯМузыка', artist: 'Des Rocs',
+           title: 'Never Ending Moment', context: 'Моя волна', codec: 'MP3',
+           bitrate_kbps: 320, sample_rate_hz: 44100, error: ''},
+});
+assert.equal(elements['#next-track'].hidden, false);
+assert.equal(elements['#next-track'].disabled, false);
+/* And the playlist editor is not offered for it: that list is the catalog
+   file, which has nothing to do with the account's stations. */
+assert.equal(elements['#playlist-link'].hidden, true);
+elements['#next-track'].emit('click');
+assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.next');
+
+/* Stopped, there is nothing to skip. The button stays in place rather than
+   disappearing, so the controls do not move under the cursor. */
+sendEvent(second, {
+  type: 'player.update', revision: 3, active_source: 'yandex',
+  player: {state: 'stopped', mode: 'ЯМузыка', artist: '', title: '',
+           context: 'Моя волна', codec: '', bitrate_kbps: 0,
+           sample_rate_hz: 0, error: ''},
+});
+assert.equal(elements['#next-track'].hidden, false);
+assert.equal(elements['#next-track'].disabled, true);
+
+/* Back on the radio it goes away again. */
+sendEvent(second, {
+  type: 'player.update', revision: 4, active_source: 'internet_radio',
+  player: player('Радио снова'),
+});
+assert.equal(elements['#next-track'].hidden, true);
 
 second.emit('close');
 assert.equal(elements['#socket-state'].textContent, 'Нет связи');

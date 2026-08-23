@@ -32,6 +32,10 @@
  * always offered and the answer comes from the attempt, as sd_media in the
  * snapshot and as a line on the browser screen. */
 #define PLAYER_CAP_SD (1U << 2)
+/* Set only while an account is linked. Unlike the card slot there is nothing
+ * to discover by trying: without a token every request fails the same way, so
+ * offering the source would only produce an error screen. */
+#define PLAYER_CAP_YANDEX (1U << 3)
 
 #ifdef __cplusplus
 extern "C" {
@@ -67,6 +71,12 @@ typedef enum {
     // Jumps the playing file to `position_seconds` and keeps playing from
     // there. Only a file can be seeked: a stream has no position to move to.
     PLAYER_COMMAND_SEEK,
+    /* Ends the playing track and moves on. Only a Yandex station has one:
+     * a stream has no tracks, and a file list already advances by itself when
+     * a track ends. Appended rather than slotted in - these values travel
+     * through a queue, and renumbering them would misread a command already
+     * posted across a firmware update. */
+    PLAYER_COMMAND_NEXT_TRACK,
 } player_command_kind_t;
 
 typedef struct {
@@ -123,6 +133,7 @@ typedef enum {
     PLAYER_OPERATION_BROWSE_UP,
     PLAYER_OPERATION_BROWSE_REVEAL,
     PLAYER_OPERATION_SEEK,
+    PLAYER_OPERATION_NEXT_TRACK,
 } player_operation_t;
 
 player_operation_t player_control_decide(const player_snapshot_t *state,

@@ -17,6 +17,9 @@
 #include "album_art.h"
 #include "audio_source.h"
 #include "internet_radio.h"
+#include "yandex_auth.h"
+#include "yandex_catalog.h"
+#include "yandex_rotor.h"
 #include "file_browser.h"
 #include "file_storage.h"
 #include "file_player.h"
@@ -240,6 +243,33 @@ static void player_file_track_finished(void)
 // stopping a player that is already stopped costs one atomic read - trusting
 // this task's bookkeeping instead would turn any drift in it into a read of
 // freed FATFS state.
+/* Which row of the Yandex list is playing. The radio status cannot answer for
+ * it: a chain of tracks has no index in the station catalog, and reports
+ * SIZE_MAX on purpose so that a reconnect never tries to reopen it by one. */
+static atomic_size_t s_yandex_item_index = ATOMIC_VAR_INIT(PLAYER_ITEM_NONE);
+
+/* Starts the station on `index` of the Yandex list as a chain of tracks. The
+ * first link is fetched inside internet_radio_start_track_chain(), so this
+ * blocks for as long as three API calls take - acceptable on this task, which
+ * is the one that already blocks on opening a station. */
+static bool player_yandex_start(size_t index)
+{
+    yandex_station_t station;
+    if (!yandex_catalog_station_at(index, &station)) {
+        ESP_LOGW(TAG, "yandex station %u is gone from the list", (unsigned int)index);
+        return false;
+    }
+    if (yandex_rotor_start(station.id) != ESP_OK) {
+        ESP_LOGE(TAG, "yandex rotor did not start for %s", station.id);
+        return false;
+    }
+    if (!internet_radio_start_track_chain(station.name)) {
+        return false;
+    }
+    atomic_store_explicit(&s_yandex_item_index, index, memory_order_release);
+    return true;
+}
+
 static void player_file_media_removing(void)
 {
     const esp_err_t result = file_player_stop();
@@ -256,11 +286,20 @@ static void player_file_media_removing(void)
 
 static bool player_stop_active_source(audio_source_t source)
 {
-    if (source == AUDIO_SOURCE_INTERNET_RADIO) {
+    if (audio_source_is_stations(source)) {
         const esp_err_t result = internet_radio_stop();
         if (result != ESP_OK) {
             ESP_LOGW(TAG, "internet radio stop failed: %s", esp_err_to_name(result));
             return false;
+        }
+        if (source == AUDIO_SOURCE_YANDEX) {
+            /* After the decoder has stopped, so nothing is inside a call that
+             * reads the rotor's buffer while it is being freed. The chain's
+             * position is kept: coming back to the same station should not
+             * replay what was already heard. */
+            yandex_rotor_stop();
+            atomic_store_explicit(&s_yandex_item_index, PLAYER_ITEM_NONE,
+                                  memory_order_release);
         }
     } else if (audio_source_is_files(source)) {
         const esp_err_t result = file_player_stop();
@@ -373,12 +412,21 @@ static void player_control_task(void *arg)
         case PLAYER_OPERATION_START_ITEM:
             if (audio_source_is_files(snapshot.active_source)) {
                 player_file_select_item(command.item_index, snapshot.playback_state);
+            } else if (snapshot.active_source == AUDIO_SOURCE_YANDEX) {
+                (void)player_yandex_start(command.item_index);
             } else {
                 (void)internet_radio_start_station_index(command.item_index);
             }
             break;
         case PLAYER_OPERATION_START_SAVED:
-            if (!audio_source_is_files(snapshot.active_source)) {
+            if (snapshot.active_source == AUDIO_SOURCE_YANDEX) {
+                /* There is no saved Yandex station, and the radio's saved one
+                 * belongs to a different source: play again means the station
+                 * that was last chosen here, and nothing at all before that. */
+                const size_t index =
+                    atomic_load_explicit(&s_yandex_item_index, memory_order_acquire);
+                if (index != PLAYER_ITEM_NONE) (void)player_yandex_start(index);
+            } else if (!audio_source_is_files(snapshot.active_source)) {
                 (void)internet_radio_start_saved_station();
             }
             break;
@@ -402,6 +450,11 @@ static void player_control_task(void *arg)
             // the web UI can arrange - the request waits and lands on the pass
             // that resumes it.
             (void)file_player_seek(command.position_seconds);
+            break;
+        case PLAYER_OPERATION_NEXT_TRACK:
+            if (!internet_radio_skip_track()) {
+                ESP_LOGW(TAG, "nothing to skip");
+            }
             break;
         case PLAYER_OPERATION_ADVANCE_ITEM:
             player_file_advance();
@@ -484,6 +537,9 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     }
     // Always: see PLAYER_CAP_SD. What is actually in the slot is sd_media.
     snapshot->capabilities |= PLAYER_CAP_SD;
+    if (yandex_auth_is_authorized()) {
+        snapshot->capabilities |= PLAYER_CAP_YANDEX;
+    }
     snapshot->active_source =
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
 
@@ -522,8 +578,16 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     internet_radio_status_t radio_status;
     internet_radio_get_status(&radio_status);
     snapshot->playback_state = player_playback_from_radio(radio_status.state);
-    snapshot->active_item_index = radio_status.station_index;
-    snapshot->item_count = internet_radio_station_count();
+    if (snapshot->active_source == AUDIO_SOURCE_YANDEX) {
+        /* The rotor's list, and the row this task remembers starting: the
+         * radio status reports SIZE_MAX for a chain by design. */
+        snapshot->active_item_index =
+            atomic_load_explicit(&s_yandex_item_index, memory_order_acquire);
+        snapshot->item_count = yandex_catalog_count();
+    } else {
+        snapshot->active_item_index = radio_status.station_index;
+        snapshot->item_count = internet_radio_station_count();
+    }
     snprintf(snapshot->context, sizeof(snapshot->context), "%s", radio_status.station);
     snprintf(snapshot->stream_title, sizeof(snapshot->stream_title), "%s",
              radio_status.title);
@@ -531,8 +595,16 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     snapshot->bitrate_kbps = radio_status.bitrate_kbps;
     snapshot->sample_rate_hz = radio_status.sample_rate_hz;
     if (radio_status.state == INTERNET_RADIO_STATE_ERROR) {
-        snprintf(snapshot->error, sizeof(snapshot->error),
-                 "Не удалось подключиться к станции");
+        /* An account without an active subscription gets preview variants only,
+         * and that is worth saying: everything else about it looks exactly
+         * like a station that would not open. */
+        if (snapshot->active_source == AUDIO_SOURCE_YANDEX &&
+            yandex_rotor_last_error() == ESP_ERR_NOT_SUPPORTED) {
+            snprintf(snapshot->error, sizeof(snapshot->error), "Нужна подписка Яндекс Музыки");
+        } else {
+            snprintf(snapshot->error, sizeof(snapshot->error),
+                     "Не удалось подключиться к станции");
+        }
     }
 }
 
@@ -550,7 +622,7 @@ bool player_control_input_fill(uint8_t *percent)
             return false;
         }
         reported = status.buffer_percent;
-    } else if (source == AUDIO_SOURCE_INTERNET_RADIO) {
+    } else if (audio_source_is_stations(source)) {
         internet_radio_status_t status;
         internet_radio_get_status(&status);
         if (status.state != INTERNET_RADIO_STATE_PLAYING &&

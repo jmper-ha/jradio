@@ -10,6 +10,7 @@
   const trackArtist = document.querySelector('#track-artist');
   const trackContext = document.querySelector('#track-context');
   const playToggle = document.querySelector('#play-toggle');
+  const nextTrack = document.querySelector('#next-track');
   const streamMeta = document.querySelector('#stream-meta');
   const playerError = document.querySelector('#player-error');
   const commandStatus = document.querySelector('#command-status');
@@ -180,6 +181,12 @@
     trackContext.textContent = safeString(player.context);
     trackContext.hidden = trackContext.textContent.length === 0 ||
       trackContext.textContent === trackTitle.textContent;
+
+    /* Only the rotor has a next track. A station has none, and a file list
+       advances on its own when a track ends. */
+    const skippable = state.activeSource === 'yandex';
+    nextTrack.hidden = !skippable;
+    nextTrack.disabled = !skippable || (player.state !== 'playing' && player.state !== 'paused');
 
     playToggle.classList.toggle('is-playing', playing);
     playToggle.setAttribute('aria-label', playing ? 'Пауза' : 'Воспроизвести');
@@ -580,6 +587,7 @@
   }
 
   playToggle.addEventListener('click', () => sendCommand('player.toggle'));
+  nextTrack.addEventListener('click', () => sendCommand('player.next'));
   renderSources();
   updatePlaylistLink();
   renderPlayer();

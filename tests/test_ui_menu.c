@@ -36,6 +36,13 @@ static void test_select_source_moves_menu_cursor(void)
     assert(ui_menu_select_source(&state, AUDIO_SOURCE_USB));
     assert(ui_menu_activate(&state) == AUDIO_SOURCE_USB);
     assert(!ui_menu_select_source(&state, AUDIO_SOURCE_NONE));
+
+    /* Yandex Music is a real source now, so leaving the player has a row to
+     * come back to - it used to map to AUDIO_SOURCE_NONE, which no row
+     * matches. */
+    assert(ui_menu_select_source(&state, AUDIO_SOURCE_YANDEX));
+    assert(ui_menu_selected_index(&state) == UI_MENU_ITEM_YANDEX_MUSIC);
+    assert(ui_menu_activate(&state) == AUDIO_SOURCE_YANDEX);
 }
 
 static void test_settings_is_the_last_row_and_is_not_a_source(void)

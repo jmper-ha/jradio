@@ -18,6 +18,7 @@
 #include "wifi_provisioning.h"
 #include "yandex_auth.h"
 #include "yandex_catalog.h"
+#include "yandex_rotor.h"
 
 static const char *TAG = "jradio";
 
@@ -76,6 +77,11 @@ void app_main(void)
     start_optional("USB storage", usb_storage_init());
     start_optional("USB player", file_player_init());
     ESP_ERROR_CHECK(internet_radio_init());
+    /* After both exist, and before anything can play: a Yandex station is an
+     * HTTP stream that arrives one track at a time, and this is the seam
+     * between the two - the audio path asks for the next link, and the rotor
+     * is what answers, without either component naming the other. */
+    internet_radio_set_track_source(yandex_rotor_next_url);
     ESP_ERROR_CHECK(player_control_init());
     ESP_ERROR_CHECK(ui_init());
     start_optional("web server", web_server_start());

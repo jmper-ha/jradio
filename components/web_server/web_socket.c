@@ -19,6 +19,7 @@
 
 #include "player_control.h"
 #include "station_catalog.h"
+#include "yandex_catalog.h"
 #endif
 
 static void secure_zero(void *memory, size_t size)
@@ -125,6 +126,17 @@ static void write_capabilities(web_json_writer_t *writer,
         web_json_literal(writer,
                        "{\"id\":\"sd\",\"label\":"
                        "\"SD-карта\",\"list_kind\":\"files\"}");
+        written = true;
+    }
+    /* Only while an account is linked, for the same reason the capability is:
+     * without one the source can do nothing but fail. */
+    if ((player->capabilities & PLAYER_CAP_YANDEX) != 0U) {
+        if (written) {
+            web_json_literal(writer, ",");
+        }
+        web_json_literal(writer,
+                       "{\"id\":\"yandex\",\"label\":"
+                       "\"ЯМузыка\",\"list_kind\":\"stations\"}");
     }
     web_json_literal(writer, "]");
 }
@@ -531,9 +543,19 @@ static bool ready_client_add(int fd)
     return false;
 }
 
+/* Which list the rows come from depends on the source: both are flat lists of
+ * stations, but one is the catalog file and the other is fetched from the
+ * account. The active source arrives through `context` rather than being read
+ * again here, so the rows can never describe a different source than the
+ * player fields serialized alongside them. */
 static const char *runtime_station_label(size_t index, void *context)
 {
-    (void)context;
+    const audio_source_t source =
+        context == NULL ? AUDIO_SOURCE_INTERNET_RADIO : *(const audio_source_t *)context;
+    if (source == AUDIO_SOURCE_YANDEX) {
+        static yandex_station_t station;
+        return yandex_catalog_station_at(index, &station) ? station.name : "";
+    }
     const station_catalog_entry_t *station = player_control_station_at(index);
     return station == NULL ? "" : station->name;
 }
@@ -591,9 +613,10 @@ static bool prepare_event_frame(httpd_ws_frame_t *frame,
                                 const player_snapshot_t *player,
                                 const web_socket_wifi_state_t *wifi)
 {
+    const audio_source_t list_source = player->active_source;
     const int length = web_socket_serialize_event(
         s_http_output, sizeof(s_http_output), kind, revision, player, wifi,
-        runtime_station_label, NULL);
+        runtime_station_label, (void *)&list_source);
     if (length <= 0) {
         ESP_LOGE(TAG, "serialize event failed type=%s max=%u",
                  runtime_event_type(kind), (unsigned)WEB_PROTOCOL_EVENT_MAX);

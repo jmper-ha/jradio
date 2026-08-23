@@ -27,9 +27,7 @@ static void ui_yandex_build_catalog(yandex_catalog_state_t catalog_state,
     if (catalog_state == YANDEX_CATALOG_READY && station_count > 0U) {
         view->mode = UI_YANDEX_MODE_LIST;
         view->status = "";
-        /* No "OK - слушать" yet: promising playback the firmware cannot do
-         * would be worse than saying nothing about that button. */
-        view->hint = "F2 - назад, F4 - отвязать";
+        view->hint = "OK - слушать, F2 - назад, F4 - отвязать";
         return;
     }
     view->mode = UI_YANDEX_MODE_MESSAGE;

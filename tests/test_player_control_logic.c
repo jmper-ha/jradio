@@ -269,10 +269,60 @@ static void test_every_file_operation_works_on_the_card_too(void)
     assert(player_control_decide(&ended, &finished) == PLAYER_OPERATION_ADVANCE_ITEM);
 }
 
+static void test_yandex_needs_a_linked_account(void)
+{
+    /* The capability is set only while an account is linked, and without one
+     * every request would fail identically - so the source is refused here
+     * rather than opening a screen that can only show an error. */
+    player_snapshot_t state = {.capabilities = PLAYER_CAP_INTERNET_RADIO | PLAYER_CAP_SD};
+    player_command_t command = {.kind = PLAYER_COMMAND_SELECT_SOURCE,
+                                .source = AUDIO_SOURCE_YANDEX};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+
+    state.capabilities |= PLAYER_CAP_YANDEX;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_SELECT_SOURCE);
+}
+
+static void test_a_yandex_station_starts_and_is_not_restarted(void)
+{
+    player_snapshot_t state = {.capabilities = PLAYER_CAP_YANDEX,
+                               .active_source = AUDIO_SOURCE_YANDEX,
+                               .playback_state = PLAYER_PLAYBACK_STOPPED,
+                               .active_item_index = PLAYER_ITEM_NONE,
+                               .item_count = 4U};
+    player_command_t command = {.kind = PLAYER_COMMAND_SELECT_ITEM, .item_index = 2U};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_START_ITEM);
+
+    /* Playing already: picking the same row again is the same no-op it is on
+     * the radio, not a restart of the chain. */
+    state.playback_state = PLAYER_PLAYBACK_PLAYING;
+    state.active_item_index = 2U;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_NONE);
+
+    /* And a row that is not in the list is refused rather than clamped. */
+    command.item_index = 4U;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+}
+
+static void test_a_yandex_chain_never_advances_by_itself(void)
+{
+    /* The end of a track is handled inside the audio path, which opens the
+     * next link without telling anyone. If a TRACK_FINISHED ever did arrive
+     * here it must not be read as "play the next station". */
+    player_snapshot_t state = {.capabilities = PLAYER_CAP_YANDEX,
+                               .active_source = AUDIO_SOURCE_YANDEX,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING};
+    player_command_t command = {.kind = PLAYER_COMMAND_TRACK_FINISHED};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_NONE);
+}
+
 int main(void)
 {
     test_each_volume_answers_for_itself();
     test_every_file_operation_works_on_the_card_too();
+    test_yandex_needs_a_linked_account();
+    test_a_yandex_station_starts_and_is_not_restarted();
+    test_a_yandex_chain_never_advances_by_itself();
     test_toggle_maps_playing_to_pause();
     test_usb_source_requires_a_mounted_drive();
     test_usb_reselecting_the_same_entry_still_acts();

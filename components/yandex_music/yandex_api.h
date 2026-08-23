@@ -19,3 +19,10 @@
  * which is a different thing from the request failing. */
 esp_err_t yandex_api_get(const char *path, char *response, size_t response_size,
                          int *status_code);
+
+/* The same, for an absolute URL the API itself handed out - a track's
+ * downloadInfoUrl. No token is attached: that URL carries its own signature,
+ * and it is over a kilobyte long, which is why it is passed whole instead of
+ * being assembled from a path. */
+esp_err_t yandex_api_get_url(const char *url, char *response, size_t response_size,
+                             int *status_code);

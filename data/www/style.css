@@ -384,6 +384,32 @@ button:disabled {
   display: block;
 }
 
+/* Smaller than the play button and without its shadow: skipping a track is a
+   secondary action next to starting and stopping one. */
+.next-track {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-muted, #e5e7eb);
+  color: var(--text, #111827);
+  cursor: pointer;
+  transition: background .18s ease, transform .18s ease;
+}
+
+.next-track:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.next-track svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: currentColor;
+}
+
 .stream-details {
   min-width: 0;
 }

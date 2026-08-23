@@ -14,6 +14,10 @@ typedef enum {
     AUDIO_SOURCE_FM,
     AUDIO_SOURCE_BLUETOOTH,
     AUDIO_SOURCE_SD,
+    /* A Yandex Music station. Appended rather than slotted in next to the
+     * radio: these values are what a saved setting holds, and renumbering them
+     * would silently change what a device restores after an update. */
+    AUDIO_SOURCE_YANDEX,
 } audio_source_t;
 
 /* True for the sources that are a filesystem with a browser over it - the USB
@@ -26,6 +30,18 @@ typedef enum {
 static inline bool audio_source_is_files(audio_source_t source)
 {
     return source == AUDIO_SOURCE_USB || source == AUDIO_SOURCE_SD;
+}
+
+/* True for the sources that are a flat list of stations rather than a
+ * filesystem: the internet radio catalog and the Yandex rotor.
+ *
+ * Both play an HTTP stream through the same decoder and answer to the same
+ * pause, resume and stop; what differs is only where the list comes from and,
+ * for Yandex, that the stream arrives one track at a time. The counterpart of
+ * audio_source_is_files(), and used the same way - by asking, not by naming. */
+static inline bool audio_source_is_stations(audio_source_t source)
+{
+    return source == AUDIO_SOURCE_INTERNET_RADIO || source == AUDIO_SOURCE_YANDEX;
 }
 
 typedef enum {

@@ -191,6 +191,7 @@ const char *web_view_source_name(audio_source_t source)
     case AUDIO_SOURCE_USB: return "usb";
     case AUDIO_SOURCE_SD: return "sd";
     case AUDIO_SOURCE_INTERNET_RADIO: return "internet_radio";
+    case AUDIO_SOURCE_YANDEX: return "yandex";
     case AUDIO_SOURCE_DLNA: return "dlna";
     case AUDIO_SOURCE_FM: return "fm";
     case AUDIO_SOURCE_BLUETOOTH: return "bluetooth";
@@ -205,6 +206,7 @@ const char *web_view_source_label(audio_source_t source)
     case AUDIO_SOURCE_USB: return "USB-плеер";
     case AUDIO_SOURCE_SD: return "SD-карта";
     case AUDIO_SOURCE_INTERNET_RADIO: return "Интернет-радио";
+    case AUDIO_SOURCE_YANDEX: return "ЯМузыка";
     case AUDIO_SOURCE_DLNA: return "DLNA";
     case AUDIO_SOURCE_FM: return "FM-радио";
     case AUDIO_SOURCE_BLUETOOTH: return "Bluetooth";

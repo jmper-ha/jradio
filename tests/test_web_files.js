@@ -91,12 +91,12 @@ class Element {
 
 const ids = [
   'socket-state', 'playlist-link', 'source-tabs', 'mode-label', 'playback-state',
-  'track-title', 'track-artist', 'track-context', 'play-toggle',
+  'track-title', 'track-artist', 'track-context', 'play-toggle', 'next-track',
   'stream-meta', 'player-error', 'command-status', 'media-list',
   'list-title', 'list-count', 'list-items', 'list-empty',
 ];
 const elements = Object.fromEntries(ids.map((id) => [
-  `#${id}`, new Element(id === 'play-toggle' ? 'button' : 'div'),
+  `#${id}`, new Element(id === 'play-toggle' || id === 'next-track' ? 'button' : 'div'),
 ]));
 const body = new Element('body');
 body.append(...Object.values(elements));

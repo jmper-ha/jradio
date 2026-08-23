@@ -111,6 +111,7 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
                                     ? PLAYER_CAP_INTERNET_RADIO
                                 : command->source == AUDIO_SOURCE_USB ? PLAYER_CAP_USB
                                 : command->source == AUDIO_SOURCE_SD  ? PLAYER_CAP_SD
+                                : command->source == AUDIO_SOURCE_YANDEX ? PLAYER_CAP_YANDEX
                                                                       : 0U;
         const bool supported = needed != 0U && (state->capabilities & needed) != 0U;
         return supported ? PLAYER_OPERATION_SELECT_SOURCE : PLAYER_OPERATION_INVALID;
@@ -139,13 +140,13 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
                        state->playback_state == PLAYER_PLAYBACK_RECONNECTING
                    ? PLAYER_OPERATION_NONE : PLAYER_OPERATION_INVALID;
     case PLAYER_COMMAND_SELECT_ITEM: {
-        if ((state->active_source != AUDIO_SOURCE_INTERNET_RADIO &&
+        if ((!audio_source_is_stations(state->active_source) &&
              !audio_source_is_files(state->active_source)) ||
             command->item_index >= state->item_count) return PLAYER_OPERATION_INVALID;
         // On USB an entry can be a directory, and re-selecting the directory
-        // the cursor is already in still has to navigate; only the radio can
-        // treat "same index, still healthy" as a no-op.
-        const bool already_healthy = state->active_source == AUDIO_SOURCE_INTERNET_RADIO &&
+        // the cursor is already in still has to navigate; only a station list
+        // can treat "same index, still healthy" as a no-op.
+        const bool already_healthy = audio_source_is_stations(state->active_source) &&
             command->item_index == state->active_item_index &&
             (state->playback_state == PLAYER_PLAYBACK_CONNECTING ||
              state->playback_state == PLAYER_PLAYBACK_PLAYING ||
@@ -176,6 +177,17 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
         return state->playback_state == PLAYER_PLAYBACK_PLAYING ||
                        state->playback_state == PLAYER_PLAYBACK_PAUSED
                    ? PLAYER_OPERATION_SEEK
+                   : PLAYER_OPERATION_INVALID;
+    case PLAYER_COMMAND_NEXT_TRACK:
+        /* Only the rotor hands out tracks one after another. Asking a station
+         * for the next track is meaningless, and a file list has no forward
+         * button by design - it advances when a track ends. */
+        if (state->active_source != AUDIO_SOURCE_YANDEX) return PLAYER_OPERATION_INVALID;
+        /* Paused counts: skipping while paused lines the next track up, and
+         * the alternative is a button that does nothing until you resume. */
+        return state->playback_state == PLAYER_PLAYBACK_PLAYING ||
+                       state->playback_state == PLAYER_PLAYBACK_PAUSED
+                   ? PLAYER_OPERATION_NEXT_TRACK
                    : PLAYER_OPERATION_INVALID;
     case PLAYER_COMMAND_TRACK_FINISHED:
         // Only USB has tracks that end. A radio stream that stops has failed

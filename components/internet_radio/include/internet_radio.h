@@ -25,6 +25,26 @@ typedef struct {
     uint8_t buffer_percent;
 } internet_radio_status_t;
 
+/* Supplies the next track of a source that is a chain of finite tracks rather
+ * than an endless stream - a Yandex Music station. Returns a URL that stays
+ * valid until the next call, or NULL when the chain cannot go on; `title`
+ * receives the line to show while it plays.
+ *
+ * A function pointer rather than a direct call because the chain lives in the
+ * yandex_music component, and the audio path must not depend on it: what this
+ * file knows is "an HTTP stream that ends and is followed by another one",
+ * which is all it needs to know. */
+typedef const char *(*internet_radio_track_source_fn)(char *title, size_t title_size);
+void internet_radio_set_track_source(internet_radio_track_source_fn source);
+
+/* Starts such a chain under `display_name`. The first track is fetched here,
+ * so this blocks for as long as the API calls take. */
+bool internet_radio_start_track_chain(const char *display_name);
+
+/* Ends the current track early and moves the chain on. False when what is
+ * playing is not a chain: a station has no next track, only a next station. */
+bool internet_radio_skip_track(void);
+
 esp_err_t internet_radio_init(void);
 esp_err_t internet_radio_start(void);
 esp_err_t internet_radio_stop(void);

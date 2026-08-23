@@ -258,6 +258,12 @@ static lv_obj_t *s_yandex_url;
 static lv_obj_t *s_yandex_countdown;
 static lv_obj_t *s_yandex_hint;
 static bool s_yandex_open;
+/* The row waiting to be started, and when to give up on it. Long enough to
+ * cover selecting a source, which stops whatever was playing and can block for
+ * seconds while a decoder task exits. */
+#define UI_YANDEX_START_TIMEOUT_MS 15000U
+static size_t s_yandex_start_row = PLAYER_ITEM_NONE;
+static uint32_t s_yandex_start_deadline_ms;
 /* Five rows at a 33-pixel pitch fit between the title and the hint, and the
  * dashboard has been four stations every time it was fetched - so the usual
  * case needs no scrolling at all. */
@@ -1446,17 +1452,6 @@ static void ui_show_yandex(void)
         const size_t count = yandex_catalog_count();
         station_list_init(&s_yandex_list, count, 0U, count);
         (void)yandex_catalog_request_refresh();
-        /* This screen is the Yandex source's station list, so entering it
-         * selects the source - the same thing opening the radio list does.
-         * It has to happen here rather than at the press that starts a
-         * station: a SELECT_ITEM is only accepted once the snapshot confirms
-         * the source, and the two cannot be posted back to back. */
-        const player_command_t select_source = {
-            .kind = PLAYER_COMMAND_SELECT_SOURCE,
-            .source = AUDIO_SOURCE_YANDEX,
-            .item_index = PLAYER_ITEM_NONE,
-        };
-        (void)ui_submit_player_command(&select_source);
     }
     ui_update_yandex();
     lv_screen_load(s_yandex_screen);
@@ -1468,6 +1463,7 @@ static void ui_close_yandex(void)
     /* Leaving the screen abandons an unfinished attempt rather than leaving a
      * task polling for a code nobody can see any more. */
     (void)yandex_auth_cancel();
+    s_yandex_start_row = PLAYER_ITEM_NONE;
     s_yandex_open = false;
     ui_load_menu_screen();
 }
@@ -2253,33 +2249,69 @@ static void ui_toggle_playback(void)
     (void)ui_submit_player_command(&command);
 }
 
-/* Starts the station under the cursor and leaves for the player screen.
- *
- * The source was selected when this screen opened, so all that is posted here
- * is the row - which is what makes it work at all, since a SELECT_ITEM is only
- * accepted once a snapshot has confirmed the source and its item count. */
+/* Remembers the row OK was pressed on. Starting it takes two commands that
+ * cannot be posted together - the source, then the row - because a
+ * SELECT_ITEM is only accepted once a snapshot has confirmed the source and
+ * the item count that goes with it. So the press records the row and the poll
+ * loop drives it, one step per pass. */
 static void ui_yandex_start_selected(void)
 {
     size_t row;
     if (!station_list_get_selection(&s_yandex_list, &row)) return;
-    yandex_station_t station;
-    const bool named = yandex_catalog_station_at(row, &station);
-    const player_command_t command = {
+    s_yandex_start_row = row;
+    s_yandex_start_deadline_ms = ui_tick_get_ms() + UI_YANDEX_START_TIMEOUT_MS;
+}
+
+/* One step of that start, called from the poll loop while the screen is open.
+ *
+ * The source is taken here rather than when the screen opens, so that looking
+ * at the list does not stop whatever is playing - and so that a station can
+ * still be started right after the account was linked, when no source could
+ * have been selected in advance. */
+static void ui_yandex_step_start(const player_snapshot_t *snapshot)
+{
+    if (s_yandex_start_row == PLAYER_ITEM_NONE) return;
+    if ((int32_t)(ui_tick_get_ms() - s_yandex_start_deadline_ms) >= 0) {
+        s_yandex_start_row = PLAYER_ITEM_NONE;
+        ui_yandex_show_notice("Не удалось запустить станцию");
+        return;
+    }
+    // A command is still on its way; the next pass will find out how it went.
+    if (ui_player_state_is_pending(&s_player_ui)) return;
+
+    if (snapshot->active_source != AUDIO_SOURCE_YANDEX) {
+        const player_command_t select_source = {
+            .kind = PLAYER_COMMAND_SELECT_SOURCE,
+            .source = AUDIO_SOURCE_YANDEX,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        (void)ui_submit_player_command(&select_source);
+        return;
+    }
+    /* The source is up but its list has not reached the snapshot yet. Waiting
+     * is right: posting now would be refused for an index the player does not
+     * know about. */
+    if (s_yandex_start_row >= snapshot->item_count) return;
+
+    const size_t row = s_yandex_start_row;
+    const player_command_t start = {
         .kind = PLAYER_COMMAND_SELECT_ITEM,
         .source = AUDIO_SOURCE_YANDEX,
         .item_index = row,
     };
-    if (!ui_submit_player_command(&command)) {
-        /* Refused because the source has not been confirmed yet, or because
-         * something else is still pending. Saying so beats a dead button. */
-        ui_yandex_show_notice("Ещё не готово, повторите");
-        ui_update_yandex();
-        return;
-    }
+    if (!ui_submit_player_command(&start)) return;
+    s_yandex_start_row = PLAYER_ITEM_NONE;
     s_yandex_open = false;
     s_yandex_notice = NULL;
+    /* The screen this leaves for is the player, so the view state has to say
+     * so: it was never in the player's view machine while this screen was up,
+     * and a view left saying "menu" would bind the buttons to the wrong
+     * screen. */
+    s_player_ui.view = UI_PLAYER_VIEW_SOURCE;
+    s_player_ui.source = AUDIO_SOURCE_YANDEX;
     ui_load_source_screen(AUDIO_SOURCE_YANDEX);
-    if (named) {
+    yandex_station_t station;
+    if (yandex_catalog_station_at(row, &station)) {
         lv_label_set_text(s_source_title, station.name);
         ui_set_label_text_if_changed(s_source_detail, station.name);
     }
@@ -2310,7 +2342,6 @@ static void ui_handle_input(board_input_action_t action)
                 if (!ui_yandex_view_is_busy(&status)) (void)yandex_auth_begin();
             } else if (view.mode == UI_YANDEX_MODE_LIST) {
                 ui_yandex_start_selected();
-                return;
             } else if (yandex_catalog_get_state() != YANDEX_CATALOG_LOADING) {
                 (void)yandex_catalog_request_refresh();
             }
@@ -2872,6 +2903,12 @@ static void ui_task(void *arg)
         if (s_settings_open) {
             ui_update_settings();
         } else if (s_yandex_open) {
+            /* The player's own state still has to follow the snapshot: this
+             * screen posts commands, and a command whose confirmation is never
+             * read stays pending for ever - which is exactly what refused
+             * every attempt to start a station from here. */
+            ui_player_state_apply_snapshot(&s_player_ui, &snapshot, ui_tick_get_ms());
+            ui_yandex_step_start(&snapshot);
             // Polled rather than driven by input: the countdown ticks and the
             // confirmation arrives from the network, neither of which is a
             // button press.

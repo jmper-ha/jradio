@@ -29,7 +29,7 @@ static bool ui_player_state_snapshot_confirms(
         return snapshot->active_source == AUDIO_SOURCE_NONE &&
                !state->pending_stop_requires_source_departure;
     case PLAYER_COMMAND_SELECT_ITEM:
-        if (snapshot->active_source != AUDIO_SOURCE_INTERNET_RADIO ||
+        if (!audio_source_is_stations(snapshot->active_source) ||
             snapshot->active_item_index != state->pending_command.item_index) {
             return false;
         }
@@ -61,8 +61,12 @@ void ui_player_state_init(ui_player_state_t *state)
 bool ui_player_state_can_select_item(const ui_player_state_t *state,
                                      size_t item_index)
 {
+    /* Any list of stations, not just the catalog: the Yandex list is fetched
+     * from the account but behaves the same - a flat list where choosing a row
+     * starts it. Files are not here at all; browsing stays outside the pending
+     * machinery, as the comment below explains. */
     return state != NULL &&
-           state->confirmed_source == AUDIO_SOURCE_INTERNET_RADIO &&
+           audio_source_is_stations(state->confirmed_source) &&
            item_index < state->item_count;
 }
 

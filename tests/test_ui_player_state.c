@@ -499,9 +499,55 @@ static void test_the_card_gets_the_same_views_as_the_drive(void)
     assert(!state.pending);
 }
 
+/* The Yandex screen lives outside this view machine, but it posts through it:
+ * first the source, then the row. Both steps used to be pinned to the internet
+ * radio, so the second was refused for ever and the screen answered every
+ * press with "not ready yet". */
+static void test_a_yandex_row_can_be_selected_and_confirmed(void)
+{
+    ui_player_state_t state;
+    ui_player_state_init(&state);
+
+    /* Nothing may be chosen before a snapshot says the source is up and how
+     * long its list is - that wait is what the screen steps through. */
+    assert(!ui_player_state_can_select_item(&state, 0U));
+
+    player_command_t select_source =
+        command(PLAYER_COMMAND_SELECT_SOURCE, AUDIO_SOURCE_YANDEX, PLAYER_ITEM_NONE);
+    assert(ui_player_state_can_post(&state, &select_source));
+    assert(ui_player_state_apply_post_result(&state, &select_source, true, 10));
+    assert(ui_player_state_is_pending(&state));
+
+    /* While it is pending the row is still refused, which is why the screen
+     * has to wait a pass rather than post both commands together. */
+    player_command_t select_item =
+        command(PLAYER_COMMAND_SELECT_ITEM, AUDIO_SOURCE_YANDEX, 2U);
+    assert(!ui_player_state_can_post(&state, &select_item));
+
+    player_snapshot_t linked = snapshot(AUDIO_SOURCE_YANDEX, PLAYER_ITEM_NONE, 4U);
+    ui_player_state_apply_snapshot(&state, &linked, 20);
+    assert(!ui_player_state_is_pending(&state));
+    assert(ui_player_state_can_select_item(&state, 2U));
+    /* A row past the end of the account's list is still refused. */
+    assert(!ui_player_state_can_select_item(&state, 4U));
+
+    assert(ui_player_state_can_post(&state, &select_item));
+    assert(ui_player_state_apply_post_result(&state, &select_item, true, 30));
+    assert(ui_player_state_is_pending(&state));
+
+    /* And the snapshot that reports the station playing clears it, instead of
+     * leaving it to time out thirteen seconds later. */
+    player_snapshot_t playing = snapshot(AUDIO_SOURCE_YANDEX, 2U, 4U);
+    playing.playback_state = PLAYER_PLAYBACK_CONNECTING;
+    ui_player_state_apply_snapshot(&state, &playing, 40);
+    assert(!ui_player_state_is_pending(&state));
+    assert(ui_player_state_source(&state) == AUDIO_SOURCE_YANDEX);
+}
+
 int main(void)
 {
     test_the_card_gets_the_same_views_as_the_drive();
+    test_a_yandex_row_can_be_selected_and_confirmed();
     test_rejected_commands_preserve_current_view();
     test_list_view_opens_for_both_sources_with_a_list();
     test_usb_browsing_does_not_go_pending();

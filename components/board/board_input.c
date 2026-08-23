@@ -4,6 +4,18 @@
 
 #define BOARD_INPUT_LONG_PRESS_MS 800U
 
+/* The software contact filter, kept outside the ESP_PLATFORM guard below so
+ * the host build checks the relation between the two: a level must hold for
+ * INPUT_DEBOUNCE_MS across polls INPUT_POLL_MS apart to count, and the encoder
+ * is sampled at the same interval for want of an interrupt line. */
+#define INPUT_POLL_MS 5
+#define INPUT_DEBOUNCE_MS 25
+/* The sample count below is an integer division, so a window that is not a
+ * whole number of polls would silently filter less than it claims. */
+_Static_assert(INPUT_DEBOUNCE_MS % INPUT_POLL_MS == 0 &&
+                   INPUT_DEBOUNCE_MS / INPUT_POLL_MS >= 2,
+               "debounce window must be at least two whole poll intervals");
+
 void board_button_gesture_init(board_button_gesture_t *gesture)
 {
     if (gesture != NULL) *gesture = (board_button_gesture_t){0};
@@ -41,9 +53,6 @@ board_input_action_t board_button_gesture_update(board_button_gesture_t *gesture
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
-/* Poll interval and debounce window come from board_options.h - they describe
- * the physical switches, not this driver. Only the queue depth is a firmware
- * choice. */
 #define INPUT_DEBOUNCE_SAMPLES (INPUT_DEBOUNCE_MS / INPUT_POLL_MS)
 #define INPUT_QUEUE_LENGTH 16
 

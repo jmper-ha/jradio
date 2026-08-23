@@ -42,6 +42,8 @@ static void test_display_group_is_complete_and_consistent(void)
 static void test_backlight_duty_fits_the_pwm_timer(void)
 {
     assert(TFT_BACKLIGHT_GPIO == 2);
+    /* The pin is this board's; the PWM settings belong to the panel module and
+     * live in its profile header. The pairing is what is worth checking. */
     assert(BACKLIGHT_PWM_HZ == 5000);
     /* LEDC tops out at 14 bits on this part, and board.c shifts by this count
      * into a uint32_t. */
@@ -66,16 +68,6 @@ static void test_control_pins_are_distinct(void)
      * for them. */
     assert(BUTTONS_USE_INTERNAL_PULLUPS == 1);
     assert(ENCODER_USE_INTERNAL_PULLUPS == 0);
-}
-
-static void test_debounce_is_a_whole_number_of_polls(void)
-{
-    /* board_input.c derives its sample count by integer division, so a debounce
-     * window that is not a multiple of the poll interval silently rounds down
-     * and filters less than the option claims. */
-    assert(INPUT_POLL_MS > 0);
-    assert(INPUT_DEBOUNCE_MS % INPUT_POLL_MS == 0);
-    assert(INPUT_DEBOUNCE_MS / INPUT_POLL_MS >= 2);
 }
 
 static void test_audio_group_matches_the_fixed_i2s_slots(void)
@@ -149,7 +141,6 @@ int main(void)
     test_display_group_is_complete_and_consistent();
     test_backlight_duty_fits_the_pwm_timer();
     test_control_pins_are_distinct();
-    test_debounce_is_a_whole_number_of_polls();
     test_audio_group_matches_the_fixed_i2s_slots();
     test_dma_holds_enough_audio_to_ride_out_a_hiccup();
     test_usb_group();

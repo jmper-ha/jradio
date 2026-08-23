@@ -25,8 +25,8 @@
  */
 
 #if defined(TFT_CS_GPIO) || defined(I2S_DOUT_GPIO) || defined(USB_DP_GPIO) || \
-    defined(ENCODER_LEFT_GPIO) || defined(BACKLIGHT_PWM_HZ) ||                \
-    defined(INPUT_POLL_MS) || defined(DISPLAY) || defined(AUDIO_DAC) ||       \
+    defined(ENCODER_LEFT_GPIO) || defined(TFT_BACKLIGHT_GPIO) ||              \
+    defined(BUTTON_F1_GPIO) || defined(DISPLAY) || defined(AUDIO_DAC) ||      \
     defined(SDC_CS_GPIO)
 #error "board_options.h: a name here is already defined elsewhere - most likely \
 an ESP-IDF header now uses it. Re-prefix the affected option in this file and \
@@ -43,7 +43,6 @@ at its use sites."
  * host enum in board.c, since the numbering of that enum is not the peripheral
  * number. */
 #define DISPLAY_SPI_PERIPHERAL 2
-#define DISPLAY_PIXEL_CLOCK_HZ (20 * 1000 * 1000)
 
 #define TFT_CS_GPIO 10
 #define TFT_DC_GPIO 47
@@ -58,10 +57,6 @@ at its use sites."
  * ====================================================================== */
 
 #define TFT_BACKLIGHT_GPIO 2
-#define BACKLIGHT_PWM_HZ 5000
-/* Duty resolution in bits. The driver's ledc_timer_bit_t enumerators are the
- * bit counts themselves, which board.c verifies rather than assumes. */
-#define BACKLIGHT_DUTY_BITS 13
 
 /* ======================================================================
  * Controls - rotary encoder with push button, plus four function buttons
@@ -84,12 +79,8 @@ at its use sites."
  * current through its contacts on every detent. */
 #define ENCODER_USE_INTERNAL_PULLUPS 0
 #define BUTTONS_USE_INTERNAL_PULLUPS 1
-/* There is no hardware debouncing, so the contacts are filtered in software:
- * a level must hold for INPUT_DEBOUNCE_MS across polls at INPUT_POLL_MS to
- * count. The encoder is polled rather than interrupt-driven at the same
- * interval. */
-#define INPUT_POLL_MS 5
-#define INPUT_DEBOUNCE_MS 25
+/* There is no hardware debouncing on either group, and no interrupt line for
+ * the encoder: both are polled and filtered in board_input.c. */
 
 /* ======================================================================
  * Audio output - I2S DAC, line out
@@ -132,14 +123,6 @@ at its use sites."
 /* GPIO 40, 41 and 42 are MTDO/MTDI/MTMS, so the bus takes over the external
  * JTAG header. No loss in practice: the built-in USB Serial/JTAG shares its
  * pins with the USB host port, which is already wired to the drive socket. */
-
-/* The sdmmc driver's own default (SDMMC_FREQ_DEFAULT, 20 MHz), which is also
- * the fastest a card is required to accept in SPI mode. Probing higher needs a
- * scope on this board's wiring, not a guess. Card enumeration always starts at
- * 400 kHz regardless; the driver steps up to this once the card answers.
- *
- * The sdspi host config wants kHz, so it divides this by 1000. */
-#define SDC_CLOCK_HZ (20 * 1000 * 1000)
 
 /* No card-detect or write-protect line is wired: the socket's switch pins are
  * unconnected, so a card that appears after boot cannot announce itself the

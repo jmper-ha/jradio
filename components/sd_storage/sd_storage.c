@@ -86,9 +86,11 @@ static esp_err_t sd_mount(void)
 {
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.slot = SD_SPI_HOST;
-    // The host config counts in kHz; the board declares the wiring's limit in
-    // Hz, like every other clock there.
-    host.max_freq_khz = SDC_CLOCK_HZ / 1000;
+    /* max_freq_khz is left at the driver's SDMMC_FREQ_DEFAULT (20 MHz), which
+     * is also the fastest a card is required to accept in SPI mode. Probing
+     * higher needs a scope on this board's wiring, not a guess. Enumeration
+     * always starts at 400 kHz regardless; the driver steps up once the card
+     * answers. */
     s_card_transaction = host.do_transaction;
     host.do_transaction = sd_transaction;
 

@@ -136,8 +136,14 @@ interface.
 
 ## Settings
 
-Language, the look of the home screen, autoplay, flipping the picture
-vertically and horizontally, volume. They apply at once and are saved.
+Language, the look of the home screen, autoplay, Yandex Music, screen
+brightness, flipping the picture vertically and horizontally, volume. They
+apply at once and are saved.
+
+Brightness is a number from 10 to 90 rather than a switch: click the row, the
+number is taken into angle brackets, and turning the knob then changes it. The
+panel follows on every detent. Clicking again releases the knob, and it moves
+through the list as before.
 
 The language switch still only changes the labels on the settings screen
 itself.

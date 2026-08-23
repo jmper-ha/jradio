@@ -233,6 +233,9 @@ static lv_obj_t *s_source_progress;
  * Long enough to cover a whole gesture, short enough that a power cut right
  * after adjusting is unlikely to lose it. */
 #define UI_VOLUME_SETTLE_MS 1500U
+/* Same deal as the volume, and for the same reason: the panel follows the knob
+ * on the very next detent, settings.csv follows once it stops turning. */
+#define UI_BRIGHTNESS_SETTLE_MS 1500U
 /* 20 blocks per channel: 20*11 + 19*3 = 277 px starting at x=30, so the row
  * ends at 307 on a 320 px panel. */
 #define UI_VU_SEGMENTS 20U
@@ -387,6 +390,8 @@ static uint32_t ui_tick_get_ms(void);
  * ui_volume_commit_due() for why the two are separate. */
 static bool s_volume_save_pending;
 static uint32_t s_volume_changed_ms;
+static bool s_brightness_save_pending;
+static uint32_t s_brightness_changed_ms;
 
 static void ui_set_label_text_if_changed(lv_obj_t *label, const char *text)
 {
@@ -1199,6 +1204,14 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         snprintf(text, text_size, "  %s: %s", english ? "Yandex Music" : "Яндекс Музыка",
                  s_device_settings.yandex_music ? "ON" : "OFF");
         break;
+    case UI_SETTINGS_ROW_BRIGHTNESS_FIELD:
+        /* Angle brackets while the knob owns the value: the cursor already
+         * says which row, and this is the only thing that says the next click
+         * of the encoder changes a number instead of moving on. */
+        snprintf(text, text_size,
+                 ui_settings_model_is_editing(&s_settings_model) ? "  %s: <%d>" : "  %s: %d",
+                 english ? "Brightness" : "Яркость", (int)s_device_settings.brightness);
+        break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         snprintf(text, text_size, "  %s: %s", english ? "Flip vertical" : "Поворот по вертикали",
                  s_device_settings.flip_vertical ? "ON" : "OFF");
@@ -1317,6 +1330,7 @@ static void ui_show_settings(void)
         lv_label_set_text(s_settings_notice, "");
         (void)board_display_set_rotation(s_device_settings.flip_vertical,
                                          s_device_settings.flip_horizontal);
+        (void)board_backlight_set(s_device_settings.brightness);
     }
     ui_apply_yandex_visibility();
     ui_update_settings();
@@ -1327,6 +1341,9 @@ static void ui_close_settings(void)
 {
     if (!s_settings_open) return;
     s_settings_open = false;
+    /* Disarmed on the way out: coming back to a screen whose knob still edits
+     * the row it was left on is the sort of thing nobody expects. */
+    s_settings_model.editing = false;
     ui_load_menu_screen();
 }
 
@@ -1621,6 +1638,25 @@ static void ui_settings_change_selected(void)
         return;
     }
     lv_label_set_text(s_settings_notice, changed ? "" : "Ошибка записи settings.csv");
+}
+
+/* The number fields. Separate from ui_settings_change_selected() because a
+ * click and a detent mean different things here: the click only decides who
+ * the knob belongs to, and this is the turn that moves the value. */
+static void ui_settings_change_number(int direction)
+{
+    if (ui_settings_model_selected(&s_settings_model) != UI_SETTINGS_ROW_BRIGHTNESS_FIELD) {
+        return;
+    }
+    const int next = ui_settings_brightness_step((int)s_device_settings.brightness, direction);
+    if (next == (int)s_device_settings.brightness) return;
+    /* Straight to the panel, saved later. Writing settings.csv per detent is
+     * the same read-modify-write that made the volume knob queue up clicks,
+     * and here the lag would be visible as well as felt. */
+    s_device_settings.brightness = (unsigned char)next;
+    (void)board_backlight_set(s_device_settings.brightness);
+    s_brightness_save_pending = true;
+    s_brightness_changed_ms = ui_tick_get_ms();
 }
 
 static void ui_create_station_list_screen(void)
@@ -2475,12 +2511,21 @@ static void ui_handle_input(board_input_action_t action)
         } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
                    action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
             const int direction = action == BOARD_INPUT_ACTION_ENCODER_RIGHT ? 1 : -1;
-            (void)ui_settings_model_move(&s_settings_model, direction);
+            if (ui_settings_model_is_editing(&s_settings_model)) {
+                ui_settings_change_number(direction);
+            } else {
+                (void)ui_settings_model_move(&s_settings_model, direction);
+            }
             ui_update_settings();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             const ui_settings_row_t row = ui_settings_model_row_at(
                 &s_settings_model, s_settings_model.cursor);
-            if (row.kind == UI_SETTINGS_ROW_GROUP) {
+            if (ui_settings_row_is_number(row.id)) {
+                /* The click arms and disarms the knob rather than changing
+                 * anything: a number has no next value to step to the way a
+                 * switch does. */
+                (void)ui_settings_model_toggle_edit(&s_settings_model);
+            } else if (row.kind == UI_SETTINGS_ROW_GROUP) {
                 (void)ui_settings_model_activate(&s_settings_model);
             } else {
                 ui_settings_change_selected();
@@ -2996,6 +3041,12 @@ static void ui_task(void *arg)
             s_volume_save_pending = false;
             (void)device_settings_set_volume(&s_device_settings, board_audio_volume());
         }
+        if (ui_volume_commit_due(s_brightness_save_pending, s_brightness_changed_ms,
+                                 ui_tick_get_ms(), UI_BRIGHTNESS_SETTLE_MS)) {
+            s_brightness_save_pending = false;
+            (void)device_settings_set_brightness(&s_device_settings,
+                                                 s_device_settings.brightness);
+        }
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
@@ -3130,6 +3181,7 @@ esp_err_t ui_init(void)
     } else {
         (void)board_display_set_rotation(s_device_settings.flip_vertical,
                                          s_device_settings.flip_horizontal);
+        (void)board_backlight_set(s_device_settings.brightness);
     }
     ui_apply_yandex_visibility();
     // Before anything can play: the board defaults to full volume, and coming

@@ -38,6 +38,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         .language = DEVICE_LANGUAGE_RU,
         .home_screen = DEVICE_HOME_SCREEN_TEXT,
         .volume = DEVICE_VOLUME_DEFAULT,
+        .brightness = DEVICE_BRIGHTNESS_DEFAULT,
         .yandex_music = true,
     };
     memcpy(settings->storage_path, path, strlen(path) + 1U);
@@ -70,6 +71,15 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
          * or blasting it. */
         if (end != NULL && *end == '\0' && parsed >= 0 && parsed <= 100) {
             settings->volume = (unsigned char)parsed;
+        }
+    }
+    if (read_value(path, "brightness", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        /* A corrupt line leaves the default rather than blacking out the
+         * screen - which would also hide the settings screen that fixes it. */
+        if (end != NULL && *end == '\0' && parsed > 0 && parsed <= 100) {
+            settings->brightness = (unsigned char)parsed;
         }
     }
     if (read_value(path, "last_source", value, sizeof(value))) {
@@ -159,6 +169,18 @@ bool device_settings_set_volume(device_settings_t *settings, unsigned char volum
     snprintf(text, sizeof(text), "%u", (unsigned int)volume);
     if (!save_value(settings, "volume", text)) return false;
     settings->volume = volume;
+    return true;
+}
+
+bool device_settings_set_brightness(device_settings_t *settings, unsigned char brightness)
+{
+    /* Zero is refused along with over-100: a backlight at 0 is a dark panel,
+     * and nothing on a dark panel can turn it back up. */
+    if (brightness == 0U || brightness > 100U) return false;
+    char text[8];
+    snprintf(text, sizeof(text), "%u", (unsigned int)brightness);
+    if (!save_value(settings, "brightness", text)) return false;
+    settings->brightness = brightness;
     return true;
 }
 

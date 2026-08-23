@@ -45,6 +45,11 @@ static const ui_settings_row_t s_field_rows[] = {
     },
 #endif
     {
+        .id = UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
+        .group = UI_SETTINGS_GROUP_DISPLAY,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
         .id = UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD,
         .group = UI_SETTINGS_GROUP_DISPLAY,
         .kind = UI_SETTINGS_ROW_FIELD,
@@ -64,7 +69,7 @@ static size_t field_count(ui_settings_group_t group)
     case UI_SETTINGS_GROUP_GENERAL:
         return 2U + (size_t)BOARD_HAS_YANDEX_MUSIC;
     case UI_SETTINGS_GROUP_DISPLAY:
-        return 2U;
+        return 3U;
     default:
         return 0U;
     }
@@ -113,6 +118,42 @@ void ui_settings_model_init(ui_settings_model_t *model)
     if (model == NULL) return;
     model->expanded_group = -1;
     model->cursor = 0U;
+    model->editing = false;
+}
+
+bool ui_settings_row_is_number(ui_settings_row_id_t id)
+{
+    return id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD;
+}
+
+bool ui_settings_model_is_editing(const ui_settings_model_t *model)
+{
+    return valid_model(model) && model->editing;
+}
+
+ui_settings_model_result_t ui_settings_model_toggle_edit(ui_settings_model_t *model)
+{
+    if (!valid_model(model)) return UI_SETTINGS_MODEL_NO_CHANGE;
+    const ui_settings_row_t row = ui_settings_model_row_at(model, model->cursor);
+    if (!ui_settings_row_is_number(row.id)) return UI_SETTINGS_MODEL_NO_CHANGE;
+    model->editing = !model->editing;
+    return UI_SETTINGS_MODEL_CHANGED;
+}
+
+int ui_settings_brightness_clamp(int value)
+{
+    if (value < UI_SETTINGS_BRIGHTNESS_MIN) return UI_SETTINGS_BRIGHTNESS_MIN;
+    if (value > UI_SETTINGS_BRIGHTNESS_MAX) return UI_SETTINGS_BRIGHTNESS_MAX;
+    return value;
+}
+
+int ui_settings_brightness_step(int value, int direction)
+{
+    if (direction == 0) return ui_settings_brightness_clamp(value);
+    const int stepped = ui_settings_brightness_clamp(value) +
+                        (direction > 0 ? UI_SETTINGS_BRIGHTNESS_STEP
+                                       : -UI_SETTINGS_BRIGHTNESS_STEP);
+    return ui_settings_brightness_clamp(stepped);
 }
 
 size_t ui_settings_model_row_count(const ui_settings_model_t *model)
@@ -158,6 +199,10 @@ ui_settings_model_result_t ui_settings_model_move(ui_settings_model_t *model, in
     if (!valid_model(model) || direction == 0 || direction == INT_MIN) {
         return UI_SETTINGS_MODEL_NO_CHANGE;
     }
+    /* The knob belongs to the value while a number is armed. Refused here as
+     * well as in the caller: a cursor that crept away would leave the screen
+     * editing one row and highlighting another. */
+    if (model->editing) return UI_SETTINGS_MODEL_NO_CHANGE;
     const size_t count = total_row_count(model->expanded_group);
     if (count == 0U) return UI_SETTINGS_MODEL_NO_CHANGE;
     size_t first;
@@ -175,7 +220,7 @@ ui_settings_model_result_t ui_settings_model_move(ui_settings_model_t *model, in
 
 ui_settings_model_result_t ui_settings_model_activate(ui_settings_model_t *model)
 {
-    if (!valid_model(model)) return UI_SETTINGS_MODEL_NO_CHANGE;
+    if (!valid_model(model) || model->editing) return UI_SETTINGS_MODEL_NO_CHANGE;
     const ui_settings_row_t row = ui_settings_model_row_at(model, model->cursor);
     if (row.kind != UI_SETTINGS_ROW_GROUP) return UI_SETTINGS_MODEL_NO_CHANGE;
     if (model->expanded_group == (int)row.group) {

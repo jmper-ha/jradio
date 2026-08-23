@@ -28,6 +28,7 @@ static void test_defaults_and_load(void)
     /* On by default: a device whose firmware has Yandex Music should show it
      * without the user first going to find a switch. */
     assert(settings.yandex_music);
+    assert(settings.brightness == DEVICE_BRIGHTNESS_DEFAULT);
     assert(strcmp(settings.storage_path, test_path) == 0);
 }
 
@@ -131,6 +132,42 @@ static void test_yandex_music_persists(void)
     assert(!reloaded.yandex_music);
 }
 
+static void test_brightness_persists_and_refuses_a_dark_panel(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    assert(device_settings_set_brightness(&settings, 30U));
+    assert(settings.brightness == 30U);
+
+    char value[32];
+    assert(settings_csv_get(test_path, "brightness", value, sizeof(value)));
+    assert(strcmp(value, "30") == 0);
+
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.brightness == 30U);
+
+    /* Zero would leave a dark panel, and nothing on a dark panel can turn it
+     * back up. Refused, and the stored value left alone. */
+    assert(!device_settings_set_brightness(&settings, 0U));
+    assert(!device_settings_set_brightness(&settings, 101U));
+    assert(settings.brightness == 30U);
+}
+
+static void test_a_corrupt_brightness_leaves_the_default(void)
+{
+    reset_file();
+    assert(settings_csv_set(test_path, "brightness", "bright"));
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    assert(settings.brightness == DEVICE_BRIGHTNESS_DEFAULT);
+
+    assert(settings_csv_set(test_path, "brightness", "0"));
+    assert(device_settings_init_at(&settings, test_path));
+    assert(settings.brightness == DEVICE_BRIGHTNESS_DEFAULT);
+}
+
 int main(void)
 {
     test_defaults_and_load();
@@ -140,6 +177,8 @@ int main(void)
     test_volume_defaults_and_persists();
     test_a_corrupt_volume_leaves_the_default();
     test_yandex_music_persists();
+    test_brightness_persists_and_refuses_a_dark_panel();
+    test_a_corrupt_brightness_leaves_the_default();
     puts("device_settings tests passed");
     return 0;
 }

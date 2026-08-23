@@ -29,6 +29,9 @@ typedef enum {
 /* Loud enough to be obviously working, quiet enough that a fresh flash does
  * not startle anyone. */
 #define DEVICE_VOLUME_DEFAULT 80
+/* Backlight percentage. The range is the UI's - see ui_settings_model.h - and
+ * this is what the panel came up at before the setting existed. */
+#define DEVICE_BRIGHTNESS_DEFAULT 50
 
 typedef struct {
     device_language_t language;
@@ -48,6 +51,10 @@ typedef struct {
     /* 0..100. Defaults to 80 rather than full: the first sound after a fresh
      * flash should not be at maximum. */
     unsigned char volume;
+    /* Backlight, as a percentage of PWM duty. Stored unvalidated against the
+     * UI's 10..90 window: this layer only refuses what the hardware cannot do,
+     * so a value written by hand still reaches the panel. */
+    unsigned char brightness;
     device_last_source_t last_source;
     char last_file[DEVICE_LAST_FILE_MAX];
     char storage_path[DEVICE_SETTINGS_PATH_MAX];
@@ -67,6 +74,7 @@ bool device_settings_set_yandex_music(device_settings_t *settings, bool enabled)
 /* Values above 100 are refused rather than clamped: a caller passing one has a
  * bug, and silently accepting it would hide it. */
 bool device_settings_set_volume(device_settings_t *settings, unsigned char volume);
+bool device_settings_set_brightness(device_settings_t *settings, unsigned char brightness);
 /* Recorded as playback starts, so a power cut still leaves the last choice
  * behind. Writing "none" clears the resume point. */
 bool device_settings_set_last_source(device_settings_t *settings,

@@ -137,6 +137,9 @@ static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
     /* The list outgrew the screen, and before the window existed the rows past
      * the fifth were drawn underneath an opaque label - present, invisible,
      * and unreachable. */
+    /* Deliberately one short of what the screen now shows: the point of the
+     * window is the case where the list does not fit, and the real screen has
+     * grown out of it for the moment. */
     const size_t visible = 5U;
     ui_settings_model_t model;
     ui_settings_model_init(&model);
@@ -210,6 +213,24 @@ static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
     }
 }
 
+static void test_the_longest_list_fits_the_screen(void)
+{
+    /* Six rows is what ui.c draws, and this is the list at its longest: three
+     * headings plus the deepest group. They are equal today, and a field added
+     * to Display without a row added to the screen is exactly the overflow
+     * that hid a setting last time. */
+    ui_settings_model_t model;
+    size_t longest = 0U;
+    for (ui_settings_group_t group = UI_SETTINGS_GROUP_LANGUAGE;
+         group < UI_SETTINGS_GROUP_COUNT; ++group) {
+        ui_settings_model_init(&model);
+        model.expanded_group = (int)group;
+        const size_t count = ui_settings_model_row_count(&model);
+        if (count > longest) longest = count;
+    }
+    assert(longest == 6U);
+}
+
 int main(void)
 {
     test_collapsed_groups_and_cursor();
@@ -218,6 +239,7 @@ int main(void)
     test_the_display_group_holds_a_number_the_knob_edits();
     test_brightness_steps_and_stops_at_the_ends();
     test_the_window_follows_the_cursor_and_otherwise_holds_still();
+    test_the_longest_list_fits_the_screen();
     puts("ui_settings_model tests passed");
     return 0;
 }

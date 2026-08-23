@@ -113,11 +113,15 @@
 #define UI_COLOR_FEED_FAR 0x46586A
 /* Settings screen. Group headings carry the 20 px face and the fields under
  * them stay at 14, so the three groups read as the structure of the screen
- * rather than as five rows of equal weight. The pitch has to clear the taller
- * heading; at most five rows are ever visible, since only one group is open. */
-#define UI_SET_ROW_Y 40
-#define UI_SET_ROW_PITCH 28
-#define UI_SET_ROW_H 26
+ * rather than as six rows of equal weight.
+ *
+ * The pitch is what makes six rows fit above the notice line at 186, which is
+ * the whole list at its longest: three headings plus the deepest group. It has
+ * to clear the 20 px heading, and 24 px does - the same height the home
+ * screen's rows use for the same face. */
+#define UI_SET_ROW_Y 36
+#define UI_SET_ROW_PITCH 25
+#define UI_SET_ROW_H 24
 /* The band along the bottom is the only place the device says how to reach its
  * web UI. It sits below everything else and never scrolls away. */
 #define UI_SET_BAND_Y 210
@@ -160,11 +164,18 @@
 
 #define UI_RADIO_EMPTY_LIST_DELAY_MS 250U
 #define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
-/* What actually fits between the title and the notice line above the web band:
- * UI_SET_ROW_Y + 5 * UI_SET_ROW_PITCH is the last row that clears it. The list
- * outgrew this once already and drew two rows underneath the notice, which is
- * opaque and painted afterwards - they were not clipped, they were covered. */
-#define UI_SETTINGS_MAX_ROWS 5U
+/* What fits between the title and the notice line above the web band, and also
+ * the whole list at its longest - so nothing scrolls today. The window and its
+ * chevrons stay because the next field added would overflow again, and the
+ * failure mode when it does is silent: rows past the end are drawn underneath
+ * the notice, which is opaque and painted after them. Not clipped, covered. */
+#define UI_SETTINGS_MAX_ROWS 6U
+/* The check the last overflow needed and did not have. A row past the notice
+ * is invisible rather than clipped, so nothing about it looks wrong on screen
+ * - the mistake has to be caught here or not at all. */
+_Static_assert(UI_SET_ROW_Y + (UI_SETTINGS_MAX_ROWS - 1U) * UI_SET_ROW_PITCH + UI_SET_ROW_H <=
+                   UI_SET_BAND_Y - 24,
+               "the last settings row runs under the notice line");
 
 static const char *TAG = "ui";
 static QueueHandle_t s_input_queue;
@@ -1132,12 +1143,12 @@ static void ui_create_settings_screen(void)
     /* In the right margin, clear of the rows: the text column ends at 300 and
      * a row with a switch starts at 58, so nothing here overlaps either. */
     s_settings_more_above = lv_label_create(s_settings_screen);
-    lv_obj_set_pos(s_settings_more_above, 302, UI_SET_ROW_Y - 16);
+    lv_obj_set_pos(s_settings_more_above, 300, UI_SET_ROW_Y - 15);
     lv_obj_set_style_text_color(s_settings_more_above, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_settings_more_above, "");
 
     s_settings_more_below = lv_label_create(s_settings_screen);
-    lv_obj_set_pos(s_settings_more_below, 302,
+    lv_obj_set_pos(s_settings_more_below, 300,
                    UI_SET_ROW_Y + UI_SETTINGS_MAX_ROWS * UI_SET_ROW_PITCH);
     lv_obj_set_style_text_color(s_settings_more_below, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_settings_more_below, "");
@@ -1158,7 +1169,8 @@ static void ui_create_settings_screen(void)
     }
     s_settings_notice = lv_label_create(s_settings_screen);
     lv_obj_set_pos(s_settings_notice, 10, UI_SET_BAND_Y - 24);
-    lv_obj_set_width(s_settings_notice, 300);
+    // Stops short of the chevron column, which shares this line.
+    lv_obj_set_width(s_settings_notice, 286);
     lv_label_set_long_mode(s_settings_notice, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_settings_notice, lv_color_hex(0xFFCC80), 0);
     lv_obj_set_style_bg_opa(s_settings_notice, LV_OPA_COVER, 0);

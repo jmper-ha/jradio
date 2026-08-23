@@ -329,9 +329,13 @@ static void player_control_task(void *arg)
                 break;
             }
             atomic_store_explicit(&s_active_source, command.source, memory_order_release);
-            if (command.source == AUDIO_SOURCE_INTERNET_RADIO) {
-                (void)internet_radio_start_saved_station();
-            } else if (audio_source_is_files(command.source)) {
+            /* Selecting a source never starts anything, the radio included.
+             * It used to resume the last station here, which made every
+             * arrival at the station list start playing whatever was on last -
+             * the user was picking a station and the box had already chosen
+             * one. Autoplay wants that resume, and asks for it by posting
+             * PLAY after this; nothing else does. */
+            if (audio_source_is_files(command.source)) {
                 /* The card is mounted here and nowhere else. It is the only
                  * moment that can: nothing detects it being inserted, so the
                  * user asking for it *is* the detection - and mounting costs

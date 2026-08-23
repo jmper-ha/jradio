@@ -2371,6 +2371,16 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
             .item_index = PLAYER_ITEM_NONE,
         };
         if (!ui_submit_player_command(&select)) return;
+        /* Selecting the source only opens it; starting the last station is a
+         * separate ask, and autoplay is the only thing that makes it. The two
+         * are queued in order, so the start lands on a snapshot that already
+         * names the radio as the active source. */
+        const player_command_t play = {
+            .kind = PLAYER_COMMAND_PLAY,
+            .source = AUDIO_SOURCE_INTERNET_RADIO,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        (void)ui_submit_player_command(&play);
         ui_load_source_screen(AUDIO_SOURCE_INTERNET_RADIO);
         // That screen arms the "no station to play" fallback, which opens the
         // list after a moment. Autoplay has a station, so the only thing that

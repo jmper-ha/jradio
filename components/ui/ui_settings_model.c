@@ -33,6 +33,11 @@ static const ui_settings_row_t s_field_rows[] = {
         .kind = UI_SETTINGS_ROW_FIELD,
     },
     {
+        .id = UI_SETTINGS_ROW_SCROLL_FIELD,
+        .group = UI_SETTINGS_GROUP_GENERAL,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
         .id = UI_SETTINGS_ROW_AUTOPLAY_FIELD,
         .group = UI_SETTINGS_GROUP_GENERAL,
         .kind = UI_SETTINGS_ROW_FIELD,
@@ -67,7 +72,7 @@ static size_t field_count(ui_settings_group_t group)
     case UI_SETTINGS_GROUP_LANGUAGE:
         return 1U;
     case UI_SETTINGS_GROUP_GENERAL:
-        return 2U + (size_t)BOARD_HAS_YANDEX_MUSIC;
+        return 3U + (size_t)BOARD_HAS_YANDEX_MUSIC;
     case UI_SETTINGS_GROUP_DISPLAY:
         return 3U;
     default:

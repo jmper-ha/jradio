@@ -52,6 +52,10 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         if (strcmp(value, "feed") == 0) settings->home_screen = DEVICE_HOME_SCREEN_FEED;
         else if (strcmp(value, "text") != 0) settings->home_screen = DEVICE_HOME_SCREEN_TEXT;
     }
+    if (read_value(path, "scroll", value, sizeof(value))) {
+        if (strcmp(value, "left") == 0) settings->scroll = DEVICE_SCROLL_LEFT;
+        else if (strcmp(value, "bounce") != 0) settings->scroll = DEVICE_SCROLL_BOUNCE;
+    }
     if (read_value(path, "display_flip_vertical", value, sizeof(value))) {
         (void)parse_bool(value, &settings->flip_vertical);
     }
@@ -121,6 +125,15 @@ bool device_settings_set_home_screen(device_settings_t *settings,
     if (!save_value(settings, "home_screen",
                     home_screen == DEVICE_HOME_SCREEN_FEED ? "feed" : "text")) return false;
     settings->home_screen = home_screen;
+    return true;
+}
+
+bool device_settings_set_scroll(device_settings_t *settings, device_scroll_t scroll)
+{
+    if (settings == NULL || scroll > DEVICE_SCROLL_LEFT) return false;
+    if (!save_value(settings, "scroll",
+                    scroll == DEVICE_SCROLL_LEFT ? "left" : "bounce")) return false;
+    settings->scroll = scroll;
     return true;
 }
 

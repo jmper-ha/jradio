@@ -44,19 +44,22 @@ static void test_each_group_has_expected_fields(void)
     ui_settings_model_init(&model);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    /* General holds home screen and autoplay, plus the Yandex Music switch in
-     * a build that has the feature - the one row here that a board option can
-     * take away. */
-    assert(ui_settings_model_row_count(&model) == 5U + BOARD_HAS_YANDEX_MUSIC);
+    /* General holds home screen, scrolling and autoplay, plus the Yandex Music
+     * switch in a build that has the feature - the one row here that a board
+     * option can take away. */
+    assert(ui_settings_model_row_count(&model) == 6U + BOARD_HAS_YANDEX_MUSIC);
     assert(ui_settings_model_row_at(&model, 2U).id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
-    assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_AUTOPLAY_FIELD);
+    assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_SCROLL_FIELD);
+    assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_AUTOPLAY_FIELD);
 
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_SCROLL_FIELD);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_AUTOPLAY_FIELD);
 #if BOARD_HAS_YANDEX_MUSIC
-    assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_YANDEX_FIELD);
+    assert(ui_settings_model_row_at(&model, 5U).id == UI_SETTINGS_ROW_YANDEX_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_YANDEX_FIELD);
 #endif
@@ -213,12 +216,11 @@ static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
     }
 }
 
-static void test_the_longest_list_fits_the_screen(void)
+static void test_the_longest_list_needs_the_window(void)
 {
-    /* Six rows is what ui.c draws, and this is the list at its longest: three
-     * headings plus the deepest group. They are equal today, and a field added
-     * to Display without a row added to the screen is exactly the overflow
-     * that hid a setting last time. */
+    /* Six rows is what ui.c draws. General is deeper than that now, so the
+     * screen scrolls again - which is fine, and is why the window exists, but
+     * it is a fact worth failing on rather than discovering on the panel. */
     ui_settings_model_t model;
     size_t longest = 0U;
     for (ui_settings_group_t group = UI_SETTINGS_GROUP_LANGUAGE;
@@ -228,7 +230,15 @@ static void test_the_longest_list_fits_the_screen(void)
         const size_t count = ui_settings_model_row_count(&model);
         if (count > longest) longest = count;
     }
-    assert(longest == 6U);
+    assert(longest == 6U + BOARD_HAS_YANDEX_MUSIC);
+    /* Whatever the longest is, every row of it is reachable with the window. */
+    ui_settings_model_init(&model);
+    model.expanded_group = (int)UI_SETTINGS_GROUP_GENERAL;
+    for (size_t cursor = 0U; cursor < longest; ++cursor) {
+        model.cursor = cursor;
+        const size_t top = ui_settings_model_window_top(&model, 6U);
+        assert(cursor >= top && cursor < top + 6U);
+    }
 }
 
 int main(void)
@@ -239,7 +249,7 @@ int main(void)
     test_the_display_group_holds_a_number_the_knob_edits();
     test_brightness_steps_and_stops_at_the_ends();
     test_the_window_follows_the_cursor_and_otherwise_holds_still();
-    test_the_longest_list_fits_the_screen();
+    test_the_longest_list_needs_the_window();
     puts("ui_settings_model tests passed");
     return 0;
 }

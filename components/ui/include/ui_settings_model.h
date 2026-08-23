@@ -17,6 +17,7 @@ typedef enum {
     UI_SETTINGS_ROW_LANGUAGE_FIELD,
     UI_SETTINGS_ROW_GENERAL_GROUP,
     UI_SETTINGS_ROW_HOME_SCREEN_FIELD,
+    UI_SETTINGS_ROW_SCROLL_FIELD,
     UI_SETTINGS_ROW_AUTOPLAY_FIELD,
     /* Present in the enum whether or not the feature is built, so the row ids
      * do not shift with a build option; the model simply never hands it out.

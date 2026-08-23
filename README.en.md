@@ -136,9 +136,14 @@ interface.
 
 ## Settings
 
-Language, the look of the home screen, autoplay, Yandex Music, screen
-brightness, flipping the picture vertically and horizontally, volume. They
-apply at once and are saved.
+Language, the look of the home screen, how long lines scroll, autoplay, Yandex
+Music, screen brightness, flipping the picture vertically and horizontally,
+volume. They apply at once and are saved.
+
+Scrolling is about lines that do not fit: the track name on the player screen,
+and the list row the cursor is on. "Left-right" runs the line out to its end
+and back again; "Left" runs it out, holds for a second, and shows it whole from
+the start. Either way the pause before the next pass is 3 seconds.
 
 Brightness is a number from 10 to 90 rather than a switch: click the row, the
 number is taken into angle brackets, and turning the knob then changes it. The

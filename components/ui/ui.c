@@ -33,6 +33,7 @@
 #include "ui_seek.h"
 #include "ui_settings_model.h"
 #include "ui_station_list.h"
+#include "ui_text_scroll.h"
 #include "ui_status_bar.h"
 #include "ui_web_address.h"
 #include "ui_yandex_screen.h"
@@ -194,7 +195,25 @@ static lv_obj_t *s_feed_dots[UI_FEED_ITEM_COUNT];
 static ui_feed_model_t s_feed_model;
 static lv_obj_t *s_source_title;
 static lv_obj_t *s_source_status;
-static lv_obj_t *s_source_detail;
+/* A line that scrolls when it does not fit.
+ *
+ * Two objects rather than one, because an LVGL label clips its text to its own
+ * area: moving the label to scroll the text moves the clip with it, and the
+ * text spills across the screen. So the box stays put and clips, and a label
+ * inside it does the travelling. The box carries the styling - background,
+ * radius, padding - and LVGL inherits text colour and font from it, so callers
+ * style the box exactly as they styled the label it replaced. */
+typedef struct {
+    lv_obj_t *box;
+    lv_obj_t *text;
+    /* When the current line appeared, so the animation is a function of the
+     * clock rather than of how many frames have been drawn. */
+    uint32_t started_ms;
+    int32_t applied_x;
+    bool scrolling;
+} ui_scroller_t;
+
+static ui_scroller_t s_source_detail;
 static lv_obj_t *s_source_stream;
 static lv_obj_t *s_source_buffer;
 static lv_obj_t *s_source_artist;
@@ -301,7 +320,7 @@ static uint32_t s_yandex_start_deadline_ms;
 /* Long enough to read, short enough that the button hints come back before
  * the next press. */
 #define UI_YANDEX_NOTICE_MS 3000U
-static lv_obj_t *s_yandex_rows[UI_YANDEX_LIST_ROWS];
+static ui_scroller_t s_yandex_rows[UI_YANDEX_LIST_ROWS];
 static station_list_state_t s_yandex_list;
 /* What the rows were last drawn from. Setting a label's text restarts its
  * scroll animation, so the rows are redrawn only when one of these moved -
@@ -320,7 +339,7 @@ static lv_obj_t *s_station_list_notice;
  * that stands in for them - are held to be shown and hidden together with it. */
 static lv_obj_t *s_station_list_notice_icon;
 static lv_obj_t *s_station_list_rule;
-static lv_obj_t *s_station_list_rows[UI_STATION_LIST_MAX_ROWS];
+static ui_scroller_t s_station_list_rows[UI_STATION_LIST_MAX_ROWS];
 /* The folder mark is a label of its own rather than a glyph inside the row's
  * text: inline it would take the row's font and colour, and it has to be
  * bigger than the name beside it and in its own colour. */
@@ -419,6 +438,91 @@ static void ui_set_label_text_if_changed(lv_obj_t *label, const char *text)
     if (current == NULL || strcmp(current, text) != 0) {
         lv_label_set_text(label, text);
     }
+}
+
+static ui_scroller_t ui_scroller_create(lv_obj_t *parent, int32_t x, int32_t y, int32_t width,
+                                        int32_t height)
+{
+    ui_scroller_t scroller = {0};
+    scroller.box = lv_obj_create(parent);
+    /* Bare: lv_obj_create brings a border, a background and scrollbars, none
+     * of which the label it stands in for had. */
+    lv_obj_remove_style_all(scroller.box);
+    lv_obj_remove_flag(scroller.box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(scroller.box, x, y);
+    lv_obj_set_size(scroller.box, width, height);
+
+    scroller.text = lv_label_create(scroller.box);
+    lv_obj_set_pos(scroller.text, 0, 0);
+    lv_label_set_long_mode(scroller.text, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_width(scroller.text, width);
+    lv_label_set_text(scroller.text, "");
+    return scroller;
+}
+
+/* Width of the box's inside, which is what the text has to fit within. Read
+ * from the object rather than remembered: callers change the padding per row,
+ * and a directory row pads further than a file row. */
+static int32_t ui_scroller_view_width(const ui_scroller_t *scroller)
+{
+    lv_area_t content;
+    lv_obj_get_content_coords(scroller->box, &content);
+    return lv_area_get_width(&content);
+}
+
+static int32_t ui_scroller_text_width(const ui_scroller_t *scroller)
+{
+    lv_point_t size = {0};
+    const char *text = lv_label_get_text(scroller->text);
+    if (text == NULL) return 0;
+    lv_text_get_size(&size, text, lv_obj_get_style_text_font(scroller->text, LV_PART_MAIN),
+                     lv_obj_get_style_text_letter_space(scroller->text, LV_PART_MAIN), 0,
+                     LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    return size.x;
+}
+
+/* Whether this line travels at all. A row that is not the one being pointed at
+ * keeps its ellipsis: a screen of marquees at once is unreadable. */
+static void ui_scroller_set_scrolling(ui_scroller_t *scroller, bool scrolling)
+{
+    if (scroller->scrolling == scrolling) return;
+    scroller->scrolling = scrolling;
+    lv_label_set_long_mode(scroller->text,
+                           scrolling ? LV_LABEL_LONG_MODE_CLIP : LV_LABEL_LONG_MODE_DOTS);
+    /* Content-sized while scrolling, so the label may be wider than the box
+     * and have somewhere to travel to; box-sized otherwise, so the ellipsis
+     * has an edge to appear at. */
+    lv_obj_set_width(scroller->text,
+                     scrolling ? LV_SIZE_CONTENT : ui_scroller_view_width(scroller));
+    scroller->started_ms = ui_tick_get_ms();
+    scroller->applied_x = 0;
+    lv_obj_set_x(scroller->text, 0);
+}
+
+static void ui_scroller_set_text(ui_scroller_t *scroller, const char *text)
+{
+    if (scroller->text == NULL || text == NULL) return;
+    const char *current = lv_label_get_text(scroller->text);
+    if (current != NULL && strcmp(current, text) == 0) return;
+    lv_label_set_text(scroller->text, text);
+    /* A new line starts from its beginning, however far the old one had got. */
+    scroller->started_ms = ui_tick_get_ms();
+    scroller->applied_x = 0;
+    lv_obj_set_x(scroller->text, 0);
+}
+
+/* Called every frame. Cheap when there is nothing to do: the offset only
+ * reaches LVGL when it actually changed, so a line at rest costs one compare. */
+static void ui_scroller_tick(ui_scroller_t *scroller, ui_text_scroll_mode_t mode, uint32_t now_ms)
+{
+    if (scroller->text == NULL || !scroller->scrolling) return;
+    if (lv_obj_has_flag(scroller->box, LV_OBJ_FLAG_HIDDEN)) return;
+    const int32_t offset = ui_text_scroll_offset(mode, ui_scroller_text_width(scroller),
+                                                 ui_scroller_view_width(scroller),
+                                                 now_ms - scroller->started_ms);
+    if (offset == scroller->applied_x) return;
+    scroller->applied_x = offset;
+    lv_obj_set_x(scroller->text, offset);
 }
 
 static const char *ui_radio_state_text(player_playback_state_t state)
@@ -648,7 +752,7 @@ static void ui_update_files_status(const player_snapshot_t *snapshot)
     ui_set_label_text_if_changed(s_source_title,
                                  tagged && tags.album[0] != '\0' ? tags.album
                                                                  : snapshot->context);
-    ui_set_label_text_if_changed(s_source_detail, tagged && tags.title[0] != '\0'
+    ui_scroller_set_text(&s_source_detail, tagged && tags.title[0] != '\0'
                                                       ? tags.title
                                                       : snapshot->stream_title);
     // The performer row is the state line's whenever there is a state worth
@@ -716,7 +820,7 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
     char artist[PLAYER_TITLE_MAX_LEN];
     char track[PLAYER_TITLE_MAX_LEN];
     (void)ui_radio_split_title(icy, artist, sizeof(artist), track, sizeof(track));
-    ui_set_label_text_if_changed(s_source_detail, track);
+    ui_scroller_set_text(&s_source_detail, track);
 
     // Playing and paused both leave the row to the performer: one needs no
     // announcement, the other has the badge. Connecting, reconnecting and
@@ -1040,11 +1144,11 @@ static void ui_update_station_list(void)
         if (entry_index < 0 || entry_index >= count) {
             // Padding: the cursor stays on the middle row, so the rows beyond
             // either end of the catalogue are simply blank.
-            lv_obj_add_flag(s_station_list_rows[row], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_station_list_rows[row].box, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(s_station_list_icons[row], LV_OBJ_FLAG_HIDDEN);
             continue;
         }
-        lv_obj_clear_flag(s_station_list_rows[row], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s_station_list_rows[row].box, LV_OBJ_FLAG_HIDDEN);
         char text[UI_LIST_ROW_TEXT_MAX];
         bool active = false;
         bool directory = false;
@@ -1058,13 +1162,13 @@ static void ui_update_station_list(void)
         } else {
             lv_obj_add_flag(s_station_list_icons[row], LV_OBJ_FLAG_HIDDEN);
         }
-        lv_obj_set_style_pad_left(s_station_list_rows[row],
+        lv_obj_set_style_pad_left(s_station_list_rows[row].box,
                                   directory ? 8 + UI_LIST_ICON_W : 8, 0);
         const bool selected = row == cursor_row;
-        lv_obj_set_style_bg_color(s_station_list_rows[row],
+        lv_obj_set_style_bg_color(s_station_list_rows[row].box,
                                   lv_color_hex(selected ? UI_COLOR_SELECTED
                                                         : UI_COLOR_GROUND), 0);
-        lv_obj_set_style_bg_opa(s_station_list_rows[row], LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_opa(s_station_list_rows[row].box, LV_OPA_COVER, 0);
         /* Three states, and each one is a brightness rather than a shape. The
          * cursor takes the accent, the row that is playing is the brightest of
          * the rest, everything else stays muted.
@@ -1075,18 +1179,16 @@ static void ui_update_station_list(void)
         const uint32_t row_colour = selected ? UI_COLOR_ACCENT
                                     : active ? UI_COLOR_TEXT
                                              : UI_COLOR_MUTED;
-        lv_obj_set_style_text_color(s_station_list_rows[row], lv_color_hex(row_colour), 0);
+        lv_obj_set_style_text_color(s_station_list_rows[row].box, lv_color_hex(row_colour), 0);
         // Only the row under the cursor scrolls: a screen of six marquees at
         // once is unreadable, and the row being pointed at is the one whose
         // full name the user is actually after. The others keep the ellipsis.
         //
-        // Set before the text, since changing either restarts the animation -
-        // which is why this function is only called when something really
-        // changed, never from the poll loop.
-        lv_label_set_long_mode(s_station_list_rows[row],
-                               selected ? LV_LABEL_LONG_MODE_SCROLL
-                                        : LV_LABEL_LONG_MODE_DOTS);
-        lv_label_set_text(s_station_list_rows[row], text);
+        // Set before the text: both restart the animation, and doing it in
+        // this order means a row that was already scrolling the same text
+        // carries on rather than jumping back to the start.
+        ui_scroller_set_scrolling(&s_station_list_rows[row], selected);
+        ui_scroller_set_text(&s_station_list_rows[row], text);
     }
     // Hidden when there is nothing to scroll through at all - on the "no
     // drive" screen a full bar under an empty list would be nonsense.
@@ -1226,6 +1328,12 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         snprintf(text, text_size, "  %s: %s", english ? "Home screen" : "Главный экран",
                  s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED ?
                      (english ? "Feed" : "Лента") : (english ? "List" : "Список"));
+        break;
+    case UI_SETTINGS_ROW_SCROLL_FIELD:
+        snprintf(text, text_size, "  %s: %s", english ? "Scrolling" : "Скроллинг",
+                 s_device_settings.scroll == DEVICE_SCROLL_LEFT
+                     ? (english ? "Left" : "Влево")
+                     : (english ? "Left-right" : "Влево-вправо"));
         break;
     case UI_SETTINGS_ROW_AUTOPLAY_FIELD:
         snprintf(text, text_size, "  %s: %s", english ? "Autoplay" : "Автовоспроизведение",
@@ -1463,17 +1571,15 @@ static void ui_create_yandex_screen(void)
     lv_label_set_text(s_yandex_countdown, "");
 
     for (size_t row = 0; row < UI_YANDEX_LIST_ROWS; ++row) {
-        s_yandex_rows[row] = lv_label_create(s_yandex_screen);
-        lv_obj_set_pos(s_yandex_rows[row], 10,
-                       UI_YANDEX_ROW_Y + (int)row * UI_YANDEX_ROW_PITCH);
-        lv_obj_set_size(s_yandex_rows[row], 300, UI_YANDEX_ROW_H);
-        lv_obj_set_style_pad_left(s_yandex_rows[row], 8, 0);
-        lv_obj_set_style_pad_top(s_yandex_rows[row], 2, 0);
-        lv_obj_set_style_text_font(s_yandex_rows[row], &ui_font_cyrillic_20, 0);
-        lv_obj_set_style_bg_opa(s_yandex_rows[row], LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(s_yandex_rows[row], lv_color_hex(UI_COLOR_GROUND), 0);
-        lv_label_set_text(s_yandex_rows[row], "");
-        lv_obj_add_flag(s_yandex_rows[row], LV_OBJ_FLAG_HIDDEN);
+        s_yandex_rows[row] = ui_scroller_create(
+            s_yandex_screen, 10, UI_YANDEX_ROW_Y + (int)row * UI_YANDEX_ROW_PITCH, 300,
+            UI_YANDEX_ROW_H);
+        lv_obj_set_style_pad_left(s_yandex_rows[row].box, 8, 0);
+        lv_obj_set_style_pad_top(s_yandex_rows[row].box, 2, 0);
+        lv_obj_set_style_text_font(s_yandex_rows[row].box, &ui_font_cyrillic_20, 0);
+        lv_obj_set_style_bg_opa(s_yandex_rows[row].box, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(s_yandex_rows[row].box, lv_color_hex(UI_COLOR_GROUND), 0);
+        lv_obj_add_flag(s_yandex_rows[row].box, LV_OBJ_FLAG_HIDDEN);
     }
 
     s_yandex_hint = lv_label_create(s_yandex_screen);
@@ -1498,29 +1604,28 @@ static void ui_update_yandex_rows(void)
         yandex_station_t station;
         if (entry_index < 0 || entry_index >= count ||
             !yandex_catalog_station_at((size_t)entry_index, &station)) {
-            lv_obj_add_flag(s_yandex_rows[row], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_yandex_rows[row].box, LV_OBJ_FLAG_HIDDEN);
             continue;
         }
-        lv_obj_remove_flag(s_yandex_rows[row], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_yandex_rows[row].box, LV_OBJ_FLAG_HIDDEN);
         const bool selected = row == cursor_row;
-        lv_obj_set_style_bg_color(s_yandex_rows[row],
+        lv_obj_set_style_bg_color(s_yandex_rows[row].box,
                                   lv_color_hex(selected ? UI_COLOR_SELECTED
                                                         : UI_COLOR_GROUND), 0);
-        lv_obj_set_style_text_color(s_yandex_rows[row],
+        lv_obj_set_style_text_color(s_yandex_rows[row].box,
                                     lv_color_hex(selected ? UI_COLOR_ACCENT
                                                           : UI_COLOR_MUTED), 0);
         // Only the row being pointed at scrolls its full name; a screen of
         // marquees is unreadable, which is the same call the station list made.
-        lv_label_set_long_mode(s_yandex_rows[row], selected ? LV_LABEL_LONG_MODE_SCROLL
-                                                            : LV_LABEL_LONG_MODE_DOTS);
-        lv_label_set_text(s_yandex_rows[row], station.name);
+        ui_scroller_set_scrolling(&s_yandex_rows[row], selected);
+        ui_scroller_set_text(&s_yandex_rows[row], station.name);
     }
 }
 
 static void ui_hide_yandex_rows(void)
 {
     for (size_t row = 0; row < UI_YANDEX_LIST_ROWS; ++row) {
-        lv_obj_add_flag(s_yandex_rows[row], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_yandex_rows[row].box, LV_OBJ_FLAG_HIDDEN);
     }
     s_yandex_rows_drawn = false;
 }
@@ -1653,6 +1758,12 @@ static void ui_settings_change_selected(void)
             s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED ?
                 DEVICE_HOME_SCREEN_TEXT : DEVICE_HOME_SCREEN_FEED);
         break;
+    case UI_SETTINGS_ROW_SCROLL_FIELD:
+        changed = device_settings_set_scroll(&s_device_settings,
+                                             s_device_settings.scroll == DEVICE_SCROLL_LEFT
+                                                 ? DEVICE_SCROLL_BOUNCE
+                                                 : DEVICE_SCROLL_LEFT);
+        break;
     case UI_SETTINGS_ROW_AUTOPLAY_FIELD:
         changed = device_settings_set_autoplay(&s_device_settings,
                                                !s_device_settings.autoplay);
@@ -1740,18 +1851,16 @@ static void ui_create_station_list_screen(void)
     lv_obj_set_style_bg_color(s_station_list_progress, lv_color_hex(UI_COLOR_ACCENT),
                               LV_PART_INDICATOR);
     for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
-        s_station_list_rows[row] = lv_label_create(s_station_list_screen);
-        lv_obj_set_pos(s_station_list_rows[row], 10,
-                       UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH);
-        lv_obj_set_size(s_station_list_rows[row], 300, UI_LIST_ROW_H);
+        s_station_list_rows[row] = ui_scroller_create(s_station_list_screen, 10,
+                                                     UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH,
+                                                     300, UI_LIST_ROW_H);
         // Bigger than the rest of the screen on purpose: this is the text the
         // user reads from a distance while turning the encoder. The 23 px line
         // it needs is what set the row height and the pitch above.
-        lv_obj_set_style_text_font(s_station_list_rows[row], &ui_font_cyrillic_20, 0);
-        lv_obj_set_style_pad_left(s_station_list_rows[row], 8, 0);
-        lv_obj_set_style_pad_top(s_station_list_rows[row], 3, 0);
-        lv_obj_set_style_radius(s_station_list_rows[row], 3, 0);
-        lv_label_set_long_mode(s_station_list_rows[row], LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_style_text_font(s_station_list_rows[row].box, &ui_font_cyrillic_20, 0);
+        lv_obj_set_style_pad_left(s_station_list_rows[row].box, 8, 0);
+        lv_obj_set_style_pad_top(s_station_list_rows[row].box, 3, 0);
+        lv_obj_set_style_radius(s_station_list_rows[row].box, 3, 0);
     }
     /* Created after every row, so each mark is drawn over the row background
      * rather than under it - LVGL paints children in creation order, and the
@@ -1935,12 +2044,13 @@ static void ui_create_source_screen(void)
     lv_label_set_long_mode(s_source_title, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_source_title, lv_color_hex(UI_COLOR_ACCENT), 0);
 
-    s_source_detail = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_detail, UI_SRC_TEXT_X, UI_SRC_ROW_TRACK);
-    lv_obj_set_size(s_source_detail, UI_SRC_TEXT_W, UI_SRC_TRACK_H);
-    lv_obj_set_style_text_font(s_source_detail, &ui_font_cyrillic_20, 0);
-    lv_label_set_long_mode(s_source_detail, LV_LABEL_LONG_SCROLL);
-    lv_obj_set_style_text_color(s_source_detail, lv_color_hex(UI_COLOR_TEXT), 0);
+    s_source_detail = ui_scroller_create(s_source_screen, UI_SRC_TEXT_X, UI_SRC_ROW_TRACK,
+                                        UI_SRC_TEXT_W, UI_SRC_TRACK_H);
+    lv_obj_set_style_text_font(s_source_detail.box, &ui_font_cyrillic_20, 0);
+    lv_obj_set_style_text_color(s_source_detail.box, lv_color_hex(UI_COLOR_TEXT), 0);
+    /* The track name always travels when it is too long - unlike a list row,
+     * there is nothing else on this screen competing for the eye. */
+    ui_scroller_set_scrolling(&s_source_detail, true);
 
     s_source_artist = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_artist, UI_SRC_TEXT_X, UI_SRC_ROW_ARTIST);
@@ -2137,7 +2247,7 @@ static void ui_load_source_screen(audio_source_t selected_source)
     lv_screen_load(s_source_screen);
     if (selected_source == AUDIO_SOURCE_INTERNET_RADIO) {
         ui_set_state_line("Connecting...", "");
-        ui_set_label_text_if_changed(s_source_detail, "");
+        ui_scroller_set_text(&s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
         s_waiting_for_radio_station = true;
         s_radio_station_wait_started_ms = ui_tick_get_ms();
@@ -2153,12 +2263,12 @@ static void ui_load_source_screen(audio_source_t selected_source)
         // Nothing plays until a file is chosen, so this screen opens idle
         // rather than pretending to connect.
         ui_set_state_line("Выберите файл", "");
-        ui_set_label_text_if_changed(s_source_detail, "");
+        ui_scroller_set_text(&s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
     } else {
         s_waiting_for_radio_station = false;
         ui_set_state_line("Not implemented", "");
-        ui_set_label_text_if_changed(s_source_detail, "");
+        ui_scroller_set_text(&s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
     }
 }
@@ -2506,7 +2616,7 @@ static void ui_yandex_step_start(const player_snapshot_t *snapshot)
     yandex_station_t station;
     if (yandex_catalog_station_at(row, &station)) {
         lv_label_set_text(s_source_title, station.name);
-        ui_set_label_text_if_changed(s_source_detail, station.name);
+        ui_scroller_set_text(&s_source_detail, station.name);
     }
 }
 
@@ -2630,7 +2740,7 @@ static void ui_handle_input(board_input_action_t action)
                                                      ? UI_MENU_ITEM_SD_CARD
                                                      : UI_MENU_ITEM_USB_FILES));
             ui_set_state_line("Открытие файла", "");
-            ui_set_label_text_if_changed(s_source_detail, entry.name);
+            ui_scroller_set_text(&s_source_detail, entry.name);
             ui_set_label_text_if_changed(s_source_stream,
                                          file_browser_format_name(entry.format));
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
@@ -2647,7 +2757,7 @@ static void ui_handle_input(board_input_action_t action)
             ui_load_source_screen(AUDIO_SOURCE_INTERNET_RADIO);
             if (entry != NULL) lv_label_set_text(s_source_title, entry->name);
             ui_set_state_line("Connecting", "");
-            ui_set_label_text_if_changed(s_source_detail,
+            ui_scroller_set_text(&s_source_detail,
                                          entry == NULL ? "" : entry->name);
             char stream_text[32];
             ui_radio_stream_text_for_url(stream_text, sizeof(stream_text),
@@ -2786,6 +2896,31 @@ static void ui_handle_input(board_input_action_t action)
  * the moment of selection because this is the one place that sees both the
  * active source and the file the USB player actually opened; the setters skip
  * a write when nothing changed, so this does not hammer the flash. */
+/* Every marquee on the device, moved one frame. Driven from the poll loop
+ * rather than from an LVGL animation because the offset is a function of the
+ * clock: a frame missed while the decoder holds a core catches up instead of
+ * leaving the line behind. Only the screen on show is walked - the rest are on
+ * parents LVGL is not drawing. */
+static void ui_scroll_tick(void)
+{
+    const ui_text_scroll_mode_t mode = s_device_settings.scroll == DEVICE_SCROLL_LEFT
+                                           ? UI_TEXT_SCROLL_LEFT
+                                           : UI_TEXT_SCROLL_BOUNCE;
+    const uint32_t now = ui_tick_get_ms();
+    lv_obj_t *active = lv_screen_active();
+    if (active == s_source_screen) {
+        ui_scroller_tick(&s_source_detail, mode, now);
+    } else if (active == s_station_list_screen) {
+        for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
+            ui_scroller_tick(&s_station_list_rows[row], mode, now);
+        }
+    } else if (active == s_yandex_screen) {
+        for (size_t row = 0; row < UI_YANDEX_LIST_ROWS; ++row) {
+            ui_scroller_tick(&s_yandex_rows[row], mode, now);
+        }
+    }
+}
+
 static void ui_remember_playing(const player_snapshot_t *snapshot)
 {
     if (!s_device_settings.autoplay) return;
@@ -3124,6 +3259,7 @@ static void ui_task(void *arg)
         } else {
             ui_sync_player_snapshot(&snapshot);
         }
+        ui_scroll_tick();
         /* Driven from here because this is the one task that is always
          * running and has stack to spare; it reports on its own schedule and
          * is a few comparisons in between. */

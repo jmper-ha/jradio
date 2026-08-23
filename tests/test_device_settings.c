@@ -29,6 +29,8 @@ static void test_defaults_and_load(void)
      * without the user first going to find a switch. */
     assert(settings.yandex_music);
     assert(settings.brightness == DEVICE_BRIGHTNESS_DEFAULT);
+    /* Bounce is what the device did before the setting existed. */
+    assert(settings.scroll == DEVICE_SCROLL_BOUNCE);
     assert(strcmp(settings.storage_path, test_path) == 0);
 }
 
@@ -168,6 +170,29 @@ static void test_a_corrupt_brightness_leaves_the_default(void)
     assert(settings.brightness == DEVICE_BRIGHTNESS_DEFAULT);
 }
 
+static void test_scroll_mode_persists(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    assert(device_settings_set_scroll(&settings, DEVICE_SCROLL_LEFT));
+
+    char value[32];
+    assert(settings_csv_get(test_path, "scroll", value, sizeof(value)));
+    assert(strcmp(value, "left") == 0);
+
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.scroll == DEVICE_SCROLL_LEFT);
+
+    /* An unknown word is the old default rather than an unnamed third mode. */
+    assert(settings_csv_set(test_path, "scroll", "sideways"));
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.scroll == DEVICE_SCROLL_BOUNCE);
+
+    assert(!device_settings_set_scroll(&settings, (device_scroll_t)99));
+}
+
 int main(void)
 {
     test_defaults_and_load();
@@ -177,6 +202,7 @@ int main(void)
     test_volume_defaults_and_persists();
     test_a_corrupt_volume_leaves_the_default();
     test_yandex_music_persists();
+    test_scroll_mode_persists();
     test_brightness_persists_and_refuses_a_dark_panel();
     test_a_corrupt_brightness_leaves_the_default();
     puts("device_settings tests passed");

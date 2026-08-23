@@ -13,6 +13,13 @@ typedef enum {
     DEVICE_HOME_SCREEN_FEED,
 } device_home_screen_t;
 
+/* How a line too long for its box is animated. The names are the UI's, not
+ * LVGL's: neither maps to one of its long modes. */
+typedef enum {
+    DEVICE_SCROLL_BOUNCE = 0,
+    DEVICE_SCROLL_LEFT,
+} device_scroll_t;
+
 typedef enum {
     DEVICE_LAST_SOURCE_NONE = 0,
     DEVICE_LAST_SOURCE_INTERNET_RADIO,
@@ -36,6 +43,7 @@ typedef enum {
 typedef struct {
     device_language_t language;
     device_home_screen_t home_screen;
+    device_scroll_t scroll;
     bool flip_vertical;
     bool flip_horizontal;
     /* Resume what was playing at power-off instead of opening the home
@@ -65,6 +73,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path);
 bool device_settings_set_language(device_settings_t *settings, device_language_t language);
 bool device_settings_set_home_screen(device_settings_t *settings,
                                      device_home_screen_t home_screen);
+bool device_settings_set_scroll(device_settings_t *settings, device_scroll_t scroll);
 bool device_settings_set_flip_vertical(device_settings_t *settings, bool enabled);
 bool device_settings_set_flip_horizontal(device_settings_t *settings, bool enabled);
 bool device_settings_set_flip_vertical_value(device_settings_t *settings, int value);

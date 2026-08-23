@@ -34,6 +34,15 @@ void ui_radio_stream_text_for_url(char *text, size_t text_size, const char *url)
     ui_radio_stream_text(text, text_size, radio_stream_format_codec_name(format), 0U, 0U);
 }
 
+const char *ui_radio_station_name(bool name_from_list, const char *list_name,
+                                  const char *stream_name)
+{
+    if (list_name == NULL) list_name = "";
+    if (stream_name == NULL) stream_name = "";
+    if (name_from_list || stream_name[0] == '\0') return list_name;
+    return stream_name;
+}
+
 bool ui_radio_split_title(const char *icy, char *artist, size_t artist_size, char *title,
                           size_t title_size)
 {

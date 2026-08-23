@@ -156,7 +156,7 @@
     const flagInput = document.createElement('input');
     flagInput.type = 'checkbox';
     flagInput.checked = row.flag === 1;
-    flagLabel.append(flagInput, document.createTextNode(' Показывать название потока вместо имени'));
+    flagLabel.append(flagInput, document.createTextNode(' Показывать название из списка, а не из потока'));
 
     fields.append(nameLabel, urlLabel, flagLabel);
 

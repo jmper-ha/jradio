@@ -609,20 +609,27 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
     // still reflects the previous station; keep showing the one the user just
     // picked instead of flipping back to the old one for the pending window.
     size_t pending_item_index;
+    const bool pending =
+        ui_player_state_pending_item(&s_player_ui, &pending_item_index);
     const size_t display_item_index =
-        ui_player_state_pending_item(&s_player_ui, &pending_item_index)
-            ? pending_item_index
-            : snapshot->active_item_index;
+        pending ? pending_item_index : snapshot->active_item_index;
     const station_catalog_entry_t *entry =
         player_control_station_at(display_item_index);
     if (entry != NULL) {
-        ui_set_label_text_if_changed(s_source_title, entry->name);
+        /* The stream's own name is only about the station the snapshot
+         * describes, so while a switch is pending it names the previous one.
+         * The list is the only source that can answer for the station just
+         * picked. */
+        const char *stream_name = pending ? "" : snapshot->context;
+        ui_set_label_text_if_changed(
+            s_source_title,
+            ui_radio_station_name(entry->flag != 0, entry->name, stream_name));
     }
 
-    const char *icy = (entry != NULL && entry->flag == 0)
-                          ? entry->name
-                          : (snapshot->stream_title[0] == '\0' ? snapshot->context
-                                                               : snapshot->stream_title);
+    // Whatever the flag says about the name, the track is the stream's to
+    // tell; with nothing sent, the line stays empty rather than repeating the
+    // station.
+    const char *icy = snapshot->stream_title;
     // Stations send one string; splitting it gives the track its own wide line
     // instead of burying it in the middle of a run-on.
     char artist[PLAYER_TITLE_MAX_LEN];

@@ -28,6 +28,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "player_control.h"
 #include "file_storage.h"
 #include "web_json.h"
+#include "yandex_auth.h"
 
 #define WEB_SERVER_MOUNT_PATH "/littlefs"
 #define WEB_SERVER_WEB_ROOT "www"
@@ -161,6 +162,57 @@ web_server_parse_result_t web_server_parse_wifi_request(const char *request, wif
             : WEB_SERVER_PARSE_INVALID;
     web_server_secure_zero(&settings, sizeof(settings));
     return result;
+}
+
+
+web_server_yandex_action_t web_server_parse_yandex_action(const char *request)
+{
+    if (request == NULL) {
+        return WEB_SERVER_YANDEX_ACTION_INVALID;
+    }
+    const char *cursor = request;
+    char action[16] = {0};
+    bool seen_action = false;
+    json_skip_whitespace(&cursor);
+    if (*cursor++ != '{') {
+        return WEB_SERVER_YANDEX_ACTION_INVALID;
+    }
+    json_skip_whitespace(&cursor);
+    while (*cursor != '}') {
+        char key[8] = {0};
+        if (!json_parse_string(&cursor, key, sizeof(key))) {
+            return WEB_SERVER_YANDEX_ACTION_INVALID;
+        }
+        json_skip_whitespace(&cursor);
+        if (*cursor++ != ':') {
+            return WEB_SERVER_YANDEX_ACTION_INVALID;
+        }
+        json_skip_whitespace(&cursor);
+        if (strcmp(key, "action") != 0 || seen_action ||
+            !json_parse_string(&cursor, action, sizeof(action))) {
+            return WEB_SERVER_YANDEX_ACTION_INVALID;
+        }
+        seen_action = true;
+        json_skip_whitespace(&cursor);
+        if (*cursor == ',') {
+            ++cursor;
+            json_skip_whitespace(&cursor);
+            if (*cursor == '}') {
+                return WEB_SERVER_YANDEX_ACTION_INVALID;
+            }
+        } else if (*cursor != '}') {
+            return WEB_SERVER_YANDEX_ACTION_INVALID;
+        }
+    }
+    ++cursor;
+    json_skip_whitespace(&cursor);
+    if (*cursor != '\0' || !seen_action) {
+        return WEB_SERVER_YANDEX_ACTION_INVALID;
+    }
+    if (strcmp(action, "begin") == 0) return WEB_SERVER_YANDEX_ACTION_BEGIN;
+    if (strcmp(action, "cancel") == 0) return WEB_SERVER_YANDEX_ACTION_CANCEL;
+    if (strcmp(action, "forget") == 0) return WEB_SERVER_YANDEX_ACTION_FORGET;
+    return WEB_SERVER_YANDEX_ACTION_INVALID;
 }
 
 #ifdef ESP_PLATFORM
@@ -394,6 +446,117 @@ static esp_err_t web_server_wifi_post(httpd_req_t *request)
  * The path and revision are echoed back deliberately: the browser can open two
  * directories in quick succession, and without them a late reply for the first
  * would overwrite the second on screen. */
+static const char *web_server_yandex_state_name(yandex_auth_state_t state)
+{
+    switch (state) {
+    case YANDEX_AUTH_REQUESTING:
+        return "requesting";
+    case YANDEX_AUTH_WAITING:
+        return "waiting";
+    case YANDEX_AUTH_AUTHORIZED:
+        return "authorized";
+    case YANDEX_AUTH_FAILED:
+        return "failed";
+    case YANDEX_AUTH_IDLE:
+    default:
+        return "idle";
+    }
+}
+
+static const char *web_server_yandex_error_name(yandex_auth_error_t error)
+{
+    switch (error) {
+    case YANDEX_AUTH_ERROR_NETWORK:
+        return "network";
+    case YANDEX_AUTH_ERROR_TIMEOUT:
+        return "timeout";
+    case YANDEX_AUTH_ERROR_DENIED:
+        return "denied";
+    case YANDEX_AUTH_ERROR_SERVER:
+        return "server";
+    case YANDEX_AUTH_ERROR_STORAGE:
+        return "storage";
+    case YANDEX_AUTH_ERROR_NONE:
+    default:
+        return "none";
+    }
+}
+
+static esp_err_t web_server_yandex_get(httpd_req_t *request)
+{
+    const yandex_auth_status_t status = yandex_auth_get_status();
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_FAIL;
+    }
+    cJSON_AddStringToObject(root, "state", web_server_yandex_state_name(status.state));
+    cJSON_AddStringToObject(root, "error", web_server_yandex_error_name(status.error));
+    /* The code and the page are meant to be read off this screen - that is the
+     * whole point of the flow. The token never appears here: this interface has
+     * no authentication, so everything it serves is public on the LAN. */
+    cJSON_AddStringToObject(root, "user_code", status.user_code);
+    cJSON_AddStringToObject(root, "verification_url", status.verification_url);
+    cJSON_AddNumberToObject(root, "seconds_left", status.seconds_left);
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (json == NULL) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(request, "application/json");
+    const esp_err_t err = httpd_resp_sendstr(request, json);
+    cJSON_free(json);
+    return err;
+}
+
+static esp_err_t web_server_yandex_post(httpd_req_t *request)
+{
+    if (request->content_len <= 0 || request->content_len >= WEB_SERVER_REQUEST_MAX_LEN) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Invalid request");
+        return ESP_FAIL;
+    }
+    char body[WEB_SERVER_REQUEST_MAX_LEN] = {0};
+    int received = 0;
+    while (received < request->content_len) {
+        const int read = httpd_req_recv(request, body + received, request->content_len - received);
+        if (read <= 0) {
+            httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Incomplete request");
+            return ESP_FAIL;
+        }
+        received += read;
+    }
+    body[received] = '\0';
+
+    esp_err_t result = ESP_ERR_INVALID_ARG;
+    switch (web_server_parse_yandex_action(body)) {
+    case WEB_SERVER_YANDEX_ACTION_BEGIN:
+        result = yandex_auth_begin();
+        break;
+    case WEB_SERVER_YANDEX_ACTION_CANCEL:
+        result = yandex_auth_cancel();
+        break;
+    case WEB_SERVER_YANDEX_ACTION_FORGET:
+        result = yandex_auth_forget();
+        break;
+    case WEB_SERVER_YANDEX_ACTION_INVALID:
+    default:
+        break;
+    }
+    if (result == ESP_ERR_INVALID_ARG) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Unknown action");
+        return ESP_FAIL;
+    }
+    if (result != ESP_OK) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Device is busy");
+        return ESP_FAIL;
+    }
+    /* Accepted, not done: the exchange takes as long as the user takes to type
+     * the code, and the page follows it through GET /api/yandex. */
+    httpd_resp_set_status(request, "202 Accepted");
+    return httpd_resp_send(request, NULL, 0);
+}
+
 static esp_err_t web_server_files_get(httpd_req_t *request)
 {
     char path[FILE_BROWSER_PATH_MAX_LEN];
@@ -602,7 +765,10 @@ esp_err_t web_server_start(void)
         // The HTTP worker is network-bound; keep it on core 0 with Wi-Fi and
         // lwIP so it cannot preempt the audio decoder pinned to core 1.
         config.core_id = 0;
-        config.max_uri_handlers = 16;
+        // Fifteen are registered below plus /ws; the spare four exist because
+        // running out is not a build error - httpd_register_uri_handler fails
+        // at startup and takes the whole web server down with it.
+        config.max_uri_handlers = 20;
         config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
         config.send_wait_timeout = 1;
         config.lru_purge_enable = false;
@@ -620,6 +786,8 @@ esp_err_t web_server_start(void)
             {.uri = "/api/files", .method = HTTP_GET, .handler = web_server_files_get},
             {.uri = "/api/playlist", .method = HTTP_GET, .handler = web_server_playlist_get},
             {.uri = "/api/playlist", .method = HTTP_POST, .handler = web_server_playlist_post},
+            {.uri = "/api/yandex", .method = HTTP_GET, .handler = web_server_yandex_get},
+            {.uri = "/api/yandex", .method = HTTP_POST, .handler = web_server_yandex_post},
         };
         for (size_t index = 0; index < sizeof(handlers) / sizeof(handlers[0]); ++index) {
             const esp_err_t err = httpd_register_uri_handler(s_server, &handlers[index]);

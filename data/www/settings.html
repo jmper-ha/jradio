@@ -66,6 +66,31 @@
         <button id="wifi-submit" class="primary-button" type="submit" disabled>Проверить и сохранить</button>
       </form>
     </section>
+
+    <section class="card settings-section" aria-labelledby="yandex-title">
+      <div class="settings-section-heading">
+        <div>
+          <p class="eyebrow">Аккаунт</p>
+          <h2 id="yandex-title">Яндекс Музыка</h2>
+        </div>
+        <span id="yandex-status" class="settings-status" role="status" aria-live="polite">Проверка…</span>
+      </div>
+
+      <div id="yandex-code-block" class="yandex-code" hidden>
+        <p class="yandex-code-lead">Откройте страницу и введите код:</p>
+        <p><a id="yandex-url" href="#" rel="noreferrer noopener" target="_blank">—</a></p>
+        <p id="yandex-code" class="yandex-code-value">—</p>
+        <p id="yandex-countdown" class="field-note"></p>
+      </div>
+
+      <p class="field-note">Пароль от Яндекса устройству не нужен: код подтверждается на сайте Яндекса, сюда возвращается только токен доступа.</p>
+
+      <div class="settings-actions">
+        <button id="yandex-link" class="primary-button" type="button">Привязать аккаунт</button>
+        <button id="yandex-cancel" class="secondary-button" type="button" hidden>Отменить</button>
+        <button id="yandex-forget" class="secondary-button" type="button" hidden>Отвязать</button>
+      </div>
+    </section>
   </main>
 
   <noscript><p class="noscript-message">Для настроек требуется JavaScript.</p></noscript>

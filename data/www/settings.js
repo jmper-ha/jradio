@@ -11,6 +11,14 @@
   const wifiIp = document.querySelector('#wifi-ip');
   const savedNetworks = document.querySelector('#saved-networks');
   const savedNetworksEmpty = document.querySelector('#saved-networks-empty');
+  const yandexStatus = document.querySelector('#yandex-status');
+  const yandexCodeBlock = document.querySelector('#yandex-code-block');
+  const yandexUrl = document.querySelector('#yandex-url');
+  const yandexCode = document.querySelector('#yandex-code');
+  const yandexCountdown = document.querySelector('#yandex-countdown');
+  const yandexLink = document.querySelector('#yandex-link');
+  const yandexCancel = document.querySelector('#yandex-cancel');
+  const yandexForget = document.querySelector('#yandex-forget');
 
   const reconnectDelays = Object.freeze([500, 1000, 2000, 4000, 8000]);
   const passwordErrors = new Set([2, 15, 202, 204]);
@@ -25,6 +33,8 @@
   let saveAccepted = false;
   let expectedSsid = '';
   let pendingRequestId = '';
+  let yandexTimer = null;
+  let yandexBusy = false;
 
   function isObject(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -226,7 +236,119 @@
     });
   }
 
+  // Yandex Music runs over REST rather than the WebSocket: it changes a few
+  // times per authorisation and never during playback, so it does not belong
+  // in the live diff stream that carries the player state.
+  const yandexStateText = Object.freeze({
+    idle: 'Аккаунт не привязан',
+    requesting: 'Запрашиваем код…',
+    waiting: 'Ожидание подтверждения',
+    authorized: 'Аккаунт привязан',
+  });
+  const yandexErrorText = Object.freeze({
+    network: 'Не удалось связаться с Яндексом',
+    timeout: 'Код истёк, попробуйте ещё раз',
+    denied: 'Вход не подтверждён',
+    server: 'Неожиданный ответ сервера',
+    storage: 'Не удалось сохранить токен на устройстве',
+  });
+
+  function normalizeYandex(value) {
+    const status = isObject(value) ? value : {};
+    return {
+      state: safeString(status.state, 'idle'),
+      error: safeString(status.error, 'none'),
+      userCode: safeString(status.user_code),
+      verificationUrl: safeString(status.verification_url),
+      secondsLeft: Number.isSafeInteger(status.seconds_left) ? status.seconds_left : 0,
+    };
+  }
+
+  function applyYandex(value) {
+    const status = normalizeYandex(value);
+    const failed = status.state === 'failed';
+    yandexStatus.textContent = failed
+      ? (yandexErrorText[status.error] || 'Не удалось привязать аккаунт')
+      : (yandexStateText[status.state] || 'Аккаунт не привязан');
+    yandexStatus.classList.toggle('is-error', failed);
+    yandexStatus.classList.toggle('is-success', status.state === 'authorized');
+
+    const waiting = status.state === 'waiting' && status.userCode !== '';
+    yandexCodeBlock.hidden = !waiting;
+    if (waiting) {
+      yandexCode.textContent = status.userCode;
+      yandexUrl.textContent = status.verificationUrl;
+      // Only ever the address the device was told to show, and only as http(s):
+      // it arrives from the network, and a javascript: URL here would run in
+      // the visitor's browser.
+      yandexUrl.href = /^https?:\/\//.test(status.verificationUrl)
+        ? status.verificationUrl : '#';
+      yandexCountdown.textContent = status.secondsLeft > 0
+        ? `Код действителен ещё ${status.secondsLeft} с` : '';
+    }
+
+    const busyState = status.state === 'requesting' || status.state === 'waiting';
+    yandexLink.hidden = busyState || status.state === 'authorized';
+    yandexCancel.hidden = !busyState;
+    yandexForget.hidden = status.state !== 'authorized';
+    yandexLink.disabled = yandexBusy;
+    yandexCancel.disabled = yandexBusy;
+    yandexForget.disabled = yandexBusy;
+    return busyState;
+  }
+
+  function scheduleYandexRefresh(fast) {
+    if (yandexTimer !== null) return;
+    // Two seconds while a code is on screen so the countdown and the moment of
+    // confirmation are visible; rarely otherwise, since nothing changes.
+    yandexTimer = window.setTimeout(() => {
+      yandexTimer = null;
+      refreshYandex();
+    }, fast ? 2000 : 15000);
+  }
+
+  function refreshYandex() {
+    return window.fetch('/api/yandex', {cache: 'no-store'})
+      .then((response) => {
+        if (!response || response.ok !== true) throw new Error('request failed');
+        return response.json();
+      })
+      .then((payload) => scheduleYandexRefresh(applyYandex(payload)))
+      .catch(() => {
+        yandexStatus.textContent = 'Нет связи с устройством';
+        yandexStatus.classList.add('is-error');
+        scheduleYandexRefresh(false);
+      });
+  }
+
+  function sendYandexAction(action) {
+    if (yandexBusy) return Promise.resolve();
+    yandexBusy = true;
+    yandexLink.disabled = true;
+    yandexCancel.disabled = true;
+    yandexForget.disabled = true;
+    return window.fetch('/api/yandex', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action}),
+    })
+      .then(() => {})
+      .catch(() => {})
+      .then(() => {
+        yandexBusy = false;
+        if (yandexTimer !== null) {
+          window.clearTimeout(yandexTimer);
+          yandexTimer = null;
+        }
+        return refreshYandex();
+      });
+  }
+
   form.addEventListener('submit', submitWifi);
+  yandexLink.addEventListener('click', () => sendYandexAction('begin'));
+  yandexCancel.addEventListener('click', () => sendYandexAction('cancel'));
+  yandexForget.addEventListener('click', () => sendYandexAction('forget'));
   setConnected(false);
   connect();
+  refreshYandex();
 })();

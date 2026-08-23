@@ -35,6 +35,7 @@
 #include "ui_station_list.h"
 #include "ui_status_bar.h"
 #include "ui_web_address.h"
+#include "ui_yandex_screen.h"
 #include "file_track_progress.h"
 
 #include "audio_volume.h"
@@ -248,6 +249,14 @@ static lv_obj_t *s_settings_notice;
 static ui_settings_model_t s_settings_model;
 static device_settings_t s_device_settings;
 static bool s_settings_open;
+static lv_obj_t *s_yandex_screen;
+static lv_obj_t *s_yandex_status;
+static lv_obj_t *s_yandex_code_panel;
+static lv_obj_t *s_yandex_code;
+static lv_obj_t *s_yandex_url;
+static lv_obj_t *s_yandex_countdown;
+static lv_obj_t *s_yandex_hint;
+static bool s_yandex_open;
 static lv_obj_t *s_station_list_screen;
 static lv_obj_t *s_station_list_title;
 static lv_obj_t *s_station_list_notice;
@@ -1207,6 +1216,122 @@ static void ui_close_settings(void)
     ui_load_menu_screen();
 }
 
+/* Yandex Music pairing screen. It exists because the device flow needs a place
+ * to print the code and the address the user types it into: the code is
+ * useless in the serial log, which nobody has open while linking a phone. */
+static void ui_create_yandex_screen(void)
+{
+    s_yandex_screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(s_yandex_screen, lv_color_hex(UI_COLOR_GROUND), 0);
+    lv_obj_set_style_border_width(s_yandex_screen, 0, 0);
+    lv_obj_set_style_pad_all(s_yandex_screen, 0, 0);
+    lv_obj_set_style_text_font(s_yandex_screen, &ui_font_cyrillic_14, 0);
+
+    lv_obj_t *title = lv_label_create(s_yandex_screen);
+    lv_label_set_text(title, "Яндекс Музыка");
+    lv_obj_set_pos(title, 12, 8);
+    lv_obj_set_style_text_font(title, &ui_font_cyrillic_20, 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(UI_COLOR_TEXT), 0);
+
+    s_yandex_status = lv_label_create(s_yandex_screen);
+    lv_obj_set_pos(s_yandex_status, 12, 44);
+    lv_obj_set_width(s_yandex_status, 296);
+    lv_label_set_long_mode(s_yandex_status, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_color(s_yandex_status, lv_color_hex(UI_COLOR_MUTED), 0);
+    lv_label_set_text(s_yandex_status, "");
+
+    /* A panel rather than three loose labels: the block appears and disappears
+     * as a unit, and hiding one parent is both cheaper and impossible to get
+     * half right. */
+    s_yandex_code_panel = lv_obj_create(s_yandex_screen);
+    lv_obj_remove_style_all(s_yandex_code_panel);
+    lv_obj_set_pos(s_yandex_code_panel, 12, 70);
+    lv_obj_set_size(s_yandex_code_panel, 296, 124);
+    lv_obj_set_style_bg_color(s_yandex_code_panel, lv_color_hex(UI_COLOR_STRIP), 0);
+    lv_obj_set_style_bg_opa(s_yandex_code_panel, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_yandex_code_panel, 8, 0);
+    lv_obj_add_flag(s_yandex_code_panel, LV_OBJ_FLAG_HIDDEN);
+
+    /* Montserrat rather than the Cyrillic face the rest of the screen uses:
+     * the pairing code is always ASCII, and this is the largest font already
+     * linked into the image (the player's placeholder art uses it), so reading
+     * it from across the room costs no extra flash. Truncates rather than
+     * spills if a code is ever longer than the eight characters Yandex
+     * issues. */
+    s_yandex_code = lv_label_create(s_yandex_code_panel);
+    lv_obj_set_pos(s_yandex_code, 0, 10);
+    lv_obj_set_width(s_yandex_code, 296);
+    lv_label_set_long_mode(s_yandex_code, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(s_yandex_code, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(s_yandex_code, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(s_yandex_code, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_label_set_text(s_yandex_code, "");
+
+    s_yandex_url = lv_label_create(s_yandex_code_panel);
+    lv_obj_set_pos(s_yandex_url, 0, 74);
+    lv_obj_set_width(s_yandex_url, 296);
+    lv_label_set_long_mode(s_yandex_url, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(s_yandex_url, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(s_yandex_url, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_label_set_text(s_yandex_url, "");
+
+    s_yandex_countdown = lv_label_create(s_yandex_code_panel);
+    lv_obj_set_pos(s_yandex_countdown, 0, 98);
+    lv_obj_set_width(s_yandex_countdown, 296);
+    lv_obj_set_style_text_align(s_yandex_countdown, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(s_yandex_countdown, lv_color_hex(UI_COLOR_DIM), 0);
+    lv_label_set_text(s_yandex_countdown, "");
+
+    s_yandex_hint = lv_label_create(s_yandex_screen);
+    lv_obj_set_pos(s_yandex_hint, 12, 212);
+    lv_obj_set_width(s_yandex_hint, 296);
+    lv_label_set_long_mode(s_yandex_hint, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_color(s_yandex_hint, lv_color_hex(UI_COLOR_DIM), 0);
+    lv_label_set_text(s_yandex_hint, "");
+}
+
+static void ui_update_yandex(void)
+{
+    if (!s_yandex_open) return;
+    const yandex_auth_status_t status = yandex_auth_get_status();
+    ui_yandex_view_t view;
+    ui_yandex_view_build(&status, &view);
+
+    ui_set_label_text_if_changed(s_yandex_status, view.status);
+    ui_set_label_text_if_changed(s_yandex_hint, view.hint);
+    if (view.show_code) {
+        ui_set_label_text_if_changed(s_yandex_code, view.code);
+        ui_set_label_text_if_changed(s_yandex_url, view.url);
+        ui_set_label_text_if_changed(s_yandex_countdown, view.countdown);
+        lv_obj_remove_flag(s_yandex_code_panel, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_yandex_code_panel, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void ui_show_yandex(void)
+{
+    s_yandex_open = true;
+    /* Opening the screen with no account starts the exchange straight away:
+     * the alternative is a screen that says "not linked" and needs a second
+     * press to do the only thing it offers. */
+    if (!yandex_auth_is_authorized()) {
+        (void)yandex_auth_begin();
+    }
+    ui_update_yandex();
+    lv_screen_load(s_yandex_screen);
+}
+
+static void ui_close_yandex(void)
+{
+    if (!s_yandex_open) return;
+    /* Leaving the screen abandons an unfinished attempt rather than leaving a
+     * task polling for a code nobody can see any more. */
+    (void)yandex_auth_cancel();
+    s_yandex_open = false;
+    ui_load_menu_screen();
+}
+
 static void ui_settings_change_selected(void)
 {
     const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
@@ -1981,6 +2106,26 @@ static void ui_handle_input(board_input_action_t action)
     // starts nothing, so making it a fourth view would put an entry in every
     // transition table for no gain. Any of the three ways out returns to the
     // main screen.
+    if (s_yandex_open) {
+        if (action == BOARD_INPUT_ACTION_F2 || action == BOARD_INPUT_ACTION_ENCODER_LONG) {
+            ui_close_yandex();
+        } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
+            const yandex_auth_status_t status = yandex_auth_get_status();
+            /* Only a retry: pressing OK during an attempt would do nothing,
+             * and pressing it while linked must not silently re-link. */
+            if (!ui_yandex_view_is_busy(&status) && status.state != YANDEX_AUTH_AUTHORIZED) {
+                (void)yandex_auth_begin();
+                ui_update_yandex();
+            }
+        } else if (action == BOARD_INPUT_ACTION_F4) {
+            const yandex_auth_status_t status = yandex_auth_get_status();
+            if (status.state == YANDEX_AUTH_AUTHORIZED) {
+                (void)yandex_auth_forget();
+                ui_update_yandex();
+            }
+        }
+        return;
+    }
     if (s_settings_open) {
         if (action == BOARD_INPUT_ACTION_F2 || action == BOARD_INPUT_ACTION_ENCODER_LONG) {
             ui_close_settings();
@@ -2168,6 +2313,11 @@ static void ui_handle_input(board_input_action_t action)
             const ui_feed_item_t item = ui_feed_model_selected(&s_feed_model);
             if (item == UI_FEED_SETTINGS) {
                 ui_show_settings();
+            } else if (item == UI_FEED_YANDEX) {
+                /* Not a source yet - the account is linked here, and playback
+                 * arrives in a later step. */
+                ui_set_label_text_if_changed(s_feed_notice, "");
+                ui_show_yandex();
             } else {
                 audio_source_t source = AUDIO_SOURCE_NONE;
                 if (!ui_feed_model_activate(item, &source)) {
@@ -2190,6 +2340,10 @@ static void ui_handle_input(board_input_action_t action)
     } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
         if (ui_menu_selection_is_settings(&s_menu)) {
             ui_show_settings();
+            return;
+        }
+        if (ui_menu_selected_index(&s_menu) == (uint8_t)UI_MENU_ITEM_YANDEX_MUSIC) {
+            ui_show_yandex();
             return;
         }
         ui_show_source();
@@ -2518,6 +2672,11 @@ static void ui_task(void *arg)
         ui_update_cover();
         if (s_settings_open) {
             ui_update_settings();
+        } else if (s_yandex_open) {
+            // Polled rather than driven by input: the countdown ticks and the
+            // confirmation arrives from the network, neither of which is a
+            // button press.
+            ui_update_yandex();
         } else {
             ui_sync_player_snapshot(&snapshot);
         }
@@ -2544,6 +2703,7 @@ static void ui_task(void *arg)
                          : active == s_feed_screen    ? "feed"
                          : active == s_menu_screen    ? "menu"
                          : active == s_settings_screen ? "settings"
+                         : active == s_yandex_screen  ? "yandex"
                          : active == s_station_list_screen ? "list"
                                                        : "other");
             }
@@ -2612,6 +2772,7 @@ esp_err_t ui_init(void)
     ui_create_menu_screen();
     ui_create_feed_screen();
     ui_create_settings_screen();
+    ui_create_yandex_screen();
     ui_create_source_screen();
     ui_create_station_list_screen();
     ui_settings_model_init(&s_settings_model);

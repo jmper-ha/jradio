@@ -38,6 +38,8 @@ const ids = [
   'socket-state', 'wifi-form', 'wifi-ssid', 'wifi-password', 'wifi-submit',
   'wifi-status', 'wifi-active', 'wifi-ip', 'saved-networks',
   'saved-networks-empty',
+  'yandex-status', 'yandex-code-block', 'yandex-url', 'yandex-code',
+  'yandex-countdown', 'yandex-link', 'yandex-cancel', 'yandex-forget',
 ];
 const elements = Object.fromEntries(ids.map((id) => [`#${id}`, new Element()]));
 elements['#wifi-form'].elements = {
@@ -70,6 +72,15 @@ class FakeWebSocket {
 }
 
 const timers = [];
+const fetchCalls = [];
+// Answers the Yandex Music polling; each test sets what the device would say.
+let yandexReply = {
+  state: 'idle', error: 'none', user_code: '', verification_url: '',
+  seconds_left: 0,
+};
+let yandexFetchFails = false;
+
+const timerHandles = new Map();
 const context = {
   console,
   document: documentRef,
@@ -78,7 +89,20 @@ const context = {
     location: {protocol: 'http:', host: 'radio.local'},
     setTimeout(callback, delay) {
       timers.push({callback, delay});
+      timerHandles.set(timers.length, timers[timers.length - 1]);
       return timers.length;
+    },
+    clearTimeout(handle) {
+      const entry = timerHandles.get(handle);
+      if (entry) entry.cleared = true;
+    },
+    fetch(url, options) {
+      fetchCalls.push({url, options});
+      if (yandexFetchFails) return Promise.reject(new Error('offline'));
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(yandexReply),
+      });
     },
   },
 };
@@ -196,4 +220,88 @@ sendEvent(first, snapshot(99, {
 ));
 assert.equal(elements['#wifi-active'].textContent, 'other');
 
-console.log('web settings tests passed');
+// Yandex Music: REST, so everything below settles on microtasks rather than
+// on socket frames. The synchronous assertions above all ran before the very
+// first fetch resolved, which is why this part is at the end and async.
+async function settle() {
+  for (let step = 0; step < 8; step += 1) await Promise.resolve();
+}
+
+function lastYandexTimer() {
+  return timers.filter((entry) => !entry.cleared).at(-1);
+}
+
+(async () => {
+  await settle();
+  assert.equal(fetchCalls[0].url, '/api/yandex');
+  assert.equal(elements['#yandex-status'].textContent, 'Аккаунт не привязан');
+  assert.equal(elements['#yandex-link'].hidden, false);
+  assert.equal(elements['#yandex-cancel'].hidden, true);
+  assert.equal(elements['#yandex-forget'].hidden, true);
+  assert.equal(elements['#yandex-code-block'].hidden, true);
+  // Nothing is happening, so the page must not poll every couple of seconds.
+  assert.equal(lastYandexTimer().delay, 15000);
+
+  yandexReply = {
+    state: 'waiting', error: 'none', user_code: 'gm2anfv7',
+    verification_url: 'https://ya.ru/device', seconds_left: 287,
+  };
+  elements['#yandex-link'].emit('click');
+  await settle();
+  const post = fetchCalls.find((call) => call.options && call.options.method === 'POST');
+  assert.deepEqual(JSON.parse(post.options.body), {action: 'begin'});
+  assert.equal(elements['#yandex-code'].textContent, 'gm2anfv7');
+  assert.equal(elements['#yandex-url'].href, 'https://ya.ru/device');
+  assert.equal(elements['#yandex-code-block'].hidden, false);
+  assert.match(elements['#yandex-countdown'].textContent, /287/);
+  assert.equal(elements['#yandex-link'].hidden, true);
+  assert.equal(elements['#yandex-cancel'].hidden, false);
+  // A live code needs a visible countdown, so the poll tightens up.
+  assert.equal(lastYandexTimer().delay, 2000);
+
+  // The address comes off the network and is written into a link the visitor
+  // clicks; anything but http(s) must not survive into href.
+  yandexReply = {
+    state: 'waiting', error: 'none', user_code: 'abcd1234',
+    verification_url: 'javascript:alert(1)', seconds_left: 100,
+  };
+  lastYandexTimer().callback();
+  await settle();
+  assert.equal(elements['#yandex-url'].href, '#');
+  assert.equal(elements['#yandex-url'].textContent, 'javascript:alert(1)');
+
+  yandexReply = {
+    state: 'authorized', error: 'none', user_code: '', verification_url: '',
+    seconds_left: 0,
+  };
+  lastYandexTimer().callback();
+  await settle();
+  assert.equal(elements['#yandex-status'].textContent, 'Аккаунт привязан');
+  assert.equal(elements['#yandex-forget'].hidden, false);
+  assert.equal(elements['#yandex-link'].hidden, true);
+  assert.equal(elements['#yandex-cancel'].hidden, true);
+  assert.equal(elements['#yandex-code-block'].hidden, true);
+
+  yandexReply = {
+    state: 'failed', error: 'timeout', user_code: '', verification_url: '',
+    seconds_left: 0,
+  };
+  lastYandexTimer().callback();
+  await settle();
+  assert.match(elements['#yandex-status'].textContent, /истёк/);
+  assert.equal(elements['#yandex-status'].classList.values.has('is-error'), true);
+  // A failed attempt is offered again rather than leaving a dead end.
+  assert.equal(elements['#yandex-link'].hidden, false);
+
+  yandexFetchFails = true;
+  lastYandexTimer().callback();
+  await settle();
+  assert.equal(elements['#yandex-status'].textContent, 'Нет связи с устройством');
+  // Still scheduled: the device coming back must not need a page reload.
+  assert.equal(lastYandexTimer().delay, 15000);
+
+  console.log('web settings tests passed');
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

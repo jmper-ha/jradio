@@ -65,6 +65,43 @@ static web_socket_wifi_state_t sample_wifi(void)
     return wifi;
 }
 
+static void test_yandex_action_accepts_only_the_three_it_implements(void)
+{
+    assert(web_server_parse_yandex_action("{\"action\":\"begin\"}") ==
+           WEB_SERVER_YANDEX_ACTION_BEGIN);
+    assert(web_server_parse_yandex_action("{ \"action\" : \"cancel\" }") ==
+           WEB_SERVER_YANDEX_ACTION_CANCEL);
+    assert(web_server_parse_yandex_action("{\"action\":\"forget\"}") ==
+           WEB_SERVER_YANDEX_ACTION_FORGET);
+}
+
+static void test_yandex_action_rejects_anything_else(void)
+{
+    /* "forget" wipes the stored credential, so a request that is merely close
+     * to valid must not be guessed at. */
+    assert(web_server_parse_yandex_action("{\"action\":\"Forget\"}") ==
+           WEB_SERVER_YANDEX_ACTION_INVALID);
+    assert(web_server_parse_yandex_action("{\"action\":\"\"}") ==
+           WEB_SERVER_YANDEX_ACTION_INVALID);
+    assert(web_server_parse_yandex_action("{\"action\":\"begin\",\"action\":\"forget\"}") ==
+           WEB_SERVER_YANDEX_ACTION_INVALID);
+    assert(web_server_parse_yandex_action("{\"action\":\"begin\",}") ==
+           WEB_SERVER_YANDEX_ACTION_INVALID);
+    assert(web_server_parse_yandex_action("{\"other\":\"begin\"}") ==
+           WEB_SERVER_YANDEX_ACTION_INVALID);
+    assert(web_server_parse_yandex_action("{\"action\":42}") ==
+           WEB_SERVER_YANDEX_ACTION_INVALID);
+    assert(web_server_parse_yandex_action("{}") == WEB_SERVER_YANDEX_ACTION_INVALID);
+    assert(web_server_parse_yandex_action("{\"action\":\"begin\"} trailing") ==
+           WEB_SERVER_YANDEX_ACTION_INVALID);
+    assert(web_server_parse_yandex_action("not json") == WEB_SERVER_YANDEX_ACTION_INVALID);
+    assert(web_server_parse_yandex_action(NULL) == WEB_SERVER_YANDEX_ACTION_INVALID);
+    /* Longer than the field it is read into: truncating would turn an unknown
+     * verb into a known one. */
+    assert(web_server_parse_yandex_action("{\"action\":\"begin_and_then_some_more\"}") ==
+           WEB_SERVER_YANDEX_ACTION_INVALID);
+}
+
 static void test_command_result_is_exact_and_escaped(void)
 {
     char output[256];
@@ -286,6 +323,8 @@ int main(void)
 {
     test_parse_accepts_ssid_and_password();
     test_parse_rejects_missing_or_empty_fields();
+    test_yandex_action_accepts_only_the_three_it_implements();
+    test_yandex_action_rejects_anything_else();
     test_command_result_is_exact_and_escaped();
     test_snapshot_has_exact_public_sections_and_no_secrets();
     test_player_update_omits_unavailable_rssi_and_repairs_utf8();

@@ -673,6 +673,41 @@ button:disabled {
   border-color: var(--accent);
 }
 
+/* The pairing code is meant to be read off the screen and typed on a phone,
+   so it gets the same treatment a one-time code gets anywhere else: large,
+   monospaced and spaced out, with no ambiguity between similar glyphs. */
+.yandex-code {
+  margin: 1.1rem 0 .4rem;
+  padding: .9rem 1rem;
+  border-radius: .75rem;
+  background: var(--surface-soft);
+}
+
+.yandex-code-lead {
+  margin: 0 0 .35rem;
+  color: var(--muted);
+  font-size: .82rem;
+}
+
+.yandex-code p {
+  margin: 0 0 .35rem;
+}
+
+.yandex-code-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.6rem;
+  font-weight: 750;
+  letter-spacing: .18em;
+  color: var(--accent-dark);
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+  margin-top: .6rem;
+}
+
 .field-note {
   margin: .15rem 0 .65rem;
   color: var(--muted);

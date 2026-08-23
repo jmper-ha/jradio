@@ -166,6 +166,7 @@ run_test ui_status_bar tests/test_ui_status_bar.c components/ui/ui_status_bar.c
 run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c
 run_test ui_vu_meter tests/test_ui_vu_meter.c components/ui/ui_vu_meter.c
 run_test ui_files_notice tests/test_ui_files_notice.c components/ui/ui_files_notice.c
+run_test ui_yandex_screen tests/test_ui_yandex_screen.c components/ui/ui_yandex_screen.c
 run_test file_browser tests/test_file_browser.c components/file_storage/file_browser.c
 run_test file_track_progress tests/test_file_track_progress.c \
     components/file_player/file_track_progress.c

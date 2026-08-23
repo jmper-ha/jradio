@@ -19,9 +19,16 @@ typedef enum {
 
 typedef struct {
     uint8_t selected;
+    bool yandex_visible;
 } ui_feed_model_t;
 
 void ui_feed_model_init(ui_feed_model_t *model, uint8_t initial_index);
+
+/* The carousel carries the same items as the list home screen, so it hides the
+ * same ones. Which item that is, and the arithmetic of stepping past it, live
+ * in ui_menu.c - this only holds the flag and asks. */
+void ui_feed_model_set_yandex_visible(ui_feed_model_t *model, bool visible);
+bool ui_feed_model_yandex_visible(const ui_feed_model_t *model);
 void ui_feed_model_move(ui_feed_model_t *model, int direction);
 ui_feed_item_t ui_feed_model_selected(const ui_feed_model_t *model);
 bool ui_feed_model_activate(ui_feed_item_t item, audio_source_t *source_out);

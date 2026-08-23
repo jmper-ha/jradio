@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "board_features.h"
+
 typedef enum {
     UI_SETTINGS_GROUP_LANGUAGE = 0,
     UI_SETTINGS_GROUP_GENERAL,
@@ -16,6 +18,10 @@ typedef enum {
     UI_SETTINGS_ROW_GENERAL_GROUP,
     UI_SETTINGS_ROW_HOME_SCREEN_FIELD,
     UI_SETTINGS_ROW_AUTOPLAY_FIELD,
+    /* Present in the enum whether or not the feature is built, so the row ids
+     * do not shift with a build option; the model simply never hands it out.
+     * A build without Yandex Music has no switch for it in General. */
+    UI_SETTINGS_ROW_YANDEX_FIELD,
     UI_SETTINGS_ROW_DISPLAY_GROUP,
     UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD,
     UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD,

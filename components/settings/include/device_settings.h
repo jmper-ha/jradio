@@ -39,6 +39,12 @@ typedef struct {
      * screen. What "what was playing" means is the two fields below: the
      * radio's own last-station URL is stored separately by station_resume. */
     bool autoplay;
+    /* Whether Yandex Music appears on the home screen. Stored whatever the
+     * firmware was built with - this layer does not know about build options,
+     * and a card moved into a build that has the feature should find the
+     * choice the user made the last time it did. Defaults to on, so a device
+     * that has the feature shows it without anyone going looking. */
+    bool yandex_music;
     /* 0..100. Defaults to 80 rather than full: the first sound after a fresh
      * flash should not be at maximum. */
     unsigned char volume;
@@ -57,6 +63,7 @@ bool device_settings_set_flip_horizontal(device_settings_t *settings, bool enabl
 bool device_settings_set_flip_vertical_value(device_settings_t *settings, int value);
 bool device_settings_set_flip_horizontal_value(device_settings_t *settings, int value);
 bool device_settings_set_autoplay(device_settings_t *settings, bool enabled);
+bool device_settings_set_yandex_music(device_settings_t *settings, bool enabled);
 /* Values above 100 are refused rather than clamped: a caller passing one has a
  * bug, and silently accepting it would hide it. */
 bool device_settings_set_volume(device_settings_t *settings, unsigned char volume);

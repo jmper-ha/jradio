@@ -11,6 +11,11 @@
  * (board_display_profile.h, board_audio_format.h), because those are
  * properties of the part and of the driver, not decisions about this board.
  *
+ * The last section is the one exception to "parts and wiring": the optional
+ * features, which are not on the board but are decided the same way and want
+ * to be found in the same place. board_features.h turns them into the 0/1
+ * everything else tests.
+ *
  * Values are plain numbers rather than driver enums so the file also compiles
  * in the host test build, which has no ESP-IDF headers.
  *
@@ -27,7 +32,7 @@
 #if defined(TFT_CS_GPIO) || defined(I2S_DOUT_GPIO) || defined(USB_DP_GPIO) || \
     defined(ENCODER_LEFT_GPIO) || defined(TFT_BACKLIGHT_GPIO) ||              \
     defined(BUTTON_F1_GPIO) || defined(DISPLAY) || defined(AUDIO_DAC) ||      \
-    defined(SDC_CS_GPIO)
+    defined(SDC_CS_GPIO) || defined(YANDEX_MUSIC)
 #error "board_options.h: a name here is already defined elsewhere - most likely \
 an ESP-IDF header now uses it. Re-prefix the affected option in this file and \
 at its use sites."
@@ -128,3 +133,17 @@ at its use sites."
  * unconnected, so a card that appears after boot cannot announce itself the
  * way a USB drive does. Insertion has to be found by trying to mount. */
 #define SDC_HAS_CARD_DETECT 0
+
+/* ======================================================================
+ * Optional features - what is built into this firmware
+ * ====================================================================== */
+
+/* Yandex Music. Not a part on the board, but the same kind of decision, and
+ * made in the same place: built out, nothing on the device mentions an account
+ * it cannot use - the source is absent from the home screen and its switch is
+ * absent from Settings. Built in, the switch in Settings > General decides
+ * whether the source appears, so a firmware that has it can still be run
+ * without it.
+ *
+ * FEATURE_OFF and deleting the line mean the same thing. */
+#define YANDEX_MUSIC FEATURE_ON

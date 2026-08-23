@@ -37,6 +37,13 @@ static const ui_settings_row_t s_field_rows[] = {
         .group = UI_SETTINGS_GROUP_GENERAL,
         .kind = UI_SETTINGS_ROW_FIELD,
     },
+#if BOARD_HAS_YANDEX_MUSIC
+    {
+        .id = UI_SETTINGS_ROW_YANDEX_FIELD,
+        .group = UI_SETTINGS_GROUP_GENERAL,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+#endif
     {
         .id = UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD,
         .group = UI_SETTINGS_GROUP_DISPLAY,
@@ -55,7 +62,7 @@ static size_t field_count(ui_settings_group_t group)
     case UI_SETTINGS_GROUP_LANGUAGE:
         return 1U;
     case UI_SETTINGS_GROUP_GENERAL:
-        return 2U;
+        return 2U + (size_t)BOARD_HAS_YANDEX_MUSIC;
     case UI_SETTINGS_GROUP_DISPLAY:
         return 2U;
     default:

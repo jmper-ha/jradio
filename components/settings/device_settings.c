@@ -38,6 +38,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         .language = DEVICE_LANGUAGE_RU,
         .home_screen = DEVICE_HOME_SCREEN_TEXT,
         .volume = DEVICE_VOLUME_DEFAULT,
+        .yandex_music = true,
     };
     memcpy(settings->storage_path, path, strlen(path) + 1U);
 
@@ -58,6 +59,9 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     }
     if (read_value(path, "autoplay", value, sizeof(value))) {
         (void)parse_bool(value, &settings->autoplay);
+    }
+    if (read_value(path, "yandex_music", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->yandex_music);
     }
     if (read_value(path, "volume", value, sizeof(value))) {
         char *end = NULL;
@@ -138,6 +142,13 @@ bool device_settings_set_autoplay(device_settings_t *settings, bool enabled)
 {
     if (!save_value(settings, "autoplay", enabled ? "1" : "0")) return false;
     settings->autoplay = enabled;
+    return true;
+}
+
+bool device_settings_set_yandex_music(device_settings_t *settings, bool enabled)
+{
+    if (!save_value(settings, "yandex_music", enabled ? "1" : "0")) return false;
+    settings->yandex_music = enabled;
     return true;
 }
 

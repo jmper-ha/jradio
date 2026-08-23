@@ -156,7 +156,8 @@ run_test ui_click_gesture tests/test_ui_click_gesture.c components/ui/ui_click_g
 run_test ui_deferred_start tests/test_ui_deferred_start.c components/ui/ui_deferred_start.c
 run_test ui_draw_buffer tests/test_ui_draw_buffer.c components/ui/ui_draw_buffer.c
 run_test ui_menu tests/test_ui_menu.c components/ui/ui_menu.c
-run_test ui_feed_model tests/test_ui_feed_model.c components/ui/ui_feed_model.c
+run_test ui_feed_model tests/test_ui_feed_model.c components/ui/ui_feed_model.c \
+    components/ui/ui_menu.c
 run_test ui_player_state tests/test_ui_player_state.c components/ui/ui_player_state.c
 run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c \
     components/internet_radio/radio_stream_format.c

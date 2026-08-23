@@ -82,6 +82,11 @@
  * lifted off the ground and its text takes the accent, which is how the player
  * screen marks the thing being played. */
 #define UI_COLOR_SELECTED 0x2A3B4A
+/* The settings screen needs a brighter cursor than the menu's. Its rows are
+ * already tinted tiles rather than bare background, and UI_COLOR_SELECTED
+ * lands within a few percent of the tile under it - close enough that the
+ * cursor could not be found without moving it. This is well clear of both. */
+#define UI_COLOR_CURSOR 0x3F6187
 
 /* Height of the status strip every screen carries. */
 #define UI_STRIP_H 26
@@ -242,7 +247,9 @@ static ui_vu_meter_t s_vu_state[2];
 static uint32_t s_vu_updated_ms;
 static lv_obj_t *s_settings_screen;
 static lv_obj_t *s_settings_rows[UI_SETTINGS_MAX_ROWS];
-#define UI_SETTINGS_SWITCH_COUNT 3U
+/* One per boolean setting, not per row on screen: only one group is open at
+ * a time, so at most three are ever visible, but each keeps its own object. */
+#define UI_SETTINGS_SWITCH_COUNT 4U
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
@@ -712,6 +719,16 @@ static const char *ui_feed_item_title(ui_feed_item_t item)
     return ui_menu_item_label((ui_menu_item_t)item);
 }
 
+/* Both home screens carry the same items, so the switch in Settings has to
+ * reach both. Called wherever settings.csv is read or written, rather than
+ * asked for at draw time: the models also move the cursor off a row that has
+ * just gone away, which is a change, not a query. */
+static void ui_apply_yandex_visibility(void)
+{
+    ui_menu_set_yandex_visible(&s_menu, s_device_settings.yandex_music);
+    ui_feed_model_set_yandex_visible(&s_feed_model, s_device_settings.yandex_music);
+}
+
 static void ui_update_feed_screen(void)
 {
     const ui_feed_item_t selected = ui_feed_model_selected(&s_feed_model);
@@ -733,11 +750,17 @@ static void ui_update_feed_screen(void)
         UI_COLOR_FEED_FAR, UI_COLOR_FEED_NEAR, UI_COLOR_ACCENT,
         UI_COLOR_FEED_NEAR, UI_COLOR_FEED_FAR,
     };
+    const bool yandex = ui_feed_model_yandex_visible(&s_feed_model);
+    /* The carousel wraps over what is on screen, not over the enum: with an
+     * item switched off, stepping past the last one has to land on the first
+     * visible one, and the dot row has to lose a dot. */
+    const int visible = (int)ui_menu_visible_count(yandex);
+    const int position = (int)ui_menu_visible_position((ui_menu_item_t)selected, yandex);
     for (size_t slot = 0; slot < 5U; ++slot) {
-        int index = (int)selected + offsets[slot];
-        while (index < 0) index += UI_FEED_ITEM_COUNT;
-        index %= UI_FEED_ITEM_COUNT;
-        const ui_feed_item_t item = (ui_feed_item_t)index;
+        int index = position + offsets[slot];
+        while (index < 0) index += visible;
+        index %= visible;
+        const ui_feed_item_t item = (ui_feed_item_t)ui_menu_visible_item_at((uint8_t)index, yandex);
         const bool center = slot == 2U;
         lv_image_set_src(s_feed_icons[slot], ui_feed_icon_image(item, sizes[slot]));
         /* The tile is bigger than the icon inside it, so the object is placed
@@ -760,10 +783,19 @@ static void ui_update_feed_screen(void)
         lv_obj_set_style_bg_color(s_feed_icons[slot], lv_color_hex(UI_COLOR_SELECTED), 0);
         lv_obj_set_style_bg_opa(s_feed_icons[slot], center ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
     }
-    for (uint8_t index = 0; index < UI_FEED_ITEM_COUNT; ++index) {
+    /* Re-centred here rather than at creation: the row is one dot narrower
+     * when an item is switched off, and an off-centre row reads as a bug. */
+    const int dots_left = UI_FEED_CENTER_X - (visible * UI_FEED_DOT_PITCH - UI_FEED_DOT) / 2;
+    for (int index = 0; index < UI_FEED_ITEM_COUNT; ++index) {
+        if (index >= visible) {
+            lv_obj_add_flag(s_feed_dots[index], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_obj_clear_flag(s_feed_dots[index], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_x(s_feed_dots[index], dots_left + index * UI_FEED_DOT_PITCH);
         lv_obj_set_style_bg_color(s_feed_dots[index],
-                                  lv_color_hex(index == (uint8_t)selected ? UI_COLOR_ACCENT
-                                                                          : UI_COLOR_FEED_DOT), 0);
+                                  lv_color_hex(index == position ? UI_COLOR_ACCENT
+                                                                 : UI_COLOR_FEED_DOT), 0);
     }
     lv_label_set_text(s_feed_title, ui_feed_item_title(selected));
 }
@@ -831,26 +863,42 @@ static void ui_flush(lv_display_t *display, const lv_area_t *area, uint8_t *pixe
     lv_display_flush_ready(display);
 }
 
+/* Rows, not items: a hidden item leaves no gap, so the row a name lands on
+ * depends on what is switched off above it. The model does that arithmetic. */
 static void ui_update_menu_highlight(void)
 {
     const uint8_t selected = ui_menu_selected_index(&s_menu);
-    for (uint8_t index = 0; index < UI_MENU_ITEM_COUNT; ++index) {
-        const bool is_selected = index == selected;
+    const bool yandex = ui_menu_yandex_visible(&s_menu);
+    const uint8_t visible = ui_menu_visible_count(yandex);
+    for (uint8_t row = 0; row < UI_MENU_ITEM_COUNT; ++row) {
+        if (row >= visible) {
+            // Hidden rather than blanked: the row tile is opaque and would
+            // otherwise leave a bar of background colour below the last name.
+            lv_obj_add_flag(s_menu_rows[row], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_menu_icons[row], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_obj_clear_flag(s_menu_rows[row], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s_menu_icons[row], LV_OBJ_FLAG_HIDDEN);
+        const ui_menu_item_t item = ui_menu_visible_item_at(row, yandex);
+        const bool is_selected = (uint8_t)item == selected;
         // Raised tile plus accent text, the way the player screen marks what
         // it is playing. The arrow the old highlight needed is gone: a filled
         // row says the same thing without spending a character on it.
-        lv_obj_set_style_bg_color(s_menu_rows[index],
+        lv_obj_set_style_bg_color(s_menu_rows[row],
                                   lv_color_hex(is_selected ? UI_COLOR_SELECTED
                                                            : UI_COLOR_GROUND), 0);
-        lv_obj_set_style_bg_opa(s_menu_rows[index], LV_OPA_COVER, 0);
-        lv_obj_set_style_text_color(s_menu_rows[index],
+        lv_obj_set_style_bg_opa(s_menu_rows[row], LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(s_menu_rows[row],
                                     lv_color_hex(is_selected ? UI_COLOR_ACCENT
                                                              : UI_COLOR_MUTED), 0);
-        lv_label_set_text(s_menu_rows[index], ui_menu_item_label((ui_menu_item_t)index));
+        lv_label_set_text(s_menu_rows[row], ui_menu_item_label(item));
+        lv_image_set_src(s_menu_icons[row],
+                         ui_feed_icon_image((ui_feed_item_t)item, UI_FEED_ICON_SMALL));
         // The icon follows the text rather than staying lit: a row that is not
         // under the cursor should read as one thing, not as a bright mark with
         // dim writing next to it.
-        lv_obj_set_style_image_recolor(s_menu_icons[index],
+        lv_obj_set_style_image_recolor(s_menu_icons[row],
                                        lv_color_hex(is_selected ? UI_COLOR_ACCENT
                                                                 : UI_COLOR_DIM), 0);
     }
@@ -1147,6 +1195,10 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         snprintf(text, text_size, "  %s: %s", english ? "Autoplay" : "Автовоспроизведение",
                  s_device_settings.autoplay ? "ON" : "OFF");
         break;
+    case UI_SETTINGS_ROW_YANDEX_FIELD:
+        snprintf(text, text_size, "  %s: %s", english ? "Yandex Music" : "Яндекс Музыка",
+                 s_device_settings.yandex_music ? "ON" : "OFF");
+        break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         snprintf(text, text_size, "  %s: %s", english ? "Flip vertical" : "Поворот по вертикали",
                  s_device_settings.flip_vertical ? "ON" : "OFF");
@@ -1179,6 +1231,10 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     case UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD:
         *index = 2U;
         *value = s_device_settings.flip_horizontal;
+        return true;
+    case UI_SETTINGS_ROW_YANDEX_FIELD:
+        *index = 3U;
+        *value = s_device_settings.yandex_music;
         return true;
     default:
         return false;
@@ -1224,8 +1280,16 @@ static void ui_update_settings(void)
                                    is_group ? &ui_font_cyrillic_20 : &ui_font_cyrillic_14, 0);
         lv_obj_set_style_pad_top(s_settings_rows[row], is_group ? 1 : 4, 0);
         const bool selected_row = item.id == selected;
-        const uint32_t background = selected_row ? UI_COLOR_SELECTED :
-            item.kind == UI_SETTINGS_ROW_FIELD ? 0x263746 : 0x101820;
+        /* Field tiles darker than they were, for the same reason: the gap to
+         * the cursor is what makes it visible, and both ends of it moved. */
+        const uint32_t background = selected_row ? UI_COLOR_CURSOR :
+            item.kind == UI_SETTINGS_ROW_FIELD ? 0x1D2A36 : UI_COLOR_GROUND;
+        // Accent on the cursor, the way every other screen marks its
+        // selection: the tile alone reads as a highlight only once you have
+        // found it.
+        lv_obj_set_style_text_color(s_settings_rows[row],
+                                    lv_color_hex(selected_row ? UI_COLOR_ACCENT
+                                                              : UI_COLOR_TEXT), 0);
         size_t switch_index = 0U;
         bool enabled = false;
         const bool has_switch = ui_settings_row_switch(item.id, &switch_index, &enabled);
@@ -1254,6 +1318,7 @@ static void ui_show_settings(void)
         (void)board_display_set_rotation(s_device_settings.flip_vertical,
                                          s_device_settings.flip_horizontal);
     }
+    ui_apply_yandex_visibility();
     ui_update_settings();
     lv_screen_load(s_settings_screen);
 }
@@ -1530,6 +1595,11 @@ static void ui_settings_change_selected(void)
     case UI_SETTINGS_ROW_AUTOPLAY_FIELD:
         changed = device_settings_set_autoplay(&s_device_settings,
                                                !s_device_settings.autoplay);
+        break;
+    case UI_SETTINGS_ROW_YANDEX_FIELD:
+        changed = device_settings_set_yandex_music(&s_device_settings,
+                                                   !s_device_settings.yandex_music);
+        if (changed) ui_apply_yandex_visibility();
         break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         changed = device_settings_set_flip_vertical(&s_device_settings,
@@ -3061,6 +3131,7 @@ esp_err_t ui_init(void)
         (void)board_display_set_rotation(s_device_settings.flip_vertical,
                                          s_device_settings.flip_horizontal);
     }
+    ui_apply_yandex_visibility();
     // Before anything can play: the board defaults to full volume, and coming
     // back from a power cut at full blast when the user had it at 20 is the
     // kind of surprise a saved setting exists to prevent.

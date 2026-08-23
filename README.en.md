@@ -18,7 +18,7 @@ output.
 | **Internet radio** | works | Your own station list, the track name straight off the air, reconnection when a stream drops |
 | **Music from a USB drive** | works | Walk through folders, tags, cover art, scrubbing, moves on to the next track |
 | **Music from an SD card** | works | The same; the card is recognised when its source is entered |
-| **Yandex Music** | works | "My wave" and your account's stations, album art, a next-track button |
+| **Yandex Music** | works | "My wave" and your account's stations, album art, a next-track button. Can be taken off the home screen |
 | **Web interface** | works | Player, station-list editor, file browsing, Wi-Fi, linking Yandex Music. No volume and no scrubbing on the web |
 | **Clock** | works | Time from the internet, on every screen |
 | **Volume** | works | On the knob, remembered across restarts |
@@ -121,6 +121,15 @@ only moves forward, and there is no going back to a track already played.
 The device does not tell Yandex what you listened to or skipped. That does not
 affect the music, but it means the device does not shape your recommendations
 either - those follow only what you play in other apps.
+
+**If you do not want it.** Settings > General has a "Yandex Music" switch.
+Turned off, the source disappears from the home screen and the device stops
+mentioning it; the account stays linked, and it can be turned back on at any
+time.
+
+To leave it out of the firmware altogether, use the `YANDEX_MUSIC` line in
+`board_options.h`: `FEATURE_OFF` - or the line deleted - means there is neither
+the source nor the switch in Settings.
 
 An account can be unlinked with F4 on the Yandex Music screen, or from the web
 interface.

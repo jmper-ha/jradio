@@ -25,6 +25,9 @@ static void test_defaults_and_load(void)
     assert(settings.language == DEVICE_LANGUAGE_RU);
     assert(settings.home_screen == DEVICE_HOME_SCREEN_TEXT);
     assert(!settings.flip_vertical && !settings.flip_horizontal);
+    /* On by default: a device whose firmware has Yandex Music should show it
+     * without the user first going to find a switch. */
+    assert(settings.yandex_music);
     assert(strcmp(settings.storage_path, test_path) == 0);
 }
 
@@ -111,6 +114,23 @@ static void test_a_corrupt_volume_leaves_the_default(void)
     assert(settings.volume == DEVICE_VOLUME_DEFAULT);
 }
 
+static void test_yandex_music_persists(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    assert(device_settings_set_yandex_music(&settings, false));
+    assert(!settings.yandex_music);
+
+    char value[32];
+    assert(settings_csv_get(test_path, "yandex_music", value, sizeof(value)));
+    assert(strcmp(value, "0") == 0);
+
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(!reloaded.yandex_music);
+}
+
 int main(void)
 {
     test_defaults_and_load();
@@ -119,6 +139,7 @@ int main(void)
     (void)unlink(test_path);
     test_volume_defaults_and_persists();
     test_a_corrupt_volume_leaves_the_default();
+    test_yandex_music_persists();
     puts("device_settings tests passed");
     return 0;
 }

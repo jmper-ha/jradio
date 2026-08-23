@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 
+#include "board_features.h"
 #include "ui_feed_model.h"
 
 static void test_navigation_wraps_and_stays_one_step(void)
@@ -81,12 +82,46 @@ static void test_the_cursor_follows_the_source_that_started(void)
     }
 }
 
+static void test_the_carousel_skips_a_hidden_item(void)
+{
+#if BOARD_HAS_YANDEX_MUSIC
+    ui_feed_model_t model;
+    ui_feed_model_init(&model, UI_FEED_DLNA);
+    assert(ui_feed_model_yandex_visible(&model));
+    ui_feed_model_move(&model, 1);
+    assert(ui_feed_model_selected(&model) == UI_FEED_YANDEX);
+
+    /* Same step, with the item switched off: straight past it to Settings,
+     * which is what the list home screen does with the same rule. */
+    ui_feed_model_init(&model, UI_FEED_DLNA);
+    ui_feed_model_set_yandex_visible(&model, false);
+    assert(!ui_feed_model_yandex_visible(&model));
+    ui_feed_model_move(&model, 1);
+    assert(ui_feed_model_selected(&model) == UI_FEED_SETTINGS);
+    ui_feed_model_move(&model, -1);
+    assert(ui_feed_model_selected(&model) == UI_FEED_DLNA);
+
+    /* Turning it off while the cursor is on it moves the cursor. */
+    ui_feed_model_init(&model, UI_FEED_YANDEX);
+    ui_feed_model_set_yandex_visible(&model, false);
+    assert(ui_feed_model_selected(&model) == UI_FEED_INTERNET_RADIO);
+#else
+    ui_feed_model_t model;
+    ui_feed_model_init(&model, UI_FEED_DLNA);
+    ui_feed_model_set_yandex_visible(&model, true);
+    assert(!ui_feed_model_yandex_visible(&model));
+    ui_feed_model_move(&model, 1);
+    assert(ui_feed_model_selected(&model) == UI_FEED_SETTINGS);
+#endif
+}
+
 int main(void)
 {
     test_navigation_wraps_and_stays_one_step();
     test_initial_index_is_normalized();
     test_activation_maps_only_the_implemented_sources();
     test_the_cursor_follows_the_source_that_started();
+    test_the_carousel_skips_a_hidden_item();
     puts("ui_feed_model tests passed");
     return 0;
 }

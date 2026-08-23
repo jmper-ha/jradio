@@ -640,7 +640,11 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
         ui_update_files_status(snapshot);
         return;
     }
-    if (ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_INTERNET_RADIO) return;
+    /* Both station sources render the same way: a name on top, a track under
+     * it, and one line of state. Only where the name comes from differs - the
+     * catalog file for the radio, the account's list for Yandex. */
+    const audio_source_t source = ui_player_state_source(&s_player_ui);
+    if (!audio_source_is_stations(source)) return;
 
     // While a station switch is pending confirmation, snapshot->active_item_index
     // still reflects the previous station; keep showing the one the user just
@@ -650,17 +654,28 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
         ui_player_state_pending_item(&s_player_ui, &pending_item_index);
     const size_t display_item_index =
         pending ? pending_item_index : snapshot->active_item_index;
-    const station_catalog_entry_t *entry =
-        player_control_station_at(display_item_index);
-    if (entry != NULL) {
-        /* The stream's own name is only about the station the snapshot
-         * describes, so while a switch is pending it names the previous one.
-         * The list is the only source that can answer for the station just
-         * picked. */
-        const char *stream_name = pending ? "" : snapshot->context;
-        ui_set_label_text_if_changed(
-            s_source_title,
-            ui_radio_station_name(entry->flag != 0, entry->name, stream_name));
+    if (source == AUDIO_SOURCE_YANDEX) {
+        yandex_station_t station;
+        if (yandex_catalog_station_at(display_item_index, &station)) {
+            ui_set_label_text_if_changed(s_source_title, station.name);
+        } else if (!pending) {
+            /* The list was refreshed under the playing station and the row is
+             * gone. What the chain reports is still its name. */
+            ui_set_label_text_if_changed(s_source_title, snapshot->context);
+        }
+    } else {
+        const station_catalog_entry_t *entry =
+            player_control_station_at(display_item_index);
+        if (entry != NULL) {
+            /* The stream's own name is only about the station the snapshot
+             * describes, so while a switch is pending it names the previous
+             * one. The list is the only source that can answer for the station
+             * just picked. */
+            const char *stream_name = pending ? "" : snapshot->context;
+            ui_set_label_text_if_changed(
+                s_source_title,
+                ui_radio_station_name(entry->flag != 0, entry->name, stream_name));
+        }
     }
 
     // Whatever the flag says about the name, the track is the stream's to
@@ -1016,8 +1031,11 @@ static void ui_update_station_list(void)
 
 static void ui_load_menu_screen(void);
 /* Defined with the rest of the player plumbing, further down; the Yandex
- * screen needs it before that, to select its source on the way in. */
+ * screen needs them before that - to post its commands, to open the list the
+ * active source owns, and to put back the screen it was opened over. */
 static bool ui_submit_player_command(const player_command_t *command);
+static void ui_show_station_list(void);
+static void ui_render_player_state(void);
 
 static void ui_create_settings_screen(void)
 {
@@ -1450,7 +1468,14 @@ static void ui_show_yandex(void)
          * this screen's stale copy for days. It costs one request, and an
          * answer that changed nothing does not disturb the rows. */
         const size_t count = yandex_catalog_count();
-        station_list_init(&s_yandex_list, count, 0U, count);
+        /* Opened over a playing station - the double click from the player -
+         * the cursor starts on it and the row is marked, the same thing the
+         * radio list does. Opened from the home screen there is nothing here
+         * to point at yet. */
+        const size_t active = ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_YANDEX
+                                  ? ui_player_state_active_item(&s_player_ui)
+                                  : count;
+        station_list_init(&s_yandex_list, count, active < count ? active : 0U, active);
         (void)yandex_catalog_request_refresh();
     }
     ui_update_yandex();
@@ -1465,7 +1490,25 @@ static void ui_close_yandex(void)
     (void)yandex_auth_cancel();
     s_yandex_start_row = PLAYER_ITEM_NONE;
     s_yandex_open = false;
-    ui_load_menu_screen();
+    /* Back to whatever this screen was opened over. Opened from the home
+     * screen the view is still MENU and this loads it; opened with a double
+     * click from a playing station it is SOURCE, and dropping to the menu
+     * there would throw away the player screen the user was on - and leave the
+     * view state saying "player" while the menu is drawn, which binds every
+     * button to the wrong screen. */
+    ui_render_player_state();
+}
+
+/* The list belonging to `source`. Yandex has a screen of its own - its rows
+ * are fetched from the account rather than read from the catalog file - so
+ * the double click that opens a list has to pick between the two. */
+static void ui_open_source_list(audio_source_t source)
+{
+    if (source == AUDIO_SOURCE_YANDEX) {
+        ui_show_yandex();
+        return;
+    }
+    ui_show_station_list();
 }
 
 static void ui_settings_change_selected(void)
@@ -2457,7 +2500,7 @@ static void ui_handle_input(board_input_action_t action)
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_SOURCE) {
         const audio_source_t source = ui_player_state_source(&s_player_ui);
         const bool has_list =
-            source == AUDIO_SOURCE_INTERNET_RADIO || audio_source_is_files(source);
+            audio_source_is_stations(source) || audio_source_is_files(source);
         if (ui_seek_is_active(&s_player_seek)) {
             // Scrubbing owns the knob and the press while it is open, so the
             // volume and the play/pause click are unreachable and cannot be
@@ -2498,7 +2541,7 @@ static void ui_handle_input(board_input_action_t action)
             switch (ui_click_gesture_press(&s_player_click, ui_tick_get_ms(),
                                            ui_seek_available())) {
             case UI_CLICK_DOUBLE:
-                ui_show_station_list();
+                ui_open_source_list(source);
                 break;
             case UI_CLICK_TRIPLE:
                 ui_begin_seek();
@@ -2873,7 +2916,7 @@ static void ui_task(void *arg)
         // scrubbing available the double has to outlast its own window before
         // it can be told from the start of a triple.
         case UI_CLICK_DOUBLE:
-            ui_show_station_list();
+            ui_open_source_list(ui_player_state_source(&s_player_ui));
             break;
         default:
             break;

@@ -52,3 +52,20 @@ yandex_link_result_t yandex_link_pick_variant(const char *json, char *url, size_
 
 /* Builds the signed MP3 URL from the XML the picked variant points at. */
 yandex_link_result_t yandex_link_from_xml(const char *xml, char *url, size_t url_size);
+
+/* The cover size asked for. The player screen's tile is 96x96 and the service
+ * offers 100x100, which measured 4.3 KB against 11.8 KB for 200x200 - the
+ * larger picture would only be thrown away by the scaler. */
+#define YANDEX_COVER_SIZE_TAG "100x100"
+#define YANDEX_COVER_URL_MAX 191U
+
+/* Turns a track's coverUri - a host and path with "%%" standing in for a size -
+ * into a URL that can be fetched.
+ *
+ * Plain HTTP on purpose. The picture is public and carries no token, and
+ * skipping TLS keeps this fetch off the internal SRAM that the audio stream's
+ * own TLS session needs; it also measured 40 ms against 147 ms.
+ *
+ * False when there is no size marker or the result would not fit, so a cover
+ * is dropped rather than fetched from a wrong address. */
+bool yandex_cover_url(const char *cover_uri, char *url, size_t url_size);

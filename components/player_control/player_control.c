@@ -33,7 +33,11 @@
  * transfers, and it left 1368 bytes of 6144. That is the thinnest margin in the
  * system, and this is the task that overflowed the one time the build was
  * compiled at -O2, where inlining costs more stack again. */
-#define PLAYER_CONTROL_TASK_STACK_SIZE 8192U
+/* 10 KB rather than 8. Starting a Yandex station resolves its first track on
+ * this task - three TLS handshakes below internet_radio_start_track_chain() -
+ * and the measured least-seen headroom fell to 1916 bytes, the thinnest of any
+ * task on the board. A stack overflow here is a reboot, not a glitch. */
+#define PLAYER_CONTROL_TASK_STACK_SIZE 10240U
 #define PLAYER_CONTROL_TASK_PRIORITY 5U
 
 static const char *TAG = "player_control";
@@ -298,6 +302,9 @@ static bool player_stop_active_source(audio_source_t source)
              * position is kept: coming back to the same station should not
              * replay what was already heard. */
             yandex_rotor_stop();
+            /* The picture belonged to the track that just stopped; leaving it
+             * up would outlast what it describes. */
+            album_art_clear();
             atomic_store_explicit(&s_yandex_item_index, PLAYER_ITEM_NONE,
                                   memory_order_release);
         }

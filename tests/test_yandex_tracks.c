@@ -22,8 +22,10 @@ static const char *const BATCH =
     "{\"id\":900001,\"name\":\"Haylen\",\"available\":true,\"genres\":[]}],"
     "\"albums\":[{\"id\":12676746,\"title\":\"Et voil\\u00e0 !\",\"year\":2019,"
     "\"artists\":[{\"id\":784066,\"name\":\"Bart & Baker\"}],"
-    "\"labels\":[{\"id\":1725897,\"name\":\"Pr'formance\"}],\"available\":true}],"
-    "\"coverUri\":\"avatars.yandex.net/get-music-content/%%\",\"type\":\"music\"},"
+    "\"labels\":[{\"id\":1725897,\"name\":\"Pr'formance\"}],\"available\":true,"
+    "\"coverUri\":\"avatars.yandex.net/album-cover-that-must-not-win/%%\"}],"
+    "\"coverUri\":\"avatars.yandex.net/get-music-content/2433207/16fb.a.12-1/%%\","
+    "\"type\":\"music\"},"
     "\"liked\":true,\"trackParameters\":{\"bpm\":130}},"
     "{\"type\":\"track\",\"track\":{"
     "\"id\":\"5072025\",\"title\":\"Green Onions\",\"available\":false,"
@@ -48,6 +50,10 @@ static void test_the_real_shape_yields_the_playable_tracks(void)
     assert(strcmp(batch.tracks[0].version, "feat. Haylen; Wolfgang Lohr Remix") == 0);
     assert(strcmp(batch.tracks[0].artist, "Bart & Baker, Haylen") == 0);
     assert(batch.tracks[0].duration_ms == 180920U);
+    /* The track's own cover, not the album's - they sit in the same object and
+     * the album carries one too. */
+    assert(strcmp(batch.tracks[0].cover,
+                  "avatars.yandex.net/get-music-content/2433207/16fb.a.12-1/%%") == 0);
     assert(batch.tracks[0].liked);
 
     /* The second playable track is the third element: the unavailable one in
@@ -56,6 +62,9 @@ static void test_the_real_shape_yields_the_playable_tracks(void)
     assert(strcmp(batch.tracks[1].title, "Париж") == 0);
     assert(strcmp(batch.tracks[1].artist, "Bellaire") == 0);
     assert(batch.tracks[1].version[0] == '\0');
+    /* A track with no picture leaves the field empty rather than borrowing the
+     * previous one's. */
+    assert(batch.tracks[1].cover[0] == '\0');
     assert(!batch.tracks[1].liked);
 }
 

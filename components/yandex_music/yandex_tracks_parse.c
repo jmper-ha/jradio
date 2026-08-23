@@ -64,6 +64,12 @@ static bool yandex_parse_track(json_reader_t *reader, yandex_track_t *track)
             if (!json_read_string_clipped(reader, track->version, sizeof(track->version))) {
                 return false;
             }
+        } else if (strcmp(key, "coverUri") == 0) {
+            /* Display only, and the track is perfectly playable without it, so
+             * a cover that will not fit is dropped rather than refused. */
+            if (!json_read_string_clipped(reader, track->cover, sizeof(track->cover))) {
+                return false;
+            }
         } else if (strcmp(key, "durationMs") == 0) {
             if (!json_read_uint(reader, &track->duration_ms)) return false;
         } else if (strcmp(key, "available") == 0) {

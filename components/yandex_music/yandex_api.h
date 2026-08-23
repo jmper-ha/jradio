@@ -26,3 +26,9 @@ esp_err_t yandex_api_get(const char *path, char *response, size_t response_size,
  * being assembled from a path. */
 esp_err_t yandex_api_get_url(const char *url, char *response, size_t response_size,
                              int *status_code);
+
+/* One GET of a picture: no token, and `out_length` rather than a terminator,
+ * because the body is bytes and not text. Used for cover art, which is served
+ * over plain HTTP from a different host. */
+esp_err_t yandex_api_get_image(const char *url, uint8_t *buffer, size_t buffer_size,
+                               size_t *out_length);

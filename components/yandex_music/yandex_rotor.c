@@ -6,6 +6,7 @@
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "album_art.h"
 #include "internet_radio.h"
 #include "yandex_api.h"
 #include "yandex_track.h"
@@ -176,6 +177,33 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track)
     return ESP_OK;
 }
 
+/* Publishes the track's cover, or takes the previous one down.
+ *
+ * Failures are silent on purpose: a missing picture is a cosmetic loss, and
+ * the track it belongs to is already playing by the time this runs. The
+ * response buffer is reused - the XML it held has been turned into the link
+ * above, so nothing else is looking at it. */
+static void yandex_rotor_publish_cover(const char *cover_uri)
+{
+    char url[YANDEX_COVER_URL_MAX + 1U];
+    if (!yandex_cover_url(cover_uri, url, sizeof(url))) {
+        album_art_clear();
+        return;
+    }
+    size_t length = 0U;
+    if (yandex_api_get_image(url, (uint8_t *)s_rotor.response, YANDEX_ROTOR_RESPONSE_SIZE,
+                             &length) != ESP_OK ||
+        length == 0U) {
+        album_art_clear();
+        return;
+    }
+    /* Identical bytes are free: album_art keeps a checksum, so an album whose
+     * tracks share one picture does not blank the tile on every change. */
+    if (!album_art_set_image((const uint8_t *)s_rotor.response, length)) {
+        ESP_LOGW(TAG, "cover did not decode (%u bytes)", (unsigned int)length);
+    }
+}
+
 esp_err_t yandex_rotor_last_error(void)
 {
     return s_rotor.last_error;
@@ -187,6 +215,9 @@ const char *yandex_rotor_next_url(char *title, size_t title_size)
     if (yandex_rotor_next(s_rotor.url, YANDEX_LINK_URL_MAX + 1U, &track) != ESP_OK) {
         return NULL;
     }
+    /* After the link, never before it: the picture is worth about 150 ms and
+     * the sound is what the caller is waiting for. */
+    yandex_rotor_publish_cover(track.cover);
     if (title != NULL && title_size > 0U) {
         /* "Performer - Title", the shape an ICY stream announces and the shape
          * every screen in this firmware already lays out. The version is part

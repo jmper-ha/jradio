@@ -195,6 +195,10 @@ run_test yandex_link tests/test_yandex_link.c \
     components/yandex_music/yandex_link.c \
     components/yandex_music/yandex_md5.c \
     components/yandex_music/yandex_json_reader.c
+run_test yandex_cover tests/test_yandex_cover.c \
+    components/yandex_music/yandex_link.c \
+    components/yandex_music/yandex_md5.c \
+    components/yandex_music/yandex_json_reader.c
 run_test yandex_auth_flow tests/test_yandex_auth_flow.c \
     components/yandex_music/yandex_auth_flow.c
 run_test yandex_auth_json -I"${cjson_include}" tests/test_yandex_auth_json.c \

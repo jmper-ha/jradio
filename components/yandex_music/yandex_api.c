@@ -23,13 +23,15 @@
 static const char *TAG = "yandex_api";
 
 static esp_err_t yandex_api_request(const char *url, bool with_token, char *response,
-                                    size_t response_size, int *status_code)
+                                    size_t response_size, int *status_code,
+                                    size_t *out_length)
 {
     if (url == NULL || response == NULL || response_size == 0U || status_code == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
     response[0] = '\0';
     *status_code = 0;
+    if (out_length != NULL) *out_length = 0U;
 
     char token[YANDEX_AUTH_TOKEN_MAX + 1];
     if (with_token && !yandex_auth_copy_token(token, sizeof(token))) {
@@ -76,6 +78,7 @@ static esp_err_t yandex_api_request(const char *url, bool with_token, char *resp
         if (read < 0) {
             err = ESP_FAIL;
         } else {
+            if (out_length != NULL) *out_length = (size_t)read;
             response[read] = '\0';
             /* A body that exactly fills the buffer is almost certainly cut
              * short, and half a JSON answer parses as nothing useful. Say so
@@ -100,11 +103,29 @@ esp_err_t yandex_api_get(const char *path, char *response, size_t response_size,
     char url[YANDEX_API_URL_MAX];
     const int length = snprintf(url, sizeof(url), "https://" YANDEX_API_HOST "%s", path);
     if (length < 0 || (size_t)length >= sizeof(url)) return ESP_ERR_INVALID_ARG;
-    return yandex_api_request(url, true, response, response_size, status_code);
+    return yandex_api_request(url, true, response, response_size, status_code, NULL);
 }
 
 esp_err_t yandex_api_get_url(const char *url, char *response, size_t response_size,
                              int *status_code)
 {
-    return yandex_api_request(url, false, response, response_size, status_code);
+    return yandex_api_request(url, false, response, response_size, status_code, NULL);
+}
+
+esp_err_t yandex_api_get_image(const char *url, uint8_t *buffer, size_t buffer_size,
+                               size_t *out_length)
+{
+    if (out_length == NULL) return ESP_ERR_INVALID_ARG;
+    /* One byte is kept back for the terminator the shared helper writes. It is
+     * meaningless for a picture, but writing it past the end would not be. */
+    if (buffer_size < 2U) return ESP_ERR_INVALID_ARG;
+    int status = 0;
+    const esp_err_t err = yandex_api_request(url, false, (char *)buffer, buffer_size, &status,
+                                             out_length);
+    if (err != ESP_OK) return err;
+    if (status != 200) {
+        *out_length = 0U;
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }

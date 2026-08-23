@@ -22,6 +22,9 @@
 #define YANDEX_TRACK_VERSION_MAX 63U
 /* All performers joined with ", ", the way the track is credited. */
 #define YANDEX_TRACK_ARTIST_MAX 127U
+/* The cover as the answer gives it: a host and path with "%%" where a size
+ * belongs, about 70 characters. */
+#define YANDEX_TRACK_COVER_MAX 127U
 /* Five is what the rotor returns; the extra room means a larger batch is
  * carried rather than rejected. */
 #define YANDEX_TRACK_BATCH_MAX 8U
@@ -31,6 +34,7 @@ typedef struct {
     char title[YANDEX_TRACK_TITLE_MAX + 1U];
     char version[YANDEX_TRACK_VERSION_MAX + 1U];
     char artist[YANDEX_TRACK_ARTIST_MAX + 1U];
+    char cover[YANDEX_TRACK_COVER_MAX + 1U];
     uint32_t duration_ms;
     bool liked;
 } yandex_track_t;

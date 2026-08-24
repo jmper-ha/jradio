@@ -11,10 +11,10 @@
  *
  * The rotor hands out a short batch at a time - five tracks, measured - and
  * the chain moves on by asking again with ?queue=<the track just played>.
- * Nothing else is needed to advance it: the feedback endpoint that would tell
- * Yandex what was listened to is deliberately not used, so the station never
- * learns from this device (and the dashboard's recommendations are shaped by
- * the user's other players only).
+ * That alone is enough to advance it within one session, but it tells Yandex
+ * nothing: what was heard, skipped or played to the end is reported separately
+ * through yandex_feedback, which is what stops a station opened tomorrow from
+ * beginning where it began today.
  *
  * Every call here blocks and performs a TLS handshake, so all of them belong
  * on a task with room for one - and none of them may run on the HTTP server
@@ -22,8 +22,11 @@
 
 /* Begins a chain. Allocates the response buffer, so it has a matching stop
  * even if no track is ever fetched. Starting a chain that is already running
- * on the same station keeps its position; a different station resets it. */
-esp_err_t yandex_rotor_start(const char *station_id);
+ * on the same station keeps its position; a different station resets it.
+ *
+ * `from` is the station's idForFrom, reported to the rotor as the place the
+ * listening started; NULL or empty is accepted, and so it is by the API. */
+esp_err_t yandex_rotor_start(const char *station_id, const char *from);
 
 /* Releases the buffer. Safe to call when nothing was started. */
 void yandex_rotor_stop(void);
@@ -49,6 +52,16 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track);
  * internet_radio_set_track_source() rather than called directly, so that the
  * audio path keeps knowing nothing about Yandex. */
 const char *yandex_rotor_next_url(char *title, size_t title_size);
+
+/* Records that the listener asked for the next track rather than letting this
+ * one finish, so that the track being left is reported as a skip. Consumed by
+ * the next track change; harmless when nothing is playing.
+ *
+ * Called by player_control rather than deduced from how much was played: a
+ * short play is also what a failed stream looks like, and telling the rotor
+ * "the listener rejected this" when the network dropped would teach it the
+ * wrong thing. */
+void yandex_rotor_note_skip(void);
 
 /* Why the last attempt failed, for the message the user sees.
  * ESP_ERR_NOT_SUPPORTED means the account has no active subscription. */

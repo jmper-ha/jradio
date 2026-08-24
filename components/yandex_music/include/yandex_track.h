@@ -28,6 +28,12 @@
 /* Five is what the rotor returns; the extra room means a larger batch is
  * carried rather than rejected. */
 #define YANDEX_TRACK_BATCH_MAX 8U
+/* The batchId the rotor stamps on the answer, measured at 42 characters
+ * ("1787591264830687-16297747482082378090.p6O1"). It is handed back to the
+ * feedback endpoint so an event is attributed to the batch it belongs to; the
+ * API accepts feedback without it, so a batch id that does not fit is dropped
+ * rather than allowed to cost the tracks. */
+#define YANDEX_TRACK_BATCH_ID_MAX 63U
 
 typedef struct {
     char id[YANDEX_TRACK_ID_MAX + 1U];
@@ -41,6 +47,7 @@ typedef struct {
 
 typedef struct {
     uint8_t count;
+    char batch_id[YANDEX_TRACK_BATCH_ID_MAX + 1U];
     yandex_track_t tracks[YANDEX_TRACK_BATCH_MAX];
 } yandex_track_batch_t;
 

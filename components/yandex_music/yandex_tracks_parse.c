@@ -101,6 +101,15 @@ bool yandex_tracks_parse_batch(const char *json, yandex_track_batch_t *batch)
     if (json_enter_object_key(&probe, "result")) {
         reader = probe;
     }
+    /* Read before descending into the sequence, from a copy: the reader never
+     * rewinds, and batchId sits beside "sequence" rather than inside it. Too
+     * long to fit is not an error - the feedback endpoint accepts events
+     * without a batch id, so the field is simply left empty. */
+    json_reader_t batch_id = reader;
+    if (json_enter_object_key(&batch_id, "batchId")) {
+        (void)json_read_string(&batch_id, batch->batch_id, sizeof(batch->batch_id));
+    }
+
     if (!json_enter_object_key(&reader, "sequence")) return false;
     if (!json_accept(&reader, '[')) return false;
     json_skip_whitespace(&reader);

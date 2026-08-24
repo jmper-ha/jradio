@@ -118,9 +118,13 @@ same list the phone app shows.
 button in the web interface). There is no previous-track button - a station
 only moves forward, and there is no going back to a track already played.
 
-The device does not tell Yandex what you listened to or skipped. That does not
-affect the music, but it means the device does not shape your recommendations
-either - those follow only what you play in other apps.
+**The device tells the station what you listened to.** What you put on, what
+played to the end, what you skipped - the same events the phone app sends.
+Without them the rotor never learns that a song has already been heard, and a
+station opened tomorrow starts where it started today; so this is not
+decoration, it is what stopped tracks from repeating. The reports go out on
+their own task a few seconds late, deliberately clear of the track change, so
+they do not lengthen the gap between songs.
 
 **If you do not want it.** Settings > General has a "Yandex Music" switch.
 Turned off, the source disappears from the home screen and the device stops

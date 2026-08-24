@@ -20,6 +20,18 @@
 esp_err_t yandex_api_get(const char *path, char *response, size_t response_size,
                          int *status_code);
 
+/* One POST of a JSON body against the API host, with the same headers.
+ *
+ * JSON and not a form on purpose: the rotor's feedback endpoint - the only
+ * caller - answers a form-encoded body with HTTP 400 "condition is not met"
+ * no matter what the fields say. Measured 2026-08-24, and it is the reason the
+ * usual Python library's radio example cannot work either.
+ *
+ * `response` receives the body whatever the status, for the same reason as
+ * above: the API explains a refusal in JSON. */
+esp_err_t yandex_api_post_json(const char *path, const char *body, char *response,
+                               size_t response_size, int *status_code);
+
 /* The same, for an absolute URL the API itself handed out - a track's
  * downloadInfoUrl. No token is attached: that URL carries its own signature,
  * and it is over a kilobyte long, which is why it is passed whole instead of

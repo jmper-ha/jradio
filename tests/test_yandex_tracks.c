@@ -79,6 +79,24 @@ static void test_the_envelope_is_optional(void)
     assert(strcmp(batch.tracks[0].artist, "B") == 0);
 }
 
+static void test_the_batch_id_comes_out_with_the_tracks(void)
+{
+    /* The feedback endpoint takes it as ?batch-id=, so it has to survive the
+     * walk into "sequence" - which the reader cannot rewind out of, which is
+     * why it is read from a copy before the descent. */
+    yandex_track_batch_t batch;
+    assert(yandex_tracks_parse_batch(BATCH, &batch));
+    assert(strcmp(batch.batch_id, "1787493923927354-179.KybK") == 0);
+
+    /* Optional, and the answer is still perfectly playable without it: the API
+     * accepts feedback with no batch id at all. */
+    assert(yandex_tracks_parse_batch(
+        "{\"sequence\":[{\"track\":{\"id\":\"1\",\"title\":\"A\",\"available\":true,"
+        "\"durationMs\":1000,\"artists\":[{\"name\":\"B\"}]}}]}",
+        &batch));
+    assert(batch.batch_id[0] == '\0');
+}
+
 static void test_an_unreadable_track_does_not_cost_the_others(void)
 {
     yandex_track_batch_t batch;
@@ -160,6 +178,7 @@ int main(void)
 {
     test_the_real_shape_yields_the_playable_tracks();
     test_the_envelope_is_optional();
+    test_the_batch_id_comes_out_with_the_tracks();
     test_an_unreadable_track_does_not_cost_the_others();
     test_a_long_title_is_clipped_on_a_character_boundary();
     test_a_batch_with_nothing_playable_fails();

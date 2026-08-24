@@ -423,16 +423,28 @@ def main():
     if not track_id:
         raise SystemExit("Станция не вернула ни одного трека - дальше проверять нечего.")
 
-    # Measured 2026-08-23: the rotor accepts feedback ONLY as a JSON body.
-    # Form-encoded - what the Python library sends - is rejected with
-    # "condition is not met" no matter what the fields say.
+    # The contract the firmware implements, measured 2026-08-23 and re-measured
+    # 2026-08-24 with every field probed one at a time:
+    #   - the body must be JSON. Form-encoded - what the Python library sends -
+    #     is refused with HTTP 400 "condition is not met" whatever the fields say.
+    #   - `timestamp` is required (400 without it); an int is accepted, and so
+    #     is 0, so a device whose clock has not synchronised can still report.
+    #   - `trackId` is required for everything except radioStarted.
+    #   - `totalPlayedSeconds` is required for trackFinished and skip.
+    #   - `from` on radioStarted and the batch-id query are both OPTIONAL.
+    #   - an unknown `type` is refused with HTTP 400.
+    # Each POST measured 90-240 ms.
     if args.feedback:
         say()
+        now = time.time()
+        duration = int((first.get("durationMs") or 0) / 1000)
         for name, body in (
-            ("radioStarted", {"type": "radioStarted", "timestamp": time.time(),
+            ("radioStarted", {"type": "radioStarted", "timestamp": now,
                               "from": id_for_from or args.station.replace(":", "-")}),
-            ("trackStarted", {"type": "trackStarted", "timestamp": time.time(),
+            ("trackStarted", {"type": "trackStarted", "timestamp": now,
                               "trackId": track_id}),
+            ("trackFinished", {"type": "trackFinished", "timestamp": now,
+                               "trackId": track_id, "totalPlayedSeconds": duration}),
         ):
             try:
                 api("POST", f"/rotor/station/{args.station}/feedback", token=token,
@@ -441,10 +453,15 @@ def main():
                 say(f"  {name}: принят")
             except HttpError as error:
                 say(f"  {name}: ОТКЛОНЁН - {error.body[:200]}")
+        # `skip` is deliberately not sent from here: it tells the station the
+        # track was rejected, and this probe never played it.
+        say("  skip: не шлём - прошивка отправляет его, когда трек правда пропустили.")
     else:
         say()
         say("  Фидбек не отправляется (включается флагом --feedback).")
-        say("  Цепочка всё равно сдвигается параметром queue=<id предыдущего трека>.")
+        say("  Цепочка всё равно сдвигается параметром queue=<id предыдущего трека>,")
+        say("  но без фидбека ротор не узнаёт, что треки прослушаны - и следующая")
+        say("  сессия начинается там же, где началась эта.")
 
     step("5. Прямая ссылка на трек (три запроса + MD5, как в прошивке)")
     info, info_bytes = api("GET", f"/tracks/{track_id}/download-info", token=token,

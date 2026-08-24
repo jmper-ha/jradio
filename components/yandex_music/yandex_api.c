@@ -22,8 +22,8 @@
 
 static const char *TAG = "yandex_api";
 
-static esp_err_t yandex_api_request(const char *url, bool with_token, char *response,
-                                    size_t response_size, int *status_code,
+static esp_err_t yandex_api_request(const char *url, bool with_token, const char *body,
+                                    char *response, size_t response_size, int *status_code,
                                     size_t *out_length)
 {
     if (url == NULL || response == NULL || response_size == 0U || status_code == NULL) {
@@ -40,7 +40,7 @@ static esp_err_t yandex_api_request(const char *url, bool with_token, char *resp
 
     const esp_http_client_config_t config = {
         .url = url,
-        .method = HTTP_METHOD_GET,
+        .method = body != NULL ? HTTP_METHOD_POST : HTTP_METHOD_GET,
         .buffer_size_tx = YANDEX_API_TX_BUFFER_SIZE,
         .timeout_ms = YANDEX_API_TIMEOUT_MS,
         .crt_bundle_attach = esp_crt_bundle_attach,
@@ -65,8 +65,16 @@ static esp_err_t yandex_api_request(const char *url, bool with_token, char *resp
         err = esp_http_client_set_header(client, "X-Yandex-Music-Client",
                                          YANDEX_API_CLIENT_HEADER);
     }
+    const size_t body_length = body != NULL ? strlen(body) : 0U;
+    if (err == ESP_OK && body != NULL) {
+        err = esp_http_client_set_header(client, "Content-Type", "application/json");
+    }
     if (err == ESP_OK) {
-        err = esp_http_client_open(client, 0);
+        err = esp_http_client_open(client, (int)body_length);
+    }
+    if (err == ESP_OK && body_length > 0U &&
+        esp_http_client_write(client, body, body_length) != (int)body_length) {
+        err = ESP_FAIL;
     }
     if (err == ESP_OK && esp_http_client_fetch_headers(client) < 0) {
         err = ESP_FAIL;
@@ -84,13 +92,14 @@ static esp_err_t yandex_api_request(const char *url, bool with_token, char *resp
              * short, and half a JSON answer parses as nothing useful. Say so
              * here rather than letting the parser report a malformed answer. */
             if ((size_t)read == response_size - 1U) {
-                ESP_LOGW(TAG, "GET %.64s filled the whole %u-byte buffer; likely truncated",
-                         url, (unsigned int)response_size);
+                ESP_LOGW(TAG, "%s %.64s filled the whole %u-byte buffer; likely truncated",
+                         body != NULL ? "POST" : "GET", url, (unsigned int)response_size);
             }
         }
     }
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "GET %.64s failed: %s", url, esp_err_to_name(err));
+        ESP_LOGW(TAG, "%s %.64s failed: %s", body != NULL ? "POST" : "GET", url,
+                 esp_err_to_name(err));
     }
     esp_http_client_cleanup(client);
     return err;
@@ -103,13 +112,23 @@ esp_err_t yandex_api_get(const char *path, char *response, size_t response_size,
     char url[YANDEX_API_URL_MAX];
     const int length = snprintf(url, sizeof(url), "https://" YANDEX_API_HOST "%s", path);
     if (length < 0 || (size_t)length >= sizeof(url)) return ESP_ERR_INVALID_ARG;
-    return yandex_api_request(url, true, response, response_size, status_code, NULL);
+    return yandex_api_request(url, true, NULL, response, response_size, status_code, NULL);
+}
+
+esp_err_t yandex_api_post_json(const char *path, const char *body, char *response,
+                               size_t response_size, int *status_code)
+{
+    if (path == NULL || body == NULL) return ESP_ERR_INVALID_ARG;
+    char url[YANDEX_API_URL_MAX];
+    const int length = snprintf(url, sizeof(url), "https://" YANDEX_API_HOST "%s", path);
+    if (length < 0 || (size_t)length >= sizeof(url)) return ESP_ERR_INVALID_ARG;
+    return yandex_api_request(url, true, body, response, response_size, status_code, NULL);
 }
 
 esp_err_t yandex_api_get_url(const char *url, char *response, size_t response_size,
                              int *status_code)
 {
-    return yandex_api_request(url, false, response, response_size, status_code, NULL);
+    return yandex_api_request(url, false, NULL, response, response_size, status_code, NULL);
 }
 
 esp_err_t yandex_api_get_image(const char *url, uint8_t *buffer, size_t buffer_size,
@@ -120,8 +139,8 @@ esp_err_t yandex_api_get_image(const char *url, uint8_t *buffer, size_t buffer_s
      * meaningless for a picture, but writing it past the end would not be. */
     if (buffer_size < 2U) return ESP_ERR_INVALID_ARG;
     int status = 0;
-    const esp_err_t err = yandex_api_request(url, false, (char *)buffer, buffer_size, &status,
-                                             out_length);
+    const esp_err_t err = yandex_api_request(url, false, NULL, (char *)buffer, buffer_size,
+                                            &status, out_length);
     if (err != ESP_OK) return err;
     if (status != 200) {
         *out_length = 0U;

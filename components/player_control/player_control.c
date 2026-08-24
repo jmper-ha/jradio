@@ -263,7 +263,9 @@ static bool player_yandex_start(size_t index)
         ESP_LOGW(TAG, "yandex station %u is gone from the list", (unsigned int)index);
         return false;
     }
-    if (yandex_rotor_start(station.id) != ESP_OK) {
+    /* idForFrom travels with the station from the dashboard precisely so this
+     * call does not have to fetch it again to name where the listening began. */
+    if (yandex_rotor_start(station.id, station.from) != ESP_OK) {
         ESP_LOGE(TAG, "yandex rotor did not start for %s", station.id);
         return false;
     }
@@ -459,6 +461,12 @@ static void player_control_task(void *arg)
             (void)file_player_seek(command.position_seconds);
             break;
         case PLAYER_OPERATION_NEXT_TRACK:
+            /* Told to the rotor before the skip is asked for: the decode task
+             * acts on it almost at once, and a track left early has to be
+             * reported as rejected rather than as heard to the end. */
+            if (snapshot.active_source == AUDIO_SOURCE_YANDEX) {
+                yandex_rotor_note_skip();
+            }
             if (!internet_radio_skip_track()) {
                 ESP_LOGW(TAG, "nothing to skip");
             }

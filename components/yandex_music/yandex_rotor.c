@@ -6,9 +6,11 @@
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "album_art.h"
 #include "internet_radio.h"
 #include "yandex_api.h"
+#include "yandex_feedback.h"
 #include "yandex_track.h"
 
 static const char *TAG = "yandex_rotor";
@@ -21,12 +23,25 @@ static const char *TAG = "yandex_rotor";
 
 typedef struct {
     char station[YANDEX_STATION_ID_MAX + 1U];
+    /* The station's idForFrom, kept only to name the place the listening
+     * started when the chain is reported as begun. */
+    char from[YANDEX_STATION_FROM_MAX + 1U];
     /* The track the next request has to name to move the chain on. Empty on
      * the first request of a station, which is what asks for its opening
      * batch. */
     char queue_from[YANDEX_TRACK_ID_MAX + 1U];
     yandex_track_batch_t batch;
     uint8_t next_index;
+    /* What is on the air, so that leaving it can be reported. Cleared as soon
+     * as the report is filed, which is what keeps a retried track change from
+     * reporting the same play twice. */
+    char playing_id[YANDEX_TRACK_ID_MAX + 1U];
+    char playing_batch[YANDEX_TRACK_BATCH_ID_MAX + 1U];
+    uint32_t playing_duration_ms;
+    int64_t playing_since_us;
+    bool playing;
+    /* Set by player_control when the listener pressed for the next track. */
+    bool skipped;
     /* One allocation carved into three: the JSON body, the downloadInfoUrl the
      * chosen variant points at, and the signed link handed to the audio path.
      * Carved rather than three static arrays because the two URLs are over a
@@ -51,10 +66,56 @@ static char *yandex_rotor_alloc(size_t size)
     return buffer;
 }
 
-esp_err_t yandex_rotor_start(const char *station_id)
+/* Fills in the parts of an event that come from the station rather than from
+ * the track, so that every report names where it came from. */
+static void yandex_rotor_event_init(yandex_feedback_event_t *event,
+                                    yandex_feedback_kind_t kind)
+{
+    *event = (yandex_feedback_event_t){0};
+    event->kind = kind;
+    snprintf(event->station, sizeof(event->station), "%s", s_rotor.station);
+}
+
+/* Reports leaving whatever is on the air, as a skip when the listener asked
+ * for the next track and as a finish otherwise - including a stop part-way
+ * through, which is still a track that was listened to for that long.
+ *
+ * Does nothing when nothing is playing, which is what makes it safe to call
+ * from both the track change and the stop. */
+static void yandex_rotor_report_end(void)
+{
+    if (!s_rotor.playing) return;
+    s_rotor.playing = false;
+
+    yandex_feedback_event_t event;
+    yandex_rotor_event_init(&event, s_rotor.skipped ? YANDEX_FEEDBACK_SKIP
+                                                    : YANDEX_FEEDBACK_TRACK_FINISHED);
+    s_rotor.skipped = false;
+    snprintf(event.track_id, sizeof(event.track_id), "%s", s_rotor.playing_id);
+    snprintf(event.batch_id, sizeof(event.batch_id), "%s", s_rotor.playing_batch);
+
+    const int64_t elapsed_us = esp_timer_get_time() - s_rotor.playing_since_us;
+    uint32_t played_ms = elapsed_us > 0 ? (uint32_t)(elapsed_us / 1000) : 0U;
+    /* Clamped to the track: the clock starts when the link is asked for, which
+     * is a second or two before the first sample is heard, and a pause stops
+     * the music without stopping the clock. Reporting more seconds than the
+     * track has is the one answer that is certainly wrong. */
+    if (s_rotor.playing_duration_ms != 0U && played_ms > s_rotor.playing_duration_ms) {
+        played_ms = s_rotor.playing_duration_ms;
+    }
+    event.played_ms = played_ms;
+    (void)yandex_feedback_post(&event);
+}
+
+esp_err_t yandex_rotor_start(const char *station_id, const char *from)
 {
     if (station_id == NULL || station_id[0] == '\0') return ESP_ERR_INVALID_ARG;
     if (strlen(station_id) > YANDEX_STATION_ID_MAX) return ESP_ERR_INVALID_ARG;
+
+    /* Before the station is replaced, or the track just left would be reported
+     * against the station taking over from it - and starting anything at all
+     * means whatever was on the air is over, same station or not. */
+    yandex_rotor_report_end();
 
     if (strcmp(s_rotor.station, station_id) != 0) {
         s_rotor.batch.count = 0U;
@@ -62,6 +123,7 @@ esp_err_t yandex_rotor_start(const char *station_id)
         s_rotor.queue_from[0] = '\0';
         strcpy(s_rotor.station, station_id);
     }
+    snprintf(s_rotor.from, sizeof(s_rotor.from), "%s", from != NULL ? from : "");
     if (s_rotor.scratch == NULL) {
         const size_t url_room = YANDEX_LINK_URL_MAX + 1U;
         s_rotor.scratch = yandex_rotor_alloc(YANDEX_ROTOR_RESPONSE_SIZE + 2U * url_room);
@@ -71,11 +133,28 @@ esp_err_t yandex_rotor_start(const char *station_id)
         s_rotor.url = s_rotor.info_url + url_room;
     }
     s_rotor.last_error = ESP_OK;
+
+    /* Sent on every start rather than only on a new station: this is the event
+     * that says the listener chose to put this station on, and choosing it
+     * again tomorrow is exactly the signal it exists to carry. */
+    yandex_feedback_event_t event;
+    yandex_rotor_event_init(&event, YANDEX_FEEDBACK_RADIO_STARTED);
+    snprintf(event.from, sizeof(event.from), "%s", s_rotor.from);
+    (void)yandex_feedback_post(&event);
     return ESP_OK;
+}
+
+void yandex_rotor_note_skip(void)
+{
+    s_rotor.skipped = true;
 }
 
 void yandex_rotor_stop(void)
 {
+    /* Before the buffer goes: a source switched off half-way through a track
+     * still listened to that much of it, and saying so is the difference
+     * between a heard track and one Yandex may offer again tomorrow. */
+    yandex_rotor_report_end();
     free(s_rotor.scratch);
     s_rotor.scratch = NULL;
     s_rotor.response = NULL;
@@ -157,6 +236,10 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track)
     if (s_rotor.scratch == NULL) return ESP_ERR_INVALID_STATE;
     url[0] = '\0';
 
+    /* First, and before the batch can be replaced: the track being left belongs
+     * to the batch that is still current here. */
+    yandex_rotor_report_end();
+
     if (s_rotor.next_index >= s_rotor.batch.count) {
         const esp_err_t err = yandex_rotor_refill();
         s_rotor.last_error = err;
@@ -173,6 +256,23 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track)
     if (err != ESP_OK) return err;
 
     *track = candidate;
+
+    /* Only once the link is in hand: a track that could not be resolved was
+     * never played, and reporting it as started would teach the rotor that it
+     * was heard. */
+    s_rotor.playing = true;
+    s_rotor.playing_since_us = esp_timer_get_time();
+    s_rotor.playing_duration_ms = candidate.duration_ms;
+    snprintf(s_rotor.playing_id, sizeof(s_rotor.playing_id), "%s", candidate.id);
+    snprintf(s_rotor.playing_batch, sizeof(s_rotor.playing_batch), "%s",
+             s_rotor.batch.batch_id);
+
+    yandex_feedback_event_t event;
+    yandex_rotor_event_init(&event, YANDEX_FEEDBACK_TRACK_STARTED);
+    snprintf(event.track_id, sizeof(event.track_id), "%s", candidate.id);
+    snprintf(event.batch_id, sizeof(event.batch_id), "%s", s_rotor.batch.batch_id);
+    (void)yandex_feedback_post(&event);
+
     ESP_LOGI(TAG, "next track %s (%u ms)", candidate.id, (unsigned int)candidate.duration_ms);
     return ESP_OK;
 }

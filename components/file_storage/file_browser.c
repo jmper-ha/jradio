@@ -165,6 +165,20 @@ size_t file_browser_dir_next_file(const file_browser_dir_t *dir, size_t from)
     return dir->count;
 }
 
+size_t file_browser_dir_previous_file(const file_browser_dir_t *dir, size_t before)
+{
+    if (dir == NULL) return 0U;
+    /* "None" is the entry count, the same answer next_file gives when it runs
+     * out - so a caller that stops on "not a valid index" stops at either end
+     * of the directory without knowing which end it hit. */
+    size_t index = before < dir->count ? before : dir->count;
+    while (index > 0U) {
+        --index;
+        if (dir->entries[index].kind == FILE_BROWSER_ENTRY_FILE) return index;
+    }
+    return dir->count;
+}
+
 /* A path is a mount root when it names a volume and nothing inside it:
  * "/usb0" and "/sd0" are roots, "/usb0/Music" is not.
  *

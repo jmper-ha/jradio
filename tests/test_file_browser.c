@@ -147,6 +147,33 @@ static void test_next_file(void)
     assert(file_browser_dir_next_file(&dir, 0U) == 1U);
 }
 
+static void test_previous_file(void)
+{
+    file_browser_entry_t storage[8];
+    file_browser_dir_t dir;
+    file_browser_dir_init(&dir, storage, 8U, "/usb0");
+    assert(file_browser_dir_add(&dir, "Album", FILE_BROWSER_ENTRY_DIRECTORY));
+    assert(file_browser_dir_add(&dir, "Second", FILE_BROWSER_ENTRY_DIRECTORY));
+    assert(file_browser_dir_add(&dir, "a.mp3", FILE_BROWSER_ENTRY_FILE));
+    assert(file_browser_dir_add(&dir, "b.mp3", FILE_BROWSER_ENTRY_FILE));
+    file_browser_dir_sort(&dir);
+
+    /* Strictly before the row asked about, so the file that is playing is
+     * never handed back as its own predecessor. */
+    assert(file_browser_dir_previous_file(&dir, 3U) == 2U);
+    /* At the first file there is nothing before it but directories, and "none"
+     * is the entry count - the same answer next_file gives at the other end,
+     * so the two read alike. */
+    assert(file_browser_dir_previous_file(&dir, 2U) == 4U);
+    assert(file_browser_dir_previous_file(&dir, 0U) == 4U);
+    /* A row past the end still answers about the last file there is. */
+    assert(file_browser_dir_previous_file(&dir, 99U) == 3U);
+
+    file_browser_dir_init(&dir, storage, 8U, "/usb0");
+    assert(file_browser_dir_add(&dir, "Only", FILE_BROWSER_ENTRY_DIRECTORY));
+    assert(file_browser_dir_previous_file(&dir, 1U) == 1U);
+}
+
 static void test_paths(void)
 {
     char path[FILE_BROWSER_PATH_MAX_LEN];
@@ -236,6 +263,7 @@ int main(void)
     test_dropped_entries_are_counted();
     test_sort_order();
     test_next_file();
+    test_previous_file();
     test_paths();
     test_finding_an_entry_by_name();
     printf("file_browser tests passed\n");

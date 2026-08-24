@@ -18,14 +18,14 @@ output.
 | **Internet radio** | works | Your own station list, the track name straight off the air, reconnection when a stream drops |
 | **Music from a USB drive** | works | Walk through folders, tags, cover art, scrubbing, moves on to the next track |
 | **Music from an SD card** | works | The same; the card is recognised when its source is entered |
-| **Yandex Music** | works | "My wave" and your account's stations, album art, a next-track button. Can be taken off the home screen |
+| **Yandex Music** | works | "My wave" and your account's stations, album art, next track and the like mark. Can be taken off the home screen |
 | **Web interface** | works | Player, station-list editor, file browsing, Wi-Fi, linking Yandex Music. No volume and no scrubbing on the web |
 | **Clock** | works | Time from the internet, on every screen |
 | **Volume** | works | On the knob, remembered across restarts |
 | **Autoplay** | works | Starts whatever was playing when the power went off |
 | **Cover art** | works | From the file's tag, from a `cover.jpg` beside the music, from Yandex |
 | **Interface language** | partly | The switch is there, but it only changes the labels on the settings screen itself |
-| **Likes in Yandex Music** | not built | There are no like and dislike buttons yet |
+| **Likes in Yandex Music** | partly | "Like" is there - on F3 and in the web interface; "dislike" is not |
 | **Yandex Music categories** | not built | Only the account's own stations are shown; there is no general catalogue of genres, moods and epochs |
 | **Bluetooth, FM, DLNA** | not built | Their menu entries are there, but they answer "not available yet" |
 
@@ -69,7 +69,8 @@ screen - that is the only place it can be read.
 | Triple press | Scrub: the knob picks a position, a press applies it |
 | Long press | Home screen; playback stops |
 | F2 | Back |
-| F3 | Play and pause |
+| F3 | Previous track or station |
+| F4 | Next track or station |
 
 A single press lands after a short delay - before that it cannot be told from
 the beginning of a double press.
@@ -114,9 +115,19 @@ the device - it is never transmitted and never stored there.
 picked for your taste. The list is personal, Yandex composes it, and it is the
 same list the phone app shows.
 
-**What you can do.** Play a station, pause it, skip to the next track (with the
-button in the web interface). There is no previous-track button - a station
-only moves forward, and there is no going back to a track already played.
+**What you can do.** Play a station, pause it, skip to the next track - with F4
+on the device or with the button in the web interface. There is no
+previous-track button: a station only moves forward, and there is no going back
+to a track already played, which is why F3 does something else here - it puts
+the "like" mark on the playing track and takes it off again.
+
+**The like mark.** The same one the app has: the track joins your liked tracks
+or leaves them. On the player screen a heart beside the volume shows it -
+outline while the track is not marked, solid once it is. What you liked earlier
+comes from Yandex with the track itself, so the heart is solid for songs marked
+from the phone too. It fills in only after the service has answered, never on
+the press alone: otherwise the screen would show something the account does not
+have. The same heart is in the web interface.
 
 **The device tells the station what you listened to.** What you put on, what
 played to the end, what you skipped - the same events the phone app sends.
@@ -135,8 +146,7 @@ To leave it out of the firmware altogether, use the `YANDEX_MUSIC` line in
 `board_options.h`: `FEATURE_OFF` - or the line deleted - means there is neither
 the source nor the switch in Settings.
 
-An account can be unlinked with F4 on the Yandex Music screen, or from the web
-interface.
+An account can be unlinked from the web interface.
 
 ## Settings
 

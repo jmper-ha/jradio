@@ -11,6 +11,7 @@
   const trackContext = document.querySelector('#track-context');
   const playToggle = document.querySelector('#play-toggle');
   const nextTrack = document.querySelector('#next-track');
+  const likeTrack = document.querySelector('#like-track');
   const streamMeta = document.querySelector('#stream-meta');
   const playerError = document.querySelector('#player-error');
   const commandStatus = document.querySelector('#command-status');
@@ -97,6 +98,12 @@
     };
     if (Number.isInteger(player.wifi_rssi_dbm)) {
       normalized.wifi_rssi_dbm = player.wifi_rssi_dbm;
+    }
+    /* Absent unless the track belongs to an account's library, which is the
+       device's way of saying there is no mark to draw - so it stays absent
+       here rather than becoming a false "not liked". */
+    if (typeof player.liked === 'boolean') {
+      normalized.liked = player.liked;
     }
     return normalized;
   }
@@ -187,6 +194,15 @@
     const skippable = state.activeSource === 'yandex';
     nextTrack.hidden = !skippable;
     nextTrack.disabled = !skippable || (player.state !== 'playing' && player.state !== 'paused');
+
+    /* The mark is shown only where the device sends one, for the same reason:
+       a station and a file are in nobody's library, and an empty heart there
+       would offer a button that can only be refused. */
+    const likeable = typeof player.liked === 'boolean';
+    likeTrack.hidden = !likeable;
+    likeTrack.disabled = !likeable || (player.state !== 'playing' && player.state !== 'paused');
+    likeTrack.classList.toggle('is-liked', likeable && player.liked);
+    likeTrack.setAttribute('aria-pressed', String(likeable && player.liked === true));
 
     playToggle.classList.toggle('is-playing', playing);
     playToggle.setAttribute('aria-label', playing ? 'Пауза' : 'Воспроизвести');
@@ -588,6 +604,7 @@
 
   playToggle.addEventListener('click', () => sendCommand('player.toggle'));
   nextTrack.addEventListener('click', () => sendCommand('player.next'));
+  likeTrack.addEventListener('click', () => sendCommand('player.like'));
   renderSources();
   updatePlaylistLink();
   renderPlayer();

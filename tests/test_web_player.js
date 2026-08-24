@@ -82,11 +82,15 @@ class Element {
 const ids = [
   'socket-state', 'playlist-link', 'source-tabs', 'mode-label', 'playback-state',
   'track-title', 'track-artist', 'track-context', 'play-toggle', 'next-track',
+  'like-track',
   'stream-meta', 'player-error', 'command-status', 'media-list',
   'list-title', 'list-count', 'list-items', 'list-empty',
 ];
 const elements = Object.fromEntries(ids.map((id) => [
-  `#${id}`, new Element(id === 'play-toggle' || id === 'next-track' ? 'button' : 'div'),
+  `#${id}`,
+  new Element(id === 'play-toggle' || id === 'next-track' || id === 'like-track'
+    ? 'button'
+    : 'div'),
 ]));
 const body = new Element('body');
 body.append(...Object.values(elements));
@@ -304,23 +308,53 @@ assert.equal(elements['#playlist-link'].hidden, true);
 elements['#next-track'].emit('click');
 assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.next');
 
+/* The like mark rides on the same update, and only appears when the device
+   sends one: the frame above carried no "liked", so there is nothing to draw
+   even though the source is the rotor. */
+assert.equal(elements['#like-track'].hidden, true);
+sendEvent(second, {
+  type: 'player.update', revision: 3, active_source: 'yandex',
+  player: {state: 'playing', mode: 'ЯМузыка', artist: 'Des Rocs',
+           title: 'Never Ending Moment', context: 'Моя волна', codec: 'MP3',
+           bitrate_kbps: 320, sample_rate_hz: 44100, error: '', liked: false},
+});
+assert.equal(elements['#like-track'].hidden, false);
+assert.equal(elements['#like-track'].classList.values.has('is-liked'), false);
+assert.equal(elements['#like-track'].attributes['aria-pressed'], 'false');
+elements['#like-track'].emit('click');
+assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.like');
+
+/* The device answers with the mark it actually got, so the heart fills in only
+   once Yandex has taken it - never on the press alone. */
+sendEvent(second, {
+  type: 'player.update', revision: 4, active_source: 'yandex',
+  player: {state: 'playing', mode: 'ЯМузыка', artist: 'Des Rocs',
+           title: 'Never Ending Moment', context: 'Моя волна', codec: 'MP3',
+           bitrate_kbps: 320, sample_rate_hz: 44100, error: '', liked: true},
+});
+assert.equal(elements['#like-track'].classList.values.has('is-liked'), true);
+assert.equal(elements['#like-track'].attributes['aria-pressed'], 'true');
+
 /* Stopped, there is nothing to skip. The button stays in place rather than
    disappearing, so the controls do not move under the cursor. */
 sendEvent(second, {
-  type: 'player.update', revision: 3, active_source: 'yandex',
+  type: 'player.update', revision: 5, active_source: 'yandex',
   player: {state: 'stopped', mode: 'ЯМузыка', artist: '', title: '',
            context: 'Моя волна', codec: '', bitrate_kbps: 0,
            sample_rate_hz: 0, error: ''},
 });
 assert.equal(elements['#next-track'].hidden, false);
 assert.equal(elements['#next-track'].disabled, true);
+/* And with nothing playing there is no track to mark either. */
+assert.equal(elements['#like-track'].hidden, true);
 
 /* Back on the radio it goes away again. */
 sendEvent(second, {
-  type: 'player.update', revision: 4, active_source: 'internet_radio',
+  type: 'player.update', revision: 6, active_source: 'internet_radio',
   player: player('Радио снова'),
 });
 assert.equal(elements['#next-track'].hidden, true);
+assert.equal(elements['#like-track'].hidden, true);
 
 second.emit('close');
 assert.equal(elements['#socket-state'].textContent, 'Нет связи');

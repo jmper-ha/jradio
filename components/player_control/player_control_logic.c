@@ -90,6 +90,8 @@ bool player_snapshot_equal(const player_snapshot_t *left,
            left->sample_rate_hz == right->sample_rate_hz &&
            left->wifi_rssi_valid == right->wifi_rssi_valid &&
            left->wifi_rssi_dbm == right->wifi_rssi_dbm &&
+           left->track_likeable == right->track_likeable &&
+           left->track_liked == right->track_liked &&
            memcmp(left->error, right->error, sizeof(left->error)) == 0;
 }
 
@@ -188,6 +190,49 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
         return state->playback_state == PLAYER_PLAYBACK_PLAYING ||
                        state->playback_state == PLAYER_PLAYBACK_PAUSED
                    ? PLAYER_OPERATION_NEXT_TRACK
+                   : PLAYER_OPERATION_INVALID;
+    case PLAYER_COMMAND_PREVIOUS_ITEM:
+    case PLAYER_COMMAND_NEXT_ITEM: {
+        const bool forward = command->kind == PLAYER_COMMAND_NEXT_ITEM;
+        const player_operation_t step =
+            forward ? PLAYER_OPERATION_NEXT_ITEM : PLAYER_OPERATION_PREVIOUS_ITEM;
+        /* The two track keys move what is playing along the list it came from.
+         * With nothing playing there is no place in the list to move from, and
+         * starting something would be a different gesture than the one asked
+         * for. */
+        if (state->active_item_index == PLAYER_ITEM_NONE) return PLAYER_OPERATION_NONE;
+        if (audio_source_is_files(state->active_source)) {
+            /* Which row holds the neighbouring *file* cannot be worked out
+             * here: a directory listing holds directories too, and this
+             * function cannot see them. The ends of the directory are refused
+             * by the executor, which can. */
+            return step;
+        }
+        /* Not the rotor, even though it is a station source: its chain has no
+         * previous track and no index in any list, and its keys mean something
+         * else entirely - the next track, and the like mark. */
+        if (state->active_source != AUDIO_SOURCE_INTERNET_RADIO) {
+            return PLAYER_OPERATION_INVALID;
+        }
+        if (state->active_item_index >= state->item_count) return PLAYER_OPERATION_NONE;
+        /* Nothing wraps: at either end of the catalog the key does nothing.
+         * A list that rolls over from the last station to the first hides the
+         * fact that the end was reached. */
+        if (forward) {
+            return state->active_item_index + 1U < state->item_count ? step
+                                                                     : PLAYER_OPERATION_NONE;
+        }
+        return state->active_item_index > 0U ? step : PLAYER_OPERATION_NONE;
+    }
+    case PLAYER_COMMAND_TOGGLE_LIKE:
+        /* Only a track that belongs to an account can carry a mark, and only
+         * while one is on the air: the mark names the track, not the station
+         * that handed it out. Paused counts - the track is still the one being
+         * listened to. */
+        if (state->active_source != AUDIO_SOURCE_YANDEX) return PLAYER_OPERATION_INVALID;
+        return state->playback_state == PLAYER_PLAYBACK_PLAYING ||
+                       state->playback_state == PLAYER_PLAYBACK_PAUSED
+                   ? PLAYER_OPERATION_TOGGLE_LIKE
                    : PLAYER_OPERATION_INVALID;
     case PLAYER_COMMAND_TRACK_FINISHED:
         // Only USB has tracks that end. A radio stream that stops has failed

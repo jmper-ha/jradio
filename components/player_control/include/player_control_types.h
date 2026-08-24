@@ -77,6 +77,20 @@ typedef enum {
      * through a queue, and renumbering them would misread a command already
      * posted across a firmware update. */
     PLAYER_COMMAND_NEXT_TRACK,
+    /* The two track keys, for the sources that are a list: the station before
+     * or after the one playing, the file before or after it in the directory.
+     *
+     * Nothing wraps. At the ends of the list the keys do nothing, which is the
+     * behaviour asked for - a list that rolls over from the last station to
+     * the first hides the fact that you have reached the end of it.
+     *
+     * Appended rather than slotted in beside SELECT_ITEM, for the reason
+     * NEXT_TRACK was: these values travel through a queue. */
+    PLAYER_COMMAND_PREVIOUS_ITEM,
+    PLAYER_COMMAND_NEXT_ITEM,
+    /* Adds the playing track to the account's liked tracks, or takes it back
+     * out. Only the rotor has tracks that belong to an account. */
+    PLAYER_COMMAND_TOGGLE_LIKE,
 } player_command_kind_t;
 
 typedef struct {
@@ -117,6 +131,13 @@ typedef struct {
     uint32_t sample_rate_hz;
     bool wifi_rssi_valid;
     int8_t wifi_rssi_dbm;
+    /* Whether the playing track can be marked at all, and whether it is
+     * marked. Two fields rather than one, because "no mark" and "no such
+     * thing as a mark here" are different pictures: only a Yandex track
+     * belongs to an account's library, so for a station or a file the heart is
+     * absent rather than empty. */
+    bool track_likeable;
+    bool track_liked;
     char error[PLAYER_ERROR_MAX_LEN];
 } player_snapshot_t;
 
@@ -134,6 +155,9 @@ typedef enum {
     PLAYER_OPERATION_BROWSE_REVEAL,
     PLAYER_OPERATION_SEEK,
     PLAYER_OPERATION_NEXT_TRACK,
+    PLAYER_OPERATION_PREVIOUS_ITEM,
+    PLAYER_OPERATION_NEXT_ITEM,
+    PLAYER_OPERATION_TOGGLE_LIKE,
 } player_operation_t;
 
 player_operation_t player_control_decide(const player_snapshot_t *state,

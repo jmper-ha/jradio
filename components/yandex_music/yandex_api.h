@@ -32,6 +32,15 @@ esp_err_t yandex_api_get(const char *path, char *response, size_t response_size,
 esp_err_t yandex_api_post_json(const char *path, const char *body, char *response,
                                size_t response_size, int *status_code);
 
+/* One POST with no body at all, its arguments in the query string.
+ *
+ * Not a variant of the above for tidiness: the likes endpoints take their
+ * track id as a query parameter, and a POST with nothing but that query was
+ * measured to be accepted on 2026-08-24. A body of any kind is one more thing
+ * to get wrong for a request that needs none. */
+esp_err_t yandex_api_post(const char *path, char *response, size_t response_size,
+                          int *status_code);
+
 /* The same, for an absolute URL the API itself handed out - a track's
  * downloadInfoUrl. No token is attached: that URL carries its own signature,
  * and it is over a kilobyte long, which is why it is passed whole instead of

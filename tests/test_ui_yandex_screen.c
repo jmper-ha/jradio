@@ -54,7 +54,7 @@ static void test_the_countdown_disappears_rather_than_showing_zero(void)
     assert(view.countdown[0] == '\0');
 }
 
-static void test_a_linked_account_offers_only_to_unlink(void)
+static void test_a_linked_account_with_no_stations_offers_a_refresh(void)
 {
     const yandex_auth_status_t status = {.state = YANDEX_AUTH_AUTHORIZED};
     ui_yandex_view_t view;
@@ -62,7 +62,11 @@ static void test_a_linked_account_offers_only_to_unlink(void)
     assert(view.mode == UI_YANDEX_MODE_MESSAGE);
     assert(strcmp(view.status, "Аккаунт привязан") == 0);
     assert(!view.show_code);
-    assert(strstr(view.hint, "отвязать") != NULL);
+    /* Unlinking used to be named here, on the fourth button. That button is
+     * the next-track key now and does nothing on this screen, so the hint no
+     * longer offers a key that is not listening; the web UI unlinks. */
+    assert(strstr(view.hint, "отвязать") == NULL);
+    assert(strstr(view.hint, "обновить") != NULL);
     assert(!ui_yandex_view_is_busy(&status));
 }
 
@@ -81,7 +85,7 @@ static void test_a_linked_account_with_stations_shows_the_list(void)
     assert(strstr(view.hint, "OK") != NULL);
     assert(strstr(view.hint, "слушать") != NULL);
     assert(strstr(view.hint, "назад") != NULL);
-    assert(strstr(view.hint, "отвязать") != NULL);
+    assert(strstr(view.hint, "отвязать") == NULL);
 }
 
 static void test_the_wait_for_stations_says_what_it_is_waiting_for(void)
@@ -178,7 +182,7 @@ int main(void)
     test_a_live_code_is_shown_with_its_address_and_countdown();
     test_a_code_without_an_address_is_not_shown_at_all();
     test_the_countdown_disappears_rather_than_showing_zero();
-    test_a_linked_account_offers_only_to_unlink();
+    test_a_linked_account_with_no_stations_offers_a_refresh();
     test_a_linked_account_with_stations_shows_the_list();
     test_the_wait_for_stations_says_what_it_is_waiting_for();
     test_a_failed_fetch_is_retryable_and_an_empty_answer_is_not_a_failure();

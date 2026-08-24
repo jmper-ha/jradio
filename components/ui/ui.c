@@ -256,6 +256,15 @@ static unsigned int s_source_cover_generation;
 static lv_obj_t *s_source_volume;
 static lv_obj_t *s_source_volume_bar;
 static lv_obj_t *s_source_volume_icon;
+/* The like mark, between the buffer reading and the volume. Only the rotor's
+ * tracks have one, so it is hidden for every other source rather than shown
+ * empty - an empty heart on a radio station would offer something the button
+ * cannot do there. */
+static lv_obj_t *s_source_like;
+/* What the heart is currently drawing: -1 nothing, 0 empty, 1 filled. Swapping
+ * the bitmap invalidates the area, and this is decided on every pass of a
+ * 10 ms loop while the mark changes about once a track. */
+static int8_t s_source_like_shown = -1;
 static lv_obj_t *s_source_pause;
 static lv_obj_t *s_source_progress;
 /* Four rising bars. Drawn rather than taken from a font: LVGL's symbol set has
@@ -733,6 +742,23 @@ static void ui_update_playback_marks(const player_snapshot_t *snapshot)
         lv_obj_clear_flag(s_source_pause, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(s_source_pause, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    /* Two bitmaps rather than one recoloured: an outline and a solid heart are
+     * different shapes, and a mark told apart by brightness alone would read
+     * as "liked, dimly" rather than as "not liked". */
+    const int8_t like = !snapshot->track_likeable ? -1 : snapshot->track_liked ? 1 : 0;
+    if (like != s_source_like_shown) {
+        s_source_like_shown = like;
+        if (like < 0) {
+            lv_obj_add_flag(s_source_like, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_image_set_src(s_source_like, like == 1 ? &ui_feed_icon_heart_filled_16
+                                                      : &ui_feed_icon_heart_16);
+            lv_obj_set_style_image_recolor(
+                s_source_like, lv_color_hex(like == 1 ? UI_COLOR_ACCENT : UI_COLOR_MUTED), 0);
+            lv_obj_clear_flag(s_source_like, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 }
 
@@ -2089,6 +2115,17 @@ static void ui_end_seek(void);
 #define UI_SRC_PROGRESS_H 4
 #define UI_SRC_PROGRESS_SEEK_H 8
 #define UI_SRC_FOOT_Y 214
+/* The footer, left to right: the buffer or the time on the left margin, the
+ * like mark in the gap neither reading reaches, then the volume.
+ *
+ * The volume sits twelve pixels further right than it used to, which is where
+ * the mark came from: it is a control, so it belongs beside the other one
+ * rather than pushed out to an edge on its own. The numbers still end clear of
+ * the 320 px edge - the bar runs to 268 and three digits to about 295. */
+#define UI_SRC_LIKE_X 150
+#define UI_SRC_VOLUME_ICON_X 190
+#define UI_SRC_VOLUME_BAR_X 208
+#define UI_SRC_VOLUME_TEXT_X 274
 #define UI_SRC_PAUSE_SIZE 76
 #define UI_SRC_PAUSE_BAR_W 10
 #define UI_SRC_PAUSE_BAR_H 34
@@ -2276,6 +2313,18 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_buffer, 10, UI_SRC_FOOT_Y);
     lv_obj_set_style_text_color(s_source_buffer, lv_color_hex(UI_COLOR_DIM), 0);
 
+    /* Between the two readings, in the gap the buffer line does not reach: the
+     * footer is where the things you can do to what is playing live, and the
+     * volume moved right to make room rather than the mark being pushed out to
+     * an edge on its own. */
+    s_source_like = lv_image_create(s_source_screen);
+    lv_obj_remove_style_all(s_source_like);
+    lv_image_set_src(s_source_like, &ui_feed_icon_heart_16);
+    lv_obj_set_size(s_source_like, 16, 16);
+    lv_obj_set_pos(s_source_like, UI_SRC_LIKE_X, UI_SRC_FOOT_Y + 1);
+    lv_obj_set_style_image_recolor_opa(s_source_like, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_source_like, LV_OBJ_FLAG_HIDDEN);
+
     /* Names the bar next to it. Without it the strip was just a rectangle in
      * the footer, indistinguishable from the progress bar above. Centred on
      * the bar's own middle line rather than on the footer row. */
@@ -2283,12 +2332,12 @@ static void ui_create_source_screen(void)
     lv_obj_remove_style_all(s_source_volume_icon);
     lv_image_set_src(s_source_volume_icon, &ui_feed_icon_volume_16);
     lv_obj_set_size(s_source_volume_icon, 16, 16);
-    lv_obj_set_pos(s_source_volume_icon, 178, UI_SRC_FOOT_Y + 1);
+    lv_obj_set_pos(s_source_volume_icon, UI_SRC_VOLUME_ICON_X, UI_SRC_FOOT_Y + 1);
     lv_obj_set_style_image_recolor(s_source_volume_icon, lv_color_hex(UI_COLOR_MUTED), 0);
     lv_obj_set_style_image_recolor_opa(s_source_volume_icon, LV_OPA_COVER, 0);
 
     s_source_volume_bar = lv_obj_create(s_source_screen);
-    lv_obj_set_pos(s_source_volume_bar, 200, UI_SRC_FOOT_Y + 5);
+    lv_obj_set_pos(s_source_volume_bar, UI_SRC_VOLUME_BAR_X, UI_SRC_FOOT_Y + 5);
     lv_obj_set_size(s_source_volume_bar, 60, 8);
     lv_obj_set_style_bg_color(s_source_volume_bar, lv_color_hex(0x23303C), 0);
     lv_obj_set_style_border_width(s_source_volume_bar, 0, 0);
@@ -2305,7 +2354,7 @@ static void ui_create_source_screen(void)
     lv_obj_clear_flag(fill, LV_OBJ_FLAG_SCROLLABLE);
 
     s_source_volume = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_volume, 266, UI_SRC_FOOT_Y);
+    lv_obj_set_pos(s_source_volume, UI_SRC_VOLUME_TEXT_X, UI_SRC_FOOT_Y);
     lv_obj_set_style_text_color(s_source_volume, lv_color_hex(UI_COLOR_MUTED), 0);
     lv_label_set_text(s_source_volume, "");
 
@@ -2785,13 +2834,6 @@ static void ui_handle_input(board_input_action_t action)
                 (void)yandex_catalog_request_refresh();
             }
             ui_update_yandex();
-        } else if (action == BOARD_INPUT_ACTION_F4) {
-            if (yandex_auth_is_authorized()) {
-                (void)yandex_auth_forget();
-                station_list_init(&s_yandex_list, 0U, 0U, 0U);
-                ui_hide_yandex_rows();
-                ui_update_yandex();
-            }
         }
         return;
     }
@@ -2970,8 +3012,27 @@ static void ui_handle_input(board_input_action_t action)
             s_volume_save_pending = true;
             s_volume_changed_ms = ui_tick_get_ms();
             ui_update_footer();
-        } else if (has_list && action == BOARD_INPUT_ACTION_F3) {
-            ui_toggle_playback();
+        } else if (action == BOARD_INPUT_ACTION_BTN_PREV ||
+                   action == BOARD_INPUT_ACTION_BTN_NEXT) {
+            const bool forward = action == BOARD_INPUT_ACTION_BTN_NEXT;
+            player_command_t command = {
+                .source = source,
+                .item_index = PLAYER_ITEM_NONE,
+            };
+            if (source == AUDIO_SOURCE_YANDEX) {
+                /* The rotor's chain runs one way only - there is no previous
+                 * track to go back to - so on this source the two keys are not
+                 * a pair: forward asks for the next track, back marks the one
+                 * playing as liked or takes the mark off again. */
+                command.kind = forward ? PLAYER_COMMAND_NEXT_TRACK
+                                       : PLAYER_COMMAND_TOGGLE_LIKE;
+            } else if (has_list) {
+                command.kind = forward ? PLAYER_COMMAND_NEXT_ITEM
+                                       : PLAYER_COMMAND_PREVIOUS_ITEM;
+            } else {
+                return;
+            }
+            (void)ui_submit_player_command(&command);
         }
         return;
     }

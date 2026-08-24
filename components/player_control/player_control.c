@@ -19,6 +19,7 @@
 #include "internet_radio.h"
 #include "yandex_auth.h"
 #include "yandex_catalog.h"
+#include "yandex_likes.h"
 #include "yandex_rotor.h"
 #include "file_browser.h"
 #include "file_storage.h"
@@ -213,6 +214,28 @@ static void player_file_advance(void)
     player_file_select_item(next, PLAYER_PLAYBACK_STOPPED);
 }
 
+/* The two track keys on a file source: the file before or after the one
+ * playing, skipping the directories in between.
+ *
+ * Unlike the advance a finished track triggers, running out of files here
+ * stops nothing - the key simply does not act. The end of a directory is a
+ * fact about the list, and taking the music off because the user pressed
+ * "next" at the last track would be a punishment for asking. */
+static void player_file_step(bool forward)
+{
+    const size_t playing = atomic_load_explicit(&s_files_item_index, memory_order_acquire);
+    // Same reason player_file_advance() refuses: a track started before the
+    // listing changed has no position in this one to step from.
+    if (playing == PLAYER_ITEM_NONE) return;
+    const size_t target = forward ? file_storage_next_file(playing + 1U)
+                                  : file_storage_previous_file(playing);
+    if (target >= file_storage_entry_count()) {
+        ESP_LOGI(TAG, "files: no %s track in this directory", forward ? "next" : "previous");
+        return;
+    }
+    player_file_select_item(target, PLAYER_PLAYBACK_STOPPED);
+}
+
 static void player_file_browse_up(void)
 {
     char current[FILE_BROWSER_PATH_MAX_LEN];
@@ -357,7 +380,10 @@ static void player_control_task(void *arg)
 
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
-        switch (player_control_decide(&snapshot, &command)) {
+        // Named rather than switched on directly: the two track keys share one
+        // branch and have to ask which of them they are.
+        const player_operation_t operation = player_control_decide(&snapshot, &command);
+        switch (operation) {
         case PLAYER_OPERATION_SELECT_SOURCE: {
             // Re-selecting the same source (retry after an error) also lands
             // here, so the previous source must actually be stopped before
@@ -474,6 +500,38 @@ static void player_control_task(void *arg)
         case PLAYER_OPERATION_ADVANCE_ITEM:
             player_file_advance();
             break;
+        case PLAYER_OPERATION_PREVIOUS_ITEM:
+        case PLAYER_OPERATION_NEXT_ITEM: {
+            const bool forward = operation == PLAYER_OPERATION_NEXT_ITEM;
+            if (audio_source_is_files(snapshot.active_source)) {
+                player_file_step(forward);
+            } else {
+                /* The station either side of the one playing. The bounds were
+                 * checked by player_control_decide(), which had the same
+                 * count in front of it - and starting an index the catalog no
+                 * longer holds is refused below anyway. */
+                const size_t target = forward ? snapshot.active_item_index + 1U
+                                              : snapshot.active_item_index - 1U;
+                (void)internet_radio_start_station_index(target);
+            }
+            break;
+        }
+        case PLAYER_OPERATION_TOGGLE_LIKE: {
+            /* Blocks on one POST, on the task that already blocks on three of
+             * them to open a station. The mark is only moved once the API has
+             * taken it: a heart that fills in and then quietly disagrees with
+             * the phone is worse than one that does not move. */
+            char track_id[YANDEX_TRACK_ID_MAX + 1U];
+            bool liked = false;
+            if (!yandex_rotor_playing_track(track_id, sizeof(track_id), &liked)) {
+                ESP_LOGW(TAG, "nothing playing to like");
+                break;
+            }
+            if (yandex_likes_set(track_id, !liked) == ESP_OK) {
+                yandex_rotor_set_playing_liked(!liked);
+            }
+            break;
+        }
         case PLAYER_OPERATION_BROWSE_UP:
             player_file_browse_up();
             break;
@@ -599,6 +657,16 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
         snapshot->active_item_index =
             atomic_load_explicit(&s_yandex_item_index, memory_order_acquire);
         snapshot->item_count = yandex_catalog_count();
+        /* The like mark, which only this source has: a station and a file
+         * belong to nobody's library. It travels in the snapshot because both
+         * screens that draw it - the device's and the web's - already poll
+         * for one, and it changes about as often as the track does. */
+        char track_id[YANDEX_TRACK_ID_MAX + 1U];
+        bool liked = false;
+        if (yandex_rotor_playing_track(track_id, sizeof(track_id), &liked)) {
+            snapshot->track_likeable = true;
+            snapshot->track_liked = liked;
+        }
     } else {
         snapshot->active_item_index = radio_status.station_index;
         snapshot->item_count = internet_radio_station_count();

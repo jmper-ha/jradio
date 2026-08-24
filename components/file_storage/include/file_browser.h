@@ -105,6 +105,10 @@ const file_browser_entry_t *file_browser_dir_entry(const file_browser_dir_t *dir
 // the directory has none left. Drives both "play what the cursor is on" and
 // auto-advance to the next track.
 size_t file_browser_dir_next_file(const file_browser_dir_t *dir, size_t from);
+/* Index of the last playable file *before* `before`, or the entry count when
+ * there is none - the same "past the end means nothing left" answer next_file
+ * gives, so the two read alike at the two ends of a directory. */
+size_t file_browser_dir_previous_file(const file_browser_dir_t *dir, size_t before);
 
 /* Index of the entry called `name`, or the entry count when there is none.
  * Used to find a remembered track again after a restart, where only the name

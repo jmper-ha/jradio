@@ -7,6 +7,8 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "album_art.h"
 #include "internet_radio.h"
 #include "yandex_api.h"
@@ -36,6 +38,9 @@ typedef struct {
      * as the report is filed, which is what keeps a retried track change from
      * reporting the same play twice. */
     char playing_id[YANDEX_TRACK_ID_MAX + 1U];
+    /* The like mark as the rotor reported it, kept up to date when the
+     * listener changes it. */
+    bool playing_liked;
     char playing_batch[YANDEX_TRACK_BATCH_ID_MAX + 1U];
     uint32_t playing_duration_ms;
     int64_t playing_since_us;
@@ -54,6 +59,12 @@ typedef struct {
 } yandex_rotor_t;
 
 static yandex_rotor_t s_rotor;
+
+/* Guards the three fields describing the track on the air. The chain is
+ * advanced by the decode task, and the screen and the web server each read
+ * them on their own; a spinlock is enough because everything held under it is
+ * two flags and a copy of a short array. */
+static portMUX_TYPE s_playing_lock = portMUX_INITIALIZER_UNLOCKED;
 
 /* Large and short-lived: PSRAM first, internal only as a fallback, the rule
  * every big buffer in this firmware follows. */
@@ -85,7 +96,9 @@ static void yandex_rotor_event_init(yandex_feedback_event_t *event,
 static void yandex_rotor_report_end(void)
 {
     if (!s_rotor.playing) return;
+    taskENTER_CRITICAL(&s_playing_lock);
     s_rotor.playing = false;
+    taskEXIT_CRITICAL(&s_playing_lock);
 
     yandex_feedback_event_t event;
     yandex_rotor_event_init(&event, s_rotor.skipped ? YANDEX_FEEDBACK_SKIP
@@ -142,6 +155,36 @@ esp_err_t yandex_rotor_start(const char *station_id, const char *from)
     snprintf(event.from, sizeof(event.from), "%s", s_rotor.from);
     (void)yandex_feedback_post(&event);
     return ESP_OK;
+}
+
+bool yandex_rotor_playing_track(char *id, size_t id_size, bool *liked)
+{
+    if (id == NULL || id_size == 0U) return false;
+    char copy[YANDEX_TRACK_ID_MAX + 1U];
+    bool playing;
+    bool mark;
+    taskENTER_CRITICAL(&s_playing_lock);
+    playing = s_rotor.playing;
+    mark = s_rotor.playing_liked;
+    memcpy(copy, s_rotor.playing_id, sizeof(copy));
+    taskEXIT_CRITICAL(&s_playing_lock);
+
+    id[0] = '\0';
+    if (!playing) return false;
+    const int written = snprintf(id, id_size, "%s", copy);
+    if (written < 0 || (size_t)written >= id_size) {
+        id[0] = '\0';
+        return false;
+    }
+    if (liked != NULL) *liked = mark;
+    return true;
+}
+
+void yandex_rotor_set_playing_liked(bool liked)
+{
+    taskENTER_CRITICAL(&s_playing_lock);
+    s_rotor.playing_liked = liked;
+    taskEXIT_CRITICAL(&s_playing_lock);
 }
 
 void yandex_rotor_note_skip(void)
@@ -260,12 +303,21 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track)
     /* Only once the link is in hand: a track that could not be resolved was
      * never played, and reporting it as started would teach the rotor that it
      * was heard. */
-    s_rotor.playing = true;
     s_rotor.playing_since_us = esp_timer_get_time();
     s_rotor.playing_duration_ms = candidate.duration_ms;
-    snprintf(s_rotor.playing_id, sizeof(s_rotor.playing_id), "%s", candidate.id);
     snprintf(s_rotor.playing_batch, sizeof(s_rotor.playing_batch), "%s",
              s_rotor.batch.batch_id);
+    /* Formatted first and published second: the copy under the lock has to be
+     * a whole id, and snprintf into the shared array would let a reader in
+     * half way through it. The mark comes from the rotor's own answer, which
+     * says for every track it hands out whether the account has it liked. */
+    char playing_id[YANDEX_TRACK_ID_MAX + 1U] = {0};
+    snprintf(playing_id, sizeof(playing_id), "%s", candidate.id);
+    taskENTER_CRITICAL(&s_playing_lock);
+    s_rotor.playing = true;
+    s_rotor.playing_liked = candidate.liked;
+    memcpy(s_rotor.playing_id, playing_id, sizeof(playing_id));
+    taskEXIT_CRITICAL(&s_playing_lock);
 
     yandex_feedback_event_t event;
     yandex_rotor_event_init(&event, YANDEX_FEEDBACK_TRACK_STARTED);

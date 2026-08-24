@@ -169,6 +169,15 @@ static void write_player(web_json_writer_t *writer,
         web_json_literal(writer, ",\"wifi_rssi_dbm\":");
         web_json_format(writer, "%d", (int)player->wifi_rssi_dbm);
     }
+    /* Only for a source that has a library to be in, the way the signal is
+     * only sent when there is one. A field always present would make the web
+     * UI draw an empty heart on a radio station, offering a button that would
+     * be refused. The frame is capped at 512 bytes and this is the section
+     * that carries the titles, so it costs as few of them as it can. */
+    if (player->track_likeable) {
+        web_json_literal(writer, ",\"liked\":");
+        web_json_literal(writer, player->track_liked ? "true" : "false");
+    }
     web_json_literal(writer, ",\"error\":");
     web_json_string(writer, player->error);
     web_json_literal(writer, "}");

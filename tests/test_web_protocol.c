@@ -134,6 +134,23 @@ static void test_accepts_the_next_track_command(void)
     assert(parse(extra, &command) != WEB_PROTOCOL_OK);
 }
 
+/* The like mark carries nothing either, and for a stronger reason: it toggles
+ * whatever the device currently holds, so a client that named a state would be
+ * telling the device what it already knows - and telling it wrong whenever a
+ * second press raced the answer to the first. */
+static void test_accepts_the_like_command(void)
+{
+    web_command_t command;
+    const char *like = "{\"type\":\"command\",\"id\":\"l1\",\"action\":\"player.like\"}";
+    assert(parse(like, &command) == WEB_PROTOCOL_OK);
+    assert(command.kind == WEB_COMMAND_PLAYER);
+    assert(command.player.kind == PLAYER_COMMAND_TOGGLE_LIKE);
+
+    const char *extra =
+        "{\"type\":\"command\",\"id\":\"l2\",\"action\":\"player.like\",\"index\":1}";
+    assert(parse(extra, &command) != WEB_PROTOCOL_OK);
+}
+
 static void test_accepts_source_and_station_selection(void)
 {
     web_command_t command;
@@ -510,6 +527,7 @@ int main(void)
     test_accepts_exact_player_commands();
     test_accepts_source_and_station_selection();
     test_accepts_the_next_track_command();
+    test_accepts_the_like_command();
     test_accepts_bounded_wifi_credentials();
     test_rejects_bad_envelope_and_exact_schema_violations();
     test_rejects_invalid_request_ids();

@@ -717,6 +717,14 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
         parsed->player.kind = PLAYER_COMMAND_NEXT_TRACK;
         return true;
     }
+    if (strcmp(action, "player.like") == 0) {
+        // Toggles rather than sets: the client would have to be told what the
+        // mark is now to send the other one, and it is told - but a second
+        // press racing the answer would then send the state it already saw.
+        if (fields != COMMON_FIELDS) return false;
+        parsed->player.kind = PLAYER_COMMAND_TOGGLE_LIKE;
+        return true;
+    }
     if (strcmp(action, "browse.up") == 0) {
         // No index: "up" is relative to whatever directory the shared listing
         // is on, which is the same one the device screen shows.

@@ -81,6 +81,10 @@ bool file_storage_current_path(char *out, size_t out_size);
 // track.
 size_t file_storage_next_file(size_t from);
 
+// The other direction, for the previous-track key: the last playable file
+// before `before`, and the same "past the end" answer when there is none.
+size_t file_storage_previous_file(size_t before);
+
 // Prints the listing, one line per entry. Called after a volume is mounted, so
 // the boot log says what the device can see.
 void file_storage_log_listing(void);

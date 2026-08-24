@@ -69,8 +69,8 @@ static board_input_channel_t s_channels[] = {
     {.gpio_num = ENCODER_BUTTON_GPIO, .action = BOARD_INPUT_ACTION_ENCODER_BUTTON},
     {.gpio_num = BUTTON_F1_GPIO, .action = BOARD_INPUT_ACTION_F1},
     {.gpio_num = BUTTON_F2_GPIO, .action = BOARD_INPUT_ACTION_F2},
-    {.gpio_num = BUTTON_F3_GPIO, .action = BOARD_INPUT_ACTION_F3},
-    {.gpio_num = BUTTON_F4_GPIO, .action = BOARD_INPUT_ACTION_F4},
+    {.gpio_num = BUTTON_PREV_GPIO, .action = BOARD_INPUT_ACTION_BTN_PREV},
+    {.gpio_num = BUTTON_NEXT_GPIO, .action = BOARD_INPUT_ACTION_BTN_NEXT},
 };
 static board_encoder_decoder_t s_encoder_decoder;
 
@@ -129,10 +129,10 @@ board_input_action_t board_input_action_from_gpio(int gpio_num, int level)
         return BOARD_INPUT_ACTION_F1;
     case BUTTON_F2_GPIO:
         return BOARD_INPUT_ACTION_F2;
-    case BUTTON_F3_GPIO:
-        return BOARD_INPUT_ACTION_F3;
-    case BUTTON_F4_GPIO:
-        return BOARD_INPUT_ACTION_F4;
+    case BUTTON_PREV_GPIO:
+        return BOARD_INPUT_ACTION_BTN_PREV;
+    case BUTTON_NEXT_GPIO:
+        return BOARD_INPUT_ACTION_BTN_NEXT;
     default:
         return BOARD_INPUT_ACTION_NONE;
     }
@@ -252,7 +252,7 @@ esp_err_t board_input_init(void)
     };
     const gpio_config_t button_config = {
         .pin_bit_mask = (1ULL << BUTTON_F1_GPIO) | (1ULL << BUTTON_F2_GPIO) |
-                        (1ULL << BUTTON_F3_GPIO) | (1ULL << BUTTON_F4_GPIO),
+                        (1ULL << BUTTON_PREV_GPIO) | (1ULL << BUTTON_NEXT_GPIO),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = BUTTONS_USE_INTERNAL_PULLUPS ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,

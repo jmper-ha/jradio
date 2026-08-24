@@ -54,8 +54,8 @@ static void test_control_pins_are_distinct(void)
 {
     const int pins[] = {
         ENCODER_RIGHT_GPIO, ENCODER_LEFT_GPIO, ENCODER_BUTTON_GPIO,
-        BUTTON_F1_GPIO, BUTTON_F2_GPIO, BUTTON_F3_GPIO,
-        BUTTON_F4_GPIO,
+        BUTTON_F1_GPIO, BUTTON_F2_GPIO, BUTTON_PREV_GPIO,
+        BUTTON_NEXT_GPIO,
     };
     const size_t count = sizeof(pins) / sizeof(pins[0]);
     for (size_t i = 0; i < count; ++i) {
@@ -121,8 +121,8 @@ static void test_no_pin_is_claimed_by_two_devices(void)
         TFT_CS_GPIO, TFT_DC_GPIO, TFT_MOSI_GPIO, TFT_SCLK_GPIO,
         TFT_BACKLIGHT_GPIO,
         ENCODER_RIGHT_GPIO, ENCODER_LEFT_GPIO, ENCODER_BUTTON_GPIO,
-        BUTTON_F1_GPIO, BUTTON_F2_GPIO, BUTTON_F3_GPIO,
-        BUTTON_F4_GPIO,
+        BUTTON_F1_GPIO, BUTTON_F2_GPIO, BUTTON_PREV_GPIO,
+        BUTTON_NEXT_GPIO,
         I2S_DOUT_GPIO, I2S_BCLK_GPIO, I2S_LRCK_GPIO,
         USB_DM_GPIO, USB_DP_GPIO,
     };

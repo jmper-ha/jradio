@@ -71,10 +71,13 @@ at its use sites."
 #define ENCODER_LEFT_GPIO 7
 #define ENCODER_BUTTON_GPIO 6
 
+/* Two of the four are named for what they do rather than for the silkscreen:
+ * the third and fourth buttons are the track keys everywhere they do anything
+ * at all, so a name that says F3 only makes the wiring harder to read back. */
 #define BUTTON_F1_GPIO 45
 #define BUTTON_F2_GPIO 21
-#define BUTTON_F3_GPIO 46
-#define BUTTON_F4_GPIO 9
+#define BUTTON_PREV_GPIO 46
+#define BUTTON_NEXT_GPIO 9
 
 /* Internal pull-ups, per group rather than for all seven pins at once.
  *

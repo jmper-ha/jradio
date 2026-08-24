@@ -385,8 +385,11 @@ button:disabled {
 }
 
 /* Smaller than the play button and without its shadow: skipping a track is a
-   secondary action next to starting and stopping one. */
-.next-track {
+   secondary action next to starting and stopping one. The like mark is the
+   same shape and size - the two are the pair of things that can be done to the
+   track itself, and one of them looking weightier would be a lie. */
+.next-track,
+.like-track {
   width: 44px;
   height: 44px;
   flex: 0 0 44px;
@@ -400,13 +403,34 @@ button:disabled {
   transition: background .18s ease, transform .18s ease;
 }
 
-.next-track:hover:not(:disabled) {
+.next-track:hover:not(:disabled),
+.like-track:hover:not(:disabled) {
   transform: translateY(-2px);
 }
 
 .next-track svg {
   width: 1.25rem;
   height: 1.25rem;
+  fill: currentColor;
+}
+
+/* Outline until the account has the track marked, solid once it has - the
+   same two states the heart on the device shows, and told apart by shape
+   rather than by colour alone. */
+.like-track svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+
+.like-track.is-liked {
+  color: var(--danger);
+}
+
+.like-track.is-liked svg {
   fill: currentColor;
 }
 

@@ -27,7 +27,7 @@ static void ui_yandex_build_catalog(yandex_catalog_state_t catalog_state,
     if (catalog_state == YANDEX_CATALOG_READY && station_count > 0U) {
         view->mode = UI_YANDEX_MODE_LIST;
         view->status = "";
-        view->hint = "OK - слушать, F2 - назад, F4 - отвязать";
+        view->hint = "OK - слушать, F2 - назад";
         return;
     }
     view->mode = UI_YANDEX_MODE_MESSAGE;
@@ -49,7 +49,7 @@ static void ui_yandex_build_catalog(yandex_catalog_state_t catalog_state,
     case YANDEX_CATALOG_EMPTY:
     default:
         view->status = "Аккаунт привязан";
-        view->hint = "OK - обновить, F2 - назад, F4 - отвязать";
+        view->hint = "OK - обновить, F2 - назад";
         break;
     }
 }

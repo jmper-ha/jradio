@@ -316,8 +316,109 @@ static void test_a_yandex_chain_never_advances_by_itself(void)
     assert(player_control_decide(&state, &command) == PLAYER_OPERATION_NONE);
 }
 
+static void test_the_track_keys_stop_at_the_ends_of_the_catalog(void)
+{
+    player_snapshot_t state = {.active_source = AUDIO_SOURCE_INTERNET_RADIO,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING,
+                               .active_item_index = 1U,
+                               .item_count = 3U};
+    player_command_t next = {.kind = PLAYER_COMMAND_NEXT_ITEM};
+    player_command_t previous = {.kind = PLAYER_COMMAND_PREVIOUS_ITEM};
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NEXT_ITEM);
+    assert(player_control_decide(&state, &previous) == PLAYER_OPERATION_PREVIOUS_ITEM);
+
+    /* At the last station forward does nothing - and does *not* wrap round to
+     * the first, which would hide the fact that the list has an end. */
+    state.active_item_index = 2U;
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NONE);
+    assert(player_control_decide(&state, &previous) == PLAYER_OPERATION_PREVIOUS_ITEM);
+
+    state.active_item_index = 0U;
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NEXT_ITEM);
+    assert(player_control_decide(&state, &previous) == PLAYER_OPERATION_NONE);
+
+    /* Nothing playing: the keys move what is on the air, they do not choose
+     * something to put there. */
+    state.active_item_index = PLAYER_ITEM_NONE;
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NONE);
+    assert(player_control_decide(&state, &previous) == PLAYER_OPERATION_NONE);
+}
+
+static void test_the_track_keys_leave_the_ends_of_a_directory_to_the_executor(void)
+{
+    /* A listing holds directories as well as files, and this function cannot
+     * see which is which - so both directions come back as work to do, and
+     * whether there is a file to move to is settled where the entries are. */
+    player_snapshot_t state = {.active_source = AUDIO_SOURCE_USB,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING,
+                               .active_item_index = 0U,
+                               .item_count = 1U};
+    player_command_t next = {.kind = PLAYER_COMMAND_NEXT_ITEM};
+    player_command_t previous = {.kind = PLAYER_COMMAND_PREVIOUS_ITEM};
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NEXT_ITEM);
+    assert(player_control_decide(&state, &previous) == PLAYER_OPERATION_PREVIOUS_ITEM);
+
+    state.active_source = AUDIO_SOURCE_SD;
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NEXT_ITEM);
+}
+
+static void test_the_rotor_has_no_track_keys_of_this_kind(void)
+{
+    /* It is a station source, but its chain has no previous track and no index
+     * in any list: on that source the same two buttons mean the next track and
+     * the like mark instead. */
+    player_snapshot_t state = {.active_source = AUDIO_SOURCE_YANDEX,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING,
+                               .active_item_index = 1U,
+                               .item_count = 4U};
+    player_command_t next = {.kind = PLAYER_COMMAND_NEXT_ITEM};
+    player_command_t previous = {.kind = PLAYER_COMMAND_PREVIOUS_ITEM};
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_INVALID);
+    assert(player_control_decide(&state, &previous) == PLAYER_OPERATION_INVALID);
+}
+
+static void test_the_like_mark_belongs_to_a_playing_rotor_track(void)
+{
+    player_snapshot_t state = {.active_source = AUDIO_SOURCE_YANDEX,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING};
+    player_command_t command = {.kind = PLAYER_COMMAND_TOGGLE_LIKE};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_TOGGLE_LIKE);
+
+    /* Paused counts: the track is still the one being listened to. */
+    state.playback_state = PLAYER_PLAYBACK_PAUSED;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_TOGGLE_LIKE);
+
+    /* Stopped there is no track to mark ... */
+    state.playback_state = PLAYER_PLAYBACK_STOPPED;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+
+    /* ... and a station or a file is in nobody's library. */
+    state.active_source = AUDIO_SOURCE_INTERNET_RADIO;
+    state.playback_state = PLAYER_PLAYBACK_PLAYING;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+    state.active_source = AUDIO_SOURCE_USB;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+}
+
+static void test_snapshot_equality_notices_the_like_mark(void)
+{
+    /* The web transport sends a section only when the snapshot differs, so a
+     * mark that does not register here would never reach the browser. */
+    player_snapshot_t left = {.active_source = AUDIO_SOURCE_YANDEX,
+                              .track_likeable = true};
+    player_snapshot_t right = left;
+    assert(player_snapshot_equal(&left, &right));
+    right.track_liked = true;
+    assert(!player_snapshot_equal(&left, &right));
+}
+
 int main(void)
 {
+    test_the_track_keys_stop_at_the_ends_of_the_catalog();
+    test_the_track_keys_leave_the_ends_of_a_directory_to_the_executor();
+    test_the_rotor_has_no_track_keys_of_this_kind();
+    test_the_like_mark_belongs_to_a_playing_rotor_track();
+    test_snapshot_equality_notices_the_like_mark();
     test_each_volume_answers_for_itself();
     test_every_file_operation_works_on_the_card_too();
     test_yandex_needs_a_linked_account();

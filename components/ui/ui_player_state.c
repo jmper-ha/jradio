@@ -107,6 +107,21 @@ bool ui_player_state_can_post(const ui_player_state_t *state,
     // browsing stays out of the pending machinery.
     case PLAYER_COMMAND_SEEK:
         return true;
+    /* The two that ask something of the track rather than of the list: the
+     * rotor's next track, and the like mark. Neither moves anything the
+     * pending machinery watches - the station stays the station, and a mark is
+     * not playback - so neither waits for a snapshot to confirm it. */
+    case PLAYER_COMMAND_NEXT_TRACK:
+    case PLAYER_COMMAND_TOGGLE_LIKE:
+        return true;
+    /* The track keys on a list source do move the active row, but they name no
+     * index for a snapshot to be checked against: the player works out which
+     * neighbour it is itself. So they are not pending commands either - only
+     * refused while another one is still in flight, so that a key press cannot
+     * overtake the selection it is meant to follow. */
+    case PLAYER_COMMAND_PREVIOUS_ITEM:
+    case PLAYER_COMMAND_NEXT_ITEM:
+        return !state->pending;
     default:
         return false;
     }
@@ -121,6 +136,10 @@ bool ui_player_state_apply_post_result(ui_player_state_t *state,
         command->kind == PLAYER_COMMAND_PAUSE ||
         command->kind == PLAYER_COMMAND_TOGGLE ||
         command->kind == PLAYER_COMMAND_SEEK ||
+        command->kind == PLAYER_COMMAND_NEXT_TRACK ||
+        command->kind == PLAYER_COMMAND_TOGGLE_LIKE ||
+        command->kind == PLAYER_COMMAND_PREVIOUS_ITEM ||
+        command->kind == PLAYER_COMMAND_NEXT_ITEM ||
         ui_player_state_is_files_browse(command)) return true;
 
     const bool superseding_stop =

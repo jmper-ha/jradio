@@ -195,6 +195,15 @@ size_t file_storage_next_file(size_t from)
     return index;
 }
 
+size_t file_storage_previous_file(size_t before)
+{
+    // Same contract as next_file above, including SIZE_MAX on a lock timeout.
+    if (!listing_lock()) return SIZE_MAX;
+    const size_t index = file_browser_dir_previous_file(&s_listing, before);
+    listing_unlock();
+    return index;
+}
+
 bool file_storage_entry_path(size_t index, file_browser_entry_t *entry, char *path,
                              size_t capacity)
 {

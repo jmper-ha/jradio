@@ -241,6 +241,7 @@ static ui_status_strip_t s_source_strip;
 static ui_status_strip_t s_menu_strip;
 static ui_status_strip_t s_feed_strip;
 static ui_status_strip_t s_list_strip;
+static ui_status_strip_t s_yandex_strip;
 static lv_obj_t *s_source_art;
 /* The cover sits on top of the placeholder tile rather than replacing it. The
  * two change over often - every track, and back to nothing the moment the
@@ -310,17 +311,27 @@ static bool s_yandex_open;
 #define UI_YANDEX_START_TIMEOUT_MS 15000U
 static size_t s_yandex_start_row = PLAYER_ITEM_NONE;
 static uint32_t s_yandex_start_deadline_ms;
-/* Five rows at a 33-pixel pitch fit between the title and the hint, and the
- * dashboard has been four stations every time it was fetched - so the usual
- * case needs no scrolling at all. */
-#define UI_YANDEX_LIST_ROWS 5U
-#define UI_YANDEX_ROW_Y 44
-#define UI_YANDEX_ROW_PITCH 33
-#define UI_YANDEX_ROW_H 28
+/* The station rows are the list screen's rows, built from the same constants
+ * rather than from a set of their own: this screen is a third list, and the
+ * geometry it had - a shorter row at a tighter pitch, no rounded corner - was
+ * the whole of why it did not look like one.
+ *
+ * The hint line the old pitch was making room for is gone in list mode; the
+ * rule and the position bar take that space, the way they do on the other two
+ * lists. */
+#define UI_YANDEX_LIST_ROWS UI_STATION_LIST_MAX_ROWS
 /* Long enough to read, short enough that the button hints come back before
  * the next press. */
 #define UI_YANDEX_NOTICE_MS 3000U
 static ui_scroller_t s_yandex_rows[UI_YANDEX_LIST_ROWS];
+static lv_obj_t *s_yandex_rule;
+static lv_obj_t *s_yandex_progress;
+/* The "nothing to list" screen: the same drive-and-a-sentence shape the file
+ * browser uses when there is no disc, with the Yandex mark in place of the
+ * drive. It replaces a grey 14-pixel line in the top corner, which read as a
+ * caption rather than as the message the screen existed for. */
+static lv_obj_t *s_yandex_message_icon;
+static lv_obj_t *s_yandex_message;
 static station_list_state_t s_yandex_list;
 /* What the rows were last drawn from. Setting a label's text restarts its
  * scroll animation, so the rows are redrawn only when one of these moved -
@@ -328,7 +339,12 @@ static station_list_state_t s_yandex_list;
 static unsigned int s_yandex_drawn_revision;
 static size_t s_yandex_drawn_selected;
 static size_t s_yandex_drawn_count;
+static size_t s_yandex_drawn_active;
 static bool s_yandex_rows_drawn;
+/* What the last pass decided the screen is showing. The idle timer only
+ * applies to the list - a pairing code takes a minute to type on a phone, and
+ * closing that screen out from under someone doing it would be a fault. */
+static ui_yandex_mode_t s_yandex_mode = UI_YANDEX_MODE_PAIRING;
 static uint32_t s_yandex_notice_until_ms;
 static const char *s_yandex_notice;
 static lv_obj_t *s_station_list_screen;
@@ -1201,6 +1217,17 @@ static void ui_update_station_list(void)
     }
 }
 
+/* Whether there is a player screen worth returning to. The idle timers on the
+ * list screens exist to put it back; with nothing playing there is nothing
+ * behind them, so browsing is allowed to take as long as the user wants. */
+static bool ui_playback_running(const player_snapshot_t *snapshot)
+{
+    return snapshot->playback_state == PLAYER_PLAYBACK_PLAYING ||
+           snapshot->playback_state == PLAYER_PLAYBACK_PAUSED ||
+           snapshot->playback_state == PLAYER_PLAYBACK_CONNECTING ||
+           snapshot->playback_state == PLAYER_PLAYBACK_RECONNECTING;
+}
+
 static void ui_load_menu_screen(void);
 /* Defined with the rest of the player plumbing, further down; the Yandex
  * screen needs them before that - to post its commands, to open the list the
@@ -1510,11 +1537,10 @@ static void ui_create_yandex_screen(void)
     lv_obj_set_style_pad_all(s_yandex_screen, 0, 0);
     lv_obj_set_style_text_font(s_yandex_screen, &ui_font_cyrillic_14, 0);
 
-    lv_obj_t *title = lv_label_create(s_yandex_screen);
-    lv_label_set_text(title, "ЯМузыка");
-    lv_obj_set_pos(title, 12, 8);
-    lv_obj_set_style_text_font(title, &ui_font_cyrillic_20, 0);
-    lv_obj_set_style_text_color(title, lv_color_hex(UI_COLOR_TEXT), 0);
+    /* The same strip the other lists carry, rather than a bare heading: the
+     * clock and the signal belong on every screen the user can sit on, and
+     * this one is sat on for as long as a pairing code lasts. */
+    ui_status_strip_create(s_yandex_screen, &s_yandex_strip, "ЯМузыка");
 
     s_yandex_status = lv_label_create(s_yandex_screen);
     lv_obj_set_pos(s_yandex_status, 12, 44);
@@ -1570,18 +1596,66 @@ static void ui_create_yandex_screen(void)
     lv_obj_set_style_text_color(s_yandex_countdown, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_yandex_countdown, "");
 
+    s_yandex_rule = lv_obj_create(s_yandex_screen);
+    lv_obj_set_pos(s_yandex_rule, 10, UI_LIST_RULE_Y);
+    lv_obj_set_size(s_yandex_rule, 300, 1);
+    lv_obj_set_style_bg_color(s_yandex_rule, lv_color_hex(UI_COLOR_RULE), 0);
+    lv_obj_set_style_border_width(s_yandex_rule, 0, 0);
+    lv_obj_set_style_pad_all(s_yandex_rule, 0, 0);
+    lv_obj_clear_flag(s_yandex_rule, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_yandex_rule, LV_OBJ_FLAG_HIDDEN);
+
+    s_yandex_progress = lv_bar_create(s_yandex_screen);
+    lv_obj_set_pos(s_yandex_progress, 10, UI_LIST_PROGRESS_Y);
+    lv_obj_set_size(s_yandex_progress, 300, 4);
+    lv_bar_set_range(s_yandex_progress, 0, 100);
+    lv_obj_set_style_radius(s_yandex_progress, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_yandex_progress, 2, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s_yandex_progress, lv_color_hex(0x23303C), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_yandex_progress, lv_color_hex(UI_COLOR_ACCENT),
+                              LV_PART_INDICATOR);
+    lv_obj_add_flag(s_yandex_progress, LV_OBJ_FLAG_HIDDEN);
+
     for (size_t row = 0; row < UI_YANDEX_LIST_ROWS; ++row) {
         s_yandex_rows[row] = ui_scroller_create(
-            s_yandex_screen, 10, UI_YANDEX_ROW_Y + (int)row * UI_YANDEX_ROW_PITCH, 300,
-            UI_YANDEX_ROW_H);
-        lv_obj_set_style_pad_left(s_yandex_rows[row].box, 8, 0);
-        lv_obj_set_style_pad_top(s_yandex_rows[row].box, 2, 0);
+            s_yandex_screen, 10, UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH, 300,
+            UI_LIST_ROW_H);
         lv_obj_set_style_text_font(s_yandex_rows[row].box, &ui_font_cyrillic_20, 0);
+        lv_obj_set_style_pad_left(s_yandex_rows[row].box, 8, 0);
+        lv_obj_set_style_pad_top(s_yandex_rows[row].box, 3, 0);
+        lv_obj_set_style_radius(s_yandex_rows[row].box, 3, 0);
         lv_obj_set_style_bg_opa(s_yandex_rows[row].box, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(s_yandex_rows[row].box, lv_color_hex(UI_COLOR_GROUND), 0);
         lv_obj_add_flag(s_yandex_rows[row].box, LV_OBJ_FLAG_HIDDEN);
     }
 
+    /* After the rows, for the reason the file browser's notice is: the rows
+     * are opaque and LVGL paints children in creation order, so a message
+     * created first is painted underneath a screen of blank rows. */
+    s_yandex_message_icon = lv_image_create(s_yandex_screen);
+    lv_obj_remove_style_all(s_yandex_message_icon);
+    lv_image_set_src(s_yandex_message_icon,
+                     ui_feed_icon_image(UI_FEED_YANDEX, UI_FEED_ICON_LARGE));
+    lv_obj_set_size(s_yandex_message_icon, UI_LIST_NOTICE_ICON, UI_LIST_NOTICE_ICON);
+    lv_image_set_inner_align(s_yandex_message_icon, LV_IMAGE_ALIGN_CENTER);
+    lv_obj_set_pos(s_yandex_message_icon, (320 - UI_LIST_NOTICE_ICON) / 2,
+                   UI_LIST_NOTICE_ICON_Y);
+    lv_obj_set_style_image_recolor(s_yandex_message_icon, lv_color_hex(UI_COLOR_NOTICE), 0);
+    lv_obj_set_style_image_recolor_opa(s_yandex_message_icon, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_yandex_message_icon, LV_OBJ_FLAG_HIDDEN);
+
+    s_yandex_message = lv_label_create(s_yandex_screen);
+    lv_label_set_text(s_yandex_message, "");
+    lv_obj_set_pos(s_yandex_message, 10, UI_LIST_NOTICE_TEXT_Y);
+    lv_obj_set_width(s_yandex_message, 300);
+    lv_obj_set_style_text_align(s_yandex_message, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(s_yandex_message, &ui_font_cyrillic_20, 0);
+    lv_obj_set_style_text_color(s_yandex_message, lv_color_hex(UI_COLOR_NOTICE), 0);
+
+    /* Only the screens with room for it keep a hint line: in list mode the
+     * rule and the bar have that space, and the two lists it now matches
+     * name no keys either. It still carries the passing notice, which is why
+     * it is created after the rows rather than beside the status line. */
     s_yandex_hint = lv_label_create(s_yandex_screen);
     lv_obj_set_pos(s_yandex_hint, 12, 212);
     lv_obj_set_width(s_yandex_hint, 296);
@@ -1609,16 +1683,48 @@ static void ui_update_yandex_rows(void)
         }
         lv_obj_remove_flag(s_yandex_rows[row].box, LV_OBJ_FLAG_HIDDEN);
         const bool selected = row == cursor_row;
+        const bool active = (size_t)entry_index == station_list_active_index(&s_yandex_list);
         lv_obj_set_style_bg_color(s_yandex_rows[row].box,
                                   lv_color_hex(selected ? UI_COLOR_SELECTED
                                                         : UI_COLOR_GROUND), 0);
+        // The station list's three brightnesses, for the same reason: the
+        // cursor takes the accent, the station that is playing is the
+        // brightest of the rest, everything else stays muted.
         lv_obj_set_style_text_color(s_yandex_rows[row].box,
                                     lv_color_hex(selected ? UI_COLOR_ACCENT
+                                                 : active ? UI_COLOR_TEXT
                                                           : UI_COLOR_MUTED), 0);
         // Only the row being pointed at scrolls its full name; a screen of
         // marquees is unreadable, which is the same call the station list made.
         ui_scroller_set_scrolling(&s_yandex_rows[row], selected);
         ui_scroller_set_text(&s_yandex_rows[row], station.name);
+    }
+    lv_bar_set_value(s_yandex_progress, station_list_progress_percent(&s_yandex_list),
+                     LV_ANIM_OFF);
+}
+
+/* Which row is playing, or `count` for none. Asked of the player's own view
+ * state rather than remembered here, so the mark follows a station started
+ * from the web UI as readily as one started from this screen. */
+static size_t ui_yandex_active_index(size_t count)
+{
+    if (ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_YANDEX) return count;
+    const size_t active = ui_player_state_active_item(&s_player_ui);
+    return active < count ? active : count;
+}
+
+/* The rule and the position bar, which belong to the rows rather than to the
+ * screen: under a message saying there are no stations they would be pointing
+ * at nothing, and they also step aside for the few seconds a passing notice
+ * needs, because the notice is drawn on the line they occupy. */
+static void ui_yandex_show_frame(bool shown)
+{
+    if (shown) {
+        lv_obj_remove_flag(s_yandex_rule, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_yandex_progress, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_yandex_rule, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_yandex_progress, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -1627,6 +1733,7 @@ static void ui_hide_yandex_rows(void)
     for (size_t row = 0; row < UI_YANDEX_LIST_ROWS; ++row) {
         lv_obj_add_flag(s_yandex_rows[row].box, LV_OBJ_FLAG_HIDDEN);
     }
+    ui_yandex_show_frame(false);
     s_yandex_rows_drawn = false;
 }
 
@@ -1645,6 +1752,8 @@ static void ui_update_yandex(void)
     ui_yandex_view_t view;
     ui_yandex_view_build(&status, catalog_state, count, &view);
 
+    s_yandex_mode = view.mode;
+
     /* A transient answer to a press - "that button does nothing yet" - takes
      * the hint line for a few seconds, because there is nowhere else on this
      * screen that a message belongs while the rows fill it. */
@@ -1653,8 +1762,24 @@ static void ui_update_yandex(void)
                              (int32_t)(s_yandex_notice_until_ms - now_ms) > 0;
     if (!notice_live) s_yandex_notice = NULL;
 
-    ui_set_label_text_if_changed(s_yandex_status, view.status);
-    ui_set_label_text_if_changed(s_yandex_hint, notice_live ? s_yandex_notice : view.hint);
+    const bool message = view.mode == UI_YANDEX_MODE_MESSAGE;
+    /* Two places one sentence can go. While the account is being linked it is
+     * a caption above the code; with nothing to list it is the whole point of
+     * the screen, and takes the shape the file browser gives that case. */
+    ui_set_label_text_if_changed(s_yandex_status, message ? "" : view.status);
+    ui_set_label_text_if_changed(s_yandex_message, message ? view.status : "");
+    if (message) {
+        lv_obj_remove_flag(s_yandex_message_icon, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_yandex_message_icon, LV_OBJ_FLAG_HIDDEN);
+    }
+    /* The keys are named only where there is room to name them. In list mode
+     * the line belongs to the rule and the bar, the way it does on the other
+     * two lists - so nothing is said there unless something went wrong. */
+    const bool list = view.mode == UI_YANDEX_MODE_LIST;
+    ui_set_label_text_if_changed(s_yandex_hint, notice_live ? s_yandex_notice
+                                                : list      ? ""
+                                                            : view.hint);
 
     if (view.show_code) {
         ui_set_label_text_if_changed(s_yandex_code, view.code);
@@ -1665,20 +1790,28 @@ static void ui_update_yandex(void)
         lv_obj_add_flag(s_yandex_code_panel, LV_OBJ_FLAG_HIDDEN);
     }
 
-    if (view.mode != UI_YANDEX_MODE_LIST) {
+    if (!list) {
         if (s_yandex_rows_drawn) ui_hide_yandex_rows();
         return;
     }
-    (void)station_list_sync_counts(&s_yandex_list, count, count);
+    ui_yandex_show_frame(!notice_live);
+    /* The station that is playing, not "none". Passing the count here - which
+     * is what this call used to do - overwrote the active row the moment the
+     * screen was opened, so the mark ui_show_yandex sets survived exactly one
+     * pass of the poll loop and the playing station looked like any other. */
+    (void)station_list_sync_counts(&s_yandex_list, count, ui_yandex_active_index(count));
     const unsigned int revision = yandex_catalog_revision();
     const size_t selected = station_list_selected_index(&s_yandex_list);
+    const size_t drawn_active = station_list_active_index(&s_yandex_list);
     if (s_yandex_rows_drawn && revision == s_yandex_drawn_revision &&
-        selected == s_yandex_drawn_selected && count == s_yandex_drawn_count) {
+        selected == s_yandex_drawn_selected && count == s_yandex_drawn_count &&
+        drawn_active == s_yandex_drawn_active) {
         return;
     }
     s_yandex_drawn_revision = revision;
     s_yandex_drawn_selected = selected;
     s_yandex_drawn_count = count;
+    s_yandex_drawn_active = drawn_active;
     s_yandex_rows_drawn = true;
     ui_update_yandex_rows();
 }
@@ -1703,12 +1836,14 @@ static void ui_show_yandex(void)
          * the cursor starts on it and the row is marked, the same thing the
          * radio list does. Opened from the home screen there is nothing here
          * to point at yet. */
-        const size_t active = ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_YANDEX
-                                  ? ui_player_state_active_item(&s_player_ui)
-                                  : count;
+        const size_t active = ui_yandex_active_index(count);
         station_list_init(&s_yandex_list, count, active < count ? active : 0U, active);
         (void)yandex_catalog_request_refresh();
     }
+    /* Starts the return timer, and starts it here rather than only on the
+     * first turn of the knob: a screen opened by accident has to find its own
+     * way back too. */
+    station_list_note_activity(&s_yandex_list, ui_tick_get_ms());
     ui_update_yandex();
     lv_screen_load(s_yandex_screen);
 }
@@ -2627,6 +2762,7 @@ static void ui_handle_input(board_input_action_t action)
     // transition table for no gain. Any of the three ways out returns to the
     // main screen.
     if (s_yandex_open) {
+        station_list_note_activity(&s_yandex_list, ui_tick_get_ms());
         if (action == BOARD_INPUT_ACTION_F2 || action == BOARD_INPUT_ACTION_ENCODER_LONG) {
             ui_close_yandex();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
@@ -3050,15 +3186,7 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
              * drew them over the message the screen exists for. */
             ui_update_station_list();
         }
-        // The timeout exists to return to something worth looking at. With
-        // nothing playing there is nothing behind this screen, so browsing is
-        // allowed to take as long as the user wants.
-        const bool playback_running =
-            snapshot->playback_state == PLAYER_PLAYBACK_PLAYING ||
-            snapshot->playback_state == PLAYER_PLAYBACK_PAUSED ||
-            snapshot->playback_state == PLAYER_PLAYBACK_CONNECTING ||
-            snapshot->playback_state == PLAYER_PLAYBACK_RECONNECTING;
-        if (playback_running &&
+        if (ui_playback_running(snapshot) &&
             station_list_idle_timeout_elapsed(&s_station_list, ui_tick_get_ms(),
                                               UI_STATION_LIST_IDLE_TIMEOUT_MS)) {
             ui_close_station_list_to_source();
@@ -3237,6 +3365,7 @@ static void ui_task(void *arg)
                                        : active == s_menu_screen         ? &s_menu_strip
                                        : active == s_feed_screen         ? &s_feed_strip
                                        : active == s_station_list_screen ? &s_list_strip
+                                       : active == s_yandex_screen       ? &s_yandex_strip
                                                                          : NULL;
             ui_status_strip_update(strip, &snapshot);
         }
@@ -3256,6 +3385,19 @@ static void ui_task(void *arg)
             // confirmation arrives from the network, neither of which is a
             // button press.
             ui_update_yandex();
+            /* The same return timer the station list has, on the same 10 s.
+             * Only over the list: a pairing code takes a minute to type on a
+             * phone, and closing that screen out from under someone doing it
+             * would be a fault, not a convenience. Nor while a station this
+             * screen asked for is still starting - the wait is the screen
+             * doing what it was told, not the user having wandered off. */
+            if (s_yandex_open && s_yandex_mode == UI_YANDEX_MODE_LIST &&
+                s_yandex_start_row == PLAYER_ITEM_NONE &&
+                ui_playback_running(&snapshot) &&
+                station_list_idle_timeout_elapsed(&s_yandex_list, ui_tick_get_ms(),
+                                                  UI_STATION_LIST_IDLE_TIMEOUT_MS)) {
+                ui_close_yandex();
+            }
         } else {
             ui_sync_player_snapshot(&snapshot);
         }

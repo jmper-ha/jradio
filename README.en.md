@@ -27,7 +27,7 @@ output.
 | **Interface language** | partly | The switch is there, but it only changes the labels on the settings screen itself |
 | **Likes in Yandex Music** | partly | "Like" is there - on F3 and in the web interface; "dislike" is not |
 | **Yandex Music categories** | not built | Only the account's own stations are shown; there is no general catalogue of genres, moods and epochs |
-| **Bluetooth, FM, DLNA** | not built | Their menu entries are there, but they answer "not available yet" |
+| **Bluetooth, FM, DLNA** | not built | They have no menu entries: the device only shows what it can actually do |
 
 ## Formats
 
@@ -144,7 +144,7 @@ time.
 
 To leave it out of the firmware altogether, use the `YANDEX_MUSIC` line in
 `board_options.h`: `FEATURE_OFF` - or the line deleted - means there is neither
-the source nor the switch in Settings.
+the source nor the switch in Settings. See "What the home screen shows".
 
 An account can be unlinked from the web interface.
 
@@ -195,6 +195,13 @@ The parts with drivers are listed in
 [`board_parts.h`](components/board/include/board_parts.h). A typo fails the
 build rather than producing a device that misbehaves.
 
+The same file names the parts this board does not carry: an FM tuner and
+Bluetooth. Their blocks are commented out rather than deleted - the file should
+answer "can this firmware drive one" with a no as well as with a yes. For
+Bluetooth the answer is final: the ESP32-S3 has no classic Bluetooth, only BLE,
+and A2DP is a classic-Bluetooth profile, so playing from a phone would need a
+receiver module of its own.
+
 | Signal | GPIO | | Signal | GPIO |
 |---|---:|---|---|---:|
 | ILI9341 CS | 10 | | Encoder button | 6 |
@@ -231,6 +238,30 @@ Worth knowing if you build the board:
 - the slot has no card-detect line, so an inserted card can only be found by
   trying to mount it - which is also why the card is not held mounted, see
   "Limits". FAT16/FAT32 only, no exFAT.
+
+## What the home screen shows
+
+The home screen shows exactly what the firmware can make use of, and nothing
+else. `board_options.h` decides, in two different ways:
+
+- **hardware**, by its wiring. USB, microSD, an FM tuner: a block of pins is
+  there, so the source is there. Comment the block out or delete it, and the
+  entry disappears from the device's screen, from the web interface and from
+  autoplay;
+- **features**, by a `FEATURE_ON` / `FEATURE_OFF` line. That is how
+  `YANDEX_MUSIC` and `DLNA` are declared; a missing line means `FEATURE_OFF`.
+
+Internet radio and Settings are always there: the first needs nothing beyond
+the Wi-Fi already on the chip, and without the second there would be no way to
+configure the device. Yandex Music has a second step as well - the switch in
+Settings, which hides the source in a firmware that was built with it.
+
+One case is its own: a build with nothing left but the radio and Settings. A
+home screen of two rows offers no choice, so there is none at all - the device
+starts straight into the station list, and a long press (or F2) switches
+between the list and Settings. Going into Settings stops the radio, exactly as
+a long press on the player screen does. The "Home screen" row in Settings is
+hidden in such a build too: there is nothing to choose between.
 
 ## Building and flashing
 

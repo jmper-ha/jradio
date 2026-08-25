@@ -1,12 +1,17 @@
 #include "ui_settings_model.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
+
+/* Every model here is built with a home screen, which is the ordinary device;
+ * the one without is what test_a_device_with_no_home_screen_drops_that_row()
+ * covers. */
 
 static void test_collapsed_groups_and_cursor(void)
 {
     ui_settings_model_t model;
-    ui_settings_model_init(&model);
+    ui_settings_model_init(&model, true);
     assert(ui_settings_model_row_count(&model) == 3U);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_LANGUAGE_GROUP);
 
@@ -20,7 +25,7 @@ static void test_collapsed_groups_and_cursor(void)
 static void test_expand_limits_cursor_to_group(void)
 {
     ui_settings_model_t model;
-    ui_settings_model_init(&model);
+    ui_settings_model_init(&model, true);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_row_count(&model) == 4U);
     assert(ui_settings_model_row_at(&model, 0U).id == UI_SETTINGS_ROW_LANGUAGE_GROUP);
@@ -41,7 +46,7 @@ static void test_expand_limits_cursor_to_group(void)
 static void test_each_group_has_expected_fields(void)
 {
     ui_settings_model_t model;
-    ui_settings_model_init(&model);
+    ui_settings_model_init(&model, true);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
     /* General holds home screen, scrolling and autoplay, plus the Yandex Music
@@ -70,7 +75,7 @@ static void test_each_group_has_expected_fields(void)
 static void test_the_display_group_holds_a_number_the_knob_edits(void)
 {
     ui_settings_model_t model;
-    ui_settings_model_init(&model);
+    ui_settings_model_init(&model, true);
     assert(!ui_settings_model_is_editing(&model));
     /* Down to Display and open it: brightness first, then the two flips. */
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
@@ -145,7 +150,7 @@ static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
      * grown out of it for the moment. */
     const size_t visible = 5U;
     ui_settings_model_t model;
-    ui_settings_model_init(&model);
+    ui_settings_model_init(&model, true);
 
     /* Collapsed, everything fits: no window movement and nothing to indicate. */
     assert(ui_settings_model_row_count(&model) <= visible);
@@ -200,10 +205,10 @@ static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
 
     /* Every reachable cursor position is inside its own window - the property
      * the whole thing exists for. */
-    ui_settings_model_init(&model);
+    ui_settings_model_init(&model, true);
     for (ui_settings_group_t group = UI_SETTINGS_GROUP_LANGUAGE;
          group < UI_SETTINGS_GROUP_COUNT; ++group) {
-        ui_settings_model_init(&model);
+        ui_settings_model_init(&model, true);
         while (ui_settings_model_row_at(&model, model.cursor).group != group ||
                ui_settings_model_row_at(&model, model.cursor).kind != UI_SETTINGS_ROW_GROUP) {
             if (ui_settings_model_move(&model, 1) != UI_SETTINGS_MODEL_CHANGED) break;
@@ -216,6 +221,38 @@ static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
     }
 }
 
+static void test_a_device_with_no_home_screen_drops_that_row(void)
+{
+    /* With only the radio and Settings to switch between, the choice between
+     * the list home screen and the carousel picks between two screens the
+     * device never shows. The row is not disabled but absent: a setting that
+     * changes nothing is worse than no setting, because it looks like it
+     * should. */
+    ui_settings_model_t model;
+    ui_settings_model_init(&model, false);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_GENERAL_GROUP);
+    assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
+
+    ui_settings_model_t with_home;
+    ui_settings_model_init(&with_home, true);
+    (void)ui_settings_model_move(&with_home, 1);
+    (void)ui_settings_model_activate(&with_home);
+    assert(ui_settings_model_row_count(&model) ==
+           ui_settings_model_row_count(&with_home) - 1U);
+
+    /* Scrolling is what the row above it becomes, so nothing below shifts by
+     * more than the one row that went. */
+    assert(ui_settings_model_row_at(&model, 2U).id == UI_SETTINGS_ROW_SCROLL_FIELD);
+    assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_AUTOPLAY_FIELD);
+
+    /* And the cursor cannot reach it: walking the whole group never lands on
+     * a row the model does not hand out. */
+    do {
+        assert(ui_settings_model_selected(&model) != UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
+    } while (ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+}
+
 static void test_the_longest_list_needs_the_window(void)
 {
     /* Six rows is what ui.c draws. General is deeper than that now, so the
@@ -225,14 +262,14 @@ static void test_the_longest_list_needs_the_window(void)
     size_t longest = 0U;
     for (ui_settings_group_t group = UI_SETTINGS_GROUP_LANGUAGE;
          group < UI_SETTINGS_GROUP_COUNT; ++group) {
-        ui_settings_model_init(&model);
+        ui_settings_model_init(&model, true);
         model.expanded_group = (int)group;
         const size_t count = ui_settings_model_row_count(&model);
         if (count > longest) longest = count;
     }
     assert(longest == 6U + BOARD_HAS_YANDEX_MUSIC);
     /* Whatever the longest is, every row of it is reachable with the window. */
-    ui_settings_model_init(&model);
+    ui_settings_model_init(&model, true);
     model.expanded_group = (int)UI_SETTINGS_GROUP_GENERAL;
     for (size_t cursor = 0U; cursor < longest; ++cursor) {
         model.cursor = cursor;
@@ -249,6 +286,7 @@ int main(void)
     test_the_display_group_holds_a_number_the_knob_edits();
     test_brightness_steps_and_stops_at_the_ends();
     test_the_window_follows_the_cursor_and_otherwise_holds_still();
+    test_a_device_with_no_home_screen_drops_that_row();
     test_the_longest_list_needs_the_window();
     puts("ui_settings_model tests passed");
     return 0;

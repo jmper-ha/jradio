@@ -1,5 +1,9 @@
 #include "sd_storage.h"
 
+#include "board_features.h"
+
+#if BOARD_HAS_SD_CARD
+
 #include <stdint.h>
 
 #include "driver/gpio.h"
@@ -254,3 +258,42 @@ esp_err_t sd_storage_init(void)
     // The mount is a feature; the bus being up is what this call promises.
     return ESP_OK;
 }
+
+#else /* !BOARD_HAS_SD_CARD */
+
+/* No socket wired on this board, so there is no bus to bring up and no pins to
+ * name - SDC_CS_GPIO and the rest are absent from board_options.h, which is
+ * exactly what BOARD_HAS_SD_CARD is reading. The card is also absent from the
+ * home screen and from the web interface, so nothing should reach these at
+ * all; they exist so that removing a part stays a one-file edit rather than a
+ * link error.
+ *
+ * Unmount succeeds: letting go of something never held is not a failure, and
+ * the player calls it on every source change. */
+
+esp_err_t sd_storage_init(void)
+{
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+esp_err_t sd_storage_mount(void)
+{
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+esp_err_t sd_storage_unmount(void)
+{
+    return ESP_OK;
+}
+
+bool sd_storage_is_mounted(void)
+{
+    return false;
+}
+
+file_browser_media_t sd_storage_media(void)
+{
+    return FILE_BROWSER_MEDIA_ABSENT;
+}
+
+#endif /* BOARD_HAS_SD_CARD */

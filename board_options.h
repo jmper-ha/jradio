@@ -32,7 +32,8 @@
 #if defined(TFT_CS_GPIO) || defined(I2S_DOUT_GPIO) || defined(USB_DP_GPIO) || \
     defined(ENCODER_LEFT_GPIO) || defined(TFT_BACKLIGHT_GPIO) ||              \
     defined(BUTTON_F1_GPIO) || defined(DISPLAY) || defined(AUDIO_DAC) ||      \
-    defined(SDC_CS_GPIO) || defined(YANDEX_MUSIC)
+    defined(SDC_CS_GPIO) || defined(YANDEX_MUSIC) || defined(FM_TUNER) ||     \
+    defined(BLUETOOTH) || defined(DLNA)
 #error "board_options.h: a name here is already defined elsewhere - most likely \
 an ESP-IDF header now uses it. Re-prefix the affected option in this file and \
 at its use sites."
@@ -138,6 +139,39 @@ at its use sites."
 #define SDC_HAS_CARD_DETECT 0
 
 /* ======================================================================
+ * FM radio - tuner module on I2C  (not fitted)
+ * ====================================================================== */
+
+/* Nothing on revision 1 receives FM, and no driver is written. The block is
+ * here rather than absent because "which parts can this firmware drive" is a
+ * question this file should answer, including with a no: an option that only
+ * exists in someone's memory gets re-invented differently next time.
+ *
+ * Uncommenting the four lines is what fits a tuner: the source then appears
+ * on the home screen and in the web interface, which is exactly the point at
+ * which the missing driver becomes the next thing to write.
+ *
+ * The bus is its own, not the card's: SPI3 has no spare pins left, and a
+ * tuner is an I2C part anyway. */
+// #define FM_TUNER FM_TUNER_RDA5807
+// #define FM_I2C_PERIPHERAL 0
+// #define FM_I2C_SDA_GPIO 8
+// #define FM_I2C_SCL_GPIO 3
+
+/* ======================================================================
+ * Bluetooth audio - not possible on this part
+ * ====================================================================== */
+
+/* The ESP32-S3 has no classic Bluetooth at all - its radio is Wi-Fi and BLE -
+ * and A2DP is a classic-Bluetooth profile. So this is not "not fitted yet"
+ * the way FM is: on this chip it cannot be fitted, and playing from a phone
+ * over Bluetooth needs a receiver module of its own feeding the I2S input, or
+ * a different part.
+ *
+ * Left named so the answer is written down where the question is asked. */
+// #define BLUETOOTH BLUETOOTH_A2DP_SINK
+
+/* ======================================================================
  * Optional features - what is built into this firmware
  * ====================================================================== */
 
@@ -150,3 +184,10 @@ at its use sites."
  *
  * FEATURE_OFF and deleting the line mean the same thing. */
 #define YANDEX_MUSIC FEATURE_ON
+
+/* DLNA renderer: play what a phone or a PC on the LAN pushes to the device.
+ * Nothing implements it yet, and it is off for the same reason FM is
+ * commented out - the option is written down so that turning it on is one
+ * line here, and so that the home screen does not offer what the firmware
+ * cannot do. */
+#define DLNA FEATURE_OFF

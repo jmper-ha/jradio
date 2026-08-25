@@ -20,13 +20,41 @@ static const ui_menu_item_config_t s_items[UI_MENU_ITEM_COUNT] = {
     [UI_MENU_ITEM_SETTINGS] = {.label = "Настройки", .source = AUDIO_SOURCE_NONE},
 };
 
+/* What this firmware was built with. Internet radio and Settings answer yes
+ * unconditionally: the radio needs no part beyond the Wi-Fi that is on the
+ * chip, and a device with no way into Settings could not be configured. */
+static bool ui_menu_item_is_built(ui_menu_item_t item)
+{
+    switch (item) {
+    case UI_MENU_ITEM_USB_FILES:
+        return BOARD_HAS_USB;
+    case UI_MENU_ITEM_SD_CARD:
+        return BOARD_HAS_SD_CARD;
+    case UI_MENU_ITEM_BLUETOOTH:
+        return BOARD_HAS_BLUETOOTH;
+    case UI_MENU_ITEM_FM_RADIO:
+        return BOARD_HAS_FM_RADIO;
+    case UI_MENU_ITEM_DLNA:
+        return BOARD_HAS_DLNA;
+    case UI_MENU_ITEM_YANDEX_MUSIC:
+        return BOARD_HAS_YANDEX_MUSIC;
+    default:
+        return true;
+    }
+}
+
 bool ui_menu_item_is_visible(ui_menu_item_t item, bool yandex_visible)
 {
     if (item >= UI_MENU_ITEM_COUNT) return false;
     /* The build decides first: with the feature out, the flag saved in
      * settings.csv is stale data about a source this firmware does not have. */
-    if (item == UI_MENU_ITEM_YANDEX_MUSIC) return BOARD_HAS_YANDEX_MUSIC && yandex_visible;
-    return true;
+    if (!ui_menu_item_is_built(item)) return false;
+    return item != UI_MENU_ITEM_YANDEX_MUSIC || yandex_visible;
+}
+
+bool ui_menu_home_screen_needed(uint8_t visible_count)
+{
+    return visible_count > 2U;
 }
 
 uint8_t ui_menu_visible_count(bool yandex_visible)

@@ -55,6 +55,10 @@ typedef struct {
      * instead of moving the cursor. One knob does both jobs, so which job it
      * is doing has to be a state, and one the screen can show. */
     bool editing;
+    /* Whether this device has a home screen at all, taken at init. Decides
+     * one row: the choice between the list and the carousel means nothing on
+     * a device that shows neither. */
+    bool home_screen;
 } ui_settings_model_t;
 
 /* Brightness runs 10..90 rather than 0..100: the panel is unreadable below
@@ -65,7 +69,9 @@ typedef struct {
 #define UI_SETTINGS_BRIGHTNESS_MAX 90
 #define UI_SETTINGS_BRIGHTNESS_STEP 5
 
-void ui_settings_model_init(ui_settings_model_t *model);
+/* `home_screen` is what ui_menu_home_screen_needed() says for the device as it
+ * is running right now - see the field it sets. */
+void ui_settings_model_init(ui_settings_model_t *model, bool home_screen);
 ui_settings_model_result_t ui_settings_model_move(ui_settings_model_t *model, int direction);
 ui_settings_model_result_t ui_settings_model_activate(ui_settings_model_t *model);
 ui_settings_row_id_t ui_settings_model_selected(const ui_settings_model_t *model);

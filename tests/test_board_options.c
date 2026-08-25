@@ -3,6 +3,7 @@
 
 #include "board_audio_format.h"
 #include "board_display_profile.h"
+#include "board_features.h"
 #include "board_options.h"
 
 /* These headers are plain data, so these are not tests of behaviour: they pin
@@ -105,12 +106,62 @@ static void test_dma_holds_enough_audio_to_ride_out_a_hiccup(void)
 
 static void test_usb_group(void)
 {
+#if BOARD_HAS_USB
     assert(USB_DM_GPIO == 19);
     assert(USB_DP_GPIO == 20);
     assert(USB_DM_GPIO != USB_DP_GPIO);
     /* VBUS is not switched: recovery goes through the controller's root-port
      * power bit instead, so no GPIO is reserved for it. */
     assert(USB_VBUS_SWITCHED == 0);
+#endif
+}
+
+static void test_sd_group(void)
+{
+#if BOARD_HAS_SD_CARD
+    assert(SDC_SPI_PERIPHERAL == 3);
+    /* Not the panel's bus: that one has no MISO wired at all, which a card
+     * cannot work without. */
+    assert(SDC_SPI_PERIPHERAL != DISPLAY_SPI_PERIPHERAL);
+    assert(SDC_CS_GPIO == 1);
+    assert(SDC_SCK_GPIO == 41);
+    assert(SDC_MISO_GPIO == 40);
+    assert(SDC_MOSI_GPIO == 42);
+    /* The socket's switch pins are unconnected, so insertion is found by
+     * trying to mount rather than by a line going low. */
+    assert(SDC_HAS_CARD_DETECT == 0);
+#endif
+}
+
+static void test_what_is_wired_is_what_the_firmware_offers(void)
+{
+    /* The rule the home screen and the web interface both read: a part is
+     * present exactly when its wiring is. There is no second switch saying
+     * "and it is really fitted" - a board with the pins named and the part
+     * declared absent is a contradiction waiting to be believed. */
+#if defined(USB_DP_GPIO)
+    assert(BOARD_HAS_USB == 1);
+#else
+    assert(BOARD_HAS_USB == 0);
+#endif
+#if defined(SDC_CS_GPIO)
+    assert(BOARD_HAS_SD_CARD == 1);
+#else
+    assert(BOARD_HAS_SD_CARD == 0);
+#endif
+
+    /* Neither is fitted on revision 1, and both are named in board_options.h
+     * anyway - the file should answer "can this firmware drive one" with a no
+     * rather than with silence. Bluetooth cannot be fitted at all: the S3
+     * radio is Wi-Fi and BLE, and A2DP is a classic-Bluetooth profile, so no
+     * board_options.h edit should ever turn this one on. */
+    assert(BOARD_HAS_FM_RADIO == 0);
+    assert(BOARD_HAS_BLUETOOTH == 0);
+
+    /* A feature has nothing to wire, so it says so directly - and the two
+     * spellings of off, the line deleted and the line set to FEATURE_OFF,
+     * have to mean the same thing. */
+    assert(BOARD_HAS_DLNA == (DLNA == FEATURE_ON));
 }
 
 static void test_no_pin_is_claimed_by_two_devices(void)
@@ -124,7 +175,15 @@ static void test_no_pin_is_claimed_by_two_devices(void)
         BUTTON_F1_GPIO, BUTTON_F2_GPIO, BUTTON_PREV_GPIO,
         BUTTON_NEXT_GPIO,
         I2S_DOUT_GPIO, I2S_BCLK_GPIO, I2S_LRCK_GPIO,
+#if BOARD_HAS_USB
         USB_DM_GPIO, USB_DP_GPIO,
+#endif
+#if BOARD_HAS_SD_CARD
+        SDC_CS_GPIO, SDC_SCK_GPIO, SDC_MISO_GPIO, SDC_MOSI_GPIO,
+#endif
+#if BOARD_HAS_FM_RADIO
+        FM_I2C_SDA_GPIO, FM_I2C_SCL_GPIO,
+#endif
     };
     const size_t count = sizeof(pins) / sizeof(pins[0]);
     for (size_t i = 0; i < count; ++i) {
@@ -144,6 +203,8 @@ int main(void)
     test_audio_group_matches_the_fixed_i2s_slots();
     test_dma_holds_enough_audio_to_ride_out_a_hiccup();
     test_usb_group();
+    test_sd_group();
+    test_what_is_wired_is_what_the_firmware_offers();
     test_no_pin_is_claimed_by_two_devices();
     puts("board_options tests passed");
     return 0;

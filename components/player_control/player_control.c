@@ -16,6 +16,7 @@
 
 #include "album_art.h"
 #include "audio_source.h"
+#include "board_features.h"
 #include "internet_radio.h"
 #include "yandex_auth.h"
 #include "yandex_catalog.h"
@@ -600,17 +601,26 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     }
 
     memset(snapshot, 0, sizeof(*snapshot));
+    /* What the build has, before what the device currently sees. A part that
+     * is not on this board must not be startable at all - not from the home
+     * screen, which already leaves its row out, and not from the web or from
+     * autoplay either, both of which come through here. player_control_decide()
+     * refuses a source whose bit is missing, so this one test covers all
+     * three. */
     snapshot->capabilities = PLAYER_CAP_INTERNET_RADIO;
     snapshot->usb_media = usb_storage_media();
     snapshot->sd_media = sd_storage_media();
     snapshot->listing_revision = player_control_listing_revision();
     snapshot->files_entry_count = file_storage_entry_count();
-    if (usb_storage_is_mounted()) {
+    if (BOARD_HAS_USB && usb_storage_is_mounted()) {
         snapshot->capabilities |= PLAYER_CAP_USB;
     }
-    // Always: see PLAYER_CAP_SD. What is actually in the slot is sd_media.
-    snapshot->capabilities |= PLAYER_CAP_SD;
-    if (yandex_auth_is_authorized()) {
+    // Always, when the socket exists: see PLAYER_CAP_SD. What is actually in
+    // the slot is sd_media.
+    if (BOARD_HAS_SD_CARD) {
+        snapshot->capabilities |= PLAYER_CAP_SD;
+    }
+    if (BOARD_HAS_YANDEX_MUSIC && yandex_auth_is_authorized()) {
         snapshot->capabilities |= PLAYER_CAP_YANDEX;
     }
     snapshot->active_source =

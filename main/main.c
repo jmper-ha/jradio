@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 
 #include "board.h"
+#include "board_features.h"
 #include "board_input.h"
 #include "device_clock.h"
 #include "internet_radio.h"
@@ -68,25 +69,41 @@ void app_main(void)
     // not depend on being connected - SNTP retries on its own and the clock
     // reads unset until an answer arrives.
     device_clock_init();
-    // After Wi-Fi, because that is what mounts LittleFS, and before the UI so
-    // the menu already knows whether an account is linked when it first draws.
-    start_optional("Yandex Music", yandex_auth_init());
-    start_optional("Yandex Music catalog", yandex_catalog_init());
-    /* Costs a mutex until a station is actually played; what it buys is that
-     * the rotor learns what was listened to, so a station opened tomorrow does
-     * not start where it started today. */
-    start_optional("Yandex Music feedback", yandex_feedback_init());
-    // Before the UI and the radio, deliberately: sd_storage_init() explains
-    // what the internal-SRAM heap does if the mount lands after them.
-    start_optional("SD card", sd_storage_init());
-    start_optional("USB storage", usb_storage_init());
-    start_optional("USB player", file_player_init());
+    /* Each of these belongs to a part or a feature board_options.h can leave
+     * out, so each is asked for only when this build has it. A plain `if` on
+     * a constant rather than #if: the call still has to compile, which is what
+     * catches a signature drifting away from a subsystem nobody currently
+     * builds. */
+    if (BOARD_HAS_YANDEX_MUSIC) {
+        // After Wi-Fi, because that is what mounts LittleFS, and before the UI
+        // so the menu already knows whether an account is linked when it first
+        // draws.
+        start_optional("Yandex Music", yandex_auth_init());
+        start_optional("Yandex Music catalog", yandex_catalog_init());
+        /* Costs a mutex until a station is actually played; what it buys is
+         * that the rotor learns what was listened to, so a station opened
+         * tomorrow does not start where it started today. */
+        start_optional("Yandex Music feedback", yandex_feedback_init());
+    }
+    if (BOARD_HAS_SD_CARD) {
+        // Before the UI and the radio, deliberately: sd_storage_init()
+        // explains what the internal-SRAM heap does if the mount lands after
+        // them.
+        start_optional("SD card", sd_storage_init());
+    }
+    if (BOARD_HAS_USB) {
+        start_optional("USB storage", usb_storage_init());
+    }
+    if (BOARD_HAS_USB || BOARD_HAS_SD_CARD) {
+        // One player for both volumes, so it is wanted if either is fitted.
+        start_optional("file player", file_player_init());
+    }
     ESP_ERROR_CHECK(internet_radio_init());
     /* After both exist, and before anything can play: a Yandex station is an
      * HTTP stream that arrives one track at a time, and this is the seam
      * between the two - the audio path asks for the next link, and the rotor
      * is what answers, without either component naming the other. */
-    internet_radio_set_track_source(yandex_rotor_next_url);
+    if (BOARD_HAS_YANDEX_MUSIC) internet_radio_set_track_source(yandex_rotor_next_url);
     ESP_ERROR_CHECK(player_control_init());
     ESP_ERROR_CHECK(ui_init());
     start_optional("web server", web_server_start());

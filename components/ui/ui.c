@@ -306,6 +306,10 @@ static lv_obj_t *s_settings_notice;
 static ui_settings_model_t s_settings_model;
 static device_settings_t s_device_settings;
 static bool s_settings_open;
+/* Set when the radio could not be opened at once on a device with no home
+ * screen - see ui_open_radio_home(). Retried from the poll loop, which is
+ * where the pending command it is waiting on gets resolved. */
+static bool s_radio_home_pending;
 static lv_obj_t *s_yandex_screen;
 static lv_obj_t *s_yandex_status;
 static lv_obj_t *s_yandex_code_panel;
@@ -895,6 +899,16 @@ static void ui_apply_yandex_visibility(void)
 {
     ui_menu_set_yandex_visible(&s_menu, s_device_settings.yandex_music);
     ui_feed_model_set_yandex_visible(&s_feed_model, s_device_settings.yandex_music);
+}
+
+/* Whether this device has a home screen at all. Asked each time rather than
+ * settled once at boot: the Yandex switch in Settings can take away the last
+ * source beyond the radio, which turns a device that had a home screen into
+ * one that does not, without a reboot in between. */
+static bool ui_home_screen_exists(void)
+{
+    return ui_menu_home_screen_needed(
+        ui_menu_visible_count(ui_menu_yandex_visible(&s_menu)));
 }
 
 static void ui_update_feed_screen(void)
@@ -1528,7 +1542,7 @@ static void ui_update_settings(void)
 static void ui_show_settings(void)
 {
     s_settings_open = true;
-    ui_settings_model_init(&s_settings_model);
+    ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
     if (!device_settings_init(&s_device_settings)) {
         lv_label_set_text(s_settings_notice, "Ошибка чтения settings.csv");
     } else {
@@ -2502,9 +2516,39 @@ static void ui_show_source(void)
     ui_show_station_list();
 }
 
+/* The radio, opened the way the home screen would have opened it. On a device
+ * with no home screen this is where "back" leads: with only two places to be,
+ * one of them has to be the resting place, and it is the one that plays.
+ *
+ * The list rather than the player, because that is where the radio starts from
+ * everywhere else - there is nothing to look at on the player screen until a
+ * station has been chosen.
+ *
+ * False when the attempt has to wait. The way back here is out of Settings,
+ * and Settings is the one screen the poll loop does not sync the player state
+ * on - so the stop that opened it can still be pending, and a select posted
+ * while one is in flight is refused. The caller arms a retry; it clears on the
+ * next pass, once the snapshot has confirmed the stop. */
+static bool ui_open_radio_home(void)
+{
+    const player_command_t command = {
+        .kind = PLAYER_COMMAND_SELECT_SOURCE,
+        .source = AUDIO_SOURCE_INTERNET_RADIO,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    if (!ui_submit_player_command(&command)) return false;
+    (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_INTERNET_RADIO);
+    ui_show_station_list();
+    return true;
+}
+
 static void ui_load_menu_screen(void)
 {
     s_waiting_for_radio_station = false;
+    if (!ui_home_screen_exists()) {
+        s_radio_home_pending = !ui_open_radio_home();
+        return;
+    }
     if (s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED && s_feed_screen != NULL) {
         ui_update_feed_screen();
         lv_screen_load(s_feed_screen);
@@ -2527,6 +2571,16 @@ static void ui_show_menu(void)
         .item_index = PLAYER_ITEM_NONE,
     };
     if (!ui_submit_player_command(&command)) return;
+    /* With no home screen this gesture is not a way out but a two-way switch,
+     * and this is the half that leads to Settings. It still stops what is
+     * playing, which is the point rather than a side effect: the radio is the
+     * other half of the switch, and leaving it running behind a screen with no
+     * transport controls is how a device ends up playing with no way to say
+     * so. */
+    if (!ui_home_screen_exists()) {
+        ui_show_settings();
+        return;
+    }
     if (old_view != ui_player_state_view(&s_player_ui) ||
         old_source != ui_player_state_source(&s_player_ui)) {
         ui_load_menu_screen();
@@ -3461,6 +3515,9 @@ static void ui_task(void *arg)
             }
         } else {
             ui_sync_player_snapshot(&snapshot);
+            /* After the sync, not before: it is the snapshot that clears the
+             * pending stop this is waiting on. */
+            if (s_radio_home_pending) s_radio_home_pending = !ui_open_radio_home();
         }
         ui_scroll_tick();
         /* Driven from here because this is the one task that is always
@@ -3558,7 +3615,6 @@ esp_err_t ui_init(void)
     ui_create_yandex_screen();
     ui_create_source_screen();
     ui_create_station_list_screen();
-    ui_settings_model_init(&s_settings_model);
     if (!device_settings_init(&s_device_settings)) {
         lv_label_set_text(s_settings_notice, "Ошибка чтения settings.csv");
     } else {
@@ -3566,7 +3622,11 @@ esp_err_t ui_init(void)
                                          s_device_settings.flip_horizontal);
         (void)board_backlight_set(s_device_settings.brightness);
     }
+    /* After the settings are read and the visibility they decide is applied:
+     * the model asks how many rows the home screen would have, and before this
+     * point the answer counts a Yandex row the switch may have turned off. */
     ui_apply_yandex_visibility();
+    ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
     // Before anything can play: the board defaults to full volume, and coming
     // back from a power cut at full blast when the user had it at 20 is the
     // kind of surprise a saved setting exists to prevent.
@@ -3578,11 +3638,11 @@ esp_err_t ui_init(void)
                                             FILE_BROWSER_MEDIA_READY, true) !=
                          UI_AUTOPLAY_HOME;
     s_autoplay_started_ms = ui_tick_get_ms();
-    if (s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED) {
-        lv_screen_load(s_feed_screen);
-    } else {
-        lv_screen_load(s_menu_screen);
-    }
+    /* Through the same call the rest of the firmware uses, so a device with no
+     * home screen boots straight into the radio instead of onto a screen it
+     * would never show again. Autoplay, if it is on, replaces this a moment
+     * later from the poll loop. */
+    ui_load_menu_screen();
 
     // Pinned to core 0 alongside Wi-Fi and lwIP: LVGL rendering and the
     // synchronous SPI flush are not time critical, but they are long enough to

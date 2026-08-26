@@ -124,9 +124,33 @@
 #define UI_SET_ROW_PITCH 25
 #define UI_SET_ROW_H 24
 /* The band along the bottom is the only place the device says how to reach its
- * web UI. It sits below everything else and never scrolls away. */
+ * web UI. It sits below everything else and never scrolls away - but it is the
+ * last thing the cursor reaches, and a click there puts the address up as a QR
+ * code, which is the only way a phone gets it without someone reading digits
+ * out loud. */
 #define UI_SET_BAND_Y 210
 #define UI_SET_BAND_H 30
+/* What the address keeps for itself, dotted past that. The hint on the right is
+ * sized to its own text and pinned to the edge instead of taking a share: a
+ * fixed width would either clip the words or steal room from the address, and
+ * the one case that overruns 190 px - the setup AP, whose band names a network
+ * as well as an address - is exactly the case the QR itself answers. */
+#define UI_SET_BAND_ADDRESS_W 190
+#define UI_SET_BAND_PAD 12
+
+/* The QR code and the white card behind it. The card is the quiet zone: the
+ * generator fills its canvas edge to edge whenever the modules divide into it
+ * evenly, and a code that runs straight into the dark background is a code a
+ * phone refuses to read. 18 px of white on every side is four modules at the
+ * smallest scale either payload produces. */
+#define UI_QR_SIZE 144
+#define UI_QR_CARD 180
+#define UI_QR_CARD_Y 4
+/* The code covers the settings screen, and nothing on it moves - so unlike a
+ * list there is no activity to measure, only how long it has been up. Long
+ * enough for a phone to be fetched from another room, short enough that the
+ * screen does not sit on a QR code all evening. */
+#define UI_QR_IDLE_TIMEOUT_MS 30000U
 
 /* The other home screen: the same items as a list. Eight rows of 24 px start
  * right under the strip and end at 222, which is every pixel the screen has -
@@ -302,6 +326,17 @@ static lv_obj_t *s_settings_more_below;
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
+static lv_obj_t *s_settings_web_hint;
+static lv_obj_t *s_qr_overlay;
+static lv_obj_t *s_qr_code;
+static lv_obj_t *s_qr_caption;
+static lv_obj_t *s_qr_back;
+static bool s_qr_open;
+static uint32_t s_qr_opened_ms;
+/* What the code on screen currently encodes, so it is rebuilt only when the
+ * payload actually changes: the settings screen updates on every pass of the
+ * UI loop, and a rebuild is a full re-encode plus a canvas repaint. */
+static char s_qr_shown[128];
 static lv_obj_t *s_settings_notice;
 static ui_settings_model_t s_settings_model;
 static device_settings_t s_device_settings;
@@ -1355,17 +1390,60 @@ static void ui_create_settings_screen(void)
     lv_obj_set_style_bg_color(s_settings_web_band, lv_color_hex(UI_COLOR_STRIP), 0);
     lv_obj_set_style_bg_opa(s_settings_web_band, LV_OPA_COVER, 0);
 
-    lv_obj_t *web_tag = lv_label_create(s_settings_web_band);
-    lv_label_set_text(web_tag, "web");
-    lv_obj_set_pos(web_tag, 12, (UI_SET_BAND_H - 19) / 2);
-    lv_obj_set_style_text_color(web_tag, lv_color_hex(UI_COLOR_ACCENT), 0);
-
+    /* The "web" tag that used to sit here is gone: the address starts with
+     * http:// and says what it is, and the room it took is what the right-hand
+     * half of the band needs to say the click leads somewhere. */
     s_settings_web_address = lv_label_create(s_settings_web_band);
-    lv_obj_set_pos(s_settings_web_address, 52, (UI_SET_BAND_H - 19) / 2);
-    lv_obj_set_width(s_settings_web_address, 256);
+    lv_obj_set_pos(s_settings_web_address, UI_SET_BAND_PAD, (UI_SET_BAND_H - 19) / 2);
+    lv_obj_set_width(s_settings_web_address, UI_SET_BAND_ADDRESS_W);
     lv_label_set_long_mode(s_settings_web_address, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_settings_web_address, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_label_set_text(s_settings_web_address, "");
+
+    s_settings_web_hint = lv_label_create(s_settings_web_band);
+    lv_obj_align(s_settings_web_hint, LV_ALIGN_RIGHT_MID, -UI_SET_BAND_PAD, 0);
+    lv_obj_set_style_text_color(s_settings_web_hint, lv_color_hex(UI_COLOR_DIM), 0);
+    lv_label_set_text(s_settings_web_hint, "");
+
+    /* A cover over this screen rather than a screen of its own: the code is a
+     * detail of the band, and the settings loop already runs - a second screen
+     * would mean a second copy of everything that keeps it up to date. */
+    s_qr_overlay = lv_obj_create(s_settings_screen);
+    lv_obj_remove_style_all(s_qr_overlay);
+    lv_obj_set_pos(s_qr_overlay, 0, 0);
+    lv_obj_set_size(s_qr_overlay, 320, 240);
+    lv_obj_set_style_bg_color(s_qr_overlay, lv_color_hex(UI_COLOR_GROUND), 0);
+    lv_obj_set_style_bg_opa(s_qr_overlay, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_qr_overlay, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *card = lv_obj_create(s_qr_overlay);
+    lv_obj_remove_style_all(card);
+    lv_obj_set_pos(card, (320 - UI_QR_CARD) / 2, UI_QR_CARD_Y);
+    lv_obj_set_size(card, UI_QR_CARD, UI_QR_CARD);
+    lv_obj_set_style_bg_color(card, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(card, 4, 0);
+
+    s_qr_code = lv_qrcode_create(card);
+    lv_qrcode_set_size(s_qr_code, UI_QR_SIZE);
+    lv_qrcode_set_dark_color(s_qr_code, lv_color_black());
+    lv_qrcode_set_light_color(s_qr_code, lv_color_white());
+    lv_obj_set_pos(s_qr_code, (UI_QR_CARD - UI_QR_SIZE) / 2, (UI_QR_CARD - UI_QR_SIZE) / 2);
+
+    s_qr_caption = lv_label_create(s_qr_overlay);
+    lv_obj_set_pos(s_qr_caption, 10, UI_QR_CARD_Y + UI_QR_CARD + 6);
+    lv_obj_set_width(s_qr_caption, 300);
+    lv_obj_set_style_text_align(s_qr_caption, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_qr_caption, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_color(s_qr_caption, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_label_set_text(s_qr_caption, "");
+
+    s_qr_back = lv_label_create(s_qr_overlay);
+    lv_obj_set_pos(s_qr_back, 10, UI_QR_CARD_Y + UI_QR_CARD + 28);
+    lv_obj_set_width(s_qr_back, 300);
+    lv_obj_set_style_text_align(s_qr_back, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(s_qr_back, lv_color_hex(UI_COLOR_DIM), 0);
+    lv_label_set_text(s_qr_back, "");
 }
 
 static const char *ui_settings_group_text(ui_settings_group_t group, bool english)
@@ -1460,14 +1538,82 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     }
 }
 
+static void ui_hide_qr(void)
+{
+    s_qr_open = false;
+    s_qr_shown[0] = '\0';
+    lv_obj_add_flag(s_qr_overlay, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* Brings the code on screen in line with the address the band is showing.
+ *
+ * The address can change while the code is up - saving a network from the web
+ * moves the box off its own access point - and a QR still offering the old one
+ * is worse than none: the phone reports a failure that looks like its own. */
+static void ui_apply_qr(const char *payload, bool available, const char *caption,
+                        bool english)
+{
+    if (!s_qr_open) return;
+    if (!available) {
+        ui_hide_qr();
+        return;
+    }
+    ui_set_label_text_if_changed(s_qr_caption, caption);
+    ui_set_label_text_if_changed(s_qr_back,
+                                 english ? "press to return" : "Нажмите, чтобы вернуться");
+    if (strcmp(payload, s_qr_shown) == 0) return;
+    if (lv_qrcode_update(s_qr_code, payload, (uint32_t)strlen(payload)) != LV_RESULT_OK) {
+        /* Nothing to show and nothing to say about it: a blank white card
+         * would read as a code the phone is failing to scan. */
+        ui_hide_qr();
+        return;
+    }
+    snprintf(s_qr_shown, sizeof(s_qr_shown), "%s", payload);
+}
+
 static void ui_update_settings_web_band(void)
 {
     const wifi_provisioning_status_t status = wifi_provisioning_status();
+    const bool english = s_device_settings.language == DEVICE_LANGUAGE_EN;
     char text[64];
-    ui_web_address_text(status.mode, status.ipv4, status.active_ssid,
-                        s_device_settings.language == DEVICE_LANGUAGE_EN,
+    ui_web_address_text(status.mode, status.ipv4, status.active_ssid, english,
                         text, sizeof(text));
     ui_set_label_text_if_changed(s_settings_web_address, text);
+
+    char payload[sizeof(s_qr_shown)];
+    const bool available = ui_web_address_qr(status.mode, status.ipv4, status.active_ssid,
+                                             payload, sizeof(payload));
+    /* The offer only appears when there is something behind it. While the box
+     * is still joining a network there is no address to encode, and a line
+     * that says "press for QR" and then does nothing is a fault report. */
+    ui_set_label_text_if_changed(s_settings_web_hint, available ? "press for QR" : "");
+
+    /* The band is the last cursor stop, so it highlights like a row: the same
+     * tile colour and the same accent, or the screen has a selection nobody
+     * can see. */
+    const bool selected =
+        ui_settings_model_selected(&s_settings_model) == UI_SETTINGS_ROW_ADDRESS_BAND;
+    lv_obj_set_style_bg_color(s_settings_web_band,
+                              lv_color_hex(selected ? UI_COLOR_CURSOR : UI_COLOR_STRIP), 0);
+    lv_obj_set_style_text_color(s_settings_web_address,
+                                lv_color_hex(selected ? UI_COLOR_ACCENT : UI_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(s_settings_web_hint,
+                                lv_color_hex(selected ? UI_COLOR_ACCENT : UI_COLOR_DIM), 0);
+    ui_apply_qr(payload, available, text, english);
+}
+
+static void ui_show_qr(void)
+{
+    if (s_qr_open) return;
+    s_qr_open = true;
+    s_qr_opened_ms = ui_tick_get_ms();
+    /* Empty, so the next band update builds the code rather than deciding it
+     * is already the one on screen. */
+    s_qr_shown[0] = '\0';
+    lv_obj_clear_flag(s_qr_overlay, LV_OBJ_FLAG_HIDDEN);
+    /* Which also takes the overlay straight back down if the address went away
+     * between the band being drawn and the button being pressed. */
+    ui_update_settings_web_band();
 }
 
 static void ui_update_settings(void)
@@ -1542,6 +1688,7 @@ static void ui_update_settings(void)
 static void ui_show_settings(void)
 {
     s_settings_open = true;
+    ui_hide_qr();
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
     if (!device_settings_init(&s_device_settings)) {
         lv_label_set_text(s_settings_notice, "Ошибка чтения settings.csv");
@@ -1561,6 +1708,7 @@ static void ui_close_settings(void)
 {
     if (!s_settings_open) return;
     s_settings_open = false;
+    ui_hide_qr();
     /* Disarmed on the way out: coming back to a screen whose knob still edits
      * the row it was left on is the sort of thing nobody expects. */
     s_settings_model.editing = false;
@@ -2939,6 +3087,16 @@ static void ui_handle_input(board_input_action_t action)
         return;
     }
     if (s_settings_open) {
+        if (s_qr_open) {
+            /* One thing on screen and one way off it: any button returns, and
+             * the knob has nothing to move. */
+            if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON ||
+                action == BOARD_INPUT_ACTION_ENCODER_LONG ||
+                action == BOARD_INPUT_ACTION_F2) {
+                ui_hide_qr();
+            }
+            return;
+        }
         if (action == BOARD_INPUT_ACTION_F2 || action == BOARD_INPUT_ACTION_ENCODER_LONG) {
             ui_close_settings();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
@@ -2953,7 +3111,9 @@ static void ui_handle_input(board_input_action_t action)
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             const ui_settings_row_t row = ui_settings_model_row_at(
                 &s_settings_model, s_settings_model.cursor);
-            if (ui_settings_row_is_number(row.id)) {
+            if (row.kind == UI_SETTINGS_ROW_BAND) {
+                ui_show_qr();
+            } else if (ui_settings_row_is_number(row.id)) {
                 /* The click arms and disarms the knob rather than changing
                  * anything: a number has no next value to step to the way a
                  * switch does. */
@@ -3545,6 +3705,12 @@ static void ui_task(void *arg)
         ui_update_footer();
         ui_update_cover();
         if (s_settings_open) {
+            /* Wrap-safe, the same subtraction the station list's idle close
+             * uses: the tick is a 32-bit millisecond counter. */
+            if (s_qr_open &&
+                (uint32_t)(ui_tick_get_ms() - s_qr_opened_ms) >= UI_QR_IDLE_TIMEOUT_MS) {
+                ui_hide_qr();
+            }
             ui_update_settings();
         } else if (s_yandex_open) {
             /* The player's own state still has to follow the snapshot: this

@@ -57,7 +57,13 @@ network. Up to five networks are remembered, and after that it connects on its
 own.
 
 The device shows the address of its web interface at the bottom of the settings
-screen - that is the only place it can be read.
+screen - that is the only place it can be read. That band is the last stop the
+cursor reaches on the screen: turn down to it and press the knob, and the
+device puts the address up as a QR code. On a joined network that is a link to
+the web interface; in setup mode it is an invitation to join the device's own
+access point instead, because `192.168.4.1` is useless until the phone is on
+that network. Another press takes the code down, and so does 30 seconds of
+nothing.
 
 ## Controls
 

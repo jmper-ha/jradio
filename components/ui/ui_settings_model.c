@@ -68,6 +68,15 @@ static const ui_settings_row_t s_field_rows[] = {
 
 #define UI_SETTINGS_FIELD_ROW_COUNT (sizeof(s_field_rows) / sizeof(s_field_rows[0]))
 
+/* Not in either table above, because nothing that walks the groups should ever
+ * meet it: the band belongs to no group and is drawn nowhere in the list. It
+ * is one cursor position past the last row, and that is all it is. */
+static const ui_settings_row_t s_band_row = {
+    .id = UI_SETTINGS_ROW_ADDRESS_BAND,
+    .group = UI_SETTINGS_GROUP_COUNT,
+    .kind = UI_SETTINGS_ROW_BAND,
+};
+
 /* Which of the rows above this particular screen offers. The build already
  * took its rows out of the table; this is the one that also depends on how the
  * device is running - with no home screen there is nothing for "Главный экран"
@@ -109,7 +118,10 @@ static size_t total_row_count(const ui_settings_model_t *model)
 static void movement_bounds(const ui_settings_model_t *model, size_t *first, size_t *last)
 {
     *first = 0U;
-    *last = total_row_count(model) - 1U;
+    /* One past the last row rather than the last row: that position is the
+     * address band. Only with every group collapsed - the expanded case below
+     * pens the cursor into its group, and the band is not in one. */
+    *last = total_row_count(model);
     if (model->expanded_group < 0) return;
     size_t offset = 0U;
     for (ui_settings_group_t group = UI_SETTINGS_GROUP_LANGUAGE;
@@ -150,12 +162,16 @@ size_t ui_settings_model_window_top(ui_settings_model_t *model, size_t visible_c
     /* Clamped first: expanding a group above the window, or collapsing one,
      * changes the row count under a window that was valid a moment ago. */
     size_t top = model->window_top;
+    /* The band is below the list and always on screen, so a cursor that has
+     * reached it must leave the rows where they are rather than scroll to
+     * reveal a row that does not exist. */
+    const size_t cursor = model->cursor < count ? model->cursor : count - 1U;
     if (count <= visible_count) {
         top = 0U;
     } else {
         if (top > count - visible_count) top = count - visible_count;
-        if (model->cursor < top) top = model->cursor;
-        if (model->cursor >= top + visible_count) top = model->cursor - visible_count + 1U;
+        if (cursor < top) top = cursor;
+        if (cursor >= top + visible_count) top = cursor - visible_count + 1U;
     }
     model->window_top = top;
     return top;
@@ -219,7 +235,9 @@ ui_settings_row_t ui_settings_model_row_at(const ui_settings_model_t *model, siz
         .group = UI_SETTINGS_GROUP_LANGUAGE,
         .kind = UI_SETTINGS_ROW_GROUP,
     };
-    if (!valid_model(model) || index >= total_row_count(model)) return invalid;
+    if (!valid_model(model)) return invalid;
+    if (index == total_row_count(model)) return s_band_row;
+    if (index > total_row_count(model)) return invalid;
 
     size_t offset = 0U;
     for (ui_settings_group_t group = UI_SETTINGS_GROUP_LANGUAGE;

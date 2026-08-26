@@ -27,11 +27,18 @@ typedef enum {
     UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
     UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD,
     UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD,
+    /* The band along the bottom of the screen, which shows the address of the
+     * web UI. It is not a setting and it is not in the list - it is drawn
+     * where it always is - but it is the last thing the cursor reaches, so it
+     * is a row here. Reachable only with every group collapsed, like the
+     * headings it follows. */
+    UI_SETTINGS_ROW_ADDRESS_BAND,
 } ui_settings_row_id_t;
 
 typedef enum {
     UI_SETTINGS_ROW_GROUP = 0,
     UI_SETTINGS_ROW_FIELD,
+    UI_SETTINGS_ROW_BAND,
 } ui_settings_row_kind_t;
 
 typedef struct {
@@ -75,7 +82,12 @@ void ui_settings_model_init(ui_settings_model_t *model, bool home_screen);
 ui_settings_model_result_t ui_settings_model_move(ui_settings_model_t *model, int direction);
 ui_settings_model_result_t ui_settings_model_activate(ui_settings_model_t *model);
 ui_settings_row_id_t ui_settings_model_selected(const ui_settings_model_t *model);
+/* How many rows the list holds - what the screen draws. The address band is
+ * one past that: it is a cursor position, not a row to draw, so counting it
+ * here would scroll the list to make room for something already on screen. */
 size_t ui_settings_model_row_count(const ui_settings_model_t *model);
+/* Answers the band for `index == ui_settings_model_row_count()`, which is how
+ * the cursor's position past the end of the list is read back. */
 ui_settings_row_t ui_settings_model_row_at(const ui_settings_model_t *model, size_t index);
 bool ui_settings_model_is_expanded(const ui_settings_model_t *model, ui_settings_group_t group);
 

@@ -22,6 +22,10 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
+# The settings screen turns its address band into a QR code on a click, which
+# is the only way a phone gets to the web UI without someone typing an IP by
+# hand - and in setup mode the only way it joins the box's access point at all.
+CONFIG_LV_USE_QRCODE=y
 CONFIG_FREERTOS_HZ=1000
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"

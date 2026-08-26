@@ -85,6 +85,77 @@ static void test_bad_arguments_are_survivable(void)
     assert(strlen(text) == sizeof(text) - 1U);
 }
 
+static void test_a_joined_network_encodes_the_url(void)
+{
+    /* The QR exists so a phone never has to be told an IP by hand. On a real
+     * network that is all it takes: the camera opens the URL. */
+    char payload[96];
+    assert(ui_web_address_qr(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home",
+                             payload, sizeof(payload)));
+    assert(strcmp(payload, "http://192.168.1.182") == 0);
+}
+
+static void test_setup_mode_encodes_the_join_instead(void)
+{
+    /* The case the URL cannot serve: the phone is not on the box's network,
+     * so http://192.168.4.1 fails before the browser draws anything. The QR
+     * hands over the network instead, and the AP is open - no password in a
+     * code anyone in the room can photograph. */
+    char payload[96];
+    assert(ui_web_address_qr(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "jradio-A1B2",
+                             payload, sizeof(payload)));
+    assert(strcmp(payload, "WIFI:T:nopass;S:jradio-A1B2;;") == 0);
+}
+
+static void test_a_name_with_separators_in_it_is_escaped(void)
+{
+    /* The setup AP names itself jradio-XXXX and never needs this, but the name
+     * arrives as text from the provisioning status: an unescaped ';' would end
+     * the field and the phone would join something else, or nothing. */
+    char payload[96];
+    assert(ui_web_address_qr(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "a;b:c,d\\e\"f",
+                             payload, sizeof(payload)));
+    assert(strcmp(payload, "WIFI:T:nopass;S:a\\;b\\:c\\,d\\\\e\\\"f;;") == 0);
+}
+
+static void test_nothing_to_reach_means_no_code(void)
+{
+    /* A QR that sends a phone to an address the box does not answer on is
+     * worse than no QR: the failure looks like the phone's fault. The band
+     * asks this same question to decide whether to offer the code at all. */
+    char payload[96];
+    assert(!ui_web_address_qr(WIFI_PROVISIONING_STA_CONNECTING, "192.168.1.182", "home",
+                              payload, sizeof(payload)));
+    assert(payload[0] == '\0');
+    assert(!ui_web_address_qr(WIFI_PROVISIONING_STA_CONNECTED, "", "home", payload,
+                              sizeof(payload)));
+    assert(payload[0] == '\0');
+    assert(!ui_web_address_qr(WIFI_PROVISIONING_STA_CONNECTED, NULL, NULL, payload,
+                              sizeof(payload)));
+    assert(payload[0] == '\0');
+    assert(!ui_web_address_qr(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home",
+                              NULL, 0U));
+
+    /* An AP that has not published its name yet still has an address, and the
+     * band says the same thing there - so the code does too. */
+    assert(ui_web_address_qr(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "", payload,
+                             sizeof(payload)));
+    assert(strcmp(payload, "http://192.168.4.1") == 0);
+}
+
+static void test_a_payload_that_would_not_fit_is_refused_whole(void)
+{
+    /* Truncation is the one failure a QR hides: a cut-short payload still
+     * scans, and hands the phone half an address. */
+    char payload[8];
+    assert(!ui_web_address_qr(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home",
+                              payload, sizeof(payload)));
+    assert(payload[0] == '\0');
+    assert(!ui_web_address_qr(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "jradio-A1B2",
+                              payload, sizeof(payload)));
+    assert(payload[0] == '\0');
+}
+
 int main(void)
 {
     test_a_joined_network_shows_where_to_reach_the_box();
@@ -94,6 +165,11 @@ int main(void)
     test_a_missing_address_says_what_is_happening();
     test_setup_mode_without_a_name_falls_back_to_the_address();
     test_bad_arguments_are_survivable();
+    test_a_joined_network_encodes_the_url();
+    test_setup_mode_encodes_the_join_instead();
+    test_a_name_with_separators_in_it_is_escaped();
+    test_nothing_to_reach_means_no_code();
+    test_a_payload_that_would_not_fit_is_refused_whole();
     printf("ui_web_address tests passed\n");
     return 0;
 }

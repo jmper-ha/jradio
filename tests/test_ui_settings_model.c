@@ -19,7 +19,65 @@ static void test_collapsed_groups_and_cursor(void)
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_GENERAL_GROUP);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DISPLAY_GROUP);
+    /* One more stop past the last heading: the address band along the bottom.
+     * It is where the cursor ends up, and only then does the screen stop. */
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_ADDRESS_BAND);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_NO_CHANGE);
+    assert(ui_settings_model_move(&model, -1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DISPLAY_GROUP);
+}
+
+static void test_the_address_band_is_a_stop_not_a_row(void)
+{
+    ui_settings_model_t model;
+    ui_settings_model_init(&model, true);
+    const size_t count = ui_settings_model_row_count(&model);
+    /* The band is not counted among the rows the screen draws: it is painted
+     * along the bottom whatever the list is doing, and counting it would make
+     * the window scroll to reveal something already on screen. */
+    assert(count == 3U);
+    const ui_settings_row_t band = ui_settings_model_row_at(&model, count);
+    assert(band.id == UI_SETTINGS_ROW_ADDRESS_BAND);
+    assert(band.kind == UI_SETTINGS_ROW_BAND);
+    /* And it holds no number, so a click there is never the knob being armed. */
+    assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_ADDRESS_BAND));
+
+    model.cursor = count;
+    assert(ui_settings_model_toggle_edit(&model) == UI_SETTINGS_MODEL_NO_CHANGE);
+    assert(!ui_settings_model_is_editing(&model));
+    /* Nor is it a group to open. */
+    assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_NO_CHANGE);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_ADDRESS_BAND);
+
+    /* With a group open the cursor stays in it, so the band cannot be reached
+     * from inside one - the same rule the headings follow. */
+    ui_settings_model_init(&model, true);
+    (void)ui_settings_model_move(&model, 1);
+    (void)ui_settings_model_move(&model, 1);
+    assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
+    while (ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED) {
+        assert(ui_settings_model_selected(&model) != UI_SETTINGS_ROW_ADDRESS_BAND);
+    }
+}
+
+static void test_the_band_does_not_scroll_the_list(void)
+{
+    /* The list is short enough to fit today, but the window is what would move
+     * if the band were ever counted as a row - so the check is written against
+     * a window too small for the list rather than against today's numbers. */
+    const size_t visible = 2U;
+    ui_settings_model_t model;
+    ui_settings_model_init(&model, true);
+    const size_t count = ui_settings_model_row_count(&model);
+    model.cursor = count - 1U;
+    const size_t top = ui_settings_model_window_top(&model, visible);
+    assert(top == count - visible);
+    /* Onto the band: the rows stay exactly where the last row left them. */
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_ADDRESS_BAND);
+    assert(ui_settings_model_window_top(&model, visible) == top);
+    assert(!ui_settings_model_has_rows_below(&model, visible));
 }
 
 static void test_expand_limits_cursor_to_group(void)
@@ -281,6 +339,8 @@ static void test_the_longest_list_needs_the_window(void)
 int main(void)
 {
     test_collapsed_groups_and_cursor();
+    test_the_address_band_is_a_stop_not_a_row();
+    test_the_band_does_not_scroll_the_list();
     test_expand_limits_cursor_to_group();
     test_each_group_has_expected_fields();
     test_the_display_group_holds_a_number_the_knob_edits();

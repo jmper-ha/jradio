@@ -1552,6 +1552,7 @@ static void ui_show_settings(void)
         (void)board_backlight_set(s_device_settings.brightness);
     }
     ui_apply_yandex_visibility();
+    device_settings_publish(&s_device_settings);
     ui_update_settings();
     lv_screen_load(s_settings_screen);
 }
@@ -1564,6 +1565,49 @@ static void ui_close_settings(void)
      * the row it was left on is the sort of thing nobody expects. */
     s_settings_model.editing = false;
     ui_load_menu_screen();
+}
+
+/* Picks up a settings change made somewhere other than this task - today the
+ * web interface, which writes settings.csv through the same setters and then
+ * raises the flag this reads.
+ *
+ * Re-reading the file is the easy half. The rest is what a stored value alone
+ * does not do: the backlight, the panel rotation, the output volume and the
+ * Yandex row in both home screens all have to be told, and this task is the
+ * only one allowed to tell them. */
+static void ui_reload_settings(void)
+{
+    /* A knob being turned right now has not reached the file yet - the write
+     * waits for the turn to settle - so the value on the card is the one from
+     * before it, and re-reading would undo the turn under the user's hand. */
+    const bool volume_pending = s_volume_save_pending;
+    const bool brightness_pending = s_brightness_save_pending;
+    const unsigned char turning_volume = board_audio_volume();
+    const unsigned char turning_brightness = s_device_settings.brightness;
+
+    if (!device_settings_init(&s_device_settings)) {
+        lv_label_set_text(s_settings_notice, "Ошибка чтения settings.csv");
+        return;
+    }
+    if (volume_pending) s_device_settings.volume = turning_volume;
+    if (brightness_pending) s_device_settings.brightness = turning_brightness;
+
+    (void)board_display_set_rotation(s_device_settings.flip_vertical,
+                                     s_device_settings.flip_horizontal);
+    (void)board_backlight_set(s_device_settings.brightness);
+    if (!volume_pending) board_audio_set_volume(s_device_settings.volume);
+    ui_apply_yandex_visibility();
+    /* The model is left alone while the settings screen is open: re-initialising
+     * it moves the cursor back to the top, and someone standing at the device
+     * has not asked for that. Its idea of whether a home screen exists can then
+     * be one Yandex switch out of date until the screen is left and reopened,
+     * which is the narrower of the two problems. */
+    device_settings_publish(&s_device_settings);
+    if (s_settings_open) {
+        ui_update_settings();
+    } else {
+        ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
+    }
 }
 
 /* Yandex Music pairing screen. It exists because the device flow needs a place
@@ -1968,6 +2012,8 @@ static void ui_settings_change_selected(void)
         return;
     }
     lv_label_set_text(s_settings_notice, changed ? "" : "Ошибка записи settings.csv");
+    // Whatever the card said, this task's copy is what the web has to show.
+    if (changed) device_settings_publish(&s_device_settings);
 }
 
 /* The number fields. Separate from ui_settings_change_selected() because a
@@ -1987,6 +2033,7 @@ static void ui_settings_change_number(int direction)
     (void)board_backlight_set(s_device_settings.brightness);
     s_brightness_save_pending = true;
     s_brightness_changed_ms = ui_tick_get_ms();
+    device_settings_publish(&s_device_settings);
 }
 
 static void ui_create_station_list_screen(void)
@@ -3063,8 +3110,13 @@ static void ui_handle_input(board_input_action_t action)
             // writing settings.csv per click stalled this task long enough that
             // clicks queued up and then arrived in a burst.
             board_audio_set_volume(volume);
+            s_device_settings.volume = volume;
             s_volume_save_pending = true;
             s_volume_changed_ms = ui_tick_get_ms();
+            /* Per detent, not per save: the web slider has to follow the knob
+             * while it is being turned, and the save is a second and a half
+             * behind on purpose. */
+            device_settings_publish(&s_device_settings);
             ui_update_footer();
         } else if (action == BOARD_INPUT_ACTION_BTN_PREV ||
                    action == BOARD_INPUT_ACTION_BTN_NEXT) {
@@ -3469,6 +3521,11 @@ static void ui_task(void *arg)
             (void)device_settings_set_brightness(&s_device_settings,
                                                  s_device_settings.brightness);
         }
+        // After the two commits above, so a change of our own is already on the
+        // card and cannot be read back as if it were somebody else's.
+        if (device_settings_take_changed()) {
+            ui_reload_settings();
+        }
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
@@ -3631,6 +3688,9 @@ esp_err_t ui_init(void)
     // back from a power cut at full blast when the user had it at 20 is the
     // kind of surprise a saved setting exists to prevent.
     board_audio_set_volume(s_device_settings.volume);
+    // Before the task starts: a browser that connects first would otherwise be
+    // told the device has no settings at all.
+    device_settings_publish(&s_device_settings);
     // Asked with both volumes assumed ready: this only decides whether there is
     // anything to wait for at all. What is actually there is settled later, by
     // ui_autoplay_step(), once the drive has had time to enumerate.

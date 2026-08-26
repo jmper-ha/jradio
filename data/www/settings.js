@@ -23,6 +23,29 @@
   const yandexStationsBlock = document.querySelector('#yandex-stations-block');
   const yandexStations = document.querySelector('#yandex-stations');
   const yandexStationsEmpty = document.querySelector('#yandex-stations-empty');
+  const deviceStatus = document.querySelector('#device-status');
+  const deviceBrightness = document.querySelector('#device-brightness');
+  /* The device's own settings screen, field for field, in the order and with
+     the wording it uses - so that "Скроллинг: Влево-вправо" means the same
+     thing in both places. `row` and `gate` belong to the two fields the device
+     itself can be without: a build with no Yandex Music has no switch for it,
+     and a board with only one place to go has no home screen to choose. */
+  const deviceFields = [
+    {field: 'language', kind: 'choice', node: document.querySelector('#device-language')},
+    {field: 'home_screen', kind: 'choice', node: document.querySelector('#device-home-screen'),
+     row: document.querySelector('#device-home-screen-row'), gate: 'home_screen'},
+    {field: 'scroll', kind: 'choice', node: document.querySelector('#device-scroll')},
+    {field: 'autoplay', kind: 'switch', node: document.querySelector('#device-autoplay')},
+    {field: 'yandex_music', kind: 'switch', node: document.querySelector('#device-yandex'),
+     row: document.querySelector('#device-yandex-row'), gate: 'yandex_music'},
+    {field: 'volume', kind: 'number', node: document.querySelector('#device-volume'),
+     output: document.querySelector('#device-volume-value')},
+    {field: 'brightness', kind: 'number', node: deviceBrightness,
+     output: document.querySelector('#device-brightness-value')},
+    {field: 'flip_vertical', kind: 'switch', node: document.querySelector('#device-flip-vertical')},
+    {field: 'flip_horizontal', kind: 'switch',
+     node: document.querySelector('#device-flip-horizontal')},
+  ];
 
   const reconnectDelays = Object.freeze([500, 1000, 2000, 4000, 8000]);
   const passwordErrors = new Set([2, 15, 202, 204]);
@@ -39,6 +62,10 @@
   let pendingRequestId = '';
   let yandexTimer = null;
   let yandexBusy = false;
+  let deviceBusy = false;
+  // The field whose handle is being held right now, if any. A push from the
+  // device must not move a control the visitor has hold of.
+  let deviceHeld = '';
 
   function isObject(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -168,12 +195,21 @@
       lastRevision = message.revision;
       haveSnapshot = true;
       applyWifi(message.wifi);
+      // Absent until the device has published its own; the REST load on page
+      // open is what fills the fields in the meantime.
+      if (isObject(message.settings)) applyLiveSettings(message.settings);
       return;
     }
     if (message.type === 'wifi.update') {
       if (!haveSnapshot || !validRevision(message) || message.revision <= lastRevision) return;
       lastRevision = message.revision;
       applyWifi(message.wifi);
+      return;
+    }
+    if (message.type === 'settings.update') {
+      if (!haveSnapshot || !validRevision(message) || message.revision <= lastRevision) return;
+      lastRevision = message.revision;
+      applyLiveSettings(message.settings);
     }
   }
 
@@ -238,6 +274,138 @@
     currentSocket.addEventListener('error', () => {
       if (socket === currentSocket) currentSocket.close();
     });
+  }
+
+  /* The device settings run over REST for the same reason the Yandex section
+     below does: they change when someone changes them and never on their own,
+     so they have no business in the diff stream that carries the player.
+
+     Neither this page nor the device screen owns them - both write settings.csv
+     through the same setters, and the device is told to re-read after a write
+     from here. That also means the values shown were read when the page loaded:
+     turn the knob on the device and this page will not notice until it is
+     reloaded. */
+
+  /* A change made at the device - the volume knob, the encoder in the settings
+     screen, a button on the front. It arrives over the socket rather than
+     being polled, because settings.csv is eleven reads and nothing else would
+     say when it had changed.
+
+     Dropped outright while a control is held or a write of ours is in flight:
+     the device pushes about four times a second, and the next one is 250 ms
+     away. */
+  function applyLiveSettings(payload) {
+    if (deviceBusy || deviceHeld !== '') return;
+    applyDeviceSettings(payload);
+  }
+
+  function setDeviceDisabled(disabled) {
+    for (const entry of deviceFields) entry.node.disabled = disabled;
+  }
+
+  function applyDeviceSettings(payload) {
+    if (!isObject(payload)) return false;
+    const available = isObject(payload.available) ? payload.available : {};
+    if (Number.isSafeInteger(payload.brightness_min) &&
+        Number.isSafeInteger(payload.brightness_max)) {
+      // The panel is unreadable below about ten and zero looks like a dead
+      // device, so the slider stops where the encoder does - and the device is
+      // what says where that is.
+      deviceBrightness.min = String(payload.brightness_min);
+      deviceBrightness.max = String(payload.brightness_max);
+    }
+    for (const entry of deviceFields) {
+      const value = payload[entry.field];
+      if (entry.kind === 'choice') {
+        if (typeof value === 'string') entry.node.value = value;
+      } else if (entry.kind === 'switch') {
+        if (typeof value === 'boolean') entry.node.checked = value;
+      } else if (Number.isSafeInteger(value)) {
+        entry.node.value = String(value);
+        entry.output.textContent = String(value);
+      }
+      // A field the build does not have is taken off the page rather than
+      // disabled: there is nothing behind it to explain.
+      if (entry.row) entry.row.hidden = available[entry.gate] !== true;
+    }
+    return true;
+  }
+
+  function refreshDeviceSettings() {
+    return window.fetch('/api/settings', {cache: 'no-store'})
+      .then((response) => {
+        if (!response || response.ok !== true) throw new Error('request failed');
+        return response.json();
+      })
+      .then((payload) => {
+        if (!applyDeviceSettings(payload)) throw new Error('unexpected payload');
+        deviceStatus.textContent = 'Готово';
+        deviceStatus.classList.remove('is-error', 'is-success');
+      })
+      .catch(() => {
+        deviceStatus.textContent = 'Нет связи с устройством';
+        deviceStatus.classList.add('is-error');
+      });
+  }
+
+  function sendDeviceChange(field, value) {
+    if (deviceBusy) return Promise.resolve();
+    deviceBusy = true;
+    setDeviceDisabled(true);
+    deviceStatus.textContent = 'Сохранение…';
+    deviceStatus.classList.remove('is-error', 'is-success');
+    return window.fetch('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({field, value}),
+    })
+      .then((response) => {
+        if (!response || response.ok !== true) throw new Error('request failed');
+        return response.json();
+      })
+      .then((payload) => {
+        // The answer is the whole document as the device now has it, so a value
+        // it refused or adjusted is what ends up on screen.
+        if (!applyDeviceSettings(payload)) throw new Error('unexpected payload');
+        deviceStatus.textContent = 'Сохранено';
+        deviceStatus.classList.add('is-success');
+      })
+      .catch(() => {
+        // Put the controls back to what the device actually holds: a switch
+        // left showing a change that never landed is worse than no answer.
+        return refreshDeviceSettings().then(() => {
+          deviceStatus.textContent = 'Не удалось сохранить';
+          deviceStatus.classList.add('is-error');
+          deviceStatus.classList.remove('is-success');
+        });
+      })
+      .then(() => {
+        deviceBusy = false;
+        setDeviceDisabled(false);
+      });
+  }
+
+  function bindDeviceFields() {
+    for (const entry of deviceFields) {
+      if (entry.kind === 'number') {
+        // The readout follows the handle; the write waits for it to be let go,
+        // or a drag across the range would post every step of the way.
+        entry.node.addEventListener('input', () => {
+          deviceHeld = entry.field;
+          entry.output.textContent = String(entry.node.value);
+        });
+        entry.node.addEventListener('change', () => {
+          deviceHeld = '';
+          sendDeviceChange(entry.field, Number(entry.node.value));
+        });
+        continue;
+      }
+      entry.node.addEventListener('change', () => {
+        sendDeviceChange(entry.field,
+                         entry.kind === 'switch' ? entry.node.checked === true
+                                                 : String(entry.node.value));
+      });
+    }
   }
 
   // Yandex Music runs over REST rather than the WebSocket: it changes a few
@@ -385,11 +553,13 @@
   }
 
   form.addEventListener('submit', submitWifi);
+  bindDeviceFields();
   yandexLink.addEventListener('click', () => sendYandexAction('begin'));
   yandexCancel.addEventListener('click', () => sendYandexAction('cancel'));
   yandexForget.addEventListener('click', () => sendYandexAction('forget'));
   yandexRefresh.addEventListener('click', () => sendYandexAction('refresh'));
   setConnected(false);
   connect();
+  refreshDeviceSettings();
   refreshYandex();
 })();

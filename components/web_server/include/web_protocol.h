@@ -7,7 +7,16 @@
 
 #define WEB_PROTOCOL_FRAME_MAX 512U
 #define WEB_PROTOCOL_REQUEST_ID_MAX 32U
-#define WEB_PROTOCOL_EVENT_MAX 4096U
+/* The largest frame this end may send. It bounds one static buffer in
+ * internal SRAM, so it is raised deliberately rather than generously.
+ *
+ * The number that decides it is the worst-case snapshot, which
+ * test_web_server.c builds and measures: a full catalog of 32 stations whose
+ * names are nothing but quotes and backslashes, every player field the same,
+ * every saved network the same. That came to 3874 bytes before the device
+ * settings joined the document and 4144 after - 48 past the 4096 this used to
+ * be. 4608 puts the margin back where it was and leaves some over. */
+#define WEB_PROTOCOL_EVENT_MAX 4608U
 
 #ifdef __cplusplus
 extern "C" {

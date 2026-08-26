@@ -2,6 +2,12 @@
 
 #include "settings_csv.h"
 
+#ifdef ESP_PLATFORM
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#endif
+
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -228,4 +234,57 @@ bool device_settings_get(const device_settings_t *settings, device_settings_t *c
     if (settings == NULL || copy == NULL) return false;
     *copy = *settings;
     return true;
+}
+
+/* Atomic rather than a plain flag: the web server's task sets it while the UI
+ * task is reading, and an exchange is what keeps a change made in that window
+ * from being cleared without ever being acted on. */
+static atomic_bool s_changed;
+
+void device_settings_mark_changed(void)
+{
+    atomic_store(&s_changed, true);
+}
+
+bool device_settings_take_changed(void)
+{
+    return atomic_exchange(&s_changed, false);
+}
+
+/* The published copy, and the lock that keeps a reader from seeing half of it.
+ *
+ * A spinlock rather than a mutex: the copy is a few hundred bytes and both
+ * sides are only ever copying, so the section is over in about the time taking
+ * a mutex would cost. It is the same thing the WebSocket broadcaster does with
+ * the player snapshot it publishes. */
+#ifdef ESP_PLATFORM
+static portMUX_TYPE s_publish_lock = portMUX_INITIALIZER_UNLOCKED;
+#define PUBLISH_LOCK() taskENTER_CRITICAL(&s_publish_lock)
+#define PUBLISH_UNLOCK() taskEXIT_CRITICAL(&s_publish_lock)
+#else
+/* The host tests are single-threaded, as they are for settings_csv. */
+#define PUBLISH_LOCK() ((void)0)
+#define PUBLISH_UNLOCK() ((void)0)
+#endif
+
+static device_settings_t s_published;
+static bool s_have_published;
+
+void device_settings_publish(const device_settings_t *settings)
+{
+    if (settings == NULL) return;
+    PUBLISH_LOCK();
+    s_published = *settings;
+    s_have_published = true;
+    PUBLISH_UNLOCK();
+}
+
+bool device_settings_read_published(device_settings_t *copy)
+{
+    if (copy == NULL) return false;
+    PUBLISH_LOCK();
+    const bool published = s_have_published;
+    if (published) *copy = s_published;
+    PUBLISH_UNLOCK();
+    return published;
 }

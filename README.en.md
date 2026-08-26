@@ -19,7 +19,7 @@ output.
 | **Music from a USB drive** | works | Walk through folders, tags, cover art, scrubbing, moves on to the next track |
 | **Music from an SD card** | works | The same; the card is recognised when its source is entered |
 | **Yandex Music** | works | "My wave" and your account's stations, album art, next track and the like mark. Can be taken off the home screen |
-| **Web interface** | works | Player, station-list editor, file browsing, Wi-Fi, linking Yandex Music. No volume and no scrubbing on the web |
+| **Web interface** | works | Player with cover art, scrubbing, volume and track keys, the device settings, station-list editor, file browsing, Wi-Fi, linking Yandex Music |
 | **Clock** | works | Time from the internet, on every screen |
 | **Volume** | works | On the knob, remembered across restarts |
 | **Autoplay** | works | Starts whatever was playing when the power went off |
@@ -78,6 +78,11 @@ the beginning of a double press.
 While scrubbing, the knob and the press are busy choosing a position, so the
 volume does not change there. Any other button leaves the mode without changing
 anything. The music plays on throughout.
+
+Scrubbing in the web interface is simpler: the position bar under the track
+name is an ordinary slider - drag it, or move it with the arrow keys. It does
+not twitch under the pointer while the position is being polled; let go and the
+device jumps and answers.
 
 ## Home screen
 
@@ -166,6 +171,13 @@ through the list as before.
 
 The language switch still only changes the labels on the settings screen
 itself.
+
+The same settings are in the web interface, on its Settings page, in the same
+words and the same order. It works both ways: a change made in the browser
+takes effect at once, as if it had been made on the knob, and a volume or
+brightness turned on the device reaches an open page within a quarter of a
+second. A slider being held with the pointer does not jump - the update is
+dropped until it is let go.
 
 ---
 
@@ -277,9 +289,10 @@ idf.py -p PORT monitor
 
 `littlefs-flash` **destroys user data** - playlist edits, saved networks,
 device settings and the Yandex Music account link: all of it lives on that one
-partition. Compare the live state first: `curl http://<ip>/api/playlist` and
-`curl http://<ip>/api/yandex`. There is nothing that can read the settings
-back - they return to their defaults, and the account has to be linked again.
+partition. Compare the live state first: `curl http://<ip>/api/playlist`,
+`curl http://<ip>/api/settings` and `curl http://<ip>/api/yandex`. The settings
+return to their defaults after the flash, and the account has to be linked
+again.
 
 ## Tests
 
@@ -287,7 +300,7 @@ back - they return to their defaults, and the account has to be linked again.
 bash tests/run_host_tests.sh
 ```
 
-65 suites, no ESP-IDF activation needed. They compile the real component
+70 suites, no ESP-IDF activation needed. They compile the real component
 sources rather than mocks, with `-Werror` and the address and undefined
 behaviour sanitizers. That is why format parsing, state machines and view
 derivation live in files with no ESP-IDF dependencies - new logic belongs
@@ -302,15 +315,50 @@ no npm and no bundler.
 | `GET /api/playlist` | Station list as CSV |
 | `POST /api/playlist` | Replaces the station list wholesale |
 | `GET /api/files` | Contents of the current directory on the active medium |
+| `GET /api/settings` | The device settings, the same ones its own screen has |
+| `POST /api/settings` | Changes one setting: `{"field":…,"value":…}` |
+| `GET /api/progress` | Track position, buffer fill, cover generation |
+| `GET /api/cover` | The current cover, 96x96, as a BMP |
 | `GET /api/yandex` | Link state and the account's stations (never the token) |
 | `POST /api/yandex` | Link, cancel, unlink, refresh the stations |
 | `POST /api/wifi` | Saves a network |
 | `/ws` | Commands and live updates |
 
 WebSocket commands: `player.play`, `player.pause`, `player.toggle`,
-`player.next`, `source.select`, `list.select`, `browse.up`, `wifi.save`. Live
-state arrives as diffs; anything large - the playlist, media directories - goes
-over REST, because it does not fit in a frame and must not spend internal SRAM.
+`player.next`, `player.previous_item`, `player.next_item`, `player.seek`,
+`player.like`, `source.select`, `list.select`, `browse.up`, `wifi.save`. Live
+state arrives as diffs - `player`, `list`, `wifi`, `settings`; anything large -
+the playlist, media directories - goes over REST, because it does not fit in a
+frame and must not spend internal SRAM.
+
+`player.seek` carries a second rather than a percentage: seconds are what the
+device turns into a byte offset, and a percentage would have to be turned back
+into seconds using a length the browser only has an estimate of.
+
+The track position and the cover go over REST too, for a different reason: the
+snapshot is diffed and broadcast on every change, and a counter that ticks
+would push a frame a second to every open browser. The page polls
+`/api/progress` once a second while something is playing and rarely otherwise.
+The cover is served as a BMP - the device holds it already decoded to RGB565
+and no longer has the original bytes, so anything compressed would mean a PNG
+encoder in firmware for a picture that travels over a LAN; 27 KB uncompressed
+is the cheaper answer. The cover's generation number rides in the URL, so the
+browser takes it from its cache until it actually changes.
+
+The device settings are written by both the panel and the web, through the same
+setters, serialised at the file level. A write from the browser raises a flag,
+and the UI task re-reads `settings.csv` and re-applies the brightness, the
+panel rotation, the volume and the Yandex row - a stored value does none of
+that by itself.
+
+They come back as a `settings` section on the socket rather than by polling:
+the knob changes the volume without telling anyone, and `settings.csv` is
+eleven consecutive reads - far too much to ask on a timer. The UI task
+publishes a copy in memory, the broadcaster reads it every 250 ms and sends a
+diff only when something has moved. That section grew the complete snapshot by
+270 bytes and pushed it past 4096, so the frame limit is now 4608;
+`test_web_server.c` builds the worst case - 32 stations named in nothing but
+quotes and backslashes - and asserts the margin is still there.
 
 **There is no authentication and `Origin` is not checked. Do not expose the
 device.**

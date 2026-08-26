@@ -17,8 +17,10 @@
 
 #include "esp_log.h"
 
+#include "device_settings.h"
 #include "player_control.h"
 #include "station_catalog.h"
+#include "web_server.h"
 #include "yandex_catalog.h"
 #endif
 
@@ -275,6 +277,13 @@ static void write_wifi(web_json_writer_t *writer,
     web_json_literal(writer, "]}");
 }
 
+static void write_settings(web_json_writer_t *writer,
+                           const web_socket_settings_state_t *settings)
+{
+    web_json_literal(writer, "\"settings\":");
+    web_settings_write(writer, &settings->view);
+}
+
 static const char *event_type(web_socket_event_kind_t kind)
 {
     switch (kind) {
@@ -283,6 +292,7 @@ static const char *event_type(web_socket_event_kind_t kind)
     case WEB_SOCKET_EVENT_PLAYER_UPDATE: return "player.update";
     case WEB_SOCKET_EVENT_LIST_UPDATE: return "list.update";
     case WEB_SOCKET_EVENT_WIFI_UPDATE: return "wifi.update";
+    case WEB_SOCKET_EVENT_SETTINGS_UPDATE: return "settings.update";
     default: return NULL;
     }
 }
@@ -291,13 +301,21 @@ int web_socket_serialize_event(char *output, size_t output_size,
                                web_socket_event_kind_t kind, uint32_t revision,
                                const player_snapshot_t *player,
                                const web_socket_wifi_state_t *wifi,
+                               const web_socket_settings_state_t *settings,
                                web_socket_station_label_fn station_label,
                                void *station_context)
 {
     web_json_writer_t writer;
     web_json_init(&writer, output, output_size, WEB_PROTOCOL_EVENT_MAX);
     const char *type = event_type(kind);
-    if (type == NULL || player == NULL || wifi == NULL) {
+    if (type == NULL || player == NULL || wifi == NULL || settings == NULL) {
+        web_json_invalidate(&writer);
+        return writer_finish(&writer);
+    }
+    /* An update about settings nobody has published yet would be a document
+     * full of defaults presented as the device's own. There is nothing to say
+     * until the UI task has spoken. */
+    if (kind == WEB_SOCKET_EVENT_SETTINGS_UPDATE && !settings->known) {
         web_json_invalidate(&writer);
         return writer_finish(&writer);
     }
@@ -319,6 +337,12 @@ int web_socket_serialize_event(char *output, size_t output_size,
         write_list(&writer, player, station_label, station_context);
         web_json_literal(&writer, ",");
         write_wifi(&writer, wifi);
+        // Omitted rather than faked when the UI has not published: the page
+        // keeps its controls disabled until a settings.update arrives.
+        if (settings->known) {
+            web_json_literal(&writer, ",");
+            write_settings(&writer, settings);
+        }
         break;
     case WEB_SOCKET_EVENT_CAPABILITIES_UPDATE:
         web_json_literal(&writer, ",");
@@ -337,6 +361,10 @@ int web_socket_serialize_event(char *output, size_t output_size,
     case WEB_SOCKET_EVENT_WIFI_UPDATE:
         web_json_literal(&writer, ",");
         write_wifi(&writer, wifi);
+        break;
+    case WEB_SOCKET_EVENT_SETTINGS_UPDATE:
+        web_json_literal(&writer, ",");
+        write_settings(&writer, settings);
         break;
     default:
         web_json_invalidate(&writer);
@@ -374,11 +402,14 @@ static bool wifi_state_equal(const web_socket_wifi_state_t *left,
 uint32_t web_socket_changed_sections(
     const player_snapshot_t *previous_player,
     const web_socket_wifi_state_t *previous_wifi,
+    const web_socket_settings_state_t *previous_settings,
     const player_snapshot_t *current_player,
-    const web_socket_wifi_state_t *current_wifi)
+    const web_socket_wifi_state_t *current_wifi,
+    const web_socket_settings_state_t *current_settings)
 {
     if (previous_player == NULL || previous_wifi == NULL ||
-        current_player == NULL || current_wifi == NULL) {
+        previous_settings == NULL || current_player == NULL ||
+        current_wifi == NULL || current_settings == NULL) {
         return WEB_SOCKET_SECTION_ALL;
     }
 
@@ -396,6 +427,15 @@ uint32_t web_socket_changed_sections(
     }
     if (!wifi_state_equal(previous_wifi, current_wifi)) {
         changes |= WEB_SOCKET_SECTION_WIFI;
+    }
+    /* The knob moves the volume without anything else being told, so this is
+     * the section that actually earns its place: it is how a settings page
+     * left open follows what is being done at the device. */
+    if (current_settings->known &&
+        (!previous_settings->known ||
+         !web_settings_view_equal(&previous_settings->view,
+                                  &current_settings->view))) {
+        changes |= WEB_SOCKET_SECTION_SETTINGS;
     }
     return changes;
 }
@@ -449,6 +489,7 @@ typedef struct {
     uint32_t sections;
     player_snapshot_t player;
     web_socket_wifi_state_t wifi;
+    web_socket_settings_state_t settings;
 } web_socket_send_job_t;
 
 static const char *TAG = "web_socket";
@@ -466,6 +507,7 @@ static int s_ready_clients[WEB_SOCKET_MAX_CLIENTS];
 static bool s_ready_client_used[WEB_SOCKET_MAX_CLIENTS];
 static player_snapshot_t s_published_player;
 static web_socket_wifi_state_t s_published_wifi;
+static web_socket_settings_state_t s_published_settings;
 static bool s_have_published;
 static bool s_broadcast_pending;
 /* All queued work executes serially in the HTTP server task. */
@@ -491,6 +533,25 @@ static void capture_wifi_state(web_socket_wifi_state_t *output)
                  "%s", saved.ssids[index]);
     }
     secure_zero(&saved, sizeof(saved));
+}
+
+static void capture_settings_state(web_socket_settings_state_t *output)
+{
+    memset(output, 0, sizeof(*output));
+    device_settings_t settings;
+    if (!device_settings_read_published(&settings)) {
+        // The UI task has not published yet, which app_main's order makes a
+        // boot that failed before it - there is nothing to tell a browser.
+        return;
+    }
+    web_settings_make_view(&output->view, &settings,
+                           web_server_home_screen_available(settings.yandex_music),
+                           web_server_yandex_available());
+    output->known = true;
+    /* The published copy carries the path of the file the drive was playing,
+     * which the browser is never shown and this stack frame has no reason to
+     * keep. */
+    secure_zero(&settings, sizeof(settings));
 }
 
 static int wifi_secret_acquire(const wifi_network_t *network)
@@ -620,12 +681,13 @@ static bool prepare_event_frame(httpd_ws_frame_t *frame,
                                 web_socket_event_kind_t kind,
                                 uint32_t revision,
                                 const player_snapshot_t *player,
-                                const web_socket_wifi_state_t *wifi)
+                                const web_socket_wifi_state_t *wifi,
+                                const web_socket_settings_state_t *settings)
 {
     const audio_source_t list_source = player->active_source;
     const int length = web_socket_serialize_event(
         s_http_output, sizeof(s_http_output), kind, revision, player, wifi,
-        runtime_station_label, (void *)&list_source);
+        settings, runtime_station_label, (void *)&list_source);
     if (length <= 0) {
         ESP_LOGE(TAG, "serialize event failed type=%s max=%u",
                  runtime_event_type(kind), (unsigned)WEB_PROTOCOL_EVENT_MAX);
@@ -686,6 +748,7 @@ static void finish_broadcast_job(const web_socket_send_job_t *job,
     if (complete) {
         s_published_player = job->player;
         s_published_wifi = job->wifi;
+        s_published_settings = job->settings;
         s_have_published = true;
     }
     s_broadcast_pending = false;
@@ -706,11 +769,14 @@ static void send_job_work(void *context)
     if (job->initial_snapshot) {
         player_snapshot_t player;
         web_socket_wifi_state_t wifi;
+        web_socket_settings_state_t settings;
         player_control_get_snapshot(&player);
         capture_wifi_state(&wifi);
+        capture_settings_state(&settings);
         httpd_ws_frame_t frame;
         const bool prepared = prepare_event_frame(
-            &frame, WEB_SOCKET_EVENT_SNAPSHOT, s_revision, &player, &wifi);
+            &frame, WEB_SOCKET_EVENT_SNAPSHOT, s_revision, &player, &wifi,
+            &settings);
         const bool websocket = httpd_ws_get_fd_info(s_server, job->target_fd) ==
                                HTTPD_WS_CLIENT_WEBSOCKET;
         if (!prepared || !websocket ||
@@ -721,6 +787,7 @@ static void send_job_work(void *context)
         }
         secure_zero(&player, sizeof(player));
         secure_zero(&wifi, sizeof(wifi));
+        secure_zero(&settings, sizeof(settings));
     } else {
         static const struct {
             uint32_t section;
@@ -731,6 +798,7 @@ static void send_job_work(void *context)
             {WEB_SOCKET_SECTION_PLAYER, WEB_SOCKET_EVENT_PLAYER_UPDATE},
             {WEB_SOCKET_SECTION_LIST, WEB_SOCKET_EVENT_LIST_UPDATE},
             {WEB_SOCKET_SECTION_WIFI, WEB_SOCKET_EVENT_WIFI_UPDATE},
+            {WEB_SOCKET_SECTION_SETTINGS, WEB_SOCKET_EVENT_SETTINGS_UPDATE},
         };
         bool complete = true;
         for (size_t index = 0U; index < sizeof(events) / sizeof(events[0]);
@@ -742,7 +810,8 @@ static void send_job_work(void *context)
                 web_socket_committed_revision(s_revision, true);
             httpd_ws_frame_t frame;
             if (!prepare_event_frame(&frame, events[index].kind, candidate,
-                                     &job->player, &job->wifi)) {
+                                     &job->player, &job->wifi,
+                                     &job->settings)) {
                 complete = false;
                 break;
             }
@@ -822,10 +891,13 @@ static void broadcaster_task(void *context)
     while (atomic_load_explicit(&s_running, memory_order_acquire)) {
         player_snapshot_t player;
         web_socket_wifi_state_t wifi;
+        web_socket_settings_state_t settings;
         player_control_get_snapshot(&player);
         capture_wifi_state(&wifi);
+        capture_settings_state(&settings);
         player_snapshot_t published_player;
         web_socket_wifi_state_t published_wifi;
+        web_socket_settings_state_t published_settings;
         bool have_published;
         bool pending;
         taskENTER_CRITICAL(&s_state_lock);
@@ -833,22 +905,26 @@ static void broadcaster_task(void *context)
         pending = s_broadcast_pending;
         published_player = s_published_player;
         published_wifi = s_published_wifi;
+        published_settings = s_published_settings;
         if (!have_published) {
             s_published_player = player;
             s_published_wifi = wifi;
+            s_published_settings = settings;
             s_have_published = true;
         }
         taskEXIT_CRITICAL(&s_state_lock);
 
         if (have_published && !pending) {
             const uint32_t sections = web_socket_changed_sections(
-                &published_player, &published_wifi, &player, &wifi);
+                &published_player, &published_wifi, &published_settings,
+                &player, &wifi, &settings);
             if (sections != WEB_SOCKET_SECTION_NONE) {
                 web_socket_send_job_t *job = send_job_acquire();
                 if (job != NULL) {
                     job->sections = sections;
                     job->player = player;
                     job->wifi = wifi;
+                    job->settings = settings;
                     taskENTER_CRITICAL(&s_state_lock);
                     if (!s_broadcast_pending) {
                         s_broadcast_pending = true;
@@ -866,6 +942,7 @@ static void broadcaster_task(void *context)
         }
         secure_zero(&published_player, sizeof(published_player));
         secure_zero(&published_wifi, sizeof(published_wifi));
+        secure_zero(&published_settings, sizeof(published_settings));
         vTaskDelayUntil(&last_wake,
                         pdMS_TO_TICKS(WEB_SOCKET_BROADCAST_PERIOD_MS));
     }

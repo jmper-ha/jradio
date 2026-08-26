@@ -90,3 +90,31 @@ bool device_settings_set_last_source(device_settings_t *settings,
                                      device_last_source_t source);
 bool device_settings_set_last_file(device_settings_t *settings, const char *path);
 bool device_settings_get(const device_settings_t *settings, device_settings_t *copy);
+
+/* Says that settings.csv was written by someone other than the UI task - today
+ * the web interface, which writes through the same setters above but into a
+ * copy of its own.
+ *
+ * The UI holds the settings it read at startup, so without this a change made
+ * in the browser would stay invisible on the panel until the settings screen
+ * was next opened. Re-reading is only half of it: brightness, the display
+ * flips, the volume and the Yandex row have to be applied to the hardware and
+ * the menus, which is work only the UI task may do.
+ *
+ * Taking the flag clears it, so a change is acted on once. */
+void device_settings_mark_changed(void);
+bool device_settings_take_changed(void);
+
+/* The other direction: what the UI task currently holds, for anyone who needs
+ * to read it without touching the card.
+ *
+ * settings.csv is eleven separate reads - one per key - so a task that polls
+ * cannot go to the file. The knob and the buttons change these values without
+ * anything else being told, and the web interface has to show what the device
+ * actually has, so the owner publishes and everyone else reads this copy.
+ *
+ * The read is serialised against the publish on the device and is a plain copy
+ * on the host, where the tests are single-threaded. False until the first
+ * publish, which is what tells a reader that the UI has not started yet. */
+void device_settings_publish(const device_settings_t *settings);
+bool device_settings_read_published(device_settings_t *copy);

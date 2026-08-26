@@ -49,6 +49,8 @@ class Element {
     this.hidden = false;
     this.disabled = false;
     this.scrollTop = 0;
+    this.style = {};
+    this.value = '';
   }
 
   append(...items) {
@@ -92,15 +94,19 @@ class Element {
 const ids = [
   'socket-state', 'playlist-link', 'source-tabs', 'mode-label', 'playback-state',
   'track-title', 'track-artist', 'track-context', 'play-toggle', 'next-track',
-  'like-track',
+  'like-track', 'previous-item', 'next-item',
+  'track-cover', 'track-progress', 'track-elapsed', 'track-total',
+  'progress-rail', 'progress-fill', 'progress-seek',
+  'volume-control', 'volume-input', 'volume-value',
   'stream-meta', 'player-error', 'command-status', 'media-list',
   'list-title', 'list-count', 'list-items', 'list-empty',
 ];
+const buttonIds = new Set([
+  'play-toggle', 'next-track', 'like-track', 'previous-item', 'next-item',
+]);
 const elements = Object.fromEntries(ids.map((id) => [
   `#${id}`,
-  new Element(id === 'play-toggle' || id === 'next-track' || id === 'like-track'
-    ? 'button'
-    : 'div'),
+  new Element(buttonIds.has(id) ? 'button' : 'div'),
 ]));
 const body = new Element('body');
 body.append(...Object.values(elements));
@@ -208,6 +214,13 @@ const context = {
     setTimeout(callback, delay) {
       timers.push({callback, delay});
       return timers.length;
+    },
+    clearTimeout() {},
+    /* The progress poll, which this test never fires: it must not share the
+       hand-driven queue above, or a reply meant for the directory listing
+       would be handed to it instead. */
+    fetch() {
+      return new Promise(() => {});
     },
   },
 };

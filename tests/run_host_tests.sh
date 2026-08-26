@@ -180,13 +180,19 @@ run_test wifi_settings tests/test_wifi_settings.c components/settings/wifi_setti
 run_test web_server -I"${cjson_include}" tests/test_web_server.c \
     components/web_server/web_server.c components/web_server/web_socket.c \
     components/web_server/web_view_model.c components/web_server/web_json.c \
-    components/settings/wifi_settings.c \
+    components/web_server/web_settings.c components/settings/device_settings.c \
+    components/settings/settings_csv.c components/settings/wifi_settings.c \
     components/file_storage/file_browser.c "${cjson_source}"
 run_test web_json tests/test_web_json.c components/web_server/web_json.c
 run_test web_protocol -I"${cjson_include}" tests/test_web_protocol.c \
     components/web_server/web_protocol.c "${cjson_source}"
 run_test web_view_model tests/test_web_view_model.c \
     components/web_server/web_view_model.c
+run_test web_settings_api -I"${cjson_include}" tests/test_web_settings_api.c \
+    components/web_server/web_settings.c components/web_server/web_json.c \
+    components/settings/device_settings.c components/settings/settings_csv.c \
+    "${cjson_source}"
+run_test web_cover tests/test_web_cover.c components/web_server/web_cover.c
 run_test yandex_catalog tests/test_yandex_catalog.c \
     components/yandex_music/yandex_catalog_parse.c \
     components/yandex_music/yandex_json_reader.c

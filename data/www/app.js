@@ -10,8 +10,20 @@
   const trackArtist = document.querySelector('#track-artist');
   const trackContext = document.querySelector('#track-context');
   const playToggle = document.querySelector('#play-toggle');
+  const previousItem = document.querySelector('#previous-item');
+  const nextItem = document.querySelector('#next-item');
   const nextTrack = document.querySelector('#next-track');
   const likeTrack = document.querySelector('#like-track');
+  const trackCover = document.querySelector('#track-cover');
+  const trackProgress = document.querySelector('#track-progress');
+  const trackElapsed = document.querySelector('#track-elapsed');
+  const trackTotal = document.querySelector('#track-total');
+  const progressRail = document.querySelector('#progress-rail');
+  const progressFill = document.querySelector('#progress-fill');
+  const progressSeek = document.querySelector('#progress-seek');
+  const volumeControl = document.querySelector('#volume-control');
+  const volumeInput = document.querySelector('#volume-input');
+  const volumeValue = document.querySelector('#volume-value');
   const streamMeta = document.querySelector('#stream-meta');
   const playerError = document.querySelector('#player-error');
   const commandStatus = document.querySelector('#command-status');
@@ -36,6 +48,12 @@
     files: {title: 'Файлы', aria: 'Список файлов'},
   });
   const reconnectDelays = Object.freeze([500, 1000, 2000, 4000, 8000]);
+  /* Once a second while a track is running, and rarely otherwise. The device
+     serves this from the single HTTP worker that also carries the WebSocket
+     broadcasts, so an idle browser left open overnight must not keep asking at
+     playing speed. */
+  const progressActiveDelay = 1000;
+  const progressIdleDelay = 5000;
 
   const state = {
     connected: false,
@@ -53,7 +71,13 @@
       error: '',
     },
     list: {kind: '', active_index: null, items: [], path: '', revision: null, has_parent: false},
+    /* Null until the device says. It is a device setting rather than anything
+       to do with the track, so it arrives in the settings section of the
+       snapshot and is pushed again whenever the knob moves. */
+    volume: null,
   };
+
+  const volume = {holding: false, busy: false, queued: null};
 
   // The file listing does not travel over the socket: a directory of long
   // names dwarfs the frame budget, so the socket carries only a revision and
@@ -62,6 +86,20 @@
   // quickly is enough to make the replies arrive out of order.
   let listFetchRevision = null;
   let listShownRevision = null;
+
+  /* Position, buffer fill and the cover do not travel over the socket. The
+     device rebuilds its snapshot on every change and sends a diff, so a
+     counter that ticks would push a frame a second to every open browser for
+     something one card shows. They come over REST instead, polled only while
+     there is something to poll for. */
+  const progress = {
+    timer: null, wanted: false, source: '', coverUrl: '',
+    elapsed: null, total: null,
+    /* True from the moment the handle is touched until the device answers the
+       jump. While it is set the poll leaves the handle alone, or the position
+       would be dragged back out from under the pointer once a second. */
+    seeking: false, seekRequest: '',
+  };
 
   let socket = null;
   let reconnectTimer = null;
@@ -114,7 +152,10 @@
     socketState.classList.toggle('is-online', connected);
     socketState.classList.toggle('is-offline', !connected);
     socketState.classList.remove('is-connecting');
-    updateControlAvailability();
+    // Through renderPlayer(), not straight to updateControlAvailability(): the
+    // baseline it applies is "connected", and several buttons are disabled for
+    // reasons of their own on top of that.
+    renderPlayer();
   }
 
   function updateControlAvailability() {
@@ -175,9 +216,240 @@
     return playbackLabels[value] || playbackLabels.unknown;
   }
 
+  function formatTime(seconds) {
+    const whole = Math.max(0, Math.trunc(seconds));
+    const minutes = Math.trunc((whole % 3600) / 60);
+    const rest = String(whole % 60).padStart(2, '0');
+    const hours = Math.trunc(whole / 3600);
+    // Minutes are padded only once there are hours in front of them, which is
+    // how every player writes it - and how the device's own screen does.
+    return hours > 0
+      ? `${hours}:${String(minutes).padStart(2, '0')}:${rest}`
+      : `${minutes}:${rest}`;
+  }
+
+  function renderVolume() {
+    const known = Number.isSafeInteger(state.volume);
+    volumeControl.hidden = !known;
+    if (!known) return;
+    volumeInput.disabled = !state.connected;
+    /* Left alone while the handle is held and while a change is in flight: the
+       device pushes its own level about four times a second, and it would drag
+       the handle back out from under the pointer. */
+    if (volume.holding || volume.busy) return;
+    volumeInput.value = String(state.volume);
+    volumeValue.textContent = String(state.volume);
+  }
+
+  function holdVolume() {
+    volume.holding = true;
+    volumeValue.textContent = String(volumeInput.value);
+  }
+
+  /* Over REST rather than as a socket command: the volume is a stored device
+     setting, not a piece of playback state, and this is the same endpoint the
+     settings page writes - so the device applies it by exactly one path. Each
+     write is a rewrite of settings.csv, which is why only one is ever in the
+     air and the rest are coalesced. */
+  function sendVolume(target) {
+    volume.busy = true;
+    window.fetch('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({field: 'volume', value: target}),
+    })
+      .then((response) => {
+        if (!response || response.ok !== true) throw new Error('request failed');
+        /* What the device now has. Without this the handle would flick back to
+           the level of the last push - the device sends its own about four
+           times a second, and one of them lands during the write. */
+        state.volume = target;
+      })
+      .catch(() => {
+        commandStatus.textContent = 'Не удалось изменить громкость';
+        commandStatus.classList.add('is-error');
+      })
+      .then(() => {
+        volume.busy = false;
+        const queued = volume.queued;
+        volume.queued = null;
+        if (queued !== null && queued !== state.volume) {
+          sendVolume(queued);
+          return;
+        }
+        // Back to whatever the device last said, which after a refused write
+        // is the level it still has.
+        renderVolume();
+      });
+  }
+
+  function commitVolume() {
+    volume.holding = false;
+    const level = Number(volumeInput.value);
+    if (!Number.isFinite(level)) return;
+    const target = Math.round(level);
+    if (volume.busy) {
+      /* Held down, an arrow key fires a change per repeat. Remembering the
+         last one instead of dropping it is what keeps the device from ending
+         up a step behind where the handle was left. */
+      volume.queued = target;
+      return;
+    }
+    sendVolume(target);
+  }
+
+  function applySettings(value) {
+    if (!isObject(value)) return;
+    const level = value.volume;
+    if (!Number.isSafeInteger(level) || level < 0 || level > 100) return;
+    state.volume = level;
+    renderVolume();
+  }
+
+  function paintProgress(elapsed, total) {
+    // Pinned at the end rather than allowed past it: a variable-bitrate file
+    // routinely outlives the device's estimate of its length.
+    const percent = total > 0 ? Math.min(100, Math.round((elapsed / total) * 100)) : 0;
+    trackElapsed.textContent = formatTime(elapsed);
+    trackTotal.textContent = formatTime(total);
+    progressFill.style.width = `${percent}%`;
+    // The handle's own value is a count of seconds, which read aloud is a
+    // number nobody wants; this is the same time the label shows.
+    progressSeek.setAttribute('aria-valuetext', formatTime(elapsed));
+  }
+
+  function renderProgress() {
+    const known = Number.isFinite(progress.total) && progress.total > 0 &&
+      Number.isFinite(progress.elapsed);
+    trackProgress.hidden = !known;
+    if (!known) {
+      progressSeek.disabled = true;
+      progressRail.classList.remove('is-seekable');
+      return;
+    }
+    /* Only a file can be jumped: a stream has no position to move to, and the
+       device refuses the command for anything else. Offering the handle there
+       would be a control that can only be told no. */
+    const seekable = state.connected &&
+      (state.activeSource === 'usb' || state.activeSource === 'sd') &&
+      (state.player.state === 'playing' || state.player.state === 'paused');
+    progressSeek.disabled = !seekable;
+    progressRail.classList.toggle('is-seekable', seekable);
+    progressSeek.max = String(progress.total);
+    if (progress.seeking) return;
+    progressSeek.value = String(progress.elapsed);
+    paintProgress(progress.elapsed, progress.total);
+  }
+
+  function beginSeek() {
+    if (progressSeek.disabled) return;
+    const target = Number(progressSeek.value);
+    if (!Number.isFinite(target)) return;
+    progress.seeking = true;
+    paintProgress(target, progress.total);
+  }
+
+  function commitSeek() {
+    const target = Number(progressSeek.value);
+    const id = progressSeek.disabled || !Number.isFinite(target)
+      ? null
+      : sendCommand('player.seek', {position: Math.round(target)});
+    if (id === null) {
+      // Nothing was sent, so the handle has to go back to where the track is.
+      progress.seeking = false;
+      renderProgress();
+      return;
+    }
+    progress.seekRequest = id;
+  }
+
+  function renderCover(cover) {
+    const present = isObject(cover) && cover.present === true;
+    /* The generation rides in the query string so the browser fetches the
+       picture exactly when it changes and takes it from its cache the rest of
+       the time - 27 KB once a second would be the alternative. */
+    const url = present ? `/api/cover?g=${safeInteger(cover.generation)}` : '';
+    if (url !== progress.coverUrl) {
+      progress.coverUrl = url;
+      if (present) trackCover.src = url;
+      else trackCover.removeAttribute('src');
+    }
+    trackCover.hidden = !present;
+  }
+
+  function clearProgress() {
+    progress.elapsed = null;
+    progress.total = null;
+    progress.seeking = false;
+    progress.seekRequest = '';
+    renderProgress();
+    renderCover(null);
+  }
+
+  function applyProgress(payload) {
+    const value = isObject(payload) ? payload : {};
+    progress.elapsed = Number.isSafeInteger(value.elapsed_seconds)
+      ? value.elapsed_seconds : null;
+    progress.total = Number.isSafeInteger(value.total_seconds)
+      ? value.total_seconds : null;
+    renderProgress();
+    renderCover(value.cover);
+  }
+
+  // Nothing to ask about while the socket is down or the source is stopped:
+  // neither a position nor a cover exists then.
+  function progressWanted() {
+    return state.connected && state.activeSource !== 'none' &&
+      (state.player.state === 'playing' || state.player.state === 'paused' ||
+       state.player.state === 'connecting');
+  }
+
+  function scheduleProgress(delay) {
+    if (progress.timer !== null) window.clearTimeout(progress.timer);
+    progress.timer = window.setTimeout(() => {
+      progress.timer = null;
+      pollProgress();
+    }, delay);
+  }
+
+  function pollProgress() {
+    if (!progressWanted()) {
+      scheduleProgress(progressIdleDelay);
+      return;
+    }
+    window.fetch('/api/progress', {cache: 'no-store'})
+      .then((response) => {
+        if (!response || response.ok !== true) throw new Error('request failed');
+        return response.json();
+      })
+      .then((payload) => {
+        applyProgress(payload);
+        scheduleProgress(progressActiveDelay);
+      })
+      // Quietly: the socket already says when the device is unreachable, and a
+      // second message about it would only cover the command status line.
+      .catch(() => scheduleProgress(progressIdleDelay));
+  }
+
+  /* Restarted only when the answer to "is there anything to poll for" changes,
+     or when the source does. Restarting on every player update would reset the
+     one-second cadence each time a station's ICY title changed. */
+  function syncProgressPolling() {
+    const wanted = progressWanted();
+    if (wanted === progress.wanted && state.activeSource === progress.source) return;
+    progress.wanted = wanted;
+    progress.source = state.activeSource;
+    if (!wanted) clearProgress();
+    scheduleProgress(0);
+  }
+
   function renderPlayer() {
     const player = state.player;
     const playing = player.state === 'playing';
+    /* First, so the refinements below survive: this sets every command button
+       to whether the socket is up, and running it afterwards would enable the
+       ones that have a second reason to be disabled. */
+    updateControlAvailability();
 
     modeLabel.textContent = safeString(player.mode, 'Нет источника');
     playbackState.textContent = stateLabel(player.state);
@@ -193,16 +465,34 @@
        advances on its own when a track ends. */
     const skippable = state.activeSource === 'yandex';
     nextTrack.hidden = !skippable;
-    nextTrack.disabled = !skippable || (player.state !== 'playing' && player.state !== 'paused');
+    nextTrack.disabled = !skippable || !state.connected ||
+      (player.state !== 'playing' && player.state !== 'paused');
 
     /* The mark is shown only where the device sends one, for the same reason:
        a station and a file are in nobody's library, and an empty heart there
        would offer a button that can only be refused. */
     const likeable = typeof player.liked === 'boolean';
     likeTrack.hidden = !likeable;
-    likeTrack.disabled = !likeable || (player.state !== 'playing' && player.state !== 'paused');
+    likeTrack.disabled = !likeable || !state.connected ||
+      (player.state !== 'playing' && player.state !== 'paused');
     likeTrack.classList.toggle('is-liked', likeable && player.liked);
     likeTrack.setAttribute('aria-pressed', String(likeable && player.liked === true));
+
+    /* The two track keys, the browser's copy of the buttons on the front of
+       the device. They move what is playing along the list it came from - the
+       neighbouring file in the directory, the neighbouring station in the
+       catalog - so they belong to the sources that are a list. The rotor is
+       not one: its next track is the skip button above, and it has no previous
+       one at all. Nothing wraps, so at either end of the list the key does
+       nothing; the device refuses it rather than rolling over. */
+    const steppable = state.activeSource === 'usb' || state.activeSource === 'sd' ||
+      state.activeSource === 'internet_radio';
+    const stepReady = steppable && state.connected &&
+      player.state !== 'stopped' && player.state !== 'error';
+    previousItem.hidden = !steppable;
+    nextItem.hidden = !steppable;
+    previousItem.disabled = !stepReady;
+    nextItem.disabled = !stepReady;
 
     playToggle.classList.toggle('is-playing', playing);
     playToggle.setAttribute('aria-label', playing ? 'Пауза' : 'Воспроизвести');
@@ -222,7 +512,8 @@
 
     playerError.textContent = safeString(player.error);
     playerError.hidden = playerError.textContent.length === 0;
-    updateControlAvailability();
+    renderVolume();
+    syncProgressPolling();
   }
 
   function listSignature(items) {
@@ -439,6 +730,7 @@
     const nextList = normalizeList(message.list);
     const previousList = state.list;
     if (nextList) state.list = nextList;
+    applySettings(message.settings);
     renderSources();
     updatePlaylistLink();
     renderPlayer();
@@ -473,6 +765,15 @@
     const id = safeString(message.id);
     if (!pendingCommands.has(id)) return;
     pendingCommands.delete(id);
+    if (id === progress.seekRequest) {
+      /* Answered, so the handle belongs to the poll again - including when the
+         device refused the jump, which is how it snaps back to where the track
+         actually is. Asked straight away rather than at the next tick: the
+         position has just moved by however far the jump went. */
+      progress.seekRequest = '';
+      progress.seeking = false;
+      scheduleProgress(0);
+    }
     if (message.ok === false) {
       commandStatus.textContent = safeString(message.error, 'Команда не выполнена');
       commandStatus.classList.add('is-error');
@@ -535,6 +836,12 @@
       case 'wifi.update':
         acceptSectionRevision(message);
         break;
+      /* The knob on the device moves this, and nothing else would tell the
+         browser: it is why the settings travel over the socket at all. */
+      case 'settings.update':
+        if (!acceptSectionRevision(message)) break;
+        applySettings(message.settings);
+        break;
       case 'command.result':
         handleCommandResult(message);
         break;
@@ -543,8 +850,10 @@
     }
   }
 
+  // Returns the request id, or null when nothing was sent. The jump needs it:
+  // it holds the handle until the device answers that exact command.
   function sendCommand(action, fields = {}) {
-    if (!state.connected || !socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!state.connected || !socket || socket.readyState !== WebSocket.OPEN) return null;
     requestSequence += 1;
     const id = `web-${requestSequence}`;
     const command = {type: 'command', id, action, ...fields};
@@ -552,12 +861,13 @@
     if (frame.length > 512) {
       commandStatus.textContent = 'Команда слишком длинная';
       commandStatus.classList.add('is-error');
-      return;
+      return null;
     }
     commandStatus.textContent = '';
     commandStatus.classList.remove('is-error');
     pendingCommands.set(id, action);
     socket.send(frame);
+    return id;
   }
 
   function scheduleReconnect() {
@@ -603,12 +913,20 @@
   }
 
   playToggle.addEventListener('click', () => sendCommand('player.toggle'));
+  previousItem.addEventListener('click', () => sendCommand('player.previous_item'));
+  nextItem.addEventListener('click', () => sendCommand('player.next_item'));
   nextTrack.addEventListener('click', () => sendCommand('player.next'));
+  // input fires all the way through a drag, change once it is let go: the bar
+  // follows the handle, and only the release is worth a command.
+  progressSeek.addEventListener('input', beginSeek);
+  progressSeek.addEventListener('change', commitSeek);
+  volumeInput.addEventListener('input', holdVolume);
+  volumeInput.addEventListener('change', commitVolume);
   likeTrack.addEventListener('click', () => sendCommand('player.like'));
   renderSources();
   updatePlaylistLink();
   renderPlayer();
   renderList();
-  updateControlAvailability();
+  scheduleProgress(progressIdleDelay);
   connect();
 })();

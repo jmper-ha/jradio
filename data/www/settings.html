@@ -34,8 +34,85 @@
     <div class="settings-heading">
       <p class="eyebrow">Устройство</p>
       <h1>Настройки</h1>
-      <p>Сетевые параметры и будущие разделы устройства.</p>
+      <p>То же, что на экране устройства, плюс сеть и аккаунт.</p>
     </div>
+
+    <section class="card settings-section" aria-labelledby="device-title">
+      <div class="settings-section-heading">
+        <div>
+          <p class="eyebrow">Устройство</p>
+          <h2 id="device-title">Экран и звук</h2>
+        </div>
+        <span id="device-status" class="settings-status" role="status" aria-live="polite">Загрузка…</span>
+      </div>
+
+      <div id="device-fields" class="device-fields">
+        <div class="device-group">
+          <h3>Язык</h3>
+          <div class="device-row">
+            <label for="device-language">Язык</label>
+            <select id="device-language" data-field="language">
+              <option value="ru">Русский</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="device-group">
+          <h3>Общие</h3>
+          <div class="device-row" id="device-home-screen-row">
+            <label for="device-home-screen">Главный экран</label>
+            <select id="device-home-screen" data-field="home_screen">
+              <option value="text">Список</option>
+              <option value="feed">Лента</option>
+            </select>
+          </div>
+          <div class="device-row">
+            <label for="device-scroll">Скроллинг</label>
+            <select id="device-scroll" data-field="scroll">
+              <option value="bounce">Влево-вправо</option>
+              <option value="left">Влево</option>
+            </select>
+          </div>
+          <div class="device-row">
+            <label for="device-autoplay">Автовоспроизведение</label>
+            <input id="device-autoplay" type="checkbox" data-field="autoplay">
+          </div>
+          <div class="device-row" id="device-yandex-row">
+            <label for="device-yandex">Яндекс Музыка</label>
+            <input id="device-yandex" type="checkbox" data-field="yandex_music">
+          </div>
+          <div class="device-row">
+            <label for="device-volume">Громкость</label>
+            <span class="device-slider">
+              <input id="device-volume" type="range" min="0" max="100" step="1" data-field="volume">
+              <output id="device-volume-value">80</output>
+            </span>
+          </div>
+        </div>
+
+        <div class="device-group">
+          <h3>Экран</h3>
+          <div class="device-row">
+            <label for="device-brightness">Яркость</label>
+            <span class="device-slider">
+              <input id="device-brightness" type="range" min="10" max="90" step="5" data-field="brightness">
+              <output id="device-brightness-value">50</output>
+            </span>
+          </div>
+          <div class="device-row">
+            <label for="device-flip-vertical">Поворот по вертикали</label>
+            <input id="device-flip-vertical" type="checkbox" data-field="flip_vertical">
+          </div>
+          <div class="device-row">
+            <label for="device-flip-horizontal">Поворот по горизонтали</label>
+            <input id="device-flip-horizontal" type="checkbox" data-field="flip_horizontal">
+          </div>
+        </div>
+      </div>
+
+      <p class="field-note">Изменения записываются в settings.csv устройства и применяются сразу — экран и кнопки на корпусе показывают то же самое.</p>
+    </section>
 
     <section class="card settings-section" aria-labelledby="wifi-title">
       <div class="settings-section-heading">

@@ -316,9 +316,140 @@ button:disabled {
 .signal-mark i:nth-child(4) { height: 100%; }
 
 .track-copy {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
   max-width: 42rem;
   margin-block: auto;
   padding-block: 2rem;
+}
+
+.track-lines {
+  min-width: 0;
+}
+
+/* The device holds one 96-pixel square whatever the file carried, so this is
+   drawn at its own size rather than stretched: an upscaled thumbnail beside
+   type this large looks like a mistake, and there is no larger copy to ask
+   for. */
+.track-cover {
+  width: 96px;
+  height: 96px;
+  flex: 0 0 96px;
+  border-radius: .75rem;
+  /* Fitted, not cropped: the device already fits a non-square picture inside
+     its 96-pixel square and centres it, and cropping here would cut off what
+     it had kept. */
+  object-fit: contain;
+  background: var(--surface-soft);
+  box-shadow: 0 8px 20px rgba(38, 55, 87, .14);
+}
+
+.track-progress {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  max-width: 42rem;
+  margin-block: 0 1.5rem;
+}
+
+.track-time {
+  color: var(--muted);
+  font-size: .9rem;
+  font-variant-numeric: tabular-nums;
+  /* Fixed, so the bar does not shuffle sideways as the seconds tick past a
+     digit boundary. */
+  min-width: 3.2rem;
+}
+
+.track-time:last-child {
+  text-align: right;
+}
+
+.progress-rail {
+  position: relative;
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.progress-fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  /* Short enough that the bar keeps up with a dragged handle, long enough that
+     the once-a-second poll does not look like a series of jumps. */
+  transition: width .15s linear;
+}
+
+/* A real range input laid over the bar rather than a click handler on it: the
+   pointer, the keyboard and assistive technology all already know what a
+   slider is, and none of them knows what a clickable div is. Its value is
+   seconds, which is what the device jumps by - a percentage would have to be
+   turned back into seconds using a length the browser only has an estimate
+   of. */
+.progress-seek {
+  position: absolute;
+  /* A 6 px bar is not a target; this makes the grab area 22 px tall without
+     moving anything on the row. */
+  inset: -8px 0;
+  width: 100%;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.progress-seek:disabled {
+  cursor: default;
+}
+
+.progress-seek::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+}
+
+.progress-seek::-moz-range-track {
+  height: 100%;
+  background: transparent;
+}
+
+.progress-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+.progress-seek::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+/* Where nothing can be jumped - a stream, or a track that is not playing - the
+   handle disappears and the bar goes back to reporting. */
+.progress-seek:disabled::-webkit-slider-thumb {
+  opacity: 0;
+}
+
+.progress-seek:disabled::-moz-range-thumb {
+  opacity: 0;
+}
+
+.progress-seek:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 5px;
+  border-radius: 999px;
 }
 
 .track-artist {
@@ -389,7 +520,8 @@ button:disabled {
    same shape and size - the two are the pair of things that can be done to the
    track itself, and one of them looking weightier would be a lie. */
 .next-track,
-.like-track {
+.like-track,
+.step-item {
   width: 44px;
   height: 44px;
   flex: 0 0 44px;
@@ -404,11 +536,13 @@ button:disabled {
 }
 
 .next-track:hover:not(:disabled),
-.like-track:hover:not(:disabled) {
+.like-track:hover:not(:disabled),
+.step-item:hover:not(:disabled) {
   transform: translateY(-2px);
 }
 
-.next-track svg {
+.next-track svg,
+.step-item svg {
   width: 1.25rem;
   height: 1.25rem;
   fill: currentColor;
@@ -434,8 +568,53 @@ button:disabled {
   fill: currentColor;
 }
 
+.next-track:disabled,
+.like-track:disabled,
+.step-item:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
 .stream-details {
   min-width: 0;
+  /* Takes the slack, so the volume that follows it sits at the right-hand end
+     of the row instead of floating in the middle. */
+  flex: 1 1 auto;
+}
+
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.volume-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.volume-control input[type="range"] {
+  width: clamp(5rem, 12vw, 8rem);
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.volume-control input[type="range"]:disabled {
+  cursor: default;
+  opacity: .5;
+}
+
+.volume-control output {
+  min-width: 2.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 #stream-meta,
@@ -697,6 +876,81 @@ button:disabled {
   text-align: left;
 }
 
+.device-fields {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.device-group h3 {
+  margin: 0 0 .6rem;
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.device-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(10rem, 14rem);
+  gap: .75rem;
+  align-items: center;
+  padding: .6rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.device-group .device-row:first-of-type {
+  border-top: 0;
+}
+
+.device-row label {
+  color: var(--text);
+  font-size: .98rem;
+}
+
+.device-row select {
+  width: 100%;
+  padding: .5rem .65rem;
+  border: 1px solid var(--line);
+  border-radius: .65rem;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+/* Left where the selects and sliders start, so the column of controls reads as
+   one column rather than three kinds of thing at three offsets. */
+.device-row input[type="checkbox"] {
+  justify-self: start;
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: var(--accent);
+}
+
+.device-slider {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+
+.device-slider input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.device-slider output {
+  min-width: 2.5rem;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.device-row select:disabled,
+.device-row input:disabled {
+  opacity: .55;
+}
+
 .settings-form {
   display: grid;
   gap: .55rem;
@@ -930,8 +1184,26 @@ button:disabled {
   }
 
   .track-copy {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
     margin-block: 1.5rem;
     padding-block: 1rem;
+  }
+
+  .device-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  /* The controls row wraps on a narrow screen, and the volume belongs on a
+     line of its own rather than squeezed against the play button. */
+  .player-controls {
+    flex-wrap: wrap;
+  }
+
+  .volume-control {
+    flex: 1 0 100%;
   }
 
   .playlist-row {

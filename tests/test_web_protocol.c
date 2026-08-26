@@ -151,6 +151,93 @@ static void test_accepts_the_like_command(void)
     assert(parse(extra, &command) != WEB_PROTOCOL_OK);
 }
 
+/* The two track keys carry nothing either. They are not the same command as
+ * player.next above: this pair steps along the list the playing item came
+ * from, while that one asks the rotor for another track - and the rotor is the
+ * only source that has one to give. */
+static void test_accepts_the_track_keys(void)
+{
+    web_command_t command;
+    const char *previous =
+        "{\"type\":\"command\",\"id\":\"p1\",\"action\":\"player.previous_item\"}";
+    assert(parse(previous, &command) == WEB_PROTOCOL_OK);
+    assert(command.kind == WEB_COMMAND_PLAYER);
+    assert(command.player.kind == PLAYER_COMMAND_PREVIOUS_ITEM);
+
+    const char *next =
+        "{\"type\":\"command\",\"id\":\"p2\",\"action\":\"player.next_item\"}";
+    assert(parse(next, &command) == WEB_PROTOCOL_OK);
+    assert(command.player.kind == PLAYER_COMMAND_NEXT_ITEM);
+
+    /* No index: which item is playing is the device's business, and one named
+     * here could already be stale - the listing is re-read as folders are
+     * opened. */
+    const char *extra =
+        "{\"type\":\"command\",\"id\":\"p3\",\"action\":\"player.next_item\","
+        "\"index\":1}";
+    assert(parse(extra, &command) != WEB_PROTOCOL_OK);
+}
+
+/* A jump names the second to land on and nothing else. Seconds rather than a
+ * percentage, because seconds are what the device turns into a byte offset -
+ * and the number is read off the frame rather than out of cJSON, which keeps
+ * every number as a double. */
+static void test_accepts_the_seek_command(void)
+{
+    web_command_t command;
+    const char *seek =
+        "{\"type\":\"command\",\"id\":\"s1\",\"action\":\"player.seek\","
+        "\"position\":137}";
+    assert(parse(seek, &command) == WEB_PROTOCOL_OK);
+    assert(command.kind == WEB_COMMAND_PLAYER);
+    assert(command.player.kind == PLAYER_COMMAND_SEEK);
+    assert(command.player.position_seconds == 137U);
+    // The row index is a different quantity and must not be carried along.
+    assert(command.player.item_index == PLAYER_ITEM_NONE);
+
+    const char *start =
+        "{\"type\":\"command\",\"id\":\"s2\",\"action\":\"player.seek\","
+        "\"position\":0}";
+    assert(parse(start, &command) == WEB_PROTOCOL_OK);
+    assert(command.player.position_seconds == 0U);
+
+    // Without one there is nowhere to land.
+    const char *bare =
+        "{\"type\":\"command\",\"id\":\"s3\",\"action\":\"player.seek\"}";
+    assert(parse(bare, &command) != WEB_PROTOCOL_OK);
+
+    /* Not a whole second, not a negative one, and not a row index wearing the
+     * other name: each of these would land somewhere nobody asked for. */
+    const char *fractional =
+        "{\"type\":\"command\",\"id\":\"s4\",\"action\":\"player.seek\","
+        "\"position\":12.5}";
+    assert(parse(fractional, &command) != WEB_PROTOCOL_OK);
+    const char *negative =
+        "{\"type\":\"command\",\"id\":\"s5\",\"action\":\"player.seek\","
+        "\"position\":-1}";
+    assert(parse(negative, &command) != WEB_PROTOCOL_OK);
+    const char *indexed =
+        "{\"type\":\"command\",\"id\":\"s6\",\"action\":\"player.seek\","
+        "\"index\":12}";
+    assert(parse(indexed, &command) != WEB_PROTOCOL_OK);
+
+    /* And the position must not leak into the commands that carry no number:
+     * the scanner reads the frame, not the action. */
+    const char *positioned_toggle =
+        "{\"type\":\"command\",\"id\":\"s7\",\"action\":\"player.toggle\","
+        "\"position\":5}";
+    assert(parse(positioned_toggle, &command) != WEB_PROTOCOL_OK);
+
+    // A selection still carries its own number, unchanged by the new one.
+    const char *select =
+        "{\"type\":\"command\",\"id\":\"s8\",\"action\":\"list.select\","
+        "\"index\":3}";
+    assert(parse(select, &command) == WEB_PROTOCOL_OK);
+    assert(command.player.kind == PLAYER_COMMAND_SELECT_ITEM);
+    assert(command.player.item_index == 3U);
+    assert(command.player.position_seconds == 0U);
+}
+
 static void test_accepts_source_and_station_selection(void)
 {
     web_command_t command;
@@ -528,6 +615,8 @@ int main(void)
     test_accepts_source_and_station_selection();
     test_accepts_the_next_track_command();
     test_accepts_the_like_command();
+    test_accepts_the_track_keys();
+    test_accepts_the_seek_command();
     test_accepts_bounded_wifi_credentials();
     test_rejects_bad_envelope_and_exact_schema_violations();
     test_rejects_invalid_request_ids();

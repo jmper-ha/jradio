@@ -54,12 +54,32 @@
         </div>
 
         <div class="track-copy">
-          <p id="track-artist" class="track-artist"></p>
-          <h1 id="track-title">Нет воспроизведения</h1>
-          <p id="track-context" class="track-context"></p>
+          <img id="track-cover" class="track-cover" alt="Обложка альбома" hidden>
+          <div class="track-lines">
+            <p id="track-artist" class="track-artist"></p>
+            <h1 id="track-title">Нет воспроизведения</h1>
+            <p id="track-context" class="track-context"></p>
+          </div>
+        </div>
+
+        <div id="track-progress" class="track-progress" hidden>
+          <span id="track-elapsed" class="track-time">0:00</span>
+          <div id="progress-rail" class="progress-rail">
+            <div id="progress-fill" class="progress-fill"></div>
+            <input id="progress-seek" class="progress-seek" type="range"
+                   min="0" max="0" step="1" value="0"
+                   aria-label="Позиция в треке" disabled>
+          </div>
+          <span id="track-total" class="track-time">0:00</span>
         </div>
 
         <div class="player-controls">
+          <button id="previous-item" class="step-item" type="button" data-command="player.previous_item"
+                  hidden aria-label="Предыдущий трек">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="m17 7-7 5 7 5ZM8 7H6v10h2z"/>
+            </svg>
+          </button>
           <button id="play-toggle" class="play-toggle" type="button" data-command="player.toggle"
                   disabled aria-label="Воспроизвести">
             <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -81,9 +101,23 @@
               <path d="m7 7 7 5-7 5Zm9 0h2v10h-2z"/>
             </svg>
           </button>
+          <button id="next-item" class="step-item" type="button" data-command="player.next_item"
+                  hidden aria-label="Следующий трек">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="m7 7 7 5-7 5Zm9 0h2v10h-2z"/>
+            </svg>
+          </button>
           <div class="stream-details">
             <p id="stream-meta">Параметры потока появятся после подключения</p>
             <p id="player-error" class="player-error" role="alert" hidden></p>
+          </div>
+          <div id="volume-control" class="volume-control" hidden>
+            <svg class="volume-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4zM16 9.2a3.8 3.8 0 0 1 0 5.6M18.6 6.6a7.4 7.4 0 0 1 0 10.8"/>
+            </svg>
+            <input id="volume-input" type="range" min="0" max="100" step="1" value="0"
+                   aria-label="Громкость" disabled>
+            <output id="volume-value">0</output>
           </div>
         </div>
 

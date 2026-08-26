@@ -6,6 +6,7 @@
 
 #include "player_control_types.h"
 #include "web_protocol.h"
+#include "web_settings.h"
 #include "wifi_provisioning.h"
 
 #define WEB_SOCKET_MAX_CLIENTS 4U
@@ -35,10 +36,12 @@ typedef enum {
     WEB_SOCKET_SECTION_PLAYER = 1U << 1,
     WEB_SOCKET_SECTION_LIST = 1U << 2,
     WEB_SOCKET_SECTION_WIFI = 1U << 3,
+    WEB_SOCKET_SECTION_SETTINGS = 1U << 4,
     WEB_SOCKET_SECTION_ALL = WEB_SOCKET_SECTION_CAPABILITIES |
                              WEB_SOCKET_SECTION_PLAYER |
                              WEB_SOCKET_SECTION_LIST |
-                             WEB_SOCKET_SECTION_WIFI,
+                             WEB_SOCKET_SECTION_WIFI |
+                             WEB_SOCKET_SECTION_SETTINGS,
 } web_socket_section_t;
 
 typedef enum {
@@ -47,6 +50,7 @@ typedef enum {
     WEB_SOCKET_EVENT_PLAYER_UPDATE,
     WEB_SOCKET_EVENT_LIST_UPDATE,
     WEB_SOCKET_EVENT_WIFI_UPDATE,
+    WEB_SOCKET_EVENT_SETTINGS_UPDATE,
 } web_socket_event_kind_t;
 
 typedef struct {
@@ -60,6 +64,23 @@ typedef struct {
                     [WIFI_SETTINGS_SSID_MAX_LEN + 1U];
 } web_socket_wifi_state_t;
 
+/* The device settings as they travel to the browser.
+ *
+ * Pushed rather than polled because the knob and the buttons change them
+ * without anything else being told, and settings.csv is eleven reads - far too
+ * much to ask on a timer. They are small enough to sit beside the player in
+ * the same frame, and they change about as often as the Wi-Fi state does,
+ * which is to say almost never.
+ *
+ * `known` is false until the UI task has published. app_main starts the UI
+ * before the web server, so in practice it is true by the time a browser can
+ * connect - and one that somehow beats it is better told nothing than told a
+ * page full of zeroes. */
+typedef struct {
+    bool known;
+    web_settings_view_t view;
+} web_socket_settings_state_t;
+
 typedef const char *(*web_socket_station_label_fn)(size_t index, void *context);
 
 int web_server_command_result(char *output, size_t output_size,
@@ -69,13 +90,16 @@ int web_socket_serialize_event(char *output, size_t output_size,
                                web_socket_event_kind_t kind, uint32_t revision,
                                const player_snapshot_t *player,
                                const web_socket_wifi_state_t *wifi,
+                               const web_socket_settings_state_t *settings,
                                web_socket_station_label_fn station_label,
                                void *station_context);
 uint32_t web_socket_changed_sections(
     const player_snapshot_t *previous_player,
     const web_socket_wifi_state_t *previous_wifi,
+    const web_socket_settings_state_t *previous_settings,
     const player_snapshot_t *current_player,
-    const web_socket_wifi_state_t *current_wifi);
+    const web_socket_wifi_state_t *current_wifi,
+    const web_socket_settings_state_t *current_settings);
 uint16_t web_socket_rejection_close_code(bool final, uint8_t frame_type,
                                           size_t payload_length);
 uint32_t web_socket_committed_revision(uint32_t current, bool complete);

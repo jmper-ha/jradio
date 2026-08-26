@@ -42,6 +42,10 @@ const ids = [
   'yandex-countdown', 'yandex-link', 'yandex-cancel', 'yandex-forget',
   'yandex-refresh', 'yandex-stations-block', 'yandex-stations',
   'yandex-stations-empty',
+  'device-status', 'device-language', 'device-home-screen', 'device-home-screen-row',
+  'device-scroll', 'device-autoplay', 'device-yandex', 'device-yandex-row',
+  'device-volume', 'device-volume-value', 'device-brightness',
+  'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal',
 ];
 const elements = Object.fromEntries(ids.map((id) => [`#${id}`, new Element()]));
 elements['#wifi-form'].elements = {
@@ -81,6 +85,16 @@ let yandexReply = {
   seconds_left: 0,
 };
 let yandexFetchFails = false;
+// What GET /api/settings would answer. Deliberately not the defaults: a page
+// that ignored the document entirely would still look right against them.
+let settingsReply = {
+  language: 'ru', home_screen: 'text', scroll: 'bounce', autoplay: false,
+  yandex_music: true, flip_vertical: false, flip_horizontal: true,
+  brightness: 45, volume: 62,
+  available: {home_screen: true, yandex_music: false},
+  brightness_min: 10, brightness_max: 90,
+};
+let settingsPostFails = false;
 
 const timerHandles = new Map();
 const context = {
@@ -100,6 +114,15 @@ const context = {
     },
     fetch(url, options) {
       fetchCalls.push({url, options});
+      if (String(url).startsWith('/api/settings')) {
+        if (options && options.method === 'POST' && settingsPostFails) {
+          return Promise.reject(new Error('refused'));
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(settingsReply),
+        });
+      }
       if (yandexFetchFails) return Promise.reject(new Error('offline'));
       return Promise.resolve({
         ok: true,
@@ -226,7 +249,9 @@ assert.equal(elements['#wifi-active'].textContent, 'other');
 // on socket frames. The synchronous assertions above all ran before the very
 // first fetch resolved, which is why this part is at the end and async.
 async function settle() {
-  for (let step = 0; step < 8; step += 1) await Promise.resolve();
+  // Deep enough for the longest chain on the page: a refused settings write
+  // falls into its catch, re-reads the document and only then reports.
+  for (let step = 0; step < 24; step += 1) await Promise.resolve();
 }
 
 function lastYandexTimer() {
@@ -235,7 +260,7 @@ function lastYandexTimer() {
 
 (async () => {
   await settle();
-  assert.equal(fetchCalls[0].url, '/api/yandex');
+  assert.ok(fetchCalls.some((call) => call.url === '/api/yandex'));
   assert.equal(elements['#yandex-status'].textContent, 'Аккаунт не привязан');
   assert.equal(elements['#yandex-link'].hidden, false);
   assert.equal(elements['#yandex-cancel'].hidden, true);
@@ -361,6 +386,123 @@ function lastYandexTimer() {
   assert.equal(elements['#yandex-status'].textContent, 'Нет связи с устройством');
   // Still scheduled: the device coming back must not need a page reload.
   assert.equal(lastYandexTimer().delay, 15000);
+
+  /* The device settings, which are the same settings.csv the panel writes.
+     The values above are what the device answered on load - a page that
+     ignored the document would have to show the HTML defaults instead. */
+  assert.equal(elements['#device-status'].textContent, 'Готово');
+  assert.equal(elements['#device-language'].value, 'ru');
+  assert.equal(elements['#device-scroll'].value, 'bounce');
+  assert.equal(elements['#device-autoplay'].checked, false);
+  assert.equal(elements['#device-flip-horizontal'].checked, true);
+  assert.equal(elements['#device-brightness'].value, '45');
+  assert.equal(elements['#device-brightness-value'].textContent, '45');
+  assert.equal(elements['#device-volume-value'].textContent, '62');
+  // The slider stops where the encoder does, and the device says where.
+  assert.equal(elements['#device-brightness'].min, '10');
+  assert.equal(elements['#device-brightness'].max, '90');
+  /* A build without Yandex Music has no such row on its own screen either, so
+     the switch goes away rather than sitting there changing nothing. */
+  assert.equal(elements['#device-yandex-row'].hidden, true);
+  assert.equal(elements['#device-home-screen-row'].hidden, false);
+
+  settingsReply = {...settingsReply, autoplay: true};
+  elements['#device-autoplay'].checked = true;
+  elements['#device-autoplay'].emit('change');
+  await settle();
+  const settingsPost = fetchCalls
+    .filter((call) => call.url === '/api/settings' && call.options &&
+                      call.options.method === 'POST')
+    .at(-1);
+  assert.deepEqual(JSON.parse(settingsPost.options.body),
+                   {field: 'autoplay', value: true});
+  assert.equal(elements['#device-status'].textContent, 'Сохранено');
+  assert.equal(elements['#device-autoplay'].disabled, false);
+
+  /* A slider writes when it is let go, not while it is being dragged: the
+     readout follows the handle on its own. */
+  const beforeDrag = fetchCalls.length;
+  elements['#device-volume'].value = '30';
+  elements['#device-volume'].emit('input');
+  assert.equal(elements['#device-volume-value'].textContent, '30');
+  assert.equal(fetchCalls.length, beforeDrag);
+  settingsReply = {...settingsReply, volume: 30};
+  elements['#device-volume'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
+                                           call.options &&
+                                           call.options.method === 'POST')
+      .at(-1).options.body),
+    {field: 'volume', value: 30});
+
+  /* A write the device refuses puts the control back to what it actually
+     holds: a switch left showing a change that never landed is worse than no
+     answer at all. */
+  settingsPostFails = true;
+  elements['#device-flip-vertical'].checked = true;
+  elements['#device-flip-vertical'].emit('change');
+  await settle();
+  assert.equal(elements['#device-status'].textContent, 'Не удалось сохранить');
+  assert.equal(elements['#device-status'].classList.values.has('is-error'), true);
+  assert.equal(elements['#device-flip-vertical'].checked, false);
+  // And the fields are usable again rather than left disabled by the failure.
+  assert.equal(elements['#device-flip-vertical'].disabled, false);
+
+  settingsPostFails = false;
+  settingsReply = {...settingsReply, language: 'en'};
+  elements['#device-language'].value = 'en';
+  elements['#device-language'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
+                                           call.options &&
+                                           call.options.method === 'POST')
+      .at(-1).options.body),
+    {field: 'language', value: 'en'});
+  assert.equal(elements['#device-status'].textContent, 'Сохранено');
+
+  /* The other direction, which is what makes this a settings page and not a
+     form: the knob and the buttons on the device move these values, and the
+     socket is what says so. Nothing else could - settings.csv is eleven reads
+     and there is no signal in it that anything has changed. */
+  sendEvent(second, {
+    type: 'settings.update', revision: 9,
+    settings: {...settingsReply, volume: 12, brightness: 70, scroll: 'left'},
+  });
+  assert.equal(elements['#device-volume'].value, '12');
+  assert.equal(elements['#device-volume-value'].textContent, '12');
+  assert.equal(elements['#device-brightness-value'].textContent, '70');
+  assert.equal(elements['#device-scroll'].value, 'left');
+
+  // A push landing while a slider is held must not pull it out from under the
+  // pointer; the next one is 250 ms away.
+  elements['#device-volume'].value = '55';
+  elements['#device-volume'].emit('input');
+  assert.equal(elements['#device-volume-value'].textContent, '55');
+  sendEvent(second, {
+    type: 'settings.update', revision: 10,
+    settings: {...settingsReply, volume: 5},
+  });
+  assert.equal(elements['#device-volume'].value, '55');
+
+  settingsReply = {...settingsReply, volume: 55};
+  elements['#device-volume'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
+                                           call.options &&
+                                           call.options.method === 'POST')
+      .at(-1).options.body),
+    {field: 'volume', value: 55});
+  assert.equal(elements['#device-volume'].value, '55');
+
+  // A stale revision is ignored here as it is everywhere else on the socket.
+  sendEvent(second, {
+    type: 'settings.update', revision: 4,
+    settings: {...settingsReply, volume: 99},
+  });
+  assert.equal(elements['#device-volume'].value, '55');
 
   console.log('web settings tests passed');
 })().catch((error) => {

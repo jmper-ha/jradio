@@ -23,8 +23,17 @@ typedef enum {
 web_server_yandex_action_t web_server_parse_yandex_action(const char *request);
 
 #ifdef ESP_PLATFORM
+#include <stdbool.h>
+
 #include "esp_err.h"
 
 esp_err_t web_server_start(void);
 esp_err_t web_server_stop(void);
+
+/* What the device's own menu offers, which the settings document has to
+ * mirror. Answered here rather than in each caller because the REST document
+ * and the live WebSocket section have to agree, and the answer comes from
+ * ui_menu - the same place the home screen and autoplay get it. */
+bool web_server_yandex_available(void);
+bool web_server_home_screen_available(bool yandex_enabled);
 #endif

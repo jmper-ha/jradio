@@ -14,6 +14,7 @@ enum {
     FIELD_INDEX = 1U << 4,
     FIELD_SSID = 1U << 5,
     FIELD_PASSWORD = 1U << 6,
+    FIELD_POSITION = 1U << 7,
 };
 
 #define COMMON_FIELDS (FIELD_TYPE | FIELD_ID | FIELD_ACTION)
@@ -25,6 +26,16 @@ typedef enum {
     RAW_INDEX_VALID,
     RAW_INDEX_INVALID,
 } raw_index_result_t;
+
+/* The whole numbers a command can carry, read off the frame itself rather than
+ * out of cJSON - which keeps every number as a double, and a double is not
+ * where a value that has to be exact belongs. */
+typedef struct {
+    raw_index_result_t index_result;
+    uint32_t index;
+    raw_index_result_t position_result;
+    uint32_t position;
+} raw_numbers_t;
 
 static void secure_zero(void *memory, size_t size)
 {
@@ -525,9 +536,13 @@ static raw_index_result_t parse_raw_index_value(const char *frame,
     return RAW_INDEX_VALID;
 }
 
-static raw_index_result_t find_top_level_raw_index(const char *frame,
-                                                   size_t length,
-                                                   uint32_t *output)
+/* Takes the key name because two commands now carry a whole number each - the
+ * row to start and the second to jump to - and they are different quantities.
+ * Sharing one scanner is what keeps them read the same strict way. */
+static raw_index_result_t find_top_level_raw_number(const char *frame,
+                                                    size_t length,
+                                                    const char *name,
+                                                    uint32_t *output)
 {
     size_t depth = 0U;
     raw_index_result_t result = RAW_INDEX_NOT_FOUND;
@@ -539,7 +554,7 @@ static raw_index_result_t find_top_level_raw_index(const char *frame,
                 return RAW_INDEX_INVALID;
             }
             if (depth == 1U &&
-                json_string_equals_ascii(frame, index + 1U, end, "index")) {
+                json_string_equals_ascii(frame, index + 1U, end, name)) {
                 size_t cursor = end + 1U;
                 while (cursor < length &&
                        json_whitespace((unsigned char)frame[cursor])) {
@@ -597,6 +612,7 @@ static uint32_t field_bit(const char *name)
     if (strcmp(name, "action") == 0) return FIELD_ACTION;
     if (strcmp(name, "source") == 0) return FIELD_SOURCE;
     if (strcmp(name, "index") == 0) return FIELD_INDEX;
+    if (strcmp(name, "position") == 0) return FIELD_POSITION;
     if (strcmp(name, "ssid") == 0) return FIELD_SSID;
     if (strcmp(name, "password") == 0) return FIELD_PASSWORD;
     return 0U;
@@ -670,12 +686,13 @@ static bool parse_common(const cJSON *root, uint32_t fields,
 
 static bool parse_player_action(const cJSON *root, uint32_t fields,
                                 const char *action,
-                                raw_index_result_t raw_index_result,
-                                uint32_t raw_index, web_command_t *parsed)
+                                const raw_numbers_t *numbers,
+                                web_command_t *parsed)
 {
     parsed->kind = WEB_COMMAND_PLAYER;
     parsed->player.source = AUDIO_SOURCE_NONE;
     parsed->player.item_index = PLAYER_ITEM_NONE;
+    parsed->player.position_seconds = 0U;
 
     if (strcmp(action, "player.play") == 0) {
         if (fields != COMMON_FIELDS) return false;
@@ -717,6 +734,21 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
         parsed->player.kind = PLAYER_COMMAND_NEXT_TRACK;
         return true;
     }
+    /* The two track keys, the web's copy of the buttons on the front. They
+     * move what is playing along the list it came from - the neighbouring file
+     * in the directory, the neighbouring station in the catalog - which is a
+     * different thing from "player.next" above: that one asks the rotor for
+     * another track, and nothing else has one to give. */
+    if (strcmp(action, "player.previous_item") == 0) {
+        if (fields != COMMON_FIELDS) return false;
+        parsed->player.kind = PLAYER_COMMAND_PREVIOUS_ITEM;
+        return true;
+    }
+    if (strcmp(action, "player.next_item") == 0) {
+        if (fields != COMMON_FIELDS) return false;
+        parsed->player.kind = PLAYER_COMMAND_NEXT_ITEM;
+        return true;
+    }
     if (strcmp(action, "player.like") == 0) {
         // Toggles rather than sets: the client would have to be told what the
         // mark is now to send the other one, and it is told - but a second
@@ -736,9 +768,27 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
     if (strcmp(action, "list.select") == 0) {
         if (fields != (COMMON_FIELDS | FIELD_INDEX)) return false;
         const cJSON *index = object_item(root, "index");
-        if (!cJSON_IsNumber(index) || raw_index_result != RAW_INDEX_VALID) return false;
+        if (!cJSON_IsNumber(index) ||
+            numbers->index_result != RAW_INDEX_VALID) {
+            return false;
+        }
         parsed->player.kind = PLAYER_COMMAND_SELECT_ITEM;
-        parsed->player.item_index = (size_t)raw_index;
+        parsed->player.item_index = (size_t)numbers->index;
+        return true;
+    }
+    /* A jump carries where to land and nothing else. It is seconds from the
+     * start of the track rather than a percentage: the device turns seconds
+     * into a byte offset, and a percentage would have to be turned into
+     * seconds first using a length the client only has an estimate of. */
+    if (strcmp(action, "player.seek") == 0) {
+        if (fields != (COMMON_FIELDS | FIELD_POSITION)) return false;
+        const cJSON *position = object_item(root, "position");
+        if (!cJSON_IsNumber(position) ||
+            numbers->position_result != RAW_INDEX_VALID) {
+            return false;
+        }
+        parsed->player.kind = PLAYER_COMMAND_SEEK;
+        parsed->player.position_seconds = numbers->position;
         return true;
     }
     return false;
@@ -808,15 +858,17 @@ web_protocol_result_t web_protocol_parse_command(const char *frame,
 
     web_command_t parsed = {0};
     uint32_t fields = 0U;
-    uint32_t raw_index = 0U;
-    const raw_index_result_t raw_index_result =
-        find_top_level_raw_index(raw, frame_length, &raw_index);
+    raw_numbers_t numbers = {RAW_INDEX_NOT_FOUND, 0U, RAW_INDEX_NOT_FOUND, 0U};
+    numbers.index_result =
+        find_top_level_raw_number(raw, frame_length, "index", &numbers.index);
+    numbers.position_result = find_top_level_raw_number(raw, frame_length,
+                                                        "position",
+                                                        &numbers.position);
     const char *action = NULL;
     bool valid = collect_fields(root, &fields) &&
                  parse_common(root, fields, &parsed, &action);
     if (valid) {
-        valid = parse_player_action(root, fields, action, raw_index_result,
-                                    raw_index, &parsed) ||
+        valid = parse_player_action(root, fields, action, &numbers, &parsed) ||
                 parse_wifi_action(root, fields, action, &parsed);
     }
     if (valid && parsed.kind == WEB_COMMAND_WIFI_SAVE) {

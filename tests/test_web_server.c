@@ -65,6 +65,27 @@ static web_socket_wifi_state_t sample_wifi(void)
     return wifi;
 }
 
+static web_socket_settings_state_t sample_settings(void)
+{
+    web_socket_settings_state_t settings = {
+        .known = true,
+        .view = {
+            .language = DEVICE_LANGUAGE_RU,
+            .home_screen = DEVICE_HOME_SCREEN_FEED,
+            .scroll = DEVICE_SCROLL_BOUNCE,
+            .volume = 62U,
+            .brightness = 45U,
+            .autoplay = true,
+            .yandex_music = true,
+            .flip_vertical = false,
+            .flip_horizontal = true,
+            .home_screen_available = true,
+            .yandex_available = true,
+        },
+    };
+    return settings;
+}
+
 static void test_yandex_action_accepts_only_the_three_it_implements(void)
 {
     assert(web_server_parse_yandex_action("{\"action\":\"begin\"}") ==
@@ -126,10 +147,11 @@ static void test_snapshot_has_exact_public_sections_and_no_secrets(void)
     const char *labels[] = {"Радио \"Шоколад\"", "Jazz Lounge"};
     const player_snapshot_t player = sample_player();
     const web_socket_wifi_state_t wifi = sample_wifi();
+    const web_socket_settings_state_t settings = sample_settings();
     char output[WEB_PROTOCOL_EVENT_MAX + 1U];
     const int length = web_socket_serialize_event(
         output, sizeof(output), WEB_SOCKET_EVENT_SNAPSHOT, 1U, &player, &wifi,
-        station_label, (void *)labels);
+        &settings, station_label, (void *)labels);
     assert(length > 0);
     assert((size_t)length == strlen(output));
     assert(strstr(output, "password") == NULL);
@@ -167,12 +189,36 @@ static void test_snapshot_has_exact_public_sections_and_no_secrets(void)
                                                         "save_pending")));
     assert(cJSON_GetObjectItemCaseSensitive(wifi_json, "last_error")->valueint ==
            202);
+
+    /* The settings ride in the same document, so a page that opens while the
+     * knob is somewhere unusual shows that rather than the defaults. */
+    cJSON *settings_json = cJSON_GetObjectItemCaseSensitive(root, "settings");
+    assert(cJSON_IsObject(settings_json));
+    assert(cJSON_GetObjectItemCaseSensitive(settings_json, "volume")->valueint == 62);
+    assert(cJSON_GetObjectItemCaseSensitive(settings_json, "brightness")->valueint == 45);
+    assert(strcmp(cJSON_GetObjectItemCaseSensitive(settings_json,
+                                                   "home_screen")->valuestring,
+                  "feed") == 0);
+    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(settings_json,
+                                                        "flip_horizontal")));
     cJSON_Delete(root);
+
+    /* Nothing published yet: the key is left out entirely rather than filled
+     * with the defaults, which the page would have no way to tell from real
+     * values. */
+    const web_socket_settings_state_t unknown = {0};
+    assert(web_socket_serialize_event(
+               output, sizeof(output), WEB_SOCKET_EVENT_SNAPSHOT, 1U, &player,
+               &wifi, &unknown, station_label, (void *)labels) > 0);
+    assert(strstr(output, "\"settings\"") == NULL);
+    assert(web_socket_serialize_event(
+               output, sizeof(output), WEB_SOCKET_EVENT_SETTINGS_UPDATE, 1U,
+               &player, &wifi, &unknown, station_label, (void *)labels) == 0);
 
     char too_small[64];
     assert(web_socket_serialize_event(
                too_small, sizeof(too_small), WEB_SOCKET_EVENT_SNAPSHOT, 1U,
-               &player, &wifi, station_label, (void *)labels) == 0);
+               &player, &wifi, &settings, station_label, (void *)labels) == 0);
     assert(too_small[0] == '\0');
 }
 
@@ -185,10 +231,11 @@ static void test_player_update_omits_unavailable_rssi_and_repairs_utf8(void)
     player.stream_title[13] = (char)0xAF;
     player.stream_title[14] = '\0';
     const web_socket_wifi_state_t wifi = sample_wifi();
+    const web_socket_settings_state_t settings = sample_settings();
     char output[1024];
     assert(web_socket_serialize_event(output, sizeof(output),
                                       WEB_SOCKET_EVENT_PLAYER_UPDATE, 7U,
-                                      &player, &wifi, NULL, NULL) > 0);
+                                      &player, &wifi, &settings, NULL, NULL) > 0);
     assert(strstr(output, "\"type\":\"player.update\"") != NULL);
     assert(strstr(output, "wifi_rssi_dbm") == NULL);
     assert(strstr(output, "\xEF\xBF\xBD") != NULL);
@@ -204,36 +251,62 @@ static void test_section_diff_and_update_types_are_bounded(void)
     player_snapshot_t current_player = previous_player;
     web_socket_wifi_state_t previous_wifi = sample_wifi();
     web_socket_wifi_state_t current_wifi = previous_wifi;
+    web_socket_settings_state_t previous_settings = sample_settings();
+    web_socket_settings_state_t current_settings = previous_settings;
 
     assert(web_socket_changed_sections(&previous_player, &previous_wifi,
-                                       &current_player, &current_wifi) ==
+                                       &previous_settings, &current_player,
+                                       &current_wifi, &current_settings) ==
            WEB_SOCKET_SECTION_NONE);
     current_player.active_item_index = 1U;
     strcpy(current_wifi.active_ssid, "backup");
     assert(web_socket_changed_sections(&previous_player, &previous_wifi,
-                                       &current_player, &current_wifi) ==
+                                       &previous_settings, &current_player,
+                                       &current_wifi, &current_settings) ==
            (WEB_SOCKET_SECTION_LIST | WEB_SOCKET_SECTION_WIFI));
 
     previous_player = current_player;
     previous_wifi = current_wifi;
     current_wifi.save_pending = !current_wifi.save_pending;
     assert(web_socket_changed_sections(&previous_player, &previous_wifi,
-                                       &current_player, &current_wifi) ==
+                                       &previous_settings, &current_player,
+                                       &current_wifi, &current_settings) ==
            WEB_SOCKET_SECTION_WIFI);
+
+    /* One step of the volume knob is the whole reason this section exists: it
+     * is how a settings page left open follows what is done at the device. */
+    previous_wifi = current_wifi;
+    current_settings.view.volume = (uint8_t)(current_settings.view.volume + 1U);
+    assert(web_socket_changed_sections(&previous_player, &previous_wifi,
+                                       &previous_settings, &current_player,
+                                       &current_wifi, &current_settings) ==
+           WEB_SOCKET_SECTION_SETTINGS);
+
+    /* And settings arriving for the first time count as a change, so a client
+     * that connected before the UI published is told once it has. */
+    previous_settings = current_settings;
+    previous_settings.known = false;
+    assert((web_socket_changed_sections(&previous_player, &previous_wifi,
+                                        &previous_settings, &current_player,
+                                        &current_wifi, &current_settings) &
+            WEB_SOCKET_SECTION_SETTINGS) != 0U);
+    previous_settings = current_settings;
 
     const web_socket_event_kind_t kinds[] = {
         WEB_SOCKET_EVENT_CAPABILITIES_UPDATE,
         WEB_SOCKET_EVENT_LIST_UPDATE,
         WEB_SOCKET_EVENT_WIFI_UPDATE,
+        WEB_SOCKET_EVENT_SETTINGS_UPDATE,
     };
     const char *types[] = {
-        "capabilities.update", "list.update", "wifi.update",
+        "capabilities.update", "list.update", "wifi.update", "settings.update",
     };
     char output[WEB_PROTOCOL_EVENT_MAX + 1U];
     for (size_t index = 0U; index < sizeof(kinds) / sizeof(kinds[0]); ++index) {
         assert(web_socket_serialize_event(output, sizeof(output), kinds[index],
                                           (uint32_t)(8U + index),
                                           &current_player, &current_wifi,
+                                          &current_settings,
                                           station_label, (void *)labels) > 0);
         cJSON *root = cJSON_Parse(output);
         assert(cJSON_IsObject(root));
@@ -278,12 +351,17 @@ static void test_worst_case_catalog_always_fits_complete_snapshot(void)
                                  sizeof(wifi.saved_ssids[index]));
     }
 
+    const web_socket_settings_state_t settings = sample_settings();
     char output[WEB_PROTOCOL_EVENT_MAX + 1U];
     const int length = web_socket_serialize_event(
         output, sizeof(output), WEB_SOCKET_EVENT_SNAPSHOT, UINT32_MAX,
-        &player, &wifi, worst_case_station_label, station_name);
+        &player, &wifi, &settings, worst_case_station_label, station_name);
     assert(length > 0);
     assert(length <= (int)WEB_PROTOCOL_EVENT_MAX);
+    /* Not merely "it fits": the buffer this bounds sits in internal SRAM, so
+     * the margin is worth knowing about before it is gone. The settings
+     * section costs 270 bytes of it. */
+    assert((int)WEB_PROTOCOL_EVENT_MAX - length >= 256);
     cJSON *root = cJSON_Parse(output);
     assert(cJSON_IsObject(root));
     cJSON *items = cJSON_GetObjectItemCaseSensitive(

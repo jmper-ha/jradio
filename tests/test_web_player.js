@@ -39,6 +39,8 @@ class Element {
     this.hidden = false;
     this.disabled = false;
     this.scrollTop = 0;
+    this.style = {};
+    this.value = '';
   }
 
   append(...items) {
@@ -82,15 +84,19 @@ class Element {
 const ids = [
   'socket-state', 'playlist-link', 'source-tabs', 'mode-label', 'playback-state',
   'track-title', 'track-artist', 'track-context', 'play-toggle', 'next-track',
-  'like-track',
+  'like-track', 'previous-item', 'next-item',
+  'track-cover', 'track-progress', 'track-elapsed', 'track-total',
+  'progress-rail', 'progress-fill', 'progress-seek',
+  'volume-control', 'volume-input', 'volume-value',
   'stream-meta', 'player-error', 'command-status', 'media-list',
   'list-title', 'list-count', 'list-items', 'list-empty',
 ];
+const buttonIds = new Set([
+  'play-toggle', 'next-track', 'like-track', 'previous-item', 'next-item',
+]);
 const elements = Object.fromEntries(ids.map((id) => [
   `#${id}`,
-  new Element(id === 'play-toggle' || id === 'next-track' || id === 'like-track'
-    ? 'button'
-    : 'div'),
+  new Element(buttonIds.has(id) ? 'button' : 'div'),
 ]));
 const body = new Element('body');
 body.append(...Object.values(elements));
@@ -156,6 +162,12 @@ class FakeWebSocket {
 }
 
 const timers = [];
+const timerHandles = new Map();
+const progressCalls = [];
+// What GET /api/progress would answer; each test sets it before firing the
+// timer the page schedules.
+let progressReply = {cover: {present: false, generation: 0, width: 0, height: 0}};
+let progressFails = false;
 const context = {
   console,
   document: documentRef,
@@ -165,10 +177,51 @@ const context = {
     location: {protocol: 'http:', host: 'radio.local'},
     setTimeout(callback, delay) {
       timers.push({callback, delay});
+      timerHandles.set(timers.length, timers[timers.length - 1]);
       return timers.length;
+    },
+    clearTimeout(handle) {
+      const entry = timerHandles.get(handle);
+      if (entry) entry.cleared = true;
+    },
+    fetch(url, options) {
+      progressCalls.push({url, options});
+      if (progressFails) return Promise.reject(new Error('offline'));
+      return Promise.resolve({ok: true, json: () => Promise.resolve(progressReply)});
     },
   },
 };
+
+// The page reschedules its poll on every answer, so a test that wants one poll
+// takes the newest live timer rather than shifting the queue.
+function firePendingTimer() {
+  for (let index = timers.length - 1; index >= 0; --index) {
+    if (!timers[index].cleared && !timers[index].fired) {
+      timers[index].fired = true;
+      timers[index].callback();
+      return true;
+    }
+  }
+  return false;
+}
+
+function settle() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+// The reconnect timer has to be picked out by its delay now that the progress
+// poll keeps one of its own in the same queue.
+function fireReconnect(delay) {
+  for (let index = timers.length - 1; index >= 0; --index) {
+    const entry = timers[index];
+    if (!entry.cleared && !entry.fired && entry.delay === delay) {
+      entry.fired = true;
+      entry.callback();
+      return true;
+    }
+  }
+  return false;
+}
 
 function player(title, rssi) {
   const value = {
@@ -203,6 +256,13 @@ const baseSnapshot = {
     items: [{index: 0, label: 'Радио Шоколад'}],
   },
   wifi: {},
+  settings: {
+    language: 'ru', home_screen: 'text', scroll: 'bounce', autoplay: false,
+    yandex_music: true, flip_vertical: false, flip_horizontal: false,
+    brightness: 45, volume: 62,
+    available: {home_screen: true, yandex_music: true},
+    brightness_min: 10, brightness_max: 90,
+  },
 };
 
 vm.createContext(context);
@@ -242,6 +302,11 @@ assert.match(elements['#stream-meta'].textContent, /MP3/);
 assert.match(elements['#stream-meta'].textContent, /128 кбит\/с/);
 assert.match(elements['#stream-meta'].textContent, /44100 Гц/);
 assert.equal(elements['#playlist-link'].hidden, false);
+/* The volume rides in the snapshot's settings section rather than in the
+   player: it is a stored device setting, not a piece of playback state. */
+assert.equal(elements['#volume-control'].hidden, false);
+assert.equal(elements['#volume-input'].value, '62');
+assert.equal(elements['#volume-value'].textContent, '62');
 
 
 
@@ -259,9 +324,7 @@ assert.equal(elements['#track-title'].textContent, 'Актуальное');
 assert.doesNotMatch(elements['#stream-meta'].textContent, /Wi-Fi/);
 
 first.emit('close');
-assert.equal(timers.length, 1);
-assert.equal(timers[0].delay, 500);
-timers.shift().callback();
+assert.ok(fireReconnect(500));
 
 const second = FakeWebSocket.instances[1];
 second.readyState = FakeWebSocket.OPEN;
@@ -302,6 +365,10 @@ sendEvent(second, {
 });
 assert.equal(elements['#next-track'].hidden, false);
 assert.equal(elements['#next-track'].disabled, false);
+/* The rotor is not a list: its chain has no previous track and no index in
+   anything, so the two track keys are absent rather than merely disabled. */
+assert.equal(elements['#previous-item'].hidden, true);
+assert.equal(elements['#next-item'].hidden, true);
 /* And the playlist editor is not offered for it: that list is the catalog
    file, which has nothing to do with the account's stations. */
 assert.equal(elements['#playlist-link'].hidden, true);
@@ -356,8 +423,169 @@ sendEvent(second, {
 assert.equal(elements['#next-track'].hidden, true);
 assert.equal(elements['#like-track'].hidden, true);
 
-second.emit('close');
-assert.equal(elements['#socket-state'].textContent, 'Нет связи');
-assert.equal(elements['#play-toggle'].disabled, true);
+/* The catalog is a list, so the two track keys are back - they move the
+   playing station along it, exactly as the buttons on the front do. */
+assert.equal(elements['#previous-item'].hidden, false);
+assert.equal(elements['#next-item'].hidden, false);
+assert.equal(elements['#previous-item'].disabled, false);
+elements['#next-item'].emit('click');
+assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.next_item');
+elements['#previous-item'].emit('click');
+assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
 
-console.log('web player tests passed');
+(async () => {
+  /* Position and cover come over REST rather than the socket: the device
+     diffs its snapshot and broadcasts on every change, so a second counter
+     would push a frame a second to every open browser. */
+  sendEvent(second, {
+    type: 'player.update', revision: 7, active_source: 'usb',
+    player: {state: 'playing', mode: 'USB-накопитель', artist: 'Kaleo',
+             title: 'Way Down We Go', context: '/usb0/Kaleo', codec: 'MP3',
+             bitrate_kbps: 320, sample_rate_hz: 44100, error: ''},
+  });
+  progressReply = {
+    elapsed_seconds: 74, total_seconds: 217,
+    cover: {present: true, generation: 4, width: 96, height: 96},
+  };
+  assert.ok(firePendingTimer());
+  await settle();
+  assert.equal(progressCalls.at(-1).url, '/api/progress');
+  assert.equal(elements['#track-progress'].hidden, false);
+  assert.equal(elements['#track-elapsed'].textContent, '1:14');
+  assert.equal(elements['#track-total'].textContent, '3:37');
+  assert.equal(elements['#progress-fill'].style.width, '34%');
+  /* The handle counts seconds, which read aloud is a number nobody wants; what
+     it announces is the same time the label shows. */
+  assert.equal(elements['#progress-seek'].attributes['aria-valuetext'], '1:14');
+  assert.equal(elements['#progress-seek'].value, '74');
+  assert.equal(elements['#progress-seek'].max, '217');
+  assert.equal(elements['#progress-seek'].disabled, false);
+
+  /* Dragging the handle: the bar and the time follow it, and nothing is sent
+     until it is let go. */
+  const beforeDrag = second.sent.length;
+  elements['#progress-seek'].value = '150';
+  elements['#progress-seek'].emit('input');
+  assert.equal(elements['#track-elapsed'].textContent, '2:30');
+  assert.equal(elements['#progress-fill'].style.width, '69%');
+  assert.equal(second.sent.length, beforeDrag);
+
+  elements['#progress-seek'].emit('change');
+  const seekFrame = JSON.parse(second.sent.at(-1));
+  assert.equal(seekFrame.action, 'player.seek');
+  assert.equal(seekFrame.position, 150);
+
+  /* Until the device answers that exact command the poll leaves the handle
+     alone: an answer still describing the old position would drag it back. */
+  progressReply = {
+    elapsed_seconds: 75, total_seconds: 217,
+    cover: {present: true, generation: 4, width: 96, height: 96},
+  };
+  assert.ok(firePendingTimer());
+  await settle();
+  assert.equal(elements['#progress-seek'].value, '150');
+
+  sendEvent(second, {type: 'command.result', id: seekFrame.id, ok: true});
+  progressReply = {
+    elapsed_seconds: 151, total_seconds: 217,
+    cover: {present: true, generation: 4, width: 96, height: 96},
+  };
+  assert.ok(firePendingTimer());
+  await settle();
+  assert.equal(elements['#progress-seek'].value, '151');
+  assert.equal(elements['#track-elapsed'].textContent, '2:31');
+  /* The generation is in the URL, so the browser fetches the picture exactly
+     when it changes and takes it from its own cache the rest of the time. */
+  assert.equal(elements['#track-cover'].hidden, false);
+  assert.equal(elements['#track-cover'].src, '/api/cover?g=4');
+
+  /* A track whose length the device cannot estimate yet loses the bar and
+     keeps the cover: a bar drawn at nothing would claim a position. */
+  progressReply = {cover: {present: true, generation: 4, width: 96, height: 96}};
+  assert.ok(firePendingTimer());
+  await settle();
+  assert.equal(elements['#track-progress'].hidden, true);
+  assert.equal(elements['#track-cover'].hidden, false);
+  // Nothing to jump to without a length, so the handle goes with the bar.
+  assert.equal(elements['#progress-seek'].disabled, true);
+
+  // And a track with no picture at all takes the tile away rather than
+  // leaving the previous album's cover under a new title.
+  progressReply = {cover: {present: false, generation: 5, width: 0, height: 0}};
+  assert.ok(firePendingTimer());
+  await settle();
+  assert.equal(elements['#track-cover'].hidden, true);
+
+  // With nothing playing there is nothing to ask about, so the poll goes
+  // quiet instead of running all night in a forgotten tab.
+  sendEvent(second, {
+    type: 'player.update', revision: 8, active_source: 'usb',
+    player: {state: 'stopped', mode: 'USB-накопитель', artist: '', title: '',
+             context: '/usb0/Kaleo', codec: '', bitrate_kbps: 0,
+             sample_rate_hz: 0, error: ''},
+  });
+  const quiet = progressCalls.length;
+  assert.ok(firePendingTimer());
+  await settle();
+  assert.equal(progressCalls.length, quiet);
+  assert.equal(elements['#track-progress'].hidden, true);
+  // Stopped, the track keys have no place in the list to move from.
+  assert.equal(elements['#previous-item'].disabled, true);
+  assert.equal(elements['#next-item'].disabled, true);
+
+  /* The knob on the front of the device moves the volume and nothing else
+     would tell the browser, which is the whole reason the settings travel over
+     the socket. */
+  sendEvent(second, {type: 'settings.update', revision: 9, settings: {volume: 30}});
+  assert.equal(elements['#volume-input'].value, '30');
+  assert.equal(elements['#volume-value'].textContent, '30');
+
+  // The readout follows the handle; nothing is written until it is let go.
+  const beforeVolume = progressCalls.length;
+  elements['#volume-input'].value = '80';
+  elements['#volume-input'].emit('input');
+  assert.equal(elements['#volume-value'].textContent, '80');
+  assert.equal(progressCalls.length, beforeVolume);
+  // And a push landing mid-drag must not pull the handle out from under it.
+  sendEvent(second, {type: 'settings.update', revision: 10, settings: {volume: 31}});
+  assert.equal(elements['#volume-input'].value, '80');
+
+  elements['#volume-input'].emit('change');
+  await settle();
+  const volumePost = progressCalls.filter((call) => call.url === '/api/settings').at(-1);
+  assert.equal(volumePost.options.method, 'POST');
+  assert.deepEqual(JSON.parse(volumePost.options.body), {field: 'volume', value: 80});
+  /* Written over REST rather than as a socket command: the volume is a stored
+     setting, and this is the endpoint the settings page uses too. The handle
+     stays where it was put rather than flicking back to the level of the last
+     push. */
+  assert.equal(elements['#volume-input'].value, '80');
+
+  /* Each write rewrites settings.csv, so only one is ever in the air. A change
+     arriving while one is - an arrow key held down fires one per repeat - is
+     remembered rather than dropped, or the device would end a step behind
+     where the handle was left. */
+  const beforeBurst = progressCalls.filter((call) => call.url === '/api/settings').length;
+  elements['#volume-input'].value = '90';
+  elements['#volume-input'].emit('change');
+  elements['#volume-input'].value = '95';
+  elements['#volume-input'].emit('change');
+  elements['#volume-input'].value = '99';
+  elements['#volume-input'].emit('change');
+  await settle();
+  const burst = progressCalls.filter((call) => call.url === '/api/settings');
+  assert.equal(burst.length - beforeBurst, 2);
+  assert.deepEqual(JSON.parse(burst.at(-1).options.body),
+                   {field: 'volume', value: 99});
+  assert.equal(elements['#volume-input'].value, '99');
+
+  second.emit('close');
+  assert.equal(elements['#socket-state'].textContent, 'Нет связи');
+  assert.equal(elements['#play-toggle'].disabled, true);
+  assert.equal(elements['#volume-input'].disabled, true);
+
+  console.log('web player tests passed');
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

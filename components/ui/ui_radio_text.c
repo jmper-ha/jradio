@@ -6,8 +6,12 @@
 
 #include "radio_stream_format.h"
 
-void ui_radio_stream_text(char *text, size_t text_size, const char *codec,
-                          uint16_t bitrate_kbps, uint32_t sample_rate_hz)
+/* The three fields and what joins them. Both forms carry exactly the same
+ * readings in the same order - only the separator differs - so a reader who
+ * has seen one panel recognises the other. */
+static void ui_radio_stream_fields(char *text, size_t text_size, const char *codec,
+                                   uint16_t bitrate_kbps, uint32_t sample_rate_hz,
+                                   const char *separator)
 {
     const char *display_codec = codec != NULL && codec[0] != '\0' ? codec : "--";
     char bitrate_text[16];
@@ -25,7 +29,20 @@ void ui_radio_stream_text(char *text, size_t text_size, const char *codec,
         snprintf(rate_text, sizeof(rate_text), "--");
     }
 
-    snprintf(text, text_size, "%s  |  %s  |  %s", display_codec, bitrate_text, rate_text);
+    snprintf(text, text_size, "%s%s%s%s%s", display_codec, separator, bitrate_text, separator,
+             rate_text);
+}
+
+void ui_radio_stream_text(char *text, size_t text_size, const char *codec,
+                          uint16_t bitrate_kbps, uint32_t sample_rate_hz)
+{
+    ui_radio_stream_fields(text, text_size, codec, bitrate_kbps, sample_rate_hz, "  |  ");
+}
+
+void ui_radio_stream_lines(char *text, size_t text_size, const char *codec,
+                           uint16_t bitrate_kbps, uint32_t sample_rate_hz)
+{
+    ui_radio_stream_fields(text, text_size, codec, bitrate_kbps, sample_rate_hz, "\n");
 }
 
 void ui_radio_stream_text_for_url(char *text, size_t text_size, const char *url)

@@ -43,7 +43,12 @@ at its use sites."
  * Display - TFT panel on SPI
  * ====================================================================== */
 
-#define DISPLAY DISPLAY_ILI9341_320
+/* The panel, and with it which way up it is mounted: DISPLAY_ILI9341_320_240
+ * is the landscape module revision 1 is built with, DISPLAY_ILI9341_240_320
+ * the same one stood on end. The choice lays out every screen in the firmware,
+ * and it picks the boot splash to match - both are compiled in, so changing
+ * this line needs no regeneration. */
+#define DISPLAY DISPLAY_ILI9341_320_240
 
 /* SPI peripheral index: 2 selects SPI2, 3 selects SPI3. Mapped to the driver's
  * host enum in board.c, since the numbering of that enum is not the peripheral

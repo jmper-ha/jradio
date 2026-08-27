@@ -12,6 +12,22 @@ static void test_unknown_bitrate_keeps_reported_codec(void)
     assert(strcmp(text, "AAC  |  -- kbps  |  --") == 0);
 }
 
+static void test_the_stacked_form_carries_the_same_three_readings(void)
+{
+    /* The narrow panel puts these in a 116 px column beside the cover art, so
+     * they are stacked rather than strung together. Same fields, same order,
+     * same placeholders - only the separator differs, which is what lets a
+     * reader recognise one panel from having seen the other. */
+    char text[48];
+
+    ui_radio_stream_lines(text, sizeof(text), "MP3", 128, 44100);
+    assert(strcmp(text, "MP3\n128 kbps\n44100") == 0);
+    ui_radio_stream_lines(text, sizeof(text), "AAC", 0, 0);
+    assert(strcmp(text, "AAC\n-- kbps\n--") == 0);
+    ui_radio_stream_lines(text, sizeof(text), NULL, 0, 0);
+    assert(strcmp(text, "--\n-- kbps\n--") == 0);
+}
+
 static void test_known_bitrate_includes_codec(void)
 {
     char text[48];
@@ -148,6 +164,7 @@ static void test_a_silent_stream_still_names_the_station(void)
 int main(void)
 {
     test_unknown_bitrate_keeps_reported_codec();
+    test_the_stacked_form_carries_the_same_three_readings();
     test_known_bitrate_includes_codec();
     test_sample_rate_formatting();
     test_missing_codec_falls_back();

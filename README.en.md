@@ -65,6 +65,11 @@ access point instead, because `192.168.4.1` is useless until the phone is on
 that network. Another press takes the code down, and so does 30 seconds of
 nothing.
 
+On a portrait panel the band shows the address without the `http://`: seven
+characters that tell the reader nothing, on a band 240 px wide that also has to
+carry the QR hint. The code itself keeps the scheme - without it a camera opens
+nothing.
+
 ## Controls
 
 | Gesture | What it does |
@@ -100,11 +105,27 @@ Choosing the drive or the card when neither is there opens an explanation
 rather than an empty list: insert the medium, it cannot be read, or it holds no
 music - these are different things, and the advice differs.
 
+## Lists
+
+Stations are numbered - `01`, `02` and on, in playlist order. The number stays
+where it is even while a long name under the cursor travels as a marquee: it
+belongs to the row, not to the name.
+
+Files are not numbered. The first row of the browser is the way out of the
+folder and directories carry a mark; neither is an nth of anything.
+
+The cursor stays on the middle row and the list moves under it. The bar below
+the list says where in it you are.
+
 ## Player screen
 
 The clock and the Wi-Fi level are at the top. Below them the cover, the station
 name, and the track and performer in large type. At the bottom, the volume
 scale, the position bar and a level meter.
+
+The codec, the bitrate and the sample rate are shown beside them: as a line
+under the performer on the wide panel, and as a column next to the cover on the
+tall one, where that line would not fit.
 
 Cover art comes from the file itself, and where the file has none, from a
 `cover.jpg`, `cover.jpeg` or `cover.png` beside the music. For Yandex Music the
@@ -222,13 +243,26 @@ and everything that follows from that choice sits in profiles beside the
 driver:
 
 ```c
-#define DISPLAY   DISPLAY_ILI9341_320
+#define DISPLAY   DISPLAY_ILI9341_320_240
 #define AUDIO_DAC DAC_PCM5102
 ```
 
 The parts with drivers are listed in
 [`board_parts.h`](components/board/include/board_parts.h). A typo fails the
 build rather than producing a device that misbehaves.
+
+Which way up the panel stands is part of its name too: `DISPLAY_ILI9341_240_320`
+is the same module on its end. The orientation decides the layout of all six
+screens and cannot be derived from the wiring - the same reason the resolution
+was already in the name.
+
+In portrait the station list shows seven rows instead of five, Settings nine
+instead of six, the home carousel three tiles instead of five, and on the
+player screen the cover art and the three stream readings stand side by side
+above the names rather than beside them. This is a
+build option and not a setting: each screen's geometry is compiled for one
+shape, and a box is mounted one way round once. The boot splash has a version
+for each orientation and both are compiled in, so nothing needs regenerating.
 
 The same file names the parts this board does not carry: an FM tuner and
 Bluetooth. Their blocks are commented out rather than deleted - the file should

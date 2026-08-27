@@ -23,21 +23,49 @@ static void test_a_selected_part_resolves_to_a_real_catalogue_entry(void)
 
 static void test_display_group_is_complete_and_consistent(void)
 {
-    assert(DISPLAY == DISPLAY_ILI9341_320);
+    assert(DISPLAY == DISPLAY_ILI9341_320_240 || DISPLAY == DISPLAY_ILI9341_240_320);
     /* Only SPI2 and SPI3 can drive a panel on this part; SPI1 is the flash bus. */
     assert(DISPLAY_SPI_PERIPHERAL == 2 || DISPLAY_SPI_PERIPHERAL == 3);
     assert(TFT_CS_GPIO == 10);
     assert(TFT_DC_GPIO == 47);
     assert(TFT_MOSI_GPIO == 11);
     assert(TFT_SCLK_GPIO == 12);
-    assert(TFT_WIDTH == 320);
-    assert(TFT_HEIGHT == 240);
     assert(TFT_RGB_ORDER_BGR == 1);
+}
+
+static void test_the_orientation_decides_the_geometry_and_nothing_else(void)
+{
+    /* Which way up the panel is mounted is part of its name, the way its
+     * resolution already was: neither is something the wiring can tell us, and
+     * both decide what the driver and every screen do. A misspelt name is
+     * DISPLAY_NONE - zero, to the preprocessor - and the profile header has no
+     * branch for it. */
+    assert(BOARD_DISPLAY_PORTRAIT == (DISPLAY == DISPLAY_ILI9341_240_320));
+
+    /* The same panel either way up: the orientation decides which of the two
+     * numbers is the width and buys no pixels. Written as the sum and the
+     * product rather than as two comparisons, so a profile that shrank the
+     * panel while swapping it fails here instead of looking plausible. */
+    assert(TFT_WIDTH + TFT_HEIGHT == 560);
+    assert(TFT_WIDTH * TFT_HEIGHT == 76800);
+
+    /* Portrait is how the controller addresses the panel natively; landscape
+     * exists only while MADCTL MV swaps the axes. Either statement alone would
+     * pass on a profile that set the geometry and forgot the swap. */
+    assert((TFT_WIDTH > TFT_HEIGHT) == (TFT_SWAP_XY != 0));
+#if BOARD_DISPLAY_PORTRAIT
+    assert(TFT_WIDTH == 240 && TFT_HEIGHT == 320);
+    assert(TFT_SWAP_XY == 0);
+#else
+    assert(TFT_WIDTH == 320 && TFT_HEIGHT == 240);
     assert(TFT_SWAP_XY == 1);
-    assert(TFT_MIRROR_X == 0);
-    assert(TFT_MIRROR_Y == 0);
-    /* The panel is landscape, which only holds while the axes are swapped. */
-    assert(TFT_SWAP_XY == 0 || TFT_WIDTH > TFT_HEIGHT);
+#endif
+
+    /* The mirror baseline is per orientation and composes with the two flip
+     * settings by XOR, so the only thing that can be checked without looking
+     * at a panel is that each is a flag and not a coordinate. */
+    assert(TFT_MIRROR_X == 0 || TFT_MIRROR_X == 1);
+    assert(TFT_MIRROR_Y == 0 || TFT_MIRROR_Y == 1);
 }
 
 static void test_backlight_duty_fits_the_pwm_timer(void)
@@ -198,6 +226,7 @@ int main(void)
 {
     test_a_selected_part_resolves_to_a_real_catalogue_entry();
     test_display_group_is_complete_and_consistent();
+    test_the_orientation_decides_the_geometry_and_nothing_else();
     test_backlight_duty_fits_the_pwm_timer();
     test_control_pins_are_distinct();
     test_audio_group_matches_the_fixed_i2s_slots();

@@ -57,8 +57,17 @@
 #define UI_TASK_PRIORITY 4
 /* Five rows of 20 px text. The count follows from the size: at 14 px six rows
  * fitted, but a name read from across the room did not, and the row pitch a
- * legible face needs leaves room for five above the scroll bar. */
+ * legible face needs leaves room for five above the scroll bar.
+ *
+ * Portrait has 80 px more to spend at the same pitch, which is two more rows
+ * with the rule and the position bar still clearing the bottom edge. Nothing
+ * else changes: station_list_window_top() already takes the count it has to
+ * scroll within as an argument. */
+#if BOARD_DISPLAY_PORTRAIT
+#define UI_STATION_LIST_MAX_ROWS 7U
+#else
 #define UI_STATION_LIST_MAX_ROWS 5U
+#endif
 
 /* The screens share one palette, stated here rather than repeated as literals.
  * The player screen defined it by accretion; the others were on a different
@@ -92,6 +101,29 @@
 /* Height of the status strip every screen carries. */
 #define UI_STRIP_H 26
 
+/* The margin every full-width block keeps, and what is left of the panel
+ * between two of them. Written against TFT_WIDTH so one layout serves both
+ * orientations; on a landscape board it is the 300 that used to be typed at
+ * each of the eleven use sites. */
+#define UI_CONTENT_X 10
+#define UI_CONTENT_W (TFT_WIDTH - 2 * UI_CONTENT_X)
+
+/* The strip's three slots, placed from the panel's own width rather than from
+ * numbers measured once on a 320 px panel: the name on the left margin, the
+ * clock centred, the signal group pinned to the right with its reading beside
+ * it. Landscape works out to 10 / 116 wide, 130, 252 and 275 - exactly what
+ * was there before - so nothing on this board moves. */
+#define UI_STRIP_CONTEXT_X 10
+#define UI_STRIP_CLOCK_W 60
+#define UI_STRIP_CLOCK_X ((TFT_WIDTH - UI_STRIP_CLOCK_W) / 2)
+/* Room for three digits of RSSI and a minus, clear of the right edge. */
+#define UI_STRIP_RSSI_X (TFT_WIDTH - 45)
+/* Four bars at a pitch of 5, ending just before the reading. */
+#define UI_STRIP_BARS_X (UI_STRIP_RSSI_X - 23)
+/* Stops short of the clock instead of running under it - which is what a
+ * fixed 116 would do once the panel is only 240 wide. */
+#define UI_STRIP_CONTEXT_W (UI_STRIP_CLOCK_X - UI_STRIP_CONTEXT_X - 4)
+
 /* Home screen carousel. Every icon is a 24x24 design scaled to one of three
  * sizes, so a single axis is enough - the old row needed a per-glyph vertical
  * inset because each FontAwesome symbol had its own height, and the inset only
@@ -100,14 +132,36 @@
  * The five centres are symmetric about 160 with 16 px of margin at both ends;
  * the row used to start 4 px from the left and 30 from the right, which read
  * as the whole thing sliding off the screen. */
-#define UI_FEED_AXIS_Y 138
-#define UI_FEED_CENTER_X 160
+#define UI_FEED_CENTER_X (TFT_WIDTH / 2)
 #define UI_FEED_INNER_DX 68
 #define UI_FEED_OUTER_DX 132
 #define UI_FEED_TILE 84
+#if BOARD_DISPLAY_PORTRAIT
+/* Three tiles, not five: the outer pair sits 132 px from the centre, and on a
+ * 240 px panel that is off the screen on both sides. The ring itself is
+ * unchanged - the same items in the same order, wrapping the same way - it is
+ * only how many of them are in view. The axis drops to the middle of the
+ * taller screen. */
+#define UI_FEED_SLOTS 3
+#define UI_FEED_AXIS_Y 168
+#else
+#define UI_FEED_SLOTS 5
+#define UI_FEED_AXIS_Y 138
+#endif
+
 #define UI_FEED_ICON_LARGE_PX 48
 #define UI_FEED_ICON_MEDIUM_PX 32
 #define UI_FEED_ICON_SMALL_PX 24
+/* The outermost slot has to clear the edge. Only the centre is tile-sized;
+ * the neighbours are exactly icon-sized, which is why this is measured
+ * against the icon and not against UI_FEED_TILE. */
+#if UI_FEED_SLOTS == 3
+_Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 >= 4,
+               "the outermost carousel icon runs off the panel");
+#else
+_Static_assert(UI_FEED_CENTER_X - UI_FEED_OUTER_DX - UI_FEED_ICON_SMALL_PX / 2 >= 4,
+               "the outermost carousel icon runs off the panel");
+#endif
 /* Depth is carried by brightness as well as size: without it the middle icon
  * reads as the only lit one rather than as the middle of a ring. */
 #define UI_COLOR_FEED_NEAR 0x8FA8BC
@@ -123,19 +177,36 @@
 #define UI_SET_ROW_Y 36
 #define UI_SET_ROW_PITCH 25
 #define UI_SET_ROW_H 24
+/* The scroll chevrons sit in the right margin, and a row that carries a switch
+ * stops short of them. A row that does not is full width and runs past: its
+ * text is dotted long before it reaches the column, and giving it the same
+ * stop would waste the width the longest field names need. */
+#define UI_SET_CHEVRON_X UI_CONTENT_W
+/* Text column of a row with a switch: the switch is 42 px at the left margin,
+ * and the label starts after it. */
+#define UI_SET_SWITCH_TEXT_X 58
 /* The band along the bottom is the only place the device says how to reach its
  * web UI. It sits below everything else and never scrolls away - but it is the
  * last thing the cursor reaches, and a click there puts the address up as a QR
  * code, which is the only way a phone gets it without someone reading digits
  * out loud. */
-#define UI_SET_BAND_Y 210
+#define UI_SET_BAND_Y (TFT_HEIGHT - 30)
 #define UI_SET_BAND_H 30
 /* What the address keeps for itself, dotted past that. The hint on the right is
  * sized to its own text and pinned to the edge instead of taking a share: a
  * fixed width would either clip the words or steal room from the address, and
  * the one case that overruns 190 px - the setup AP, whose band names a network
  * as well as an address - is exactly the case the QR itself answers. */
+#if BOARD_DISPLAY_PORTRAIT
+/* Same share of the band as on the wider panel, so the hint on the right
+ * keeps the room its words need. */
+#define UI_SET_BAND_ADDRESS_W 130
+/* No room for one, and nothing lost: see ui_web_address.h. */
+#define UI_SET_BAND_SHOW_SCHEME false
+#else
 #define UI_SET_BAND_ADDRESS_W 190
+#define UI_SET_BAND_SHOW_SCHEME true
+#endif
 #define UI_SET_BAND_PAD 12
 
 /* The QR code and the white card behind it. The card is the quiet zone: the
@@ -161,15 +232,17 @@
 #define UI_MENU_ROW_PITCH 24
 #define UI_MENU_ROW_H 24
 #define UI_MENU_ROW_X 6
-#define UI_MENU_ROW_W 308
+#define UI_MENU_ROW_W (TFT_WIDTH - 12)
 #define UI_MENU_ICON_X 12
 #define UI_MENU_TEXT_PAD 38
 
 /* One dot per item, so a ring of eight does not feel endless. */
 #define UI_FEED_DOT 6
 #define UI_FEED_DOT_PITCH 10
-#define UI_FEED_DOT_Y 200
+#define UI_FEED_DOT_Y (TFT_HEIGHT - 40)
 #define UI_COLOR_FEED_DOT 0x33445A
+/* The last line of the screen, under the dots. */
+#define UI_FEED_NOTICE_Y (TFT_HEIGHT - 22)
 
 /* List screens: rows start straight under the strip, and a rule and the
  * position bar close the screen the way they close the player's. */
@@ -179,13 +252,23 @@
 /* Width the folder glyph reserves at the left of a row: 24 px of Montserrat 24
  * (its adv_w) plus the gap before the name. */
 #define UI_LIST_ICON_W 30
+/* Width the index reserves on a station row: two digits of the 20 px face
+ * (12.7 px of advance each) and the gap before the name. A station row is
+ * never a directory, so this and the folder mark never both apply; a file row
+ * has no index and keeps the left edge it always had. */
+#define UI_LIST_NUMBER_W 34
 #define UI_LIST_RULE_Y (UI_LIST_ROW_Y + (int)UI_STATION_LIST_MAX_ROWS * UI_LIST_ROW_PITCH + 6)
 #define UI_LIST_PROGRESS_Y (UI_LIST_RULE_Y + 8)
 /* The empty-browser screen: a drive above the sentence that says what is wrong
  * with it, together in the middle of the space the rows leave behind. */
 #define UI_LIST_NOTICE_ICON 48
+#if BOARD_DISPLAY_PORTRAIT
+#define UI_LIST_NOTICE_ICON_Y 124
+#define UI_LIST_NOTICE_TEXT_Y 188
+#else
 #define UI_LIST_NOTICE_ICON_Y 84
 #define UI_LIST_NOTICE_TEXT_Y 148
+#endif
 
 #define UI_RADIO_EMPTY_LIST_DELAY_MS 250U
 #define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
@@ -194,7 +277,11 @@
  * chevrons stay because the next field added would overflow again, and the
  * failure mode when it does is silent: rows past the end are drawn underneath
  * the notice, which is opaque and painted after them. Not clipped, covered. */
+#if BOARD_DISPLAY_PORTRAIT
+#define UI_SETTINGS_MAX_ROWS 9U
+#else
 #define UI_SETTINGS_MAX_ROWS 6U
+#endif
 /* The check the last overflow needed and did not have. A row past the notice
  * is invisible rather than clipped, so nothing about it looks wrong on screen
  * - the mistake has to be caught here or not at all. */
@@ -214,7 +301,7 @@ static lv_obj_t *s_menu_notice;
 static lv_obj_t *s_feed_screen;
 static lv_obj_t *s_feed_title;
 static lv_obj_t *s_feed_notice;
-static lv_obj_t *s_feed_icons[5];
+static lv_obj_t *s_feed_icons[UI_FEED_SLOTS];
 static lv_obj_t *s_feed_dots[UI_FEED_ITEM_COUNT];
 static ui_feed_model_t s_feed_model;
 static lv_obj_t *s_source_title;
@@ -235,6 +322,11 @@ typedef struct {
     uint32_t started_ms;
     int32_t applied_x;
     bool scrolling;
+    /* Where a line that fits comes to rest. List rows leave it false and start
+     * at the left margin; the player's column in portrait centres, or a short
+     * track name would sit against the margin under a centred cover while the
+     * three plain labels around it were centred. */
+    bool centred;
 } ui_scroller_t;
 
 static ui_scroller_t s_source_detail;
@@ -307,8 +399,155 @@ static lv_obj_t *s_source_progress;
 /* 20 blocks per channel: 20*11 + 19*3 = 277 px starting at x=30, so the row
  * ends at 307 on a 320 px panel. */
 #define UI_VU_SEGMENTS 20U
+/* The count is the meter's resolution and stays; only the block narrows on the
+ * shorter axis. Twenty is also the number LVGL can afford to see change at
+ * once - see the invalidation note in ui_update_vu_meter(). */
+#if BOARD_DISPLAY_PORTRAIT
+#define UI_VU_SEGMENT_W 8
+#define UI_VU_SEGMENT_GAP 2
+#else
 #define UI_VU_SEGMENT_W 11
 #define UI_VU_SEGMENT_GAP 3
+#endif
+
+/* Player screen layout, in device pixels.
+ *
+ * 320x240 leaves no room for guessing, so the numbers live together here
+ * rather than scattered through the builder. A status strip carries what is
+ * not about the music - clock, signal - and everything below it is the
+ * playing item. The bottom row pairs the two things that answer "is it going
+ * to keep playing, and how loud": buffer on the left, volume on the right.
+ */
+#define UI_SRC_STATUS_H 26
+#define UI_SRC_ART_SIZE 96
+/* One line of each face, from the generated fonts' own line_height. Rows are
+ * spaced by these rather than by eye, so nothing can overlap its neighbour. */
+#define UI_SRC_LINE_H 19
+#define UI_SRC_TRACK_H 23
+
+#if BOARD_DISPLAY_PORTRAIT
+/* The cover moves above the text instead of beside it. It has to: at 240 px
+ * wide, a 96 px tile alongside would leave 130 for the name, and the name is
+ * the one thing on this screen worth reading from across the room. Stacking
+ * costs about a hundred pixels of height, which is exactly what the taller
+ * panel gives back - so the cover keeps its 96 px and album_art is untouched.
+ *
+ * The tile sits on the left - inset from the margin rather than against it,
+ * so it does not read as having fallen off the edge - and the three stream
+ * readings take the column it leaves, stacked one per line and centred against
+ * its height.
+ * That is what pays for the rows below: the readings used to have a line of
+ * their own under the performer, and giving it up is what lets the name, the
+ * album and the performer breathe instead of being packed four deep.
+ *
+ * Those three rows are centred on the panel, not on the column beside the
+ * cover - they are the width of the screen, and anything else reads as a
+ * landscape screen that fell over. */
+#define UI_SRC_ART_X (UI_CONTENT_X + 10)
+#define UI_SRC_ART_Y 32
+#define UI_SRC_TEXT_X UI_CONTENT_X
+#define UI_SRC_TEXT_W UI_CONTENT_W
+/* Starts 10 px past the tile and runs to the right margin. */
+#define UI_SRC_STREAM_X (UI_SRC_ART_X + UI_SRC_ART_SIZE + 10)
+#define UI_SRC_STREAM_W (UI_CONTENT_X + UI_CONTENT_W - UI_SRC_STREAM_X)
+#define UI_SRC_STREAM_H (3 * UI_SRC_LINE_H)
+#define UI_SRC_STREAM_Y (UI_SRC_ART_Y + (UI_SRC_ART_SIZE - UI_SRC_STREAM_H) / 2)
+#define UI_SRC_ROW_TITLE 138
+#define UI_SRC_ROW_TRACK 162
+#define UI_SRC_ROW_ARTIST 192
+#define UI_SRC_RULE_TOP 226
+#define UI_SRC_VU_Y 234
+#else
+#define UI_SRC_ART_X 10
+#define UI_SRC_ART_Y 36
+#define UI_SRC_TEXT_X 118
+#define UI_SRC_TEXT_W 192
+/* The title shares the tile's top edge, which is what ties the two columns
+ * together on the wide panel. */
+#define UI_SRC_ROW_TITLE UI_SRC_ART_Y
+#define UI_SRC_ROW_TRACK 58
+#define UI_SRC_ROW_ARTIST 86
+/* One line across the text column, under the performer. */
+#define UI_SRC_STREAM_X UI_SRC_TEXT_X
+#define UI_SRC_STREAM_W UI_SRC_TEXT_W
+#define UI_SRC_STREAM_H UI_SRC_LINE_H
+#define UI_SRC_STREAM_Y 108
+#define UI_SRC_RULE_TOP 144
+#define UI_SRC_VU_Y 155
+#endif
+/* The text block must clear the tile above it whichever way the two are
+ * arranged - side by side it always does, stacked it is the thing to check. */
+_Static_assert(UI_SRC_ROW_TITLE >= UI_SRC_ART_Y + UI_SRC_ART_SIZE ||
+                   UI_SRC_TEXT_X >= UI_SRC_ART_X + UI_SRC_ART_SIZE,
+               "the player's text runs over its cover art");
+/* And so must the stream readings, which are beside the tile on one panel and
+ * on the other side of it on the other. */
+_Static_assert(UI_SRC_STREAM_X >= UI_SRC_ART_X + UI_SRC_ART_SIZE ||
+                   UI_SRC_STREAM_X + UI_SRC_STREAM_W <= UI_SRC_ART_X ||
+                   UI_SRC_STREAM_Y >= UI_SRC_ART_Y + UI_SRC_ART_SIZE,
+               "the player's stream readings run over its cover art");
+
+#define UI_SRC_VU_BLOCK_H 10
+#define UI_SRC_VU_PITCH 18
+/* Where the meter starts, just past the L and R marks on the left margin. */
+#define UI_SRC_VU_X (UI_CONTENT_X + 20)
+/* Twenty blocks and nineteen gaps, and the right margin. The narrower block
+ * in portrait is exactly what this asserts is necessary. */
+_Static_assert(UI_SRC_VU_X + (int)UI_VU_SEGMENTS * (UI_VU_SEGMENT_W + UI_VU_SEGMENT_GAP) -
+                       UI_VU_SEGMENT_GAP <=
+                   TFT_WIDTH - UI_CONTENT_X,
+               "the level meter runs off the panel");
+/* The two rules frame the meter, so the gap below is derived from the gap
+ * above instead of being typed in again. Written out by hand they drifted to
+ * 10 and 17 px, which read as the meter having slipped upwards. */
+#define UI_SRC_VU_GAP (UI_SRC_VU_Y - (UI_SRC_RULE_TOP + 1))
+#define UI_SRC_VU_BOTTOM (UI_SRC_VU_Y + UI_SRC_VU_PITCH + UI_SRC_VU_BLOCK_H)
+#define UI_SRC_RULE_BOTTOM (UI_SRC_VU_BOTTOM + UI_SRC_VU_GAP)
+/* Equalising the frame freed seven pixels; they go into the space around the
+ * progress bar, which was pressed against the rule above it and the times
+ * below. */
+#define UI_SRC_PROGRESS_Y (UI_SRC_RULE_BOTTOM + 8)
+/* A hairline while it only reports, twice that while it is being aimed: the
+ * bar is the control in scrubbing mode, and a 4 px target is not one. It grows
+ * about its own centre line, so the row it lives on does not shift. */
+#define UI_SRC_PROGRESS_H 4
+#define UI_SRC_PROGRESS_SEEK_H 8
+/* The footer, left to right: the buffer or the time on the left margin, the
+ * like mark in the gap neither reading reaches, then the volume.
+ *
+ * The volume sits twelve pixels further right than it used to, which is where
+ * the mark came from: it is a control, so it belongs beside the other one
+ * rather than pushed out to an edge on its own. The numbers still end clear of
+ * the 320 px edge - the bar runs to 268 and three digits to about 295.
+ *
+ * Portrait fits the same five things into 80 px less. Four of them are as
+ * short as they can be - "01:24 / 03:52" is the longest reading the left slot
+ * ever shows, and the mark, the icon and the number are fixed - so the bar is
+ * the one that gives, at 44 px instead of 60. */
+#if BOARD_DISPLAY_PORTRAIT
+#define UI_SRC_FOOT_Y 290
+#define UI_SRC_LIKE_X 116
+#define UI_SRC_VOLUME_ICON_X 136
+#define UI_SRC_VOLUME_BAR_X 156
+#define UI_SRC_VOLUME_BAR_W 44
+#define UI_SRC_VOLUME_TEXT_X 206
+#else
+#define UI_SRC_FOOT_Y 214
+#define UI_SRC_LIKE_X 150
+#define UI_SRC_VOLUME_ICON_X 190
+#define UI_SRC_VOLUME_BAR_X 208
+#define UI_SRC_VOLUME_BAR_W 60
+#define UI_SRC_VOLUME_TEXT_X 274
+#endif
+/* Three digits of volume, and the right margin every other block keeps. */
+_Static_assert(UI_SRC_VOLUME_TEXT_X + 26 <= TFT_WIDTH,
+               "the player's volume reading runs off the panel");
+_Static_assert(UI_SRC_FOOT_Y + UI_SRC_LINE_H <= TFT_HEIGHT,
+               "the player's footer runs off the bottom of the panel");
+#define UI_SRC_PAUSE_SIZE 76
+#define UI_SRC_PAUSE_BAR_W 10
+#define UI_SRC_PAUSE_BAR_H 34
+#define UI_SRC_PAUSE_GAP 10
 static lv_obj_t *s_source_vu[2][UI_VU_SEGMENTS];
 /* Colour last written to each block, so an unchanged one is left alone; see
  * ui_update_vu() for why that matters so much. 0 is not a colour any block
@@ -408,6 +647,10 @@ static ui_scroller_t s_station_list_rows[UI_STATION_LIST_MAX_ROWS];
  * text: inline it would take the row's font and colour, and it has to be
  * bigger than the name beside it and in its own colour. */
 static lv_obj_t *s_station_list_icons[UI_STATION_LIST_MAX_ROWS];
+/* The index down the left of a station row. Its own label rather than part of
+ * the row text: the row under the cursor scrolls, and the number is what the
+ * eye counts down - it has to stay where it is while the name travels. */
+static lv_obj_t *s_station_list_numbers[UI_STATION_LIST_MAX_ROWS];
 static lv_obj_t *s_station_list_progress;
 static station_list_state_t s_station_list;
 static ui_player_state_t s_player_ui;
@@ -568,6 +811,22 @@ static void ui_scroller_set_scrolling(ui_scroller_t *scroller, bool scrolling)
     lv_obj_set_x(scroller->text, 0);
 }
 
+/* Resting x for the label inside the box. Zero unless the scroller is centred
+ * and the line fits: a line too long to fit fills the view, is about to
+ * travel, and has nowhere to be centred.
+ *
+ * Only meaningful while the label is content-sized, which is what scrolling
+ * makes it - a box-sized label is already the full width and moving it would
+ * push it out of the box. Nothing sets `centred` on a scroller that is ever
+ * switched out of scrolling. */
+static int32_t ui_scroller_rest_x(const ui_scroller_t *scroller)
+{
+    if (!scroller->centred || !scroller->scrolling) return 0;
+    const int32_t view = ui_scroller_view_width(scroller);
+    const int32_t text = ui_scroller_text_width(scroller);
+    return text >= view ? 0 : (view - text) / 2;
+}
+
 static void ui_scroller_set_text(ui_scroller_t *scroller, const char *text)
 {
     if (scroller->text == NULL || text == NULL) return;
@@ -576,8 +835,9 @@ static void ui_scroller_set_text(ui_scroller_t *scroller, const char *text)
     lv_label_set_text(scroller->text, text);
     /* A new line starts from its beginning, however far the old one had got. */
     scroller->started_ms = ui_tick_get_ms();
-    scroller->applied_x = 0;
-    lv_obj_set_x(scroller->text, 0);
+    const int32_t rest = ui_scroller_rest_x(scroller);
+    scroller->applied_x = rest;
+    lv_obj_set_x(scroller->text, rest);
 }
 
 /* Called every frame. Cheap when there is nothing to do: the offset only
@@ -589,9 +849,13 @@ static void ui_scroller_tick(ui_scroller_t *scroller, ui_text_scroll_mode_t mode
     const int32_t offset = ui_text_scroll_offset(mode, ui_scroller_text_width(scroller),
                                                  ui_scroller_view_width(scroller),
                                                  now_ms - scroller->started_ms);
-    if (offset == scroller->applied_x) return;
-    scroller->applied_x = offset;
-    lv_obj_set_x(scroller->text, offset);
+    /* The two never both apply: the resting offset is zero for any line wide
+     * enough to travel, so this is the travel while moving and the centring
+     * while still. */
+    const int32_t x = offset + ui_scroller_rest_x(scroller);
+    if (x == scroller->applied_x) return;
+    scroller->applied_x = x;
+    lv_obj_set_x(scroller->text, x);
 }
 
 static const char *ui_radio_state_text(player_playback_state_t state)
@@ -615,7 +879,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
 {
     lv_obj_t *band = lv_obj_create(screen);
     lv_obj_set_pos(band, 0, 0);
-    lv_obj_set_size(band, 320, UI_STRIP_H);
+    lv_obj_set_size(band, TFT_WIDTH, UI_STRIP_H);
     lv_obj_set_style_bg_color(band, lv_color_hex(UI_COLOR_STRIP), 0);
     lv_obj_set_style_border_width(band, 0, 0);
     lv_obj_set_style_radius(band, 0, 0);
@@ -623,8 +887,8 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     lv_obj_clear_flag(band, LV_OBJ_FLAG_SCROLLABLE);
 
     strip->context = lv_label_create(screen);
-    lv_obj_set_pos(strip->context, 10, 6);
-    lv_obj_set_size(strip->context, 116, 19);
+    lv_obj_set_pos(strip->context, UI_STRIP_CONTEXT_X, 6);
+    lv_obj_set_size(strip->context, UI_STRIP_CONTEXT_W, 19);
     lv_label_set_long_mode(strip->context, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(strip->context, lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_label_set_text(strip->context, context);
@@ -632,8 +896,8 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     // Centred rather than left-aligned: it is the one thing on the screen read
     // from across the room, and the middle is where the eye goes first.
     strip->clock = lv_label_create(screen);
-    lv_obj_set_pos(strip->clock, 130, 5);
-    lv_obj_set_width(strip->clock, 60);
+    lv_obj_set_pos(strip->clock, UI_STRIP_CLOCK_X, 5);
+    lv_obj_set_width(strip->clock, UI_STRIP_CLOCK_W);
     lv_obj_set_style_text_align(strip->clock, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(strip->clock, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_label_set_text(strip->clock, "");
@@ -643,7 +907,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
         const int height = 3 + bar * 3;
         lv_obj_set_size(block, 3, height);
         // Grown from a common baseline so the four read as one rising shape.
-        lv_obj_set_pos(block, 252 + bar * 5, 7 + (12 - height));
+        lv_obj_set_pos(block, UI_STRIP_BARS_X + bar * 5, 7 + (12 - height));
         lv_obj_set_style_border_width(block, 0, 0);
         lv_obj_set_style_radius(block, 1, 0);
         lv_obj_set_style_pad_all(block, 0, 0);
@@ -653,7 +917,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
         strip->bar_colour[bar] = UI_COLOR_BAR_OFF;
     }
     strip->rssi = lv_label_create(screen);
-    lv_obj_set_pos(strip->rssi, 275, 6);
+    lv_obj_set_pos(strip->rssi, UI_STRIP_RSSI_X, 6);
     lv_obj_set_style_text_color(strip->rssi, lv_color_hex(UI_COLOR_MUTED), 0);
     lv_label_set_text(strip->rssi, "");
 }
@@ -752,7 +1016,7 @@ static void ui_update_footer(void)
         lv_obj_clear_flag(s_source_progress, LV_OBJ_FLAG_HIDDEN);
         lv_obj_t *played = lv_obj_get_child(s_source_progress, 0);
         if (played != NULL) {
-            const int32_t width = (int32_t)((300U * played_percent) / 100U);
+            const int32_t width = (int32_t)(((unsigned int)UI_CONTENT_W * played_percent) / 100U);
             const int32_t clamped = width < 1 ? 1 : width;
             // Written only on a change, like every other value in this loop:
             // a resize invalidates, and this runs every pass.
@@ -768,7 +1032,7 @@ static void ui_update_footer(void)
     ui_set_label_text_if_changed(s_source_volume, volume_text);
     lv_obj_t *fill_bar = lv_obj_get_child(s_source_volume_bar, 0);
     if (fill_bar != NULL) {
-        const int32_t width = (int32_t)((60U * volume) / 100U);
+        const int32_t width = (int32_t)(((unsigned int)UI_SRC_VOLUME_BAR_W * volume) / 100U);
         const int32_t clamped = width < 1 ? 1 : width;
         // Same reason as the meter blocks: resizing invalidates, and this runs
         // every pass while the volume changes only when the knob turns.
@@ -835,6 +1099,22 @@ static void ui_set_state_line(const char *state, const char *artist)
     }
 }
 
+/* The same three readings either way; only their shape follows the space they
+ * are given - one line across the wide panel, a stacked column beside the
+ * cover on the narrow one. */
+static void ui_set_stream_readings(const player_snapshot_t *snapshot)
+{
+    char text[64];
+#if BOARD_DISPLAY_PORTRAIT
+    ui_radio_stream_lines(text, sizeof(text), snapshot->codec, snapshot->bitrate_kbps,
+                          snapshot->sample_rate_hz);
+#else
+    ui_radio_stream_text(text, sizeof(text), snapshot->codec, snapshot->bitrate_kbps,
+                         snapshot->sample_rate_hz);
+#endif
+    ui_set_label_text_if_changed(s_source_stream, text);
+}
+
 static void ui_update_files_status(const player_snapshot_t *snapshot)
 {
     audio_tags_t tags;
@@ -853,10 +1133,7 @@ static void ui_update_files_status(const player_snapshot_t *snapshot)
     // naming. Pause is not one - the badge says it.
     ui_set_state_line(snapshot->playback_state == PLAYER_PLAYBACK_STOPPED ? "Выберите файл" : "",
                       tagged ? tags.artist : "");
-    char stream_text[64];
-    ui_radio_stream_text(stream_text, sizeof(stream_text), snapshot->codec,
-                         snapshot->bitrate_kbps, snapshot->sample_rate_hz);
-    ui_set_label_text_if_changed(s_source_stream, stream_text);
+    ui_set_stream_readings(snapshot);
 }
 
 static void ui_update_radio_status(const player_snapshot_t *snapshot)
@@ -923,10 +1200,7 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
                          snapshot->playback_state == PLAYER_PLAYBACK_PAUSED;
     ui_set_state_line(settled ? "" : ui_radio_state_text(snapshot->playback_state), artist);
 
-    char stream_text[64];
-    ui_radio_stream_text(stream_text, sizeof(stream_text), snapshot->codec,
-                         snapshot->bitrate_kbps, snapshot->sample_rate_hz);
-    ui_set_label_text_if_changed(s_source_stream, stream_text);
+    ui_set_stream_readings(snapshot);
 }
 
 static uint32_t ui_tick_get_ms(void)
@@ -962,36 +1236,57 @@ static bool ui_home_screen_exists(void)
 static void ui_update_feed_screen(void)
 {
     const ui_feed_item_t selected = ui_feed_model_selected(&s_feed_model);
-    const int offsets[5] = {-2, -1, 0, 1, 2};
-    const int centers[5] = {
+    /* One entry per slot in view, ordered left to right, with the selected
+     * item in the middle. Portrait drops the outer pair rather than moving it
+     * inwards: at 240 px there is no room for a fourth and fifth tile that is
+     * not either off the panel or on top of its neighbour. */
+#if UI_FEED_SLOTS == 3
+    const int offsets[UI_FEED_SLOTS] = {-1, 0, 1};
+    const int centers[UI_FEED_SLOTS] = {
+        UI_FEED_CENTER_X - UI_FEED_INNER_DX, UI_FEED_CENTER_X,
+        UI_FEED_CENTER_X + UI_FEED_INNER_DX,
+    };
+    const ui_feed_icon_size_t sizes[UI_FEED_SLOTS] = {
+        UI_FEED_ICON_MEDIUM, UI_FEED_ICON_LARGE, UI_FEED_ICON_MEDIUM,
+    };
+    const int pixels[UI_FEED_SLOTS] = {
+        UI_FEED_ICON_MEDIUM_PX, UI_FEED_ICON_LARGE_PX, UI_FEED_ICON_MEDIUM_PX,
+    };
+    const uint32_t colors[UI_FEED_SLOTS] = {
+        UI_COLOR_FEED_NEAR, UI_COLOR_ACCENT, UI_COLOR_FEED_NEAR,
+    };
+#else
+    const int offsets[UI_FEED_SLOTS] = {-2, -1, 0, 1, 2};
+    const int centers[UI_FEED_SLOTS] = {
         UI_FEED_CENTER_X - UI_FEED_OUTER_DX, UI_FEED_CENTER_X - UI_FEED_INNER_DX,
         UI_FEED_CENTER_X,
         UI_FEED_CENTER_X + UI_FEED_INNER_DX, UI_FEED_CENTER_X + UI_FEED_OUTER_DX,
     };
-    const ui_feed_icon_size_t sizes[5] = {
+    const ui_feed_icon_size_t sizes[UI_FEED_SLOTS] = {
         UI_FEED_ICON_SMALL, UI_FEED_ICON_MEDIUM, UI_FEED_ICON_LARGE,
         UI_FEED_ICON_MEDIUM, UI_FEED_ICON_SMALL,
     };
-    const int pixels[5] = {
+    const int pixels[UI_FEED_SLOTS] = {
         UI_FEED_ICON_SMALL_PX, UI_FEED_ICON_MEDIUM_PX, UI_FEED_ICON_LARGE_PX,
         UI_FEED_ICON_MEDIUM_PX, UI_FEED_ICON_SMALL_PX,
     };
-    const uint32_t colors[5] = {
+    const uint32_t colors[UI_FEED_SLOTS] = {
         UI_COLOR_FEED_FAR, UI_COLOR_FEED_NEAR, UI_COLOR_ACCENT,
         UI_COLOR_FEED_NEAR, UI_COLOR_FEED_FAR,
     };
+#endif
     const bool yandex = ui_feed_model_yandex_visible(&s_feed_model);
     /* The carousel wraps over what is on screen, not over the enum: with an
      * item switched off, stepping past the last one has to land on the first
      * visible one, and the dot row has to lose a dot. */
     const int visible = (int)ui_menu_visible_count(yandex);
     const int position = (int)ui_menu_visible_position((ui_menu_item_t)selected, yandex);
-    for (size_t slot = 0; slot < 5U; ++slot) {
+    for (size_t slot = 0; slot < (size_t)UI_FEED_SLOTS; ++slot) {
         int index = position + offsets[slot];
         while (index < 0) index += visible;
         index %= visible;
         const ui_feed_item_t item = (ui_feed_item_t)ui_menu_visible_item_at((uint8_t)index, yandex);
-        const bool center = slot == 2U;
+        const bool center = slot == (size_t)UI_FEED_SLOTS / 2U;
         lv_image_set_src(s_feed_icons[slot], ui_feed_icon_image(item, sizes[slot]));
         /* The tile is bigger than the icon inside it, so the object is placed
          * by its own box and the image centred within it. Everything else is
@@ -1041,7 +1336,7 @@ static void ui_create_feed_screen(void)
 
     s_feed_title = lv_label_create(s_feed_screen);
     lv_obj_set_pos(s_feed_title, 0, UI_STRIP_H + 8);
-    lv_obj_set_size(s_feed_title, 320, 28);
+    lv_obj_set_size(s_feed_title, TFT_WIDTH, 28);
     lv_obj_set_style_text_align(s_feed_title, LV_TEXT_ALIGN_CENTER, 0);
     /* A real 20 px face, not the 14 px one scaled up.
      *
@@ -1055,12 +1350,12 @@ static void ui_create_feed_screen(void)
     lv_obj_set_style_text_font(s_feed_title, &ui_font_cyrillic_20, 0);
     lv_obj_set_style_text_color(s_feed_title, lv_color_hex(UI_COLOR_TEXT), 0);
     s_feed_notice = lv_label_create(s_feed_screen);
-    lv_obj_set_pos(s_feed_notice, 8, 218);
-    lv_obj_set_size(s_feed_notice, 304, 18);
+    lv_obj_set_pos(s_feed_notice, 8, UI_FEED_NOTICE_Y);
+    lv_obj_set_size(s_feed_notice, TFT_WIDTH - 16, 18);
     lv_obj_set_style_text_align(s_feed_notice, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(s_feed_notice, lv_color_hex(0xFFCC80), 0);
     lv_label_set_text(s_feed_notice, "");
-    for (size_t index = 0; index < 5U; ++index) {
+    for (size_t index = 0; index < (size_t)UI_FEED_SLOTS; ++index) {
         s_feed_icons[index] = lv_image_create(s_feed_screen);
         lv_obj_set_style_pad_all(s_feed_icons[index], 0, 0);
         // Centres the bitmap inside the tile, which is larger than it.
@@ -1180,7 +1475,7 @@ static void ui_create_menu_screen(void)
     s_menu_notice = lv_label_create(s_menu_screen);
     lv_label_set_text(s_menu_notice, "");
     lv_obj_set_style_text_font(s_menu_notice, &ui_font_cyrillic_14, 0);
-    lv_obj_set_pos(s_menu_notice, 12, 221);
+    lv_obj_set_pos(s_menu_notice, 12, TFT_HEIGHT - 19);
     lv_obj_set_style_text_color(s_menu_notice, lv_color_hex(UI_COLOR_NOTICE), 0);
     ui_update_menu_highlight();
 }
@@ -1198,9 +1493,12 @@ static bool ui_list_row_text(size_t list_index, char *text, size_t text_size,
     *directory = false;
     if (!ui_list_shows_files()) {
         const station_catalog_entry_t *entry = player_control_station_at(list_index);
-        // Ordinal, so the first station reads 001 rather than 000.
-        snprintf(text, text_size, "%03u %s", (unsigned)(list_index + 1U),
-                 entry == NULL ? "" : entry->name);
+        /* The name alone. The index used to be part of this string and
+         * travelled with it when the row scrolled, which put the number
+         * halfway across the screen and then off it - the one part of the row
+         * that should never move. It is a label of its own now, drawn by the
+         * caller beside the box. */
+        snprintf(text, text_size, "%s", entry == NULL ? "" : entry->name);
         *active = list_index == station_list_active_index(&s_station_list);
         return true;
     }
@@ -1250,6 +1548,7 @@ static void ui_update_station_list(void)
             // either end of the catalogue are simply blank.
             lv_obj_add_flag(s_station_list_rows[row].box, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(s_station_list_icons[row], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_station_list_numbers[row], LV_OBJ_FLAG_HIDDEN);
             continue;
         }
         lv_obj_clear_flag(s_station_list_rows[row].box, LV_OBJ_FLAG_HIDDEN);
@@ -1266,8 +1565,27 @@ static void ui_update_station_list(void)
         } else {
             lv_obj_add_flag(s_station_list_icons[row], LV_OBJ_FLAG_HIDDEN);
         }
+        /* Stations are numbered, files are not: a browser row can be ".." or a
+         * directory, and neither is an nth of anything. A station row is never
+         * a directory, so the number and the folder mark never share a row and
+         * the two indents never add up. */
+        const bool numbered = !ui_list_shows_files();
+        if (numbered) {
+            /* Two digits for any catalogue this list can scroll, and room for
+             * what an unsigned can actually print - the compiler checks the
+             * latter and does not know about the former. */
+            char number[12];
+            snprintf(number, sizeof(number), "%02u", (unsigned)(entry_index + 1));
+            ui_set_label_text_if_changed(s_station_list_numbers[row], number);
+            lv_obj_clear_flag(s_station_list_numbers[row], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_station_list_numbers[row], LV_OBJ_FLAG_HIDDEN);
+        }
         lv_obj_set_style_pad_left(s_station_list_rows[row].box,
-                                  directory ? 8 + UI_LIST_ICON_W : 8, 0);
+                                  numbered    ? 8 + UI_LIST_NUMBER_W
+                                  : directory ? 8 + UI_LIST_ICON_W
+                                              : 8,
+                                  0);
         const bool selected = row == cursor_row;
         lv_obj_set_style_bg_color(s_station_list_rows[row].box,
                                   lv_color_hex(selected ? UI_COLOR_SELECTED
@@ -1284,6 +1602,14 @@ static void ui_update_station_list(void)
                                     : active ? UI_COLOR_TEXT
                                              : UI_COLOR_MUTED;
         lv_obj_set_style_text_color(s_station_list_rows[row].box, lv_color_hex(row_colour), 0);
+        // The index takes the row's colour: it is part of the row, not a
+        // fixture beside it, and a number that stayed muted under the cursor
+        // would read as a different row from the name next to it.
+        lv_obj_set_style_text_color(s_station_list_numbers[row], lv_color_hex(row_colour), 0);
+        // And the patch it sits on takes the row's background, or the column
+        // would stay dark under a lit row.
+        lv_obj_set_style_bg_color(s_station_list_numbers[row],
+                                  lv_color_hex(selected ? UI_COLOR_SELECTED : UI_COLOR_GROUND), 0);
         // Only the row under the cursor scrolls: a screen of six marquees at
         // once is unreadable, and the row being pointed at is the one whose
         // full name the user is actually after. The others keep the ellipsis.
@@ -1347,7 +1673,7 @@ static void ui_create_settings_screen(void)
     for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
         s_settings_rows[row] = lv_label_create(s_settings_screen);
         lv_obj_set_pos(s_settings_rows[row], 10, UI_SET_ROW_Y + (int)row * UI_SET_ROW_PITCH);
-        lv_obj_set_width(s_settings_rows[row], 300);
+        lv_obj_set_width(s_settings_rows[row], UI_CONTENT_W);
         lv_obj_set_height(s_settings_rows[row], UI_SET_ROW_H);
         lv_obj_set_style_pad_left(s_settings_rows[row], 6, 0);
         lv_obj_set_style_pad_top(s_settings_rows[row], 2, 0);
@@ -1360,12 +1686,12 @@ static void ui_create_settings_screen(void)
     /* In the right margin, clear of the rows: the text column ends at 300 and
      * a row with a switch starts at 58, so nothing here overlaps either. */
     s_settings_more_above = lv_label_create(s_settings_screen);
-    lv_obj_set_pos(s_settings_more_above, 300, UI_SET_ROW_Y - 15);
+    lv_obj_set_pos(s_settings_more_above, UI_SET_CHEVRON_X, UI_SET_ROW_Y - 15);
     lv_obj_set_style_text_color(s_settings_more_above, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_settings_more_above, "");
 
     s_settings_more_below = lv_label_create(s_settings_screen);
-    lv_obj_set_pos(s_settings_more_below, 300,
+    lv_obj_set_pos(s_settings_more_below, UI_SET_CHEVRON_X,
                    UI_SET_ROW_Y + UI_SETTINGS_MAX_ROWS * UI_SET_ROW_PITCH);
     lv_obj_set_style_text_color(s_settings_more_below, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_settings_more_below, "");
@@ -1387,7 +1713,7 @@ static void ui_create_settings_screen(void)
     s_settings_notice = lv_label_create(s_settings_screen);
     lv_obj_set_pos(s_settings_notice, 10, UI_SET_BAND_Y - 24);
     // Stops short of the chevron column, which shares this line.
-    lv_obj_set_width(s_settings_notice, 286);
+    lv_obj_set_width(s_settings_notice, TFT_WIDTH - 34);
     lv_label_set_long_mode(s_settings_notice, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_settings_notice, lv_color_hex(0xFFCC80), 0);
     lv_obj_set_style_bg_opa(s_settings_notice, LV_OPA_COVER, 0);
@@ -1399,7 +1725,7 @@ static void ui_create_settings_screen(void)
     s_settings_web_band = lv_obj_create(s_settings_screen);
     lv_obj_remove_style_all(s_settings_web_band);
     lv_obj_set_pos(s_settings_web_band, 0, UI_SET_BAND_Y);
-    lv_obj_set_size(s_settings_web_band, 320, UI_SET_BAND_H);
+    lv_obj_set_size(s_settings_web_band, TFT_WIDTH, UI_SET_BAND_H);
     lv_obj_set_style_bg_color(s_settings_web_band, lv_color_hex(UI_COLOR_STRIP), 0);
     lv_obj_set_style_bg_opa(s_settings_web_band, LV_OPA_COVER, 0);
 
@@ -1424,14 +1750,14 @@ static void ui_create_settings_screen(void)
     s_qr_overlay = lv_obj_create(s_settings_screen);
     lv_obj_remove_style_all(s_qr_overlay);
     lv_obj_set_pos(s_qr_overlay, 0, 0);
-    lv_obj_set_size(s_qr_overlay, 320, 240);
+    lv_obj_set_size(s_qr_overlay, TFT_WIDTH, TFT_HEIGHT);
     lv_obj_set_style_bg_color(s_qr_overlay, lv_color_hex(UI_COLOR_GROUND), 0);
     lv_obj_set_style_bg_opa(s_qr_overlay, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_qr_overlay, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *card = lv_obj_create(s_qr_overlay);
     lv_obj_remove_style_all(card);
-    lv_obj_set_pos(card, (320 - UI_QR_CARD) / 2, UI_QR_CARD_Y);
+    lv_obj_set_pos(card, (TFT_WIDTH - UI_QR_CARD) / 2, UI_QR_CARD_Y);
     lv_obj_set_size(card, UI_QR_CARD, UI_QR_CARD);
     lv_obj_set_style_bg_color(card, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
@@ -1445,7 +1771,7 @@ static void ui_create_settings_screen(void)
 
     s_qr_caption = lv_label_create(s_qr_overlay);
     lv_obj_set_pos(s_qr_caption, 10, UI_QR_CARD_Y + UI_QR_CARD + 6);
-    lv_obj_set_width(s_qr_caption, 300);
+    lv_obj_set_width(s_qr_caption, UI_CONTENT_W);
     lv_obj_set_style_text_align(s_qr_caption, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_qr_caption, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_qr_caption, lv_color_hex(UI_COLOR_TEXT), 0);
@@ -1453,7 +1779,7 @@ static void ui_create_settings_screen(void)
 
     s_qr_back = lv_label_create(s_qr_overlay);
     lv_obj_set_pos(s_qr_back, 10, UI_QR_CARD_Y + UI_QR_CARD + 28);
-    lv_obj_set_width(s_qr_back, 300);
+    lv_obj_set_width(s_qr_back, UI_CONTENT_W);
     lv_obj_set_style_text_align(s_qr_back, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(s_qr_back, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_qr_back, "");
@@ -1590,7 +1916,7 @@ static void ui_update_settings_web_band(void)
     const bool english = s_device_settings.language == DEVICE_LANGUAGE_EN;
     char text[64];
     ui_web_address_text(status.mode, status.ipv4, status.active_ssid, english,
-                        text, sizeof(text));
+                        UI_SET_BAND_SHOW_SCHEME, text, sizeof(text));
     ui_set_label_text_if_changed(s_settings_web_address, text);
 
     char payload[sizeof(s_qr_shown)];
@@ -1684,8 +2010,9 @@ static void ui_update_settings(void)
         size_t switch_index = 0U;
         bool enabled = false;
         const bool has_switch = ui_settings_row_switch(item.id, &switch_index, &enabled);
-        lv_obj_set_x(s_settings_rows[row], has_switch ? 58 : 10);
-        lv_obj_set_width(s_settings_rows[row], has_switch ? 242 : 300);
+        lv_obj_set_x(s_settings_rows[row], has_switch ? UI_SET_SWITCH_TEXT_X : UI_CONTENT_X);
+        lv_obj_set_width(s_settings_rows[row],
+                         has_switch ? UI_SET_CHEVRON_X - UI_SET_SWITCH_TEXT_X : UI_CONTENT_W);
         lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(background), 0);
         if (has_switch) {
             lv_obj_t *toggle = s_settings_switches[switch_index];
@@ -1698,6 +2025,23 @@ static void ui_update_settings(void)
     }
 }
 
+/* Applies the two flip settings and repaints everything.
+ *
+ * The repaint is the point. esp_lcd_panel_mirror() changes where the
+ * controller puts incoming pixels, and LVGL has no idea it happened: every
+ * pixel already on the glass was written under the old mapping and stays
+ * exactly where it was, so the screen keeps fragments of the previous
+ * orientation until something else happens to invalidate them. On the settings
+ * screen that is most of it - only the row under the cursor redraws by itself,
+ * and the rest of the list sits there mirrored. */
+static void ui_apply_display_rotation(void)
+{
+    (void)board_display_set_rotation(s_device_settings.flip_vertical,
+                                     s_device_settings.flip_horizontal);
+    lv_obj_t *screen = lv_screen_active();
+    if (screen != NULL) lv_obj_invalidate(screen);
+}
+
 static void ui_show_settings(void)
 {
     s_settings_open = true;
@@ -1707,8 +2051,7 @@ static void ui_show_settings(void)
         lv_label_set_text(s_settings_notice, "Ошибка чтения settings.csv");
     } else {
         lv_label_set_text(s_settings_notice, "");
-        (void)board_display_set_rotation(s_device_settings.flip_vertical,
-                                         s_device_settings.flip_horizontal);
+        ui_apply_display_rotation();
         (void)board_backlight_set(s_device_settings.brightness);
     }
     ui_apply_yandex_visibility();
@@ -1753,8 +2096,7 @@ static void ui_reload_settings(void)
     if (volume_pending) s_device_settings.volume = turning_volume;
     if (brightness_pending) s_device_settings.brightness = turning_brightness;
 
-    (void)board_display_set_rotation(s_device_settings.flip_vertical,
-                                     s_device_settings.flip_horizontal);
+    ui_apply_display_rotation();
     (void)board_backlight_set(s_device_settings.brightness);
     if (!volume_pending) board_audio_set_volume(s_device_settings.volume);
     ui_apply_yandex_visibility();
@@ -1789,7 +2131,7 @@ static void ui_create_yandex_screen(void)
 
     s_yandex_status = lv_label_create(s_yandex_screen);
     lv_obj_set_pos(s_yandex_status, 12, 44);
-    lv_obj_set_width(s_yandex_status, 296);
+    lv_obj_set_width(s_yandex_status, TFT_WIDTH - 24);
     lv_label_set_long_mode(s_yandex_status, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_yandex_status, lv_color_hex(UI_COLOR_MUTED), 0);
     lv_label_set_text(s_yandex_status, "");
@@ -1800,7 +2142,7 @@ static void ui_create_yandex_screen(void)
     s_yandex_code_panel = lv_obj_create(s_yandex_screen);
     lv_obj_remove_style_all(s_yandex_code_panel);
     lv_obj_set_pos(s_yandex_code_panel, 12, 70);
-    lv_obj_set_size(s_yandex_code_panel, 296, 122);
+    lv_obj_set_size(s_yandex_code_panel, TFT_WIDTH - 24, 122);
     lv_obj_set_style_bg_color(s_yandex_code_panel, lv_color_hex(UI_COLOR_STRIP), 0);
     lv_obj_set_style_bg_opa(s_yandex_code_panel, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(s_yandex_code_panel, 8, 0);
@@ -1814,7 +2156,7 @@ static void ui_create_yandex_screen(void)
      * issues. */
     s_yandex_code = lv_label_create(s_yandex_code_panel);
     lv_obj_set_pos(s_yandex_code, 0, 6);
-    lv_obj_set_width(s_yandex_code, 296);
+    lv_obj_set_width(s_yandex_code, TFT_WIDTH - 24);
     lv_label_set_long_mode(s_yandex_code, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(s_yandex_code, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(s_yandex_code, &lv_font_montserrat_48, 0);
@@ -1826,7 +2168,7 @@ static void ui_create_yandex_screen(void)
      * linked, so neither costs flash. */
     s_yandex_url = lv_label_create(s_yandex_code_panel);
     lv_obj_set_pos(s_yandex_url, 0, 66);
-    lv_obj_set_width(s_yandex_url, 296);
+    lv_obj_set_width(s_yandex_url, TFT_WIDTH - 24);
     lv_label_set_long_mode(s_yandex_url, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(s_yandex_url, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(s_yandex_url, &lv_font_montserrat_24, 0);
@@ -1836,14 +2178,14 @@ static void ui_create_yandex_screen(void)
     s_yandex_countdown = lv_label_create(s_yandex_code_panel);
     lv_obj_set_pos(s_yandex_countdown, 0, 98);
     lv_obj_set_style_text_font(s_yandex_countdown, &ui_font_cyrillic_14, 0);
-    lv_obj_set_width(s_yandex_countdown, 296);
+    lv_obj_set_width(s_yandex_countdown, TFT_WIDTH - 24);
     lv_obj_set_style_text_align(s_yandex_countdown, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(s_yandex_countdown, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_yandex_countdown, "");
 
     s_yandex_rule = lv_obj_create(s_yandex_screen);
     lv_obj_set_pos(s_yandex_rule, 10, UI_LIST_RULE_Y);
-    lv_obj_set_size(s_yandex_rule, 300, 1);
+    lv_obj_set_size(s_yandex_rule, UI_CONTENT_W, 1);
     lv_obj_set_style_bg_color(s_yandex_rule, lv_color_hex(UI_COLOR_RULE), 0);
     lv_obj_set_style_border_width(s_yandex_rule, 0, 0);
     lv_obj_set_style_pad_all(s_yandex_rule, 0, 0);
@@ -1852,7 +2194,7 @@ static void ui_create_yandex_screen(void)
 
     s_yandex_progress = lv_bar_create(s_yandex_screen);
     lv_obj_set_pos(s_yandex_progress, 10, UI_LIST_PROGRESS_Y);
-    lv_obj_set_size(s_yandex_progress, 300, 4);
+    lv_obj_set_size(s_yandex_progress, UI_CONTENT_W, 4);
     lv_bar_set_range(s_yandex_progress, 0, 100);
     lv_obj_set_style_radius(s_yandex_progress, 2, LV_PART_MAIN);
     lv_obj_set_style_radius(s_yandex_progress, 2, LV_PART_INDICATOR);
@@ -1863,8 +2205,8 @@ static void ui_create_yandex_screen(void)
 
     for (size_t row = 0; row < UI_YANDEX_LIST_ROWS; ++row) {
         s_yandex_rows[row] = ui_scroller_create(
-            s_yandex_screen, 10, UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH, 300,
-            UI_LIST_ROW_H);
+            s_yandex_screen, UI_CONTENT_X, UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH,
+            UI_CONTENT_W, UI_LIST_ROW_H);
         lv_obj_set_style_text_font(s_yandex_rows[row].box, &ui_font_cyrillic_20, 0);
         lv_obj_set_style_pad_left(s_yandex_rows[row].box, 8, 0);
         lv_obj_set_style_pad_top(s_yandex_rows[row].box, 3, 0);
@@ -1883,7 +2225,7 @@ static void ui_create_yandex_screen(void)
                      ui_feed_icon_image(UI_FEED_YANDEX, UI_FEED_ICON_LARGE));
     lv_obj_set_size(s_yandex_message_icon, UI_LIST_NOTICE_ICON, UI_LIST_NOTICE_ICON);
     lv_image_set_inner_align(s_yandex_message_icon, LV_IMAGE_ALIGN_CENTER);
-    lv_obj_set_pos(s_yandex_message_icon, (320 - UI_LIST_NOTICE_ICON) / 2,
+    lv_obj_set_pos(s_yandex_message_icon, (TFT_WIDTH - UI_LIST_NOTICE_ICON) / 2,
                    UI_LIST_NOTICE_ICON_Y);
     lv_obj_set_style_image_recolor(s_yandex_message_icon, lv_color_hex(UI_COLOR_NOTICE), 0);
     lv_obj_set_style_image_recolor_opa(s_yandex_message_icon, LV_OPA_COVER, 0);
@@ -1892,7 +2234,7 @@ static void ui_create_yandex_screen(void)
     s_yandex_message = lv_label_create(s_yandex_screen);
     lv_label_set_text(s_yandex_message, "");
     lv_obj_set_pos(s_yandex_message, 10, UI_LIST_NOTICE_TEXT_Y);
-    lv_obj_set_width(s_yandex_message, 300);
+    lv_obj_set_width(s_yandex_message, UI_CONTENT_W);
     lv_obj_set_style_text_align(s_yandex_message, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(s_yandex_message, &ui_font_cyrillic_20, 0);
     lv_obj_set_style_text_color(s_yandex_message, lv_color_hex(UI_COLOR_NOTICE), 0);
@@ -1902,8 +2244,8 @@ static void ui_create_yandex_screen(void)
      * name no keys either. It still carries the passing notice, which is why
      * it is created after the rows rather than beside the status line. */
     s_yandex_hint = lv_label_create(s_yandex_screen);
-    lv_obj_set_pos(s_yandex_hint, 12, 212);
-    lv_obj_set_width(s_yandex_hint, 296);
+    lv_obj_set_pos(s_yandex_hint, 12, TFT_HEIGHT - 28);
+    lv_obj_set_width(s_yandex_hint, TFT_WIDTH - 24);
     lv_label_set_long_mode(s_yandex_hint, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_yandex_hint, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_yandex_hint, "");
@@ -2179,18 +2521,12 @@ static void ui_settings_change_selected(void)
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         changed = device_settings_set_flip_vertical(&s_device_settings,
                                                     !s_device_settings.flip_vertical);
-        if (changed) {
-            (void)board_display_set_rotation(s_device_settings.flip_vertical,
-                                             s_device_settings.flip_horizontal);
-        }
+        if (changed) ui_apply_display_rotation();
         break;
     case UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD:
         changed = device_settings_set_flip_horizontal(&s_device_settings,
                                                       !s_device_settings.flip_horizontal);
-        if (changed) {
-            (void)board_display_set_rotation(s_device_settings.flip_vertical,
-                                             s_device_settings.flip_horizontal);
-        }
+        if (changed) ui_apply_display_rotation();
         break;
     default:
         return;
@@ -2239,7 +2575,7 @@ static void ui_create_station_list_screen(void)
 
     s_station_list_rule = lv_obj_create(s_station_list_screen);
     lv_obj_set_pos(s_station_list_rule, 10, UI_LIST_RULE_Y);
-    lv_obj_set_size(s_station_list_rule, 300, 1);
+    lv_obj_set_size(s_station_list_rule, UI_CONTENT_W, 1);
     lv_obj_set_style_bg_color(s_station_list_rule, lv_color_hex(UI_COLOR_RULE), 0);
     lv_obj_set_style_border_width(s_station_list_rule, 0, 0);
     lv_obj_set_style_pad_all(s_station_list_rule, 0, 0);
@@ -2249,7 +2585,7 @@ static void ui_create_station_list_screen(void)
     // full-width line whose filled part is the accent.
     s_station_list_progress = lv_bar_create(s_station_list_screen);
     lv_obj_set_pos(s_station_list_progress, 10, UI_LIST_PROGRESS_Y);
-    lv_obj_set_size(s_station_list_progress, 300, 4);
+    lv_obj_set_size(s_station_list_progress, UI_CONTENT_W, 4);
     lv_bar_set_range(s_station_list_progress, 0, 100);
     lv_obj_set_style_radius(s_station_list_progress, 2, LV_PART_MAIN);
     lv_obj_set_style_radius(s_station_list_progress, 2, LV_PART_INDICATOR);
@@ -2257,9 +2593,14 @@ static void ui_create_station_list_screen(void)
     lv_obj_set_style_bg_color(s_station_list_progress, lv_color_hex(UI_COLOR_ACCENT),
                               LV_PART_INDICATOR);
     for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
-        s_station_list_rows[row] = ui_scroller_create(s_station_list_screen, 10,
+        /* The box is the row, and its width is the panel's - not a 300 typed
+         * when there was only one panel. It is what the marquee measures
+         * itself against: too wide, and a name that overflows the screen is
+         * calculated to fit and never travels, while one that does travel
+         * stops with its tail still off the edge. */
+        s_station_list_rows[row] = ui_scroller_create(s_station_list_screen, UI_CONTENT_X,
                                                      UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH,
-                                                     300, UI_LIST_ROW_H);
+                                                     UI_CONTENT_W, UI_LIST_ROW_H);
         // Bigger than the rest of the screen on purpose: this is the text the
         // user reads from a distance while turning the encoder. The 23 px line
         // it needs is what set the row height and the pitch above.
@@ -2285,6 +2626,28 @@ static void ui_create_station_list_screen(void)
         lv_label_set_text(s_station_list_icons[row], LV_SYMBOL_DIRECTORY);
         lv_obj_add_flag(s_station_list_icons[row], LV_OBJ_FLAG_HIDDEN);
     }
+    /* Same reason as the marks above: created after the rows so it draws over
+     * the opaque row background, and at the same left edge and baseline the
+     * name would have had without it. */
+    for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
+        s_station_list_numbers[row] = lv_label_create(s_station_list_screen);
+        /* The whole column, not just the digits, and opaque in the row's own
+         * colour. A scrolling name travels left out of the box's padding and
+         * LVGL clips it at the box edge, not at the padding - so without
+         * something solid over the column the text slides across the number
+         * and the two are read together. This is that something: same left
+         * edge and same corner radius as the row, so it disappears into it. */
+        lv_obj_set_pos(s_station_list_numbers[row], UI_CONTENT_X,
+                       UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH);
+        lv_obj_set_size(s_station_list_numbers[row], 8 + UI_LIST_NUMBER_W, UI_LIST_ROW_H);
+        lv_obj_set_style_pad_left(s_station_list_numbers[row], 8, 0);
+        lv_obj_set_style_pad_top(s_station_list_numbers[row], 3, 0);
+        lv_obj_set_style_radius(s_station_list_numbers[row], 3, 0);
+        lv_obj_set_style_bg_opa(s_station_list_numbers[row], LV_OPA_COVER, 0);
+        lv_obj_set_style_text_font(s_station_list_numbers[row], &ui_font_cyrillic_20, 0);
+        lv_label_set_text(s_station_list_numbers[row], "");
+        lv_obj_add_flag(s_station_list_numbers[row], LV_OBJ_FLAG_HIDDEN);
+    }
 
     /* Created last, after every row, for the same reason the folder marks are:
      * the rows are opaque, and LVGL paints children in creation order. The
@@ -2295,7 +2658,7 @@ static void ui_create_station_list_screen(void)
     lv_image_set_src(s_station_list_notice_icon, &ui_feed_icon_usb_stick_48);
     lv_obj_set_size(s_station_list_notice_icon, UI_LIST_NOTICE_ICON, UI_LIST_NOTICE_ICON);
     lv_image_set_inner_align(s_station_list_notice_icon, LV_IMAGE_ALIGN_CENTER);
-    lv_obj_set_pos(s_station_list_notice_icon, (320 - UI_LIST_NOTICE_ICON) / 2,
+    lv_obj_set_pos(s_station_list_notice_icon, (TFT_WIDTH - UI_LIST_NOTICE_ICON) / 2,
                    UI_LIST_NOTICE_ICON_Y);
     lv_obj_set_style_image_recolor(s_station_list_notice_icon,
                                    lv_color_hex(UI_COLOR_NOTICE), 0);
@@ -2305,7 +2668,7 @@ static void ui_create_station_list_screen(void)
     s_station_list_notice = lv_label_create(s_station_list_screen);
     lv_label_set_text(s_station_list_notice, "");
     lv_obj_set_pos(s_station_list_notice, 10, UI_LIST_NOTICE_TEXT_Y);
-    lv_obj_set_width(s_station_list_notice, 300);
+    lv_obj_set_width(s_station_list_notice, UI_CONTENT_W);
     // Centred under the drive, and wrapped rather than ellipsised: the
     // unreadable-drive line is two lines wide and its second half - the format
     // to use - is the half worth reading.
@@ -2319,62 +2682,6 @@ static void ui_show_station_list(void);
 // needs; every way off the player screen has to close the mode first.
 static void ui_end_seek(void);
 
-/* Player screen layout, in device pixels.
- *
- * 320x240 leaves no room for guessing, so the numbers live together here
- * rather than scattered through the builder. A status strip carries what is
- * not about the music - clock, signal - and everything below it is the
- * playing item. The bottom row pairs the two things that answer "is it going
- * to keep playing, and how loud": buffer on the left, volume on the right.
- */
-#define UI_SRC_STATUS_H 26
-#define UI_SRC_ART_X 10
-#define UI_SRC_ART_Y 36
-#define UI_SRC_ART_SIZE 96
-#define UI_SRC_TEXT_X 118
-#define UI_SRC_TEXT_W 192
-/* One line of each face, from the generated fonts' own line_height. Rows are
- * spaced by these rather than by eye, so nothing can overlap its neighbour. */
-#define UI_SRC_LINE_H 19
-#define UI_SRC_TRACK_H 23
-#define UI_SRC_ROW_TRACK 58
-#define UI_SRC_ROW_ARTIST 86
-#define UI_SRC_ROW_STREAM 108
-#define UI_SRC_RULE_TOP 144
-#define UI_SRC_VU_Y 155
-#define UI_SRC_VU_BLOCK_H 10
-#define UI_SRC_VU_PITCH 18
-/* The two rules frame the meter, so the gap below is derived from the gap
- * above instead of being typed in again. Written out by hand they drifted to
- * 10 and 17 px, which read as the meter having slipped upwards. */
-#define UI_SRC_VU_GAP (UI_SRC_VU_Y - (UI_SRC_RULE_TOP + 1))
-#define UI_SRC_VU_BOTTOM (UI_SRC_VU_Y + UI_SRC_VU_PITCH + UI_SRC_VU_BLOCK_H)
-#define UI_SRC_RULE_BOTTOM (UI_SRC_VU_BOTTOM + UI_SRC_VU_GAP)
-/* Equalising the frame freed seven pixels; they go into the space around the
- * progress bar, which was pressed against the rule above it and the times
- * below. */
-#define UI_SRC_PROGRESS_Y (UI_SRC_RULE_BOTTOM + 8)
-/* A hairline while it only reports, twice that while it is being aimed: the
- * bar is the control in scrubbing mode, and a 4 px target is not one. It grows
- * about its own centre line, so the row it lives on does not shift. */
-#define UI_SRC_PROGRESS_H 4
-#define UI_SRC_PROGRESS_SEEK_H 8
-#define UI_SRC_FOOT_Y 214
-/* The footer, left to right: the buffer or the time on the left margin, the
- * like mark in the gap neither reading reaches, then the volume.
- *
- * The volume sits twelve pixels further right than it used to, which is where
- * the mark came from: it is a control, so it belongs beside the other one
- * rather than pushed out to an edge on its own. The numbers still end clear of
- * the 320 px edge - the bar runs to 268 and three digits to about 295. */
-#define UI_SRC_LIKE_X 150
-#define UI_SRC_VOLUME_ICON_X 190
-#define UI_SRC_VOLUME_BAR_X 208
-#define UI_SRC_VOLUME_TEXT_X 274
-#define UI_SRC_PAUSE_SIZE 76
-#define UI_SRC_PAUSE_BAR_W 10
-#define UI_SRC_PAUSE_BAR_H 34
-#define UI_SRC_PAUSE_GAP 10
 
 /* Picks up whatever cover album_art has published.
  *
@@ -2456,7 +2763,7 @@ static void ui_create_source_screen(void)
     // it LV_LABEL_LONG_DOT wraps to a second line before it considers
     // shortening, and a long station name grew downwards over the codec row.
     s_source_title = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_title, UI_SRC_TEXT_X, UI_SRC_ART_Y);
+    lv_obj_set_pos(s_source_title, UI_SRC_TEXT_X, UI_SRC_ROW_TITLE);
     lv_obj_set_size(s_source_title, UI_SRC_TEXT_W, UI_SRC_LINE_H);
     lv_label_set_long_mode(s_source_title, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_source_title, lv_color_hex(UI_COLOR_ACCENT), 0);
@@ -2484,9 +2791,21 @@ static void ui_create_source_screen(void)
     lv_label_set_long_mode(s_source_status, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_source_status, lv_color_hex(UI_COLOR_DIM), 0);
 
+#if BOARD_DISPLAY_PORTRAIT
+    /* Centred as a column under a centred cover. Landscape reads the same
+     * three rows down their left edge beside the tile and sets nothing. */
+    lv_obj_set_style_text_align(s_source_title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_align(s_source_artist, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_align(s_source_status, LV_TEXT_ALIGN_CENTER, 0);
+    s_source_detail.centred = true;
+#endif
+
+    /* Not centred with the three rows below, on either panel: here it is a
+     * column of readings against the left margin, there a line under the
+     * performer that starts where the performer does. */
     s_source_stream = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_stream, UI_SRC_TEXT_X, UI_SRC_ROW_STREAM);
-    lv_obj_set_size(s_source_stream, UI_SRC_TEXT_W, UI_SRC_LINE_H);
+    lv_obj_set_pos(s_source_stream, UI_SRC_STREAM_X, UI_SRC_STREAM_Y);
+    lv_obj_set_size(s_source_stream, UI_SRC_STREAM_W, UI_SRC_STREAM_H);
     lv_label_set_long_mode(s_source_stream, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_source_stream, lv_color_hex(UI_COLOR_DIM), 0);
 
@@ -2496,7 +2815,7 @@ static void ui_create_source_screen(void)
      * 0x23303C these were there in principle and invisible in practice. */
     lv_obj_t *rule_top = lv_obj_create(s_source_screen);
     lv_obj_set_pos(rule_top, 10, UI_SRC_RULE_TOP);
-    lv_obj_set_size(rule_top, 300, 1);
+    lv_obj_set_size(rule_top, UI_CONTENT_W, 1);
     lv_obj_set_style_bg_color(rule_top, lv_color_hex(UI_COLOR_RULE), 0);
     lv_obj_set_style_border_width(rule_top, 0, 0);
     lv_obj_set_style_pad_all(rule_top, 0, 0);
@@ -2507,7 +2826,7 @@ static void ui_create_source_screen(void)
             lv_obj_t *block = lv_obj_create(s_source_screen);
             lv_obj_set_size(block, UI_VU_SEGMENT_W, UI_SRC_VU_BLOCK_H);
             lv_obj_set_pos(block,
-                           30 + (int)segment * (UI_VU_SEGMENT_W + UI_VU_SEGMENT_GAP),
+                           UI_SRC_VU_X + (int)segment * (UI_VU_SEGMENT_W + UI_VU_SEGMENT_GAP),
                            UI_SRC_VU_Y + (int)channel * UI_SRC_VU_PITCH);
             lv_obj_set_style_border_width(block, 0, 0);
             lv_obj_set_style_radius(block, 1, 0);
@@ -2519,13 +2838,13 @@ static void ui_create_source_screen(void)
         }
         lv_obj_t *mark = lv_label_create(s_source_screen);
         lv_label_set_text(mark, channel == 0U ? "L" : "R");
-        lv_obj_set_pos(mark, 12, UI_SRC_VU_Y - 3 + (int)channel * UI_SRC_VU_PITCH);
+        lv_obj_set_pos(mark, UI_CONTENT_X + 2, UI_SRC_VU_Y - 3 + (int)channel * UI_SRC_VU_PITCH);
         lv_obj_set_style_text_color(mark, lv_color_hex(UI_COLOR_DIM), 0);
     }
 
     lv_obj_t *rule_bottom = lv_obj_create(s_source_screen);
     lv_obj_set_pos(rule_bottom, 10, UI_SRC_RULE_BOTTOM);
-    lv_obj_set_size(rule_bottom, 300, 1);
+    lv_obj_set_size(rule_bottom, UI_CONTENT_W, 1);
     lv_obj_set_style_bg_color(rule_bottom, lv_color_hex(UI_COLOR_RULE), 0);
     lv_obj_set_style_border_width(rule_bottom, 0, 0);
     lv_obj_set_style_pad_all(rule_bottom, 0, 0);
@@ -2538,7 +2857,7 @@ static void ui_create_source_screen(void)
      * end to be a fraction of. */
     s_source_progress = lv_obj_create(s_source_screen);
     lv_obj_set_pos(s_source_progress, 10, UI_SRC_PROGRESS_Y);
-    lv_obj_set_size(s_source_progress, 300, UI_SRC_PROGRESS_H);
+    lv_obj_set_size(s_source_progress, UI_CONTENT_W, UI_SRC_PROGRESS_H);
     lv_obj_set_style_bg_color(s_source_progress, lv_color_hex(0x23303C), 0);
     lv_obj_set_style_border_width(s_source_progress, 0, 0);
     lv_obj_set_style_radius(s_source_progress, 2, 0);
@@ -2583,7 +2902,7 @@ static void ui_create_source_screen(void)
 
     s_source_volume_bar = lv_obj_create(s_source_screen);
     lv_obj_set_pos(s_source_volume_bar, UI_SRC_VOLUME_BAR_X, UI_SRC_FOOT_Y + 5);
-    lv_obj_set_size(s_source_volume_bar, 60, 8);
+    lv_obj_set_size(s_source_volume_bar, UI_SRC_VOLUME_BAR_W, 8);
     lv_obj_set_style_bg_color(s_source_volume_bar, lv_color_hex(0x23303C), 0);
     lv_obj_set_style_border_width(s_source_volume_bar, 0, 0);
     lv_obj_set_style_radius(s_source_volume_bar, 2, 0);
@@ -2591,7 +2910,7 @@ static void ui_create_source_screen(void)
     lv_obj_clear_flag(s_source_volume_bar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *fill = lv_obj_create(s_source_volume_bar);
     lv_obj_set_pos(fill, 0, 0);
-    lv_obj_set_size(fill, 60, 8);
+    lv_obj_set_size(fill, UI_SRC_VOLUME_BAR_W, 8);
     lv_obj_set_style_bg_color(fill, lv_color_hex(UI_COLOR_MUTED), 0);
     lv_obj_set_style_border_width(fill, 0, 0);
     lv_obj_set_style_radius(fill, 2, 0);
@@ -2956,7 +3275,7 @@ static void ui_apply_seek_visual(bool seeking)
     const int32_t height = seeking ? UI_SRC_PROGRESS_SEEK_H : UI_SRC_PROGRESS_H;
     lv_obj_set_pos(s_source_progress, 10,
                    UI_SRC_PROGRESS_Y - (height - UI_SRC_PROGRESS_H) / 2);
-    lv_obj_set_size(s_source_progress, 300, height);
+    lv_obj_set_size(s_source_progress, UI_CONTENT_W, height);
     lv_obj_t *played = lv_obj_get_child(s_source_progress, 0);
     if (played != NULL) lv_obj_set_height(played, height);
 }
@@ -3892,8 +4211,7 @@ esp_err_t ui_init(void)
     if (!device_settings_init(&s_device_settings)) {
         lv_label_set_text(s_settings_notice, "Ошибка чтения settings.csv");
     } else {
-        (void)board_display_set_rotation(s_device_settings.flip_vertical,
-                                         s_device_settings.flip_horizontal);
+        ui_apply_display_rotation();
         (void)board_backlight_set(s_device_settings.brightness);
     }
     /* After the settings are read and the visibility they decide is applied:

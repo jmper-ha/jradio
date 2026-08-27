@@ -15,8 +15,19 @@
  */
 
 #define DISPLAY_NONE 0
-/* ILI9341 controller driving a 320x240 panel over SPI. */
-#define DISPLAY_ILI9341_320 1
+/* ILI9341 controller over SPI, in the two ways this firmware can drive it.
+ *
+ * The same module both times - the resolution written into the name is the
+ * panel as the firmware addresses it, not two different parts. Which way up it
+ * is mounted decides the layout of all six screens, and like the resolution it
+ * is not something the wiring can tell us, so it belongs in the part number
+ * for the same reason the resolution already did.
+ *
+ * A build option and deliberately not a setting: every screen's geometry is
+ * compiled for one shape, and a box is mounted one way round once. See
+ * board_display_profile.h for everything the choice decides. */
+#define DISPLAY_ILI9341_320_240 1
+#define DISPLAY_ILI9341_240_320 2
 
 #define DAC_NONE 0
 /* PCM5102 / PCM5102A I2S stereo DAC, no MCLK input, line level out. */

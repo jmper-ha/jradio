@@ -20,9 +20,15 @@
  * access point - the one the user has to join before the address means
  * anything. It is shown there for that reason, and nowhere else: on a real
  * network the user already knows which one they are on.
+ *
+ * `with_scheme` prints the address as a URL rather than as bare digits. It is
+ * false on the narrow panel, where the band is 240 px wide and has to carry
+ * the hint on the right as well: `http://` is seven characters that tell a
+ * reader nothing they will not assume, and the address is what they came for.
+ * The QR payload is not affected - a code without a scheme opens nothing.
  */
 void ui_web_address_text(wifi_provisioning_mode_t mode, const char *ipv4, const char *ssid,
-                         bool english, char *out, size_t out_size);
+                         bool english, bool with_scheme, char *out, size_t out_size);
 
 /* What the QR code behind that band encodes. False when there is nothing worth
  * encoding, which is also what decides whether the band offers the QR at all.

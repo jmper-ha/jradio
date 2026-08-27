@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 void ui_web_address_text(wifi_provisioning_mode_t mode, const char *ipv4, const char *ssid,
-                         bool english, char *out, size_t out_size)
+                         bool english, bool with_scheme, char *out, size_t out_size)
 {
     if (out == NULL || out_size == 0U) return;
     out[0] = '\0';
@@ -31,7 +31,9 @@ void ui_web_address_text(wifi_provisioning_mode_t mode, const char *ipv4, const 
         snprintf(out, out_size, english ? "connecting to Wi-Fi..." : "Подключение к сети...");
         return;
     }
-    snprintf(out, out_size, "http://%s", ipv4);
+    /* The setup-AP line above already prints the address bare, beside the
+     * network name - there has never been room for a scheme there either. */
+    snprintf(out, out_size, with_scheme ? "http://%s" : "%s", ipv4);
 }
 
 /* Appends with the bounds check the whole payload depends on: a QR that got

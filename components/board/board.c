@@ -821,13 +821,23 @@ static esp_err_t board_display_init(void)
  * not "fix" this without looking at the screen again.
  *
  * mirror() only touches MX/MY and leaves MV alone, so the swap_xy set at init
- * survives. It does however replace TFT_MIRROR_X/Y from the display profile
- * rather than composing with them; that is invisible while both are 0, but a
- * panel needing a non-zero baseline would lose it here. */
+ * survives.
+ *
+ * The user's two switches compose with the panel's own baseline rather than
+ * replacing it. esp_lcd_panel_mirror() sets MX/MY outright, so passing the
+ * switches alone would throw away TFT_MIRROR_X/Y - the orientation the panel
+ * needs before anybody touches a setting - the first time either switch moved.
+ * Invisible on this board, where both are 0 and XOR changes nothing; on a panel
+ * with a non-zero baseline it is the difference between a flip and a picture
+ * that lands upside down and stays there.
+ *
+ * XOR rather than OR: a switch has to be able to turn a baseline mirror off
+ * again, or the setting would only ever work in one direction. */
 esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal)
 {
     if (s_panel == NULL) return ESP_ERR_INVALID_STATE;
-    return esp_lcd_panel_mirror(s_panel, flip_horizontal, flip_vertical);
+    return esp_lcd_panel_mirror(s_panel, flip_horizontal != (bool)TFT_MIRROR_X,
+                                flip_vertical != (bool)TFT_MIRROR_Y);
 }
 
 esp_err_t board_init(void)

@@ -197,6 +197,30 @@ static void player_file_reveal_playing(void)
     atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
 }
 
+/* Plays the file the source last had open, for the screen's play button after
+ * a track has stopped.
+ *
+ * By path rather than by row: the listing can have moved anywhere since - the
+ * browser follows the user, not the music - so an index would name whatever
+ * happens to sit at that position in another directory. The name and the
+ * format come back out of the path, which is where file_storage put them.
+ *
+ * Reads s_files_playing_path without the lock, the way the reveal does: the
+ * lock exists for the UI task reading it, and this runs on the task that
+ * writes it. */
+static void player_file_start_saved(void)
+{
+    if (s_files_playing_path[0] == '\0') return;
+    const char *name = strrchr(s_files_playing_path, '/');
+    name = name == NULL ? s_files_playing_path : name + 1;
+    const esp_err_t result = file_player_play(s_files_playing_path, name,
+                                              file_browser_format_from_name(name));
+    if (result != ESP_OK) {
+        ESP_LOGW(TAG, "cannot restart %s: %s", s_files_playing_path,
+                 esp_err_to_name(result));
+    }
+}
+
 static void player_file_advance(void)
 {
     const size_t played = atomic_load_explicit(&s_files_item_index, memory_order_acquire);
@@ -205,9 +229,17 @@ static void player_file_advance(void)
     if (played == PLAYER_ITEM_NONE) return;
     const size_t next = file_storage_next_file(played + 1U);
     if (next >= file_storage_entry_count()) {
+        /* The end of the directory: nothing wraps and nothing crosses into the
+         * next folder. The row and the path stay as they are, which is what
+         * the radio and the rotor do when they stop - the screen goes on
+         * naming the track that just ended, the list goes on marking its row,
+         * and pressing play starts it again.
+         *
+         * They used to be cleared here. Playback stopped correctly, but the
+         * screen was left showing a track with every button accepting a press
+         * and doing nothing: the only way out was to open the list and choose
+         * something. */
         ESP_LOGI(TAG, "usb: last track in the directory, stopping");
-        atomic_store_explicit(&s_files_item_index, PLAYER_ITEM_NONE, memory_order_release);
-        player_set_playing_path("");
         return;
     }
     // A track that ended is no longer playing, so nothing here can be mistaken
@@ -462,7 +494,9 @@ static void player_control_task(void *arg)
                 const size_t index =
                     atomic_load_explicit(&s_yandex_item_index, memory_order_acquire);
                 if (index != PLAYER_ITEM_NONE) (void)player_yandex_start(index);
-            } else if (!audio_source_is_files(snapshot.active_source)) {
+            } else if (audio_source_is_files(snapshot.active_source)) {
+                player_file_start_saved();
+            } else {
                 (void)internet_radio_start_saved_station();
             }
             break;

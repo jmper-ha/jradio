@@ -15,7 +15,10 @@
 #define TFT_HEIGHT 240
 /* Verified on the connected TFT: blue data is rendered red with MADCTL RGB. */
 #define TFT_RGB_ORDER_BGR 1
-/* The panel is mounted landscape, then rotated 180 degrees. */
+/* The panel is mounted landscape, then rotated 180 degrees. This is the
+ * baseline the device boots with; the user's two flip settings compose with it
+ * by XOR in board_display_set_rotation(), so a non-zero value here survives a
+ * switch being touched and can still be turned off by one. */
 #define TFT_SWAP_XY 1
 #define TFT_MIRROR_X 0
 #define TFT_MIRROR_Y 0

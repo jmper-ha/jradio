@@ -400,6 +400,55 @@ static void test_the_like_mark_belongs_to_a_playing_rotor_track(void)
     assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
 }
 
+static void test_a_stopped_file_source_can_be_started_again(void)
+{
+    /* What the play button means once a track has stopped - including the way
+     * a directory ends, which is a stop like any other from here.
+     *
+     * The pure answer was always START_SAVED, for every source. The executor
+     * was the half that disagreed: its START_SAVED branch restarted the radio
+     * and the rotor and had `else if (!audio_source_is_files(...))` around it,
+     * so on a file source the press was accepted and dropped. The end of a
+     * directory then left a screen naming a track with every button doing
+     * nothing, and the only way out was the list.
+     *
+     * This test cannot reach the executor - player_control.c is device-only -
+     * so it pins the contract the executor has to honour, and the comment
+     * above is the other half of the fix. */
+    player_command_t toggle = {.kind = PLAYER_COMMAND_TOGGLE};
+    const audio_source_t sources[] = {AUDIO_SOURCE_USB, AUDIO_SOURCE_SD};
+    for (size_t index = 0U; index < sizeof(sources) / sizeof(sources[0]); ++index) {
+        player_snapshot_t state = {.active_source = sources[index],
+                                   .playback_state = PLAYER_PLAYBACK_STOPPED};
+        assert(player_control_decide(&state, &toggle) == PLAYER_OPERATION_START_SAVED);
+        /* A file that failed to decode is startable too - the same rule the
+         * radio follows, and the reason a broken file is not a dead end. */
+        state.playback_state = PLAYER_PLAYBACK_ERROR;
+        assert(player_control_decide(&state, &toggle) == PLAYER_OPERATION_START_SAVED);
+    }
+}
+
+static void test_the_track_keys_still_work_at_the_end_of_a_directory(void)
+{
+    /* The row the last track played from is kept rather than cleared, so the
+     * keys have a place in the list to move from. Both are answered here; only
+     * the executor knows whether a neighbouring *file* exists, since a listing
+     * holds directories too. */
+    player_snapshot_t state = {.active_source = AUDIO_SOURCE_USB,
+                               .playback_state = PLAYER_PLAYBACK_STOPPED,
+                               .active_item_index = 3U, .item_count = 4U};
+    player_command_t previous = {.kind = PLAYER_COMMAND_PREVIOUS_ITEM};
+    player_command_t next = {.kind = PLAYER_COMMAND_NEXT_ITEM};
+    assert(player_control_decide(&state, &previous) == PLAYER_OPERATION_PREVIOUS_ITEM);
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NEXT_ITEM);
+
+    /* Cleared, they do nothing - which is what browsing away from the playing
+     * directory leaves behind, and there is no row there to step from. */
+    state.active_item_index = PLAYER_ITEM_NONE;
+    assert(player_control_decide(&state, &previous) == PLAYER_OPERATION_NONE);
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NONE);
+}
+
 static void test_the_rejection_answers_to_the_same_conditions(void)
 {
     /* Its own command and its own operation, but the same question about
@@ -455,6 +504,8 @@ int main(void)
     test_the_track_keys_leave_the_ends_of_a_directory_to_the_executor();
     test_the_rotor_has_no_track_keys_of_this_kind();
     test_the_like_mark_belongs_to_a_playing_rotor_track();
+    test_a_stopped_file_source_can_be_started_again();
+    test_the_track_keys_still_work_at_the_end_of_a_directory();
     test_the_rejection_answers_to_the_same_conditions();
     test_snapshot_equality_notices_the_like_mark();
     test_each_volume_answers_for_itself();

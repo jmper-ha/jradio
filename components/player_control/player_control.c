@@ -50,10 +50,16 @@ static atomic_int s_active_source = ATOMIC_VAR_INIT(AUDIO_SOURCE_NONE);
 // Which listing row the USB player is on. Unlike the radio, the player itself
 // has no notion of an index - it only knows a path - so the controller keeps it.
 static atomic_size_t s_files_item_index = ATOMIC_VAR_INIT(PLAYER_ITEM_NONE);
-// Bumped whenever the listing is replaced. The browser screen watches this to
-// reset its cursor: the path itself is truncated to PLAYER_NAME_MAX_LEN in the
-// snapshot, so two deep directories can look identical there.
-static atomic_uint s_files_listing_revision = ATOMIC_VAR_INIT(0U);
+/* Bumped whenever either listing is replaced - a directory read, or a playlist
+ * saved from the web. The browser screen watches it to reset its cursor (the
+ * path itself is truncated to PLAYER_NAME_MAX_LEN in the snapshot, so two deep
+ * directories can look identical there), and the web watches it to re-fetch
+ * the names, which no longer travel over the socket at all.
+ *
+ * One counter for both lists rather than one each: the two are never on screen
+ * together, and a browser showing stations when a directory changed pays for
+ * it with one GET of the list it is already showing. */
+static atomic_uint s_listing_revision = ATOMIC_VAR_INIT(0U);
 /* Full path of the file being played. It is here rather than in the snapshot
  * because a path this long would not fit the 512-byte frame the snapshot is
  * diffed into for the web.
@@ -141,7 +147,7 @@ static void player_file_select_item(size_t index, player_playback_state_t playba
         // The listing under the cursor is gone, so the remembered row would
         // point at an unrelated file in the new directory.
         atomic_store_explicit(&s_files_item_index, PLAYER_ITEM_NONE, memory_order_release);
-        atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
+        atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
         return;
     }
     /* Choosing the file that is already playing is how the user gets back to
@@ -194,7 +200,7 @@ static void player_file_reveal_playing(void)
     atomic_store_explicit(&s_files_item_index,
                           index < file_storage_entry_count() ? index : PLAYER_ITEM_NONE,
                           memory_order_release);
-    atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
+    atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
 }
 
 /* Plays the file the source last had open, for the screen's play button after
@@ -280,7 +286,7 @@ static void player_file_browse_up(void)
     }
     if (file_storage_read_directory(parent) != ESP_OK) return;
     atomic_store_explicit(&s_files_item_index, PLAYER_ITEM_NONE, memory_order_release);
-    atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
+    atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
 }
 
 // Runs on the USB playback task as it exits, so it may only hand the intent
@@ -473,7 +479,7 @@ static void player_control_task(void *arg)
                 }
                 atomic_store_explicit(&s_files_item_index, PLAYER_ITEM_NONE,
                                       memory_order_release);
-                atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
+                atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
             }
             break;
         }
@@ -657,7 +663,16 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     snapshot->capabilities = PLAYER_CAP_INTERNET_RADIO;
     snapshot->usb_media = usb_storage_media();
     snapshot->sd_media = sd_storage_media();
-    snapshot->listing_revision = player_control_listing_revision();
+    /* The sum of the two counters that can change a list under the browser:
+     * this module's, which covers directories and the station catalogue, and
+     * the rotor's, which moves only when a refresh actually found different
+     * stations. Both only ever increase, so the sum only ever increases -
+     * which is what the browser relies on to ignore a reply that arrives out
+     * of order. Which of the two moved does not matter: either means the names
+     * it is holding may be stale, and re-fetching the list it is already
+     * showing costs one GET. */
+    snapshot->listing_revision =
+        player_control_listing_revision() + yandex_catalog_revision();
     snapshot->files_entry_count = file_storage_entry_count();
     if (BOARD_HAS_USB && usb_storage_is_mounted()) {
         snapshot->capabilities |= PLAYER_CAP_USB;
@@ -845,10 +860,10 @@ bool player_control_file_resume_path(const char *path)
         char root[FILE_BROWSER_PATH_MAX_LEN];
         (void)file_browser_path_volume_root(path, root, sizeof(root));
         (void)file_storage_read_directory(root);
-        atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
+        atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
         return false;
     }
-    atomic_fetch_add_explicit(&s_files_listing_revision, 1U, memory_order_release);
+    atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
 
     const char *name = strrchr(path, '/');
     name = name == NULL ? path : name + 1;
@@ -867,5 +882,10 @@ bool player_control_file_resume_path(const char *path)
 
 unsigned int player_control_listing_revision(void)
 {
-    return atomic_load_explicit(&s_files_listing_revision, memory_order_acquire);
+    return atomic_load_explicit(&s_listing_revision, memory_order_acquire);
+}
+
+void player_control_note_listing_changed(void)
+{
+    atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
 }

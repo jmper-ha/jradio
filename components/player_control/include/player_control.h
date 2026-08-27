@@ -36,9 +36,15 @@ const station_catalog_entry_t *player_control_station_at(size_t index);
 // Copies out a row of the USB listing; false when the row is gone, which
 // happens when the drive is pulled while the browser screen is open.
 bool player_control_file_entry_at(size_t index, file_browser_entry_t *entry);
-// Changes every time the listing is replaced, so a screen can tell "the same
-// directory changed" from "this is a different directory".
+// Changes every time either listing is replaced, so a screen can tell "the
+// same directory changed" from "this is a different directory", and so the web
+// knows to re-fetch names it is no longer sent over the socket.
 unsigned int player_control_listing_revision(void);
+/* Says a listing this module does not own has changed - the station catalogue,
+ * saved from the web, or a refreshed Yandex catalogue. The directory listing
+ * bumps the counter by itself; these two are replaced elsewhere and would
+ * otherwise leave every browser showing the old names. */
+void player_control_note_listing_changed(void);
 
 /* How full the active source's decoder input buffer is, 0..100. False when
  * there is nothing to report - no source playing, or a WAV file, which is read

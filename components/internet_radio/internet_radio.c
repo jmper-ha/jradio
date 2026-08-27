@@ -39,7 +39,10 @@
  * the client answers a request that does not fit with "Out of buffer" - which
  * looks like a network failure and is not one. */
 #define RADIO_HTTP_TX_BUFFER_SIZE 2048
-#define RADIO_CATALOG_BUFFER_SIZE 16384
+/* Derived from what the catalogue may hold rather than typed: a buffer that
+ * does not fit the file truncates it silently, and the count has already been
+ * raised once. */
+#define RADIO_CATALOG_BUFFER_SIZE STATION_CATALOG_TEXT_MAX_LEN
 #define RADIO_HTTP_MAX_REDIRECTS 5U
 #define RADIO_HTTP_CONNECT_RETRIES 3U
 /* A live stream that stops delivering has already silenced the DAC well
@@ -137,7 +140,13 @@ typedef struct {
     bool output_started;
     bool initialized;
     radio_stream_format_t stream_format;
-    station_catalog_t catalog;
+    /* In PSRAM, not in this struct: the array is 35 KB, and this struct is a
+     * static. Internal DRAM is the scarce resource here - a TLS handshake
+     * needs it and cannot borrow from PSRAM - so the one big table that is
+     * only ever read from tasks goes where there is room. Allocated once at
+     * init and never reallocated, which is what lets readers take no lock;
+     * see the note in internet_radio_replace_playlist(). */
+    station_catalog_t *catalog;
     radio_decoder_t *decoder;
     TaskHandle_t direct_task;
     SemaphoreHandle_t direct_done;
@@ -1512,7 +1521,7 @@ static bool radio_direct_reconnect(internet_radio_context_t *radio)
 {
     internet_radio_status_t status;
     internet_radio_get_status(&status);
-    if (status.station_index >= radio->catalog.count ||
+    if (status.station_index >= radio->catalog->count ||
         atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire) ||
         atomic_load_explicit(&radio->direct_paused, memory_order_acquire)) {
         return false;
@@ -1531,7 +1540,7 @@ static bool radio_direct_reconnect(internet_radio_context_t *radio)
 
     radio_stream_close(radio);
     radio_decoder_reset(radio->decoder);
-    const char *url = radio->catalog.entries[status.station_index].url;
+    const char *url = radio->catalog->entries[status.station_index].url;
     for (unsigned int attempt = 0U; attempt < RADIO_HTTP_CONNECT_RETRIES; ++attempt) {
         if (!radio_delay_interruptible(radio, RADIO_HTTP_RECONNECT_DELAY_MS)) {
             return false;
@@ -1624,14 +1633,14 @@ static void radio_load_catalog(internet_radio_context_t *radio)
 {
     FILE *file = fopen(STATION_CATALOG_PATH, "r");
     if (file == NULL) {
-        radio->catalog.count = 0;
+        radio->catalog->count = 0;
         ESP_LOGW(TAG, "station catalog unavailable: %s", STATION_CATALOG_PATH);
         return;
     }
     char *text = malloc(RADIO_CATALOG_BUFFER_SIZE);
     if (text == NULL) {
         fclose(file);
-        radio->catalog.count = 0;
+        radio->catalog->count = 0;
         ESP_LOGE(TAG, "station catalog allocation failed");
         return;
     }
@@ -1640,17 +1649,17 @@ static void radio_load_catalog(internet_radio_context_t *radio)
     fclose(file);
     if (!complete) {
         free(text);
-        radio->catalog.count = 0;
+        radio->catalog->count = 0;
         ESP_LOGE(TAG, "station catalog is too large or unreadable");
         return;
     }
     text[bytes_read] = '\0';
-    (void)station_catalog_load_text(text, &radio->catalog);
-    if (station_catalog_append_if_missing(&radio->catalog, &s_europa_plus_station)) {
+    (void)station_catalog_load_text(text, radio->catalog);
+    if (station_catalog_append_if_missing(radio->catalog, &s_europa_plus_station)) {
         ESP_LOGI(TAG, "added built-in AAC station to catalog");
     }
     free(text);
-    ESP_LOGI(TAG, "loaded %u internet radio stations", (unsigned int)radio->catalog.count);
+    ESP_LOGI(TAG, "loaded %u internet radio stations", (unsigned int)radio->catalog->count);
 }
 
 esp_err_t internet_radio_catalog_replace(const char *text, size_t length, size_t *out_count,
@@ -1720,7 +1729,7 @@ esp_err_t internet_radio_catalog_replace(const char *text, size_t length, size_t
     // even if the save reordered or removed entries ahead of it.
     //
     // Only the status bookkeeping runs under s_status_lock. The catalog copy
-    // (~11 KB) and the URL search must stay outside it: taskENTER_CRITICAL
+    // (35 KB) and the URL search must stay outside it: taskENTER_CRITICAL
     // disables interrupts on this core, and holding it that long starves the
     // I2S DMA and Wi-Fi ISRs. Readers of s_radio.catalog
     // (internet_radio_station_at() and friends) do not take this lock anyway:
@@ -1735,19 +1744,19 @@ esp_err_t internet_radio_catalog_replace(const char *text, size_t length, size_t
 
     char playing_url[STATION_CATALOG_URL_MAX_LEN] = {0};
     bool was_playing = false;
-    if (playing_index < s_radio.catalog.count) {
+    if (playing_index < s_radio.catalog->count) {
         snprintf(playing_url, sizeof(playing_url), "%s",
-                 s_radio.catalog.entries[playing_index].url);
+                 s_radio.catalog->entries[playing_index].url);
         was_playing = true;
     }
 
-    s_radio.catalog = *parsed;
+    *s_radio.catalog = *parsed;
     heap_caps_free(parsed);
     size_t new_index = SIZE_MAX;
     if (was_playing) {
-        (void)station_catalog_find_by_url(&s_radio.catalog, playing_url, &new_index);
+        (void)station_catalog_find_by_url(s_radio.catalog, playing_url, &new_index);
     }
-    const size_t resulting_count = s_radio.catalog.count;
+    const size_t resulting_count = s_radio.catalog->count;
 
     // Publish the re-resolved index, unless another task switched stations
     // while the catalog was being installed - that newer choice wins.
@@ -1789,6 +1798,23 @@ esp_err_t internet_radio_init(void)
         s_radio.direct_done = NULL;
         return ESP_ERR_NO_MEM;
     }
+    s_radio.catalog = heap_caps_calloc(1U, sizeof(station_catalog_t),
+                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (s_radio.catalog == NULL) {
+        // A board without PSRAM, or one that has run out of it. The table is
+        // the whole station list, so there is nothing to fall back to.
+        s_radio.catalog = heap_caps_calloc(1U, sizeof(station_catalog_t),
+                                           MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (s_radio.catalog == NULL) {
+        vSemaphoreDelete(s_radio.direct_io_mutex);
+        s_radio.direct_io_mutex = NULL;
+        vSemaphoreDelete(s_radio.direct_done);
+        s_radio.direct_done = NULL;
+        ESP_LOGE(TAG, "station catalog allocation failed (%u bytes)",
+                 (unsigned int)sizeof(station_catalog_t));
+        return ESP_ERR_NO_MEM;
+    }
     taskENTER_CRITICAL(&s_status_lock);
     s_radio.status.state = INTERNET_RADIO_STATE_STOPPED;
     s_radio.status.station_index = SIZE_MAX;
@@ -1802,7 +1828,7 @@ esp_err_t internet_radio_init(void)
 
 esp_err_t internet_radio_start(void)
 {
-    if (s_radio.catalog.count == 0U) return ESP_ERR_NOT_FOUND;
+    if (s_radio.catalog->count == 0U) return ESP_ERR_NOT_FOUND;
     return internet_radio_start_station_index(0U) ? ESP_OK : ESP_FAIL;
 }
 
@@ -1818,9 +1844,9 @@ bool internet_radio_start_saved_station(void)
 bool internet_radio_saved_station_index(size_t *index)
 {
     char url[STATION_CATALOG_URL_MAX_LEN];
-    return index != NULL && s_radio.initialized && s_radio.catalog.count > 0U &&
+    return index != NULL && s_radio.initialized && s_radio.catalog->count > 0U &&
            station_resume_load_last_url(STATION_SETTINGS_PATH, url, sizeof(url)) &&
-           station_catalog_find_by_url(&s_radio.catalog, url, index);
+           station_catalog_find_by_url(s_radio.catalog, url, index);
 }
 
 /* Brings whatever was playing to a halt before something else starts. Both
@@ -1983,14 +2009,14 @@ bool internet_radio_start_track_chain(const char *display_name)
 bool internet_radio_start_station_index(size_t index)
 {
     if (!s_radio.initialized) return false;
-    if (index >= s_radio.catalog.count) return false;
+    if (index >= s_radio.catalog->count) return false;
     if (!radio_stop_previous()) return false;
-    if (!radio_start_stream(s_radio.catalog.entries[index].url,
-                            s_radio.catalog.entries[index].name, index, false)) {
+    if (!radio_start_stream(s_radio.catalog->entries[index].url,
+                            s_radio.catalog->entries[index].name, index, false)) {
         return false;
     }
     (void)station_resume_save_last_url(STATION_SETTINGS_PATH,
-                                       s_radio.catalog.entries[index].url);
+                                       s_radio.catalog->entries[index].url);
     return true;
 }
 
@@ -2087,12 +2113,12 @@ void internet_radio_get_status(internet_radio_status_t *status)
 
 size_t internet_radio_station_count(void)
 {
-    return s_radio.catalog.count;
+    return s_radio.catalog->count;
 }
 
 const station_catalog_entry_t *internet_radio_station_at(size_t index)
 {
-    return index < s_radio.catalog.count ? &s_radio.catalog.entries[index] : NULL;
+    return index < s_radio.catalog->count ? &s_radio.catalog->entries[index] : NULL;
 }
 
 size_t internet_radio_current_station_index(void)

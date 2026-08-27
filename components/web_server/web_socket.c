@@ -201,56 +201,42 @@ static void write_active_index(web_json_writer_t *writer,
     }
 }
 
-/* The USB listing is a header only: the entries themselves go over REST.
+/* The listing is a header only: the entries themselves go over REST.
+ *
  * A directory may hold up to FILE_STORAGE_MAX_ENTRIES names of up to
- * FILE_BROWSER_NAME_MAX_LEN bytes each, which is far past the
- * WEB_PROTOCOL_EVENT_MAX frame this serializer writes into, and growing that
- * static buffer is the wrong trade in a firmware already short of internal
- * SRAM. The revision is what tells the browser to re-fetch: opening a sibling
- * directory can leave the path length, the count and the active index looking
- * identical. */
-static void write_usb_list(web_json_writer_t *writer, const player_snapshot_t *player)
+ * FILE_BROWSER_NAME_MAX_LEN bytes each, and the station catalogue up to
+ * STATION_CATALOG_MAX_ENTRIES of STATION_CATALOG_NAME_MAX_LEN - both far past
+ * the WEB_PROTOCOL_EVENT_MAX frame this serializer writes into, and growing
+ * that static buffer is the wrong trade in a firmware already short of
+ * internal SRAM. Stations used to be sent in full and fitted only while there
+ * were 32 of them; the limit is now 99, and the frame is no longer a reason
+ * the catalogue cannot grow again.
+ *
+ * The revision is what tells the browser to re-fetch. It has to be, for
+ * either list: opening a sibling directory can leave the path length, the
+ * count and the active index looking identical, and a playlist edited to the
+ * same number of stations is invisible in every other field here. */
+static void write_list(web_json_writer_t *writer, const player_snapshot_t *player)
 {
-    web_json_literal(writer, "\"list\":{\"kind\":\"files\",\"active_index\":");
+    const bool files = audio_source_is_files(player->active_source);
+    web_json_literal(writer, "\"list\":{\"kind\":");
+    web_json_literal(writer, files ? "\"files\"" : "\"stations\"");
+    web_json_literal(writer, ",\"active_index\":");
     write_active_index(writer, player);
-    web_json_literal(writer, ",\"path\":");
-    web_json_string(writer, player->context);
     web_json_literal(writer, ",\"revision\":");
     web_json_format(writer, "%u", player->listing_revision);
     web_json_literal(writer, ",\"count\":");
     web_json_format(writer, "%u", (unsigned)player->item_count);
-    web_json_literal(writer, ",\"has_parent\":");
-    web_json_literal(writer,
-                   file_browser_path_is_root(player->context) ? "false" : "true");
+    if (files) {
+        /* The browser needs to know where it is and whether it can go up;
+         * a station list has neither question. */
+        web_json_literal(writer, ",\"path\":");
+        web_json_string(writer, player->context);
+        web_json_literal(writer, ",\"has_parent\":");
+        web_json_literal(writer,
+                         file_browser_path_is_root(player->context) ? "false" : "true");
+    }
     web_json_literal(writer, "}");
-}
-
-static void write_list(web_json_writer_t *writer, const player_snapshot_t *player,
-                       web_socket_station_label_fn station_label,
-                       void *station_context)
-{
-    if (audio_source_is_files(player->active_source)) {
-        write_usb_list(writer, player);
-        return;
-    }
-    web_json_literal(writer, "\"list\":{\"kind\":\"stations\",\"active_index\":");
-    write_active_index(writer, player);
-    web_json_literal(writer, ",\"items\":[");
-    for (size_t index = 0U; index < player->item_count && web_json_valid(writer);
-         ++index) {
-        if (index > 0U) {
-            web_json_literal(writer, ",");
-        }
-        web_json_literal(writer, "{\"index\":");
-        web_json_format(writer, "%u", (unsigned)index);
-        web_json_literal(writer, ",\"label\":");
-        web_json_string_bounded(writer, station_label == NULL ? "" :
-                                              station_label(index,
-                                                            station_context),
-                              48U);
-        web_json_literal(writer, "}");
-    }
-    web_json_literal(writer, "]}");
 }
 
 static void write_wifi(web_json_writer_t *writer,
@@ -303,9 +289,7 @@ int web_socket_serialize_event(char *output, size_t output_size,
                                web_socket_event_kind_t kind, uint32_t revision,
                                const player_snapshot_t *player,
                                const web_socket_wifi_state_t *wifi,
-                               const web_socket_settings_state_t *settings,
-                               web_socket_station_label_fn station_label,
-                               void *station_context)
+                               const web_socket_settings_state_t *settings)
 {
     web_json_writer_t writer;
     web_json_init(&writer, output, output_size, WEB_PROTOCOL_EVENT_MAX);
@@ -336,7 +320,7 @@ int web_socket_serialize_event(char *output, size_t output_size,
         web_json_literal(&writer, ",");
         write_player(&writer, player);
         web_json_literal(&writer, ",");
-        write_list(&writer, player, station_label, station_context);
+        write_list(&writer, player);
         web_json_literal(&writer, ",");
         write_wifi(&writer, wifi);
         // Omitted rather than faked when the UI has not published: the page
@@ -358,7 +342,7 @@ int web_socket_serialize_event(char *output, size_t output_size,
         break;
     case WEB_SOCKET_EVENT_LIST_UPDATE:
         web_json_literal(&writer, ",");
-        write_list(&writer, player, station_label, station_context);
+        write_list(&writer, player);
         break;
     case WEB_SOCKET_EVENT_WIFI_UPDATE:
         web_json_literal(&writer, ",");
@@ -615,23 +599,6 @@ static bool ready_client_add(int fd)
     return false;
 }
 
-/* Which list the rows come from depends on the source: both are flat lists of
- * stations, but one is the catalog file and the other is fetched from the
- * account. The active source arrives through `context` rather than being read
- * again here, so the rows can never describe a different source than the
- * player fields serialized alongside them. */
-static const char *runtime_station_label(size_t index, void *context)
-{
-    const audio_source_t source =
-        context == NULL ? AUDIO_SOURCE_INTERNET_RADIO : *(const audio_source_t *)context;
-    if (source == AUDIO_SOURCE_YANDEX) {
-        static yandex_station_t station;
-        return yandex_catalog_station_at(index, &station) ? station.name : "";
-    }
-    const station_catalog_entry_t *station = player_control_station_at(index);
-    return station == NULL ? "" : station->name;
-}
-
 static web_socket_send_job_t *send_job_acquire(void)
 {
     web_socket_send_job_t *job = NULL;
@@ -686,10 +653,9 @@ static bool prepare_event_frame(httpd_ws_frame_t *frame,
                                 const web_socket_wifi_state_t *wifi,
                                 const web_socket_settings_state_t *settings)
 {
-    const audio_source_t list_source = player->active_source;
     const int length = web_socket_serialize_event(
         s_http_output, sizeof(s_http_output), kind, revision, player, wifi,
-        settings, runtime_station_label, (void *)&list_source);
+        settings);
     if (length <= 0) {
         ESP_LOGE(TAG, "serialize event failed type=%s max=%u",
                  runtime_event_type(kind), (unsigned)WEB_PROTOCOL_EVENT_MAX);

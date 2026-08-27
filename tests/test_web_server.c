@@ -6,6 +6,7 @@
 #include "cJSON.h"
 #include "web_server.h"
 #include "web_socket.h"
+#include "station_catalog.h"
 
 static void test_parse_accepts_ssid_and_password(void)
 {
@@ -25,12 +26,6 @@ static void test_parse_rejects_missing_or_empty_fields(void)
            WEB_SERVER_PARSE_INVALID);
     assert(web_server_parse_wifi_request("{\"ssid\":\"home\",\"password\":\"pw\",}",
                                          &network) == WEB_SERVER_PARSE_INVALID);
-}
-
-static const char *station_label(size_t index, void *context)
-{
-    const char *const *labels = context;
-    return labels[index];
 }
 
 static player_snapshot_t sample_player(void)
@@ -144,14 +139,13 @@ static void test_command_result_is_exact_and_escaped(void)
 
 static void test_snapshot_has_exact_public_sections_and_no_secrets(void)
 {
-    const char *labels[] = {"Радио \"Шоколад\"", "Jazz Lounge"};
     const player_snapshot_t player = sample_player();
     const web_socket_wifi_state_t wifi = sample_wifi();
     const web_socket_settings_state_t settings = sample_settings();
     char output[WEB_PROTOCOL_EVENT_MAX + 1U];
     const int length = web_socket_serialize_event(
         output, sizeof(output), WEB_SOCKET_EVENT_SNAPSHOT, 1U, &player, &wifi,
-        &settings, station_label, (void *)labels);
+        &settings);
     assert(length > 0);
     assert((size_t)length == strlen(output));
     assert(strstr(output, "password") == NULL);
@@ -176,9 +170,16 @@ static void test_snapshot_has_exact_public_sections_and_no_secrets(void)
                   "Be My Lover") == 0);
     assert(cJSON_GetObjectItemCaseSensitive(player_json, "wifi_rssi_dbm")->valueint == -67);
 
+    /* A header, not the names: those come from GET /api/stations, keyed by the
+     * revision here. Asserting the absence of "items" is the point - it is
+     * what keeps the frame independent of how many stations there are. */
     cJSON *list = cJSON_GetObjectItemCaseSensitive(root, "list");
+    assert(strcmp(cJSON_GetObjectItemCaseSensitive(list, "kind")->valuestring,
+                  "stations") == 0);
     assert(cJSON_GetObjectItemCaseSensitive(list, "active_index")->valueint == 0);
-    assert(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(list, "items")) == 2);
+    assert(cJSON_GetObjectItemCaseSensitive(list, "count")->valueint == 2);
+    assert(cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(list, "revision")));
+    assert(cJSON_GetObjectItemCaseSensitive(list, "items") == NULL);
 
     cJSON *wifi_json = cJSON_GetObjectItemCaseSensitive(root, "wifi");
     assert(strcmp(cJSON_GetObjectItemCaseSensitive(wifi_json, "mode")->valuestring,
@@ -209,16 +210,16 @@ static void test_snapshot_has_exact_public_sections_and_no_secrets(void)
     const web_socket_settings_state_t unknown = {0};
     assert(web_socket_serialize_event(
                output, sizeof(output), WEB_SOCKET_EVENT_SNAPSHOT, 1U, &player,
-               &wifi, &unknown, station_label, (void *)labels) > 0);
+               &wifi, &unknown) > 0);
     assert(strstr(output, "\"settings\"") == NULL);
     assert(web_socket_serialize_event(
                output, sizeof(output), WEB_SOCKET_EVENT_SETTINGS_UPDATE, 1U,
-               &player, &wifi, &unknown, station_label, (void *)labels) == 0);
+               &player, &wifi, &unknown) == 0);
 
     char too_small[64];
     assert(web_socket_serialize_event(
                too_small, sizeof(too_small), WEB_SOCKET_EVENT_SNAPSHOT, 1U,
-               &player, &wifi, &settings, station_label, (void *)labels) == 0);
+               &player, &wifi, &settings) == 0);
     assert(too_small[0] == '\0');
 }
 
@@ -235,7 +236,7 @@ static void test_player_update_omits_unavailable_rssi_and_repairs_utf8(void)
     char output[1024];
     assert(web_socket_serialize_event(output, sizeof(output),
                                       WEB_SOCKET_EVENT_PLAYER_UPDATE, 7U,
-                                      &player, &wifi, &settings, NULL, NULL) > 0);
+                                      &player, &wifi, &settings) > 0);
     assert(strstr(output, "\"type\":\"player.update\"") != NULL);
     assert(strstr(output, "wifi_rssi_dbm") == NULL);
     assert(strstr(output, "\xEF\xBF\xBD") != NULL);
@@ -246,7 +247,6 @@ static void test_player_update_omits_unavailable_rssi_and_repairs_utf8(void)
 
 static void test_section_diff_and_update_types_are_bounded(void)
 {
-    const char *labels[] = {"Radio 1", "Radio 2"};
     player_snapshot_t previous_player = sample_player();
     player_snapshot_t current_player = previous_player;
     web_socket_wifi_state_t previous_wifi = sample_wifi();
@@ -306,20 +306,13 @@ static void test_section_diff_and_update_types_are_bounded(void)
         assert(web_socket_serialize_event(output, sizeof(output), kinds[index],
                                           (uint32_t)(8U + index),
                                           &current_player, &current_wifi,
-                                          &current_settings,
-                                          station_label, (void *)labels) > 0);
+                                          &current_settings) > 0);
         cJSON *root = cJSON_Parse(output);
         assert(cJSON_IsObject(root));
         assert(strcmp(cJSON_GetObjectItemCaseSensitive(root, "type")->valuestring,
                       types[index]) == 0);
         cJSON_Delete(root);
     }
-}
-
-static const char *worst_case_station_label(size_t index, void *context)
-{
-    (void)index;
-    return context;
 }
 
 static void fill_json_expensive_text(char *output, size_t capacity)
@@ -331,13 +324,18 @@ static void fill_json_expensive_text(char *output, size_t capacity)
     output[capacity - 1U] = '\0';
 }
 
-static void test_worst_case_catalog_always_fits_complete_snapshot(void)
+static void test_the_frame_does_not_grow_with_the_catalogue(void)
 {
-    char station_name[96];
-    fill_json_expensive_text(station_name, sizeof(station_name));
+    /* The frame used to carry every station name and fitted only while there
+     * were 32 of them. The names moved to GET /api/stations, and this is the
+     * property that replaced "32 of them fit": the snapshot costs the same
+     * whether the catalogue holds one station or all of them.
+     *
+     * Everything else is still the worst case it always was - the fields that
+     * do travel, filled with the characters JSON has to escape. */
     player_snapshot_t player = sample_player();
-    player.item_count = 32U;
-    player.active_item_index = 31U;
+    player.item_count = STATION_CATALOG_MAX_ENTRIES;
+    player.active_item_index = STATION_CATALOG_MAX_ENTRIES - 1U;
     fill_json_expensive_text(player.context, sizeof(player.context));
     fill_json_expensive_text(player.stream_title, sizeof(player.stream_title));
     fill_json_expensive_text(player.codec, sizeof(player.codec));
@@ -355,24 +353,32 @@ static void test_worst_case_catalog_always_fits_complete_snapshot(void)
     char output[WEB_PROTOCOL_EVENT_MAX + 1U];
     const int length = web_socket_serialize_event(
         output, sizeof(output), WEB_SOCKET_EVENT_SNAPSHOT, UINT32_MAX,
-        &player, &wifi, &settings, worst_case_station_label, station_name);
+        &player, &wifi, &settings);
     assert(length > 0);
     assert(length <= (int)WEB_PROTOCOL_EVENT_MAX);
     /* Not merely "it fits": the buffer this bounds sits in internal SRAM, so
      * the margin is worth knowing about before it is gone. The settings
      * section costs 270 bytes of it. */
     assert((int)WEB_PROTOCOL_EVENT_MAX - length >= 256);
+
     cJSON *root = cJSON_Parse(output);
     assert(cJSON_IsObject(root));
-    cJSON *items = cJSON_GetObjectItemCaseSensitive(
-        cJSON_GetObjectItemCaseSensitive(root, "list"), "items");
-    assert(cJSON_GetArraySize(items) == 32);
-    for (size_t index = 0U; index < 32U; ++index) {
-        cJSON *label = cJSON_GetObjectItemCaseSensitive(
-            cJSON_GetArrayItem(items, (int)index), "label");
-        assert(cJSON_IsString(label));
-    }
+    cJSON *list = cJSON_GetObjectItemCaseSensitive(root, "list");
+    assert(cJSON_GetObjectItemCaseSensitive(list, "count")->valueint ==
+           (int)STATION_CATALOG_MAX_ENTRIES);
+    assert(cJSON_GetObjectItemCaseSensitive(list, "items") == NULL);
     cJSON_Delete(root);
+
+    /* The same snapshot with one station. Whatever is left of the difference
+     * is the digits of the count and the active index, and nothing else - if a
+     * name ever finds its way back into this frame, this is what catches it. */
+    player.item_count = 1U;
+    player.active_item_index = 0U;
+    const int shortest = web_socket_serialize_event(
+        output, sizeof(output), WEB_SOCKET_EVENT_SNAPSHOT, UINT32_MAX,
+        &player, &wifi, &settings);
+    assert(shortest > 0);
+    assert(length - shortest <= 4);
 }
 
 static void test_protocol_rejection_close_codes_are_bounded(void)
@@ -409,7 +415,7 @@ int main(void)
     test_snapshot_has_exact_public_sections_and_no_secrets();
     test_player_update_omits_unavailable_rssi_and_repairs_utf8();
     test_section_diff_and_update_types_are_bounded();
-    test_worst_case_catalog_always_fits_complete_snapshot();
+    test_the_frame_does_not_grow_with_the_catalogue();
     test_protocol_rejection_close_codes_are_bounded();
     test_revision_advances_only_after_complete_serialization();
     puts("web_server tests passed");

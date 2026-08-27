@@ -81,8 +81,6 @@ typedef struct {
     web_settings_view_t view;
 } web_socket_settings_state_t;
 
-typedef const char *(*web_socket_station_label_fn)(size_t index, void *context);
-
 int web_server_command_result(char *output, size_t output_size,
                               const char *request_id, bool ok,
                               const char *error);
@@ -90,9 +88,7 @@ int web_socket_serialize_event(char *output, size_t output_size,
                                web_socket_event_kind_t kind, uint32_t revision,
                                const player_snapshot_t *player,
                                const web_socket_wifi_state_t *wifi,
-                               const web_socket_settings_state_t *settings,
-                               web_socket_station_label_fn station_label,
-                               void *station_context);
+                               const web_socket_settings_state_t *settings);
 uint32_t web_socket_changed_sections(
     const player_snapshot_t *previous_player,
     const web_socket_wifi_state_t *previous_wifi,

@@ -186,6 +186,18 @@ const context = {
       if (entry) entry.cleared = true;
     },
     fetch(url, options) {
+      // The station names are fetched, not sent in the frame; this test is
+      // about the player controls, so it answers that once and lets the
+      // progress poll have the rest.
+      if (typeof url === 'string' && url.startsWith('/api/stations')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            kind: 'stations', revision: 1, count: 1,
+            items: [{index: 0, label: 'Радио Шоколад'}],
+          }),
+        });
+      }
       progressCalls.push({url, options});
       if (progressFails) return Promise.reject(new Error('offline'));
       return Promise.resolve({ok: true, json: () => Promise.resolve(progressReply)});
@@ -254,7 +266,8 @@ const baseSnapshot = {
   list: {
     kind: 'stations',
     active_index: 0,
-    items: [{index: 0, label: 'Радио Шоколад'}],
+    revision: 1,
+    count: 1,
   },
   wifi: {},
   settings: {

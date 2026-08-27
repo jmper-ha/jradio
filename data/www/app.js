@@ -80,12 +80,19 @@
 
   const volume = {holding: false, busy: false, queued: null};
 
-  // The file listing does not travel over the socket: a directory of long
-  // names dwarfs the frame budget, so the socket carries only a revision and
-  // the entries come from GET /api/files. Tracked here so a reply for a
-  // directory the user has already left can be discarded - opening two folders
-  // quickly is enough to make the replies arrive out of order.
+  // Neither listing travels over the socket: a directory of long names, or a
+  // catalogue of up to 99 stations, dwarfs the frame budget, so the socket
+  // carries a revision and a count and the entries come from GET /api/files or
+  // GET /api/stations. Tracked here so a reply for a listing the user has
+  // already left can be discarded - opening two folders quickly is enough to
+  // make the replies arrive out of order.
+  //
+  // The kind is tracked beside the revision because the two lists share one
+  // counter: switching between them without it looks like the revision the
+  // browser already has, and the new list would never be fetched.
+  let listFetchKind = null;
   let listFetchRevision = null;
+  let listShownKind = null;
   let listShownRevision = null;
 
   /* Position, buffer fill and the cover do not travel over the socket. The
@@ -543,23 +550,18 @@
       ? value.active_index
       : null;
     const kind = safeString(value.kind);
-    if (kind === 'files') {
-      // A file listing arrives as a header only; the entries are fetched
-      // separately, so the ones already on screen are kept until they do.
-      return {
-        kind,
-        active_index,
-        items: state.list.kind === 'files' ? state.list.items : [],
-        path: safeString(value.path),
-        revision: Number.isSafeInteger(value.revision) ? value.revision : null,
-        has_parent: value.has_parent === true,
-      };
-    }
-    if (!Array.isArray(value.items)) return null;
-    const items = value.items
-      .filter((item) => isObject(item) && Number.isSafeInteger(item.index) && typeof item.label === 'string')
-      .map((item) => ({index: item.index, label: item.label}));
-    return {kind, active_index, items, path: '', revision: null, has_parent: false};
+    if (kind !== 'files' && kind !== 'stations') return null;
+    // Both listings arrive as a header only; the entries are fetched
+    // separately, so the ones already on screen are kept until they do.
+    const files = kind === 'files';
+    return {
+      kind,
+      active_index,
+      items: state.list.kind === kind ? state.list.items : [],
+      path: files ? safeString(value.path) : '',
+      revision: Number.isSafeInteger(value.revision) ? value.revision : null,
+      has_parent: files && value.has_parent === true,
+    };
   }
 
   function fileEntryLabel(entry) {
@@ -578,48 +580,81 @@
       }));
   }
 
-  async function loadFileListing(revision) {
-    // Guard against the same revision being fetched twice: player updates
-    // arrive far more often than the listing changes.
-    if (listFetchRevision === revision || listShownRevision === revision) return;
+  function normalizeStationEntries(payload) {
+    if (!isObject(payload) || !Array.isArray(payload.items)) return null;
+    return payload.items
+      .filter((item) => isObject(item) && Number.isSafeInteger(item.index) &&
+                        typeof item.label === 'string')
+      .map((item) => ({index: item.index, label: item.label}));
+  }
+
+  const listingSources = {
+    files: {
+      url: '/api/files',
+      parse: normalizeFileEntries,
+      error: 'Не удалось прочитать флешку',
+    },
+    stations: {
+      url: '/api/stations',
+      parse: normalizeStationEntries,
+      error: 'Не удалось прочитать список станций',
+    },
+  };
+
+  async function loadListing(kind, revision) {
+    const source = listingSources[kind];
+    if (!source) return;
+    // Guard against the same listing being fetched twice: player updates
+    // arrive far more often than a listing changes.
+    if (listFetchKind === kind && listFetchRevision === revision) return;
+    if (listShownKind === kind && listShownRevision === revision) return;
+    listFetchKind = kind;
     listFetchRevision = revision;
     try {
-      const response = await fetch('/api/files', {cache: 'no-store'});
+      const response = await fetch(source.url, {cache: 'no-store'});
       if (!response.ok) throw new Error(`status ${response.status}`);
       const payload = await response.json();
-      const entries = normalizeFileEntries(payload);
+      const entries = source.parse(payload);
       if (!entries) throw new Error('unexpected payload');
       // The device may have moved on while this was in flight. Trust the
       // revision the response carries, not the one that triggered the fetch.
-      if (state.list.kind !== 'files') return;
-      if (listShownRevision !== null && Number.isSafeInteger(payload.revision) &&
-          payload.revision < listShownRevision) {
+      if (state.list.kind !== kind) return;
+      if (listShownKind === kind && listShownRevision !== null &&
+          Number.isSafeInteger(payload.revision) && payload.revision < listShownRevision) {
         return;
       }
       const previousList = state.list;
+      const files = kind === 'files';
       state.list = {
         ...state.list,
         items: entries,
-        path: safeString(payload.path, state.list.path),
-        has_parent: payload.has_parent === true,
+        path: files ? safeString(payload.path, state.list.path) : '',
+        has_parent: files && payload.has_parent === true,
       };
+      listShownKind = kind;
       listShownRevision = Number.isSafeInteger(payload.revision) ? payload.revision : revision;
       renderList(previousList);
     } catch (error) {
-      commandStatus.textContent = 'Не удалось прочитать флешку';
+      commandStatus.textContent = source.error;
       commandStatus.classList.add('is-error');
     } finally {
-      if (listFetchRevision === revision) listFetchRevision = null;
+      if (listFetchKind === kind && listFetchRevision === revision) {
+        listFetchKind = null;
+        listFetchRevision = null;
+      }
     }
   }
 
-  function syncFileListing() {
-    if (state.list.kind !== 'files') {
+  function syncListing() {
+    if (!listingSources[state.list.kind]) {
+      listShownKind = null;
       listShownRevision = null;
       return;
     }
     if (state.list.revision === null) return;
-    if (state.list.revision !== listShownRevision) loadFileListing(state.list.revision);
+    if (state.list.kind !== listShownKind || state.list.revision !== listShownRevision) {
+      loadListing(state.list.kind, state.list.revision);
+    }
   }
 
   function focusedListIndex() {
@@ -735,7 +770,7 @@
 
     // Every path that changes the list ends here, so this is the single place
     // the REST fetch needs to be triggered from.
-    syncFileListing();
+    syncListing();
   }
 
   function applySnapshot(message) {

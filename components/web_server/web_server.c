@@ -26,6 +26,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "wifi_provisioning.h"
 #include "internet_radio.h"
 #include "player_control.h"
+#include "station_catalog.h"
 #include "file_storage.h"
 #include "album_art.h"
 #include "esp_heap_caps.h"
@@ -39,7 +40,10 @@ static void web_server_secure_zero(void *memory, size_t size)
 #define WEB_SERVER_MOUNT_PATH "/littlefs"
 #define WEB_SERVER_WEB_ROOT "www"
 #define WEB_SERVER_REQUEST_MAX_LEN 256
-#define WEB_SERVER_PLAYLIST_MAX_LEN 16384
+/* The upload has to be able to carry a full catalogue, so it is derived from
+ * the catalogue rather than typed - otherwise raising the station count leaves
+ * a limit behind that rejects the very file the device can now hold. */
+#define WEB_SERVER_PLAYLIST_MAX_LEN STATION_CATALOG_TEXT_MAX_LEN
 
 static const char *TAG = "web";
 static httpd_handle_t s_server;
@@ -694,6 +698,81 @@ static esp_err_t web_server_files_get(httpd_req_t *request)
     return httpd_resp_send_chunk(request, NULL, 0);
 }
 
+/* The names behind the socket's list header.
+ *
+ * The frame carries a kind, a count, an active index and a revision, and no
+ * labels at all - see write_list() in web_socket.c for why. This is where the
+ * labels come from, and the browser re-fetches whenever the revision moves.
+ *
+ * Which list depends on the source, exactly as the on-device screen does: both
+ * are flat lists of stations, but one is the catalogue file and the other is
+ * fetched from the account. The source is read from a single snapshot so it
+ * cannot disagree with the count taken beside it. */
+static esp_err_t web_server_stations_get(httpd_req_t *request)
+{
+    player_snapshot_t snapshot;
+    player_control_get_snapshot(&snapshot);
+    const bool rotor = snapshot.active_source == AUDIO_SOURCE_YANDEX;
+    const size_t count = rotor ? yandex_catalog_count() : internet_radio_station_count();
+
+    web_json_writer_t writer;
+    web_json_init(&writer, s_file_chunk_buffer, sizeof(s_file_chunk_buffer),
+                  sizeof(s_file_chunk_buffer));
+    web_json_literal(&writer, "{\"kind\":\"stations\",\"revision\":");
+    web_json_format(&writer, "%u", snapshot.listing_revision);
+    web_json_literal(&writer, ",\"count\":");
+    web_json_format(&writer, "%u", (unsigned)count);
+    web_json_literal(&writer, ",\"items\":[");
+    if (!web_json_valid(&writer)) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Listing too large");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(request, "application/json; charset=utf-8");
+    // Live state, not a file: a cached copy would name stations the device has
+    // already been given a new playlist for.
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+
+    for (size_t index = 0U; index < count; ++index) {
+        const char *label = "";
+        yandex_station_t station;
+        if (rotor) {
+            if (!yandex_catalog_station_at(index, &station)) break;
+            label = station.name;
+        } else {
+            const station_catalog_entry_t *entry = internet_radio_station_at(index);
+            if (entry == NULL) break;
+            label = entry->name;
+        }
+        web_json_literal(&writer, index > 0U ? ",{\"index\":" : "{\"index\":");
+        web_json_format(&writer, "%u", (unsigned)index);
+        web_json_literal(&writer, ",\"label\":");
+        web_json_string(&writer, label);
+        web_json_literal(&writer, "}");
+        if (!web_json_valid(&writer)) {
+            ESP_LOGE(TAG, "station %u did not fit the chunk buffer", (unsigned)index);
+            return ESP_FAIL;
+        }
+        /* Flush whenever the next entry might not fit, so one buffer serves a
+         * catalogue of any size - the same rule the file listing uses, and the
+         * reason 99 stations need no bigger buffer than 32 did. */
+        if (web_json_length(&writer) + STATION_CATALOG_NAME_MAX_LEN + 32U >
+            sizeof(s_file_chunk_buffer)) {
+            const esp_err_t err = httpd_resp_send_chunk(request, s_file_chunk_buffer,
+                                                        web_json_length(&writer));
+            if (err != ESP_OK) return err;
+            web_json_init(&writer, s_file_chunk_buffer, sizeof(s_file_chunk_buffer),
+                          sizeof(s_file_chunk_buffer));
+        }
+    }
+
+    web_json_literal(&writer, "]}");
+    if (!web_json_valid(&writer)) return ESP_FAIL;
+    const esp_err_t err = httpd_resp_send_chunk(request, s_file_chunk_buffer,
+                                                web_json_length(&writer));
+    if (err != ESP_OK) return err;
+    return httpd_resp_send_chunk(request, NULL, 0);
+}
+
 static esp_err_t web_server_playlist_get(httpd_req_t *request)
 {
     FILE *file = fopen(STATION_CATALOG_PATH, "r");
@@ -774,6 +853,11 @@ static esp_err_t web_server_playlist_post(httpd_req_t *request)
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save playlist");
         return ESP_FAIL;
     }
+
+    /* The names are no longer in the socket frame, so nothing else would tell
+     * an open browser that they changed - a playlist edited to the same number
+     * of stations looks identical in every other field of the snapshot. */
+    player_control_note_listing_changed();
 
     cJSON *root = cJSON_CreateObject();
     if (root == NULL || cJSON_AddNumberToObject(root, "count", (double)count) == NULL) {
@@ -1049,6 +1133,7 @@ esp_err_t web_server_start(void)
             {.uri = "/api/status", .method = HTTP_GET, .handler = web_server_status_get},
             {.uri = "/api/wifi", .method = HTTP_POST, .handler = web_server_wifi_post},
             {.uri = "/api/files", .method = HTTP_GET, .handler = web_server_files_get},
+            {.uri = "/api/stations", .method = HTTP_GET, .handler = web_server_stations_get},
             {.uri = "/api/playlist", .method = HTTP_GET, .handler = web_server_playlist_get},
             {.uri = "/api/playlist", .method = HTTP_POST, .handler = web_server_playlist_post},
             {.uri = "/api/yandex", .method = HTTP_GET, .handler = web_server_yandex_get},

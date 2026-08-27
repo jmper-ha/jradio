@@ -471,6 +471,12 @@ keys.
 
 ## Limits
 
+- **At most 99 stations in the playlist.** Lines beyond that are dropped as the
+  file is parsed, and the reply to an upload says how many stations were
+  actually read - the file itself is stored whole, so the number of lines in it
+  and the number of stations in the device need not agree. A station name is
+  limited to 96 bytes and its URL to 256; a longer line is dropped entirely.
+  The catalogue is 35 KB and lives in PSRAM.
 - **At most 256 entries per directory.** The rest are dropped with a warning;
   each entry costs about 264 bytes of PSRAM. The listing is one for both
   volumes - only one directory is on screen anyway, and a second copy would
@@ -488,7 +494,8 @@ keys.
 - **The web interface assumes a trusted local network.** There is no
   authentication and `Origin` is not checked. Do not expose the device.
 - Internal SRAM is the board's scarcest resource, and most of the large buffers
-  live in PSRAM: the stream buffer, the directory listing, LVGL's heap. Each of
+  live in PSRAM: the stream buffer, the directory listing, the station
+  catalogue, LVGL's heap. Each of
   those allocations keeps a fallback to internal memory so that a board without
   PSRAM still works - keep that fallback in new ones too.
 

@@ -404,7 +404,12 @@ socket.emit('open');
   await respond({}, {ok: false, status: 404});
   assert.equal(elements['#command-status'].textContent, 'Не удалось прочитать флешку');
 
-  // Switching back to the radio restores the station list unchanged.
+  // Switching back to the radio fetches the station names, the same way a
+  // directory does. The two lists share one revision counter, so this also
+  // covers the case that would otherwise be silent: revision 6 has already
+  // been shown - for the files - and the station list must be fetched anyway
+  // because it is a different list.
+  fetchCalls.length = 0;
   sendEvent(socket, {
     type: 'snapshot',
     revision: 8,
@@ -414,9 +419,13 @@ socket.emit('open');
     ],
     active_source: 'internet_radio',
     player: {...usbPlayer(), mode: 'Интернет-радио', context: 'Радио'},
-    list: {kind: 'stations', active_index: 0, items: [{index: 0, label: 'Радио Шоколад'}]},
+    list: {kind: 'stations', active_index: 0, revision: 6, count: 1},
     wifi: {},
   });
+  assert.equal(fetchCalls.length, 1, 'a station list is fetched, not read from the frame');
+  assert.equal(fetchCalls[0].url, '/api/stations');
+  await respond({kind: 'stations', revision: 6, count: 1,
+                 items: [{index: 0, label: 'Радио Шоколад'}]});
   assert.deepEqual(labels(), ['Радио Шоколад']);
   assert.equal(elements['#list-title'].textContent, 'Станции');
 

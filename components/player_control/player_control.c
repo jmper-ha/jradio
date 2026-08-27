@@ -517,20 +517,33 @@ static void player_control_task(void *arg)
             }
             break;
         }
-        case PLAYER_OPERATION_TOGGLE_LIKE: {
+        case PLAYER_OPERATION_TOGGLE_LIKE:
+        case PLAYER_OPERATION_TOGGLE_DISLIKE: {
             /* Blocks on one POST, on the task that already blocks on three of
              * them to open a station. The mark is only moved once the API has
              * taken it: a heart that fills in and then quietly disagrees with
-             * the phone is worse than one that does not move. */
+             * the phone is worse than one that does not move.
+             *
+             * One request even when the marks cross. The two lists exclude
+             * each other server-side in both directions - measured by reading
+             * both libraries around each call - so disliking a liked track
+             * needs no second POST to take the like off, and the rotor's copy
+             * of the marks follows the same rule. */
+            const bool dislike = operation == PLAYER_OPERATION_TOGGLE_DISLIKE;
             char track_id[YANDEX_TRACK_ID_MAX + 1U];
             bool liked = false;
-            if (!yandex_rotor_playing_track(track_id, sizeof(track_id), &liked)) {
-                ESP_LOGW(TAG, "nothing playing to like");
+            bool disliked = false;
+            if (!yandex_rotor_playing_track(track_id, sizeof(track_id), &liked, &disliked)) {
+                ESP_LOGW(TAG, "nothing playing to mark");
                 break;
             }
-            if (yandex_likes_set(track_id, !liked) == ESP_OK) {
-                yandex_rotor_set_playing_liked(!liked);
+            const bool set = dislike ? !disliked : !liked;
+            if (yandex_likes_set(track_id, dislike ? YANDEX_MARK_DISLIKE : YANDEX_MARK_LIKE,
+                                 set) != ESP_OK) {
+                break;
             }
+            if (dislike) yandex_rotor_set_playing_disliked(set);
+            else yandex_rotor_set_playing_liked(set);
             break;
         }
         case PLAYER_OPERATION_BROWSE_UP:
@@ -673,9 +686,11 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
          * for one, and it changes about as often as the track does. */
         char track_id[YANDEX_TRACK_ID_MAX + 1U];
         bool liked = false;
-        if (yandex_rotor_playing_track(track_id, sizeof(track_id), &liked)) {
+        bool disliked = false;
+        if (yandex_rotor_playing_track(track_id, sizeof(track_id), &liked, &disliked)) {
             snapshot->track_likeable = true;
             snapshot->track_liked = liked;
+            snapshot->track_disliked = disliked;
         }
     } else {
         snapshot->active_item_index = radio_status.station_index;

@@ -151,6 +151,22 @@ static void test_accepts_the_like_command(void)
     assert(parse(extra, &command) != WEB_PROTOCOL_OK);
 }
 
+/* The rejection is its own action rather than a field on the one above: the
+ * browser has a button per mark and the device has one key, so a shared "set
+ * this mark" would have to say which one anyway. */
+static void test_accepts_the_dislike_command(void)
+{
+    web_command_t command;
+    const char *dislike = "{\"type\":\"command\",\"id\":\"d1\",\"action\":\"player.dislike\"}";
+    assert(parse(dislike, &command) == WEB_PROTOCOL_OK);
+    assert(command.kind == WEB_COMMAND_PLAYER);
+    assert(command.player.kind == PLAYER_COMMAND_TOGGLE_DISLIKE);
+
+    const char *extra =
+        "{\"type\":\"command\",\"id\":\"d2\",\"action\":\"player.dislike\",\"index\":0}";
+    assert(parse(extra, &command) != WEB_PROTOCOL_OK);
+}
+
 /* The two track keys carry nothing either. They are not the same command as
  * player.next above: this pair steps along the list the playing item came
  * from, while that one asks the rotor for another track - and the rotor is the
@@ -615,6 +631,7 @@ int main(void)
     test_accepts_source_and_station_selection();
     test_accepts_the_next_track_command();
     test_accepts_the_like_command();
+    test_accepts_the_dislike_command();
     test_accepts_the_track_keys();
     test_accepts_the_seek_command();
     test_accepts_bounded_wifi_credentials();

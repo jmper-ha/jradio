@@ -107,12 +107,19 @@ bool ui_player_state_can_post(const ui_player_state_t *state,
     // browsing stays out of the pending machinery.
     case PLAYER_COMMAND_SEEK:
         return true;
-    /* The two that ask something of the track rather than of the list: the
-     * rotor's next track, and the like mark. Neither moves anything the
-     * pending machinery watches - the station stays the station, and a mark is
-     * not playback - so neither waits for a snapshot to confirm it. */
+    /* The ones that ask something of the track rather than of the list: the
+     * rotor's next track, and either mark on it. None of them moves anything
+     * the pending machinery watches - the station stays the station, and a
+     * mark is not playback - so none waits for a snapshot to confirm it.
+     *
+     * This list is named rather than defaulted to true, so a command added to
+     * player_control_types.h is refused here until someone decides what it
+     * means on this screen. The dislike was added and not listed, and the
+     * result was a key that did nothing while the same command sent from the
+     * browser - which does not pass through this gate - worked. */
     case PLAYER_COMMAND_NEXT_TRACK:
     case PLAYER_COMMAND_TOGGLE_LIKE:
+    case PLAYER_COMMAND_TOGGLE_DISLIKE:
         return true;
     /* The track keys on a list source do move the active row, but they name no
      * index for a snapshot to be checked against: the player works out which
@@ -138,6 +145,7 @@ bool ui_player_state_apply_post_result(ui_player_state_t *state,
         command->kind == PLAYER_COMMAND_SEEK ||
         command->kind == PLAYER_COMMAND_NEXT_TRACK ||
         command->kind == PLAYER_COMMAND_TOGGLE_LIKE ||
+        command->kind == PLAYER_COMMAND_TOGGLE_DISLIKE ||
         command->kind == PLAYER_COMMAND_PREVIOUS_ITEM ||
         command->kind == PLAYER_COMMAND_NEXT_ITEM ||
         ui_player_state_is_files_browse(command)) return true;

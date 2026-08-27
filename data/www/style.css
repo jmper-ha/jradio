@@ -521,6 +521,7 @@ button:disabled {
    track itself, and one of them looking weightier would be a lie. */
 .next-track,
 .like-track,
+.dislike-track,
 .step-item {
   width: 44px;
   height: 44px;
@@ -537,6 +538,7 @@ button:disabled {
 
 .next-track:hover:not(:disabled),
 .like-track:hover:not(:disabled),
+.dislike-track:hover:not(:disabled),
 .step-item:hover:not(:disabled) {
   transform: translateY(-2px);
 }
@@ -549,15 +551,31 @@ button:disabled {
 }
 
 /* Outline until the account has the track marked, solid once it has - the
-   same two states the heart on the device shows, and told apart by shape
-   rather than by colour alone. */
-.like-track svg {
+   same states the heart on the device shows, and told apart by shape rather
+   than by colour alone. The rejection is the same heart with a bar through it,
+   which is the third bitmap on the device: one mark, three answers. */
+.like-track svg,
+.dislike-track svg {
   width: 1.25rem;
   height: 1.25rem;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
   stroke-linejoin: round;
+}
+
+.dislike-track svg .slash,
+.dislike-track svg .slash-gap {
+  stroke-linecap: round;
+}
+
+/* The knockout, painted in the button's own background so the bar sits in a
+   clear gap instead of touching the heart's outline. It has to name the same
+   colour the button does - a filter would do it without repeating the value,
+   and would cost a compositing layer for one 44 px control. */
+.dislike-track svg .slash-gap {
+  stroke: var(--surface-muted, #e5e7eb);
+  stroke-width: 4.4;
 }
 
 .like-track.is-liked {
@@ -568,8 +586,13 @@ button:disabled {
   fill: currentColor;
 }
 
+.dislike-track.is-disliked {
+  color: var(--danger);
+}
+
 .next-track:disabled,
 .like-track:disabled,
+.dislike-track:disabled,
 .step-item:disabled {
   opacity: .45;
   cursor: default;

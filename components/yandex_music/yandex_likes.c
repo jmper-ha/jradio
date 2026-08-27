@@ -19,19 +19,25 @@ static bool yandex_likes_digits(const char *text)
     return true;
 }
 
-size_t yandex_likes_path(const char *uid, const char *track_id, bool liked, char *out,
-                         size_t out_size)
+size_t yandex_likes_path(const char *uid, const char *track_id, yandex_mark_t mark, bool set,
+                         char *out, size_t out_size)
 {
     if (out == NULL || out_size == 0U) return 0U;
     out[0] = '\0';
+    if (mark != YANDEX_MARK_LIKE && mark != YANDEX_MARK_DISLIKE) return 0U;
     if (!yandex_likes_digits(uid) || !yandex_likes_digits(track_id)) return 0U;
 
-    /* Singular to add, plural to remove. Measured, and each endpoint refuses
-     * the other's spelling with HTTP 400 - so this asymmetry is the contract
-     * and not a slip to be tidied away. */
-    const int written = liked
-        ? snprintf(out, out_size, "/users/%s/likes/tracks/add?track-id=%s", uid, track_id)
-        : snprintf(out, out_size, "/users/%s/likes/tracks/remove?track-ids=%s", uid, track_id);
+    /* The two marks are two collections under one shape of URL, so the only
+     * thing that varies is the word. */
+    const char *collection = mark == YANDEX_MARK_DISLIKE ? "dislikes" : "likes";
+    /* Singular to add, plural to remove. Measured on both pairs, and each
+     * endpoint refuses the other's spelling with HTTP 400 - so this asymmetry
+     * is the contract and not a slip to be tidied away. */
+    const int written = set
+        ? snprintf(out, out_size, "/users/%s/%s/tracks/add?track-id=%s", uid, collection,
+                   track_id)
+        : snprintf(out, out_size, "/users/%s/%s/tracks/remove?track-ids=%s", uid, collection,
+                   track_id);
     if (written < 0 || (size_t)written >= out_size) {
         out[0] = '\0';
         return 0U;
@@ -109,7 +115,7 @@ static bool yandex_likes_fetch_uid(void)
     return parsed;
 }
 
-esp_err_t yandex_likes_set(const char *track_id, bool liked)
+esp_err_t yandex_likes_set(const char *track_id, yandex_mark_t mark, bool set)
 {
     if (!yandex_likes_digits(track_id)) return ESP_ERR_INVALID_ARG;
     if (!yandex_likes_fetch_uid()) return ESP_ERR_INVALID_STATE;
@@ -117,20 +123,21 @@ esp_err_t yandex_likes_set(const char *track_id, bool liked)
     /* uid, track id and the fixed parts, with room to spare: a truncated path
      * would mark a track nobody asked about. */
     char path[96];
-    if (yandex_likes_path(s_uid, track_id, liked, path, sizeof(path)) == 0U) {
+    if (yandex_likes_path(s_uid, track_id, mark, set, path, sizeof(path)) == 0U) {
         return ESP_ERR_INVALID_ARG;
     }
 
+    const char *name = mark == YANDEX_MARK_DISLIKE ? "dislike" : "like";
     char response[YANDEX_LIKES_RESPONSE_SIZE];
     int status = 0;
     const esp_err_t err = yandex_api_post(path, response, sizeof(response), &status);
     if (err != ESP_OK) return err;
     if (status != 200) {
-        ESP_LOGW(TAG, "like %s for %s returned HTTP %d", liked ? "add" : "remove", track_id,
+        ESP_LOGW(TAG, "%s %s for %s returned HTTP %d", name, set ? "add" : "remove", track_id,
                  status);
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "track %s %s", track_id, liked ? "liked" : "unliked");
+    ESP_LOGI(TAG, "track %s %s%s", track_id, set ? "" : "un", name);
     return ESP_OK;
 }
 

@@ -94,7 +94,7 @@ class Element {
 const ids = [
   'socket-state', 'playlist-link', 'source-tabs', 'mode-label', 'playback-state',
   'track-title', 'track-artist', 'track-context', 'play-toggle', 'next-track',
-  'like-track', 'previous-item', 'next-item',
+  'like-track', 'dislike-track', 'previous-item', 'next-item',
   'track-cover', 'track-progress', 'track-elapsed', 'track-total',
   'progress-rail', 'progress-fill', 'progress-seek',
   'volume-control', 'volume-input', 'volume-value',
@@ -102,7 +102,8 @@ const ids = [
   'list-title', 'list-count', 'list-items', 'list-empty',
 ];
 const buttonIds = new Set([
-  'play-toggle', 'next-track', 'like-track', 'previous-item', 'next-item',
+  'play-toggle', 'next-track', 'like-track', 'dislike-track', 'previous-item',
+  'next-item',
 ]);
 const elements = Object.fromEntries(ids.map((id) => [
   `#${id}`,

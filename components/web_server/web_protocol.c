@@ -757,6 +757,15 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
         parsed->player.kind = PLAYER_COMMAND_TOGGLE_LIKE;
         return true;
     }
+    if (strcmp(action, "player.dislike") == 0) {
+        // Its own action rather than a value on the one above, for the reason
+        // the command is its own kind: the browser has a button per mark and
+        // the device has one key, so a shared "set this mark" would have to
+        // carry which one anyway.
+        if (fields != COMMON_FIELDS) return false;
+        parsed->player.kind = PLAYER_COMMAND_TOGGLE_DISLIKE;
+        return true;
+    }
     if (strcmp(action, "browse.up") == 0) {
         // No index: "up" is relative to whatever directory the shared listing
         // is on, which is the same one the device screen shows.

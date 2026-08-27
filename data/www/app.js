@@ -14,6 +14,7 @@
   const nextItem = document.querySelector('#next-item');
   const nextTrack = document.querySelector('#next-track');
   const likeTrack = document.querySelector('#like-track');
+  const dislikeTrack = document.querySelector('#dislike-track');
   const trackCover = document.querySelector('#track-cover');
   const trackProgress = document.querySelector('#track-progress');
   const trackElapsed = document.querySelector('#track-elapsed');
@@ -142,6 +143,10 @@
        here rather than becoming a false "not liked". */
     if (typeof player.liked === 'boolean') {
       normalized.liked = player.liked;
+      /* Sent together with the like and never on its own, so one test covers
+         both marks - and an old device that sends only `liked` still draws a
+         heart rather than nothing. */
+      normalized.disliked = player.disliked === true;
     }
     return normalized;
   }
@@ -472,11 +477,21 @@
        a station and a file are in nobody's library, and an empty heart there
        would offer a button that can only be refused. */
     const likeable = typeof player.liked === 'boolean';
+    const markable = likeable && state.connected &&
+      (player.state === 'playing' || player.state === 'paused');
     likeTrack.hidden = !likeable;
-    likeTrack.disabled = !likeable || !state.connected ||
-      (player.state !== 'playing' && player.state !== 'paused');
-    likeTrack.classList.toggle('is-liked', likeable && player.liked);
+    likeTrack.disabled = !markable;
+    likeTrack.classList.toggle('is-liked', likeable && player.liked === true);
     likeTrack.setAttribute('aria-pressed', String(likeable && player.liked === true));
+
+    /* Its own button rather than a second meaning of the heart: the device has
+       one key and has to overload it, the browser has room for both. The two
+       marks exclude each other, so pressing one takes the other off without
+       the browser having to ask for that. */
+    dislikeTrack.hidden = !likeable;
+    dislikeTrack.disabled = !markable;
+    dislikeTrack.classList.toggle('is-disliked', likeable && player.disliked === true);
+    dislikeTrack.setAttribute('aria-pressed', String(likeable && player.disliked === true));
 
     /* The two track keys, the browser's copy of the buttons on the front of
        the device. They move what is playing along the list it came from - the
@@ -923,6 +938,7 @@
   volumeInput.addEventListener('input', holdVolume);
   volumeInput.addEventListener('change', commitVolume);
   likeTrack.addEventListener('click', () => sendCommand('player.like'));
+  dislikeTrack.addEventListener('click', () => sendCommand('player.dislike'));
   renderSources();
   updatePlaylistLink();
   renderPlayer();

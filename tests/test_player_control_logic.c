@@ -400,6 +400,37 @@ static void test_the_like_mark_belongs_to_a_playing_rotor_track(void)
     assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
 }
 
+static void test_the_rejection_answers_to_the_same_conditions(void)
+{
+    /* Its own command and its own operation, but the same question about
+     * whether there is a track to mark at all - so the two are decided
+     * together and only the answer differs. */
+    player_snapshot_t state = {.active_source = AUDIO_SOURCE_YANDEX,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING};
+    player_command_t command = {.kind = PLAYER_COMMAND_TOGGLE_DISLIKE};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_TOGGLE_DISLIKE);
+
+    state.playback_state = PLAYER_PLAYBACK_PAUSED;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_TOGGLE_DISLIKE);
+
+    /* The mark the track already carries changes nothing here: whether this
+     * press sets the rejection or takes it off is the executor's to work out,
+     * from the state at the moment the queue reaches it rather than the one
+     * the button was drawn from. */
+    state.playback_state = PLAYER_PLAYBACK_PLAYING;
+    state.track_likeable = true;
+    state.track_disliked = true;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_TOGGLE_DISLIKE);
+
+    state.playback_state = PLAYER_PLAYBACK_STOPPED;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+    state.playback_state = PLAYER_PLAYBACK_PLAYING;
+    state.active_source = AUDIO_SOURCE_INTERNET_RADIO;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+    state.active_source = AUDIO_SOURCE_SD;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+}
+
 static void test_snapshot_equality_notices_the_like_mark(void)
 {
     /* The web transport sends a section only when the snapshot differs, so a
@@ -410,6 +441,12 @@ static void test_snapshot_equality_notices_the_like_mark(void)
     assert(player_snapshot_equal(&left, &right));
     right.track_liked = true;
     assert(!player_snapshot_equal(&left, &right));
+
+    /* And the other mark, which travels the same way and would otherwise
+     * change on the device without the browser ever hearing about it. */
+    right = left;
+    right.track_disliked = true;
+    assert(!player_snapshot_equal(&left, &right));
 }
 
 int main(void)
@@ -418,6 +455,7 @@ int main(void)
     test_the_track_keys_leave_the_ends_of_a_directory_to_the_executor();
     test_the_rotor_has_no_track_keys_of_this_kind();
     test_the_like_mark_belongs_to_a_playing_rotor_track();
+    test_the_rejection_answers_to_the_same_conditions();
     test_snapshot_equality_notices_the_like_mark();
     test_each_volume_answers_for_itself();
     test_every_file_operation_works_on_the_card_too();

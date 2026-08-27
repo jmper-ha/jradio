@@ -63,20 +63,26 @@ const char *yandex_rotor_next_url(char *title, size_t title_size);
  * wrong thing. */
 void yandex_rotor_note_skip(void);
 
-/* The track on the air and whether the account has it marked, for the heart on
- * the screen and in the web UI. False when nothing is playing.
+/* The track on the air and which of the two marks the account has on it, for
+ * the heart on the screen and in the web UI. False when nothing is playing.
+ * Either output pointer may be NULL.
  *
  * Copied out under a spinlock rather than read field by field: the chain is
  * advanced by the decode task, and a snapshot is built on whichever task asks
  * for one - so without it a reader could take half of one track's id and half
  * of the next one's. */
-bool yandex_rotor_playing_track(char *id, size_t id_size, bool *liked);
+bool yandex_rotor_playing_track(char *id, size_t id_size, bool *liked, bool *disliked);
 
 /* Records the mark the account now carries for the playing track, once the API
  * has accepted it. Kept here rather than in player_control because this is
  * where the track itself lives: the next track that starts overwrites it, and
- * nothing has to remember to clear it. */
+ * nothing has to remember to clear it.
+ *
+ * The two exclude each other, the way the API does: setting one clears the
+ * other here as well, so the screen cannot show a heart that is filled and
+ * struck through at once. */
 void yandex_rotor_set_playing_liked(bool liked);
+void yandex_rotor_set_playing_disliked(bool disliked);
 
 /* Why the last attempt failed, for the message the user sees.
  * ESP_ERR_NOT_SUPPORTED means the account has no active subscription. */

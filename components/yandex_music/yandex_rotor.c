@@ -41,6 +41,12 @@ typedef struct {
     /* The like mark as the rotor reported it, kept up to date when the
      * listener changes it. */
     bool playing_liked;
+    /* The dislike, which the rotor does not report - measured 2026-08-26, a
+     * sequence item carries `liked` and nothing about the other list. It is
+     * therefore false on every track that starts and true only where the
+     * listener has just pressed for it, which loses nothing: a disliked track
+     * is one the rotor stops handing out. */
+    bool playing_disliked;
     char playing_batch[YANDEX_TRACK_BATCH_ID_MAX + 1U];
     uint32_t playing_duration_ms;
     int64_t playing_since_us;
@@ -157,15 +163,17 @@ esp_err_t yandex_rotor_start(const char *station_id, const char *from)
     return ESP_OK;
 }
 
-bool yandex_rotor_playing_track(char *id, size_t id_size, bool *liked)
+bool yandex_rotor_playing_track(char *id, size_t id_size, bool *liked, bool *disliked)
 {
     if (id == NULL || id_size == 0U) return false;
     char copy[YANDEX_TRACK_ID_MAX + 1U];
     bool playing;
     bool mark;
+    bool against;
     taskENTER_CRITICAL(&s_playing_lock);
     playing = s_rotor.playing;
     mark = s_rotor.playing_liked;
+    against = s_rotor.playing_disliked;
     memcpy(copy, s_rotor.playing_id, sizeof(copy));
     taskEXIT_CRITICAL(&s_playing_lock);
 
@@ -177,6 +185,7 @@ bool yandex_rotor_playing_track(char *id, size_t id_size, bool *liked)
         return false;
     }
     if (liked != NULL) *liked = mark;
+    if (disliked != NULL) *disliked = against;
     return true;
 }
 
@@ -184,6 +193,18 @@ void yandex_rotor_set_playing_liked(bool liked)
 {
     taskENTER_CRITICAL(&s_playing_lock);
     s_rotor.playing_liked = liked;
+    /* Liking a disliked track takes it out of the dislikes server-side -
+     * measured - so the mark here follows rather than being left to disagree
+     * with the account until the next track. */
+    if (liked) s_rotor.playing_disliked = false;
+    taskEXIT_CRITICAL(&s_playing_lock);
+}
+
+void yandex_rotor_set_playing_disliked(bool disliked)
+{
+    taskENTER_CRITICAL(&s_playing_lock);
+    s_rotor.playing_disliked = disliked;
+    if (disliked) s_rotor.playing_liked = false;
     taskEXIT_CRITICAL(&s_playing_lock);
 }
 
@@ -316,6 +337,10 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track)
     taskENTER_CRITICAL(&s_playing_lock);
     s_rotor.playing = true;
     s_rotor.playing_liked = candidate.liked;
+    /* Nothing to read it from: the rotor reports the like and not the dislike.
+     * False is also the truthful answer nearly always, since a track the
+     * account has rejected is one this station stops offering. */
+    s_rotor.playing_disliked = false;
     memcpy(s_rotor.playing_id, playing_id, sizeof(playing_id));
     taskEXIT_CRITICAL(&s_playing_lock);
 

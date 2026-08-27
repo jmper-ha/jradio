@@ -414,6 +414,11 @@ static ui_player_state_t s_player_ui;
 // Only the player screen tells a single click from a double one, so only
 // there does a click wait out the window; every other screen acts at once.
 static ui_click_gesture_t s_player_click;
+/* The like key has its own gesture, because it is its own button: a press of
+ * it must not join a gesture the encoder started, and both can be pending at
+ * once. Only the rotor arms it - everywhere else BTN_PREV steps a list and a
+ * 350 ms wait for a second press would be felt. */
+static ui_click_gesture_t s_like_click;
 /* Open only while the encoder is scrubbing the playing file. It takes over
  * both the knob and the progress bar, so everything that leaves the player
  * screen has to close it - a thick bar left behind would be a mode with no way
@@ -783,17 +788,25 @@ static void ui_update_playback_marks(const player_snapshot_t *snapshot)
         lv_obj_add_flag(s_source_pause, LV_OBJ_FLAG_HIDDEN);
     }
 
-    /* Two bitmaps rather than one recoloured: an outline and a solid heart are
-     * different shapes, and a mark told apart by brightness alone would read
-     * as "liked, dimly" rather than as "not liked". */
-    const int8_t like = !snapshot->track_likeable ? -1 : snapshot->track_liked ? 1 : 0;
+    /* A bitmap per state rather than one recoloured: an outline heart, a solid
+     * one and a struck-through one are different shapes, and marks told apart
+     * by brightness alone would read as "liked, dimly" rather than as three
+     * different answers. */
+    const int8_t like = !snapshot->track_likeable ? -1
+                        : snapshot->track_disliked ? 2
+                        : snapshot->track_liked    ? 1
+                                                   : 0;
     if (like != s_source_like_shown) {
         s_source_like_shown = like;
         if (like < 0) {
             lv_obj_add_flag(s_source_like, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_image_set_src(s_source_like, like == 1 ? &ui_feed_icon_heart_filled_16
-                                                      : &ui_feed_icon_heart_16);
+            lv_image_set_src(s_source_like, like == 2 ? &ui_feed_icon_heart_slash_16
+                                            : like == 1 ? &ui_feed_icon_heart_filled_16
+                                                        : &ui_feed_icon_heart_16);
+            /* The rejection is muted like the empty heart, not accented like
+             * the filled one: it is not something the screen is celebrating,
+             * and the shape already says which of the two it is. */
             lv_obj_set_style_image_recolor(
                 s_source_like, lv_color_hex(like == 1 ? UI_COLOR_ACCENT : UI_COLOR_MUTED), 0);
             lv_obj_clear_flag(s_source_like, LV_OBJ_FLAG_HIDDEN);
@@ -2109,6 +2122,29 @@ static void ui_open_source_list(audio_source_t source)
     ui_show_station_list();
 }
 
+/* The like key's two gestures, resolved against the mark the track carries.
+ *
+ * A double press asks for the rejection. A single one normally asks for the
+ * like - but on a track already rejected it takes that back instead, because
+ * this is the only key on the box that can and turning a rejection straight
+ * into a like is not a gesture anybody made. Which is why this reads the
+ * snapshot rather than sending a fixed command: the same press means two
+ * different things depending on what the track is already marked with. */
+static void ui_submit_like_press(bool double_press)
+{
+    player_snapshot_t snapshot;
+    player_control_get_snapshot(&snapshot);
+    player_command_t command = {
+        .kind = PLAYER_COMMAND_TOGGLE_LIKE,
+        .source = AUDIO_SOURCE_YANDEX,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    if (double_press || snapshot.track_disliked) {
+        command.kind = PLAYER_COMMAND_TOGGLE_DISLIKE;
+    }
+    (void)ui_submit_player_command(&command);
+}
+
 static void ui_settings_change_selected(void)
 {
     const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
@@ -3240,6 +3276,7 @@ static void ui_handle_input(board_input_action_t action)
             // Leaving the screen entirely, so a click waiting out its window
             // must not land on the home screen.
             ui_click_gesture_cancel(&s_player_click);
+            ui_click_gesture_cancel(&s_like_click);
             ui_show_menu();
         } else if (has_list && action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             // Double click opens the list, triple click starts scrubbing, and
@@ -3288,10 +3325,19 @@ static void ui_handle_input(board_input_action_t action)
             if (source == AUDIO_SOURCE_YANDEX) {
                 /* The rotor's chain runs one way only - there is no previous
                  * track to go back to - so on this source the two keys are not
-                 * a pair: forward asks for the next track, back marks the one
-                 * playing as liked or takes the mark off again. */
-                command.kind = forward ? PLAYER_COMMAND_NEXT_TRACK
-                                       : PLAYER_COMMAND_TOGGLE_LIKE;
+                 * a pair: forward asks for the next track, and back carries
+                 * both marks. A double press is the rejection, delivered at
+                 * once; the single press waits out its window in the poll
+                 * loop, which is the cost of the second gesture and is not
+                 * felt on an action nothing is waiting for. */
+                if (!forward) {
+                    if (ui_click_gesture_press(&s_like_click, ui_tick_get_ms(), false) ==
+                        UI_CLICK_DOUBLE) {
+                        ui_submit_like_press(true);
+                    }
+                    return;
+                }
+                command.kind = PLAYER_COMMAND_NEXT_TRACK;
             } else if (has_list) {
                 command.kind = forward ? PLAYER_COMMAND_NEXT_ITEM
                                        : PLAYER_COMMAND_PREVIOUS_ITEM;
@@ -3459,6 +3505,7 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
         // The player screen went away on its own - a station finished
         // connecting, the source stopped - so a click waiting on it is stale.
         ui_click_gesture_cancel(&s_player_click);
+        ui_click_gesture_cancel(&s_like_click);
         ui_render_player_state();
     }
 
@@ -3657,6 +3704,9 @@ static void ui_task(void *arg)
                 ui_handle_input(action);
             }
         }
+        if (ui_click_gesture_poll(&s_like_click, ui_tick_get_ms()) == UI_CLICK_SINGLE) {
+            ui_submit_like_press(false);
+        }
         switch (ui_click_gesture_poll(&s_player_click, ui_tick_get_ms())) {
         case UI_CLICK_SINGLE:
             ui_toggle_playback();
@@ -3793,6 +3843,7 @@ esp_err_t ui_init(void)
     ui_menu_init(&s_menu);
     ui_player_state_init(&s_player_ui);
     ui_click_gesture_init(&s_player_click);
+    ui_click_gesture_init(&s_like_click);
     ui_vu_meter_init(&s_vu_state[0]);
     ui_vu_meter_init(&s_vu_state[1]);
     s_vu_updated_ms = ui_tick_get_ms();

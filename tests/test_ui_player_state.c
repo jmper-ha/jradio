@@ -544,10 +544,50 @@ static void test_a_yandex_row_can_be_selected_and_confirmed(void)
     assert(ui_player_state_source(&state) == AUDIO_SOURCE_YANDEX);
 }
 
+static void test_the_marks_reach_the_player_without_going_pending(void)
+{
+    /* This gate is the screen's own, and it names every command it will let
+     * through. The dislike shipped without being named here, so the key on the
+     * front of the device did nothing while the identical command from the
+     * browser - which never passes this way - worked. Nothing about the screen
+     * looked wrong; the command was simply dropped one layer above the queue.
+     *
+     * Both marks are asserted, not only the one that broke: the like had no
+     * test here either, which is why the omission was invisible. */
+    ui_player_state_t state;
+    ui_player_state_init(&state);
+
+    player_snapshot_t playing = snapshot(AUDIO_SOURCE_YANDEX, PLAYER_ITEM_NONE, 4U);
+    playing.playback_state = PLAYER_PLAYBACK_PLAYING;
+    ui_player_state_apply_snapshot(&state, &playing, 10);
+
+    const player_command_kind_t marks[] = {
+        PLAYER_COMMAND_TOGGLE_LIKE,
+        PLAYER_COMMAND_TOGGLE_DISLIKE,
+        PLAYER_COMMAND_NEXT_TRACK,
+    };
+    for (size_t index = 0U; index < sizeof(marks) / sizeof(marks[0]); ++index) {
+        player_command_t mark = command(marks[index], AUDIO_SOURCE_YANDEX, PLAYER_ITEM_NONE);
+        assert(ui_player_state_can_post(&state, &mark));
+        assert(ui_player_state_apply_post_result(&state, &mark, true, 20));
+        /* And none of them waits on a snapshot: a mark is not playback, so
+         * nothing in the snapshot would ever confirm it and the screen would
+         * sit pending until the timeout - refusing every press in between. */
+        assert(!ui_player_state_is_pending(&state));
+    }
+
+    /* A second press right after the first is accepted too, which is what
+     * makes the double press on the device's like key possible at all. */
+    player_command_t again =
+        command(PLAYER_COMMAND_TOGGLE_DISLIKE, AUDIO_SOURCE_YANDEX, PLAYER_ITEM_NONE);
+    assert(ui_player_state_can_post(&state, &again));
+}
+
 int main(void)
 {
     test_the_card_gets_the_same_views_as_the_drive();
     test_a_yandex_row_can_be_selected_and_confirmed();
+    test_the_marks_reach_the_player_without_going_pending();
     test_rejected_commands_preserve_current_view();
     test_list_view_opens_for_both_sources_with_a_list();
     test_usb_browsing_does_not_go_pending();

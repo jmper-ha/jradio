@@ -91,6 +91,11 @@ typedef enum {
     /* Adds the playing track to the account's liked tracks, or takes it back
      * out. Only the rotor has tracks that belong to an account. */
     PLAYER_COMMAND_TOGGLE_LIKE,
+    /* The other list the same track can be in. Its own command rather than a
+     * value on the one above, because the two surfaces that send it disagree
+     * about what a press means: the web has a button per mark, and the device
+     * has one key whose second press has to mean the other thing. */
+    PLAYER_COMMAND_TOGGLE_DISLIKE,
 } player_command_kind_t;
 
 typedef struct {
@@ -131,13 +136,17 @@ typedef struct {
     uint32_t sample_rate_hz;
     bool wifi_rssi_valid;
     int8_t wifi_rssi_dbm;
-    /* Whether the playing track can be marked at all, and whether it is
-     * marked. Two fields rather than one, because "no mark" and "no such
-     * thing as a mark here" are different pictures: only a Yandex track
+    /* Whether the playing track can be marked at all, and which mark it
+     * carries. Separate from the marks themselves, because "no mark" and "no
+     * such thing as a mark here" are different pictures: only a Yandex track
      * belongs to an account's library, so for a station or a file the heart is
-     * absent rather than empty. */
+     * absent rather than empty.
+     *
+     * The two marks exclude each other - that is how the API behaves and how
+     * the rotor keeps them - so at most one of these is ever true. */
     bool track_likeable;
     bool track_liked;
+    bool track_disliked;
     char error[PLAYER_ERROR_MAX_LEN];
 } player_snapshot_t;
 
@@ -158,6 +167,7 @@ typedef enum {
     PLAYER_OPERATION_PREVIOUS_ITEM,
     PLAYER_OPERATION_NEXT_ITEM,
     PLAYER_OPERATION_TOGGLE_LIKE,
+    PLAYER_OPERATION_TOGGLE_DISLIKE,
 } player_operation_t;
 
 player_operation_t player_control_decide(const player_snapshot_t *state,

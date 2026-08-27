@@ -11,10 +11,32 @@ static void test_the_two_endpoints_spell_the_parameter_differently(void)
      * track-ids, and each refuses the other's spelling with HTTP 400. The
      * asymmetry is the contract, so a "tidied" builder would break one of the
      * two directions and only one. */
-    assert(yandex_likes_path("531515355", "38903142", true, path, sizeof(path)) > 0U);
+    assert(yandex_likes_path("531515355", "38903142", YANDEX_MARK_LIKE, true, path,
+                             sizeof(path)) > 0U);
     assert(strcmp(path, "/users/531515355/likes/tracks/add?track-id=38903142") == 0);
-    assert(yandex_likes_path("531515355", "38903142", false, path, sizeof(path)) > 0U);
+    assert(yandex_likes_path("531515355", "38903142", YANDEX_MARK_LIKE, false, path,
+                             sizeof(path)) > 0U);
     assert(strcmp(path, "/users/531515355/likes/tracks/remove?track-ids=38903142") == 0);
+}
+
+static void test_the_dislike_is_the_same_shape_of_url(void)
+{
+    char path[96];
+    /* Measured 2026-08-26: the rejection lives in a second collection under
+     * the same endpoints, and it repeats the singular/plural asymmetry exactly
+     * - track-ids on add answers 400 there too. */
+    assert(yandex_likes_path("531515355", "38903142", YANDEX_MARK_DISLIKE, true, path,
+                             sizeof(path)) > 0U);
+    assert(strcmp(path, "/users/531515355/dislikes/tracks/add?track-id=38903142") == 0);
+    assert(yandex_likes_path("531515355", "38903142", YANDEX_MARK_DISLIKE, false, path,
+                             sizeof(path)) > 0U);
+    assert(strcmp(path, "/users/531515355/dislikes/tracks/remove?track-ids=38903142") == 0);
+
+    /* A mark that is neither builds nothing: the collection name would be a
+     * guess, and the request would ask the server to interpret it. */
+    assert(yandex_likes_path("531515355", "38903142", (yandex_mark_t)7, true, path,
+                             sizeof(path)) == 0U);
+    assert(path[0] == '\0');
 }
 
 static void test_only_digits_are_ever_put_in_the_path(void)
@@ -23,15 +45,17 @@ static void test_only_digits_are_ever_put_in_the_path(void)
     /* Both ids come out of the API's own answers. Anything else means the
      * answer was not the one we take it for, and the request is not sent at
      * all rather than sent with an escaped guess in it. */
-    assert(yandex_likes_path("531515355", "38903142; drop", true, path, sizeof(path)) == 0U);
+    assert(yandex_likes_path("531515355", "38903142; drop", YANDEX_MARK_LIKE, true, path,
+                             sizeof(path)) == 0U);
     assert(path[0] == '\0');
-    assert(yandex_likes_path("../admin", "38903142", true, path, sizeof(path)) == 0U);
-    assert(yandex_likes_path("531515355", "", true, path, sizeof(path)) == 0U);
-    assert(yandex_likes_path(NULL, "38903142", true, path, sizeof(path)) == 0U);
+    assert(yandex_likes_path("../admin", "38903142", YANDEX_MARK_LIKE, true, path, sizeof(path)) == 0U);
+    assert(yandex_likes_path("531515355", "", YANDEX_MARK_LIKE, true, path, sizeof(path)) == 0U);
+    assert(yandex_likes_path(NULL, "38903142", YANDEX_MARK_LIKE, true, path, sizeof(path)) == 0U);
     /* And a path that will not fit is refused, not clipped: a truncated id
      * names a different track. */
     char tiny[24];
-    assert(yandex_likes_path("531515355", "38903142", true, tiny, sizeof(tiny)) == 0U);
+    assert(yandex_likes_path("531515355", "38903142", YANDEX_MARK_LIKE, true, tiny,
+                             sizeof(tiny)) == 0U);
     assert(tiny[0] == '\0');
 }
 
@@ -70,6 +94,7 @@ static void test_an_answer_without_an_account_is_refused(void)
 int main(void)
 {
     test_the_two_endpoints_spell_the_parameter_differently();
+    test_the_dislike_is_the_same_shape_of_url();
     test_only_digits_are_ever_put_in_the_path();
     test_the_account_id_is_read_out_of_the_status_answer();
     test_an_answer_without_an_account_is_refused();

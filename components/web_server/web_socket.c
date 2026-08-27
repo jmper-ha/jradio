@@ -179,6 +179,8 @@ static void write_player(web_json_writer_t *writer,
     if (player->track_likeable) {
         web_json_literal(writer, ",\"liked\":");
         web_json_literal(writer, player->track_liked ? "true" : "false");
+        web_json_literal(writer, ",\"disliked\":");
+        web_json_literal(writer, player->track_disliked ? "true" : "false");
     }
     web_json_literal(writer, ",\"error\":");
     web_json_string(writer, player->error);

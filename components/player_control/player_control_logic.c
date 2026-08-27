@@ -92,6 +92,7 @@ bool player_snapshot_equal(const player_snapshot_t *left,
            left->wifi_rssi_dbm == right->wifi_rssi_dbm &&
            left->track_likeable == right->track_likeable &&
            left->track_liked == right->track_liked &&
+           left->track_disliked == right->track_disliked &&
            memcmp(left->error, right->error, sizeof(left->error)) == 0;
 }
 
@@ -225,15 +226,20 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
         return state->active_item_index > 0U ? step : PLAYER_OPERATION_NONE;
     }
     case PLAYER_COMMAND_TOGGLE_LIKE:
+    case PLAYER_COMMAND_TOGGLE_DISLIKE:
         /* Only a track that belongs to an account can carry a mark, and only
          * while one is on the air: the mark names the track, not the station
          * that handed it out. Paused counts - the track is still the one being
-         * listened to. */
+         * listened to. Both marks answer to the same conditions, so they are
+         * decided together and only the operation differs. */
         if (state->active_source != AUDIO_SOURCE_YANDEX) return PLAYER_OPERATION_INVALID;
-        return state->playback_state == PLAYER_PLAYBACK_PLAYING ||
-                       state->playback_state == PLAYER_PLAYBACK_PAUSED
-                   ? PLAYER_OPERATION_TOGGLE_LIKE
-                   : PLAYER_OPERATION_INVALID;
+        if (state->playback_state != PLAYER_PLAYBACK_PLAYING &&
+            state->playback_state != PLAYER_PLAYBACK_PAUSED) {
+            return PLAYER_OPERATION_INVALID;
+        }
+        return command->kind == PLAYER_COMMAND_TOGGLE_DISLIKE
+                   ? PLAYER_OPERATION_TOGGLE_DISLIKE
+                   : PLAYER_OPERATION_TOGGLE_LIKE;
     case PLAYER_COMMAND_TRACK_FINISHED:
         // Only USB has tracks that end. A radio stream that stops has failed
         // and must not silently jump to another station.

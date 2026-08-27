@@ -95,6 +95,19 @@
               <path d="M12 20.3 4.6 12.9a4.6 4.6 0 1 1 6.5-6.5l.9.9.9-.9a4.6 4.6 0 1 1 6.5 6.5Z"/>
             </svg>
           </button>
+          <button id="dislike-track" class="dislike-track" type="button" data-command="player.dislike"
+                  hidden aria-label="Не нравится" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M12 20.3 4.6 12.9a4.6 4.6 0 1 1 6.5-6.5l.9.9.9-.9a4.6 4.6 0 1 1 6.5 6.5Z"/>
+              <!-- Two copies of one line: the wide one is painted in the
+                   button's own background and knocks a gap out of the heart,
+                   the thin one is the bar. Without the gap the two outlines
+                   touch and read as a smudge, which is the same reason the
+                   device's bitmap erases before it strikes. -->
+              <path class="slash-gap" d="M4.5 4.5 19.5 19.5"/>
+              <path class="slash" d="M4.5 4.5 19.5 19.5"/>
+            </svg>
+          </button>
           <button id="next-track" class="next-track" type="button" data-command="player.next"
                   hidden aria-label="Следующий трек">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">

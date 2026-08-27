@@ -84,7 +84,7 @@ class Element {
 const ids = [
   'socket-state', 'playlist-link', 'source-tabs', 'mode-label', 'playback-state',
   'track-title', 'track-artist', 'track-context', 'play-toggle', 'next-track',
-  'like-track', 'previous-item', 'next-item',
+  'like-track', 'dislike-track', 'previous-item', 'next-item',
   'track-cover', 'track-progress', 'track-elapsed', 'track-total',
   'progress-rail', 'progress-fill', 'progress-seek',
   'volume-control', 'volume-input', 'volume-value',
@@ -92,7 +92,8 @@ const ids = [
   'list-title', 'list-count', 'list-items', 'list-empty',
 ];
 const buttonIds = new Set([
-  'play-toggle', 'next-track', 'like-track', 'previous-item', 'next-item',
+  'play-toggle', 'next-track', 'like-track', 'dislike-track', 'previous-item',
+  'next-item',
 ]);
 const elements = Object.fromEntries(ids.map((id) => [
   `#${id}`,
@@ -391,6 +392,15 @@ assert.equal(elements['#like-track'].attributes['aria-pressed'], 'false');
 elements['#like-track'].emit('click');
 assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.like');
 
+/* The rejection appears and disappears with the like, because the device sends
+   the two together: one test of "does this track belong to a library" decides
+   both buttons. */
+assert.equal(elements['#dislike-track'].hidden, false);
+assert.equal(elements['#dislike-track'].classList.values.has('is-disliked'), false);
+assert.equal(elements['#dislike-track'].attributes['aria-pressed'], 'false');
+elements['#dislike-track'].emit('click');
+assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.dislike');
+
 /* The device answers with the mark it actually got, so the heart fills in only
    once Yandex has taken it - never on the press alone. */
 sendEvent(second, {
@@ -401,11 +411,37 @@ sendEvent(second, {
 });
 assert.equal(elements['#like-track'].classList.values.has('is-liked'), true);
 assert.equal(elements['#like-track'].attributes['aria-pressed'], 'true');
+assert.equal(elements['#dislike-track'].classList.values.has('is-disliked'), false);
+
+/* And the other way: the two marks exclude each other, so the frame that says
+   one is set says the other is not, and the browser draws exactly what it was
+   told rather than working it out. */
+sendEvent(second, {
+  type: 'player.update', revision: 5, active_source: 'yandex',
+  player: {state: 'playing', mode: 'ЯМузыка', artist: 'Des Rocs',
+           title: 'Never Ending Moment', context: 'Моя волна', codec: 'MP3',
+           bitrate_kbps: 320, sample_rate_hz: 44100, error: '',
+           liked: false, disliked: true},
+});
+assert.equal(elements['#like-track'].classList.values.has('is-liked'), false);
+assert.equal(elements['#dislike-track'].classList.values.has('is-disliked'), true);
+assert.equal(elements['#dislike-track'].attributes['aria-pressed'], 'true');
+
+/* A device that sends only the like - an older one, or one whose frame lost
+   the field - still draws a heart rather than nothing at all. */
+sendEvent(second, {
+  type: 'player.update', revision: 6, active_source: 'yandex',
+  player: {state: 'playing', mode: 'ЯМузыка', artist: 'Des Rocs',
+           title: 'Never Ending Moment', context: 'Моя волна', codec: 'MP3',
+           bitrate_kbps: 320, sample_rate_hz: 44100, error: '', liked: true},
+});
+assert.equal(elements['#like-track'].hidden, false);
+assert.equal(elements['#dislike-track'].classList.values.has('is-disliked'), false);
 
 /* Stopped, there is nothing to skip. The button stays in place rather than
    disappearing, so the controls do not move under the cursor. */
 sendEvent(second, {
-  type: 'player.update', revision: 5, active_source: 'yandex',
+  type: 'player.update', revision: 7, active_source: 'yandex',
   player: {state: 'stopped', mode: 'ЯМузыка', artist: '', title: '',
            context: 'Моя волна', codec: '', bitrate_kbps: 0,
            sample_rate_hz: 0, error: ''},
@@ -414,14 +450,16 @@ assert.equal(elements['#next-track'].hidden, false);
 assert.equal(elements['#next-track'].disabled, true);
 /* And with nothing playing there is no track to mark either. */
 assert.equal(elements['#like-track'].hidden, true);
+assert.equal(elements['#dislike-track'].hidden, true);
 
 /* Back on the radio it goes away again. */
 sendEvent(second, {
-  type: 'player.update', revision: 6, active_source: 'internet_radio',
+  type: 'player.update', revision: 8, active_source: 'internet_radio',
   player: player('Радио снова'),
 });
 assert.equal(elements['#next-track'].hidden, true);
 assert.equal(elements['#like-track'].hidden, true);
+assert.equal(elements['#dislike-track'].hidden, true);
 
 /* The catalog is a list, so the two track keys are back - they move the
    playing station along it, exactly as the buttons on the front do. */
@@ -438,7 +476,7 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
      diffs its snapshot and broadcasts on every change, so a second counter
      would push a frame a second to every open browser. */
   sendEvent(second, {
-    type: 'player.update', revision: 7, active_source: 'usb',
+    type: 'player.update', revision: 9, active_source: 'usb',
     player: {state: 'playing', mode: 'USB-накопитель', artist: 'Kaleo',
              title: 'Way Down We Go', context: '/usb0/Kaleo', codec: 'MP3',
              bitrate_kbps: 320, sample_rate_hz: 44100, error: ''},
@@ -519,7 +557,7 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
   // With nothing playing there is nothing to ask about, so the poll goes
   // quiet instead of running all night in a forgotten tab.
   sendEvent(second, {
-    type: 'player.update', revision: 8, active_source: 'usb',
+    type: 'player.update', revision: 10, active_source: 'usb',
     player: {state: 'stopped', mode: 'USB-накопитель', artist: '', title: '',
              context: '/usb0/Kaleo', codec: '', bitrate_kbps: 0,
              sample_rate_hz: 0, error: ''},
@@ -536,7 +574,7 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
   /* The knob on the front of the device moves the volume and nothing else
      would tell the browser, which is the whole reason the settings travel over
      the socket. */
-  sendEvent(second, {type: 'settings.update', revision: 9, settings: {volume: 30}});
+  sendEvent(second, {type: 'settings.update', revision: 11, settings: {volume: 30}});
   assert.equal(elements['#volume-input'].value, '30');
   assert.equal(elements['#volume-value'].textContent, '30');
 
@@ -547,7 +585,7 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
   assert.equal(elements['#volume-value'].textContent, '80');
   assert.equal(progressCalls.length, beforeVolume);
   // And a push landing mid-drag must not pull the handle out from under it.
-  sendEvent(second, {type: 'settings.update', revision: 10, settings: {volume: 31}});
+  sendEvent(second, {type: 'settings.update', revision: 12, settings: {volume: 31}});
   assert.equal(elements['#volume-input'].value, '80');
 
   elements['#volume-input'].emit('change');

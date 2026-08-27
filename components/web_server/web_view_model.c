@@ -238,6 +238,7 @@ uint32_t web_view_snapshot_changes(const player_snapshot_t *previous,
         previous->wifi_rssi_dbm != current->wifi_rssi_dbm ||
         previous->track_likeable != current->track_likeable ||
         previous->track_liked != current->track_liked ||
+        previous->track_disliked != current->track_disliked ||
         memcmp(previous->error, current->error, sizeof(previous->error)) != 0) {
         changes |= WEB_VIEW_SECTION_PLAYER;
     }

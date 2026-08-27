@@ -18,14 +18,14 @@ output.
 | **Internet radio** | works | Your own station list, the track name straight off the air, reconnection when a stream drops |
 | **Music from a USB drive** | works | Walk through folders, tags, cover art, scrubbing, moves on to the next track |
 | **Music from an SD card** | works | The same; the card is recognised when its source is entered |
-| **Yandex Music** | works | "My wave" and your account's stations, album art, next track and the like mark. Can be taken off the home screen |
+| **Yandex Music** | works | "My wave" and your account's stations, album art, next track, like and dislike. Can be taken off the home screen |
 | **Web interface** | works | Player with cover art, scrubbing, volume and track keys, the device settings, station-list editor, file browsing, Wi-Fi, linking Yandex Music |
 | **Clock** | works | Time from the internet, on every screen |
 | **Volume** | works | On the knob, remembered across restarts |
 | **Autoplay** | works | Starts whatever was playing when the power went off |
 | **Cover art** | works | From the file's tag, from a `cover.jpg` beside the music, from Yandex |
 | **Interface language** | partly | The switch is there, but it only changes the labels on the settings screen itself |
-| **Likes in Yandex Music** | partly | "Like" is there - on F3 and in the web interface; "dislike" is not |
+| **Likes in Yandex Music** | works | "Like" and "dislike" - on F3 and in the web interface |
 | **Yandex Music categories** | not built | Only the account's own stations are shown; there is no general catalogue of genres, moods and epochs |
 | **Bluetooth, FM, DLNA** | not built | They have no menu entries: the device only shows what it can actually do |
 
@@ -129,8 +129,8 @@ same list the phone app shows.
 **What you can do.** Play a station, pause it, skip to the next track - with F4
 on the device or with the button in the web interface. There is no
 previous-track button: a station only moves forward, and there is no going back
-to a track already played, which is why F3 does something else here - it puts
-the "like" mark on the playing track and takes it off again.
+to a track already played, which is why F3 does something else here - it carries
+both marks on the playing track, "like" and "dislike".
 
 **The like mark.** The same one the app has: the track joins your liked tracks
 or leaves them. On the player screen a heart beside the volume shows it -
@@ -139,6 +139,23 @@ comes from Yandex with the track itself, so the heart is solid for songs marked
 from the phone too. It fills in only after the service has answered, never on
 the press alone: otherwise the screen would show something the account does not
 have. The same heart is in the web interface.
+
+**The dislike.** The same F3, pressed twice: the track joins your rejected ones
+and the station stops offering it. The heart is struck through. Any further
+press of that key takes it back - single or double, because while a track is
+rejected the key can do only one thing and that is undo it. The single press now
+lands a third of a second late, which is how long the key waits for a possible
+second one; on a mark nothing is waiting for, it is not felt.
+
+In the web interface the dislike is a button of its own beside the heart: there
+is room for both, and no reason to make one press mean two things. The two marks
+exclude each other - setting one clears the other - and that is how Yandex
+itself behaves, not only this end.
+
+Yandex does not hand a rejected track back, so there is nothing to tell it about
+the mark afterwards: on the device it is visible only while the track you
+rejected is still playing. Nothing is lost by that - next time the song simply
+is not there.
 
 **The device tells the station what you listened to.** What you put on, what
 played to the end, what you skipped - the same events the phone app sends.
@@ -332,7 +349,8 @@ no npm and no bundler.
 
 WebSocket commands: `player.play`, `player.pause`, `player.toggle`,
 `player.next`, `player.previous_item`, `player.next_item`, `player.seek`,
-`player.like`, `source.select`, `list.select`, `browse.up`, `wifi.save`. Live
+`player.like`, `player.dislike`, `source.select`, `list.select`, `browse.up`,
+`wifi.save`. Live
 state arrives as diffs - `player`, `list`, `wifi`, `settings`; anything large -
 the playlist, media directories - goes over REST, because it does not fit in a
 frame and must not spend internal SRAM.

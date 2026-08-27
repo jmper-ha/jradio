@@ -36,3 +36,4 @@ extern const lv_image_dsc_t ui_feed_icon_settings_48;
 extern const lv_image_dsc_t ui_feed_icon_volume_16;
 extern const lv_image_dsc_t ui_feed_icon_heart_16;
 extern const lv_image_dsc_t ui_feed_icon_heart_filled_16;
+extern const lv_image_dsc_t ui_feed_icon_heart_slash_16;

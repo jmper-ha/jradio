@@ -16,7 +16,7 @@
  * drag in LVGL: the layout is arithmetic, and the host tests compile it. */
 
 #define UI_FONT_CYRILLIC_14_LINE_H 19
-#define UI_FONT_CYRILLIC_20_LINE_H 23
+#define UI_FONT_CYRILLIC_20_LINE_H 24
 
 /* Two levels, so the argument is expanded before it is pasted: the roles below
  * are given a size macro, not a literal. */

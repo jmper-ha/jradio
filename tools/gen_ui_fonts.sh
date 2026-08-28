@@ -9,22 +9,36 @@
 # Usage:
 #     bash tools/gen_ui_fonts.sh <size> [unicode-ranges]
 #
-# The default range is what the 14 px face carries: ASCII plus Cyrillic
-# through the historic block. The 20 px face was built with the narrower
-# 0x0400-0x045F, which covers Russian and its neighbours and nothing more -
-# each generated file records in its own header what it was built with.
+# The default range is the UI's own language plus what the device only reads
+# and never wrote: file names off a drive, ICY titles, tags. Those arrive in
+# whatever alphabet the album was released in, so the accented Latin blocks and
+# the punctuation a tagger reaches for are as necessary as the Cyrillic - a
+# character with no glyph is drawn as a box, which is how the German album on
+# the test drive read as damaged rather than as unsupported.
+#
+# 0x0300-0x030F earns its place for a subtler reason. A name can arrive
+# decomposed - "u" followed by a combining diaeresis rather than the single
+# character - and FATFS hands it over exactly as it was written. The converter
+# gives those marks zero advance and a negative offset, so LVGL draws them back
+# over the letter before and the pair reads correctly with no composition step.
+#
+# The default deliberately leaves the Cyrillic bound out: the two existing
+# faces do not agree on it, and neither can be changed without moving rows on
+# every screen. 0x0460-0x048F alone raises the 20 px line height from 23 to 26.
+# Pass the range in full when regenerating one of them - each generated file
+# records in its own header what it was built with.
 #
 # lv_font_conv comes from npm and npx will fetch it on first use, so the very
 # first run needs the network.
 set -euo pipefail
 
 if [ $# -lt 1 ]; then
-    sed -n '2,20p' "$0" >&2
+    sed -n '2,32p' "$0" >&2
     exit 2
 fi
 
 size=$1
-ranges=${2:-0x20-0x7F,0x0400-0x052F}
+ranges=${2:-0x20-0x7F,0xA0-0x17F,0x0300-0x030F,0x2010-0x2027,0x2116,0x0400-0x052F}
 project_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 font=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 out="${project_dir}/components/ui/ui_font_cyrillic_${size}.c"

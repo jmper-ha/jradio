@@ -54,10 +54,13 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
 #if (TFT_WIDTH == 320 && TFT_HEIGHT == 240) || (TFT_WIDTH == 240 && TFT_HEIGHT == 320)
     /* Both panels so far are laid out for the same four faces, and these are
      * the generated fonts' own line heights. A face regenerated at another
-     * size has to come through here. */
+     * size has to come through here - and so does one regenerated at the same
+     * size over a wider set of characters, which is how the 20 px face went
+     * from 23 to 24: a capital carrying an accent is taller than any letter
+     * the face held before. */
     assert(UI_FONT_BODY_PX == 14 && UI_FONT_TITLE_PX == 20);
     assert(UI_FONT_ICON_PX == 24 && UI_FONT_DISPLAY_PX == 48);
-    assert(UI_SRC_LINE_H == 19 && UI_SRC_TRACK_H == 23);
+    assert(UI_SRC_LINE_H == 19 && UI_SRC_TRACK_H == 24);
 #endif
 }
 

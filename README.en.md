@@ -304,6 +304,19 @@ precisely because what is drawn with them is not text but the symbol block
 bundled into it, and a missing `CONFIG_LV_FONT_MONTSERRAT_<size>` fails the
 build with a message instead of failing at the link.
 
+The faces cover more than the interface's own language. The UI is Russian, but
+file names, ICY titles and tags arrive as whoever wrote them wrote them, so
+accented Latin reaches the screen as readily as Cyrillic - and a character with
+no glyph is drawn by LVGL as a box, which makes an album read as damaged rather
+than as unsupported. So the faces carry Latin-1 Supplement, Latin Extended-A,
+the punctuation a tagger reaches for, and the combining marks 0x0300-0x030F.
+The last of those because a name can arrive decomposed - "u" followed by a
+separate diaeresis - and FATFS hands it over exactly as it was written. The
+converter gives such a mark zero advance and a negative offset, so LVGL draws it
+back over the letter before it and nothing has to be composed. The Cyrillic
+bound is the one thing left where it was: the 14 px and 20 px faces do not agree
+on it, and 0x0460-0x048F by itself raises the 20 px line height from 23 to 26.
+
 Each face's line height is copied into
 [`ui_font_metrics.h`](components/ui/include/ui_font_metrics.h): the layout has
 to be computed before there is a program, and a font knows its own metrics only
@@ -311,7 +324,9 @@ once LVGL is up. `ui.c` checks the copy against the font at start-up and logs
 the disagreement. Checked both ways: a face no layout selects is dropped by the
 linker - a build carrying a spare 18 px face came out the same size to the byte
 - and pointing the panel at that face instead moves the line height to 24 and
-every row spacing with it.
+every row spacing with it. It earned its keep at once: widening the character
+set moved the 20 px face from 23 to 24, and the row spacings followed on their
+own.
 
 The same file names the parts this board does not carry: an FM tuner and
 Bluetooth. Their blocks are commented out rather than deleted - the file should

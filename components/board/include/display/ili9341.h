@@ -12,8 +12,9 @@
 #define TFT_RGB_ORDER_BGR 1
 
 /* This panel's idle state is already the right way round; nothing sends INVON.
- * Named anyway, because the controller next to it in the catalogue needs the
- * opposite value and a missing macro is easier to spot than a missing call. */
+ * Named anyway rather than left implicit: inversion is a per-panel fact that
+ * has to be looked at on a screen, and a macro every profile answers is easier
+ * to spot than a call one of them forgot to make. */
 #define TFT_INVERT_COLOR 0
 
 /* Geometry and the MADCTL baseline, both decided by which of the two panels

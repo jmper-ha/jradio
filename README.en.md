@@ -270,11 +270,13 @@ own in
 driver file in `components/board/display/`; `board.c` does not know which one
 was selected - it calls `board_panel_create()` and works through the common
 esp_lcd interface from there. Besides the ILI9341 the catalogue carries the
-ST7789 320x240, in two orientations as well: its driver ships inside ESP-IDF,
-while its profile was written from the datasheet and has not been seen on a
-panel yet - [`st7789.h`](components/board/include/display/st7789.h) says which
-of its constants still need checking against a screen. The driver that was not
-selected costs no flash at all.
+ST7789 320x240, in two orientations as well; its driver ships inside ESP-IDF,
+so it needs no dependency of its own. The landscape profile was taken off a
+panel: RGB colour order, inversion off - against the usual advice for an
+ST7789, which with INVON renders the whole screen as a negative - and one
+horizontal mirror. Portrait has not been built yet and
+[`st7789.h`](components/board/include/display/st7789.h) marks it as derived
+rather than measured. The driver that was not selected costs no flash at all.
 
 The same file names the parts this board does not carry: an FM tuner and
 Bluetooth. Their blocks are commented out rather than deleted - the file should
@@ -298,9 +300,9 @@ receiver module of its own.
 | microSD MOSI | 42 | | | |
 
 The display's RST is tied to the ESP32's reset and takes no GPIO. On modules
-that bring RST out separately - the usual case for an ST7789, which comes up
-initialised only some of the time without it - the pin is declared by a
-`TFT_RESET_GPIO` line; `board_options.h` carries one, commented out.
+that bring RST out separately the pin is declared by a `TFT_RESET_GPIO` line;
+`board_options.h` carries one, commented out. The ST7789 tried here did not
+need one, though these boards are known to.
 
 Worth knowing if you build the board:
 

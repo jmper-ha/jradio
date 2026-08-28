@@ -731,13 +731,6 @@ esp_err_t board_display_draw_rgb565(int x1, int y1, int x2, int y2, const uint16
  * Decoded a band at a time straight into the fill buffer, so the picture
  * needs no buffer of its own - the runs arrive in raster order, which is the
  * order the bands are drawn in. */
-/* A picture of the wrong shape is not caught by the decoder: it fills the
- * panel row by row and simply comes out sheared, which looks like a display
- * fault rather than like a stale asset. */
-_Static_assert(BOOT_SPLASH_WIDTH == TFT_WIDTH && BOOT_SPLASH_HEIGHT == TFT_HEIGHT,
-               "the boot splash was drawn for a different panel shape - rerun "
-               "tools/gen_boot_splash.py");
-
 static esp_err_t board_display_splash(void)
 {
     size_t pair = 0;

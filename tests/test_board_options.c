@@ -76,19 +76,25 @@ static void test_the_orientation_decides_the_geometry_and_nothing_else(void)
     /* The same panel either way up: the orientation decides which of the two
      * numbers is the width and buys no pixels. Written as the sum and the
      * product rather than as two comparisons, so a profile that shrank the
-     * panel while swapping it fails here instead of looking plausible. */
+     * panel while swapping it fails here instead of looking plausible.
+     *
+     * Both parts in the catalogue happen to be 320x240 panels; a part of some
+     * other size would state its own pair here rather than share this one. */
+#if DISPLAY == DISPLAY_ILI9341_320_240 || DISPLAY == DISPLAY_ILI9341_240_320 || \
+    DISPLAY == DISPLAY_ST7789_320_240 || DISPLAY == DISPLAY_ST7789_240_320
     assert(TFT_WIDTH + TFT_HEIGHT == 560);
     assert(TFT_WIDTH * TFT_HEIGHT == 76800);
+#endif
 
     /* Portrait is how the controller addresses the panel natively; landscape
      * exists only while MADCTL MV swaps the axes. Either statement alone would
      * pass on a profile that set the geometry and forgot the swap. */
     assert((TFT_WIDTH > TFT_HEIGHT) == (TFT_SWAP_XY != 0));
 #if BOARD_DISPLAY_PORTRAIT
-    assert(TFT_WIDTH == 240 && TFT_HEIGHT == 320);
+    assert(TFT_HEIGHT > TFT_WIDTH);
     assert(TFT_SWAP_XY == 0);
 #else
-    assert(TFT_WIDTH == 320 && TFT_HEIGHT == 240);
+    assert(TFT_WIDTH > TFT_HEIGHT);
     assert(TFT_SWAP_XY == 1);
 #endif
 

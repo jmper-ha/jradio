@@ -278,6 +278,23 @@ horizontal mirror. Portrait has not been built yet and
 [`st7789.h`](components/board/include/display/st7789.h) marks it as derived
 rather than measured. The driver that was not selected costs no flash at all.
 
+The screen layout lives in [`ui_layout.h`](components/ui/include/ui_layout.h)
+and is checked by a host test. Everything that follows from the panel's size -
+how many rows the list and Settings hold, how wide the level meter's blocks are,
+how many tiles the carousel shows - is computed from `TFT_WIDTH` and
+`TFT_HEIGHT` rather than picked per orientation. The numbers that were placed by
+eye on a screen (the carousel axis, the player's rows, the footer) sit in one
+file per panel shape under [`layout/`](components/ui/include/layout/): deriving
+them was tried and does not work - centring the carousel misses the two measured
+positions by 7 px and 3 px, in opposite directions.
+
+A panel of a new size is a copy of that file and one line in the dispatcher; a
+shape with no file fails the build with a message saying what to create. Checked
+against a 480x320 panel that does not exist: the list gets 7 rows instead of 5,
+Settings 9 instead of 6, the carousel 5 tiles, and the meter's blocks 17 px
+instead of 11. Font sizes stay as they are - a much larger panel would want a
+design pass of its own.
+
 The same file names the parts this board does not carry: an FM tuner and
 Bluetooth. Their blocks are commented out rather than deleted - the file should
 answer "can this firmware drive one" with a no as well as with a yes. For

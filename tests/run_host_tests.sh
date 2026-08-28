@@ -125,6 +125,7 @@ run_test board_audio_health tests/test_board_audio_health.c \
 run_test board_audio_startup tests/test_board_audio_startup.c \
     components/board/board_audio_startup.c
 run_test board_options tests/test_board_options.c
+run_test ui_layout tests/test_ui_layout.c
 run_test board_input tests/test_board_input.c components/board/board_input.c
 run_test board_button_gesture tests/test_board_button_gesture.c components/board/board_input.c
 run_test hls_playlist tests/test_hls_playlist.c \

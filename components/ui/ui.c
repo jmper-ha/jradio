@@ -24,6 +24,7 @@
 #include "ui_draw_buffer.h"
 #include "ui_font_cyrillic_14.h"
 #include "ui_font_cyrillic_20.h"
+#include "ui_layout.h"
 #include "ui_menu.h"
 #include "ui_feed_icon_bitmaps.h"
 #include "ui_feed_icons.h"
@@ -55,19 +56,6 @@
  * around 5.6 KB, so this leaves roughly 2.5 KB of margin. */
 #define UI_TASK_STACK_SIZE 8192
 #define UI_TASK_PRIORITY 4
-/* Five rows of 20 px text. The count follows from the size: at 14 px six rows
- * fitted, but a name read from across the room did not, and the row pitch a
- * legible face needs leaves room for five above the scroll bar.
- *
- * Portrait has 80 px more to spend at the same pitch, which is two more rows
- * with the rule and the position bar still clearing the bottom edge. Nothing
- * else changes: station_list_window_top() already takes the count it has to
- * scroll within as an argument. */
-#if BOARD_DISPLAY_PORTRAIT
-#define UI_STATION_LIST_MAX_ROWS 7U
-#else
-#define UI_STATION_LIST_MAX_ROWS 5U
-#endif
 
 /* The screens share one palette, stated here rather than repeated as literals.
  * The player screen defined it by accretion; the others were on a different
@@ -98,196 +86,22 @@
  * cursor could not be found without moving it. This is well clear of both. */
 #define UI_COLOR_CURSOR 0x3F6187
 
-/* Height of the status strip every screen carries. */
-#define UI_STRIP_H 26
-
-/* The margin every full-width block keeps, and what is left of the panel
- * between two of them. Written against TFT_WIDTH so one layout serves both
- * orientations; on a landscape board it is the 300 that used to be typed at
- * each of the eleven use sites. */
-#define UI_CONTENT_X 10
-#define UI_CONTENT_W (TFT_WIDTH - 2 * UI_CONTENT_X)
-
-/* The strip's three slots, placed from the panel's own width rather than from
- * numbers measured once on a 320 px panel: the name on the left margin, the
- * clock centred, the signal group pinned to the right with its reading beside
- * it. Landscape works out to 10 / 116 wide, 130, 252 and 275 - exactly what
- * was there before - so nothing on this board moves. */
-#define UI_STRIP_CONTEXT_X 10
-#define UI_STRIP_CLOCK_W 60
-#define UI_STRIP_CLOCK_X ((TFT_WIDTH - UI_STRIP_CLOCK_W) / 2)
-/* Room for three digits of RSSI and a minus, clear of the right edge. */
-#define UI_STRIP_RSSI_X (TFT_WIDTH - 45)
-/* Four bars at a pitch of 5, ending just before the reading. */
-#define UI_STRIP_BARS_X (UI_STRIP_RSSI_X - 23)
-/* Stops short of the clock instead of running under it - which is what a
- * fixed 116 would do once the panel is only 240 wide. */
-#define UI_STRIP_CONTEXT_W (UI_STRIP_CLOCK_X - UI_STRIP_CONTEXT_X - 4)
-
-/* Home screen carousel. Every icon is a 24x24 design scaled to one of three
- * sizes, so a single axis is enough - the old row needed a per-glyph vertical
- * inset because each FontAwesome symbol had its own height, and the inset only
- * ever fitted one of them.
- *
- * The five centres are symmetric about 160 with 16 px of margin at both ends;
- * the row used to start 4 px from the left and 30 from the right, which read
- * as the whole thing sliding off the screen. */
-#define UI_FEED_CENTER_X (TFT_WIDTH / 2)
-#define UI_FEED_INNER_DX 68
-#define UI_FEED_OUTER_DX 132
-#define UI_FEED_TILE 84
-#if BOARD_DISPLAY_PORTRAIT
-/* Three tiles, not five: the outer pair sits 132 px from the centre, and on a
- * 240 px panel that is off the screen on both sides. The ring itself is
- * unchanged - the same items in the same order, wrapping the same way - it is
- * only how many of them are in view. The axis drops to the middle of the
- * taller screen. */
-#define UI_FEED_SLOTS 3
-#define UI_FEED_AXIS_Y 168
-#else
-#define UI_FEED_SLOTS 5
-#define UI_FEED_AXIS_Y 138
-#endif
-
-#define UI_FEED_ICON_LARGE_PX 48
-#define UI_FEED_ICON_MEDIUM_PX 32
-#define UI_FEED_ICON_SMALL_PX 24
-/* The outermost slot has to clear the edge. Only the centre is tile-sized;
- * the neighbours are exactly icon-sized, which is why this is measured
- * against the icon and not against UI_FEED_TILE. */
-#if UI_FEED_SLOTS == 3
-_Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 >= 4,
-               "the outermost carousel icon runs off the panel");
-#else
-_Static_assert(UI_FEED_CENTER_X - UI_FEED_OUTER_DX - UI_FEED_ICON_SMALL_PX / 2 >= 4,
-               "the outermost carousel icon runs off the panel");
-#endif
 /* Depth is carried by brightness as well as size: without it the middle icon
  * reads as the only lit one rather than as the middle of a ring. */
 #define UI_COLOR_FEED_NEAR 0x8FA8BC
 #define UI_COLOR_FEED_FAR 0x46586A
-/* Settings screen. Group headings carry the 20 px face and the fields under
- * them stay at 14, so the three groups read as the structure of the screen
- * rather than as six rows of equal weight.
- *
- * The pitch is what makes six rows fit above the notice line at 186, which is
- * the whole list at its longest: three headings plus the deepest group. It has
- * to clear the 20 px heading, and 24 px does - the same height the home
- * screen's rows use for the same face. */
-#define UI_SET_ROW_Y 36
-#define UI_SET_ROW_PITCH 25
-#define UI_SET_ROW_H 24
-/* The scroll chevrons sit in the right margin, and a row that carries a switch
- * stops short of them. A row that does not is full width and runs past: its
- * text is dotted long before it reaches the column, and giving it the same
- * stop would waste the width the longest field names need. */
-#define UI_SET_CHEVRON_X UI_CONTENT_W
-/* Text column of a row with a switch: the switch is 42 px at the left margin,
- * and the label starts after it. */
-#define UI_SET_SWITCH_TEXT_X 58
-/* The band along the bottom is the only place the device says how to reach its
- * web UI. It sits below everything else and never scrolls away - but it is the
- * last thing the cursor reaches, and a click there puts the address up as a QR
- * code, which is the only way a phone gets it without someone reading digits
- * out loud. */
-#define UI_SET_BAND_Y (TFT_HEIGHT - 30)
-#define UI_SET_BAND_H 30
-/* What the address keeps for itself, dotted past that. The hint on the right is
- * sized to its own text and pinned to the edge instead of taking a share: a
- * fixed width would either clip the words or steal room from the address, and
- * the one case that overruns 190 px - the setup AP, whose band names a network
- * as well as an address - is exactly the case the QR itself answers. */
-#if BOARD_DISPLAY_PORTRAIT
-/* Same share of the band as on the wider panel, so the hint on the right
- * keeps the room its words need. */
-#define UI_SET_BAND_ADDRESS_W 130
-/* No room for one, and nothing lost: see ui_web_address.h. */
-#define UI_SET_BAND_SHOW_SCHEME false
-#else
-#define UI_SET_BAND_ADDRESS_W 190
-#define UI_SET_BAND_SHOW_SCHEME true
-#endif
-#define UI_SET_BAND_PAD 12
+/* The dots under the carousel, dimmer again than the far icons. */
+#define UI_COLOR_FEED_DOT 0x33445A
 
-/* The QR code and the white card behind it. The card is the quiet zone: the
- * generator fills its canvas edge to edge whenever the modules divide into it
- * evenly, and a code that runs straight into the dark background is a code a
- * phone refuses to read. 18 px of white on every side is four modules at the
- * smallest scale either payload produces. */
-#define UI_QR_SIZE 144
-#define UI_QR_CARD 180
-#define UI_QR_CARD_Y 4
 /* The code covers the settings screen, and nothing on it moves - so unlike a
  * list there is no activity to measure, only how long it has been up. Long
  * enough for a phone to be fetched from another room, short enough that the
  * screen does not sit on a QR code all evening. */
 #define UI_QR_IDLE_TIMEOUT_MS 30000U
-
-/* The other home screen: the same items as a list. Eight rows of 24 px start
- * right under the strip and end at 222, which is every pixel the screen has -
- * the previous 27 px pitch fitted seven items and ran off the bottom as soon
- * as the SD card row appeared. The icon column is the carousel's 24 px bitmap,
- * so both home screens name an item the same way. */
-#define UI_MENU_ROW_Y (UI_STRIP_H + 4)
-#define UI_MENU_ROW_PITCH 24
-#define UI_MENU_ROW_H 24
-#define UI_MENU_ROW_X 6
-#define UI_MENU_ROW_W (TFT_WIDTH - 12)
-#define UI_MENU_ICON_X 12
-#define UI_MENU_TEXT_PAD 38
-
-/* One dot per item, so a ring of eight does not feel endless. */
-#define UI_FEED_DOT 6
-#define UI_FEED_DOT_PITCH 10
-#define UI_FEED_DOT_Y (TFT_HEIGHT - 40)
-#define UI_COLOR_FEED_DOT 0x33445A
-/* The last line of the screen, under the dots. */
-#define UI_FEED_NOTICE_Y (TFT_HEIGHT - 22)
-
-/* List screens: rows start straight under the strip, and a rule and the
- * position bar close the screen the way they close the player's. */
-#define UI_LIST_ROW_Y (UI_STRIP_H + 6)
-#define UI_LIST_ROW_PITCH 36
-#define UI_LIST_ROW_H 30
-/* Width the folder glyph reserves at the left of a row: 24 px of Montserrat 24
- * (its adv_w) plus the gap before the name. */
-#define UI_LIST_ICON_W 30
-/* Width the index reserves on a station row: two digits of the 20 px face
- * (12.7 px of advance each) and the gap before the name. A station row is
- * never a directory, so this and the folder mark never both apply; a file row
- * has no index and keeps the left edge it always had. */
-#define UI_LIST_NUMBER_W 34
-#define UI_LIST_RULE_Y (UI_LIST_ROW_Y + (int)UI_STATION_LIST_MAX_ROWS * UI_LIST_ROW_PITCH + 6)
-#define UI_LIST_PROGRESS_Y (UI_LIST_RULE_Y + 8)
-/* The empty-browser screen: a drive above the sentence that says what is wrong
- * with it, together in the middle of the space the rows leave behind. */
-#define UI_LIST_NOTICE_ICON 48
-#if BOARD_DISPLAY_PORTRAIT
-#define UI_LIST_NOTICE_ICON_Y 124
-#define UI_LIST_NOTICE_TEXT_Y 188
-#else
-#define UI_LIST_NOTICE_ICON_Y 84
-#define UI_LIST_NOTICE_TEXT_Y 148
-#endif
-
+/* How long a list waits with nothing on it before giving up and going back,
+ * and how long an idle station list stays open. */
 #define UI_RADIO_EMPTY_LIST_DELAY_MS 250U
 #define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
-/* What fits between the title and the notice line above the web band, and also
- * the whole list at its longest - so nothing scrolls today. The window and its
- * chevrons stay because the next field added would overflow again, and the
- * failure mode when it does is silent: rows past the end are drawn underneath
- * the notice, which is opaque and painted after them. Not clipped, covered. */
-#if BOARD_DISPLAY_PORTRAIT
-#define UI_SETTINGS_MAX_ROWS 9U
-#else
-#define UI_SETTINGS_MAX_ROWS 6U
-#endif
-/* The check the last overflow needed and did not have. A row past the notice
- * is invisible rather than clipped, so nothing about it looks wrong on screen
- * - the mistake has to be caught here or not at all. */
-_Static_assert(UI_SET_ROW_Y + (UI_SETTINGS_MAX_ROWS - 1U) * UI_SET_ROW_PITCH + UI_SET_ROW_H <=
-                   UI_SET_BAND_Y - 24,
-               "the last settings row runs under the notice line");
 
 static const char *TAG = "ui";
 static QueueHandle_t s_input_queue;
@@ -396,158 +210,7 @@ static lv_obj_t *s_source_progress;
 /* Same deal as the volume, and for the same reason: the panel follows the knob
  * on the very next detent, settings.csv follows once it stops turning. */
 #define UI_BRIGHTNESS_SETTLE_MS 1500U
-/* 20 blocks per channel: 20*11 + 19*3 = 277 px starting at x=30, so the row
- * ends at 307 on a 320 px panel. */
-#define UI_VU_SEGMENTS 20U
-/* The count is the meter's resolution and stays; only the block narrows on the
- * shorter axis. Twenty is also the number LVGL can afford to see change at
- * once - see the invalidation note in ui_update_vu_meter(). */
-#if BOARD_DISPLAY_PORTRAIT
-#define UI_VU_SEGMENT_W 8
-#define UI_VU_SEGMENT_GAP 2
-#else
-#define UI_VU_SEGMENT_W 11
-#define UI_VU_SEGMENT_GAP 3
-#endif
 
-/* Player screen layout, in device pixels.
- *
- * 320x240 leaves no room for guessing, so the numbers live together here
- * rather than scattered through the builder. A status strip carries what is
- * not about the music - clock, signal - and everything below it is the
- * playing item. The bottom row pairs the two things that answer "is it going
- * to keep playing, and how loud": buffer on the left, volume on the right.
- */
-#define UI_SRC_STATUS_H 26
-#define UI_SRC_ART_SIZE 96
-/* One line of each face, from the generated fonts' own line_height. Rows are
- * spaced by these rather than by eye, so nothing can overlap its neighbour. */
-#define UI_SRC_LINE_H 19
-#define UI_SRC_TRACK_H 23
-
-#if BOARD_DISPLAY_PORTRAIT
-/* The cover moves above the text instead of beside it. It has to: at 240 px
- * wide, a 96 px tile alongside would leave 130 for the name, and the name is
- * the one thing on this screen worth reading from across the room. Stacking
- * costs about a hundred pixels of height, which is exactly what the taller
- * panel gives back - so the cover keeps its 96 px and album_art is untouched.
- *
- * The tile sits on the left - inset from the margin rather than against it,
- * so it does not read as having fallen off the edge - and the three stream
- * readings take the column it leaves, stacked one per line and centred against
- * its height.
- * That is what pays for the rows below: the readings used to have a line of
- * their own under the performer, and giving it up is what lets the name, the
- * album and the performer breathe instead of being packed four deep.
- *
- * Those three rows are centred on the panel, not on the column beside the
- * cover - they are the width of the screen, and anything else reads as a
- * landscape screen that fell over. */
-#define UI_SRC_ART_X (UI_CONTENT_X + 10)
-#define UI_SRC_ART_Y 32
-#define UI_SRC_TEXT_X UI_CONTENT_X
-#define UI_SRC_TEXT_W UI_CONTENT_W
-/* Starts 10 px past the tile and runs to the right margin. */
-#define UI_SRC_STREAM_X (UI_SRC_ART_X + UI_SRC_ART_SIZE + 10)
-#define UI_SRC_STREAM_W (UI_CONTENT_X + UI_CONTENT_W - UI_SRC_STREAM_X)
-#define UI_SRC_STREAM_H (3 * UI_SRC_LINE_H)
-#define UI_SRC_STREAM_Y (UI_SRC_ART_Y + (UI_SRC_ART_SIZE - UI_SRC_STREAM_H) / 2)
-#define UI_SRC_ROW_TITLE 138
-#define UI_SRC_ROW_TRACK 162
-#define UI_SRC_ROW_ARTIST 192
-#define UI_SRC_RULE_TOP 226
-#define UI_SRC_VU_Y 234
-#else
-#define UI_SRC_ART_X 10
-#define UI_SRC_ART_Y 36
-#define UI_SRC_TEXT_X 118
-#define UI_SRC_TEXT_W 192
-/* The title shares the tile's top edge, which is what ties the two columns
- * together on the wide panel. */
-#define UI_SRC_ROW_TITLE UI_SRC_ART_Y
-#define UI_SRC_ROW_TRACK 58
-#define UI_SRC_ROW_ARTIST 86
-/* One line across the text column, under the performer. */
-#define UI_SRC_STREAM_X UI_SRC_TEXT_X
-#define UI_SRC_STREAM_W UI_SRC_TEXT_W
-#define UI_SRC_STREAM_H UI_SRC_LINE_H
-#define UI_SRC_STREAM_Y 108
-#define UI_SRC_RULE_TOP 144
-#define UI_SRC_VU_Y 155
-#endif
-/* The text block must clear the tile above it whichever way the two are
- * arranged - side by side it always does, stacked it is the thing to check. */
-_Static_assert(UI_SRC_ROW_TITLE >= UI_SRC_ART_Y + UI_SRC_ART_SIZE ||
-                   UI_SRC_TEXT_X >= UI_SRC_ART_X + UI_SRC_ART_SIZE,
-               "the player's text runs over its cover art");
-/* And so must the stream readings, which are beside the tile on one panel and
- * on the other side of it on the other. */
-_Static_assert(UI_SRC_STREAM_X >= UI_SRC_ART_X + UI_SRC_ART_SIZE ||
-                   UI_SRC_STREAM_X + UI_SRC_STREAM_W <= UI_SRC_ART_X ||
-                   UI_SRC_STREAM_Y >= UI_SRC_ART_Y + UI_SRC_ART_SIZE,
-               "the player's stream readings run over its cover art");
-
-#define UI_SRC_VU_BLOCK_H 10
-#define UI_SRC_VU_PITCH 18
-/* Where the meter starts, just past the L and R marks on the left margin. */
-#define UI_SRC_VU_X (UI_CONTENT_X + 20)
-/* Twenty blocks and nineteen gaps, and the right margin. The narrower block
- * in portrait is exactly what this asserts is necessary. */
-_Static_assert(UI_SRC_VU_X + (int)UI_VU_SEGMENTS * (UI_VU_SEGMENT_W + UI_VU_SEGMENT_GAP) -
-                       UI_VU_SEGMENT_GAP <=
-                   TFT_WIDTH - UI_CONTENT_X,
-               "the level meter runs off the panel");
-/* The two rules frame the meter, so the gap below is derived from the gap
- * above instead of being typed in again. Written out by hand they drifted to
- * 10 and 17 px, which read as the meter having slipped upwards. */
-#define UI_SRC_VU_GAP (UI_SRC_VU_Y - (UI_SRC_RULE_TOP + 1))
-#define UI_SRC_VU_BOTTOM (UI_SRC_VU_Y + UI_SRC_VU_PITCH + UI_SRC_VU_BLOCK_H)
-#define UI_SRC_RULE_BOTTOM (UI_SRC_VU_BOTTOM + UI_SRC_VU_GAP)
-/* Equalising the frame freed seven pixels; they go into the space around the
- * progress bar, which was pressed against the rule above it and the times
- * below. */
-#define UI_SRC_PROGRESS_Y (UI_SRC_RULE_BOTTOM + 8)
-/* A hairline while it only reports, twice that while it is being aimed: the
- * bar is the control in scrubbing mode, and a 4 px target is not one. It grows
- * about its own centre line, so the row it lives on does not shift. */
-#define UI_SRC_PROGRESS_H 4
-#define UI_SRC_PROGRESS_SEEK_H 8
-/* The footer, left to right: the buffer or the time on the left margin, the
- * like mark in the gap neither reading reaches, then the volume.
- *
- * The volume sits twelve pixels further right than it used to, which is where
- * the mark came from: it is a control, so it belongs beside the other one
- * rather than pushed out to an edge on its own. The numbers still end clear of
- * the 320 px edge - the bar runs to 268 and three digits to about 295.
- *
- * Portrait fits the same five things into 80 px less. Four of them are as
- * short as they can be - "01:24 / 03:52" is the longest reading the left slot
- * ever shows, and the mark, the icon and the number are fixed - so the bar is
- * the one that gives, at 44 px instead of 60. */
-#if BOARD_DISPLAY_PORTRAIT
-#define UI_SRC_FOOT_Y 290
-#define UI_SRC_LIKE_X 116
-#define UI_SRC_VOLUME_ICON_X 136
-#define UI_SRC_VOLUME_BAR_X 156
-#define UI_SRC_VOLUME_BAR_W 44
-#define UI_SRC_VOLUME_TEXT_X 206
-#else
-#define UI_SRC_FOOT_Y 214
-#define UI_SRC_LIKE_X 150
-#define UI_SRC_VOLUME_ICON_X 190
-#define UI_SRC_VOLUME_BAR_X 208
-#define UI_SRC_VOLUME_BAR_W 60
-#define UI_SRC_VOLUME_TEXT_X 274
-#endif
-/* Three digits of volume, and the right margin every other block keeps. */
-_Static_assert(UI_SRC_VOLUME_TEXT_X + 26 <= TFT_WIDTH,
-               "the player's volume reading runs off the panel");
-_Static_assert(UI_SRC_FOOT_Y + UI_SRC_LINE_H <= TFT_HEIGHT,
-               "the player's footer runs off the bottom of the panel");
-#define UI_SRC_PAUSE_SIZE 76
-#define UI_SRC_PAUSE_BAR_W 10
-#define UI_SRC_PAUSE_BAR_H 34
-#define UI_SRC_PAUSE_GAP 10
 static lv_obj_t *s_source_vu[2][UI_VU_SEGMENTS];
 /* Colour last written to each block, so an unchanged one is left alone; see
  * ui_update_vu() for why that matters so much. 0 is not a colour any block
@@ -1105,7 +768,7 @@ static void ui_set_state_line(const char *state, const char *artist)
 static void ui_set_stream_readings(const player_snapshot_t *snapshot)
 {
     char text[64];
-#if BOARD_DISPLAY_PORTRAIT
+#if UI_SRC_STREAM_LINES
     ui_radio_stream_lines(text, sizeof(text), snapshot->codec, snapshot->bitrate_kbps,
                           snapshot->sample_rate_hz);
 #else
@@ -2791,9 +2454,9 @@ static void ui_create_source_screen(void)
     lv_label_set_long_mode(s_source_status, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_source_status, lv_color_hex(UI_COLOR_DIM), 0);
 
-#if BOARD_DISPLAY_PORTRAIT
-    /* Centred as a column under a centred cover. Landscape reads the same
-     * three rows down their left edge beside the tile and sets nothing. */
+#if UI_SRC_TEXT_CENTRED
+    /* Centred as a column under a centred cover. A layout that reads the three
+     * rows down their left edge beside the tile sets nothing. */
     lv_obj_set_style_text_align(s_source_title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_align(s_source_artist, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_align(s_source_status, LV_TEXT_ALIGN_CENTER, 0);

@@ -43,12 +43,19 @@ at its use sites."
  * Display - TFT panel on SPI
  * ====================================================================== */
 
-/* The panel, and with it which way up it is mounted: DISPLAY_ILI9341_320_240
- * is the landscape module revision 1 is built with, DISPLAY_ILI9341_240_320
- * the same one stood on end. The choice lays out every screen in the firmware,
- * and it picks the boot splash to match - both are compiled in, so changing
- * this line needs no regeneration. */
+/* The panel, and with it which way up it is mounted. The choice lays out every
+ * screen in the firmware, and it picks the boot splash to match - both are
+ * compiled in, so changing this line needs no regeneration.
+ *
+ * One line, one panel: uncomment the one that is fitted and comment the rest.
+ * Each part appears twice because the orientation is part of the selection -
+ * _320_240 is the module lying down, _240_320 the same glass stood on end.
+ * See board_parts.h for the catalogue and display/<part>.h for what each
+ * choice decides. */
 #define DISPLAY DISPLAY_ILI9341_320_240
+/* #define DISPLAY DISPLAY_ILI9341_240_320 */
+/* #define DISPLAY DISPLAY_ST7789_320_240 */
+/* #define DISPLAY DISPLAY_ST7789_240_320 */
 
 /* SPI peripheral index: 2 selects SPI2, 3 selects SPI3. Mapped to the driver's
  * host enum in board.c, since the numbering of that enum is not the peripheral
@@ -60,8 +67,13 @@ at its use sites."
 #define TFT_MOSI_GPIO 11
 #define TFT_SCLK_GPIO 12
 /* No MISO: the panel is written to and never read back.
- * No RST pin either - the panel's reset is tied to the ESP32 reset line, so it
- * costs no GPIO and cannot be driven separately. */
+ * No RST pin either - the ILI9341 module's reset is tied to the ESP32 reset
+ * line, so it costs no GPIO and cannot be driven separately. Most ST7789
+ * breakouts instead bring RST out and need it driven: without it the
+ * controller comes up initialised only some of the time, which reads as an
+ * intermittently dead panel rather than as a missing wire. Wire it and
+ * uncomment this line; left out, the driver is told there is none. */
+/* #define TFT_RESET_GPIO 4 */
 
 /* ======================================================================
  * Display backlight - PWM on a single pin

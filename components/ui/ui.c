@@ -22,8 +22,7 @@
 #include "ui_autoplay.h"
 #include "ui_click_gesture.h"
 #include "ui_draw_buffer.h"
-#include "ui_font_cyrillic_14.h"
-#include "ui_font_cyrillic_20.h"
+#include "ui_fonts.h"
 #include "ui_layout.h"
 #include "ui_menu.h"
 #include "ui_feed_icon_bitmaps.h"
@@ -994,7 +993,7 @@ static void ui_create_feed_screen(void)
     lv_obj_set_style_bg_color(s_feed_screen, lv_color_hex(UI_COLOR_GROUND), 0);
     lv_obj_set_style_border_width(s_feed_screen, 0, 0);
     lv_obj_set_style_pad_all(s_feed_screen, 0, 0);
-    lv_obj_set_style_text_font(s_feed_screen, &ui_font_cyrillic_14, 0);
+    lv_obj_set_style_text_font(s_feed_screen, UI_FONT_BODY, 0);
     ui_status_strip_create(s_feed_screen, &s_feed_strip, "jRadio");
 
     s_feed_title = lv_label_create(s_feed_screen);
@@ -1010,7 +1009,7 @@ static void ui_create_feed_screen(void)
      * the UI task pinned a core until the task watchdog fired, which looked
      * like the display freezing on the way back to the home screen. A drawn
      * glyph is also sharper than a stretched one. */
-    lv_obj_set_style_text_font(s_feed_title, &ui_font_cyrillic_20, 0);
+    lv_obj_set_style_text_font(s_feed_title, UI_FONT_TITLE, 0);
     lv_obj_set_style_text_color(s_feed_title, lv_color_hex(UI_COLOR_TEXT), 0);
     s_feed_notice = lv_label_create(s_feed_screen);
     lv_obj_set_pos(s_feed_notice, 8, UI_FEED_NOTICE_Y);
@@ -1102,7 +1101,7 @@ static void ui_create_menu_screen(void)
     // so this covers every label on the screen including any added later. The
     // default font has no Cyrillic and renders it as empty boxes, which is a
     // mistake that only shows up when a label first receives Russian text.
-    lv_obj_set_style_text_font(s_menu_screen, &ui_font_cyrillic_20, 0);
+    lv_obj_set_style_text_font(s_menu_screen, UI_FONT_TITLE, 0);
 
     ui_status_strip_create(s_menu_screen, &s_menu_strip, "jRadio");
 
@@ -1137,7 +1136,7 @@ static void ui_create_menu_screen(void)
     // refused to open, and it is empty the rest of the time.
     s_menu_notice = lv_label_create(s_menu_screen);
     lv_label_set_text(s_menu_notice, "");
-    lv_obj_set_style_text_font(s_menu_notice, &ui_font_cyrillic_14, 0);
+    lv_obj_set_style_text_font(s_menu_notice, UI_FONT_BODY, 0);
     lv_obj_set_pos(s_menu_notice, 12, TFT_HEIGHT - 19);
     lv_obj_set_style_text_color(s_menu_notice, lv_color_hex(UI_COLOR_NOTICE), 0);
     ui_update_menu_highlight();
@@ -1323,14 +1322,14 @@ static void ui_create_settings_screen(void)
     // so this covers every label on the screen including any added later. The
     // default font has no Cyrillic and renders it as empty boxes, which is a
     // mistake that only shows up when a label first receives Russian text.
-    lv_obj_set_style_text_font(s_settings_screen, &ui_font_cyrillic_14, 0);
+    lv_obj_set_style_text_font(s_settings_screen, UI_FONT_BODY, 0);
 
     lv_obj_t *title = lv_label_create(s_settings_screen);
     lv_label_set_text(title, "Настройки");
     lv_obj_set_pos(title, 12, 8);
     // Matches the group headings under it: a heading smaller than the rows it
     // introduces reads as a mistake.
-    lv_obj_set_style_text_font(title, &ui_font_cyrillic_20, 0);
+    lv_obj_set_style_text_font(title, UI_FONT_TITLE, 0);
     lv_obj_set_style_text_color(title, lv_color_hex(UI_COLOR_TEXT), 0);
 
     for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
@@ -1657,7 +1656,7 @@ static void ui_update_settings(void)
         // Set per row rather than at creation: which row is a heading changes
         // as groups open and close.
         lv_obj_set_style_text_font(s_settings_rows[row],
-                                   is_group ? &ui_font_cyrillic_20 : &ui_font_cyrillic_14, 0);
+                                   is_group ? UI_FONT_TITLE : UI_FONT_BODY, 0);
         lv_obj_set_style_pad_top(s_settings_rows[row], is_group ? 1 : 4, 0);
         const bool selected_row = item.id == selected;
         /* Field tiles darker than they were, for the same reason: the gap to
@@ -1785,7 +1784,7 @@ static void ui_create_yandex_screen(void)
     lv_obj_set_style_bg_color(s_yandex_screen, lv_color_hex(UI_COLOR_GROUND), 0);
     lv_obj_set_style_border_width(s_yandex_screen, 0, 0);
     lv_obj_set_style_pad_all(s_yandex_screen, 0, 0);
-    lv_obj_set_style_text_font(s_yandex_screen, &ui_font_cyrillic_14, 0);
+    lv_obj_set_style_text_font(s_yandex_screen, UI_FONT_BODY, 0);
 
     /* The same strip the other lists carry, rather than a bare heading: the
      * clock and the signal belong on every screen the user can sit on, and
@@ -1822,7 +1821,7 @@ static void ui_create_yandex_screen(void)
     lv_obj_set_width(s_yandex_code, TFT_WIDTH - 24);
     lv_label_set_long_mode(s_yandex_code, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(s_yandex_code, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(s_yandex_code, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_font(s_yandex_code, UI_FONT_DISPLAY, 0);
     lv_obj_set_style_text_color(s_yandex_code, lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_label_set_text(s_yandex_code, "");
 
@@ -1834,13 +1833,13 @@ static void ui_create_yandex_screen(void)
     lv_obj_set_width(s_yandex_url, TFT_WIDTH - 24);
     lv_label_set_long_mode(s_yandex_url, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(s_yandex_url, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(s_yandex_url, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(s_yandex_url, UI_FONT_ICON, 0);
     lv_obj_set_style_text_color(s_yandex_url, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_label_set_text(s_yandex_url, "");
 
     s_yandex_countdown = lv_label_create(s_yandex_code_panel);
     lv_obj_set_pos(s_yandex_countdown, 0, 98);
-    lv_obj_set_style_text_font(s_yandex_countdown, &ui_font_cyrillic_14, 0);
+    lv_obj_set_style_text_font(s_yandex_countdown, UI_FONT_BODY, 0);
     lv_obj_set_width(s_yandex_countdown, TFT_WIDTH - 24);
     lv_obj_set_style_text_align(s_yandex_countdown, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(s_yandex_countdown, lv_color_hex(UI_COLOR_DIM), 0);
@@ -1870,7 +1869,7 @@ static void ui_create_yandex_screen(void)
         s_yandex_rows[row] = ui_scroller_create(
             s_yandex_screen, UI_CONTENT_X, UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH,
             UI_CONTENT_W, UI_LIST_ROW_H);
-        lv_obj_set_style_text_font(s_yandex_rows[row].box, &ui_font_cyrillic_20, 0);
+        lv_obj_set_style_text_font(s_yandex_rows[row].box, UI_FONT_TITLE, 0);
         lv_obj_set_style_pad_left(s_yandex_rows[row].box, 8, 0);
         lv_obj_set_style_pad_top(s_yandex_rows[row].box, 3, 0);
         lv_obj_set_style_radius(s_yandex_rows[row].box, 3, 0);
@@ -1899,7 +1898,7 @@ static void ui_create_yandex_screen(void)
     lv_obj_set_pos(s_yandex_message, 10, UI_LIST_NOTICE_TEXT_Y);
     lv_obj_set_width(s_yandex_message, UI_CONTENT_W);
     lv_obj_set_style_text_align(s_yandex_message, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(s_yandex_message, &ui_font_cyrillic_20, 0);
+    lv_obj_set_style_text_font(s_yandex_message, UI_FONT_TITLE, 0);
     lv_obj_set_style_text_color(s_yandex_message, lv_color_hex(UI_COLOR_NOTICE), 0);
 
     /* Only the screens with room for it keep a hint line: in list mode the
@@ -2229,7 +2228,7 @@ static void ui_create_station_list_screen(void)
     // so this covers every label on the screen including any added later. The
     // default font has no Cyrillic and renders it as empty boxes, which is a
     // mistake that only shows up when a label first receives Russian text.
-    lv_obj_set_style_text_font(s_station_list_screen, &ui_font_cyrillic_14, 0);
+    lv_obj_set_style_text_font(s_station_list_screen, UI_FONT_BODY, 0);
     ui_status_strip_create(s_station_list_screen, &s_list_strip, "");
     /* The heading moves into the strip's left slot instead of taking a line of
      * its own - which is where the room for the rule and the position bar came
@@ -2267,7 +2266,7 @@ static void ui_create_station_list_screen(void)
         // Bigger than the rest of the screen on purpose: this is the text the
         // user reads from a distance while turning the encoder. The 23 px line
         // it needs is what set the row height and the pitch above.
-        lv_obj_set_style_text_font(s_station_list_rows[row].box, &ui_font_cyrillic_20, 0);
+        lv_obj_set_style_text_font(s_station_list_rows[row].box, UI_FONT_TITLE, 0);
         lv_obj_set_style_pad_left(s_station_list_rows[row].box, 8, 0);
         lv_obj_set_style_pad_top(s_station_list_rows[row].box, 3, 0);
         lv_obj_set_style_radius(s_station_list_rows[row].box, 3, 0);
@@ -2283,7 +2282,7 @@ static void ui_create_station_list_screen(void)
         // kinds of row share a left edge instead of stepping in and out.
         lv_obj_set_pos(s_station_list_icons[row], 18,
                        UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH + 2);
-        lv_obj_set_style_text_font(s_station_list_icons[row], &lv_font_montserrat_24, 0);
+        lv_obj_set_style_text_font(s_station_list_icons[row], UI_FONT_ICON, 0);
         lv_obj_set_style_text_color(s_station_list_icons[row],
                                     lv_color_hex(UI_COLOR_FOLDER), 0);
         lv_label_set_text(s_station_list_icons[row], LV_SYMBOL_DIRECTORY);
@@ -2307,7 +2306,7 @@ static void ui_create_station_list_screen(void)
         lv_obj_set_style_pad_top(s_station_list_numbers[row], 3, 0);
         lv_obj_set_style_radius(s_station_list_numbers[row], 3, 0);
         lv_obj_set_style_bg_opa(s_station_list_numbers[row], LV_OPA_COVER, 0);
-        lv_obj_set_style_text_font(s_station_list_numbers[row], &ui_font_cyrillic_20, 0);
+        lv_obj_set_style_text_font(s_station_list_numbers[row], UI_FONT_TITLE, 0);
         lv_label_set_text(s_station_list_numbers[row], "");
         lv_obj_add_flag(s_station_list_numbers[row], LV_OBJ_FLAG_HIDDEN);
     }
@@ -2336,7 +2335,7 @@ static void ui_create_station_list_screen(void)
     // unreadable-drive line is two lines wide and its second half - the format
     // to use - is the half worth reading.
     lv_obj_set_style_text_align(s_station_list_notice, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(s_station_list_notice, &ui_font_cyrillic_20, 0);
+    lv_obj_set_style_text_font(s_station_list_notice, UI_FONT_TITLE, 0);
     lv_obj_set_style_text_color(s_station_list_notice, lv_color_hex(UI_COLOR_NOTICE), 0);
 }
 
@@ -2397,7 +2396,7 @@ static void ui_create_source_screen(void)
     // so this covers every label on the screen including any added later. The
     // default font has no Cyrillic and renders it as empty boxes, which is a
     // mistake that only shows up when a label first receives Russian text.
-    lv_obj_set_style_text_font(s_source_screen, &ui_font_cyrillic_14, 0);
+    lv_obj_set_style_text_font(s_source_screen, UI_FONT_BODY, 0);
 
     ui_status_strip_create(s_source_screen, &s_source_strip, "");
 
@@ -2412,7 +2411,7 @@ static void ui_create_source_screen(void)
     lv_obj_set_style_border_width(s_source_art, 1, 0);
     lv_obj_set_style_radius(s_source_art, 3, 0);
     lv_obj_set_style_text_color(s_source_art, lv_color_hex(0x3E5060), 0);
-    lv_obj_set_style_text_font(s_source_art, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_font(s_source_art, UI_FONT_DISPLAY, 0);
     lv_obj_set_style_text_align(s_source_art, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_pad_top(s_source_art, 24, 0);
     lv_label_set_text(s_source_art, LV_SYMBOL_AUDIO);
@@ -2433,7 +2432,7 @@ static void ui_create_source_screen(void)
 
     s_source_detail = ui_scroller_create(s_source_screen, UI_SRC_TEXT_X, UI_SRC_ROW_TRACK,
                                         UI_SRC_TEXT_W, UI_SRC_TRACK_H);
-    lv_obj_set_style_text_font(s_source_detail.box, &ui_font_cyrillic_20, 0);
+    lv_obj_set_style_text_font(s_source_detail.box, UI_FONT_TITLE, 0);
     lv_obj_set_style_text_color(s_source_detail.box, lv_color_hex(UI_COLOR_TEXT), 0);
     /* The track name always travels when it is too long - unlike a list row,
      * there is nothing else on this screen competing for the eye. */
@@ -3817,6 +3816,20 @@ esp_err_t ui_init(void)
              (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
              (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
              (unsigned int)UI_DRAW_BUFFER_SIZE);
+    /* The layout was compiled against the line heights copied into
+     * ui_font_metrics.h from the generated fonts. A face regenerated at another
+     * size, or a line mistyped when a size was added for a new panel, moves
+     * every row on every screen by a pixel or two - which shows up as text that
+     * touches and points at nothing. The fonts know their own metrics, but only
+     * now that LVGL is up, so this is the earliest the copy can be checked. */
+    if (UI_FONT_BODY->line_height != UI_FONT_BODY_LINE_H ||
+        UI_FONT_TITLE->line_height != UI_FONT_TITLE_LINE_H) {
+        ESP_LOGE(TAG,
+                 "font metrics disagree with the layout: body %d vs %d, title %d vs %d",
+                 (int)UI_FONT_BODY->line_height, (int)UI_FONT_BODY_LINE_H,
+                 (int)UI_FONT_TITLE->line_height, (int)UI_FONT_TITLE_LINE_H);
+    }
+
     s_input_queue = xQueueCreate(UI_INPUT_QUEUE_LENGTH, sizeof(board_input_action_t));
     if (s_input_queue == NULL) {
         ESP_LOGE(TAG, "input queue allocation failed");

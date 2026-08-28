@@ -38,6 +38,29 @@ static void test_the_derived_counts_match_the_measured_panels(void)
 #endif
 }
 
+static void test_the_layout_measures_in_the_faces_it_declares(void)
+{
+    /* A row is spaced by the face it carries. Stating it this way rather than
+     * as two literals that happen to agree is what lets a shape ask for bigger
+     * text without every row pitch having to be found and edited. */
+    assert(UI_SRC_LINE_H == UI_FONT_BODY_LINE_H);
+    assert(UI_SRC_TRACK_H == UI_FONT_TITLE_LINE_H);
+    /* A face has to be one the tree actually carries; a size with no generated
+     * source is a link error, but a size with no line height in
+     * ui_font_metrics.h is a silent expansion to nothing. */
+    assert(UI_FONT_BODY_LINE_H > 0 && UI_FONT_TITLE_LINE_H > 0);
+    assert(UI_FONT_TITLE_LINE_H >= UI_FONT_BODY_LINE_H);
+
+#if (TFT_WIDTH == 320 && TFT_HEIGHT == 240) || (TFT_WIDTH == 240 && TFT_HEIGHT == 320)
+    /* Both panels so far are laid out for the same four faces, and these are
+     * the generated fonts' own line heights. A face regenerated at another
+     * size has to come through here. */
+    assert(UI_FONT_BODY_PX == 14 && UI_FONT_TITLE_PX == 20);
+    assert(UI_FONT_ICON_PX == 24 && UI_FONT_DISPLAY_PX == 48);
+    assert(UI_SRC_LINE_H == 19 && UI_SRC_TRACK_H == 23);
+#endif
+}
+
 static void test_the_windows_hold_together(void)
 {
     /* Rows start below the strip and the last one leaves room for what closes
@@ -95,6 +118,7 @@ static void test_the_player_stacks_downwards(void)
 int main(void)
 {
     test_the_derived_counts_match_the_measured_panels();
+    test_the_layout_measures_in_the_faces_it_declares();
     test_the_windows_hold_together();
     test_the_strip_slots_stay_in_their_lanes();
     test_the_player_stacks_downwards();

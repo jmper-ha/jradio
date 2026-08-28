@@ -67,3 +67,12 @@
  * anything else reads as a landscape screen that fell over. */
 #define UI_SRC_STREAM_LINES 1
 #define UI_SRC_TEXT_CENTRED 1
+
+/* The faces this shape is laid out for. Every row pitch and every line height
+ * below follows from them, so a panel that wants bigger text states it here
+ * and the layout moves with it. The text sizes have to exist in
+ * ui_font_metrics.h; the icon sizes have to be enabled in sdkconfig. */
+#define UI_FONT_BODY_PX 14
+#define UI_FONT_TITLE_PX 20
+#define UI_FONT_ICON_PX 24
+#define UI_FONT_DISPLAY_PX 48

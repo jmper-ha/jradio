@@ -292,8 +292,26 @@ A panel of a new size is a copy of that file and one line in the dispatcher; a
 shape with no file fails the build with a message saying what to create. Checked
 against a 480x320 panel that does not exist: the list gets 7 rows instead of 5,
 Settings 9 instead of 6, the carousel 5 tiles, and the meter's blocks 17 px
-instead of 11. Font sizes stay as they are - a much larger panel would want a
-design pass of its own.
+instead of 11.
+
+Fonts are part of the shape too. Screens ask for a role rather than a size -
+body, title, icon, display
+([`ui_fonts.h`](components/ui/include/ui_fonts.h)) - and which size each role
+gets is the shape file's decision. The Cyrillic faces are made by
+[`tools/gen_ui_fonts.sh`](tools/gen_ui_fonts.sh) from DejaVu Sans, because
+LVGL's built-in Montserrat is Latin only; the icon faces are Montserrat
+precisely because what is drawn with them is not text but the symbol block
+bundled into it, and a missing `CONFIG_LV_FONT_MONTSERRAT_<size>` fails the
+build with a message instead of failing at the link.
+
+Each face's line height is copied into
+[`ui_font_metrics.h`](components/ui/include/ui_font_metrics.h): the layout has
+to be computed before there is a program, and a font knows its own metrics only
+once LVGL is up. `ui.c` checks the copy against the font at start-up and logs
+the disagreement. Checked both ways: a face no layout selects is dropped by the
+linker - a build carrying a spare 18 px face came out the same size to the byte
+- and pointing the panel at that face instead moves the line height to 24 and
+every row spacing with it.
 
 The same file names the parts this board does not carry: an FM tuner and
 Bluetooth. Their blocks are commented out rather than deleted - the file should

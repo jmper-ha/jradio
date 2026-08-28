@@ -3,6 +3,7 @@
 #include <stdbool.h>
 
 #include "board_display_profile.h"
+#include "ui_font_metrics.h"
 
 /* Where every screen's geometry lives.
  *
@@ -157,9 +158,11 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
 #define UI_SRC_STATUS_H 26
 #define UI_SRC_ART_SIZE 96
 /* One line of each face, from the generated fonts' own line_height. Rows are
- * spaced by these rather than by eye, so nothing can overlap its neighbour. */
-#define UI_SRC_LINE_H 19
-#define UI_SRC_TRACK_H 23
+ * spaced by these rather than by eye, so nothing can overlap its neighbour -
+ * and now that the face is the shape's to choose, they follow it rather than
+ * standing as the 19 and 23 the two known panels happen to need. */
+#define UI_SRC_LINE_H UI_FONT_BODY_LINE_H
+#define UI_SRC_TRACK_H UI_FONT_TITLE_LINE_H
 #define UI_SRC_VU_BLOCK_H 10
 #define UI_SRC_VU_PITCH 18
 /* Where the meter starts, just past the L and R marks on the left margin. */

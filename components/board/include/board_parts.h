@@ -28,6 +28,16 @@
  * board_display_profile.h for everything the choice decides. */
 #define DISPLAY_ILI9341_320_240 1
 #define DISPLAY_ILI9341_240_320 2
+/* ST7789 controller over SPI, the same two ways. Read as one part with two
+ * orientations, exactly like the pair above.
+ *
+ * Not yet seen on a panel: display/st7789.h has the constants the datasheet
+ * and the usual wiring of these modules give, and says which of them can only
+ * be settled by looking at the screen. The driver itself is ESP-IDF's own -
+ * esp_lcd carries ST7789 in the box, unlike the ILI9341, which arrives as a
+ * managed component. */
+#define DISPLAY_ST7789_320_240 3
+#define DISPLAY_ST7789_240_320 4
 
 #define DAC_NONE 0
 /* PCM5102 / PCM5102A I2S stereo DAC, no MCLK input, line level out. */

@@ -264,6 +264,18 @@ build option and not a setting: each screen's geometry is compiled for one
 shape, and a box is mounted one way round once. The boot splash has a version
 for each orientation and both are compiled in, so nothing needs regenerating.
 
+The panel does not have to be an ILI9341. Each controller has a profile of its
+own in
+[`components/board/include/display/`](components/board/include/display/) and a
+driver file in `components/board/display/`; `board.c` does not know which one
+was selected - it calls `board_panel_create()` and works through the common
+esp_lcd interface from there. Besides the ILI9341 the catalogue carries the
+ST7789 320x240, in two orientations as well: its driver ships inside ESP-IDF,
+while its profile was written from the datasheet and has not been seen on a
+panel yet - [`st7789.h`](components/board/include/display/st7789.h) says which
+of its constants still need checking against a screen. The driver that was not
+selected costs no flash at all.
+
 The same file names the parts this board does not carry: an FM tuner and
 Bluetooth. Their blocks are commented out rather than deleted - the file should
 answer "can this firmware drive one" with a no as well as with a yes. For
@@ -285,7 +297,10 @@ receiver module of its own.
 | microSD SCK | 41 | | microSD MISO | 40 |
 | microSD MOSI | 42 | | | |
 
-The display's RST is tied to the ESP32's reset and takes no GPIO.
+The display's RST is tied to the ESP32's reset and takes no GPIO. On modules
+that bring RST out separately - the usual case for an ST7789, which comes up
+initialised only some of the time without it - the pin is declared by a
+`TFT_RESET_GPIO` line; `board_options.h` carries one, commented out.
 
 Worth knowing if you build the board:
 

@@ -23,14 +23,44 @@ static void test_a_selected_part_resolves_to_a_real_catalogue_entry(void)
 
 static void test_display_group_is_complete_and_consistent(void)
 {
-    assert(DISPLAY == DISPLAY_ILI9341_320_240 || DISPLAY == DISPLAY_ILI9341_240_320);
+    assert(DISPLAY == DISPLAY_ILI9341_320_240 || DISPLAY == DISPLAY_ILI9341_240_320 ||
+           DISPLAY == DISPLAY_ST7789_320_240 || DISPLAY == DISPLAY_ST7789_240_320);
     /* Only SPI2 and SPI3 can drive a panel on this part; SPI1 is the flash bus. */
     assert(DISPLAY_SPI_PERIPHERAL == 2 || DISPLAY_SPI_PERIPHERAL == 3);
     assert(TFT_CS_GPIO == 10);
     assert(TFT_DC_GPIO == 47);
     assert(TFT_MOSI_GPIO == 11);
     assert(TFT_SCLK_GPIO == 12);
+
+    /* Colour order and inversion belong to the glass, not to the board, so all
+     * that holds for every profile is that each is a flag - board.c turns them
+     * into a driver enum and a bool. */
+    assert(TFT_RGB_ORDER_BGR == 0 || TFT_RGB_ORDER_BGR == 1);
+    assert(TFT_INVERT_COLOR == 0 || TFT_INVERT_COLOR == 1);
+#if DISPLAY == DISPLAY_ILI9341_320_240 || DISPLAY == DISPLAY_ILI9341_240_320
+    /* Both measured on the panel this device ships with: blue reads as red
+     * under MADCTL RGB, and nothing has to send INVON. */
     assert(TFT_RGB_ORDER_BGR == 1);
+    assert(TFT_INVERT_COLOR == 0);
+#endif
+}
+
+static void test_every_panel_in_the_catalogue_has_its_own_number(void)
+{
+    /* Two parts sharing a number would not be a clash the compiler notices:
+     * board_display_profile.h dispatches on the value, so the second one would
+     * silently be built with the first one's profile. */
+    const int panels[] = {
+        DISPLAY_NONE,
+        DISPLAY_ILI9341_320_240, DISPLAY_ILI9341_240_320,
+        DISPLAY_ST7789_320_240, DISPLAY_ST7789_240_320,
+    };
+    const size_t count = sizeof(panels) / sizeof(panels[0]);
+    for (size_t i = 0; i < count; ++i) {
+        for (size_t j = i + 1U; j < count; ++j) {
+            assert(panels[i] != panels[j]);
+        }
+    }
 }
 
 static void test_the_orientation_decides_the_geometry_and_nothing_else(void)
@@ -40,7 +70,8 @@ static void test_the_orientation_decides_the_geometry_and_nothing_else(void)
      * both decide what the driver and every screen do. A misspelt name is
      * DISPLAY_NONE - zero, to the preprocessor - and the profile header has no
      * branch for it. */
-    assert(BOARD_DISPLAY_PORTRAIT == (DISPLAY == DISPLAY_ILI9341_240_320));
+    assert(BOARD_DISPLAY_PORTRAIT == (DISPLAY == DISPLAY_ILI9341_240_320 ||
+                                      DISPLAY == DISPLAY_ST7789_240_320));
 
     /* The same panel either way up: the orientation decides which of the two
      * numbers is the width and buys no pixels. Written as the sum and the
@@ -199,6 +230,11 @@ static void test_no_pin_is_claimed_by_two_devices(void)
     const int pins[] = {
         TFT_CS_GPIO, TFT_DC_GPIO, TFT_MOSI_GPIO, TFT_SCLK_GPIO,
         TFT_BACKLIGHT_GPIO,
+#if TFT_RESET_GPIO >= 0
+        /* Only when a board wires one. The profile's default of -1 means "no
+         * pin", which is not a GPIO and would fail the range check below. */
+        TFT_RESET_GPIO,
+#endif
         ENCODER_RIGHT_GPIO, ENCODER_LEFT_GPIO, ENCODER_BUTTON_GPIO,
         BUTTON_F1_GPIO, BUTTON_F2_GPIO, BUTTON_PREV_GPIO,
         BUTTON_NEXT_GPIO,
@@ -226,6 +262,7 @@ int main(void)
 {
     test_a_selected_part_resolves_to_a_real_catalogue_entry();
     test_display_group_is_complete_and_consistent();
+    test_every_panel_in_the_catalogue_has_its_own_number();
     test_the_orientation_decides_the_geometry_and_nothing_else();
     test_backlight_duty_fits_the_pwm_timer();
     test_control_pins_are_distinct();

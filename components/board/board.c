@@ -9,7 +9,6 @@
 #include "driver/spi_master.h"
 #include "esp_check.h"
 #include "esp_err.h"
-#include "esp_lcd_ili9341.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_ops.h"
@@ -23,6 +22,7 @@
 #include "board_audio_startup.h"
 #include "board_audio_format.h"
 #include "board_display_profile.h"
+#include "display/board_panel.h"
 #include "boot_splash.h"
 #include "board_options.h"
 #include "board_input.h"
@@ -801,17 +801,13 @@ static esp_err_t board_display_init(void)
                                                   &io_config, &io_handle), TAG,
                         "create LCD SPI I/O failed");
 
+    /* Which controller answers here is the one thing this file does not know:
+     * board_panel_create() lives in display/<part>.c and is the only code that
+     * names a vendor driver. What follows it is MADCTL, the same register on
+     * every panel in the catalogue. */
     esp_lcd_panel_handle_t panel = NULL;
-    const esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = -1,
-        .rgb_ele_order = TFT_RGB_ORDER_BGR ? LCD_RGB_ELEMENT_ORDER_BGR :
-                                                   LCD_RGB_ELEMENT_ORDER_RGB,
-        .bits_per_pixel = 16,
-    };
-    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_ili9341(io_handle, &panel_config, &panel), TAG,
-                        "create ILI9341 panel failed");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(panel), TAG, "reset ILI9341 failed");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_init(panel), TAG, "initialize ILI9341 failed");
+    ESP_RETURN_ON_ERROR(board_panel_create(io_handle, &panel), TAG,
+                        "create " BOARD_PANEL_NAME " panel failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_swap_xy(panel, TFT_SWAP_XY), TAG,
                         "set landscape rotation failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(panel, TFT_MIRROR_X, TFT_MIRROR_Y), TAG,
@@ -849,11 +845,12 @@ esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal)
 
 esp_err_t board_init(void)
 {
-    ESP_LOGI(TAG, "initializing input, PWM backlight, I2S and ILI9341");
+    ESP_LOGI(TAG, "initializing input, PWM backlight, I2S and " BOARD_PANEL_NAME);
     ESP_RETURN_ON_ERROR(board_input_init(), TAG, "configure input GPIOs failed");
     ESP_RETURN_ON_ERROR(board_backlight_init(), TAG, "initialize backlight failed");
     ESP_RETURN_ON_ERROR(board_audio_init(), TAG, "initialize PCM5102 I2S output failed");
-    ESP_RETURN_ON_ERROR(board_display_init(), TAG, "initialize ILI9341 failed");
+    ESP_RETURN_ON_ERROR(board_display_init(), TAG,
+                        "initialize " BOARD_PANEL_NAME " failed");
     ESP_RETURN_ON_ERROR(board_backlight_set(50), TAG, "set initial backlight failed");
     ESP_LOGI(TAG, "board initialized; display shows the boot splash");
     return ESP_OK;

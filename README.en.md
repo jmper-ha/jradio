@@ -65,6 +65,10 @@ access point instead, because `192.168.4.1` is useless until the phone is on
 that network. Another press takes the code down, and so does 30 seconds of
 nothing.
 
+The page opens dark, whatever the phone or the computer is set to. The sun in
+the header switches it to light; the choice is remembered by the browser and
+holds until it is changed back.
+
 On a portrait panel the band shows the address without the `http://`: seven
 characters that tell the reader nothing, on a band 240 px wide that also has to
 carry the QR hint. The code itself keeps the scheme - without it a camera opens
@@ -217,7 +221,9 @@ The language switch still only changes the labels on the settings screen
 itself.
 
 The same settings are in the web interface, on its Settings page, in the same
-words and the same order. It works both ways: a change made in the browser
+words and the same order - except the volume, which has a knob on the device and
+a slider in the player itself; a third place to set it only confused matters. It
+works both ways: a change made in the browser
 takes effect at once, as if it had been made on the knob, and a volume or
 brightness turned on the device reaches an open page within a quarter of a
 second. A slider being held with the pointer does not jump - the update is
@@ -441,8 +447,12 @@ no npm and no bundler.
 | `GET /api/files` | Contents of the current directory on the active medium |
 | `GET /api/settings` | The device settings, the same ones its own screen has |
 | `POST /api/settings` | Changes one setting: `{"field":…,"value":…}` |
-| `GET /api/progress` | Track position, buffer fill, cover generation |
+| `GET /api/progress` | Track position, buffer fill, cover signature |
 | `GET /api/cover` | The current cover, 96x96, as a BMP |
+| `GET /api/stations` | The station names of the active source |
+| `POST /api/station-test` | Plays an address on the device without touching the playlist |
+| `GET /api/station-icon` | An uploaded station picture, by file name |
+| `POST /api/station-icon` | Uploads a station picture; the device names the file |
 | `GET /api/yandex` | Link state and the account's stations (never the token) |
 | `POST /api/yandex` | Link, cancel, unlink, refresh the stations |
 | `POST /api/wifi` | Saves a network |
@@ -484,8 +494,34 @@ would push a frame a second to every open browser. The page polls
 The cover is served as a BMP - the device holds it already decoded to RGB565
 and no longer has the original bytes, so anything compressed would mean a PNG
 encoder in firmware for a picture that travels over a LAN; 27 KB uncompressed
-is the cheaper answer. The cover's generation number rides in the URL, so the
-browser takes it from its cache until it actually changes.
+is the cheaper answer. The URL carries the cover's signature - a checksum of the
+bytes it was decoded from - and the answer itself is marked `no-store`.
+
+The URL used to carry the generation instead, and the answer was cached for a
+day. The generation counts from zero at every boot, so `?g=1` meant one picture
+on Tuesday and another on Wednesday, and three browsers showed three different
+covers for one track, each the one it had cached first. A signature cannot do
+that: one picture, one URL; different pictures, different URLs.
+
+The rotor's covers do not come from the device at all. `/api/progress` hands the
+page the picture's address on `avatars.yandex.net` at 400x400 and the browser
+fetches it itself: the device pays nothing - only the address travels - and the
+page draws something four times as detailed as the 96 pixels the panel decodes
+it into.
+
+A station's own picture is the playlist's fourth column, after the name flag and
+a tab. The column is optional, and a three-field line still reads as it did. The
+browser scales the picture to 96 pixels on its longer side and re-encodes it as
+PNG before sending - kilobytes travel to the device, not a photograph - and the
+device names the file itself: a name that comes from a client is a name that can
+turn out to be a path. The files live in `/littlefs/radio_img/`, and saving the
+playlist deletes the ones nothing refers to any more - that is the one moment
+when the full list of names in use is known.
+
+The picture is published through the same `album_art` that carries file and
+rotor covers, so the panel's tile and the browser's both draw it without a line
+of new UI code. The key is the file name rather than the station index: replace
+the picture of the station that is playing and it updates.
 
 The device settings are written by both the panel and the web, through the same
 setters, serialised at the file level. A write from the browser raises a flag,
@@ -501,6 +537,12 @@ diff only when something has moved. That section grew the complete snapshot by
 270 bytes and pushed it past 4096, so the frame limit is now 4608;
 `test_web_server.c` builds the worst case - 32 stations named in nothing but
 quotes and backslashes - and asserts the margin is still there.
+
+Static assets are served with `Cache-Control: no-cache` and an `ETag` over the
+file's bytes: the browser keeps them but asks before showing them. An unchanged
+file costs one `304` with no body, and after `littlefs-flash` an ordinary reload
+picks up the new styles and scripts. They were cached for an hour before that,
+and that hour meant a page running against a device that had already moved on.
 
 **There is no authentication and `Origin` is not checked. Do not expose the
 device.**
@@ -549,8 +591,11 @@ memory actually ran out.
 
 The `littlefs` partition holds both the web assets and user data: `data/www/`
 (gzipped at build time), `data/config/stations.csv`,
-`data/config/settings.csv`, and `wifi.json` and `yandex.json`, which the device
-creates itself and which are not in Git. Do not commit passwords, tokens or
+`data/config/settings.csv`, `data/radio_img/` with the station pictures, and
+`wifi.json` and `yandex.json`, which the device creates itself and which are not
+in Git. Everything under `data/` goes into the image, so station pictures survive
+`littlefs-flash` - one uploaded through the browser and never put in the
+repository will not. Do not commit passwords, tokens or
 keys.
 
 ## Limits

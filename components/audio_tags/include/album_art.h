@@ -21,6 +21,12 @@ typedef struct {
      * generation N needs to do nothing at all until it sees N+1, which is what
      * keeps this off the ten-millisecond poll loop. */
     unsigned int generation;
+    /* A checksum of the bytes the cover was decoded from - the same picture
+     * has the same signature across reboots, and two different pictures
+     * practically never share one. The generation says *that* the cover
+     * changed; this says *which* cover it is, which is what a cache key has to
+     * be. Zero when nothing is published. */
+    uint32_t signature;
     bool present;
     // The fitted size, which is the square only for a square picture. The
     // caller centres it; nothing here paints a border or a background.

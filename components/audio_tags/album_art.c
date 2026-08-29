@@ -86,8 +86,12 @@ esp_err_t album_art_init(void)
  * stack; holding the lock for the few milliseconds the resampling takes costs
  * nothing but a poll of the screen. */
 static bool reduce_into_cover(const uint16_t *source, uint16_t source_width,
-                              uint16_t source_height, const image_rect_t *rect)
+                              uint16_t source_height, const image_rect_t *rect,
+                              const uint8_t *bytes, size_t length)
 {
+    /* Outside the lock: the checksum is a pass over the source bytes, and
+     * nothing else may hold the tile meanwhile. */
+    const uint32_t signature = checksum_of(bytes, length);
     xSemaphoreTake(s_lock, portMAX_DELAY);
     const bool scaled = image_scale_rgb565(source, source_width, source_height, s_cover,
                                            rect->width, rect->height, rect->width);
@@ -95,9 +99,16 @@ static bool reduce_into_cover(const uint16_t *source, uint16_t source_width,
         s_width = rect->width;
         s_height = rect->height;
         s_present = true;
+        /* Named in the same breath as it is published: a reader that sees the
+         * new picture must not be handed the old one's name, because that name
+         * is what the page caches the picture under. */
+        s_source_length = length;
+        s_source_checksum = signature;
     } else if (s_present) {
         // Half a cover is not a cover; the screen goes back to its placeholder.
         s_present = false;
+        s_source_length = 0U;
+        s_source_checksum = 0U;
     }
     ++s_generation;
     xSemaphoreGive(s_lock);
@@ -121,10 +132,11 @@ void album_art_clear(void)
 
 album_art_status_t album_art_status(void)
 {
-    album_art_status_t status = {0U, false, 0U, 0U};
+    album_art_status_t status = {0U, 0U, false, 0U, 0U};
     if (s_lock == NULL) return status;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     status.generation = s_generation;
+    status.signature = s_present ? s_source_checksum : 0U;
     status.present = s_present;
     status.width = s_width;
     status.height = s_height;
@@ -220,7 +232,7 @@ static bool decode_with_stb_and_publish(const uint8_t *data, size_t length)
     if (!image_decode_rgb565(data, length, &pixels, &width, &height)) return false;
 
     const image_rect_t rect = image_fit_square(width, height, (uint16_t)ALBUM_ART_SIZE);
-    const bool published = reduce_into_cover(pixels, width, height, &rect);
+    const bool published = reduce_into_cover(pixels, width, height, &rect, data, length);
     if (published) {
         ESP_LOGI(TAG, "cover %ux%u shown as %ux%u", (unsigned int)width, (unsigned int)height,
                  (unsigned int)rect.width, (unsigned int)rect.height);
@@ -285,7 +297,8 @@ static bool decode_and_publish(const uint8_t *data, size_t length)
             } else {
                 const image_rect_t rect =
                     image_fit_square(context.width, context.height, (uint16_t)ALBUM_ART_SIZE);
-                if (reduce_into_cover(context.pixels, context.width, context.height, &rect)) {
+                if (reduce_into_cover(context.pixels, context.width, context.height, &rect,
+                                      data, length)) {
                     published = true;
                     ESP_LOGI(TAG, "cover %ux%u decoded at 1/%u and shown as %ux%u",
                              (unsigned int)decoder.width, (unsigned int)decoder.height,
@@ -314,10 +327,6 @@ bool album_art_set_image(const uint8_t *data, size_t length)
         album_art_clear();
         return false;
     }
-    xSemaphoreTake(s_lock, portMAX_DELAY);
-    s_source_length = length;
-    s_source_checksum = checksum;
-    xSemaphoreGive(s_lock);
     return true;
 }
 

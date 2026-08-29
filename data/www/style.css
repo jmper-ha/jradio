@@ -1,26 +1,73 @@
+/* jradio - the web remote. Dense grid, one accent, two themes.
+
+   Dark is the default, not the system's preference: this page is a remote for
+   a box that lives in a dark room, and the panel it mirrors is dark too. So
+   the bare :root holds the whole dark palette and only an explicit choice -
+   [data-theme="light"], written by the toggle into localStorage - swaps it.
+   No colour is declared inside the light block alone: a token defined only
+   there would have no value in the default state. */
 :root {
-  color-scheme: light;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: dark;
+  /* System faces only: the device serves this page itself, and a hosted font
+     would mean it looks different when there is no internet. */
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
   font-synthesis: none;
-  --page: #f4f7fb;
-  --surface: #ffffff;
-  --surface-soft: #eef4ff;
-  --text: #182338;
-  --muted: #64748b;
-  --line: #dce4ef;
-  --accent: #2563eb;
-  --accent-dark: #1d4ed8;
-  --accent-soft: #dbeafe;
-  --success: #15803d;
-  --danger: #b42318;
-  --shadow: 0 16px 42px rgba(38, 55, 87, .09);
-  --radius: 1.25rem;
-  --content-columns: minmax(0, 1.5fr) minmax(18rem, .8fr);
+
+  --page: #0c0f13;
+  --surface: #14181e;
+  --surface-2: #1a1f26;
+  --surface-3: #222932;
+  --line: #252d37;
+  --line-soft: #1e252d;
+  --text: #e9ecf1;
+  --text-2: #c2c9d3;
+  --muted: #8b95a3;
+  --accent: #f0a93c;
+  --accent-2: #ffc369;
+  --accent-soft: #2b2114;
+  --accent-line: #4a3a1e;
+  --on-accent: #191203;
+  --ok: #4cc38a;
+  --bad: #f0785a;
+  --bad-soft: #2a1a15;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .45);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 30px rgba(0, 0, 0, .35);
+  --focus: rgba(240, 169, 60, .5);
+
+  --r: 10px;
+  --r-lg: 14px;
+  --row: 38px;
+  --bar: 46px;
+  --cover: 120px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
-* {
-  box-sizing: border-box;
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #eceff3;
+  --surface: #ffffff;
+  --surface-2: #f4f6f9;
+  --surface-3: #e9edf2;
+  --line: #d8dee6;
+  --line-soft: #e6eaf0;
+  --text: #12161c;
+  --text-2: #39424f;
+  --muted: #6c7686;
+  --accent: #a5620a;
+  --accent-2: #8a5108;
+  --accent-soft: #f8ecd9;
+  --accent-line: #e3c79b;
+  --on-accent: #ffffff;
+  --ok: #1b7048;
+  --bad: #a83a1c;
+  --bad-soft: #fbeae5;
+  --shadow-sm: 0 1px 2px rgba(18, 22, 28, .08);
+  --shadow: 0 1px 2px rgba(18, 22, 28, .06), 0 10px 26px rgba(18, 22, 28, .07);
+  --focus: rgba(165, 98, 10, .45);
 }
+
+* { box-sizing: border-box; }
 
 html {
   min-width: 320px;
@@ -31,150 +78,182 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
-  overflow-x: hidden;
-  background:
-    radial-gradient(circle at 10% 0%, rgba(37, 99, 235, .08), transparent 24rem),
-    var(--page);
+  background: var(--page);
   color: var(--text);
+  font-size: 15px;
+  line-height: 1.45;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
-button,
-input,
-a {
-  font: inherit;
+h1, h2, h3, h4 {
+  margin: 0;
+  letter-spacing: -.015em;
+  text-wrap: balance;
 }
 
-button,
-a {
-  -webkit-tap-highlight-color: transparent;
+p { margin: 0; }
+
+button, input, select, a { font: inherit; color: inherit; }
+
+button, a, label { -webkit-tap-highlight-color: transparent; }
+
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+
+button:disabled { cursor: not-allowed; opacity: .45; }
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
-button:focus-visible,
-a:focus-visible,
-input:focus-visible {
-  outline: 3px solid rgba(37, 99, 235, .42);
-  outline-offset: 3px;
+[hidden] { display: none !important; }
+
+.mono, .num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }
 
-button:disabled {
-  cursor: not-allowed;
-  opacity: .48;
+/* In the markup for a screen reader, not for the screen: the source is
+   already named by the active tab, and there is nowhere to say it twice. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-[hidden] {
-  display: none !important;
+.eyebrow {
+    font-size: .68rem;
+  font-weight: 650;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
+
+/* ----------------------------------------------------------------- header */
 
 .site-header {
-  border-bottom: 1px solid rgba(220, 228, 239, .88);
-  background: rgba(255, 255, 255, .88);
-  backdrop-filter: blur(14px);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  flex: none;
+  min-height: var(--bar);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .header-inner,
-.page-shell {
-  width: min(100% - 2rem, 1180px);
+.list-head,
+.list-items,
+.player-main,
+.player-error,
+.command-status {
+  width: min(100%, 1120px);
   margin-inline: auto;
 }
 
 .header-inner {
-  min-height: 4.5rem;
+  min-height: var(--bar);
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: .6rem;
+  padding-inline: .75rem;
 }
 
 .brand {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  gap: .7rem;
-  color: var(--text);
-  font-size: 1.2rem;
-  font-weight: 760;
-  letter-spacing: -.025em;
-  text-decoration: none;
-}
-
-.brand-mark {
-  width: 2.35rem;
-  height: 2.35rem;
-  display: grid;
-  place-items: center;
-  border-radius: .75rem;
-  background: var(--accent);
-  color: #fff;
-  box-shadow: 0 8px 18px rgba(37, 99, 235, .25);
-}
-
-.brand-mark svg {
-  width: 1.45rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: .7rem;
-  margin-left: auto;
-}
-
-.socket-state {
-  min-height: 2rem;
   display: inline-flex;
   align-items: center;
   gap: .45rem;
+  flex: none;
+    font-size: .95rem;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  text-decoration: none;
+  color: var(--text);
+}
+
+/* The player's own mark: the green tuning eye from the splash screen, drawn
+   rather than fetched - one 24 px logo is not worth a file, a route and a
+   request, and an SVG stays sharp on any panel. Its colours are its own, so
+   nothing here paints over them with currentColor. */
+.brand-mark {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.brand-mark svg {
+  width: 24px;
+  height: 24px;
+}
+
+.eye-wedge { fill: #0d3b22; }
+.eye-pupil { fill: #0b1710; }
+
+.eye-ring,
+.eye-ticks {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.brand-word { display: inline; }
+
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+}
+
+.socket-state {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  font-family: var(--mono);
+  font-size: .72rem;
   color: var(--muted);
-  font-size: .84rem;
-  font-weight: 650;
   white-space: nowrap;
 }
 
 .socket-state::before {
-  width: .55rem;
-  height: .55rem;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: #f59e0b;
   content: "";
-  box-shadow: 0 0 0 4px rgba(245, 158, 11, .12);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
 }
 
-.socket-state.is-online::before {
-  background: #22c55e;
-  box-shadow: 0 0 0 4px rgba(34, 197, 94, .12);
-}
-
-.socket-state.is-offline::before {
-  background: #ef4444;
-  box-shadow: 0 0 0 4px rgba(239, 68, 68, .1);
-}
+.socket-state.is-online::before { background: var(--ok); }
+.socket-state.is-offline::before { background: var(--bad); }
+.socket-state.is-offline { color: var(--bad); }
 
 .icon-button {
-  width: 44px;
-  height: 44px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--line);
-  border-radius: .8rem;
-  background: var(--surface);
+  border-radius: 8px;
+  border: 1px solid transparent;
   color: var(--muted);
   text-decoration: none;
-  transition: border-color .18s ease, color .18s ease, transform .18s ease;
+  flex: none;
 }
 
-.icon-button:hover {
-  border-color: #aec2e0;
-  color: var(--accent);
-  transform: translateY(-1px);
-}
+.icon-button:hover { color: var(--text); background: var(--surface-2); }
 
 .icon-button svg {
-  width: 1.3rem;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.7;
@@ -182,1134 +261,1254 @@ button:disabled {
   stroke-linejoin: round;
 }
 
-.page-shell {
-  padding-block: 1.4rem 2.5rem;
-}
+/* The theme icon shows the half that is not on screen right now. */
+.theme-toggle .icon-moon { display: none; }
+.theme-toggle .icon-sun { display: block; }
+
+:root[data-theme="light"] .theme-toggle .icon-moon { display: block; }
+:root[data-theme="light"] .theme-toggle .icon-sun { display: none; }
+
+/* ------------------------------------------------------- source switcher */
 
 .source-tabs {
-  min-height: 44px;
   display: flex;
-  gap: .55rem;
-  margin-bottom: 1rem;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: var(--surface-2);
   overflow-x: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
+
+.source-tabs::-webkit-scrollbar { display: none; }
 
 .source-tab {
-  min-height: 44px;
-  flex: 0 0 auto;
-  padding: .65rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--muted);
-  cursor: pointer;
-  font-size: .9rem;
-  font-weight: 700;
-  transition: background .18s ease, border-color .18s ease, color .18s ease;
-}
-
-.source-tab:hover,
-.source-tab.is-active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent-dark);
-}
-
-.content-grid {
-  display: grid;
-  grid-template-columns: var(--content-columns);
-  gap: 1.25rem;
-  align-items: stretch;
-}
-
-.card {
-  min-width: 0;
-  border: 1px solid rgba(220, 228, 239, .9);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-}
-
-.player-card {
-  min-height: 31rem;
-  display: flex;
-  flex-direction: column;
-  padding: clamp(1.35rem, 3vw, 2.25rem);
-}
-
-.player-heading,
-.list-heading,
-.player-controls {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.header-inner,
-.player-heading,
-.list-heading,
-.list-item {
-  justify-content: space-between;
-}
-
-.eyebrow {
-  margin: 0 0 .35rem;
-  color: var(--accent);
-  font-size: .75rem;
-  font-weight: 800;
-  letter-spacing: .11em;
-  text-transform: uppercase;
-}
-
-.playback-state {
+  height: 28px;
   display: inline-flex;
   align-items: center;
-  gap: .4rem;
-  margin: 0;
+  text-decoration: none;
+  padding-inline: .7rem;
+  border-radius: 7px;
+  font-size: .82rem;
+  font-weight: 500;
   color: var(--muted);
-  font-size: .9rem;
-  font-weight: 650;
+  white-space: nowrap;
 }
 
-.playback-state::before {
-  width: .48rem;
-  height: .48rem;
-  border-radius: 50%;
-  background: #94a3b8;
-  content: "";
+.source-tab:hover:not(:disabled) { color: var(--text); }
+
+.source-tab.is-active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
 }
 
-.playback-state[data-state="playing"]::before {
-  background: #22c55e;
-  box-shadow: 0 0 0 4px rgba(34, 197, 94, .12);
-}
+/* ------------------------------------------------------------ player shell */
 
-.playback-state[data-state="connecting"]::before,
-.playback-state[data-state="reconnecting"]::before {
-  background: #f59e0b;
-}
-
-.playback-state[data-state="error"]::before {
-  background: #ef4444;
-}
-
-.signal-mark {
-  height: 2.25rem;
+/* The header and the player panel stay put and only the list scrolls: the
+   panel is what the page is for, and it would otherwise scroll away with the
+   list. The height comes from a flex column on body rather than from
+   subtracting the header - on a narrow screen the header wraps its tabs onto
+   a second row and any subtraction misses. */
+.player-page {
+  height: 100vh;
+  height: 100dvh;
   display: flex;
-  align-items: end;
-  gap: .25rem;
-  padding: .55rem .65rem;
-  border-radius: .75rem;
-  background: var(--surface-soft);
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.signal-mark i {
-  width: .2rem;
-  border-radius: 999px;
+.app-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+
+.media-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.list-head {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .45rem .75rem;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.list-head h2 {
+  font-size: .85rem;
+  font-weight: 650;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A path reads as a path, not as a heading: a file listing carries /usb0/…
+   where a station list carries a title, and the monospaced face keeps the two
+   apart. */
+.media-list[data-kind="files"] .list-head h2 {
+  font-family: var(--mono);
+  font-size: .78rem;
+  font-weight: 400;
+  color: var(--text-2);
+}
+
+.list-count {
+  font-family: var(--mono);
+  font-size: .72rem;
+  color: var(--muted);
+  flex: none;
+}
+
+.list-search {
+  margin-left: auto;
+  width: min(220px, 42vw);
+  height: 28px;
+  padding: 0 .6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: .82rem;
+}
+
+.list-search::placeholder { color: var(--muted); }
+
+.list-items {
+  flex: 1;
+  min-height: 0;
+  margin-block: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  counter-reset: row;
+  background: var(--surface);
+}
+
+/* Two faces of one control: words where there is room, the home screen's own
+   marks where there is not. */
+.source-icon { display: none; }
+
+.source-icon path,
+.source-icon circle,
+.source-icon rect { fill: currentColor; }
+
+.source-icon .stroke {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.source-icon .thick { stroke-width: 2.4; }
+
+.list-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  padding: 1.4rem .75rem;
+  font-size: .85rem;
+  color: var(--muted);
+}
+
+.spinner {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Still says "working", without the motion. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; border-top-color: var(--accent); opacity: .7; }
+}
+
+.list-item {
+  width: 100%;
+  min-height: var(--row);
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  padding: 0 .75rem;
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+  counter-increment: row;
+}
+
+/* The row number is drawn by a counter rather than sent by the device: the
+   indices run consecutively anyway, and another field in the reply would cost
+   room in the frame. */
+.list-item::before {
+  content: counter(row);
+  width: 1.7rem;
+  flex: none;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: .72rem;
+  color: var(--muted);
+}
+
+/* The "up" row carries no number - it is navigation, not an entry. */
+.list-item:not([data-index]) { counter-increment: none; }
+.list-item:not([data-index])::before { content: "\2191"; }
+
+.list-item:hover:not(:disabled) { background: var(--surface-2); }
+
+.list-item.is-active { background: var(--accent-soft); }
+.list-item.is-active::before { color: var(--accent); }
+
+.list-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .9rem;
+}
+
+.list-item.is-active .list-item-label { font-weight: 600; }
+
+.list-item.is-directory .list-item-label::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 9px;
+  margin-right: .45rem;
+  border: 1.4px solid var(--muted);
+  border-top-width: 3px;
+  border-radius: 2px;
+}
+
+.list-item-meta {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-family: var(--mono);
+  font-size: .66rem;
+  color: var(--muted);
+}
+
+/* The playing mark is three bars rather than a word: the right-hand column is
+   narrow, and the row's state has to read without taking room from the
+   name. */
+.active-marker {
+  flex: none;
+  display: none;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+  font-size: 0;
+}
+
+.list-item.is-active .active-marker { display: flex; }
+.list-item.is-active .list-item-meta { display: none; }
+
+.active-marker::before,
+.active-marker::after,
+.active-marker > i {
+  content: "";
+  display: block;
+  width: 2px;
+  border-radius: 1px;
   background: var(--accent);
+  transform-origin: bottom;
+  animation: vu .9s ease-in-out infinite;
 }
 
-.signal-mark i:nth-child(1) { height: 25%; opacity: .4; }
-.signal-mark i:nth-child(2) { height: 45%; opacity: .58; }
-.signal-mark i:nth-child(3) { height: 70%; opacity: .78; }
-.signal-mark i:nth-child(4) { height: 100%; }
+.active-marker::before { height: 6px; animation-delay: -.2s; }
+.active-marker::after { height: 8px; animation-delay: -.55s; }
+.active-marker > i { height: 12px; }
+
+/* On a directory the mark sits on a row that opens rather than plays, so the
+   animation has nothing to say there. */
+.list-item.is-directory .active-marker::before,
+.list-item.is-directory .active-marker::after,
+.list-item.is-directory .active-marker > i { animation: none; }
+
+@keyframes vu {
+  0%, 100% { transform: scaleY(.45); }
+  50% { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .active-marker::before,
+  .active-marker::after,
+  .active-marker > i { animation: none; }
+}
+
+.empty-state {
+  padding: 1.6rem .75rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: .88rem;
+}
+
+/* -------------------------------------------------------------- player bar */
+
+.player-bar {
+  flex: none;
+  position: relative;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.player-main {
+  display: flex;
+  align-items: flex-start;
+  gap: .9rem;
+  padding: .8rem .75rem;
+}
+
+/* The cover sets the panel's height, and the column beside it is centred
+   against the cover so the panel keeps that height whether the station has an
+   icon or not. */
+.player-body {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--cover);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: .65rem;
+}
 
 .track-copy {
   display: flex;
-  gap: 1.5rem;
-  align-items: center;
-  max-width: 42rem;
-  margin-block: auto;
-  padding-block: 2rem;
-}
-
-.track-lines {
+  align-items: flex-start;
+  gap: .8rem;
   min-width: 0;
 }
 
-/* The device holds one 96-pixel square whatever the file carried, so this is
-   drawn at its own size rather than stretched: an upscaled thumbnail beside
-   type this large looks like a mistake, and there is no larger copy to ask
-   for. */
-.track-cover {
-  width: 96px;
-  height: 96px;
-  flex: 0 0 96px;
-  border-radius: .75rem;
-  /* Fitted, not cropped: the device already fits a non-square picture inside
-     its 96-pixel square and centres it, and cropping here would cut off what
-     it had kept. */
-  object-fit: contain;
-  background: var(--surface-soft);
-  box-shadow: 0 8px 20px rgba(38, 55, 87, .14);
+.track-art {
+  position: relative;
+  width: var(--cover);
+  height: var(--cover);
+  flex: none;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-3);
 }
+
+/* No picture, no tile: an empty square beside the title reads as a defect
+   rather than as a placeholder. The panel keeps its height either way -
+   that is what the column's min-height is for. */
+.track-art:has(> img[hidden]) { display: none; }
+
+.track-cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--surface-3);
+}
+
+.track-lines { min-width: 0; flex: 1; }
+
+.track-lines > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#track-title {
+  font-family: inherit;
+  font-size: 1.6rem;
+  font-weight: 650;
+  letter-spacing: -.015em;
+}
+
+.track-artist {
+  font-size: 1.05rem;
+  color: var(--text-2);
+}
+
+.track-context {
+  font-size: .85rem;
+  color: var(--muted);
+}
+
+/* The transport sits on its own line, centred under the copy: it is the one
+   thing on the panel that is reached for without reading first. */
+.player-transport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .9rem;
+  flex-wrap: wrap;
+}
+
+/* The position line and the volume close the panel. With no position line -
+   a radio stream - the volume still keeps to the right-hand corner. */
+.player-bottom {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 22px;
+}
+
+.player-controls {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  flex: none;
+}
+
+.player-controls button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-2);
+  flex: none;
+}
+
+.player-controls button:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+
+.player-controls button svg { width: 24px; height: 24px; fill: currentColor; }
+
+.play-toggle {
+  width: 58px !important;
+  height: 58px !important;
+  border-radius: 18px !important;
+  background: var(--accent) !important;
+  color: var(--on-accent) !important;
+}
+
+.play-toggle svg { width: 28px; height: 28px; }
+.play-toggle .icon-pause { display: none; }
+.play-toggle.is-playing .icon-play { display: none; }
+.play-toggle.is-playing .icon-pause { display: block; }
+
+.like-track svg,
+.dislike-track svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+}
+
+.like-track.is-liked { color: var(--accent); }
+.like-track.is-liked svg { fill: currentColor; stroke: none; }
+.dislike-track.is-disliked { color: var(--bad); }
+
+/* The wide copy of the slash knocks a gap out of the heart's outline: without
+   it the two outlines merge into a smudge - the same reason the device's
+   bitmap erases before it strikes. */
+.dislike-track .slash-gap { stroke: var(--surface-2); stroke-width: 4; }
+.dislike-track .slash { stroke: currentColor; stroke-width: 1.7; }
 
 .track-progress {
   display: flex;
   align-items: center;
-  gap: .75rem;
-  max-width: 42rem;
-  margin-block: 0 1.5rem;
-}
-
-.track-time {
+  gap: .6rem;
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: .72rem;
   color: var(--muted);
-  font-size: .9rem;
-  font-variant-numeric: tabular-nums;
-  /* Fixed, so the bar does not shuffle sideways as the seconds tick past a
-     digit boundary. */
-  min-width: 3.2rem;
-}
-
-.track-time:last-child {
-  text-align: right;
 }
 
 .progress-rail {
   position: relative;
-  flex: 1 1 auto;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--line);
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
 }
 
 .progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
   width: 0;
-  height: 100%;
-  border-radius: inherit;
+  border-radius: 2px;
   background: var(--accent);
-  /* Short enough that the bar keeps up with a dragged handle, long enough that
-     the once-a-second poll does not look like a series of jumps. */
-  transition: width .15s linear;
 }
 
-/* A real range input laid over the bar rather than a click handler on it: the
-   pointer, the keyboard and assistive technology all already know what a
-   slider is, and none of them knows what a clickable div is. Its value is
-   seconds, which is what the device jumps by - a percentage would have to be
-   turned back into seconds using a length the browser only has an estimate
-   of. */
 .progress-seek {
   position: absolute;
-  /* A 6 px bar is not a target; this makes the grab area 22 px tall without
-     moving anything on the row. */
   inset: -8px 0;
   width: 100%;
   margin: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-  cursor: pointer;
-}
-
-.progress-seek:disabled {
-  cursor: default;
-}
-
-.progress-seek::-webkit-slider-runnable-track {
-  height: 100%;
-  background: transparent;
-}
-
-.progress-seek::-moz-range-track {
-  height: 100%;
-  background: transparent;
-}
-
-.progress-seek::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--surface);
-}
-
-.progress-seek::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--surface);
-}
-
-/* Where nothing can be jumped - a stream, or a track that is not playing - the
-   handle disappears and the bar goes back to reporting. */
-.progress-seek:disabled::-webkit-slider-thumb {
   opacity: 0;
+  cursor: pointer;
 }
 
-.progress-seek:disabled::-moz-range-thumb {
-  opacity: 0;
-}
-
-.progress-seek:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 5px;
-  border-radius: 999px;
-}
-
-.track-artist {
-  margin: 0 0 .65rem;
-  color: var(--accent);
-  font-size: clamp(.98rem, 2vw, 1.1rem);
-  font-weight: 750;
-  overflow-wrap: anywhere;
-}
-
-#track-title {
-  margin: 0;
-  color: var(--text);
-  font-size: clamp(2rem, 5vw, 3.8rem);
-  line-height: 1.04;
-  letter-spacing: -.045em;
-  overflow-wrap: anywhere;
-}
-
-.track-context {
-  margin: .9rem 0 0;
-  color: var(--muted);
-  font-size: 1rem;
-  overflow-wrap: anywhere;
-}
-
-.player-controls {
-  justify-content: flex-start;
-}
-
-.play-toggle {
-  width: 64px;
-  height: 64px;
-  flex: 0 0 64px;
-  display: grid;
-  place-items: center;
-  border: 0;
+.progress-seek:disabled { cursor: default; }
+.progress-rail.is-seekable .progress-fill::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -5px;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
-  cursor: pointer;
-  box-shadow: 0 12px 24px rgba(37, 99, 235, .26);
-  transition: background .18s ease, transform .18s ease;
-}
-
-.play-toggle:hover:not(:disabled) {
-  background: var(--accent-dark);
-  transform: translateY(-2px);
-}
-
-.play-toggle svg {
-  width: 1.8rem;
-  height: 1.8rem;
-  fill: currentColor;
-}
-
-.play-toggle .icon-pause,
-.play-toggle.is-playing .icon-play {
-  display: none;
-}
-
-.play-toggle.is-playing .icon-pause {
-  display: block;
-}
-
-/* Smaller than the play button and without its shadow: skipping a track is a
-   secondary action next to starting and stopping one. The like mark is the
-   same shape and size - the two are the pair of things that can be done to the
-   track itself, and one of them looking weightier would be a lie. */
-.next-track,
-.like-track,
-.dislike-track,
-.step-item {
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  background: var(--surface-muted, #e5e7eb);
-  color: var(--text, #111827);
-  cursor: pointer;
-  transition: background .18s ease, transform .18s ease;
-}
-
-.next-track:hover:not(:disabled),
-.like-track:hover:not(:disabled),
-.dislike-track:hover:not(:disabled),
-.step-item:hover:not(:disabled) {
-  transform: translateY(-2px);
-}
-
-.next-track svg,
-.step-item svg {
-  width: 1.25rem;
-  height: 1.25rem;
-  fill: currentColor;
-}
-
-/* Outline until the account has the track marked, solid once it has - the
-   same states the heart on the device shows, and told apart by shape rather
-   than by colour alone. The rejection is the same heart with a bar through it,
-   which is the third bitmap on the device: one mark, three answers. */
-.like-track svg,
-.dislike-track svg {
-  width: 1.25rem;
-  height: 1.25rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linejoin: round;
-}
-
-.dislike-track svg .slash,
-.dislike-track svg .slash-gap {
-  stroke-linecap: round;
-}
-
-/* The knockout, painted in the button's own background so the bar sits in a
-   clear gap instead of touching the heart's outline. It has to name the same
-   colour the button does - a filter would do it without repeating the value,
-   and would cost a compositing layer for one 44 px control. */
-.dislike-track svg .slash-gap {
-  stroke: var(--surface-muted, #e5e7eb);
-  stroke-width: 4.4;
-}
-
-.like-track.is-liked {
-  color: var(--danger);
-}
-
-.like-track.is-liked svg {
-  fill: currentColor;
-}
-
-.dislike-track.is-disliked {
-  color: var(--danger);
-}
-
-.next-track:disabled,
-.like-track:disabled,
-.dislike-track:disabled,
-.step-item:disabled {
-  opacity: .45;
-  cursor: default;
-}
-
-.stream-details {
-  min-width: 0;
-  /* Takes the slack, so the volume that follows it sits at the right-hand end
-     of the row instead of floating in the middle. */
-  flex: 1 1 auto;
+  box-shadow: 0 0 0 2px var(--surface-2);
 }
 
 .volume-control {
   display: flex;
   align-items: center;
-  gap: .6rem;
-  flex: 0 0 auto;
+  gap: .45rem;
+  flex: none;
+  width: 160px;
+  margin-left: auto;
   color: var(--muted);
 }
 
 .volume-icon {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 16px;
+  height: 16px;
+  flex: none;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.7;
-  stroke-linejoin: round;
   stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.volume-control input[type="range"] {
-  width: clamp(5rem, 12vw, 8rem);
+#volume-input {
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  margin: 0;
+  border-radius: 2px;
+  background: var(--surface-3);
   accent-color: var(--accent);
-  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
-.volume-control input[type="range"]:disabled {
-  cursor: default;
-  opacity: .5;
+#volume-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
-.volume-control output {
-  min-width: 2.2rem;
+#volume-input::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+#volume-value {
+  font-family: var(--mono);
+  font-size: .72rem;
+  width: 2.2ch;
   text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
-#stream-meta,
-.player-error,
-.command-status {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-#stream-meta {
-  color: var(--muted);
-  font-size: .9rem;
-  line-height: 1.5;
-}
-
-.player-error,
-.command-status.is-error {
-  color: var(--danger);
-}
-
-.player-error {
-  margin-top: .35rem;
-  font-size: .88rem;
-  font-weight: 650;
-}
-
-.command-status {
-  min-height: 1.25rem;
-  margin-top: 1rem;
-  font-size: .85rem;
-}
-
-.media-list {
-  max-height: 36rem;
-  padding: 1.5rem;
-  overflow: hidden;
-}
-
-.list-heading {
-  margin-bottom: 1rem;
-}
-
-.list-heading h2 {
-  margin: 0;
-  font-size: 1.35rem;
-  letter-spacing: -.02em;
-}
-
-.list-count {
-  min-width: 2rem;
-  padding: .3rem .6rem;
-  border-radius: 999px;
-  background: var(--surface-soft);
-  color: var(--accent-dark);
-  font-size: .8rem;
-  font-weight: 800;
-  text-align: center;
-}
-
-.list-items {
-  max-height: 29rem;
-  margin: 0;
-  padding: 0 .35rem 0 0;
-  overflow-y: auto;
-  list-style: none;
-  scrollbar-color: #b8c6d9 transparent;
-  scrollbar-width: thin;
-}
-
-.list-items li + li {
-  margin-top: .45rem;
-}
-
-.list-item {
-  width: 100%;
-  min-height: 52px;
+/* The chips wrap rather than ellipsize: a truncated "Воспроизв…" says less
+   than the same two chips on two lines. */
+.stream-details {
   display: flex;
   align-items: center;
-  gap: .75rem;
-  padding: .7rem .8rem .7rem .95rem;
-  border: 1px solid transparent;
-  border-radius: .85rem;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-  text-align: left;
-  transition: background .16s ease, border-color .16s ease;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: .3rem .35rem;
+  flex: none;
+  max-width: 40vw;
+  padding-top: .2rem;
 }
 
-.list-item:hover {
-  background: #f7f9fc;
+.state-chip,
+.stream-chip {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: .68rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.list-item.is-active {
-  border-color: #93b4f5;
+.state-chip[data-state="playing"] {
+  color: var(--accent);
+  border-color: var(--accent-line);
   background: var(--accent-soft);
 }
 
-.list-item-label {
-  min-width: 0;
-  font-weight: 650;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
+.state-chip[data-state="error"] { color: var(--bad); border-color: var(--bad); }
 
-.active-marker {
-  display: none;
-  flex: 0 0 auto;
-  color: var(--accent-dark);
-  font-size: .72rem;
-  font-weight: 800;
-}
-
-.list-item.is-active .active-marker {
-  display: inline;
-}
-
-/* A directory is opened rather than played, so it reads differently from a
-   track and shows its marker on hover instead of when active. */
-.list-item.is-directory .list-item-label {
-  font-weight: 700;
-  color: var(--accent-dark);
-}
-
-.list-item.is-directory:hover .active-marker,
-.list-item.is-directory:focus-visible .active-marker {
-  display: inline;
-}
-
-.empty-state {
-  margin: 2rem 0;
-  color: var(--muted);
-  text-align: center;
-}
-
-.noscript-message {
-  width: min(100% - 2rem, 40rem);
-  margin: 2rem auto;
-  padding: 1rem;
-  border: 1px solid var(--line);
-  border-radius: .75rem;
-  background: var(--surface);
-  text-align: center;
-}
-
-.settings-page {
-  width: min(100% - 2rem, 760px);
-}
-
-.settings-heading {
-  margin: .4rem 0 1.25rem;
-}
-
-.settings-heading h1 {
-  margin: .15rem 0 .35rem;
-  font-size: clamp(2rem, 6vw, 3rem);
-  letter-spacing: -.045em;
-}
-
-.settings-heading > p:last-child {
-  margin: 0;
+.player-error,
+.command-status {
+  padding: 0 .75rem .55rem;
+  font-size: .78rem;
   color: var(--muted);
 }
 
-.settings-section {
-  padding: clamp(1.25rem, 4vw, 2rem);
-}
+.player-error { color: var(--bad); }
+.command-status.is-error { color: var(--bad); }
 
-.settings-section-heading,
-.network-summary,
-.network-summary > div {
-  display: flex;
-}
+/* The expand button means nothing on a large screen, where everything is
+   visible already, so it exists only on a phone. */
+.player-expand { display: none; }
 
-.settings-section-heading {
-  align-items: flex-start;
-  justify-content: space-between;
+/* ------------------------------------------------------- document pages */
+
+.page-shell {
+  width: min(100% - 1.5rem, 900px);
+  margin-inline: auto;
+  padding-block: 1.25rem 2.5rem;
+  display: grid;
   gap: 1rem;
 }
 
-.settings-section-heading h2,
-.saved-networks-block h3 {
-  margin: .15rem 0 0;
+.page-heading { display: grid; gap: .2rem; }
+.page-heading h1 { font-size: 1.45rem; font-weight: 700; }
+.page-heading > p:last-child { color: var(--muted); font-size: .88rem; }
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  min-height: 34px;
+  padding: .35rem .8rem;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface-2);
+}
+
+.card-head h2 {
+  font-size: .68rem;
+  font-weight: 650;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .settings-status {
-  max-width: 18rem;
-  padding: .42rem .72rem;
-  border-radius: 999px;
-  background: var(--surface-soft);
-  color: var(--accent-dark);
-  font-size: .82rem;
-  font-weight: 750;
+  margin-left: auto;
+  font-size: .75rem;
+  color: var(--muted);
   text-align: right;
 }
 
-.settings-status.is-error {
-  background: #fee2e2;
-  color: var(--danger);
+.settings-status.is-error { color: var(--bad); }
+.settings-status.is-success { color: var(--ok); }
+
+.settings-columns {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+  grid-template-columns: 1fr;
 }
 
-.settings-status.is-success {
-  background: #dcfce7;
-  color: var(--success);
+@media (min-width: 780px) {
+  .settings-columns { grid-template-columns: 1fr 1fr; }
+}
+
+.settings-column { display: grid; gap: 1rem; align-content: start; }
+
+/* A settings row: the caption on the left, the control on the right, nothing
+   in between. */
+.device-row {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  min-height: 36px;
+  padding: .2rem .8rem;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: .88rem;
+}
+
+.device-row:last-child { border-bottom: 0; }
+
+.device-row > label:first-child,
+.device-row > .row-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.device-group + .device-group { border-top: 1px solid var(--line); }
+
+.device-group > h3 {
+  margin: 0;
+  padding: .4rem .8rem;
+  font-size: .66rem;
+  font-weight: 650;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.row-value {
+  font-family: var(--mono);
+  font-size: .78rem;
+  color: var(--muted);
+  text-align: right;
+}
+
+.row-value.is-ok { color: var(--ok); }
+
+select,
+input[type="text"],
+input[type="password"] {
+  height: 30px;
+  padding: 0 .5rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: .85rem;
+}
+
+select { min-width: 8.5rem; }
+
+input[type="text"],
+input[type="password"] { width: 100%; }
+
+/* A switch rather than a checkbox: beside the volume slider a square box
+   looks borrowed, and its state reads worse. */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 36px;
+  height: 21px;
+  margin: 0;
+  flex: none;
+  border-radius: 99px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  position: relative;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+
+input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: transform .15s ease;
+}
+
+input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"]:checked::after { transform: translateX(15px); }
+input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
+
+.device-slider {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  width: 150px;
+  flex: none;
+}
+
+.device-slider input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  margin: 0;
+  border-radius: 2px;
+  background: var(--surface-3);
+  accent-color: var(--accent);
+}
+
+.device-slider output {
+  font-family: var(--mono);
+  font-size: .75rem;
+  color: var(--muted);
+  width: 2.5ch;
+  text-align: right;
+}
+
+.field-note {
+  padding: .5rem .8rem;
+  color: var(--muted);
+  font-size: .78rem;
+  border-top: 1px solid var(--line-soft);
 }
 
 .network-summary {
-  gap: .75rem;
-  margin: 1.5rem 0;
+  margin: 0;
+  display: grid;
 }
 
 .network-summary > div {
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: .25rem;
-  padding: .85rem 1rem;
-  border-radius: .9rem;
-  background: #f7f9fc;
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  min-height: 34px;
+  padding: .2rem .8rem;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: .88rem;
 }
 
-.network-summary dt {
-  color: var(--muted);
-  font-size: .78rem;
-  font-weight: 650;
-}
+.network-summary dt { flex: 1; color: var(--text); }
 
 .network-summary dd {
   margin: 0;
-  overflow-wrap: anywhere;
-  font-weight: 750;
-}
-
-.saved-networks-block {
-  padding-block: .25rem 1.25rem;
-  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: .78rem;
+  color: var(--muted);
 }
 
 .saved-networks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .5rem;
-  margin: .85rem 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .saved-networks li {
-  padding: .42rem .7rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  font-size: .85rem;
-  font-weight: 650;
-}
-
-.saved-networks-block .empty-state {
-  margin: 1rem 0 0;
-  text-align: left;
-}
-
-.device-fields {
-  display: grid;
-  gap: 1.5rem;
-}
-
-.device-group h3 {
-  margin: 0 0 .6rem;
-  font-size: .95rem;
-  font-weight: 700;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: .08em;
-}
-
-.device-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(10rem, 14rem);
-  gap: .75rem;
-  align-items: center;
-  padding: .6rem 0;
-  border-top: 1px solid var(--line);
-}
-
-.device-group .device-row:first-of-type {
-  border-top: 0;
-}
-
-.device-row label {
-  color: var(--text);
-  font-size: .98rem;
-}
-
-.device-row select {
-  width: 100%;
-  padding: .5rem .65rem;
-  border: 1px solid var(--line);
-  border-radius: .65rem;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-}
-
-/* Left where the selects and sliders start, so the column of controls reads as
-   one column rather than three kinds of thing at three offsets. */
-.device-row input[type="checkbox"] {
-  justify-self: start;
-  width: 1.25rem;
-  height: 1.25rem;
-  accent-color: var(--accent);
-}
-
-.device-slider {
+  min-height: 32px;
   display: flex;
   align-items: center;
-  gap: .75rem;
-}
-
-.device-slider input[type="range"] {
-  flex: 1 1 auto;
-  min-width: 0;
-  accent-color: var(--accent);
-}
-
-.device-slider output {
-  min-width: 2.5rem;
-  text-align: right;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.device-row select:disabled,
-.device-row input:disabled {
-  opacity: .55;
+  padding: .2rem .8rem;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: .85rem;
 }
 
 .settings-form {
   display: grid;
-  gap: .55rem;
-  padding-top: 1.25rem;
+  gap: .4rem;
+  padding: .6rem .8rem .8rem;
 }
 
 .settings-form label {
-  margin-top: .45rem;
-  font-size: .86rem;
-  font-weight: 700;
-}
-
-.settings-form input {
-  width: 100%;
-  min-height: 46px;
-  padding: .65rem .8rem;
-  border: 1px solid var(--line);
-  border-radius: .75rem;
-  background: var(--surface);
-  color: var(--text);
-}
-
-.settings-form input:focus {
-  border-color: var(--accent);
-}
-
-/* The pairing code is meant to be read off the screen and typed on a phone,
-   so it gets the same treatment a one-time code gets anywhere else: large,
-   monospaced and spaced out, with no ambiguity between similar glyphs. */
-.yandex-code {
-  margin: 1.1rem 0 .4rem;
-  padding: .9rem 1rem;
-  border-radius: .75rem;
-  background: var(--surface-soft);
-}
-
-.yandex-code-lead {
-  margin: 0 0 .35rem;
+  font-size: .78rem;
   color: var(--muted);
-  font-size: .82rem;
 }
 
-.yandex-code p {
-  margin: 0 0 .35rem;
-}
-
-.yandex-code-value {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 1.6rem;
-  font-weight: 750;
-  letter-spacing: .18em;
-  color: var(--accent-dark);
+/* In a grid the button would stretch across the column and read as a bar. */
+.settings-form .primary-button {
+  justify-self: start;
+  margin-top: .3rem;
 }
 
 .settings-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: .6rem;
-  margin-top: .6rem;
+  gap: .4rem;
+  padding: .6rem .8rem;
+  border-top: 1px solid var(--line-soft);
 }
 
-.field-note {
-  margin: .15rem 0 .65rem;
-  color: var(--muted);
-  font-size: .78rem;
-  line-height: 1.45;
+.primary-button,
+.secondary-button {
+  height: 30px;
+  padding: 0 .75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: .85rem;
 }
 
 .primary-button {
-  min-height: 46px;
-  justify-self: start;
-  padding: .7rem 1rem;
-  border: 0;
-  border-radius: .75rem;
-  background: var(--accent);
-  color: #fff;
-  cursor: pointer;
-  font-weight: 750;
-}
-
-.primary-button:hover:not(:disabled) {
-  background: var(--accent-dark);
-}
-
-.secondary-button {
-  min-height: 46px;
-  display: inline-flex;
-  align-items: center;
-  padding: .65rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: .75rem;
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  font-weight: 700;
-  text-decoration: none;
-  transition: border-color .18s ease, color .18s ease;
-}
-
-.secondary-button:hover:not(:disabled) {
   border-color: var(--accent);
-  color: var(--accent-dark);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
 }
+
+.secondary-button:hover:not(:disabled) { background: var(--surface-2); }
+
+.file-button { cursor: pointer; }
+
+.yandex-code { padding: .6rem .8rem; display: grid; gap: .3rem; }
+.yandex-code-lead { font-size: .85rem; }
+.yandex-code a { color: var(--accent-2); }
+
+.yandex-code-value {
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  font-weight: 500;
+  letter-spacing: .18em;
+  color: var(--text);
+}
+
+/* --------------------------------------------------------- playlist editor */
 
 .playlist-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: .6rem;
-  padding-top: 1.25rem;
+  gap: .4rem;
+  margin-left: auto;
 }
 
 .playlist-rows {
-  display: grid;
-  gap: .75rem;
-  margin: 1.25rem 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
+  counter-reset: prow;
 }
 
 .playlist-row {
+  border-bottom: 1px solid var(--line-soft);
+  counter-increment: prow;
+}
+
+.playlist-row.is-editing { background: var(--surface-2); }
+
+/* The row is read to find a station; the fields for changing one live in the
+   panel below it. With a name field, an address field and a switch on every
+   line there was no list left to read, only a wall of inputs. */
+.playlist-row-head {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: .85rem;
-  padding: 1rem 1.1rem;
-  border: 1px solid var(--line);
-  border-radius: 1rem;
-  background: #f7f9fc;
+  align-items: center;
+  gap: .6rem;
+  min-height: var(--row);
+  padding: .2rem .8rem;
 }
 
-.playlist-row.has-error {
-  border-color: #f3b0a8;
-  background: #fef4f3;
-}
-
-.playlist-row-fields {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
-  gap: .75rem;
-  align-items: end;
-}
-
-.playlist-row-fields label {
-  display: grid;
-  gap: .35rem;
-  font-size: .78rem;
-  font-weight: 700;
+.playlist-row-head::before {
+  content: counter(prow);
+  width: 1.7rem;
+  flex: none;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: .72rem;
   color: var(--muted);
 }
 
-.playlist-row-fields input[type="text"] {
-  /* Form controls don't stretch to their grid track by default - without an
-     explicit width they keep the browser's intrinsic input width (~20ch),
-     which can be wider than the column and spill into the next field. */
-  width: 100%;
+.playlist-row-name {
+  flex: 0 1 auto;
+  min-width: 6rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .9rem;
+}
+
+.playlist-row-url {
+  flex: 1 1 12rem;
   min-width: 0;
-  min-height: 44px;
-  padding: .55rem .7rem;
-  border: 1px solid var(--line);
-  border-radius: .65rem;
-  background: var(--surface);
-  color: var(--text);
-  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: .74rem;
+  color: var(--muted);
 }
 
-.playlist-row-fields input[type="text"]:focus {
-  border-color: var(--accent);
+/* The station's own picture, the same one the panel shows while it plays. */
+.playlist-row-thumb {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 5px;
+  object-fit: cover;
+  background: var(--surface-3);
 }
 
-.playlist-row-flag {
-  flex-direction: row;
+.playlist-row-icon {
+  display: flex;
   align-items: center;
   gap: .5rem;
-  padding-bottom: .55rem;
-  color: var(--muted);
-  font-weight: 650;
-  white-space: nowrap;
+  flex-wrap: wrap;
 }
 
-.playlist-row-actions {
-  flex: 0 0 auto;
+.playlist-row-icon-preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: contain;
+  background: #000;
 }
 
+.playlist-row.has-error { background: var(--bad-soft); }
+.playlist-row.has-error .playlist-row-name { color: var(--bad); }
+
+.playlist-row-edit,
 .playlist-row-delete {
-  width: 40px;
-  height: 40px;
-  color: var(--danger);
+  width: 28px;
+  height: 28px;
 }
 
-.playlist-row-delete:hover {
-  border-color: var(--danger);
-  color: var(--danger);
+.playlist-row-edit { margin-left: auto; }
+
+.playlist-row-delete:hover { color: var(--bad); background: var(--bad-soft); }
+.playlist-row.is-editing .playlist-row-edit { color: var(--accent); }
+
+/* The pencil says the row can be changed; once the panel is open the arrow
+   says how to close it again. */
+.playlist-row-edit .icon-collapse { display: none; }
+.playlist-row.is-editing .playlist-row-edit .icon-pencil { display: none; }
+.playlist-row.is-editing .playlist-row-edit .icon-collapse { display: block; }
+
+.playlist-row-editor {
+  display: grid;
+  gap: .5rem;
+  padding: .2rem .8rem .8rem 3.1rem;
+}
+
+/* Only the two field labels stack their caption over the input; the switch is
+   a label too and would otherwise be caught by the same rule, putting its
+   sentence on the line below it. */
+.playlist-row-field {
+  display: grid;
+  gap: .2rem;
+}
+
+.playlist-row-field > span {
+  font-size: .72rem;
+  color: var(--muted);
+}
+
+.playlist-row-url-input {
+  font-family: var(--mono);
+  font-size: .78rem;
+}
+
+/* The switch belongs with the fields it qualifies, not in the row: what the
+   flag means takes a sentence, and a sentence has no room on a 38 px line. */
+.playlist-row-flag {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .8rem;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.playlist-row-tests {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+}
+
+.playlist-row-tests .is-testing {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .playlist-row-error {
-  flex-basis: 100%;
-  margin: .5rem 0 0;
-  color: var(--danger);
-  font-size: .82rem;
-  font-weight: 650;
+  color: var(--bad);
+  font-size: .78rem;
 }
+
+.playlist-row-error.is-notice { color: var(--muted); }
 
 .playlist-save-bar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 1rem;
-  padding-top: 1.5rem;
-  margin-top: 1.5rem;
+  gap: .6rem;
+  flex-wrap: wrap;
+  padding: .5rem .8rem;
   border-top: 1px solid var(--line);
+  background: var(--surface-2);
 }
 
-@media (max-width: 760px) {
-  .content-grid {
-    --content-columns: 1fr;
-  }
+/* Its own width, not what is left over: in a flex row the label was clipped
+   mid-word. */
+.playlist-save-bar .primary-button {
+  flex: none;
+  white-space: nowrap;
+}
 
-  .player-card {
-    min-height: auto;
-  }
+.playlist-save-bar .command-status { padding: 0; }
 
-  .media-list {
-    max-height: none;
-  }
+.noscript-message {
+  margin: 1rem;
+  padding: .8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--text-2);
+}
 
-  .list-items {
-    max-height: none;
-    overflow: visible;
-  }
+/* ------------------------------------------------------------------ phone */
 
-  .track-copy {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
-    margin-block: 1.5rem;
-    padding-block: 1rem;
-  }
-
-  .device-row {
-    grid-template-columns: 1fr;
-    align-items: start;
-  }
-
-  /* The controls row wraps on a narrow screen, and the volume belongs on a
-     line of its own rather than squeezed against the play button. */
-  .player-controls {
+@media (max-width: 720px) {
+  .header-inner {
+    gap: .4rem;
+    padding-inline: .6rem;
+    padding-block: .3rem;
     flex-wrap: wrap;
   }
+  .brand-word { display: none; }
+  .source-tabs { order: 3; flex-basis: 100%; justify-content: space-around; }
+  .source-tab { padding-inline: .45rem; font-size: .76rem; }
 
-  .volume-control {
-    flex: 1 0 100%;
+  /* The four Russian words do not fit across a phone header, so the marks take
+     their place. The word is clipped rather than dropped: it is still the
+     button's name for anything that reads the page aloud. */
+  .source-tab[data-icon] { padding-inline: .9rem; }
+  .source-tab[data-icon] .source-icon {
+    display: block;
+    width: 22px;
+    height: 22px;
+  }
+  .source-tab[data-icon] .source-tab-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
-  .playlist-row {
+  /* The three buttons keep one row of their own rather than breaking across
+     two: at this width the heading and the status leave less than one button
+     of space beside them. */
+  .card-head { flex-wrap: wrap; }
+  .playlist-toolbar { flex: 1 0 100%; flex-wrap: nowrap; justify-content: flex-end; }
+
+  .list-search { width: 100%; }
+  .list-head { flex-wrap: wrap; }
+  .list-item { min-height: 44px; }
+
+  /* Folded away: the cover, two lines and pause on one row. Everything else
+     waits for the card to be expanded - a full panel at the top of a phone
+     would leave no list under it. */
+  .player-main { padding: .45rem .6rem; gap: .55rem; align-items: center; }
+  .player-body { min-height: 0; }
+  .player-expand {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    color: var(--muted);
+    flex: none;
+  }
+  .player-expand svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    /* The panel opens downwards now that it sits at the top, so the chevron
+       points the way the card will move. */
+    transform: rotate(180deg);
+    transition: transform .18s ease;
+  }
+  .player-bar.is-expanded .player-expand svg { transform: rotate(0); }
+
+  .player-bar:not(.is-expanded) .player-body {
+    flex-direction: row;
+    align-items: center;
+    gap: .5rem;
+  }
+  .player-bar:not(.is-expanded) .track-art {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+  }
+  .player-bar:not(.is-expanded) .track-copy { flex: 1; }
+  .player-bar:not(.is-expanded) #track-title { font-size: .95rem; font-weight: 600; }
+  .player-bar:not(.is-expanded) .track-artist { font-size: .78rem; color: var(--muted); }
+  .player-bar:not(.is-expanded) .player-transport { flex: none; }
+  .player-bar:not(.is-expanded) .play-toggle {
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 14px !important;
+  }
+  .player-bar:not(.is-expanded) .play-toggle svg { width: 22px; height: 22px; }
+
+  .player-bar:not(.is-expanded) .track-progress,
+  .player-bar:not(.is-expanded) .player-bottom,
+  .player-bar:not(.is-expanded) .volume-control,
+  .player-bar:not(.is-expanded) .stream-details,
+  .player-bar:not(.is-expanded) .track-context,
+  .player-bar:not(.is-expanded) .like-track,
+  .player-bar:not(.is-expanded) .dislike-track,
+  .player-bar:not(.is-expanded) .step-item { display: none; }
+
+  .player-bar.is-expanded .player-main {
     flex-direction: column;
-    /* flex-wrap: wrap on a column-direction container wraps overflow into a
-       new column beside the first, not a new row below it - undoing that
-       here keeps the row-direction (desktop) wrap fix from misplacing the
-       error text sideways in this stacked layout. */
-    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: .7rem;
+    padding: .8rem .8rem 1rem;
   }
+  .player-bar.is-expanded .track-art {
+    width: min(140px, 42vw);
+    height: min(140px, 42vw);
+    border-radius: 14px;
+    margin-inline: auto;
+  }
+  .player-bar.is-expanded .track-copy {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  /* Column children shrink to their content, and a long track name would
+     then run off both edges instead of ellipsizing. */
+  .player-bar.is-expanded .track-lines { width: 100%; }
+  .player-bar.is-expanded #track-title { font-size: 1.25rem; }
+  .player-bar.is-expanded .track-artist { font-size: .95rem; }
+  /* Two chips do not fit one phone line: they wrap rather than run off the
+     edge, which is what a centred overflowing row does. */
+  .player-bar.is-expanded .stream-details {
+    max-width: 100%;
+    padding-top: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .player-bar.is-expanded .stream-chip { min-width: 0; }
+  .player-bar.is-expanded .player-controls { gap: .5rem; }
+  /* The two wrappers stop being boxes so their children join the card's own
+     column, which is the only way the position line can sit under the picture
+     while the volume stays last. */
+  .player-bar.is-expanded .player-body,
+  .player-bar.is-expanded .player-bottom { display: contents; }
+  .player-bar.is-expanded .track-art { order: 1; }
+  .player-bar.is-expanded .track-progress { order: 2; }
+  .player-bar.is-expanded .track-copy { order: 3; }
+  .player-bar.is-expanded .player-transport { order: 4; }
+  .player-bar.is-expanded .volume-control { order: 5; width: 100%; margin-left: 0; }
+  /* Expanded, the button moves to its own corner: in the middle of the column
+     it reads as part of the transport. The row that starts the card keeps
+     clear of it - the position line's total would otherwise be printed under
+     the chevron. */
+  .player-bar.is-expanded .player-expand { position: absolute; top: .5rem; right: .6rem; }
+  .player-bar.is-expanded .track-progress { padding-right: 2.1rem; }
 
-  .playlist-row-fields {
-    width: 100%;
-    grid-template-columns: 1fr;
-  }
-
-  .playlist-row-actions {
-    align-self: flex-end;
-  }
+  .page-shell { width: min(100% - 1rem, 900px); }
 }
 
 @media (max-width: 420px) {
-  .header-inner,
-  .page-shell {
-    width: min(100% - 1rem, 1180px);
-  }
-
-  .socket-state {
-    font-size: .76rem;
-  }
-
-  .player-card,
-  .media-list,
-  .settings-section {
-    padding: 1.1rem;
-    border-radius: 1rem;
-  }
-
-  .signal-mark {
-    display: none;
-  }
-
-  .settings-page {
-    width: min(100% - 1rem, 760px);
-  }
-
-  .settings-section-heading,
-  .network-summary {
-    flex-direction: column;
-  }
-
-  .settings-status {
-    max-width: 100%;
-    text-align: left;
-  }
-
-  .network-summary > div,
-  .primary-button {
-    width: 100%;
-  }
-
-  .playlist-toolbar .secondary-button {
-    flex: 1 1 auto;
-    justify-content: center;
-  }
-
-  .playlist-save-bar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  #track-title {
-    font-size: clamp(1.75rem, 11vw, 2.5rem);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    transition-duration: .01ms !important;
-    animation-duration: .01ms !important;
-    animation-iteration-count: 1 !important;
-  }
+  .stream-details { max-width: 100%; }
+  /* The address is the first thing to go: on a phone the name and the two
+     buttons are what the row is for, and the address is a line of noise the
+     panel shows in full anyway. */
+  .playlist-row-url { display: none; }
+  .playlist-row-editor { padding-left: 1.6rem; }
 }

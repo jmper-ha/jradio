@@ -54,6 +54,10 @@ class Element {
   append(...items) { this.children.push(...items); }
   appendChild(item) { this.children.push(item); return item; }
   setAttribute(name, value) { this.attributes[name] = value; }
+  removeAttribute(name) { delete this.attributes[name]; }
+  // The row's picture is an <img>; src is a plain property here, and the code
+  // takes it off again with removeAttribute when there is no picture.
+  get firstChild() { return this.children[0]; }
   querySelector(selector) {
     for (const child of this.children) {
       if (elementMatches(child, selector)) return child;
@@ -133,9 +137,12 @@ const {parseCatalogText, serializeCatalog, rowError} = context.module.exports;
   assert.equal(withGarbage.rows.length, 1);
   assert.equal(withGarbage.skipped, 2);
 
-  const many = Array.from({length: 40}, (_, i) => `s${i}\thttp://${i}\t0`).join('\n');
+  // The ceiling is STATION_CATALOG_MAX_ENTRIES, which is 99: the editor kept
+  // saying 32 long after the device grew, and an import of a longer file lost
+  // its tail without a word.
+  const many = Array.from({length: 120}, (_, i) => `s${i}\thttp://${i}\t0`).join('\n');
   const overflow = parseCatalogText(many);
-  assert.equal(overflow.rows.length, 32);
+  assert.equal(overflow.rows.length, 99);
   assert.equal(overflow.truncated, true);
 
   // rowError validation, mirrors the on-device length/format limits

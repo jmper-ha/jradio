@@ -38,8 +38,6 @@
     {field: 'autoplay', kind: 'switch', node: document.querySelector('#device-autoplay')},
     {field: 'yandex_music', kind: 'switch', node: document.querySelector('#device-yandex'),
      row: document.querySelector('#device-yandex-row'), gate: 'yandex_music'},
-    {field: 'volume', kind: 'number', node: document.querySelector('#device-volume'),
-     output: document.querySelector('#device-volume-value')},
     {field: 'brightness', kind: 'number', node: deviceBrightness,
      output: document.querySelector('#device-brightness-value')},
     {field: 'flip_vertical', kind: 'switch', node: document.querySelector('#device-flip-vertical')},

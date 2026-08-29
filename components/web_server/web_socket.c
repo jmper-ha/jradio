@@ -1095,8 +1095,20 @@ static esp_err_t websocket_handler(httpd_req_t *request)
 {
     if (request->method == HTTP_GET) {
         /* The current connection is already marked as WebSocket here. */
-        if (websocket_client_count(request->handle) > WEB_SOCKET_MAX_CLIENTS) {
-            ESP_LOGW(TAG, "WebSocket client limit reached");
+        const size_t clients = websocket_client_count(request->handle);
+        if (clients > WEB_SOCKET_MAX_CLIENTS) {
+            // With the count: a slot is held until the device notices the
+            // client has gone, and without the number one message cannot tell
+            // a genuinely full pool from sessions nobody has swept.
+            ESP_LOGW(TAG, "WebSocket client limit reached: %u of %u",
+                     (unsigned)clients, (unsigned)WEB_SOCKET_MAX_CLIENTS);
+            /* Refusing without closing left the socket marked as a WebSocket:
+             * it never entered the broadcast list, nothing ever wrote to it,
+             * and the device never noticed the client was not there. The next
+             * attempt counted it as live - the ceiling was one below the
+             * configured limit. */
+            (void)httpd_sess_trigger_close(request->handle,
+                                           httpd_req_to_sockfd(request));
             return ESP_FAIL;
         }
         const int fd = httpd_req_to_sockfd(request);

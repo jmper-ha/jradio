@@ -27,19 +27,33 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "internet_radio.h"
 #include "player_control.h"
 #include "station_catalog.h"
+#include "ui_now_playing.h"
 #include "file_storage.h"
 #include "album_art.h"
 #include "esp_heap_caps.h"
+#include "esp_random.h"
+#include <dirent.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "ui_menu.h"
 #include "web_cover.h"
 #include "web_json.h"
 #include "web_settings.h"
 #include "yandex_auth.h"
 #include "yandex_catalog.h"
+#include "yandex_rotor.h"
 
 #define WEB_SERVER_MOUNT_PATH "/littlefs"
 #define WEB_SERVER_WEB_ROOT "www"
 #define WEB_SERVER_REQUEST_MAX_LEN 256
+/* The playlist editor's test request carries a whole station: a 256-byte URL,
+ * a 96-byte name and the JSON around them. */
+#define WEB_SERVER_STATION_TEST_MAX_LEN 512
+/* A picture already scaled to ALBUM_ART_SIZE by the browser. PNG of a 96 px
+ * square is a few kilobytes; the cap is there to stop a mistake, not to fit a
+ * photograph. */
+#define WEB_SERVER_STATION_ICON_MAX_LEN 32768U
 /* The upload has to be able to carry a full catalogue, so it is derived from
  * the catalogue rather than typed - otherwise raising the station count leaves
  * a limit behind that rejects the very file the device can now hold. */
@@ -245,6 +259,28 @@ static bool web_server_client_accepts_gzip(httpd_req_t *request)
     return strstr(header, "gzip") != NULL;
 }
 
+/* A tag for what the file currently holds, so a page load asks "still this?"
+ * instead of "give me it again". FNV-1a over the bytes rather than the size or
+ * a timestamp: the image is built on a PC and flashed whole, so mtimes say
+ * nothing useful, and an edit that leaves the size alone is exactly the change
+ * that must not slip through. */
+static bool web_server_file_tag(FILE *file, char *out, size_t out_size)
+{
+    uint32_t hash = 2166136261U;
+    size_t total = 0U;
+    size_t read;
+    while ((read = fread(s_file_chunk_buffer, 1U, sizeof(s_file_chunk_buffer), file)) > 0U) {
+        for (size_t index = 0U; index < read; ++index) {
+            hash ^= (uint8_t)s_file_chunk_buffer[index];
+            hash *= 16777619U;
+        }
+        total += read;
+    }
+    if (ferror(file) || fseek(file, 0, SEEK_SET) != 0) return false;
+    const int written = snprintf(out, out_size, "\"%x-%x\"", (unsigned)total, (unsigned)hash);
+    return written > 0 && (size_t)written < out_size;
+}
+
 static esp_err_t web_server_send_file(httpd_req_t *request, const char *relative_path,
                                       const char *content_type)
 {
@@ -264,14 +300,34 @@ static esp_err_t web_server_send_file(httpd_req_t *request, const char *relative
         httpd_resp_send_err(request, HTTPD_404_NOT_FOUND, "Web file not installed");
         return ESP_FAIL;
     }
+    /* Kept in scope until the response has gone out: esp_http_server stores the
+     * pointer it is given and reads it while sending. */
+    char tag[24];
+    const bool tagged = web_server_file_tag(file, tag, sizeof(tag));
+
     httpd_resp_set_type(request, content_type);
     if (gzipped) {
         httpd_resp_set_hdr(request, "Content-Encoding", "gzip");
     }
-    // These assets only change when the web UI is re-flashed via
-    // `idf.py littlefs-flash`, so caching them for an hour avoids
-    // re-downloading them on every normal page load/navigation.
-    httpd_resp_set_hdr(request, "Cache-Control", "public, max-age=3600");
+    /* Kept, but never used without asking. These assets change only when the
+     * partition is re-flashed, and a browser holding an hour-old copy of app.js
+     * after that is a page running against a device that has moved on - which
+     * is a whole class of "the screen shows something else" that no amount of
+     * fixing the device can reach. Revalidation costs one conditional GET per
+     * asset per page load on a LAN; the 304 carries no body. */
+    httpd_resp_set_hdr(request, "Cache-Control", "no-cache");
+    // The gzipped and plain variants of one URL are different bytes.
+    httpd_resp_set_hdr(request, "Vary", "Accept-Encoding");
+    if (tagged) {
+        httpd_resp_set_hdr(request, "ETag", tag);
+        char have[24];
+        if (httpd_req_get_hdr_value_str(request, "If-None-Match", have, sizeof(have)) == ESP_OK &&
+            strcmp(have, tag) == 0) {
+            fclose(file);
+            httpd_resp_set_status(request, "304 Not Modified");
+            return httpd_resp_send(request, NULL, 0);
+        }
+    }
     size_t bytes_read;
     while ((bytes_read = fread(s_file_chunk_buffer, 1, sizeof(s_file_chunk_buffer), file)) > 0) {
         const esp_err_t err = httpd_resp_send_chunk(request, s_file_chunk_buffer, bytes_read);
@@ -298,6 +354,12 @@ static esp_err_t web_server_root_get(httpd_req_t *request)
 static esp_err_t web_server_app_js_get(httpd_req_t *request)
 {
     return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/app.js",
+                                "application/javascript; charset=utf-8");
+}
+
+static esp_err_t web_server_theme_js_get(httpd_req_t *request)
+{
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/theme.js",
                                 "application/javascript; charset=utf-8");
 }
 
@@ -387,7 +449,17 @@ static esp_err_t web_server_status_get(httpd_req_t *request)
         return ESP_FAIL;
     }
     cJSON_AddStringToObject(radio_json, "state", web_server_radio_state_name(radio.state));
-    cJSON_AddStringToObject(radio_json, "station", radio.station);
+    /* The same answer the panel and the page give: status.station carries the
+     * stream's icy-name, and the playlist's third column says whose name to
+     * show. Without this the diagnostic request named the station differently
+     * from both screens. */
+    const station_catalog_entry_t *station_entry =
+        player_control_station_at(radio.station_index);
+    cJSON_AddStringToObject(
+        radio_json, "station",
+        ui_now_playing_station_name(station_entry != NULL && station_entry->flag != 0,
+                                    station_entry != NULL ? station_entry->name : "",
+                                    radio.station));
     cJSON_AddStringToObject(radio_json, "title", radio.title);
     cJSON_AddStringToObject(radio_json, "codec", radio.codec);
     cJSON_AddNumberToObject(radio_json, "bitrate_kbps", radio.bitrate_kbps);
@@ -718,7 +790,12 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
     web_json_writer_t writer;
     web_json_init(&writer, s_file_chunk_buffer, sizeof(s_file_chunk_buffer),
                   sizeof(s_file_chunk_buffer));
-    web_json_literal(&writer, "{\"kind\":\"stations\",\"revision\":");
+    /* The source is named outright: the radio and the rotor share one list
+     * kind, and the rotor's catalogue is fetched over the network - a reply to
+     * a request sent before the switch arrives after it. */
+    web_json_literal(&writer, "{\"kind\":\"stations\",\"source\":");
+    web_json_string(&writer, rotor ? "yandex" : "internet_radio");
+    web_json_literal(&writer, ",\"revision\":");
     web_json_format(&writer, "%u", snapshot.listing_revision);
     web_json_literal(&writer, ",\"count\":");
     web_json_format(&writer, "%u", (unsigned)count);
@@ -799,6 +876,9 @@ static esp_err_t web_server_playlist_get(httpd_req_t *request)
     return httpd_resp_send_chunk(request, NULL, 0);
 }
 
+/* Defined below, beside the upload it cleans up after. */
+static void web_server_sweep_station_icons(void);
+
 static esp_err_t web_server_playlist_post(httpd_req_t *request)
 {
     if (request->content_len <= 0 ||
@@ -829,6 +909,11 @@ static esp_err_t web_server_playlist_post(httpd_req_t *request)
     const esp_err_t result =
         internet_radio_catalog_replace(body, received, &count, &active_station_removed);
     free(body);
+    if (result == ESP_OK) {
+        // The catalogue is the list of names in use, so this is the moment a
+        // picture nobody refers to can be told from one in use.
+        web_server_sweep_station_icons();
+    }
 
     if (result == ESP_OK && active_station_removed) {
         // Hand the stop to player_control instead of calling
@@ -925,6 +1010,169 @@ static esp_err_t web_server_settings_api_get(httpd_req_t *request)
     return httpd_resp_send(request, s_file_chunk_buffer, (ssize_t)length);
 }
 
+/* Plays a URL that is in no catalogue: the playlist editor's "test on the
+ * device", which lets a station be heard before it is saved. Nothing is
+ * written - not the catalogue, not the resume point - so a station that turns
+ * out to be dead leaves no trace. An empty URL stops the test. */
+/* The picture of a station, uploaded from the playlist editor. The browser has
+ * already scaled it to ALBUM_ART_SIZE and re-encoded it, so what arrives is a
+ * few kilobytes of PNG - the device only stores the bytes and hands them to
+ * album_art when the station plays, which is the same decoder a file's cover
+ * goes through.
+ *
+ * The name is generated here rather than taken from the request: the file name
+ * ends up in the playlist and is joined to one directory, and a name chosen by
+ * the client is a name that can be a path. */
+static esp_err_t web_server_station_icon_post(httpd_req_t *request)
+{
+    if (request->content_len <= 0 ||
+        (size_t)request->content_len > WEB_SERVER_STATION_ICON_MAX_LEN) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Invalid picture size");
+        return ESP_FAIL;
+    }
+    if (mkdir(STATION_ICON_DIR, 0777) != 0 && errno != EEXIST) {
+        ESP_LOGE(TAG, "cannot create %s: %s", STATION_ICON_DIR, strerror(errno));
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Storage unavailable");
+        return ESP_FAIL;
+    }
+
+    char name[STATION_CATALOG_ICON_MAX_LEN];
+    char path[sizeof(STATION_ICON_DIR) + STATION_CATALOG_ICON_MAX_LEN + 1U];
+    FILE *file = NULL;
+    /* A few attempts rather than one: the name is random, and the only way to
+     * find out it is taken is to look. */
+    for (int attempt = 0; attempt < 8 && file == NULL; ++attempt) {
+        snprintf(name, sizeof(name), "s%08lx.png", (unsigned long)esp_random());
+        snprintf(path, sizeof(path), "%s/%s", STATION_ICON_DIR, name);
+        struct stat existing;
+        if (stat(path, &existing) == 0) continue;
+        file = fopen(path, "wb");
+    }
+    if (file == NULL) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Cannot store picture");
+        return ESP_FAIL;
+    }
+
+    /* Streamed in kilobyte pieces: the whole picture never sits in RAM here,
+     * and the HTTP worker's stack is the scarce thing on this path. */
+    char chunk[1024];
+    size_t received = 0U;
+    bool failed = false;
+    while (received < (size_t)request->content_len) {
+        const size_t want = (size_t)request->content_len - received;
+        const int read = httpd_req_recv(request, chunk,
+                                        want < sizeof(chunk) ? want : sizeof(chunk));
+        if (read <= 0) {
+            failed = true;
+            break;
+        }
+        if (fwrite(chunk, 1U, (size_t)read, file) != (size_t)read) {
+            failed = true;
+            break;
+        }
+        received += (size_t)read;
+    }
+    fclose(file);
+    if (failed) {
+        (void)unlink(path);
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Incomplete upload");
+        return ESP_FAIL;
+    }
+
+    char reply[STATION_CATALOG_ICON_MAX_LEN + 16U];
+    snprintf(reply, sizeof(reply), "{\"file\":\"%s\"}", name);
+    httpd_resp_set_type(request, "application/json");
+    return httpd_resp_sendstr(request, reply);
+}
+
+/* Hands a stored picture back, so the editor can show what a station already
+ * has after the page is reloaded. The name is checked against the same rule
+ * the catalogue parses it with - it is joined to one directory, and a name
+ * that is a path is a way out of it. */
+static esp_err_t web_server_station_icon_get(httpd_req_t *request)
+{
+    char query[STATION_CATALOG_ICON_MAX_LEN + 16U];
+    char name[STATION_CATALOG_ICON_MAX_LEN];
+    if (httpd_req_get_url_query_str(request, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "file", name, sizeof(name)) != ESP_OK ||
+        !station_catalog_icon_is_valid(name) || name[0] == '\0') {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Invalid picture name");
+        return ESP_FAIL;
+    }
+    /* Relative to the mount, which is what web_server_send_file() joins to -
+     * and it is also what applies the same caching every other stored file
+     * gets. A new picture is a new name, so a cached one is never stale. */
+    char relative[sizeof(STATION_ICON_DIR) + STATION_CATALOG_ICON_MAX_LEN];
+    snprintf(relative, sizeof(relative), "radio_img/%s", name);
+    return web_server_send_file(request, relative, "image/png");
+}
+
+/* Pictures nobody names any more are deleted when the playlist is saved. That
+ * is the only moment the full set of names is known, and without it a picture
+ * replaced or a station removed would keep its file for ever. */
+static void web_server_sweep_station_icons(void)
+{
+    DIR *dir = opendir(STATION_ICON_DIR);
+    if (dir == NULL) return;
+    const struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_DIR) continue;
+        if (internet_radio_icon_in_use(entry->d_name)) continue;
+        char path[sizeof(STATION_ICON_DIR) + STATION_CATALOG_ICON_MAX_LEN + 1U];
+        if (snprintf(path, sizeof(path), "%s/%s", STATION_ICON_DIR, entry->d_name) >=
+            (int)sizeof(path)) {
+            continue;
+        }
+        if (unlink(path) == 0) {
+            ESP_LOGI(TAG, "removed unused station picture %s", entry->d_name);
+        }
+    }
+    closedir(dir);
+}
+
+static esp_err_t web_server_station_test_post(httpd_req_t *request)
+{
+    /* Its own size, and static rather than on the stack: a station URL alone
+     * may be 256 bytes, which is the whole of WEB_SERVER_REQUEST_MAX_LEN, and
+     * the name and the JSON around them still have to fit. esp_http_server
+     * runs one worker, so this buffer has one user at a time. */
+    static char body[WEB_SERVER_STATION_TEST_MAX_LEN];
+    if (request->content_len <= 0 ||
+        request->content_len >= (int)sizeof(body)) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Invalid request");
+        return ESP_FAIL;
+    }
+    memset(body, 0, sizeof(body));
+    int received = 0;
+    while (received < request->content_len) {
+        const int read = httpd_req_recv(request, body + received,
+                                        request->content_len - received);
+        if (read <= 0) {
+            httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Incomplete request");
+            return ESP_FAIL;
+        }
+        received += read;
+    }
+
+    cJSON *root = cJSON_ParseWithLength(body, (size_t)received);
+    const cJSON *url = root == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(root, "url");
+    if (!cJSON_IsString(url)) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Invalid request");
+        return ESP_FAIL;
+    }
+    const cJSON *name = cJSON_GetObjectItemCaseSensitive(root, "name");
+    const bool posted = player_control_post_stream_test(
+        url->valuestring, cJSON_IsString(name) ? name->valuestring : "");
+    cJSON_Delete(root);
+    if (!posted) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Address too long");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(request, "application/json");
+    return httpd_resp_sendstr(request, "{\"ok\":true}");
+}
+
 static esp_err_t web_server_settings_api_post(httpd_req_t *request)
 {
     if (request->content_len <= 0 || request->content_len >= WEB_SERVER_REQUEST_MAX_LEN) {
@@ -999,15 +1247,34 @@ static esp_err_t web_server_progress_get(httpd_req_t *request)
     }
     /* The generation is what the page watches: the picture itself comes from
      * /api/cover, and re-fetching 27 KB once a second to find out it has not
-     * changed is exactly what this number exists to prevent. */
+     * changed is exactly what this number exists to prevent.
+     *
+     * The signature is what the page *names* the picture by. The generation
+     * counts from zero at every boot, so ?g=1 meant a different cover on every
+     * run while the answer was cached for a day - three browsers ended up
+     * showing three different album covers for the same track. */
     web_json_literal(&writer, "\"cover\":{\"present\":");
     web_json_literal(&writer, cover.present ? "true" : "false");
     web_json_literal(&writer, ",\"generation\":");
     web_json_format(&writer, "%u", cover.generation);
+    web_json_literal(&writer, ",\"signature\":");
+    web_json_format(&writer, "%u", (unsigned)cover.signature);
     web_json_literal(&writer, ",\"width\":");
     web_json_format(&writer, "%u", (unsigned)cover.width);
     web_json_literal(&writer, ",\"height\":");
     web_json_format(&writer, "%u", (unsigned)cover.height);
+    /* The rotor's tracks carry a picture the service will serve at any size,
+     * so the page is given the address and fetches it at the size it draws,
+     * instead of stretching the 96 px the panel decoded. Nothing else has an
+     * address to give: a station icon and a file's tag live on the device. */
+    char cover_url[YANDEX_COVER_URL_MAX + 1U];
+    /* No source check beside it: the rotor answers only while it is the one
+     * playing, and reading the snapshot here would copy it onto the http
+     * worker's stack for one comparison. */
+    if (yandex_rotor_playing_cover_url(cover_url, sizeof(cover_url))) {
+        web_json_literal(&writer, ",\"url\":");
+        web_json_string(&writer, cover_url);
+    }
     web_json_literal(&writer, "}}");
     if (!web_json_valid(&writer)) {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
@@ -1058,9 +1325,13 @@ static esp_err_t web_server_cover_get(httpd_req_t *request)
         return ESP_FAIL;
     }
     httpd_resp_set_type(request, "image/bmp");
-    /* Immutable for a day, because the page asks for a different URL when the
-     * picture changes - the generation rides in the query string. */
-    httpd_resp_set_hdr(request, "Cache-Control", "public, max-age=86400");
+    /* Never stored. The page already asks only when the picture changes - the
+     * signature rides in the query string - so a cache saves at most one fetch
+     * per track and can hand back the wrong picture for a whole day: two
+     * browsers showed two different album covers for one track, each the one
+     * it happened to cache first under an older page's ?g= address. Correct
+     * beats 27 KB. */
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
 
     size_t length = WEB_COVER_BMP_HEADER_SIZE;
     esp_err_t err = ESP_OK;
@@ -1114,10 +1385,10 @@ esp_err_t web_server_start(void)
         // The HTTP worker is network-bound; keep it on core 0 with Wi-Fi and
         // lwIP so it cannot preempt the audio decoder pinned to core 1.
         config.core_id = 0;
-        // Eighteen are registered below plus /ws; the spare five exist because
-        // running out is not a build error - httpd_register_uri_handler fails
-        // at startup and takes the whole web server down with it.
-        config.max_uri_handlers = 24;
+        // Twenty-three are registered below plus /ws; the spare ones exist
+        // because running out is not a build error - httpd_register_uri_handler
+        // fails at startup and takes the whole web server down with it.
+        config.max_uri_handlers = 30;
         config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
         config.send_wait_timeout = 1;
         config.lru_purge_enable = false;
@@ -1125,6 +1396,7 @@ esp_err_t web_server_start(void)
         const httpd_uri_t handlers[] = {
             {.uri = "/", .method = HTTP_GET, .handler = web_server_root_get},
             {.uri = "/app.js", .method = HTTP_GET, .handler = web_server_app_js_get},
+            {.uri = "/theme.js", .method = HTTP_GET, .handler = web_server_theme_js_get},
             {.uri = "/style.css", .method = HTTP_GET, .handler = web_server_style_get},
             {.uri = "/settings", .method = HTTP_GET, .handler = web_server_settings_get},
             {.uri = "/settings.js", .method = HTTP_GET, .handler = web_server_settings_js_get},
@@ -1140,6 +1412,9 @@ esp_err_t web_server_start(void)
             {.uri = "/api/yandex", .method = HTTP_POST, .handler = web_server_yandex_post},
             {.uri = "/api/settings", .method = HTTP_GET, .handler = web_server_settings_api_get},
             {.uri = "/api/settings", .method = HTTP_POST, .handler = web_server_settings_api_post},
+            {.uri = "/api/station-test", .method = HTTP_POST, .handler = web_server_station_test_post},
+            {.uri = "/api/station-icon", .method = HTTP_POST, .handler = web_server_station_icon_post},
+            {.uri = "/api/station-icon", .method = HTTP_GET, .handler = web_server_station_icon_get},
             {.uri = "/api/progress", .method = HTTP_GET, .handler = web_server_progress_get},
             {.uri = "/api/cover", .method = HTTP_GET, .handler = web_server_cover_get},
         };

@@ -33,6 +33,10 @@
   const listCount = document.querySelector('#list-count');
   const listItems = document.querySelector('#list-items');
   const listEmpty = document.querySelector('#list-empty');
+  const listLoading = document.querySelector('#list-loading');
+  const listSearch = document.querySelector('#list-search');
+  const playerBar = document.querySelector('#player-bar');
+  const playerExpand = document.querySelector('#player-expand');
 
   const playbackLabels = Object.freeze({
     stopped: 'Остановлено',
@@ -90,9 +94,16 @@
   // The kind is tracked beside the revision because the two lists share one
   // counter: switching between them without it looks like the revision the
   // browser already has, and the new list would never be fetched.
+  // The source is tracked beside the kind: internet radio and the rotor share
+  // one kind ("stations"), so on the kind alone a move from one catalogue to
+  // the other is indistinguishable from "the same list" - the previous
+  // source's stations stayed on screen, and a click on a row selected that
+  // index in the new catalogue.
   let listFetchKind = null;
+  let listFetchSource = null;
   let listFetchRevision = null;
   let listShownKind = null;
+  let listShownSource = null;
   let listShownRevision = null;
 
   /* Position, buffer fill and the cover do not travel over the socket. The
@@ -191,6 +202,41 @@
       }));
   }
 
+  /* The same marks the device's home-screen carousel uses, redrawn as SVG:
+     the antenna for internet radio, the flash drive standing up, the card and
+     the rotor's spark. The spark's outline is the device's own geometry -
+     twelve graded rays measured off the service's icon, the numbers copied
+     from tools/gen_feed_icons.py - so the two faces show one shape.
+
+     They replace the labels on a phone, where four words of Russian do not fit
+     across the header. Ours, never the device's strings, so they are safe to
+     hand to innerHTML. */
+  const sourceIcons = Object.freeze({
+    internet_radio:
+      '<svg class="source-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+      '<circle cx="12" cy="8" r="2.2"/>' +
+      '<path class="stroke" d="M9.1 11.4a4.4 4.4 0 0 1 0-6.8M14.9 4.6a4.4 4.4 0 0 1 0 6.8' +
+      'M6.6 13.9a7.9 7.9 0 0 1 0-11.8M17.4 2.1a7.9 7.9 0 0 1 0 11.8"/>' +
+      '<path class="stroke thick" d="M12 12.8v8.4"/></svg>',
+    usb:
+      '<svg class="source-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+      '<path fill-rule="evenodd" d="M9.5 2.2h5a.8.8 0 0 1 .8.8v5.4H8.7V3a.8.8 0 0 1 .8-.8Z' +
+      'M9.89 3.94h1.72v2.11H9.89Zm2.5 0h1.72v2.11h-1.72Z"/>' +
+      '<path class="stroke" d="M7 8.2h10v11a2.2 2.2 0 0 1-2.2 2.2H9.2A2.2 2.2 0 0 1 7 19.2Z"/>' +
+      '<rect x="8.6" y="12.2" width="6.8" height="2" rx="0.9"/></svg>',
+    sd:
+      '<svg class="source-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+      '<path class="stroke" d="M16.2 2.4 18.6 4.8V19a2.4 2.4 0 0 1-2.4 2.4H7.8A2.4 2.4 0 0 1 5.4 19' +
+      'V4.8a2.4 2.4 0 0 1 2.4-2.4Z"/>' +
+      '<path class="stroke" d="M8.6 6.2v2.6M11.2 6.2v2.6M13.8 6.2v2.6"/></svg>',
+    yandex:
+      '<svg class="source-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+      '<path d="M20.43 12.93 16.86 12.18 19.55 16.11 15.83 13.15 17.02 18.79 14.26 13.63' +
+      ' 11.74 20.37 12.21 13.07 4.94 16.88 10.86 11.29 3.57 10.24 10.79 9.42 5.90 5.89' +
+      ' 11.52 8.02 9.50 3.93 12.84 7.09 13.27 3.62 14.64 6.90 16.71 4.86 16.30 7.68' +
+      ' 19.05 6.89 17.28 9.11 20.27 9.70 17.43 10.77Z"/></svg>',
+  });
+
   function renderSources() {
     const previousSignature = sourceTabs.dataset.signature || '';
     const nextSignature = sourceSignature(state.capabilities);
@@ -201,7 +247,20 @@
         button.className = 'source-tab';
         button.dataset.command = 'source.select';
         button.dataset.source = source.id;
-        button.textContent = source.label;
+        const icon = sourceIcons[source.id];
+        if (icon) {
+          button.innerHTML = icon;
+          // Only where there is a mark to show instead: an unknown source
+          // keeps its words rather than becoming a blank square.
+          button.dataset.icon = '1';
+        }
+        /* The label stays in the button even when the icon replaces it - on a
+           phone it is clipped, not removed, so the button still has a name to
+           be read out. */
+        const label = document.createElement('span');
+        label.className = 'source-tab-label';
+        label.textContent = source.label;
+        button.append(label);
         button.addEventListener('click', () => {
           sendCommand('source.select', {source: source.id});
         });
@@ -377,10 +436,27 @@
 
   function renderCover(cover) {
     const present = isObject(cover) && cover.present === true;
-    /* The generation rides in the query string so the browser fetches the
-       picture exactly when it changes and takes it from its cache the rest of
-       the time - 27 KB once a second would be the alternative. */
-    const url = present ? `/api/cover?g=${safeInteger(cover.generation)}` : '';
+    /* Where the device hands over an address - the rotor's tracks, whose
+       pictures the service serves at any size - the browser fetches it
+       itself and gets one drawn for this screen rather than the 96 px the
+       panel decoded. Everything else comes from the device.
+
+       The device's own pictures are named in the query string by their
+       signature - a checksum of the bytes they were decoded from - so the
+       browser fetches one exactly when it changes and takes it from its cache
+       the rest of the time; 27 KB once a second would be the alternative.
+       The generation is only the fallback: it counts from zero at every boot,
+       so the same ?g= meant a different picture after a restart, and the
+       day-long cache handed back whichever one that browser saw first. */
+    const remote = present && typeof cover.url === 'string' &&
+                   cover.url.indexOf('http://') === 0 ? cover.url : '';
+    let url = '';
+    if (present) {
+      const signature = safeInteger(cover.signature);
+      url = remote || (signature > 0
+        ? `/api/cover?s=${signature}`
+        : `/api/cover?g=${safeInteger(cover.generation)}`);
+    }
     if (url !== progress.coverUrl) {
       progress.coverUrl = url;
       if (present) trackCover.src = url;
@@ -480,16 +556,21 @@
     nextTrack.disabled = !skippable || !state.connected ||
       (player.state !== 'playing' && player.state !== 'paused');
 
-    /* The mark is shown only where the device sends one, for the same reason:
-       a station and a file are in nobody's library, and an empty heart there
-       would offer a button that can only be refused. */
-    const likeable = typeof player.liked === 'boolean';
-    const markable = likeable && state.connected &&
+    /* Shown for the rotor and nowhere else: a station and a file are in
+       nobody's library, and an empty heart there would offer a button that can
+       only be refused.
+
+       Tied to the source rather than to the mark the device sends, because
+       between two rotor tracks it sends none - and hiding the pair there made
+       them vanish on every skip, taking the buttons either side of them along
+       for the ride. They stay, greyed, until the next track says what it is. */
+    const likeable = state.activeSource === 'yandex';
+    const markable = likeable && typeof player.liked === 'boolean' && state.connected &&
       (player.state === 'playing' || player.state === 'paused');
     likeTrack.hidden = !likeable;
     likeTrack.disabled = !markable;
-    likeTrack.classList.toggle('is-liked', likeable && player.liked === true);
-    likeTrack.setAttribute('aria-pressed', String(likeable && player.liked === true));
+    likeTrack.classList.toggle('is-liked', markable && player.liked === true);
+    likeTrack.setAttribute('aria-pressed', String(markable && player.liked === true));
 
     /* Its own button rather than a second meaning of the heart: the device has
        one key and has to overload it, the browser has room for both. The two
@@ -497,8 +578,8 @@
        the browser having to ask for that. */
     dislikeTrack.hidden = !likeable;
     dislikeTrack.disabled = !markable;
-    dislikeTrack.classList.toggle('is-disliked', likeable && player.disliked === true);
-    dislikeTrack.setAttribute('aria-pressed', String(likeable && player.disliked === true));
+    dislikeTrack.classList.toggle('is-disliked', markable && player.disliked === true);
+    dislikeTrack.setAttribute('aria-pressed', String(markable && player.disliked === true));
 
     /* The two track keys, the browser's copy of the buttons on the front of
        the device. They move what is playing along the list it came from - the
@@ -540,7 +621,8 @@
 
   function listSignature(items) {
     return items
-      .map((item) => `${item.index}\u0000${item.label}\u0000${item.isDirectory ? 'd' : 'f'}`)
+      .map((item) => `${item.index}\u0000${item.label}\u0000${item.meta || ''}` +
+                     `\u0000${item.isDirectory ? 'd' : 'f'}`)
       .join('\u0001');
   }
 
@@ -552,21 +634,27 @@
     const kind = safeString(value.kind);
     if (kind !== 'files' && kind !== 'stations') return null;
     // Both listings arrive as a header only; the entries are fetched
-    // separately, so the ones already on screen are kept until they do.
+    // separately, so the ones already on screen are kept until they do - but
+    // only when they belong to the same source: rows of a catalogue that has
+    // been left cannot stay, their indices no longer mean what they did.
     const files = kind === 'files';
+    const keep = state.list.kind === kind && listShownSource === state.activeSource;
     return {
       kind,
       active_index,
-      items: state.list.kind === kind ? state.list.items : [],
+      items: keep ? state.list.items : [],
       path: files ? safeString(value.path) : '',
       revision: Number.isSafeInteger(value.revision) ? value.revision : null,
       has_parent: files && value.has_parent === true,
     };
   }
 
-  function fileEntryLabel(entry) {
-    if (entry.kind === 'dir') return `${entry.name}/`;
-    return entry.format ? `${entry.name} · ${entry.format}` : entry.name;
+  /* The format used to be appended to the name and a directory marked with a
+     slash. The name is now just the name: the format moves to its own column
+     on the right, a directory is known by its icon, and a long name is
+     truncated on itself rather than on a trailing file type. */
+  function fileEntryMeta(entry) {
+    return entry.kind === 'dir' ? '' : safeString(entry.format);
   }
 
   function normalizeFileEntries(payload) {
@@ -575,7 +663,8 @@
       .filter((item) => isObject(item) && Number.isSafeInteger(item.index) && typeof item.name === 'string')
       .map((item) => ({
         index: item.index,
-        label: fileEntryLabel(item),
+        label: item.name,
+        meta: fileEntryMeta(item),
         isDirectory: item.kind === 'dir',
       }));
   }
@@ -585,7 +674,7 @@
     return payload.items
       .filter((item) => isObject(item) && Number.isSafeInteger(item.index) &&
                         typeof item.label === 'string')
-      .map((item) => ({index: item.index, label: item.label}));
+      .map((item) => ({index: item.index, label: item.label, meta: ''}));
   }
 
   const listingSources = {
@@ -604,11 +693,15 @@
   async function loadListing(kind, revision) {
     const source = listingSources[kind];
     if (!source) return;
+    const activeSource = state.activeSource;
     // Guard against the same listing being fetched twice: player updates
     // arrive far more often than a listing changes.
-    if (listFetchKind === kind && listFetchRevision === revision) return;
-    if (listShownKind === kind && listShownRevision === revision) return;
+    if (listFetchKind === kind && listFetchSource === activeSource &&
+        listFetchRevision === revision) return;
+    if (listShownKind === kind && listShownSource === activeSource &&
+        listShownRevision === revision) return;
     listFetchKind = kind;
+    listFetchSource = activeSource;
     listFetchRevision = revision;
     try {
       const response = await fetch(source.url, {cache: 'no-store'});
@@ -619,6 +712,17 @@
       // The device may have moved on while this was in flight. Trust the
       // revision the response carries, not the one that triggered the fetch.
       if (state.list.kind !== kind) return;
+      /* And the source too: the device fetches the rotor's catalogue over the
+         network, so a reply to a request sent before the switch arrives after
+         it. The reply names the source it belongs to.
+
+         Until a source is selected there is nothing to compare against: the
+         device serves the radio catalogue under its own name while the page
+         knows only "none". The reply is accepted, and still tracked as
+         "none" - the first selection of a source refetches the list. */
+      if (state.activeSource !== activeSource) return;
+      if (activeSource !== 'none' && typeof payload.source === 'string' &&
+          payload.source !== activeSource) return;
       if (listShownKind === kind && listShownRevision !== null &&
           Number.isSafeInteger(payload.revision) && payload.revision < listShownRevision) {
         return;
@@ -632,14 +736,17 @@
         has_parent: files && payload.has_parent === true,
       };
       listShownKind = kind;
+      listShownSource = activeSource;
       listShownRevision = Number.isSafeInteger(payload.revision) ? payload.revision : revision;
       renderList(previousList);
     } catch (error) {
       commandStatus.textContent = source.error;
       commandStatus.classList.add('is-error');
     } finally {
-      if (listFetchKind === kind && listFetchRevision === revision) {
+      if (listFetchKind === kind && listFetchSource === activeSource &&
+          listFetchRevision === revision) {
         listFetchKind = null;
+        listFetchSource = null;
         listFetchRevision = null;
       }
     }
@@ -648,13 +755,58 @@
   function syncListing() {
     if (!listingSources[state.list.kind]) {
       listShownKind = null;
+      listShownSource = null;
       listShownRevision = null;
       return;
     }
     if (state.list.revision === null) return;
-    if (state.list.kind !== listShownKind || state.list.revision !== listShownRevision) {
+    if (state.list.kind !== listShownKind || listShownSource !== state.activeSource ||
+        state.list.revision !== listShownRevision) {
       loadListing(state.list.kind, state.list.revision);
     }
+  }
+
+  /* The search lives in the browser alone: all 99 stations have already
+     arrived, and asking the device for a filtered list would pay another
+     request for what is on the page. The "up" row is never hidden - it is
+     navigation, not an entry. */
+  function applyListFilter() {
+    const query = listSearch.value.trim().toLowerCase();
+    let shown = 0;
+    Array.from(listItems.children).forEach((row) => {
+      const button = row.children[0];
+      if (!button || button.dataset.index === undefined) return;
+      const label = button.children[0];
+      const text = label ? String(label.textContent).toLowerCase() : '';
+      const match = query === '' || text.includes(query);
+      row.hidden = !match;
+      if (match) shown += 1;
+    });
+    const total = state.list.items.length;
+    listCount.textContent = query === '' ? String(total) : `${shown}/${total}`;
+  }
+
+  /* The list is on screen before a source is selected: with none active the
+     device still reports the "stations" kind and serves the station catalogue.
+     The device itself only opens that list through the menu, which has already
+     selected the source. So the browser names the owner of the list it is
+     showing: the first source with the same list kind, which for the station
+     catalogue shown in this state is internet radio. */
+  function listOwnerSource() {
+    const kind = state.list.kind;
+    if (!kind) return null;
+    const active = state.capabilities.find((source) => source.id === state.activeSource);
+    if (active && active.list_kind === kind) return null;
+    const owner = state.capabilities.find((source) => source.list_kind === kind);
+    return owner ? owner.id : null;
+  }
+
+  function selectListItem(index) {
+    const owner = listOwnerSource();
+    // Two commands rather than one: the device takes them off its queue in
+    // order, and by the time the second is read the source is already set.
+    if (owner !== null) sendCommand('source.select', {source: owner});
+    sendCommand('list.select', {index});
   }
 
   function focusedListIndex() {
@@ -697,6 +849,7 @@
       const button = document.createElement('button');
       const label = document.createElement('span');
       const marker = document.createElement('span');
+      const meta = document.createElement('span');
 
       button.type = 'button';
       button.className = 'list-item';
@@ -711,9 +864,15 @@
       // meaningless on one.
       marker.textContent = item.isDirectory ? 'Открыть' : 'Играет';
       marker.setAttribute('aria-hidden', 'true');
-      button.append(label, marker);
+      /* CSS draws two of the bars as pseudo-elements; the third has to be a
+         node, because one element has only two of them. */
+      marker.append(document.createElement('i'));
+      meta.className = 'list-item-meta';
+      meta.textContent = safeString(item.meta);
+      meta.hidden = meta.textContent.length === 0;
+      button.append(label, marker, meta);
       button.addEventListener('click', () => {
-        sendCommand('list.select', {index: item.index});
+        selectListItem(item.index);
       });
       row.append(button);
       return row;
@@ -748,12 +907,19 @@
       ? state.list.path
       : label.title;
     listItems.setAttribute('aria-label', label.aria);
+    mediaList.dataset.kind = kind;
     rebuildListIfNeeded(previousList);
     listCount.textContent = String(state.list.items.length);
     // A subdirectory with no playable files still offers the way back, so the
     // list is only truly empty when there is nothing to click at all.
     const rowCount = state.list.items.length + (state.list.has_parent ? 1 : 0);
-    listEmpty.hidden = rowCount !== 0;
+    /* The rotor's stations are fetched from the service after the source is
+       selected, so an empty list right after the switch means the device is
+       still asking - not that there is nothing. The other sources are read
+       from the device itself and are empty only when they really are. */
+    const waiting = rowCount === 0 && state.connected && state.activeSource === 'yandex';
+    listLoading.hidden = !waiting;
+    listEmpty.hidden = rowCount !== 0 || waiting;
     listItems.hidden = rowCount === 0;
 
     listItems.querySelectorAll('button').forEach((button) => {
@@ -767,6 +933,10 @@
         button.removeAttribute('aria-current');
       }
     });
+
+    // The filter is applied last: the rows may have just been rebuilt, and
+    // they come back visible.
+    applyListFilter();
 
     // Every path that changes the list ends here, so this is the single place
     // the REST fetch needs to be triggered from.
@@ -972,6 +1142,16 @@
   progressSeek.addEventListener('change', commitSeek);
   volumeInput.addEventListener('input', holdVolume);
   volumeInput.addEventListener('change', commitVolume);
+  listSearch.addEventListener('input', applyListFilter);
+  /* Folded away on a phone the bar shows only the cover, the title and pause;
+     the position, the volume and the stream's numbers live in the expanded
+     card. On a large screen the button is hidden - everything fits there. */
+  playerExpand.addEventListener('click', () => {
+    const expanded = playerBar.classList.toggle('is-expanded');
+    playerExpand.setAttribute('aria-expanded', String(expanded));
+    playerExpand.setAttribute('aria-label',
+      expanded ? 'Свернуть карточку трека' : 'Развернуть карточку трека');
+  });
   likeTrack.addEventListener('click', () => sendCommand('player.like'));
   dislikeTrack.addEventListener('click', () => sendCommand('player.dislike'));
   renderSources();

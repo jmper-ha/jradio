@@ -49,7 +49,11 @@ class Element {
     this.hidden = false;
     this.disabled = false;
     this.scrollTop = 0;
-    this.style = {};
+    /* setProperty is needed as much as plain assignment: the player bar paints
+       its own --played variable through it. */
+    this.style = {
+      setProperty(name, value) { this[name] = value; },
+    };
     this.value = '';
   }
 
@@ -99,7 +103,8 @@ const ids = [
   'progress-rail', 'progress-fill', 'progress-seek',
   'volume-control', 'volume-input', 'volume-value',
   'stream-meta', 'player-error', 'command-status', 'media-list',
-  'list-title', 'list-count', 'list-items', 'list-empty',
+  'list-title', 'list-count', 'list-items', 'list-empty', 'list-loading', 'list-search',
+  'player-bar', 'player-expand',
 ];
 const buttonIds = new Set([
   'play-toggle', 'next-track', 'like-track', 'dislike-track', 'previous-item',
@@ -289,7 +294,7 @@ socket.emit('open');
     ],
   });
 
-  assert.deepEqual(labels(), ['Альбом/', 'track.mp3 · MP3']);
+  assert.deepEqual(labels(), ['Альбом', 'track.mp3']);
   assert.equal(elements['#list-count'].textContent, '2');
   // The heading names the directory: "Файлы" alone leaves the user lost.
   assert.equal(elements['#list-title'].textContent, '/usb0');
@@ -298,6 +303,11 @@ socket.emit('open');
   // A directory is opened, never played.
   assert.equal(rows()[0].children[1].textContent, 'Открыть');
   assert.equal(rows()[1].children[1].textContent, 'Играет');
+  // The format moved out of the name into its own column: a directory has
+  // none, a file has one.
+  assert.equal(rows()[0].children[2].hidden, true);
+  assert.equal(rows()[1].children[2].textContent, 'MP3');
+  assert.equal(rows()[1].children[2].hidden, false);
 
   // Clicking an entry selects it by the device's own index.
   rows()[1].emit('click');
@@ -329,7 +339,7 @@ socket.emit('open');
   });
 
   // The parent row leads the list and is not counted as an entry.
-  assert.deepEqual(labels(), ['.. (наверх)', 'a.mp3 · MP3']);
+  assert.deepEqual(labels(), ['.. (наверх)', 'a.mp3']);
   assert.equal(elements['#list-count'].textContent, '1');
   assert.equal(rows()[0].dataset.command, 'browse.up');
   assert.equal(rows()[0].dataset.index, undefined,
@@ -377,7 +387,7 @@ socket.emit('open');
     }),
   });
   await flush();
-  assert.deepEqual(labels(), ['.. (наверх)', 'new.mp3 · MP3']);
+  assert.deepEqual(labels(), ['.. (наверх)', 'new.mp3']);
 
   pendingFetch[0].resolve({
     ok: true,
@@ -388,7 +398,7 @@ socket.emit('open');
     }),
   });
   await flush();
-  assert.deepEqual(labels(), ['.. (наверх)', 'new.mp3 · MP3'],
+  assert.deepEqual(labels(), ['.. (наверх)', 'new.mp3'],
     'a late reply for an abandoned directory must be discarded');
   assert.equal(elements['#list-title'].textContent, '/usb0/Вторая');
 
@@ -428,6 +438,134 @@ socket.emit('open');
                  items: [{index: 0, label: 'Радио Шоколад'}]});
   assert.deepEqual(labels(), ['Радио Шоколад']);
   assert.equal(elements['#list-title'].textContent, 'Станции');
+
+  /* With no source selected the device still calls the list kind "stations"
+     and serves the station catalogue. The device opens that list through its
+     menu, which has already chosen the source, so a click on a row selects the
+     owner of the list first. */
+  socket.sent.length = 0;
+  sendEvent(socket, {
+    type: 'snapshot',
+    revision: 9,
+    capabilities: [
+      {id: 'internet_radio', label: 'Интернет-радио', list_kind: 'stations'},
+      {id: 'usb', label: 'USB-накопитель', list_kind: 'files'},
+    ],
+    active_source: 'none',
+    player: {...usbPlayer(), mode: 'Нет источника', context: ''},
+    list: {kind: 'stations', active_index: null, revision: 9, count: 1},
+    wifi: {},
+  });
+  await respond({kind: 'stations', revision: 9, count: 1,
+                 items: [{index: 0, label: 'Радио Шоколад'}]});
+  rows()[0].emit('click');
+  assert.deepEqual(socket.sent.map((frame) => JSON.parse(frame).action),
+    ['source.select', 'list.select'],
+    'источник выбирается перед строкой');
+  assert.equal(JSON.parse(socket.sent[0]).source, 'internet_radio');
+  assert.equal(JSON.parse(socket.sent[1]).index, 0);
+
+  // And when the source is already the right one, no extra command is sent.
+  socket.sent.length = 0;
+  sendEvent(socket, {
+    type: 'player.update', revision: 10, active_source: 'internet_radio',
+    player: {...usbPlayer(), mode: 'Интернет-радио', context: 'Радио'},
+  });
+  rows()[0].emit('click');
+  assert.deepEqual(socket.sent.map((frame) => JSON.parse(frame).action),
+    ['list.select'], 'источник уже выбран - одна команда');
+
+  /* The radio and the rotor share one list kind ("stations"), so on the kind
+     alone a switch between them is indistinguishable from "the same list".
+     Until this was tracked the abandoned source's stations stayed on screen
+     and a click selected that index in the new catalogue: pressing "Джаз"
+     started the second radio station. */
+  /* The previous section left a request unanswered and it belongs to nothing
+     now; replies below are handed out in order, so it has to leave the
+     queue. */
+  pendingFetch.length = 0;
+  fetchCalls.length = 0;
+  sendEvent(socket, {
+    type: 'snapshot',
+    revision: 11,
+    capabilities: [
+      {id: 'internet_radio', label: 'Интернет-радио', list_kind: 'stations'},
+      {id: 'yandex', label: 'ЯМузыка', list_kind: 'stations'},
+    ],
+    active_source: 'yandex',
+    player: {...usbPlayer(), mode: 'ЯМузыка', context: 'Моя волна'},
+    list: {kind: 'stations', active_index: null, revision: 12, count: 2},
+    wifi: {},
+  });
+  assert.deepEqual(labels(), [], 'станции прежнего источника с экрана убраны');
+  assert.equal(fetchCalls.length, 1, 'список нового источника запрашивается заново');
+  /* The rotor fetches its stations from the service after the switch, so the
+     gap is a wait and not an answer: a spinner, not "the list is empty". */
+  assert.equal(elements['#list-loading'].hidden, false, 'ждём станции ротора');
+  assert.equal(elements['#list-empty'].hidden, true, 'пока не говорим, что пусто');
+
+  // A reply from the abandoned source, late to the switch, does not land on
+  // top of the new list.
+  await respond({kind: 'stations', source: 'internet_radio', revision: 12, count: 1,
+                 items: [{index: 0, label: 'Радио Шоколад'}]});
+  assert.deepEqual(labels(), [], 'ответ от покинутого источника отброшен');
+
+  fetchCalls.length = 0;
+  sendEvent(socket, {
+    type: 'list.update', revision: 13,
+    list: {kind: 'stations', active_index: null, revision: 13, count: 2},
+  });
+  await respond({kind: 'stations', source: 'yandex', revision: 13, count: 2,
+                 items: [{index: 0, label: 'Моя волна'}, {index: 1, label: 'Джаз'}]});
+  assert.deepEqual(labels(), ['Моя волна', 'Джаз']);
+  assert.equal(elements['#list-loading'].hidden, true, 'станции пришли - ожидание снято');
+
+  // And back again: the same list kind, a different source, the rows change
+  // once more.
+  fetchCalls.length = 0;
+  sendEvent(socket, {
+    type: 'player.update', revision: 14, active_source: 'internet_radio',
+    player: {...usbPlayer(), mode: 'Интернет-радио', context: 'Радио'},
+  });
+  sendEvent(socket, {
+    type: 'list.update', revision: 15,
+    list: {kind: 'stations', active_index: 0, revision: 14, count: 1},
+  });
+  /* Two requests: one for the source change, one for the list revision - the
+     device sends both events in a single broadcast. The check on the source is
+     kept on purpose even though the device now moves the revision too: without
+     it a source that changed with no new revision would again leave someone
+     else's rows on screen. The surplus reply is dropped by revision. */
+  assert.equal(fetchCalls.length, 2, 'смена источника и смена ревизии, оба запроса');
+  await respond({kind: 'stations', source: 'internet_radio', revision: 14, count: 1,
+                 items: [{index: 0, label: 'Радио Шоколад'}]});
+  assert.deepEqual(labels(), ['Радио Шоколад']);
+  await respond({kind: 'stations', source: 'internet_radio', revision: 13, count: 1,
+                 items: [{index: 0, label: 'Устаревший ответ'}]});
+  assert.deepEqual(labels(), ['Радио Шоколад'], 'ответ с прошлой ревизией отброшен');
+
+  /* Before the first source is chosen the page knows only "none" while the
+     device serves the radio catalogue under its own name: that reply has to be
+     accepted, or the list is empty after a reboot. */
+  pendingFetch.length = 0;
+  fetchCalls.length = 0;
+  sendEvent(socket, {
+    type: 'snapshot',
+    revision: 16,
+    capabilities: [
+      {id: 'internet_radio', label: 'Интернет-радио', list_kind: 'stations'},
+      {id: 'yandex', label: 'ЯМузыка', list_kind: 'stations'},
+    ],
+    active_source: 'none',
+    player: {...usbPlayer(), mode: 'Нет источника', context: ''},
+    list: {kind: 'stations', active_index: null, revision: 16, count: 1},
+    wifi: {},
+  });
+  assert.equal(fetchCalls.length, 1);
+  await respond({kind: 'stations', source: 'internet_radio', revision: 16, count: 1,
+                 items: [{index: 0, label: 'Радио Шоколад'}]});
+  assert.deepEqual(labels(), ['Радио Шоколад'],
+    'каталог радио принимается и до выбора источника');
 
   console.log('web usb tests passed');
 })().catch((error) => {

@@ -39,7 +39,11 @@ class Element {
     this.hidden = false;
     this.disabled = false;
     this.scrollTop = 0;
-    this.style = {};
+    /* setProperty is needed as much as plain assignment: the player bar paints
+       its own --played variable through it. */
+    this.style = {
+      setProperty(name, value) { this[name] = value; },
+    };
     this.value = '';
   }
 
@@ -89,7 +93,8 @@ const ids = [
   'progress-rail', 'progress-fill', 'progress-seek',
   'volume-control', 'volume-input', 'volume-value',
   'stream-meta', 'player-error', 'command-status', 'media-list',
-  'list-title', 'list-count', 'list-items', 'list-empty',
+  'list-title', 'list-count', 'list-items', 'list-empty', 'list-loading', 'list-search',
+  'player-bar', 'player-expand',
 ];
 const buttonIds = new Set([
   'play-toggle', 'next-track', 'like-track', 'dislike-track', 'previous-item',
@@ -389,10 +394,15 @@ assert.equal(elements['#playlist-link'].hidden, true);
 elements['#next-track'].emit('click');
 assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.next');
 
-/* The like mark rides on the same update, and only appears when the device
-   sends one: the frame above carried no "liked", so there is nothing to draw
-   even though the source is the rotor. */
-assert.equal(elements['#like-track'].hidden, true);
+/* The two marks belong to the rotor, so they are on screen for the whole of
+   it - the frame above carried no "liked", and they wait greyed rather than
+   disappearing. Hiding them between tracks made them blink out on every skip
+   and shifted the buttons either side of them. */
+assert.equal(elements['#like-track'].hidden, false);
+assert.equal(elements['#like-track'].disabled, true);
+assert.equal(elements['#dislike-track'].hidden, false);
+assert.equal(elements['#dislike-track'].disabled, true);
+assert.equal(elements['#like-track'].classList.values.has('is-liked'), false);
 sendEvent(second, {
   type: 'player.update', revision: 3, active_source: 'yandex',
   player: {state: 'playing', mode: 'ЯМузыка', artist: 'Des Rocs',
@@ -461,9 +471,12 @@ sendEvent(second, {
 });
 assert.equal(elements['#next-track'].hidden, false);
 assert.equal(elements['#next-track'].disabled, true);
-/* And with nothing playing there is no track to mark either. */
-assert.equal(elements['#like-track'].hidden, true);
-assert.equal(elements['#dislike-track'].hidden, true);
+/* And with nothing playing there is no track to mark - the pair stays in
+   place, greyed, for the same reason the skip button does. */
+assert.equal(elements['#like-track'].hidden, false);
+assert.equal(elements['#like-track'].disabled, true);
+assert.equal(elements['#dislike-track'].hidden, false);
+assert.equal(elements['#dislike-track'].disabled, true);
 
 /* Back on the radio it goes away again. */
 sendEvent(second, {
@@ -559,6 +572,40 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
   assert.equal(elements['#track-cover'].hidden, false);
   // Nothing to jump to without a length, so the handle goes with the bar.
   assert.equal(elements['#progress-seek'].disabled, true);
+
+  /* The picture is named by what it is, not by how many covers have gone by:
+     the generation restarts at zero on every boot, and the day-long cache on
+     /api/cover then hands back whichever picture that browser saw first under
+     the same ?g=. */
+  progressReply = {
+    cover: {present: true, generation: 4, signature: 3735928559, width: 96, height: 96},
+  };
+  assert.ok(firePendingTimer());
+  await settle();
+  assert.equal(elements['#track-cover'].src, '/api/cover?s=3735928559');
+
+  /* Where the device hands over an address - the rotor's tracks - the browser
+     fetches the picture itself, at the size the page draws rather than the
+     96 px the panel decoded. */
+  progressReply = {
+    cover: {
+      present: true, generation: 4, width: 96, height: 96,
+      url: 'http://avatars.yandex.net/get-music-content/1/a.a.1/400x400',
+    },
+  };
+  assert.ok(firePendingTimer());
+  await settle();
+  assert.equal(elements['#track-cover'].src,
+               'http://avatars.yandex.net/get-music-content/1/a.a.1/400x400');
+
+  // An address the device did not mean is ignored rather than loaded: only a
+  // plain http:// picture address is followed.
+  progressReply = {
+    cover: {present: true, generation: 6, width: 96, height: 96, url: 'javascript:0'},
+  };
+  assert.ok(firePendingTimer());
+  await settle();
+  assert.equal(elements['#track-cover'].src, '/api/cover?g=6');
 
   // And a track with no picture at all takes the tile away rather than
   // leaving the previous album's cover under a new title.

@@ -46,7 +46,9 @@ CONFIG_HTTPD_WS_SUPPORT=y
 CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0=y
 # Must cover the httpd session pool (WEB_SOCKET_SERVER_SOCKET_CAPACITY, see
 # web_socket.h) plus the internet radio's streaming HTTP client socket and a
-# few spares for DNS/mDNS lookups.
+# few spares for DNS/mDNS lookups. The pool is 12 with six WebSocket clients,
+# so 16 leaves exactly the three spares that rule asks for and nothing more:
+# raising the client count again means raising this too.
 CONFIG_LWIP_MAX_SOCKETS=16
 # Nothing here speaks IPv6: no source file references it, autoconfig was off,
 # and the router hands out IPv4. Measured cost of leaving it on: 33 KB of

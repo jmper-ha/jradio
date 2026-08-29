@@ -44,7 +44,7 @@ const ids = [
   'yandex-stations-empty',
   'device-status', 'device-language', 'device-home-screen', 'device-home-screen-row',
   'device-scroll', 'device-autoplay', 'device-yandex', 'device-yandex-row',
-  'device-volume', 'device-volume-value', 'device-brightness',
+  'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal',
 ];
 const elements = Object.fromEntries(ids.map((id) => [`#${id}`, new Element()]));
@@ -397,7 +397,6 @@ function lastYandexTimer() {
   assert.equal(elements['#device-flip-horizontal'].checked, true);
   assert.equal(elements['#device-brightness'].value, '45');
   assert.equal(elements['#device-brightness-value'].textContent, '45');
-  assert.equal(elements['#device-volume-value'].textContent, '62');
   // The slider stops where the encoder does, and the device says where.
   assert.equal(elements['#device-brightness'].min, '10');
   assert.equal(elements['#device-brightness'].max, '90');
@@ -420,21 +419,23 @@ function lastYandexTimer() {
   assert.equal(elements['#device-autoplay'].disabled, false);
 
   /* A slider writes when it is let go, not while it is being dragged: the
-     readout follows the handle on its own. */
+     readout follows the handle on its own. Brightness is the page's only
+     slider now - the volume left it, having a knob on the device and a
+     control on the player page already. */
   const beforeDrag = fetchCalls.length;
-  elements['#device-volume'].value = '30';
-  elements['#device-volume'].emit('input');
-  assert.equal(elements['#device-volume-value'].textContent, '30');
+  elements['#device-brightness'].value = '30';
+  elements['#device-brightness'].emit('input');
+  assert.equal(elements['#device-brightness-value'].textContent, '30');
   assert.equal(fetchCalls.length, beforeDrag);
-  settingsReply = {...settingsReply, volume: 30};
-  elements['#device-volume'].emit('change');
+  settingsReply = {...settingsReply, brightness: 30};
+  elements['#device-brightness'].emit('change');
   await settle();
   assert.deepEqual(
     JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
                                            call.options &&
                                            call.options.method === 'POST')
       .at(-1).options.body),
-    {field: 'volume', value: 30});
+    {field: 'brightness', value: 30});
 
   /* A write the device refuses puts the control back to what it actually
      holds: a switch left showing a change that never landed is worse than no
@@ -468,41 +469,40 @@ function lastYandexTimer() {
      and there is no signal in it that anything has changed. */
   sendEvent(second, {
     type: 'settings.update', revision: 9,
-    settings: {...settingsReply, volume: 12, brightness: 70, scroll: 'left'},
+    settings: {...settingsReply, brightness: 70, scroll: 'left'},
   });
-  assert.equal(elements['#device-volume'].value, '12');
-  assert.equal(elements['#device-volume-value'].textContent, '12');
+  assert.equal(elements['#device-brightness'].value, '70');
   assert.equal(elements['#device-brightness-value'].textContent, '70');
   assert.equal(elements['#device-scroll'].value, 'left');
 
   // A push landing while a slider is held must not pull it out from under the
   // pointer; the next one is 250 ms away.
-  elements['#device-volume'].value = '55';
-  elements['#device-volume'].emit('input');
-  assert.equal(elements['#device-volume-value'].textContent, '55');
+  elements['#device-brightness'].value = '55';
+  elements['#device-brightness'].emit('input');
+  assert.equal(elements['#device-brightness-value'].textContent, '55');
   sendEvent(second, {
     type: 'settings.update', revision: 10,
-    settings: {...settingsReply, volume: 5},
+    settings: {...settingsReply, brightness: 15},
   });
-  assert.equal(elements['#device-volume'].value, '55');
+  assert.equal(elements['#device-brightness'].value, '55');
 
-  settingsReply = {...settingsReply, volume: 55};
-  elements['#device-volume'].emit('change');
+  settingsReply = {...settingsReply, brightness: 55};
+  elements['#device-brightness'].emit('change');
   await settle();
   assert.deepEqual(
     JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
                                            call.options &&
                                            call.options.method === 'POST')
       .at(-1).options.body),
-    {field: 'volume', value: 55});
-  assert.equal(elements['#device-volume'].value, '55');
+    {field: 'brightness', value: 55});
+  assert.equal(elements['#device-brightness'].value, '55');
 
   // A stale revision is ignored here as it is everywhere else on the socket.
   sendEvent(second, {
     type: 'settings.update', revision: 4,
-    settings: {...settingsReply, volume: 99},
+    settings: {...settingsReply, brightness: 90},
   });
-  assert.equal(elements['#device-volume'].value, '55');
+  assert.equal(elements['#device-brightness'].value, '55');
 
   console.log('web settings tests passed');
 })().catch((error) => {

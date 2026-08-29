@@ -499,6 +499,36 @@ static void test_the_card_gets_the_same_views_as_the_drive(void)
     assert(!state.pending);
 }
 
+/* After a reboot, and after the web has stopped the source, the snapshot says
+   no source at all - and still describes the station catalogue, which is what
+   the list on screen is showing. The press used to be refused here, silently:
+   no command, no notice, no log line, so the encoder looked dead. */
+static void test_a_station_row_can_be_selected_without_a_source(void)
+{
+    ui_player_state_t state;
+    ui_player_state_init(&state);
+
+    player_snapshot_t idle = snapshot(AUDIO_SOURCE_NONE, PLAYER_ITEM_NONE, 18U);
+    idle.playback_state = PLAYER_PLAYBACK_STOPPED;
+    ui_player_state_apply_snapshot(&state, &idle, 10);
+    assert(ui_player_state_can_select_item(&state, 7U));
+    /* The catalogue's end still holds: the count comes from the same list. */
+    assert(!ui_player_state_can_select_item(&state, 18U));
+
+    player_command_t select_item =
+        command(PLAYER_COMMAND_SELECT_ITEM, AUDIO_SOURCE_INTERNET_RADIO, 7U);
+    assert(ui_player_state_can_post(&state, &select_item));
+    assert(ui_player_state_apply_post_result(&state, &select_item, true, 20));
+
+    /* The player adopts the radio as it starts the row, and that snapshot is
+       what confirms the command rather than leaving it to time out. */
+    player_snapshot_t playing = snapshot(AUDIO_SOURCE_INTERNET_RADIO, 7U, 18U);
+    playing.playback_state = PLAYER_PLAYBACK_CONNECTING;
+    ui_player_state_apply_snapshot(&state, &playing, 30);
+    assert(!ui_player_state_is_pending(&state));
+    assert(ui_player_state_source(&state) == AUDIO_SOURCE_INTERNET_RADIO);
+}
+
 /* The Yandex screen lives outside this view machine, but it posts through it:
  * first the source, then the row. Both steps used to be pinned to the internet
  * radio, so the second was refused for ever and the screen answered every
@@ -587,6 +617,7 @@ int main(void)
 {
     test_the_card_gets_the_same_views_as_the_drive();
     test_a_yandex_row_can_be_selected_and_confirmed();
+    test_a_station_row_can_be_selected_without_a_source();
     test_the_marks_reach_the_player_without_going_pending();
     test_rejected_commands_preserve_current_view();
     test_list_view_opens_for_both_sources_with_a_list();

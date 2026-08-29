@@ -64,9 +64,18 @@ bool ui_player_state_can_select_item(const ui_player_state_t *state,
     /* Any list of stations, not just the catalog: the Yandex list is fetched
      * from the account but behaves the same - a flat list where choosing a row
      * starts it. Files are not here at all; browsing stays outside the pending
-     * machinery, as the comment below explains. */
+     * machinery, as the comment below explains.
+     *
+     * No source at all counts too. After a reboot, and after the web has
+     * stopped the source, the snapshot still describes the station catalogue -
+     * item_count comes from it and the list is on screen - and the player
+     * adopts the radio as the active source when it starts the row. Refusing
+     * here left the press doing nothing whatsoever: the handler returns
+     * without a command, without a notice and without a log line, so the
+     * encoder simply looked dead. */
     return state != NULL &&
-           audio_source_is_stations(state->confirmed_source) &&
+           (audio_source_is_stations(state->confirmed_source) ||
+            state->confirmed_source == AUDIO_SOURCE_NONE) &&
            item_index < state->item_count;
 }
 

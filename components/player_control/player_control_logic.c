@@ -143,8 +143,15 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
                        state->playback_state == PLAYER_PLAYBACK_RECONNECTING
                    ? PLAYER_OPERATION_NONE : PLAYER_OPERATION_INVALID;
     case PLAYER_COMMAND_SELECT_ITEM: {
-        if ((!audio_source_is_stations(state->active_source) &&
-             !audio_source_is_files(state->active_source)) ||
+        /* With no source selected the snapshot still describes the station
+         * catalogue - item_count comes from it, and both screens show the
+         * list. This used to be dropped in silence: after a reboot neither a
+         * press of the encoder nor a click on a row started anything until the
+         * source was selected separately. The executor marks the radio as the
+         * active source when it accepts such a command. */
+        const bool stations = audio_source_is_stations(state->active_source) ||
+                              state->active_source == AUDIO_SOURCE_NONE;
+        if ((!stations && !audio_source_is_files(state->active_source)) ||
             command->item_index >= state->item_count) return PLAYER_OPERATION_INVALID;
         // On USB an entry can be a directory, and re-selecting the directory
         // the cursor is already in still has to navigate; only a station list

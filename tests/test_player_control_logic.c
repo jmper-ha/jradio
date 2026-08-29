@@ -20,6 +20,44 @@ static void test_active_station_is_not_restarted(void)
     assert(player_control_decide(&state, &command) == PLAYER_OPERATION_NONE);
 }
 
+/* After a reboot no source is selected, yet both screens already show the
+   station list: a press on a row must start the station rather than vanish. */
+static void test_station_starts_without_a_selected_source(void)
+{
+    player_snapshot_t state = {.active_source = AUDIO_SOURCE_NONE,
+                               .playback_state = PLAYER_PLAYBACK_STOPPED,
+                               .active_item_index = PLAYER_ITEM_NONE,
+                               .item_count = 7};
+    player_command_t command = {.kind = PLAYER_COMMAND_SELECT_ITEM, .item_index = 2};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_START_ITEM);
+}
+
+/* The catalogue's bounds still hold here: with no source the index comes from
+   that same list, and there is no row past its end. */
+static void test_station_index_past_the_catalog_is_refused_without_a_source(void)
+{
+    player_snapshot_t state = {.active_source = AUDIO_SOURCE_NONE,
+                               .playback_state = PLAYER_PLAYBACK_STOPPED,
+                               .item_count = 7};
+    player_command_t command = {.kind = PLAYER_COMMAND_SELECT_ITEM, .item_index = 7};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+}
+
+/* Trying a station from the playlist editor interrupts whatever plays: one
+   output cannot do both, and the button says what it will do. */
+static void test_a_stream_test_is_always_accepted(void)
+{
+    player_snapshot_t idle = {.active_source = AUDIO_SOURCE_NONE,
+                              .playback_state = PLAYER_PLAYBACK_STOPPED};
+    player_snapshot_t busy = {.active_source = AUDIO_SOURCE_USB,
+                              .playback_state = PLAYER_PLAYBACK_PLAYING};
+    player_command_t command = {.kind = PLAYER_COMMAND_TEST_STREAM,
+                                .source = AUDIO_SOURCE_INTERNET_RADIO,
+                                .item_index = PLAYER_ITEM_NONE};
+    assert(player_control_decide(&idle, &command) == PLAYER_OPERATION_TEST_STREAM);
+    assert(player_control_decide(&busy, &command) == PLAYER_OPERATION_TEST_STREAM);
+}
+
 static void test_failed_active_station_can_be_retried(void)
 {
     player_snapshot_t state = {.active_source = AUDIO_SOURCE_INTERNET_RADIO,
@@ -523,6 +561,9 @@ int main(void)
     test_usb_state_maps_to_public_playback_state();
     test_active_station_is_not_restarted();
     test_failed_active_station_can_be_retried();
+    test_station_starts_without_a_selected_source();
+    test_station_index_past_the_catalog_is_refused_without_a_source();
+    test_a_stream_test_is_always_accepted();
     test_healthy_active_source_reselect_is_noop();
     test_failed_active_source_can_be_reselected();
     test_unavailable_source_is_rejected();

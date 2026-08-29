@@ -96,6 +96,12 @@ typedef enum {
      * about what a press means: the web has a button per mark, and the device
      * has one key whose second press has to mean the other thing. */
     PLAYER_COMMAND_TOGGLE_DISLIKE,
+    /* Plays a URL that is in no list - the playlist editor trying a station
+     * before saving it. The address does not travel in the command: it is 256
+     * bytes and the queue holds eight of these, so it goes into a buffer of
+     * its own through player_control_post_stream_test(). Appended, like the
+     * ones above, because these values travel through a queue. */
+    PLAYER_COMMAND_TEST_STREAM,
 } player_command_kind_t;
 
 typedef struct {
@@ -177,6 +183,7 @@ typedef enum {
     PLAYER_OPERATION_NEXT_ITEM,
     PLAYER_OPERATION_TOGGLE_LIKE,
     PLAYER_OPERATION_TOGGLE_DISLIKE,
+    PLAYER_OPERATION_TEST_STREAM,
 } player_operation_t;
 
 player_operation_t player_control_decide(const player_snapshot_t *state,

@@ -164,6 +164,12 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
              state->playback_state == PLAYER_PLAYBACK_RECONNECTING);
         return already_healthy ? PLAYER_OPERATION_NONE : PLAYER_OPERATION_START_ITEM;
     }
+    case PLAYER_COMMAND_TEST_STREAM:
+        /* Whatever is playing gives way: the button that sends this says it
+         * will try the station now, and one output cannot do both. The URL is
+         * not in the command, so there is nothing here to check it against -
+         * the executor refuses an empty one. */
+        return PLAYER_OPERATION_TEST_STREAM;
     case PLAYER_COMMAND_BROWSE_UP:
         // Whether there is anywhere to go depends on the path, which this pure
         // function cannot see; the executor refuses at the mount root.

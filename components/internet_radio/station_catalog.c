@@ -15,10 +15,27 @@ static bool station_catalog_copy_field(char *destination, size_t destination_siz
     return true;
 }
 
+bool station_catalog_icon_is_valid(const char *icon)
+{
+    if (icon == NULL) return false;
+    if (icon[0] == '\0') return true;
+    if (icon[0] == '.') return false;
+    for (const char *cursor = icon; *cursor != '\0'; ++cursor) {
+        const char value = *cursor;
+        const bool allowed = (value >= 'a' && value <= 'z') ||
+                             (value >= 'A' && value <= 'Z') ||
+                             (value >= '0' && value <= '9') ||
+                             value == '.' || value == '-' || value == '_';
+        if (!allowed) return false;
+    }
+    return true;
+}
+
 bool station_catalog_parse_line(const char *line, station_catalog_entry_t *entry)
 {
     const char *first_tab;
     const char *second_tab;
+    const char *third_tab;
     const char *end;
     char flag_text[16];
     char *flag_end;
@@ -32,17 +49,37 @@ bool station_catalog_parse_line(const char *line, station_catalog_entry_t *entry
     first_tab = memchr(line, '\t', (size_t)(end - line));
     if (first_tab == NULL) return false;
     second_tab = memchr(first_tab + 1, '\t', (size_t)(end - (first_tab + 1)));
-    if (second_tab == NULL || memchr(second_tab + 1, '\t', (size_t)(end - (second_tab + 1))) != NULL) {
+    if (second_tab == NULL) return false;
+    /* The picture is optional and last: a line written before the column
+     * existed has three fields and still parses, which is what keeps an old
+     * playlist working. A fourth tab is still a malformed line. */
+    third_tab = memchr(second_tab + 1, '\t', (size_t)(end - (second_tab + 1)));
+    if (third_tab != NULL &&
+        memchr(third_tab + 1, '\t', (size_t)(end - (third_tab + 1))) != NULL) {
         return false;
     }
+    const char *flag_end_of_field = third_tab == NULL ? end : third_tab;
 
+    entry->icon[0] = '\0';
     if (!station_catalog_copy_field(entry->name, sizeof(entry->name), line,
                                     (size_t)(first_tab - line)) ||
         !station_catalog_copy_field(entry->url, sizeof(entry->url), first_tab + 1,
                                     (size_t)(second_tab - (first_tab + 1))) ||
         !station_catalog_copy_field(flag_text, sizeof(flag_text), second_tab + 1,
-                                    (size_t)(end - (second_tab + 1)))) {
+                                    (size_t)(flag_end_of_field - (second_tab + 1)))) {
         return false;
+    }
+    /* An empty fourth column is no picture, not a malformed field: it is what
+     * the editor writes for a station that has none. */
+    if (third_tab != NULL && end > third_tab + 1) {
+        if (!station_catalog_copy_field(entry->icon, sizeof(entry->icon), third_tab + 1,
+                                        (size_t)(end - (third_tab + 1)))) {
+            return false;
+        }
+        /* A name, never a path: it is joined to /littlefs/radio_img, and a
+         * separator or a leading dot in it would reach outside that
+         * directory. An empty fourth column is simply no picture. */
+        if (!station_catalog_icon_is_valid(entry->icon)) return false;
     }
 
     errno = 0;

@@ -31,7 +31,41 @@ static void test_reject_rows_with_extra_fields(void)
 {
     station_catalog_entry_t entry;
 
-    assert(!station_catalog_parse_line("A\tB\t0\tC\n", &entry));
+    /* Four columns is a station with a picture; five is still a malformed
+       line. */
+    assert(!station_catalog_parse_line("A\tB\t0\tC\tD\n", &entry));
+}
+
+/* The fourth column names the station's picture, and it is optional: a
+   playlist written before the column existed still loads. */
+static void test_parse_row_with_icon(void)
+{
+    station_catalog_entry_t entry;
+
+    assert(station_catalog_parse_line("A\thttp://x\t1\ts7f3a91c.png\n", &entry));
+    assert(strcmp(entry.icon, "s7f3a91c.png") == 0);
+    assert(entry.flag == 1);
+
+    assert(station_catalog_parse_line("A\thttp://x\t1\n", &entry));
+    assert(entry.icon[0] == '\0');
+
+    /* An empty fourth column is simply no picture. */
+    assert(station_catalog_parse_line("A\thttp://x\t0\t\n", &entry));
+    assert(entry.icon[0] == '\0');
+}
+
+/* The name is joined to one directory, so anything that could reach out of it
+   takes the whole line down rather than being quietly cleaned up. */
+static void test_reject_icon_that_is_a_path(void)
+{
+    station_catalog_entry_t entry;
+
+    assert(!station_catalog_parse_line("A\thttp://x\t0\t../secret.png\n", &entry));
+    assert(!station_catalog_parse_line("A\thttp://x\t0\tsub/dir.png\n", &entry));
+    assert(!station_catalog_parse_line("A\thttp://x\t0\t.hidden\n", &entry));
+    assert(!station_catalog_icon_is_valid("a b.png"));
+    assert(station_catalog_icon_is_valid(""));
+    assert(station_catalog_icon_is_valid("s-1_2.png"));
 }
 
 static void test_reject_unsupported_flag(void)
@@ -84,6 +118,8 @@ int main(void)
     test_parse_valid_row();
     test_parse_crlf_row();
     test_reject_rows_with_extra_fields();
+    test_parse_row_with_icon();
+    test_reject_icon_that_is_a_path();
     test_reject_unsupported_flag();
     test_skip_malformed_row();
     test_find_saved_url();

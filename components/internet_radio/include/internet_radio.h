@@ -56,6 +56,13 @@ const station_catalog_entry_t *internet_radio_station_at(size_t index);
 bool internet_radio_start_saved_station(void);
 bool internet_radio_saved_station_index(size_t *index);
 bool internet_radio_start_station_index(size_t index);
+/* Plays a URL that is in no catalogue - the playlist editor trying a station
+ * before it is saved. Nothing is written to the catalogue or to the resume
+ * point; stopping is the ordinary stop. */
+bool internet_radio_test_stream(const char *url, const char *name);
+/* Whether any station in the catalogue names this picture file. The playlist
+ * editor's save uses it to sweep away the ones nothing refers to. */
+bool internet_radio_icon_in_use(const char *icon);
 size_t internet_radio_current_station_index(void);
 /* Replaces the saved station catalog. Never stops playback itself: if the
  * station that was playing is gone from the new list, *out_active_station_removed

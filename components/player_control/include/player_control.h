@@ -31,6 +31,15 @@ bool player_file_same_file_playing(const char *path, const char *playing_path,
 
 esp_err_t player_control_init(void);
 bool player_control_post(const player_command_t *command);
+
+/* Posts PLAYER_COMMAND_TEST_STREAM together with the address to try. The URL
+ * is copied into a buffer of player_control's own rather than into the
+ * command: it is 256 bytes, the queue holds eight commands, and every one of
+ * them would have carried the space. An empty URL stops the test.
+ *
+ * Only the web server sends this, and esp_http_server runs one worker, so the
+ * buffer has a single writer. */
+bool player_control_post_stream_test(const char *url, const char *name);
 void player_control_get_snapshot(player_snapshot_t *snapshot);
 const station_catalog_entry_t *player_control_station_at(size_t index);
 // Copies out a row of the USB listing; false when the row is gone, which

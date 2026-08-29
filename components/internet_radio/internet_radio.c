@@ -1818,7 +1818,11 @@ esp_err_t internet_radio_init(void)
     taskENTER_CRITICAL(&s_status_lock);
     s_radio.status.state = INTERNET_RADIO_STATE_STOPPED;
     s_radio.status.station_index = SIZE_MAX;
-    snprintf(s_radio.status.station, sizeof(s_radio.status.station), "DB91-TX");
+    /* Empty rather than a placeholder: before the first station there is
+     * nothing to name, and a non-empty string here was handed to everyone who
+     * reads the status as if it were a station - the page showed it as the
+     * title while the panel was showing the list. */
+    s_radio.status.station[0] = '\0';
     taskEXIT_CRITICAL(&s_status_lock);
     radio_load_catalog(&s_radio);
     ESP_RETURN_ON_ERROR(radio_sync_output(&s_radio), TAG, "disable idle I2S output failed");
@@ -2020,6 +2024,30 @@ bool internet_radio_start_station_index(size_t index)
     return true;
 }
 
+/* A URL that is in no catalogue, played once. The station index stays
+ * SIZE_MAX, which is what keeps a reconnect from trying to reopen it by index
+ * and what tells everything above that this is not one of the saved stations;
+ * the resume point is left alone, so a test does not become what PLAY brings
+ * back after a reboot. */
+/* Whether any station names this picture. Asked when the playlist is saved,
+ * to find the files nothing refers to any more. */
+bool internet_radio_icon_in_use(const char *icon)
+{
+    if (!s_radio.initialized || icon == NULL || icon[0] == '\0') return false;
+    bool used = false;
+    for (size_t index = 0U; index < s_radio.catalog->count && !used; ++index) {
+        used = strcmp(s_radio.catalog->entries[index].icon, icon) == 0;
+    }
+    return used;
+}
+
+bool internet_radio_test_stream(const char *url, const char *name)
+{
+    if (!s_radio.initialized || url == NULL || url[0] == '\0') return false;
+    if (!radio_stop_previous()) return false;
+    return radio_start_stream(url, name == NULL ? "" : name, SIZE_MAX, false);
+}
+
 esp_err_t internet_radio_stop(void)
 {
     if (!s_radio.initialized) return ESP_ERR_INVALID_STATE;
@@ -2038,6 +2066,14 @@ esp_err_t internet_radio_stop(void)
     taskENTER_CRITICAL(&s_status_lock);
     (void)internet_radio_state_apply(&s_radio.status.state, INTERNET_RADIO_EVENT_STOP);
     s_radio.status.station_index = SIZE_MAX;
+    /* What the stream called itself, and what it was playing, belong to the
+     * stream that just ended. Left behind, they are what the rotor and the
+     * file player would be labelled with after a source switch, since both
+     * fall back on these fields when they have nothing of their own yet. A
+     * station stopped on its own still shows its name - that one comes from
+     * the playlist, not from here. */
+    s_radio.status.station[0] = '\0';
+    s_radio.status.title[0] = '\0';
     /* Cleared only here, and only once the task has confirmed it is gone -
      * including when it had already ended on its own, in which case the
      * semaphore was waiting and the take above returned at once. */

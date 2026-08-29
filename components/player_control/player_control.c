@@ -18,6 +18,7 @@
 #include "audio_source.h"
 #include "board_features.h"
 #include "internet_radio.h"
+#include "station_catalog.h"
 #include "yandex_auth.h"
 #include "yandex_catalog.h"
 #include "yandex_likes.h"
@@ -406,6 +407,112 @@ static bool player_stop_active_source(audio_source_t source)
     return false;
 }
 
+/* The radio can start playing while no source has been selected: PLAY after a
+ * reboot restores the saved station, and a list row is now accepted as well.
+ * Leaving the source unset there put the snapshot in a "playing, no source"
+ * state, and everything that asks audio_source_is_stations() - the next
+ * station, the neighbouring track, selecting a row - was then dropped in
+ * silence. */
+/* The address of a station being tried from the playlist editor. Written by
+ * the web server's single worker and read by this task; the mutex is there for
+ * the crossing, not for contention. */
+static char s_test_url[STATION_CATALOG_URL_MAX_LEN + 1U];
+static char s_test_name[STATION_CATALOG_NAME_MAX_LEN + 1U];
+static portMUX_TYPE s_test_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static bool player_adopt_internet_radio(audio_source_t active)
+{
+    if (active != AUDIO_SOURCE_NONE) return true;
+    if (audio_source_manager_start(&s_manager, AUDIO_SOURCE_INTERNET_RADIO) !=
+        AUDIO_SOURCE_OK) {
+        ESP_LOGW(TAG, "internet radio source start failed");
+        return false;
+    }
+    atomic_store_explicit(&s_active_source, AUDIO_SOURCE_INTERNET_RADIO,
+                          memory_order_release);
+    return true;
+}
+
+/* The picture a station carries, published through the same album_art the
+ * covers of files and rotor tracks go through - so the panel's tile and the
+ * page's cover draw it with no code of their own. The file is read here
+ * because this task is the one that knows a station has just started, and the
+ * decode costs tens of milliseconds, which belongs where a stream is being
+ * opened rather than where a frame is being drawn.
+ *
+ * The upload cap in web_server.c is the same number: nothing larger can have
+ * been stored, so anything larger on disk does not belong there. */
+#define PLAYER_STATION_ICON_MAX_BYTES 32768U
+
+static char s_icon_shown[STATION_CATALOG_ICON_MAX_LEN];
+
+static void player_publish_station_icon(const char *icon)
+{
+    char path[sizeof(STATION_ICON_DIR) + STATION_CATALOG_ICON_MAX_LEN + 1U];
+    snprintf(path, sizeof(path), "%s/%s", STATION_ICON_DIR, icon);
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        ESP_LOGW(TAG, "station picture %s is missing", icon);
+        album_art_clear();
+        return;
+    }
+    fseek(file, 0, SEEK_END);
+    const long size = ftell(file);
+    rewind(file);
+    if (size <= 0 || size > (long)PLAYER_STATION_ICON_MAX_BYTES) {
+        fclose(file);
+        ESP_LOGW(TAG, "station picture %s is %ld bytes", icon, size);
+        album_art_clear();
+        return;
+    }
+    /* PSRAM first, like every other buffer this size: internal memory is what
+     * TLS and the decoder are short of. */
+    uint8_t *bytes = heap_caps_malloc((size_t)size, MALLOC_CAP_SPIRAM);
+    if (bytes == NULL) bytes = heap_caps_malloc((size_t)size, MALLOC_CAP_INTERNAL);
+    if (bytes == NULL) {
+        fclose(file);
+        album_art_clear();
+        return;
+    }
+    const size_t read = fread(bytes, 1U, (size_t)size, file);
+    fclose(file);
+    if (read != (size_t)size || !album_art_set_image(bytes, read)) {
+        ESP_LOGW(TAG, "station picture %s could not be decoded", icon);
+        album_art_clear();
+    }
+    free(bytes);
+}
+
+/* Keyed on the file name rather than on the station index: saving a new
+ * picture for the station that is playing changes the name and nothing else,
+ * and that has to reach the screen too. */
+static void player_sync_station_icon(void)
+{
+    const audio_source_t source =
+        atomic_load_explicit(&s_active_source, memory_order_acquire);
+    if (source != AUDIO_SOURCE_INTERNET_RADIO) {
+        /* The station's picture must not outlive the station. Clearing only
+         * what this function put up leaves the covers that files and the
+         * rotor publish for themselves alone: s_icon_shown is empty unless a
+         * station icon is on the screen right now. */
+        if (s_icon_shown[0] != '\0') {
+            album_art_clear();
+            s_icon_shown[0] = '\0';
+        }
+        return;
+    }
+    const station_catalog_entry_t *entry =
+        player_control_station_at(internet_radio_current_station_index());
+    const char *icon = entry == NULL ? "" : entry->icon;
+    if (strncmp(icon, s_icon_shown, sizeof(s_icon_shown)) == 0) return;
+    snprintf(s_icon_shown, sizeof(s_icon_shown), "%s", icon);
+    if (icon[0] == '\0') {
+        album_art_clear();
+        return;
+    }
+    player_publish_station_icon(icon);
+}
+
 static void player_control_task(void *arg)
 {
     (void)arg;
@@ -442,6 +549,24 @@ static void player_control_task(void *arg)
                 break;
             }
             atomic_store_explicit(&s_active_source, command.source, memory_order_release);
+            /* The listing changed with the source, and the revision is the
+             * only way to say so: the radio and the rotor share one list kind
+             * ("stations") and can happen to have the same number of rows.
+             * Without this the browser kept the previous source's stations on
+             * screen, and a click on a row selected that index in the new
+             * catalogue instead. */
+            atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
+            /* The rotor's station list is not stored anywhere: it lives in
+             * memory and is fetched by whoever is about to show it. On the
+             * device the screen does that as it opens; the web page only draws
+             * what is there, so after a reboot it saw an empty list until
+             * someone pressed "Обновить станции" in the settings. Selecting the
+             * source is the same gesture as opening the screen, so the request
+             * goes out here: it costs one call to the API and disturbs nothing
+             * when the list has not changed. */
+            if (command.source == AUDIO_SOURCE_YANDEX) {
+                (void)yandex_catalog_request_refresh();
+            }
             /* Selecting a source never starts anything, the radio included.
              * It used to resume the last station here, which made every
              * arrival at the station list start playing whatever was on last -
@@ -488,7 +613,7 @@ static void player_control_task(void *arg)
                 player_file_select_item(command.item_index, snapshot.playback_state);
             } else if (snapshot.active_source == AUDIO_SOURCE_YANDEX) {
                 (void)player_yandex_start(command.item_index);
-            } else {
+            } else if (player_adopt_internet_radio(snapshot.active_source)) {
                 (void)internet_radio_start_station_index(command.item_index);
             }
             break;
@@ -502,7 +627,7 @@ static void player_control_task(void *arg)
                 if (index != PLAYER_ITEM_NONE) (void)player_yandex_start(index);
             } else if (audio_source_is_files(snapshot.active_source)) {
                 player_file_start_saved();
-            } else {
+            } else if (player_adopt_internet_radio(snapshot.active_source)) {
                 (void)internet_radio_start_saved_station();
             }
             break;
@@ -520,6 +645,30 @@ static void player_control_task(void *arg)
                 (void)internet_radio_resume();
             }
             break;
+        case PLAYER_OPERATION_TEST_STREAM: {
+            char url[STATION_CATALOG_URL_MAX_LEN + 1U];
+            char name[STATION_CATALOG_NAME_MAX_LEN + 1U];
+            taskENTER_CRITICAL(&s_test_lock);
+            snprintf(url, sizeof(url), "%s", s_test_url);
+            snprintf(name, sizeof(name), "%s", s_test_name);
+            taskEXIT_CRITICAL(&s_test_lock);
+            /* An empty address is the stop: the same button sends it, and a
+             * test that cannot be stopped from where it started is a trap. */
+            if (url[0] == '\0') {
+                (void)internet_radio_stop();
+                break;
+            }
+            /* A drive or the rotor has to let go of the output first; the
+             * radio is already where the test wants to play. */
+            audio_source_t active = snapshot.active_source;
+            if (active != AUDIO_SOURCE_NONE && active != AUDIO_SOURCE_INTERNET_RADIO) {
+                if (!player_stop_active_source(active)) break;
+                active = AUDIO_SOURCE_NONE;
+            }
+            if (!player_adopt_internet_radio(active)) break;
+            (void)internet_radio_test_stream(url, name);
+            break;
+        }
         case PLAYER_OPERATION_SEEK:
             // Nothing is resumed here: the file plays throughout scrubbing, so
             // a jump is only a jump. Asked for on a paused file - which only
@@ -601,6 +750,9 @@ static void player_control_task(void *arg)
             ESP_LOGW(TAG, "invalid player command kind=%d", (int)command.kind);
             break;
         }
+        /* Once per command, which is every moment the playing station can have
+         * changed - and one comparison when it has not. */
+        player_sync_station_icon();
     }
 }
 
@@ -639,6 +791,22 @@ esp_err_t player_control_init(void)
     file_player_set_finished_callback(player_file_track_finished);
     usb_storage_set_media_removing_callback(player_file_media_removing);
     return ESP_OK;
+}
+
+bool player_control_post_stream_test(const char *url, const char *name)
+{
+    if (url == NULL) return false;
+    if (strlen(url) > STATION_CATALOG_URL_MAX_LEN) return false;
+    taskENTER_CRITICAL(&s_test_lock);
+    snprintf(s_test_url, sizeof(s_test_url), "%s", url);
+    snprintf(s_test_name, sizeof(s_test_name), "%s", name == NULL ? "" : name);
+    taskEXIT_CRITICAL(&s_test_lock);
+    const player_command_t command = {
+        .kind = PLAYER_COMMAND_TEST_STREAM,
+        .source = AUDIO_SOURCE_INTERNET_RADIO,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    return player_control_post(&command);
 }
 
 bool player_control_post(const player_command_t *command)

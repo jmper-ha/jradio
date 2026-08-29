@@ -417,10 +417,14 @@ Terminal - Run Task: flashing, the device log, the host tests. For a blank
 board there is "ESP-IDF: First flash (app + data)", which writes the firmware
 and the data partition both.
 
-The tasks go through [`tools/idf.sh`](tools/idf.sh), which finds an installed
-ESP-IDF - the extension's copy included - and activates it, so `export.sh`
-never has to be sourced by hand. The port is detected; with more than one board
-attached, name the right one in `ESPPORT`.
+The tasks go through [`tools/idf.sh`](tools/idf.sh), or
+[`tools/idf.ps1`](tools/idf.ps1) on Windows, which finds an installed ESP-IDF -
+the extension's copy included - and activates it, so `export.sh` never has to
+be sourced by hand. The port is detected when the machine has one board on it;
+with several attached, name the right one in `ESPPORT`.
+
+Every task works on Windows except "Host tests": those want a POSIX shell and a
+gcc with sanitizers, so Linux, macOS or WSL.
 
 The same from a terminal:
 

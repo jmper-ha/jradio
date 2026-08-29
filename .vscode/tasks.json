@@ -6,8 +6,16 @@
       "detail": "Собрать прошивку и образ данных",
       "type": "shell",
       "command": "bash tools/idf.sh build",
-      "options": { "cwd": "${workspaceFolder}" },
-      "group": { "kind": "build", "isDefault": true },
+      "windows": {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/idf.ps1 build"
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
       "problemMatcher": "$gcc"
     },
     {
@@ -15,7 +23,12 @@
       "detail": "Собрать и залить прошивку; данные на устройстве не трогает",
       "type": "shell",
       "command": "bash tools/idf.sh flash",
-      "options": { "cwd": "${workspaceFolder}" },
+      "windows": {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/idf.ps1 flash"
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
       "problemMatcher": "$gcc"
     },
     {
@@ -23,8 +36,15 @@
       "detail": "То же самое и сразу лог с устройства; выход из лога Ctrl+]",
       "type": "shell",
       "command": "bash tools/idf.sh flash monitor",
-      "options": { "cwd": "${workspaceFolder}" },
-      "presentation": { "panel": "dedicated" },
+      "windows": {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/idf.ps1 flash monitor"
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "panel": "dedicated"
+      },
       "problemMatcher": "$gcc"
     },
     {
@@ -32,8 +52,15 @@
       "detail": "Лог с устройства, без перепрошивки; выход Ctrl+]",
       "type": "shell",
       "command": "bash tools/idf.sh monitor",
-      "options": { "cwd": "${workspaceFolder}" },
-      "presentation": { "panel": "dedicated" },
+      "windows": {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/idf.ps1 monitor"
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "panel": "dedicated"
+      },
       "problemMatcher": []
     },
     {
@@ -41,7 +68,12 @@
       "detail": "Первая заливка на чистую плату: прошивка и раздел данных целиком",
       "type": "shell",
       "command": "bash tools/idf.sh flash littlefs-flash",
-      "options": { "cwd": "${workspaceFolder}" },
+      "windows": {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/idf.ps1 flash littlefs-flash"
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
       "problemMatcher": "$gcc"
     },
     {
@@ -49,16 +81,26 @@
       "detail": "Перезаписать раздел данных ЦЕЛИКОМ: сети Wi-Fi, правки плейлиста и привязка Яндекса пропадут",
       "type": "shell",
       "command": "bash tools/idf.sh littlefs-flash",
-      "options": { "cwd": "${workspaceFolder}" },
+      "windows": {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/idf.ps1 littlefs-flash"
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
       "problemMatcher": "$gcc"
     },
     {
       "label": "Host tests",
-      "detail": "Хостовые тесты; ESP-IDF активировать не нужно",
+      "detail": "Хостовые тесты; нужен POSIX-shell и gcc — Linux, macOS или WSL",
       "type": "shell",
       "command": "bash tests/run_host_tests.sh",
-      "options": { "cwd": "${workspaceFolder}" },
-      "group": { "kind": "test", "isDefault": true },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
       "problemMatcher": "$gcc"
     }
   ]

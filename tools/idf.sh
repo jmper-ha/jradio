@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Run idf.py with ESP-IDF activated, wherever it happens to be installed.
 #
-# The VS Code tasks call this instead of idf.py directly. A freshly cloned
+# The VS Code tasks call this instead of idf.py directly; tools/idf.ps1 is the
+# same script for Windows, and a change here belongs there too. A freshly cloned
 # project has nothing on PATH, so `idf.py build` answers "command not found" -
 # a poor first message for someone who has just been told to press Build. This
 # finds the framework the way tests/run_host_tests.sh already finds it for the

@@ -1,0 +1,6 @@
+# The VS Code tasks run tools/idf.sh through bash and tools/idf.ps1 through
+# PowerShell. A Windows clone with core.autocrlf=true would otherwise get CRLF
+# into the shell scripts, where the shebang line then fails with a message
+# about a file that plainly exists.
+*.sh text eol=lf
+*.ps1 text eol=crlf

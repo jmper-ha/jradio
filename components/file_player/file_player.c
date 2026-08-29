@@ -183,6 +183,11 @@ typedef struct {
  * own would lend it to the next file that has none. */
 static char s_folder_cover_directory[FILE_BROWSER_PATH_MAX_LEN];
 static bool s_folder_cover_published;
+/* Which picture was left on the tile. "Something is on the tile" is not the
+ * same question: the rotor and the station icons publish into the same tile,
+ * so a cover put up for this folder can have been replaced while another
+ * source was playing, and only the generation tells the two apart. */
+static unsigned int s_folder_cover_generation;
 
 /* Reads a picture out of a file and publishes it as the cover.
  *
@@ -248,7 +253,9 @@ static bool load_folder_cover(void)
     char path[FILE_BROWSER_PATH_MAX_LEN];
     if (!file_browser_path_parent(s_request.path, directory, sizeof(directory))) return false;
     // Still the same album, and its picture is still the one on screen.
-    if (s_folder_cover_published && album_art_status().present &&
+    const album_art_status_t shown = album_art_status();
+    if (s_folder_cover_published && shown.present &&
+        shown.generation == s_folder_cover_generation &&
         strcmp(directory, s_folder_cover_directory) == 0) {
         return true;
     }
@@ -267,6 +274,7 @@ static bool load_folder_cover(void)
     if (published) {
         snprintf(s_folder_cover_directory, sizeof(s_folder_cover_directory), "%s", directory);
         s_folder_cover_published = true;
+        s_folder_cover_generation = album_art_status().generation;
     }
     return published;
 }

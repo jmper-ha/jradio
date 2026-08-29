@@ -112,5 +112,23 @@ if ! command -v idf.py >/dev/null 2>&1; then
 fi
 rm -f "${jradio_log}"
 
+# Without a port, esptool probes every /dev/ttyS* the machine has before it
+# reaches the board - 34 of them here, several seconds of scrolling for a
+# task someone pressed a button to run. One obvious candidate is taken as the
+# answer; with several, idf.py is left to do its own thing, because guessing
+# which board is the radio is worse than a slow probe.
+if [ -z "${ESPPORT:-}" ]; then
+    jradio_ports=()
+    for jradio_glob in /dev/ttyACM* /dev/ttyUSB* /dev/cu.usbmodem* /dev/cu.usbserial*; do
+        [ -e "${jradio_glob}" ] && jradio_ports+=("${jradio_glob}")
+    done
+    if [ "${#jradio_ports[@]}" -eq 1 ]; then
+        export ESPPORT="${jradio_ports[0]}"
+        echo "tools/idf.sh: port ${ESPPORT}" >&2
+    elif [ "${#jradio_ports[@]}" -gt 1 ]; then
+        echo "tools/idf.sh: several ports (${jradio_ports[*]}); set ESPPORT to choose" >&2
+    fi
+fi
+
 cd "${jradio_root}"
 exec idf.py "$@"

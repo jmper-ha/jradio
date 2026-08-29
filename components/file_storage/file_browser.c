@@ -61,6 +61,25 @@ const char *file_browser_format_name(file_browser_format_t format)
     }
 }
 
+const char *file_browser_entry_type_label(const file_browser_entry_t *entry)
+{
+    if (entry == NULL) return "";
+    if (entry->kind == FILE_BROWSER_ENTRY_PLAYLIST) {
+        // Read back off the name rather than stored: it is two bytes of state
+        // in every one of the 256 entries to save a call made only while a row
+        // is being drawn.
+        return playlist_file_kind_name(playlist_file_kind_from_name(entry->name));
+    }
+    return file_browser_format_name(entry->format);
+}
+
+const char *file_browser_display_name(const char *name)
+{
+    if (name == NULL) return "";
+    const char *slash = strrchr(name, '/');
+    return slash == NULL ? name : slash + 1;
+}
+
 bool file_browser_name_is_hidden(const char *name)
 {
     return name == NULL || name[0] == '\0' || name[0] == '.';
@@ -75,12 +94,21 @@ void file_browser_dir_init(file_browser_dir_t *dir, file_browser_entry_t *storag
     dir->count = 0U;
     dir->dropped_full = 0U;
     dir->dropped_long_name = 0U;
+    dir->dropped_unplayable = 0U;
+    dir->listing = FILE_BROWSER_LISTING_DIRECTORY;
     dir->path[0] = '\0';
     if (path != NULL && strlen(path) < sizeof(dir->path)) {
         // strcpy is safe here precisely because of the length test above; an
         // over-long mount path is a programming error, not user data.
         strcpy(dir->path, path);
     }
+}
+
+void file_browser_dir_init_playlist(file_browser_dir_t *dir, file_browser_entry_t *storage,
+                                   size_t capacity, const char *path)
+{
+    file_browser_dir_init(dir, storage, capacity, path);
+    if (dir != NULL) dir->listing = FILE_BROWSER_LISTING_PLAYLIST;
 }
 
 bool file_browser_dir_add(file_browser_dir_t *dir, const char *name,
@@ -91,8 +119,15 @@ bool file_browser_dir_add(file_browser_dir_t *dir, const char *name,
     }
     file_browser_format_t format = FILE_BROWSER_FORMAT_NONE;
     if (kind == FILE_BROWSER_ENTRY_FILE) {
-        format = file_browser_format_from_name(name);
-        if (format == FILE_BROWSER_FORMAT_NONE) return false;
+        /* A playlist is offered even though no decoder will ever see it: what
+         * it opens is a list, and that is decided here, from the name, so that
+         * a caller reading a directory does not have to know the difference. */
+        if (playlist_file_kind_from_name(name) != PLAYLIST_FILE_NONE) {
+            kind = FILE_BROWSER_ENTRY_PLAYLIST;
+        } else {
+            format = file_browser_format_from_name(name);
+            if (format == FILE_BROWSER_FORMAT_NONE) return false;
+        }
     }
     const size_t length = strlen(name);
     if (length >= FILE_BROWSER_NAME_MAX_LEN) {
@@ -111,12 +146,26 @@ bool file_browser_dir_add(file_browser_dir_t *dir, const char *name,
     return true;
 }
 
+/* Directories, then playlists, then tracks: the two kinds that open something
+ * sit above the ones that play, and a drive whose root holds one playlist and
+ * a hundred files does not bury it. Not the enum order - PLAYLIST was appended
+ * to that so the values already stored anywhere kept their meaning. */
+static int kind_rank(file_browser_entry_kind_t kind)
+{
+    switch (kind) {
+    case FILE_BROWSER_ENTRY_DIRECTORY: return 0;
+    case FILE_BROWSER_ENTRY_PLAYLIST: return 1;
+    case FILE_BROWSER_ENTRY_FILE:
+    default: return 2;
+    }
+}
+
 static int compare_entries(const void *left, const void *right)
 {
     const file_browser_entry_t *a = (const file_browser_entry_t *)left;
     const file_browser_entry_t *b = (const file_browser_entry_t *)right;
-    if (a->kind != b->kind) {
-        return a->kind == FILE_BROWSER_ENTRY_DIRECTORY ? -1 : 1;
+    if (kind_rank(a->kind) != kind_rank(b->kind)) {
+        return kind_rank(a->kind) < kind_rank(b->kind) ? -1 : 1;
     }
     const int by_name = compare_names(a->name, b->name);
     // Case-insensitive comparison makes "Track.mp3" and "track.mp3" equal, and
@@ -214,19 +263,51 @@ bool file_browser_path_on_volume(const char *path, const char *root)
            (path[length] == '\0' || path[length] == '/');
 }
 
-bool file_browser_path_child(const char *path, const char *name, char *out, size_t out_size)
+static bool path_join(const char *path, size_t path_length, const char *name, char *out,
+                      size_t out_size)
 {
-    if (path == NULL || name == NULL || out == NULL || out_size == 0U) return false;
-    // "." and ".." would walk out of the mount point; nothing above a volume
-    // root is ours to browse.
-    if (file_browser_name_is_hidden(name) || strchr(name, '/') != NULL) return false;
-    const size_t path_length = strlen(path);
     const size_t name_length = strlen(name);
     if (path_length + 1U + name_length + 1U > out_size) return false;
     memcpy(out, path, path_length);
     out[path_length] = '/';
     memcpy(out + path_length + 1U, name, name_length + 1U);
     return true;
+}
+
+bool file_browser_path_child(const char *path, const char *name, char *out, size_t out_size)
+{
+    if (path == NULL || name == NULL || out == NULL || out_size == 0U) return false;
+    // "." and ".." would walk out of the mount point; nothing above a volume
+    // root is ours to browse.
+    if (file_browser_name_is_hidden(name) || strchr(name, '/') != NULL) return false;
+    return path_join(path, strlen(path), name, out, out_size);
+}
+
+bool file_browser_dir_path_for(const file_browser_dir_t *dir, const char *name, char *out,
+                              size_t out_size)
+{
+    if (dir == NULL || name == NULL || out == NULL || out_size == 0U) return false;
+    if (dir->listing != FILE_BROWSER_LISTING_PLAYLIST) {
+        return file_browser_path_child(dir->path, name, out, out_size);
+    }
+    // Checked here as well as where the line was parsed: this is the point
+    // where a reference becomes a path something will be opened at.
+    if (!playlist_file_reference_is_safe(name)) return false;
+    if (name[0] == '/') {
+        // A playlist may write the whole path. Nothing resolves it - it is
+        // already one - but it still has to fit.
+        const size_t length = strlen(name);
+        if (length + 1U > out_size) return false;
+        memcpy(out, name, length + 1U);
+        return true;
+    }
+    /* The reference is relative to the directory the playlist file is in, so
+     * that is what dir->path is cut back to. A playlist directly under a
+     * volume root gives the root itself ("/usb0/list.m3u" -> "/usb0"); a path
+     * with no directory above it is not on any volume and opens nothing. */
+    const char *slash = strrchr(dir->path, '/');
+    if (slash == NULL || slash == dir->path) return false;
+    return path_join(dir->path, (size_t)(slash - dir->path), name, out, out_size);
 }
 
 bool file_browser_path_parent(const char *path, char *out, size_t out_size)

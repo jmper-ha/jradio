@@ -290,29 +290,35 @@ socket.emit('open');
     has_parent: false,
     items: [
       {index: 0, name: 'Альбом', kind: 'dir'},
-      {index: 1, name: 'track.mp3', kind: 'file', format: 'MP3'},
+      {index: 1, name: 'playlist.m3u', kind: 'playlist', format: 'M3U'},
+      {index: 2, name: 'track.mp3', kind: 'file', format: 'MP3'},
     ],
   });
 
-  assert.deepEqual(labels(), ['Альбом', 'track.mp3']);
-  assert.equal(elements['#list-count'].textContent, '2');
+  assert.deepEqual(labels(), ['Альбом', 'playlist.m3u', 'track.mp3']);
+  assert.equal(elements['#list-count'].textContent, '3');
   // The heading names the directory: "Файлы" alone leaves the user lost.
   assert.equal(elements['#list-title'].textContent, '/usb0');
   assert.ok(rows()[0].classList.contains('is-directory'));
-  assert.ok(!rows()[1].classList.contains('is-directory'));
+  /* A playlist opens a listing the way a folder does, so it is marked and
+     acted on as one - it is the track rows that play. */
+  assert.ok(rows()[1].classList.contains('is-directory'));
+  assert.ok(!rows()[2].classList.contains('is-directory'));
   // A directory is opened, never played.
   assert.equal(rows()[0].children[1].textContent, 'Открыть');
-  assert.equal(rows()[1].children[1].textContent, 'Играет');
+  assert.equal(rows()[1].children[1].textContent, 'Открыть');
+  assert.equal(rows()[2].children[1].textContent, 'Играет');
   // The format moved out of the name into its own column: a directory has
-  // none, a file has one.
+  // none, a file has one, and a playlist says which of the two it is.
   assert.equal(rows()[0].children[2].hidden, true);
-  assert.equal(rows()[1].children[2].textContent, 'MP3');
-  assert.equal(rows()[1].children[2].hidden, false);
+  assert.equal(rows()[1].children[2].textContent, 'M3U');
+  assert.equal(rows()[2].children[2].textContent, 'MP3');
+  assert.equal(rows()[2].children[2].hidden, false);
 
   // Clicking an entry selects it by the device's own index.
-  rows()[1].emit('click');
+  rows()[2].emit('click');
   assert.deepEqual(JSON.parse(socket.sent.at(-1)), {
-    type: 'command', id: 'web-1', action: 'list.select', index: 1,
+    type: 'command', id: 'web-1', action: 'list.select', index: 2,
   });
 
   // Player updates repeat the same revision and must not refetch.

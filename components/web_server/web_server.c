@@ -735,14 +735,18 @@ static esp_err_t web_server_files_get(httpd_req_t *request)
         web_json_literal(&writer, index > 0U ? ",{\"index\":" : "{\"index\":");
         web_json_format(&writer, "%u", (unsigned)index);
         web_json_literal(&writer, ",\"name\":");
-        web_json_string(&writer, entry.name);
+        // The same short name the device's own row shows: inside a playlist
+        // the entry name is the path the file wrote.
+        web_json_string(&writer, file_browser_display_name(entry.name));
         web_json_literal(&writer, ",\"kind\":");
-        web_json_literal(&writer,
-                         entry.kind == FILE_BROWSER_ENTRY_DIRECTORY ? "\"dir\""
-                                                                   : "\"file\"");
+        // A playlist is its own kind rather than a directory, because the page
+        // shows the type ("M3U") beside it and a directory has none.
+        web_json_literal(&writer, entry.kind == FILE_BROWSER_ENTRY_DIRECTORY ? "\"dir\""
+                                  : entry.kind == FILE_BROWSER_ENTRY_PLAYLIST ? "\"playlist\""
+                                                                              : "\"file\"");
         if (entry.kind != FILE_BROWSER_ENTRY_DIRECTORY) {
             web_json_literal(&writer, ",\"format\":");
-            web_json_string(&writer, file_browser_format_name(entry.format));
+            web_json_string(&writer, file_browser_entry_type_label(&entry));
         }
         web_json_literal(&writer, "}");
         if (!web_json_valid(&writer)) {

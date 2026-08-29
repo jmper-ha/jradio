@@ -1175,8 +1175,11 @@ static bool ui_list_row_text(size_t list_index, char *text, size_t text_size,
     // Directories are marked rather than merely sorted first, so the row tells
     // you what the encoder click will do before you press it. The mark itself
     // is drawn by the caller, from its own label - see s_station_list_icons.
-    *directory = entry.kind == FILE_BROWSER_ENTRY_DIRECTORY;
-    snprintf(text, text_size, "%s", entry.name);
+    // A playlist is marked the same way: clicking it opens a list too.
+    *directory = entry.kind != FILE_BROWSER_ENTRY_FILE;
+    // Inside a playlist the name is the path the file wrote; the row has room
+    // for the track, not for the folders above it.
+    snprintf(text, text_size, "%s", file_browser_display_name(entry.name));
     *active = list_index == station_list_active_index(&s_station_list);
     return true;
 }
@@ -3176,10 +3179,10 @@ static void ui_handle_input(board_input_action_t action)
                 .item_index = index,
             };
             if (!ui_submit_player_command(&command)) return;
-            // Opening a directory keeps the browser on screen; the new listing
-            // arrives through the snapshot poll. Only a file switches to the
-            // player.
-            if (entry.kind == FILE_BROWSER_ENTRY_DIRECTORY) return;
+            // Opening a directory or a playlist keeps the browser on screen;
+            // the new listing arrives through the snapshot poll. Only a file
+            // switches to the player.
+            if (entry.kind != FILE_BROWSER_ENTRY_FILE) return;
             // Leave the list in the view state too, not just on screen. The
             // automatic list-to-player transition in
             // ui_player_state_apply_snapshot() only fires for the radio, so USB
@@ -3195,9 +3198,9 @@ static void ui_handle_input(board_input_action_t action)
                                                      ? UI_MENU_ITEM_SD_CARD
                                                      : UI_MENU_ITEM_USB_FILES));
             ui_set_state_line("Открытие файла", "");
-            ui_scroller_set_text(&s_source_detail, entry.name);
+            ui_scroller_set_text(&s_source_detail, file_browser_display_name(entry.name));
             ui_set_label_text_if_changed(s_source_stream,
-                                         file_browser_format_name(entry.format));
+                                         file_browser_entry_type_label(&entry));
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             size_t index;
             if (!station_list_get_selection(&s_station_list, &index) ||

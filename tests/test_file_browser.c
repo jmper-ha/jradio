@@ -255,6 +255,43 @@ static void test_finding_an_entry_by_name(void)
     assert(file_browser_dir_find(NULL, "a.mp3") == 0U);
 }
 
+/* A playlist in a directory is listed as its own kind, so that everything
+ * walking the listing knows the click opens something rather than plays it. */
+static void test_playlists_in_a_directory(void)
+{
+    file_browser_entry_t storage[8];
+    file_browser_dir_t dir;
+    file_browser_dir_init(&dir, storage, 8U, "/usb0");
+
+    assert(file_browser_dir_add(&dir, "z.mp3", FILE_BROWSER_ENTRY_FILE));
+    assert(file_browser_dir_add(&dir, "playlist.m3u", FILE_BROWSER_ENTRY_FILE));
+    assert(file_browser_dir_add(&dir, "radio.PLS", FILE_BROWSER_ENTRY_FILE));
+    assert(file_browser_dir_add(&dir, "Music", FILE_BROWSER_ENTRY_DIRECTORY));
+    // Still nothing playable about a text file beside the music.
+    assert(!file_browser_dir_add(&dir, "notes.txt", FILE_BROWSER_ENTRY_FILE));
+    file_browser_dir_sort(&dir);
+
+    // Directories, then playlists, then tracks: what opens sits above what
+    // plays, and one playlist is not buried under a hundred files.
+    assert(file_browser_dir_entry(&dir, 0U)->kind == FILE_BROWSER_ENTRY_DIRECTORY);
+    assert(file_browser_dir_entry(&dir, 1U)->kind == FILE_BROWSER_ENTRY_PLAYLIST);
+    assert(strcmp(file_browser_dir_entry(&dir, 1U)->name, "playlist.m3u") == 0);
+    assert(file_browser_dir_entry(&dir, 2U)->kind == FILE_BROWSER_ENTRY_PLAYLIST);
+    assert(file_browser_dir_entry(&dir, 3U)->kind == FILE_BROWSER_ENTRY_FILE);
+
+    // The type column names the list format, and nothing for a directory.
+    assert(strcmp(file_browser_entry_type_label(file_browser_dir_entry(&dir, 0U)), "") == 0);
+    assert(strcmp(file_browser_entry_type_label(file_browser_dir_entry(&dir, 1U)), "M3U") == 0);
+    assert(strcmp(file_browser_entry_type_label(file_browser_dir_entry(&dir, 2U)), "PLS") == 0);
+    assert(strcmp(file_browser_entry_type_label(file_browser_dir_entry(&dir, 3U)), "MP3") == 0);
+    assert(strcmp(file_browser_entry_type_label(NULL), "") == 0);
+
+    /* Track advance steps over a playlist the way it steps over a directory:
+     * the only entry it may land on is one a decoder can open. */
+    assert(file_browser_dir_next_file(&dir, 0U) == 3U);
+    assert(file_browser_dir_previous_file(&dir, 3U) == file_browser_dir_count(&dir));
+}
+
 int main(void)
 {
     test_format_from_name();
@@ -266,6 +303,7 @@ int main(void)
     test_previous_file();
     test_paths();
     test_finding_an_entry_by_name();
+    test_playlists_in_a_directory();
     printf("file_browser tests passed\n");
     return 0;
 }

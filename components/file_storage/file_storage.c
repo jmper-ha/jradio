@@ -2,6 +2,8 @@
 
 #include <dirent.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -15,6 +17,11 @@ static const char *TAG = "files";
 // One directory is on screen at a time, so one shared listing is enough. At
 // 264 bytes per entry this is ~68 KB, which is why it lives in PSRAM.
 #define FILE_STORAGE_MAX_ENTRIES 256
+
+/* One playlist line. Long enough for the longest path the browser handles
+ * plus the "File99=" a .pls puts in front of it; a line that still does not
+ * fit is dropped and counted, the way an over-long file name is. */
+#define FILE_STORAGE_LINE_MAX (FILE_BROWSER_PATH_MAX_LEN + 16)
 
 // Two: the USB drive and the SD card, which is also all FATFS is built for
 // (CONFIG_FATFS_VOLUME_COUNT).
@@ -139,6 +146,88 @@ esp_err_t file_storage_read_directory(const char *path)
     return ESP_OK;
 }
 
+esp_err_t file_storage_read_playlist(const char *path)
+{
+    if (path == NULL || s_entries == NULL) return ESP_ERR_INVALID_ARG;
+    const playlist_file_kind_t kind = playlist_file_kind_from_name(path);
+    if (kind == PLAYLIST_FILE_NONE) return ESP_ERR_INVALID_ARG;
+    // Asked before the open, for the reason read_directory gives.
+    if (!file_storage_path_mounted(path)) return ESP_ERR_INVALID_STATE;
+    /* The line buffer is a kilobyte, so it is allocated rather than put on the
+     * stack: every caller of this is the player_control task, whose stack is
+     * the tightest on the device. PSRAM first like every other large block,
+     * and freed before returning - a playlist is opened by a keypress, not in
+     * a loop. */
+    char *line = heap_caps_malloc(FILE_STORAGE_LINE_MAX, MALLOC_CAP_SPIRAM);
+    if (line == NULL) line = heap_caps_malloc(FILE_STORAGE_LINE_MAX, MALLOC_CAP_INTERNAL);
+    if (line == NULL) return ESP_ERR_NO_MEM;
+    FILE *file = fopen(path, "r");
+    if (file == NULL) {
+        ESP_LOGE(TAG, "cannot open %s", path);
+        free(line);
+        return ESP_FAIL;
+    }
+    if (!listing_lock()) {
+        fclose(file);
+        free(line);
+        return ESP_ERR_TIMEOUT;
+    }
+    file_browser_dir_init_playlist(&s_listing, s_entries, FILE_STORAGE_MAX_ENTRIES, path);
+    while (fgets(line, FILE_STORAGE_LINE_MAX, file) != NULL) {
+        const bool whole_line = strchr(line, '\n') != NULL || feof(file);
+        const char *reference = NULL;
+        const playlist_file_line_t parsed = playlist_file_read_line(kind, line, &reference);
+        if (!whole_line) {
+            /* Only the head of the line is here. Drop the rest of it, and count
+             * the entry only if that head was going somewhere: an #EXTINF
+             * comment longer than the buffer costs the listing nothing, and
+             * reporting it as a lost track would be a lie. */
+            int discarded;
+            while ((discarded = fgetc(file)) != EOF && discarded != '\n') {
+            }
+            if (parsed != PLAYLIST_FILE_LINE_IGNORED) ++s_listing.dropped_long_name;
+            continue;
+        }
+        if (parsed == PLAYLIST_FILE_LINE_UNPLAYABLE) {
+            ++s_listing.dropped_unplayable;
+            continue;
+        }
+        if (parsed != PLAYLIST_FILE_LINE_TRACK) continue;
+        /* dir_add refuses a file in a format nothing here decodes, and says so
+         * by returning false without counting it - which is right for a
+         * directory, where a .txt beside the music was never a track. In a
+         * playlist it is one the user asked for and will not get. */
+        if (!file_browser_dir_add(&s_listing, reference, FILE_BROWSER_ENTRY_FILE) &&
+            file_browser_format_from_name(reference) == FILE_BROWSER_FORMAT_NONE) {
+            ++s_listing.dropped_unplayable;
+        }
+    }
+    // Deliberately not sorted: the order the file gives is the playing order.
+    const size_t count = s_listing.count;
+    const size_t dropped_full = s_listing.dropped_full;
+    const size_t dropped_long = s_listing.dropped_long_name;
+    const size_t dropped_unplayable = s_listing.dropped_unplayable;
+    listing_unlock();
+    fclose(file);
+    free(line);
+    if (dropped_full > 0U || dropped_long > 0U || dropped_unplayable > 0U) {
+        ESP_LOGW(TAG, "%s: %u entries dropped (listing full=%u, line too long=%u, "
+                      "cannot be played=%u)",
+                 path, (unsigned)(dropped_full + dropped_long + dropped_unplayable),
+                 (unsigned)dropped_full, (unsigned)dropped_long,
+                 (unsigned)dropped_unplayable);
+    }
+    ESP_LOGI(TAG, "%s: %u tracks", path, (unsigned)count);
+    return ESP_OK;
+}
+
+esp_err_t file_storage_open(const char *path)
+{
+    return playlist_file_kind_from_name(path) != PLAYLIST_FILE_NONE
+               ? file_storage_read_playlist(path)
+               : file_storage_read_directory(path);
+}
+
 bool file_storage_listing_is_on(const char *root)
 {
     if (s_entries == NULL || root == NULL || !listing_lock()) return false;
@@ -213,7 +302,9 @@ bool file_storage_entry_path(size_t index, file_browser_entry_t *entry, char *pa
     if (found != NULL) {
         *entry = *found;
         // Pure string work, so the lock is held for no longer than a copy.
-        built = file_browser_path_child(s_listing.path, found->name, path, capacity);
+        // Which of the two listings is open decides what the name means, and
+        // dir_path_for is the one place that knows.
+        built = file_browser_dir_path_for(&s_listing, found->name, path, capacity);
     }
     listing_unlock();
     return built;
@@ -245,7 +336,7 @@ void file_storage_log_listing(void)
         if (entry.kind == FILE_BROWSER_ENTRY_DIRECTORY) {
             ESP_LOGI(TAG, "  [dir] %s", entry.name);
         } else {
-            ESP_LOGI(TAG, "  %-4s %s", file_browser_format_name(entry.format), entry.name);
+            ESP_LOGI(TAG, "  %-4s %s", file_browser_entry_type_label(&entry), entry.name);
         }
     }
 }

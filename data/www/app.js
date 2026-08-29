@@ -665,7 +665,9 @@
         index: item.index,
         label: item.name,
         meta: fileEntryMeta(item),
-        isDirectory: item.kind === 'dir',
+        // A playlist opens a listing the way a folder does, so the row gets
+        // the same marker and the same "Открыть" action.
+        isDirectory: item.kind === 'dir' || item.kind === 'playlist',
       }));
   }
 

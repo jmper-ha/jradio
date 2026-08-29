@@ -39,6 +39,25 @@ bool file_storage_path_mounted(const char *path);
 // Reads `path` into the shared listing, replacing what was there.
 esp_err_t file_storage_read_directory(const char *path);
 
+/* Reads the tracks of the .m3u or .pls file at `path` into the shared listing.
+ *
+ * A playlist takes the place of a directory rather than sitting beside one:
+ * the listing is what the browser shows, what track advance steps through, and
+ * what the previous/next keys move in, so a playlist that is open *is* the
+ * current directory as far as everything above here is concerned. Browsing up
+ * out of it lands in the folder the file is in, because that is the parent of
+ * its path.
+ *
+ * The order in the file is kept - it is the playing order - so unlike a
+ * directory this listing is never sorted. Entries the device cannot open are
+ * counted, not listed: see file_browser_dir_t::dropped_unplayable. */
+esp_err_t file_storage_read_playlist(const char *path);
+
+// Whichever of the two `path` names. Used wherever a path comes back from
+// somewhere that stored it - a resume point, the track being played - and the
+// code that opens it should not have to re-derive which kind it is.
+esp_err_t file_storage_open(const char *path);
+
 /* True while the listing is showing `root` or something inside it.
  *
  * Asked by a volume on its way out, because with two of them the listing can

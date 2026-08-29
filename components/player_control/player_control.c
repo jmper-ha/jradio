@@ -71,13 +71,36 @@ static atomic_uint s_listing_revision = ATOMIC_VAR_INIT(0U);
  * come back to. */
 static char s_files_playing_path[FILE_BROWSER_PATH_MAX_LEN];
 static SemaphoreHandle_t s_playing_path_lock;
+/* Where that track was chosen from - the directory that was open, or the
+ * playlist file whose tracks were - and the name it has in there.
+ *
+ * Kept rather than worked out from the path, which is what the reveal used to
+ * do with strrchr(). With a playlist open the two no longer follow from each
+ * other: the track can be anywhere on the volume, and its name in the listing
+ * is the reference the playlist wrote, folders and all.
+ *
+ * No lock, unlike the path above: these are written and read only by this
+ * task. The UI asks for the path, to write the resume point down, and for
+ * nothing else here. */
+static char s_files_playing_list[FILE_BROWSER_PATH_MAX_LEN];
+static char s_files_playing_name[FILE_BROWSER_NAME_MAX_LEN];
 
-static void player_set_playing_path(const char *path)
+/* `name` is the name the track has in the listing it came from, and the
+ * listing itself is read back out of file_storage rather than passed in: it
+ * goes straight into its static, because a second kilobyte of path on this
+ * task's stack is what there is least room for. */
+static void player_set_playing_file(const char *path, const char *name)
 {
+    const bool playing = path != NULL && path[0] != '\0';
+    snprintf(s_files_playing_name, sizeof(s_files_playing_name), "%s",
+             playing && name != NULL ? name : "");
+    if (!playing || !file_storage_current_path(s_files_playing_list,
+                                               sizeof(s_files_playing_list))) {
+        s_files_playing_list[0] = '\0';
+    }
     if (s_playing_path_lock == NULL) return;
     xSemaphoreTake(s_playing_path_lock, portMAX_DELAY);
-    snprintf(s_files_playing_path, sizeof(s_files_playing_path), "%s",
-             path == NULL ? "" : path);
+    snprintf(s_files_playing_path, sizeof(s_files_playing_path), "%s", playing ? path : "");
     xSemaphoreGive(s_playing_path_lock);
 }
 
@@ -139,8 +162,15 @@ static void player_file_select_item(size_t index, player_playback_state_t playba
         ESP_LOGW(TAG, "usb item %u is not in the current listing", (unsigned int)index);
         return;
     }
-    if (entry.kind == FILE_BROWSER_ENTRY_DIRECTORY) {
-        const esp_err_t result = file_storage_read_directory(path);
+    if (entry.kind != FILE_BROWSER_ENTRY_FILE) {
+        /* Directories and playlists are both containers: selecting one opens
+         * what it holds and leaves the browser where it is. A playlist takes
+         * the place of the directory in the listing, so everything after this
+         * - the cursor, track advance, the two track keys - goes on working
+         * off the one listing, without knowing which kind it is walking. */
+        const esp_err_t result = entry.kind == FILE_BROWSER_ENTRY_PLAYLIST
+                                     ? file_storage_read_playlist(path)
+                                     : file_storage_read_directory(path);
         if (result != ESP_OK) {
             ESP_LOGW(TAG, "cannot open %s: %s", path, esp_err_to_name(result));
             return;
@@ -160,13 +190,16 @@ static void player_file_select_item(size_t index, player_playback_state_t playba
         atomic_store_explicit(&s_files_item_index, index, memory_order_release);
         return;
     }
-    const esp_err_t result = file_player_play(path, entry.name, entry.format);
+    // The display name, not the entry name: inside a playlist the latter is a
+    // path, and the player screen would show the folders instead of the track.
+    const esp_err_t result = file_player_play(path, file_browser_display_name(entry.name),
+                                              entry.format);
     if (result != ESP_OK) {
         ESP_LOGW(TAG, "cannot play %s: %s", path, esp_err_to_name(result));
-        player_set_playing_path("");
+        player_set_playing_file(NULL, NULL);
         return;
     }
-    player_set_playing_path(path);
+    player_set_playing_file(path, entry.name);
     atomic_store_explicit(&s_files_item_index, index, memory_order_release);
 }
 
@@ -178,23 +211,23 @@ static void player_file_select_item(size_t index, player_playback_state_t playba
  * browser opened on a directory unrelated to what was coming out of the
  * speakers.
  *
- * The directory is reopened even when the listing never left it, rather than
- * comparing paths first: the comparison needs a second 1 KB path buffer on a
- * task whose stack is already the tightest on the device, and the read costs
- * the same as stepping into any folder, which this task does on a keypress
- * anyway. */
+ * What is reopened is the listing the track was chosen from, which is a
+ * playlist file as readily as a folder. Reopening the folder the track happens
+ * to sit in would drop the user out of the playlist mid-play, and with it the
+ * order the rest of the tracks were going to arrive in.
+ *
+ * It is reopened even when the listing never left it, rather than comparing
+ * paths first: the comparison needs a second 1 KB path buffer on a task whose
+ * stack is already the tightest on the device, and the read costs the same as
+ * stepping into any folder, which this task does on a keypress anyway. */
 static void player_file_reveal_playing(void)
 {
-    if (s_files_playing_path[0] == '\0') return;
-    char parent[FILE_BROWSER_PATH_MAX_LEN];
-    if (!file_browser_path_parent(s_files_playing_path, parent, sizeof(parent))) return;
-    if (file_storage_read_directory(parent) != ESP_OK) {
-        ESP_LOGW(TAG, "cannot reopen %s", parent);
+    if (s_files_playing_path[0] == '\0' || s_files_playing_list[0] == '\0') return;
+    if (file_storage_open(s_files_playing_list) != ESP_OK) {
+        ESP_LOGW(TAG, "cannot reopen %s", s_files_playing_list);
         return;
     }
-    const char *name = strrchr(s_files_playing_path, '/');
-    name = name == NULL ? s_files_playing_path : name + 1;
-    const size_t index = file_storage_find_entry(name);
+    const size_t index = file_storage_find_entry(s_files_playing_name);
     // The file can have been deleted from another machine since it was opened;
     // the directory is still the right one to show, just without a cursor to
     // put on the playing row.
@@ -209,8 +242,8 @@ static void player_file_reveal_playing(void)
  *
  * By path rather than by row: the listing can have moved anywhere since - the
  * browser follows the user, not the music - so an index would name whatever
- * happens to sit at that position in another directory. The name and the
- * format come back out of the path, which is where file_storage put them.
+ * happens to sit at that position in another directory. The name it was
+ * chosen under is remembered beside the path, and the format follows from it.
  *
  * Reads s_files_playing_path without the lock, the way the reveal does: the
  * lock exists for the UI task reading it, and this runs on the task that
@@ -218,8 +251,7 @@ static void player_file_reveal_playing(void)
 static void player_file_start_saved(void)
 {
     if (s_files_playing_path[0] == '\0') return;
-    const char *name = strrchr(s_files_playing_path, '/');
-    name = name == NULL ? s_files_playing_path : name + 1;
+    const char *name = file_browser_display_name(s_files_playing_name);
     const esp_err_t result = file_player_play(s_files_playing_path, name,
                                               file_browser_format_from_name(name));
     if (result != ESP_OK) {
@@ -383,8 +415,8 @@ static bool player_stop_active_source(audio_source_t source)
          * to the next play(), so a cover shared by a whole album stays on the
          * screen instead of being decoded again for every track. */
         album_art_clear();
-        // Nothing is playing any more, so there is no directory to reveal.
-        player_set_playing_path("");
+        // Nothing is playing any more, so there is no listing to reveal.
+        player_set_playing_file(NULL, NULL);
         /* And the card goes back in its box. The order is the whole point:
          * file_player_stop() has returned, so nothing is inside fread() on the
          * volume this is about to tear down - the same contract the USB
@@ -1039,9 +1071,9 @@ bool player_control_file_resume_path(const char *path)
     const size_t index = file_storage_find_entry(name);
     if (index >= file_storage_entry_count()) return false;
     file_browser_entry_t entry;
-    /* A directory that took the file's name is not the track we remembered. */
-    if (!file_storage_entry_at(index, &entry) ||
-        entry.kind == FILE_BROWSER_ENTRY_DIRECTORY) {
+    /* A directory - or a playlist - that took the file's name is not the track
+     * we remembered. */
+    if (!file_storage_entry_at(index, &entry) || entry.kind != FILE_BROWSER_ENTRY_FILE) {
         return false;
     }
     // Nothing is playing at start-up, so this can only be a fresh start.

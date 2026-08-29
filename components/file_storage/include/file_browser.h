@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "playlist_file.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -36,6 +38,11 @@ typedef enum {
 typedef enum {
     FILE_BROWSER_ENTRY_DIRECTORY = 0,
     FILE_BROWSER_ENTRY_FILE,
+    /* An .m3u or .pls file. Its own kind rather than a file with an odd
+     * format, because everything that walks a listing has to treat it as a
+     * container: selecting it opens what it names, and track advance steps
+     * over it the way it steps over a directory. */
+    FILE_BROWSER_ENTRY_PLAYLIST,
 } file_browser_entry_kind_t;
 
 typedef enum {
@@ -47,7 +54,23 @@ typedef enum {
     FILE_BROWSER_FORMAT_WAV,
 } file_browser_format_t;
 
+/* What the open listing is: the contents of a directory, or the tracks a
+ * playlist file names.
+ *
+ * The difference is in what an entry name means. In a directory it is a name
+ * inside dir->path. In a playlist it is the reference as the file wrote it -
+ * a path relative to the directory the *playlist* is in, which may lead
+ * through folders of its own ("Music/Album/1.mp3") or be a full path on the
+ * volume. file_browser_dir_path_for() is the one place that knows this. */
+typedef enum {
+    FILE_BROWSER_LISTING_DIRECTORY = 0,
+    FILE_BROWSER_LISTING_PLAYLIST,
+} file_browser_listing_t;
+
 typedef struct {
+    // In a playlist listing this holds the reference, slashes and all, so it
+    // can be longer than the file name a browser row shows - see
+    // file_browser_entry_display_name().
     char name[FILE_BROWSER_NAME_MAX_LEN];
     file_browser_entry_kind_t kind;
     // FILE_BROWSER_FORMAT_NONE for directories.
@@ -65,6 +88,13 @@ typedef struct {
     // reason so the UI can say which one happened.
     size_t dropped_full;
     size_t dropped_long_name;
+    /* Tracks the playlist named but this device cannot open: streams, drive
+     * letters, formats with no decoder. Counted rather than dropped silently,
+     * so a short list has an explanation. */
+    size_t dropped_unplayable;
+    file_browser_listing_t listing;
+    // The directory being shown, or - for a playlist listing - the path of the
+    // playlist file itself.
     char path[FILE_BROWSER_PATH_MAX_LEN];
 } file_browser_dir_t;
 
@@ -79,6 +109,19 @@ typedef struct {
 file_browser_format_t file_browser_format_from_name(const char *name);
 const char *file_browser_format_name(file_browser_format_t format);
 
+// What the type column shows for one entry: the audio format for a track,
+// "M3U"/"PLS" for a playlist, nothing for a directory.
+const char *file_browser_entry_type_label(const file_browser_entry_t *entry);
+
+/* The part of an entry name a browser row shows, and the name a playing track
+ * is announced under.
+ *
+ * Identical to the name itself everywhere except inside a playlist, where the
+ * name is the reference the file wrote and can carry the folders it leads
+ * through. A 116 px row would then show the start of a path and cut off the
+ * track. Nothing is copied: the pointer is into the name passed in. */
+const char *file_browser_display_name(const char *name);
+
 // True for "." / ".." and for dot-files. Media players that wrote to the drive
 // leave "._track.mp3" AppleDouble stubs and ".Trashes" behind; listing those
 // as playable tracks is noise.
@@ -86,6 +129,12 @@ bool file_browser_name_is_hidden(const char *name);
 
 void file_browser_dir_init(file_browser_dir_t *dir, file_browser_entry_t *storage,
                           size_t capacity, const char *path);
+
+// The same, for the tracks of the playlist file at `path`. Entries added
+// afterwards are references rather than names, and the listing must not be
+// sorted: the order the file writes them in is the order they play in.
+void file_browser_dir_init_playlist(file_browser_dir_t *dir, file_browser_entry_t *storage,
+                                   size_t capacity, const char *path);
 
 // Returns true when the entry was stored. Filtered-out entries (hidden names,
 // files in no supported format) return false without touching the counters:
@@ -132,6 +181,19 @@ bool file_browser_path_on_volume(const char *path, const char *root);
 // Both return false rather than truncating: a truncated path is a path to the
 // wrong file, and silently opening the wrong file is worse than refusing.
 bool file_browser_path_child(const char *path, const char *name, char *out, size_t out_size);
+
+/* The full path an entry of `dir` opens, whichever kind of listing it is.
+ *
+ * For a directory this is the directory plus the name. For a playlist it is
+ * the reference resolved against the directory the playlist file sits in -
+ * which is what makes both playlists on the test drive work: the .m3u in the
+ * root writes "Music/Album/1.mp3", and the .pls inside Music/ writes
+ * "Album/1.mp3", and each is relative to its own file.
+ *
+ * Refuses, rather than truncating, for the reason path_child does; refuses
+ * an unsafe reference for the reason playlist_file_reference_is_safe() gives. */
+bool file_browser_dir_path_for(const file_browser_dir_t *dir, const char *name, char *out,
+                              size_t out_size);
 bool file_browser_path_parent(const char *path, char *out, size_t out_size);
 
 #ifdef __cplusplus

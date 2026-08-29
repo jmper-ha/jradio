@@ -40,11 +40,21 @@
   --row: 38px;
   --bar: 46px;
   --cover: 120px;
+  /* The player screen's stand-in tile, hex for hex: the same face in the
+     browser as on the panel. */
+  --art-tile: #18242e;
+  --art-edge: #26343f;
+  --art-mark: #3e5060;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
+  /* The panel is dark and has one palette; a page that can be light needs the
+     same tile in its own terms, or the cover leaves a dark hole in it. */
+  --art-tile: #eef1f6;
+  --art-edge: #dde3ea;
+  --art-mark: #9fadbb;
   --page: #eceff3;
   --surface: #ffffff;
   --surface-2: #f4f6f9;
@@ -602,15 +612,26 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   width: var(--cover);
   height: var(--cover);
   flex: none;
+  border: 1px solid var(--art-edge);
   border-radius: 12px;
   overflow: hidden;
-  background: var(--surface-3);
+  background: var(--art-tile);
 }
 
-/* No picture, no tile: an empty square beside the title reads as a defect
-   rather than as a placeholder. The panel keeps its height either way -
-   that is what the column's min-height is for. */
-.track-art:has(> img[hidden]) { display: none; }
+.track-art-mark {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  /* The proportion the panel draws it at: a 48-pixel glyph in a 96-pixel
+     tile. */
+  width: 45%;
+  height: 45%;
+  fill: var(--art-mark);
+}
+
+/* Belt and braces: the cover is opaque and covers the mark anyway, but a
+   picture that ever arrives with transparency should not show it through. */
+.track-art:has(> img:not([hidden])) .track-art-mark { display: none; }
 
 .track-cover {
   position: absolute;
@@ -618,7 +639,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   width: 100%;
   height: 100%;
   object-fit: cover;
-  background: var(--surface-3);
+  background: var(--art-tile);
 }
 
 .track-lines { min-width: 0; flex: 1; }

@@ -71,10 +71,19 @@
              as the region's label for a screen reader. -->
         <p id="mode-label" class="sr-only">Нет источника</p>
 
-        <!-- The tile only wraps the picture: it clips the rounded corner and
-             it is what the phone rules resize. With nothing in it the tile is
-             not drawn at all. -->
+        <!-- The tile is always drawn, with the panel's own mark in it when
+             there is no picture - a radio station without a logo, a file
+             without a tag. The same stand-in the device's player screen uses,
+             down to its three colours: an empty square where the cover should
+             be reads as a fault, and a missing one moves everything beside it. -->
         <div class="track-art" aria-hidden="true">
+          <svg class="track-art-mark" viewBox="0 0 24 24" focusable="false">
+            <path d="M9.6 5.2 19.4 3v2.7L9.6 7.9Z"/>
+            <rect x="9.6" y="5.2" width="1.7" height="12.4"/>
+            <rect x="17.7" y="3" width="1.7" height="12.6"/>
+            <ellipse cx="7.7" cy="17.4" rx="3" ry="2.6"/>
+            <ellipse cx="15.8" cy="15.4" rx="3" ry="2.6"/>
+          </svg>
           <img id="track-cover" class="track-cover" alt="" hidden>
         </div>
 

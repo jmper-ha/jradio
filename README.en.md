@@ -18,7 +18,7 @@ output.
 | **Internet radio** | works | Your own station list, the track name straight off the air, reconnection when a stream drops |
 | **Music from a USB drive** | works | Walk through folders, tags, cover art, scrubbing, moves on to the next track |
 | **Music from an SD card** | works | The same; the card is recognised when its source is entered |
-| **Playlists on the media** | works | `.m3u`, `.m3u8` and `.pls` open like a folder: their own track order, across any folders on the drive |
+| **Playlists on the media** | works | `.m3u`, `.m3u8` and `.pls` files open like a folder: their own track order, gathered from any folders |
 | **Yandex Music** | works | "My wave" and your account's stations, album art, next track, like and dislike. Can be taken off the home screen |
 | **Web interface** | works | Player with cover art, scrubbing, volume and track keys, the device settings, station-list editor, file browsing, Wi-Fi, linking Yandex Music |
 | **Clock** | works | Time from the internet, on every screen |
@@ -40,27 +40,37 @@ output.
 | FLAC in Ogg | yes | `.ogg`, `.oga` | Vorbis under the same extensions will not play |
 | WAV | - | `.wav` | 16-bit, mono or stereo |
 | HLS (`.m3u8`) | yes | - | Segments in MP3 or AAC. A stream wrapped in MPEG-TS is not demuxed |
-| Playlists | - | `.m3u`, `.m3u8`, `.pls` | A list of files on the media, not a stream; the order comes from the file |
 
 Radio works over both HTTP and HTTPS. A station whose address ends in `.m3u8`
 is not a stream but an index of short files; the device handles such an index
-by itself, with nothing to configure. The `.m3u8` extension means different
-things on a station and on a drive: on a station it is HLS, on the media it is
-an ordinary playlist.
-
-A playlist on the media opens like a folder. Its paths are read relative to the
-folder the playlist file itself is in: an `.m3u` in the root of a drive writes
-`Music/Album/1.mp3`, while a `.pls` inside `Music` writes `Album/1.mp3`. The
-backslashes of a playlist written on Windows are understood as separators too.
-Tracks come in the order they are written in - this listing is not sorted - and
-browsing up out of a playlist lands in the folder it sits in. Lines the device
-cannot open - `http://` links, drive letters, paths with `..`, formats with no
-decoder - are skipped, and how many there were is in the log.
+by itself, with nothing to configure. On the media the same extension means
+something else - an ordinary playlist, see below.
 
 Only files can be scrubbed: neither a radio stream nor a Yandex station has a
 length or a position to move to. Track length is worked out from the file size
 and the bitrate - exact for WAV and for constant bitrate, taken from the header
 for FLAC, and drifting a little on a variable-bitrate file.
+
+### Playlists on the media
+
+Besides the audio the device reads playlist files on a drive and on a card -
+`.m3u`, `.m3u8` and `.pls`. They have nothing to do with the station list:
+they are ordinary files beside the music, written by whatever player put the
+media together.
+
+A playlist is not played but opened, the way a folder is. Its tracks are what
+the list then shows, in the order the file writes them in, and from there
+everything works as it does in a folder: the track keys and auto-advance move
+along the playlist, and browsing up lands in the folder the file sits in. The
+tracks themselves may be anywhere on the media, across as many folders as they
+like.
+
+Paths inside a playlist are read relative to the folder the file itself is in:
+an `.m3u` in the root of a drive writes `Music/Album/1.mp3`, while a `.pls`
+inside `Music` writes `Album/1.mp3`. Backslashes, as Windows writes them, are
+understood as separators too. Lines the device cannot open - `http://` links,
+drive letters, paths with `..`, formats with no decoder - are skipped, and how
+many there were is in the log.
 
 ## First run
 
@@ -129,7 +139,8 @@ where it is even while a long name under the cursor travels as a marquee: it
 belongs to the row, not to the name.
 
 Files are not numbered. The first row of the browser is the way out of the
-folder and directories carry a mark; neither is an nth of anything.
+folder, and directories and playlists carry a mark each of their own; neither
+is an nth of anything.
 
 The cursor stays on the middle row and the list moves under it. The bar below
 the list says where in it you are.

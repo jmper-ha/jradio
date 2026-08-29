@@ -1380,7 +1380,6 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
     padding-block: .3rem;
     flex-wrap: wrap;
   }
-  .brand-word { display: none; }
   .source-tabs { order: 3; flex-basis: 100%; justify-content: space-around; }
   .source-tab { padding-inline: .45rem; font-size: .76rem; }
 

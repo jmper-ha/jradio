@@ -913,10 +913,17 @@ JRESULT jd_mcu_output(
         uint16_t w, * d = (uint16_t *)s;
         unsigned int n = rx * ry;
 
+        /* The MCU above is built B, G, R - see the labels in the colour
+         * conversion - so the first byte is blue and the last is red. Packing
+         * them in the order they arrive is what put every baseline-JPEG cover
+         * on the screen with red and blue exchanged. */
         do {
-            w = (*s++ & 0xF8) << 8;     /* RRRRR----------- */
-            w |= (*s++ & 0xFC) << 3;    /* -----GGGGGG----- */
-            w |= *s++ >> 3;             /* -----------BBBBB */
+            const uint8_t blue = *s++;
+            const uint8_t green = *s++;
+            const uint8_t red = *s++;
+            w = (uint16_t)((red & 0xF8) << 8);      /* RRRRR----------- */
+            w |= (uint16_t)((green & 0xFC) << 3);   /* -----GGGGGG----- */
+            w |= (uint16_t)(blue >> 3);             /* -----------BBBBB */
             *d++ = w;
         } while(--n);
     }

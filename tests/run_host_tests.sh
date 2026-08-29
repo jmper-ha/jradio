@@ -22,6 +22,7 @@ include_flags=(
     # Vendored, and private to the component on the device; the host build has
     # no CMake to inherit that from.
     -I"${project_dir}/components/audio_tags/stb"
+    -I"${project_dir}/components/audio_tags/tjpgd"
     -I"${project_dir}/components/board/include"
     -I"${project_dir}/components/diagnostics/include"
     -I"${project_dir}/components/internet_radio/include"
@@ -107,6 +108,7 @@ grep -Fq 'settings_csv_init();' main/main.c
 run_test audio_pcm_convert tests/test_audio_pcm_convert.c components/board/audio_pcm_convert.c
 run_test audio_volume tests/test_audio_volume.c components/board/audio_volume.c
 run_test audio_source tests/test_audio_source.c components/audio/audio_source_manager.c
+run_test album_art_decode tests/test_album_art_decode.c components/audio_tags/tjpgd/tjpgd.c
 run_test audio_tags_text tests/test_audio_tags_text.c components/audio_tags/audio_tags_text.c
 run_test audio_tags_reader tests/test_audio_tags_reader.c \
     components/audio_tags/audio_tags_reader.c components/audio_tags/id3v2.c \

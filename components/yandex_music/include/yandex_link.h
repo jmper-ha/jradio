@@ -57,6 +57,12 @@ yandex_link_result_t yandex_link_from_xml(const char *xml, char *url, size_t url
  * offers 100x100, which measured 4.3 KB against 11.8 KB for 200x200 - the
  * larger picture would only be thrown away by the scaler. */
 #define YANDEX_COVER_SIZE_TAG "100x100"
+/* What the browser is handed instead. The page is looked at on a phone or a
+ * desktop, where the tile is a few hundred device pixels across, and the
+ * picture costs the device nothing: only the address travels, the browser
+ * fetches it itself. Same length as the panel's tag, so one bound covers
+ * both. */
+#define YANDEX_COVER_WEB_SIZE_TAG "400x400"
 #define YANDEX_COVER_URL_MAX 191U
 
 /* Turns a track's coverUri - a host and path with "%%" standing in for a size -
@@ -69,3 +75,7 @@ yandex_link_result_t yandex_link_from_xml(const char *xml, char *url, size_t url
  * False when there is no size marker or the result would not fit, so a cover
  * is dropped rather than fetched from a wrong address. */
 bool yandex_cover_url(const char *cover_uri, char *url, size_t url_size);
+
+/* The same address at YANDEX_COVER_WEB_SIZE_TAG, for the web page rather than
+ * for the panel. */
+bool yandex_cover_url_web(const char *cover_uri, char *url, size_t url_size);

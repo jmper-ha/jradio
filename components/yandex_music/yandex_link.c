@@ -159,7 +159,8 @@ yandex_link_result_t yandex_link_from_xml(const char *xml, char *url, size_t url
     return YANDEX_LINK_OK;
 }
 
-bool yandex_cover_url(const char *cover_uri, char *url, size_t url_size)
+static bool cover_url_sized(const char *cover_uri, const char *size_tag,
+                            char *url, size_t url_size)
 {
     if (cover_uri == NULL || url == NULL || url_size == 0U) return false;
     url[0] = '\0';
@@ -168,11 +169,21 @@ bool yandex_cover_url(const char *cover_uri, char *url, size_t url_size)
     const char *marker = strstr(cover_uri, "%%");
     if (marker == NULL) return false;
     const size_t prefix = (size_t)(marker - cover_uri);
-    const int written = snprintf(url, url_size, "http://%.*s" YANDEX_COVER_SIZE_TAG "%s",
-                                 (int)prefix, cover_uri, marker + 2);
+    const int written = snprintf(url, url_size, "http://%.*s%s%s",
+                                 (int)prefix, cover_uri, size_tag, marker + 2);
     if (written < 0 || (size_t)written >= url_size) {
         url[0] = '\0';
         return false;
     }
     return true;
+}
+
+bool yandex_cover_url(const char *cover_uri, char *url, size_t url_size)
+{
+    return cover_url_sized(cover_uri, YANDEX_COVER_SIZE_TAG, url, url_size);
+}
+
+bool yandex_cover_url_web(const char *cover_uri, char *url, size_t url_size)
+{
+    return cover_url_sized(cover_uri, YANDEX_COVER_WEB_SIZE_TAG, url, url_size);
 }

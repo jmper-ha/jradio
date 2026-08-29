@@ -48,6 +48,9 @@ typedef struct {
      * is one the rotor stops handing out. */
     bool playing_disliked;
     char playing_batch[YANDEX_TRACK_BATCH_ID_MAX + 1U];
+    /* The coverUri of the track on the air, kept so the web page can be given
+     * the address and fetch a bigger copy than the panel's 96 px tile. */
+    char playing_cover[YANDEX_TRACK_COVER_MAX + 1U];
     uint32_t playing_duration_ms;
     int64_t playing_since_us;
     bool playing;
@@ -187,6 +190,21 @@ bool yandex_rotor_playing_track(char *id, size_t id_size, bool *liked, bool *dis
     if (liked != NULL) *liked = mark;
     if (disliked != NULL) *disliked = against;
     return true;
+}
+
+bool yandex_rotor_playing_cover_url(char *url, size_t url_size)
+{
+    if (url == NULL || url_size == 0U) return false;
+    char uri[YANDEX_TRACK_COVER_MAX + 1U];
+    bool playing;
+    taskENTER_CRITICAL(&s_playing_lock);
+    playing = s_rotor.playing;
+    memcpy(uri, s_rotor.playing_cover, sizeof(uri));
+    taskEXIT_CRITICAL(&s_playing_lock);
+
+    url[0] = '\0';
+    if (!playing) return false;
+    return yandex_cover_url_web(uri, url, url_size);
 }
 
 void yandex_rotor_set_playing_liked(bool liked)
@@ -334,6 +352,8 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track)
      * says for every track it hands out whether the account has it liked. */
     char playing_id[YANDEX_TRACK_ID_MAX + 1U] = {0};
     snprintf(playing_id, sizeof(playing_id), "%s", candidate.id);
+    char playing_cover[YANDEX_TRACK_COVER_MAX + 1U] = {0};
+    snprintf(playing_cover, sizeof(playing_cover), "%s", candidate.cover);
     taskENTER_CRITICAL(&s_playing_lock);
     s_rotor.playing = true;
     s_rotor.playing_liked = candidate.liked;
@@ -342,6 +362,7 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track)
      * account has rejected is one this station stops offering. */
     s_rotor.playing_disliked = false;
     memcpy(s_rotor.playing_id, playing_id, sizeof(playing_id));
+    memcpy(s_rotor.playing_cover, playing_cover, sizeof(playing_cover));
     taskEXIT_CRITICAL(&s_playing_lock);
 
     yandex_feedback_event_t event;

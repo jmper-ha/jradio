@@ -81,6 +81,12 @@ bool yandex_rotor_playing_track(char *id, size_t id_size, bool *liked, bool *dis
  * The two exclude each other, the way the API does: setting one clears the
  * other here as well, so the screen cannot show a heart that is filled and
  * struck through at once. */
+/* The address of the track's cover at the size a browser wants, or false when
+ * nothing is playing or the track came without a picture. The device does not
+ * fetch this one: it hands the address to the page, which loads it itself and
+ * so is not limited to the 96 px the panel decodes into. */
+bool yandex_rotor_playing_cover_url(char *url, size_t url_size);
+
 void yandex_rotor_set_playing_liked(bool liked);
 void yandex_rotor_set_playing_disliked(bool disliked);
 

@@ -19,6 +19,14 @@ static void test_the_size_marker_is_replaced(void)
 static void test_a_marker_in_the_middle_still_works(void)
 {
     char url[YANDEX_COVER_URL_MAX + 1U];
+    /* The page is handed a bigger copy of the same picture: it draws a tile a
+     * few hundred device pixels across, and the device pays nothing for the
+     * difference - only the address travels. */
+    assert(yandex_cover_url_web("avatars.yandex.net/get-music-content/14247687/f8a8.a.336-1/%%",
+                                url, sizeof(url)));
+    assert(strcmp(url,
+                  "http://avatars.yandex.net/get-music-content/14247687/f8a8.a.336-1/400x400") == 0);
+
     assert(yandex_cover_url("host/a/%%/b", url, sizeof(url)));
     assert(strcmp(url, "http://host/a/100x100/b") == 0);
 }

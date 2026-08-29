@@ -29,6 +29,12 @@ typedef struct {
      * variable-bitrate file - see file_track_progress.h. */
     uint32_t elapsed_seconds;
     uint32_t total_seconds;
+    /* Bumped each time a track's tags are published. The tags themselves are
+     * too big to travel in this structure (see below), but whoever only needs
+     * to know that they have changed can watch this: they are read after the
+     * track has already started, so nothing else in here moves when they
+     * arrive, and a watcher comparing the rest would never notice. */
+    uint32_t tags_revision;
 } file_player_status_t;
 
 // Called from the playback task once a track ends *by itself* - not after a

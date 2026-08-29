@@ -714,6 +714,7 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
         snprintf(snapshot->codec, sizeof(snapshot->codec), "%s", usb_status.codec);
         snapshot->bitrate_kbps = usb_status.bitrate_kbps;
         snapshot->sample_rate_hz = usb_status.sample_rate_hz;
+        snapshot->track_tag_revision = usb_status.tags_revision;
         if (usb_status.state == FILE_PLAYER_STATE_ERROR) {
             snprintf(snapshot->error, sizeof(snapshot->error), "Не удалось воспроизвести файл");
         }

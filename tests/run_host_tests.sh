@@ -162,6 +162,7 @@ run_test ui_feed_model tests/test_ui_feed_model.c components/ui/ui_feed_model.c 
 run_test ui_player_state tests/test_ui_player_state.c components/ui/ui_player_state.c
 run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c \
     components/internet_radio/radio_stream_format.c
+run_test ui_now_playing tests/test_ui_now_playing.c components/ui/ui_now_playing.c
 run_test ui_seek tests/test_ui_seek.c components/ui/ui_seek.c
 run_test ui_web_address tests/test_ui_web_address.c components/ui/ui_web_address.c
 run_test ui_settings_model tests/test_ui_settings_model.c components/ui/ui_settings_model.c
@@ -181,6 +182,7 @@ run_test wifi_settings tests/test_wifi_settings.c components/settings/wifi_setti
 run_test web_server -I"${cjson_include}" tests/test_web_server.c \
     components/web_server/web_server.c components/web_server/web_socket.c \
     components/web_server/web_view_model.c components/web_server/web_json.c \
+    components/ui/ui_now_playing.c \
     components/web_server/web_settings.c components/settings/device_settings.c \
     components/settings/settings_csv.c components/settings/wifi_settings.c \
     components/file_storage/file_browser.c "${cjson_source}"

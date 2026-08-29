@@ -69,10 +69,13 @@ bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_se
  * False for a source that has no such thing: a stream carries one ICY line and
  * no performer field at all.
  *
- * Outside player_snapshot_t for the same reason as the position above - the
- * snapshot is what the web transport diffs and sends on every change, and
- * three more strings would not fit a frame that is capped at 512 bytes. The
- * cover is not here either; it is published by album_art. */
+ * Outside player_snapshot_t for the same reason as the position above: the
+ * snapshot is copied onto the stack of every task that polls, and three more
+ * strings would cost 384 bytes on each of them. Both faces ask for them here
+ * instead and pass them to ui_now_playing.h, which is what makes the screen
+ * and the web page say the same thing about one track; the snapshot only
+ * carries track_tag_revision, so a watcher knows when to ask again. The cover
+ * is not here either; it is published by album_art. */
 bool player_control_track_tags(audio_tags_t *tags);
 
 /* The full path of the file being played, for writing the resume point down.

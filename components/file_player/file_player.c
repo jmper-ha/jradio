@@ -51,6 +51,10 @@ static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
 static file_player_status_t s_status;
 // Under the same lock as the status, but kept out of it - see file_player.h.
 static audio_tags_t s_tags;
+/* Only ever increases, and deliberately not part of s_status, which is cleared
+ * whole when a track starts: a counter that went back to zero would look
+ * unchanged to a watcher that had seen zero before. */
+static atomic_uint s_tags_revision = ATOMIC_VAR_INIT(0);
 /* Written by the playback task on every pass and read by whoever asks for
  * status. Atomic rather than inside the status critical section: the loop runs
  * thousands of times a second and this is one byte of display. */
@@ -366,6 +370,7 @@ static void load_tags(file_player_context_t *ctx)
         taskENTER_CRITICAL(&s_status_lock);
         s_tags = tags;
         taskEXIT_CRITICAL(&s_status_lock);
+        atomic_fetch_add_explicit(&s_tags_revision, 1U, memory_order_release);
         ESP_LOGI(TAG, "tags: title=\"%s\" artist=\"%s\" album=\"%s\"", tags.title,
                  tags.artist, tags.album);
     }
@@ -997,6 +1002,10 @@ esp_err_t file_player_play(const char *path, const char *display_name,
     // Cleared here rather than when the previous track ended, so nothing ever
     // reads the last track's performer against this one's file name.
     audio_tags_clear(&s_tags);
+    /* The clearing counts as a change too: a track that turns out to have no
+     * tags of its own has to move the screen off the previous track's rather
+     * than leave it standing. */
+    atomic_fetch_add_explicit(&s_tags_revision, 1U, memory_order_release);
     s_status.state = FILE_PLAYER_STATE_STARTING;
     snprintf(s_status.track, sizeof(s_status.track), "%s",
              display_name != NULL ? display_name : path);
@@ -1092,4 +1101,5 @@ void file_player_get_status(file_player_status_t *status)
         (uint8_t)atomic_load_explicit(&s_input_fill_percent, memory_order_relaxed);
     status->elapsed_seconds = atomic_load_explicit(&s_elapsed_seconds, memory_order_relaxed);
     status->total_seconds = atomic_load_explicit(&s_total_seconds, memory_order_relaxed);
+    status->tags_revision = atomic_load_explicit(&s_tags_revision, memory_order_acquire);
 }

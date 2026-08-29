@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "player_control_types.h"
+#include "ui_now_playing.h"
 #include "web_protocol.h"
 #include "web_settings.h"
 #include "wifi_provisioning.h"
@@ -87,6 +88,7 @@ int web_server_command_result(char *output, size_t output_size,
 int web_socket_serialize_event(char *output, size_t output_size,
                                web_socket_event_kind_t kind, uint32_t revision,
                                const player_snapshot_t *player,
+                               const ui_now_playing_t *now,
                                const web_socket_wifi_state_t *wifi,
                                const web_socket_settings_state_t *settings);
 uint32_t web_socket_changed_sections(

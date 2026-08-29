@@ -29,6 +29,7 @@
 #include "ui_feed_icons.h"
 #include "ui_feed_model.h"
 #include "ui_player_state.h"
+#include "ui_now_playing.h"
 #include "ui_radio_text.h"
 #include "ui_seek.h"
 #include "ui_settings_model.h"
@@ -781,20 +782,16 @@ static void ui_update_files_status(const player_snapshot_t *snapshot)
 {
     audio_tags_t tags;
     const bool tagged = player_control_track_tags(&tags);
-    /* Each row falls back on its own: a file can name its album and not its
-     * performer, and half a set of tags is still better than none. The album
-     * takes the place the radio gives the station name, and the directory
-     * stands in where the file did not name one. */
-    ui_set_label_text_if_changed(s_source_title,
-                                 tagged && tags.album[0] != '\0' ? tags.album
-                                                                 : snapshot->context);
-    ui_scroller_set_text(&s_source_detail, tagged && tags.title[0] != '\0'
-                                                      ? tags.title
-                                                      : snapshot->stream_title);
+    ui_now_playing_t now;
+    ui_now_playing_for_file(snapshot->context, snapshot->stream_title,
+                            tagged ? &tags : NULL, &now);
+
+    ui_set_label_text_if_changed(s_source_title, now.heading);
+    ui_scroller_set_text(&s_source_detail, now.title);
     // The performer row is the state line's whenever there is a state worth
     // naming. Pause is not one - the badge says it.
     ui_set_state_line(snapshot->playback_state == PLAYER_PLAYBACK_STOPPED ? "Выберите файл" : "",
-                      tagged ? tags.artist : "");
+                      now.artist);
     ui_set_stream_readings(snapshot);
 }
 
@@ -820,47 +817,49 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
         ui_player_state_pending_item(&s_player_ui, &pending_item_index);
     const size_t display_item_index =
         pending ? pending_item_index : snapshot->active_item_index;
+
+    /* The stream's own name is only about the station the snapshot describes,
+     * so while a switch is pending it names the previous one. The list is the
+     * only source that can answer for the station just picked. */
+    const char *stream_name = pending ? "" : snapshot->context;
+    const char *list_name = NULL;
+    bool name_from_list = true;
     if (source == AUDIO_SOURCE_YANDEX) {
         yandex_station_t station;
         if (yandex_catalog_station_at(display_item_index, &station)) {
-            ui_set_label_text_if_changed(s_source_title, station.name);
+            list_name = station.name;
         } else if (!pending) {
             /* The list was refreshed under the playing station and the row is
              * gone. What the chain reports is still its name. */
-            ui_set_label_text_if_changed(s_source_title, snapshot->context);
+            list_name = snapshot->context;
         }
     } else {
         const station_catalog_entry_t *entry =
             player_control_station_at(display_item_index);
         if (entry != NULL) {
-            /* The stream's own name is only about the station the snapshot
-             * describes, so while a switch is pending it names the previous
-             * one. The list is the only source that can answer for the station
-             * just picked. */
-            const char *stream_name = pending ? "" : snapshot->context;
-            ui_set_label_text_if_changed(
-                s_source_title,
-                ui_radio_station_name(entry->flag != 0, entry->name, stream_name));
+            list_name = entry->name;
+            name_from_list = entry->flag != 0;
         }
     }
 
-    // Whatever the flag says about the name, the track is the stream's to
-    // tell; with nothing sent, the line stays empty rather than repeating the
-    // station.
-    const char *icy = snapshot->stream_title;
-    // Stations send one string; splitting it gives the track its own wide line
-    // instead of burying it in the middle of a run-on.
-    char artist[PLAYER_TITLE_MAX_LEN];
-    char track[PLAYER_TITLE_MAX_LEN];
-    (void)ui_radio_split_title(icy, artist, sizeof(artist), track, sizeof(track));
-    ui_scroller_set_text(&s_source_detail, track);
+    ui_now_playing_t now;
+    ui_now_playing_for_station(name_from_list, list_name != NULL ? list_name : "",
+                               stream_name, snapshot->stream_title, &now);
+    /* A station the list can no longer answer for keeps the name the previous
+     * pass put there rather than having it blanked; what is playing is still
+     * the stream's to tell, so the rows below it go on either way. */
+    if (list_name != NULL) {
+        ui_set_label_text_if_changed(s_source_title, now.heading);
+    }
+    ui_scroller_set_text(&s_source_detail, now.title);
 
     // Playing and paused both leave the row to the performer: one needs no
     // announcement, the other has the badge. Connecting, reconnecting and
     // failure are the states worth a line.
     const bool settled = snapshot->playback_state == PLAYER_PLAYBACK_PLAYING ||
                          snapshot->playback_state == PLAYER_PLAYBACK_PAUSED;
-    ui_set_state_line(settled ? "" : ui_radio_state_text(snapshot->playback_state), artist);
+    ui_set_state_line(settled ? "" : ui_radio_state_text(snapshot->playback_state),
+                      now.artist);
 
     ui_set_stream_readings(snapshot);
 }

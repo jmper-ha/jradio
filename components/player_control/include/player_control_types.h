@@ -120,6 +120,15 @@ typedef struct {
      * this struct distinguishes one directory from another - and the web needs
      * that to know when to re-fetch the listing over REST. */
     unsigned int listing_revision;
+    /* Bumped every time the playing file's tags are read, or cleared because
+     * the next file has none. The tags themselves are not in here - three more
+     * strings would cost 384 bytes on the stack of every task that polls, for
+     * something two screens read - but a watcher that only sends when the
+     * snapshot differs has to be told they arrived. They are read after the
+     * track is already playing, so nothing else in here moves with them, and
+     * the web page would otherwise keep showing the file name until the next
+     * track. Always 0 for a source that has no tags. */
+    unsigned int track_tag_revision;
     /* One per volume rather than one for "the files source": the menu asks
      * about a source before selecting it, and for the card the answer has to
      * survive the card being unmounted between visits. */

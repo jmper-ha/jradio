@@ -24,6 +24,10 @@
 #include "yandex_catalog.h"
 #endif
 
+/* Only the device half wipes buffers: everything it clears is a saved network,
+ * a snapshot or a frame that lived in RAM shared with the next request. The
+ * host build serialises into its own stack and has nothing to scrub. */
+#ifdef ESP_PLATFORM
 static void secure_zero(void *memory, size_t size)
 {
     volatile unsigned char *bytes = memory;
@@ -31,6 +35,7 @@ static void secure_zero(void *memory, size_t size)
         *bytes++ = 0U;
     }
 }
+#endif
 
 static int writer_finish(web_json_writer_t *writer)
 {
@@ -143,24 +148,24 @@ static void write_capabilities(web_json_writer_t *writer,
     web_json_literal(writer, "]");
 }
 
+/* The three lines come in already worked out, from the same function the panel
+ * reads - see ui_now_playing.h. Deriving them here instead is what let the page
+ * and the screen drift apart: they have to say the same thing about the same
+ * track, and the only way to be sure of that is for there to be one answer. */
 static void write_player(web_json_writer_t *writer,
-                         const player_snapshot_t *player)
+                         const player_snapshot_t *player,
+                         const ui_now_playing_t *now)
 {
-    char artist[PLAYER_NAME_MAX_LEN];
-    char title[PLAYER_TITLE_MAX_LEN];
-    web_view_split_player_title(player->stream_title, player->context,
-                                artist, sizeof(artist), title, sizeof(title));
-
     web_json_literal(writer, "\"player\":{\"state\":");
     web_json_string(writer, web_view_playback_name(player->playback_state));
     web_json_literal(writer, ",\"mode\":");
     web_json_string(writer, web_view_source_label(player->active_source));
     web_json_literal(writer, ",\"artist\":");
-    web_json_string(writer, artist);
+    web_json_string(writer, now->artist);
     web_json_literal(writer, ",\"title\":");
-    web_json_string(writer, title);
+    web_json_string(writer, now->title);
     web_json_literal(writer, ",\"context\":");
-    web_json_string(writer, player->context);
+    web_json_string(writer, now->heading);
     web_json_literal(writer, ",\"codec\":");
     web_json_string(writer, player->codec);
     web_json_literal(writer, ",\"bitrate_kbps\":");
@@ -174,8 +179,8 @@ static void write_player(web_json_writer_t *writer,
     /* Only for a source that has a library to be in, the way the signal is
      * only sent when there is one. A field always present would make the web
      * UI draw an empty heart on a radio station, offering a button that would
-     * be refused. The frame is capped at 512 bytes and this is the section
-     * that carries the titles, so it costs as few of them as it can. */
+     * be refused. This is the section that carries the titles, so it costs as
+     * few bytes as it can. */
     if (player->track_likeable) {
         web_json_literal(writer, ",\"liked\":");
         web_json_literal(writer, player->track_liked ? "true" : "false");
@@ -185,9 +190,6 @@ static void write_player(web_json_writer_t *writer,
     web_json_literal(writer, ",\"error\":");
     web_json_string(writer, player->error);
     web_json_literal(writer, "}");
-
-    secure_zero(artist, sizeof(artist));
-    secure_zero(title, sizeof(title));
 }
 
 static void write_active_index(web_json_writer_t *writer,
@@ -288,13 +290,15 @@ static const char *event_type(web_socket_event_kind_t kind)
 int web_socket_serialize_event(char *output, size_t output_size,
                                web_socket_event_kind_t kind, uint32_t revision,
                                const player_snapshot_t *player,
+                               const ui_now_playing_t *now,
                                const web_socket_wifi_state_t *wifi,
                                const web_socket_settings_state_t *settings)
 {
     web_json_writer_t writer;
     web_json_init(&writer, output, output_size, WEB_PROTOCOL_EVENT_MAX);
     const char *type = event_type(kind);
-    if (type == NULL || player == NULL || wifi == NULL || settings == NULL) {
+    if (type == NULL || player == NULL || now == NULL || wifi == NULL ||
+        settings == NULL) {
         web_json_invalidate(&writer);
         return writer_finish(&writer);
     }
@@ -318,7 +322,7 @@ int web_socket_serialize_event(char *output, size_t output_size,
         web_json_literal(&writer, ",\"active_source\":");
         web_json_string(&writer, web_view_source_name(player->active_source));
         web_json_literal(&writer, ",");
-        write_player(&writer, player);
+        write_player(&writer, player, now);
         web_json_literal(&writer, ",");
         write_list(&writer, player);
         web_json_literal(&writer, ",");
@@ -338,7 +342,7 @@ int web_socket_serialize_event(char *output, size_t output_size,
         web_json_literal(&writer, ",\"active_source\":");
         web_json_string(&writer, web_view_source_name(player->active_source));
         web_json_literal(&writer, ",");
-        write_player(&writer, player);
+        write_player(&writer, player, now);
         break;
     case WEB_SOCKET_EVENT_LIST_UPDATE:
         web_json_literal(&writer, ",");
@@ -646,6 +650,56 @@ static const char *runtime_event_type(web_socket_event_kind_t kind)
     return type == NULL ? "unknown" : type;
 }
 
+/* Works out the three now-playing lines the way the panel does, from the same
+ * function, so the page and the screen never disagree about one track.
+ *
+ * The tags are read live rather than captured with the snapshot: they arrive
+ * after the track has already started, and it is player_snapshot_t's
+ * track_tag_revision that makes their arrival a change worth a frame at all.
+ * The panel has the same seam - it polls the snapshot and the tags separately
+ * - so the two stay alike down to the window where a frame could carry the
+ * previous track's name beside the new one's tags. */
+static void capture_now_playing(const player_snapshot_t *player,
+                                ui_now_playing_t *now)
+{
+    if (audio_source_is_files(player->active_source)) {
+        audio_tags_t tags;
+        const bool tagged = player_control_track_tags(&tags);
+        ui_now_playing_for_file(player->context, player->stream_title,
+                                tagged ? &tags : NULL, now);
+        secure_zero(&tags, sizeof(tags));
+        return;
+    }
+    if (audio_source_is_stations(player->active_source)) {
+        /* The list is what the flag lives in, so a station it can no longer
+         * answer for falls back on the name the stream gives itself - which is
+         * what the flag would have chosen anyway with no list entry to prefer. */
+        const char *list_name = NULL;
+        bool name_from_list = true;
+        if (player->active_source == AUDIO_SOURCE_YANDEX) {
+            yandex_station_t station;
+            if (yandex_catalog_station_at(player->active_item_index, &station)) {
+                list_name = station.name;
+            }
+        } else {
+            const station_catalog_entry_t *entry =
+                player_control_station_at(player->active_item_index);
+            if (entry != NULL) {
+                list_name = entry->name;
+                name_from_list = entry->flag != 0;
+            }
+        }
+        if (list_name == NULL) {
+            list_name = player->context;
+            name_from_list = false;
+        }
+        ui_now_playing_for_station(name_from_list, list_name, player->context,
+                                   player->stream_title, now);
+        return;
+    }
+    ui_now_playing_for_station(false, "", player->context, player->stream_title, now);
+}
+
 static bool prepare_event_frame(httpd_ws_frame_t *frame,
                                 web_socket_event_kind_t kind,
                                 uint32_t revision,
@@ -653,9 +707,12 @@ static bool prepare_event_frame(httpd_ws_frame_t *frame,
                                 const web_socket_wifi_state_t *wifi,
                                 const web_socket_settings_state_t *settings)
 {
+    ui_now_playing_t now;
+    capture_now_playing(player, &now);
     const int length = web_socket_serialize_event(
-        s_http_output, sizeof(s_http_output), kind, revision, player, wifi,
+        s_http_output, sizeof(s_http_output), kind, revision, player, &now, wifi,
         settings);
+    secure_zero(&now, sizeof(now));
     if (length <= 0) {
         ESP_LOGE(TAG, "serialize event failed type=%s max=%u",
                  runtime_event_type(kind), (unsigned)WEB_PROTOCOL_EVENT_MAX);

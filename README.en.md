@@ -456,6 +456,23 @@ state arrives as diffs - `player`, `list`, `wifi`, `settings`; anything large -
 the playlist, media directories - goes over REST, because it does not fit in a
 frame and must not spend internal SRAM.
 
+The player's three lines - what is being listened to, the performer, the track -
+come to the page and to the screen from one function
+([`ui_now_playing.h`](components/ui/include/ui_now_playing.h)) rather than being
+worked out twice. Worked out twice, they drifted: on files the page showed the
+file's name where the screen read its tags, and it named a station by whatever
+the stream called itself while the screen obeyed the playlist's flag - "Радио
+Шоколад" with the flag set is named from the list on the screen, and was named
+`DB91-TX` on the page, which is what the stream calls itself. Each also had its
+own way of splitting the ICY line into a performer and a track: the page knew
+about the en dash and repaired broken UTF-8, the screen did neither.
+
+The tags themselves still stay out of the snapshot: it is copied onto the stack
+of every task that polls it, and three more strings would cost 384 bytes on each
+of them. What travels is `track_tag_revision` - the tags are read after the
+track has already started, and without a counter the page would go on showing
+the file name until the track ended.
+
 `player.seek` carries a second rather than a percentage: seconds are what the
 device turns into a byte offset, and a percentage would have to be turned back
 into seconds using a length the browser only has an estimate of.

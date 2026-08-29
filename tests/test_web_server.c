@@ -81,6 +81,17 @@ static web_socket_settings_state_t sample_settings(void)
     return settings;
 }
 
+/* The three now-playing lines the device works out before it serialises, from
+ * the same function the panel reads. The serializer is handed the answer, so
+ * the test has to build one too. */
+static ui_now_playing_t sample_now_playing(const player_snapshot_t *player)
+{
+    ui_now_playing_t now;
+    ui_now_playing_for_station(false, player->context, player->context,
+                               player->stream_title, &now);
+    return now;
+}
+
 static void test_yandex_action_accepts_only_the_three_it_implements(void)
 {
     assert(web_server_parse_yandex_action("{\"action\":\"begin\"}") ==
@@ -143,9 +154,10 @@ static void test_snapshot_has_exact_public_sections_and_no_secrets(void)
     const web_socket_wifi_state_t wifi = sample_wifi();
     const web_socket_settings_state_t settings = sample_settings();
     char output[WEB_PROTOCOL_EVENT_MAX + 1U];
+    const ui_now_playing_t now = sample_now_playing(&player);
     const int length = web_socket_serialize_event(
-        output, sizeof(output), WEB_SOCKET_EVENT_SNAPSHOT, 1U, &player, &wifi,
-        &settings);
+        output, sizeof(output), WEB_SOCKET_EVENT_SNAPSHOT, 1U, &player, &now,
+        &wifi, &settings);
     assert(length > 0);
     assert((size_t)length == strlen(output));
     assert(strstr(output, "password") == NULL);
@@ -210,16 +222,16 @@ static void test_snapshot_has_exact_public_sections_and_no_secrets(void)
     const web_socket_settings_state_t unknown = {0};
     assert(web_socket_serialize_event(
                output, sizeof(output), WEB_SOCKET_EVENT_SNAPSHOT, 1U, &player,
-               &wifi, &unknown) > 0);
+               &now, &wifi, &unknown) > 0);
     assert(strstr(output, "\"settings\"") == NULL);
     assert(web_socket_serialize_event(
                output, sizeof(output), WEB_SOCKET_EVENT_SETTINGS_UPDATE, 1U,
-               &player, &wifi, &unknown) == 0);
+               &player, &now, &wifi, &unknown) == 0);
 
     char too_small[64];
     assert(web_socket_serialize_event(
                too_small, sizeof(too_small), WEB_SOCKET_EVENT_SNAPSHOT, 1U,
-               &player, &wifi, &settings) == 0);
+               &player, &now, &wifi, &settings) == 0);
     assert(too_small[0] == '\0');
 }
 
@@ -234,9 +246,10 @@ static void test_player_update_omits_unavailable_rssi_and_repairs_utf8(void)
     const web_socket_wifi_state_t wifi = sample_wifi();
     const web_socket_settings_state_t settings = sample_settings();
     char output[1024];
+    const ui_now_playing_t now = sample_now_playing(&player);
     assert(web_socket_serialize_event(output, sizeof(output),
                                       WEB_SOCKET_EVENT_PLAYER_UPDATE, 7U,
-                                      &player, &wifi, &settings) > 0);
+                                      &player, &now, &wifi, &settings) > 0);
     assert(strstr(output, "\"type\":\"player.update\"") != NULL);
     assert(strstr(output, "wifi_rssi_dbm") == NULL);
     assert(strstr(output, "\xEF\xBF\xBD") != NULL);
@@ -303,9 +316,10 @@ static void test_section_diff_and_update_types_are_bounded(void)
     };
     char output[WEB_PROTOCOL_EVENT_MAX + 1U];
     for (size_t index = 0U; index < sizeof(kinds) / sizeof(kinds[0]); ++index) {
+        const ui_now_playing_t now = sample_now_playing(&current_player);
         assert(web_socket_serialize_event(output, sizeof(output), kinds[index],
                                           (uint32_t)(8U + index),
-                                          &current_player, &current_wifi,
+                                          &current_player, &now, &current_wifi,
                                           &current_settings) > 0);
         cJSON *root = cJSON_Parse(output);
         assert(cJSON_IsObject(root));
@@ -351,9 +365,14 @@ static void test_the_frame_does_not_grow_with_the_catalogue(void)
 
     const web_socket_settings_state_t settings = sample_settings();
     char output[WEB_PROTOCOL_EVENT_MAX + 1U];
+    ui_now_playing_t now;
+    memset(&now, 0, sizeof(now));
+    fill_json_expensive_text(now.heading, sizeof(now.heading));
+    fill_json_expensive_text(now.artist, sizeof(now.artist));
+    fill_json_expensive_text(now.title, sizeof(now.title));
     const int length = web_socket_serialize_event(
         output, sizeof(output), WEB_SOCKET_EVENT_SNAPSHOT, UINT32_MAX,
-        &player, &wifi, &settings);
+        &player, &now, &wifi, &settings);
     assert(length > 0);
     assert(length <= (int)WEB_PROTOCOL_EVENT_MAX);
     /* Not merely "it fits": the buffer this bounds sits in internal SRAM, so
@@ -376,7 +395,7 @@ static void test_the_frame_does_not_grow_with_the_catalogue(void)
     player.active_item_index = 0U;
     const int shortest = web_socket_serialize_event(
         output, sizeof(output), WEB_SOCKET_EVENT_SNAPSHOT, UINT32_MAX,
-        &player, &wifi, &settings);
+        &player, &now, &wifi, &settings);
     assert(shortest > 0);
     assert(length - shortest <= 4);
 }

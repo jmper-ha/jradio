@@ -11,11 +11,15 @@
  * internal SRAM, so it is raised deliberately rather than generously.
  *
  * The number that decides it is the worst-case snapshot, which
- * test_web_server.c builds and measures: a full catalog of 32 stations whose
- * names are nothing but quotes and backslashes, every player field the same,
- * every saved network the same. That came to 3874 bytes before the device
- * settings joined the document and 4144 after - 48 past the 4096 this used to
- * be. 4608 puts the margin back where it was and leaves some over. */
+ * test_web_server.c builds and measures: every field that travels filled with
+ * nothing but quotes and backslashes, and every saved network the same. That
+ * came to 3874 bytes before the device settings joined the document and 4144
+ * after - 48 past the 4096 this used to be, which is why it is 4608.
+ *
+ * It has since fallen to 2377: the station names left the frame for
+ * GET /api/stations, which cost far more than the now-playing lines that
+ * replaced them. The bound stays where it is - it is a ceiling, not a
+ * reservation, and the buffer is only as big as what is written into it. */
 #define WEB_PROTOCOL_EVENT_MAX 4608U
 
 #ifdef __cplusplus

@@ -300,10 +300,15 @@ socket.emit('open');
   // The heading names the directory: "Файлы" alone leaves the user lost.
   assert.equal(elements['#list-title'].textContent, '/usb0');
   assert.ok(rows()[0].classList.contains('is-directory'));
-  /* A playlist opens a listing the way a folder does, so it is marked and
-     acted on as one - it is the track rows that play. */
+  /* A playlist opens a listing the way a folder does, so it is acted on as
+     one - it is the track rows that play. Its glyph is its own, though: the
+     row carries is-playlist, and the stylesheet draws a list rather than a
+     folder on it. */
   assert.ok(rows()[1].classList.contains('is-directory'));
+  assert.ok(rows()[1].classList.contains('is-playlist'));
+  assert.ok(!rows()[0].classList.contains('is-playlist'));
   assert.ok(!rows()[2].classList.contains('is-directory'));
+  assert.ok(!rows()[2].classList.contains('is-playlist'));
   // A directory is opened, never played.
   assert.equal(rows()[0].children[1].textContent, 'Открыть');
   assert.equal(rows()[1].children[1].textContent, 'Открыть');

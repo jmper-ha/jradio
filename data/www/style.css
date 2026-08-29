@@ -506,6 +506,19 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   border-radius: 2px;
 }
 
+/* A playlist opens like a folder but is not one - it names tracks from
+   anywhere on the drive - so it gets the stack of lines a list is drawn with
+   instead of the folder's tab. Same specificity as the rule above and later in
+   the file, which is what lets it win on a row that carries both classes. */
+.list-item.is-playlist .list-item-label::before {
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(var(--muted) 0 0) no-repeat 0 0 / 12px 1.6px,
+    linear-gradient(var(--muted) 0 0) no-repeat 0 3.7px / 12px 1.6px,
+    linear-gradient(var(--muted) 0 0) no-repeat 0 7.4px / 12px 1.6px;
+}
+
 .list-item-meta {
   flex: none;
   padding: 1px 5px;

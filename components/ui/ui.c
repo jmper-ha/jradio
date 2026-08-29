@@ -1141,17 +1141,18 @@ static void ui_create_menu_screen(void)
     ui_update_menu_highlight();
 }
 
-// Fills `text` with what the row at `list_index` should read, and reports
-// whether that row is the one currently playing and whether it is a directory.
+/* Fills `text` with what the row at `list_index` should read, reports whether
+ * that row is the one currently playing, and gives the mark that goes in front
+ * of it - the folder glyph, the playlist glyph, or none at all. */
 /* Longest row either list can produce: a full-length USB name. Station rows
  * are far shorter - a three-digit ordinal, a space and a 96-byte name. */
 #define UI_LIST_ROW_TEXT_MAX (FILE_BROWSER_NAME_MAX_LEN + 8U)
 
 static bool ui_list_row_text(size_t list_index, char *text, size_t text_size,
-                             bool *active, bool *directory)
+                             bool *active, const char **mark)
 {
     *active = false;
-    *directory = false;
+    *mark = NULL;
     if (!ui_list_shows_files()) {
         const station_catalog_entry_t *entry = player_control_station_at(list_index);
         /* The name alone. The index used to be part of this string and
@@ -1172,11 +1173,19 @@ static bool ui_list_row_text(size_t list_index, char *text, size_t text_size,
         text[0] = '\0';
         return false;
     }
-    // Directories are marked rather than merely sorted first, so the row tells
-    // you what the encoder click will do before you press it. The mark itself
-    // is drawn by the caller, from its own label - see s_station_list_icons.
-    // A playlist is marked the same way: clicking it opens a list too.
-    *directory = entry.kind != FILE_BROWSER_ENTRY_FILE;
+    /* Directories are marked rather than merely sorted first, so the row tells
+     * you what the encoder click will do before you press it. The mark itself
+     * is drawn by the caller, from its own label - see s_station_list_icons.
+     *
+     * A playlist gets a mark of its own rather than the folder's. Both open
+     * something, so both are marked, but a playlist is not a place on the
+     * drive: it names tracks from anywhere on it, and the folder glyph would
+     * promise a folder that is not there. */
+    if (entry.kind == FILE_BROWSER_ENTRY_DIRECTORY) {
+        *mark = LV_SYMBOL_DIRECTORY;
+    } else if (entry.kind == FILE_BROWSER_ENTRY_PLAYLIST) {
+        *mark = LV_SYMBOL_LIST;
+    }
     // Inside a playlist the name is the path the file wrote; the row has room
     // for the track, not for the folders above it.
     snprintf(text, text_size, "%s", file_browser_display_name(entry.name));
@@ -1218,21 +1227,22 @@ static void ui_update_station_list(void)
         lv_obj_clear_flag(s_station_list_rows[row].box, LV_OBJ_FLAG_HIDDEN);
         char text[UI_LIST_ROW_TEXT_MAX];
         bool active = false;
-        bool directory = false;
-        (void)ui_list_row_text((size_t)entry_index, text, sizeof(text), &active,
-                               &directory);
-        // The name starts after the folder mark on a directory row and at the
-        // edge everywhere else, so the two never overlap and a file's name is
-        // not indented for a mark it does not have.
-        if (directory) {
+        const char *mark = NULL;
+        (void)ui_list_row_text((size_t)entry_index, text, sizeof(text), &active, &mark);
+        // The name starts after the mark on a row that has one and at the edge
+        // everywhere else, so the two never overlap and a file's name is not
+        // indented for a mark it does not have.
+        const bool marked = mark != NULL;
+        if (marked) {
+            ui_set_label_text_if_changed(s_station_list_icons[row], mark);
             lv_obj_clear_flag(s_station_list_icons[row], LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(s_station_list_icons[row], LV_OBJ_FLAG_HIDDEN);
         }
         /* Stations are numbered, files are not: a browser row can be ".." or a
          * directory, and neither is an nth of anything. A station row is never
-         * a directory, so the number and the folder mark never share a row and
-         * the two indents never add up. */
+         * marked, so the number and the folder mark never share a row and the
+         * two indents never add up. */
         const bool numbered = !ui_list_shows_files();
         if (numbered) {
             /* Two digits for any catalogue this list can scroll, and room for
@@ -1246,9 +1256,9 @@ static void ui_update_station_list(void)
             lv_obj_add_flag(s_station_list_numbers[row], LV_OBJ_FLAG_HIDDEN);
         }
         lv_obj_set_style_pad_left(s_station_list_rows[row].box,
-                                  numbered    ? 8 + UI_LIST_NUMBER_W
-                                  : directory ? 8 + UI_LIST_ICON_W
-                                              : 8,
+                                  numbered ? 8 + UI_LIST_NUMBER_W
+                                  : marked ? 8 + UI_LIST_ICON_W
+                                           : 8,
                                   0);
         const bool selected = row == cursor_row;
         lv_obj_set_style_bg_color(s_station_list_rows[row].box,
@@ -2287,7 +2297,9 @@ static void ui_create_station_list_screen(void)
         lv_obj_set_style_text_font(s_station_list_icons[row], UI_FONT_ICON, 0);
         lv_obj_set_style_text_color(s_station_list_icons[row],
                                     lv_color_hex(UI_COLOR_FOLDER), 0);
-        lv_label_set_text(s_station_list_icons[row], LV_SYMBOL_DIRECTORY);
+        // Which glyph a row carries is decided as the row is drawn - a folder
+        // and a playlist do not get the same one - so the label starts empty.
+        lv_label_set_text(s_station_list_icons[row], "");
         lv_obj_add_flag(s_station_list_icons[row], LV_OBJ_FLAG_HIDDEN);
     }
     /* Same reason as the marks above: created after the rows so it draws over

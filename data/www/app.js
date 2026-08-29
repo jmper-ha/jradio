@@ -622,7 +622,7 @@
   function listSignature(items) {
     return items
       .map((item) => `${item.index}\u0000${item.label}\u0000${item.meta || ''}` +
-                     `\u0000${item.isDirectory ? 'd' : 'f'}`)
+                     `\u0000${item.isPlaylist ? 'p' : item.isDirectory ? 'd' : 'f'}`)
       .join('\u0001');
   }
 
@@ -666,8 +666,10 @@
         label: item.name,
         meta: fileEntryMeta(item),
         // A playlist opens a listing the way a folder does, so the row gets
-        // the same marker and the same "Открыть" action.
+        // the same "Открыть" action - but not the same glyph: it is not a
+        // place on the drive, it names tracks from anywhere on it.
         isDirectory: item.kind === 'dir' || item.kind === 'playlist',
+        isPlaylist: item.kind === 'playlist',
       }));
   }
 
@@ -857,6 +859,7 @@
       button.className = 'list-item';
       // Modifier through classList, matching how is-active is applied below.
       button.classList.toggle('is-directory', Boolean(item.isDirectory));
+      button.classList.toggle('is-playlist', Boolean(item.isPlaylist));
       button.dataset.command = 'list.select';
       button.dataset.index = String(item.index);
       label.className = 'list-item-label';

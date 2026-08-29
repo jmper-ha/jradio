@@ -1,6 +1,7 @@
 #pragma once
 
 #include "board_parts.h"
+#include "board_options_guard.h"
 
 /* Which external parts are fitted, and how they are wired.
  *
@@ -21,23 +22,10 @@
  *
  * Board revision 1, ESP32-S3 QFN56, 16 MB flash, 8 MB PSRAM.
  *
- * These names are deliberately unprefixed, which puts them in the same
- * namespace as ESP-IDF's. Nothing collides today, but a future IDF release
- * defining e.g. its own I2S_DOUT_GPIO would otherwise silently win or lose
- * depending on include order. The guard below turns that into a build error
- * naming the option, so include this header *after* the driver headers - as
- * every file here does.
+ * The names here are unprefixed and so share ESP-IDF's namespace; include
+ * this header *after* the driver headers, as every file does.
+ * board_options_guard.h says why, and turns a collision into a build error.
  */
-
-#if defined(TFT_CS_GPIO) || defined(I2S_DOUT_GPIO) || defined(USB_DP_GPIO) || \
-    defined(ENCODER_LEFT_GPIO) || defined(TFT_BACKLIGHT_GPIO) ||              \
-    defined(BUTTON_F1_GPIO) || defined(DISPLAY) || defined(AUDIO_DAC) ||      \
-    defined(SDC_CS_GPIO) || defined(YANDEX_MUSIC) || defined(FM_TUNER) ||     \
-    defined(BLUETOOTH) || defined(DLNA)
-#error "board_options.h: a name here is already defined elsewhere - most likely \
-an ESP-IDF header now uses it. Re-prefix the affected option in this file and \
-at its use sites."
-#endif
 
 /* ======================================================================
  * Display - TFT panel on SPI

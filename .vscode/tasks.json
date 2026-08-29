@@ -3,93 +3,63 @@
   "tasks": [
     {
       "label": "ESP-IDF: Build",
+      "detail": "Собрать прошивку и образ данных",
       "type": "shell",
-      "command": "idf.py build",
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "shell": {
-          "executable": "/bin/bash",
-          "args": [
-            "-lc"
-          ]
-        }
-      },
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
+      "command": "bash tools/idf.sh build",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true },
       "problemMatcher": "$gcc"
     },
     {
       "label": "ESP-IDF: Flash",
+      "detail": "Собрать и залить прошивку; данные на устройстве не трогает",
       "type": "shell",
-      "command": "idf.py -p ${input:serialPort} flash",
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "shell": {
-          "executable": "/bin/bash",
-          "args": [
-            "-lc"
-          ]
-        }
-      },
-      "dependsOn": "ESP-IDF: Build",
-      "problemMatcher": "$gcc"
-    },
-    {
-      "label": "ESP-IDF: Flash LittleFS Web",
-      "type": "shell",
-      "command": "idf.py -p ${input:serialPort} littlefs-flash",
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "shell": {
-          "executable": "/bin/bash",
-          "args": [
-            "-lc"
-          ]
-        }
-      },
-      "dependsOn": "ESP-IDF: Build",
+      "command": "bash tools/idf.sh flash",
+      "options": { "cwd": "${workspaceFolder}" },
       "problemMatcher": "$gcc"
     },
     {
       "label": "ESP-IDF: Build, Flash & Monitor",
+      "detail": "То же самое и сразу лог с устройства; выход из лога Ctrl+]",
       "type": "shell",
-      "command": "idf.py -p ${input:serialPort} flash monitor",
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "shell": {
-          "executable": "/bin/bash",
-          "args": [
-            "-lc"
-          ]
-        }
-      },
-      "dependsOn": "ESP-IDF: Build",
+      "command": "bash tools/idf.sh flash monitor",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "panel": "dedicated" },
       "problemMatcher": "$gcc"
     },
     {
       "label": "ESP-IDF: Monitor",
+      "detail": "Лог с устройства, без перепрошивки; выход Ctrl+]",
       "type": "shell",
-      "command": "idf.py -p ${input:serialPort} monitor",
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "shell": {
-          "executable": "/bin/bash",
-          "args": [
-            "-lc"
-          ]
-        }
-      },
-      "problemMatcher": "$gcc"
-    }
-  ],
-  "inputs": [
+      "command": "bash tools/idf.sh monitor",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "panel": "dedicated" },
+      "problemMatcher": []
+    },
     {
-      "id": "serialPort",
-      "type": "promptString",
-      "description": "Последовательный порт ESP32-S3, например /dev/ttyACM0",
-      "default": "/dev/ttyACM0"
+      "label": "ESP-IDF: First flash (app + data)",
+      "detail": "Первая заливка на чистую плату: прошивка и раздел данных целиком",
+      "type": "shell",
+      "command": "bash tools/idf.sh flash littlefs-flash",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "ESP-IDF: Flash LittleFS Web",
+      "detail": "Перезаписать раздел данных ЦЕЛИКОМ: сети Wi-Fi, правки плейлиста и привязка Яндекса пропадут",
+      "type": "shell",
+      "command": "bash tools/idf.sh littlefs-flash",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "Host tests",
+      "detail": "Хостовые тесты; ESP-IDF активировать не нужно",
+      "type": "shell",
+      "command": "bash tests/run_host_tests.sh",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": "$gcc"
     }
   ]
 }

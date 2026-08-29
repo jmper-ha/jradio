@@ -409,6 +409,21 @@ hidden in such a build too: there is nothing to choose between.
 
 ESP-IDF 5.5.x, target `esp32s3`.
 
+The shortest way in is VS Code: open the project folder and it offers the
+recommended extensions - ESP-IDF and C/C++. The ESP-IDF extension opens its own
+setup wizard on first run, which downloads the framework and the toolchain;
+pick 5.5.x. After that `Ctrl+Shift+B` builds, and the rest is under
+Terminal - Run Task: flashing, the device log, the host tests. For a blank
+board there is "ESP-IDF: First flash (app + data)", which writes the firmware
+and the data partition both.
+
+The tasks go through [`tools/idf.sh`](tools/idf.sh), which finds an installed
+ESP-IDF - the extension's copy included - and activates it, so `export.sh`
+never has to be sourced by hand. The port is detected; with more than one board
+attached, name the right one in `ESPPORT`.
+
+The same from a terminal:
+
 ```bash
 idf.py set-target esp32s3
 idf.py build

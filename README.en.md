@@ -37,7 +37,7 @@ output.
 | MP3 | yes | `.mp3` | |
 | AAC | yes | `.aac`, `.adts` | Raw ADTS only. `.m4a` is AAC in an MP4 container and cannot be read |
 | FLAC | yes | `.flac` | |
-| FLAC in Ogg | yes | `.ogg`, `.oga` | Vorbis under the same extensions will not play |
+| Ogg | yes | `.ogg`, `.oga` | It may hold FLAC, Vorbis or Opus - which one is read from the stream's first page, not from the extension |
 | WAV | - | `.wav` | 16-bit, mono or stereo |
 | HLS (`.m3u8`) | yes | - | Segments in MP3 or AAC. A stream wrapped in MPEG-TS is not demuxed |
 
@@ -45,6 +45,11 @@ Radio works over both HTTP and HTTPS. A station whose address ends in `.m3u8`
 is not a stream but an index of short files; the device handles such an index
 by itself, with nothing to configure. On the media the same extension means
 something else - an ordinary playlist, see below.
+
+FLAC plays at 24 bits too. The I2S slots are 16-bit and are not reconfigured on
+the fly, so the sample is narrowed to 16 bits as it leaves the decoder; a frame
+of such a stream is 24 KB rather than 16, and the output buffer grows to fit it
+by itself.
 
 Only files can be scrubbed: neither a radio stream nor a Yandex station has a
 length or a position to move to. Track length is worked out from the file size
@@ -675,7 +680,7 @@ output and one for the incoming stream:
 
 ```
 board: audio health: realtime=100% peak=21533 silent=0 zero_run=0 underruns=0
-internet_radio: stream health: i2s_underruns=0 starvations=0 min_backlog=32768/65536 (1024ms) pcm=100%
+internet_radio: stream health: i2s_underruns=0 starvations=0 min_backlog=131072/262144 (819ms) pcm=100%
 ```
 
 A healthy picture is `realtime` at 99-100% with every other counter at zero. If

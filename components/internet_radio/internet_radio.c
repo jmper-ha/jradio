@@ -50,12 +50,28 @@
  * second of audio. Waiting 30 s to notice, as this used to, turned a server
  * stall into 30 s of dead air; reconnecting promptly costs a fraction of it. */
 #define RADIO_HTTP_IDLE_TIMEOUT_MS 3000U
+/* What one esp_http_client_read() may spend waiting on the socket once the
+ * body is being read.
+ *
+ * The 10 s connect timeout is the wrong number here, because it does not bound
+ * the wait - it bounds the whole call. esp_http_client_read() keeps going back
+ * to the socket until it has filled the length asked for, so a stream that
+ * pauses mid-buffer holds the decode loop for the full ten seconds: no reading,
+ * no decoding, and the DAC drains. Measured on a station whose server stalls,
+ * every gap cost exactly ten seconds and the stream never recovered.
+ *
+ * Short here means the call returns with whatever it has, which is what the
+ * caller wants anyway. The waiting is done by the loop above, which has its own
+ * idle budget and knows what it is waiting for. */
+#define RADIO_HTTP_STREAM_TIMEOUT_MS 100
 #define RADIO_HTTP_RECONNECT_DELAY_MS 500U
 /* Backlog held ahead of the decoder. 16 KB was about a second at 128 kbps but
  * only 90 ms of a 1441 kbps FLAC stream - less cushion than the I2S DMA
- * itself - so high-bitrate streams glitched on any network jitter. This lives
- * in PSRAM, where the extra 48 KB is cheap. */
-#define RADIO_DIRECT_INPUT_SIZE 65536U
+ * itself - so high-bitrate streams glitched on any network jitter. 64 KB was
+ * still only 0.3 s of the fastest station in use (a 24-bit 48 kHz FLAC at
+ * 229 KB/s), which is not enough to ride out one slow round trip. This lives
+ * in PSRAM, where a quarter of a megabyte costs nothing. */
+#define RADIO_DIRECT_INPUT_SIZE 262144U
 /* Wall-clock cap on one top-up burst. The bound has to be time, not a chunk
  * count: a stream we are behind on always has more bytes waiting, so the
  * question is only how long the loop may stay away from the decoder. Well
@@ -63,6 +79,16 @@
  * which is exactly what an uncapped version did. */
 #define RADIO_DIRECT_TOPUP_BUDGET_MS 20U
 #define RADIO_DIRECT_NETWORK_CHUNK 2048U
+/* How long one pass may spend handing PCM to the I2S driver.
+ *
+ * The block is placed a slice at a time rather than all at once, because the
+ * socket is only read between passes: a blocking write of a whole 4096-sample
+ * FLAC block holds the loop for ~85 ms, and a station can then deliver no more
+ * than one TCP receive window per block. That put a hard ceiling of roughly
+ * 250 KB/s on this task no matter how fast the link was, and the fastest FLAC
+ * stations sit right under it. Slicing at 20 ms cycles the loop four times per
+ * block instead of once, and the ceiling moves with it. */
+#define RADIO_DIRECT_OUTPUT_SLICE_MS 20U
 #define RADIO_DIRECT_PCM_SIZE 16384U
 #define RADIO_DIRECT_STOP_TIMEOUT_MS 12000U
 #define RADIO_STARVATION_REPORT_MS 10000U
@@ -324,26 +350,34 @@ static void radio_set_title(void *context, const char *title)
     ESP_LOGI(TAG, "title: %s", title);
 }
 
+/* Hands as much of `data` to the output as the DMA will take within
+ * RADIO_DIRECT_OUTPUT_SLICE_MS, and reports how much went. A short write is
+ * the normal case, not a failure: the caller keeps the remainder and comes
+ * back on its next pass, having read the socket in between.
+ *
+ * `block_start` is true only for the first slice of a decoded block, so the
+ * block counter still counts blocks. */
 static esp_err_t radio_pcm_output(internet_radio_context_t *radio, const uint8_t *data,
-                                  size_t data_size)
+                                  size_t data_size, bool block_start, size_t *written_out)
 {
     const uint16_t peak = pcm_s16le_peak(data, (size_t)data_size);
     size_t written = 0;
     esp_err_t result;
     if (internet_radio_output_start_once(&radio->output_started)) {
+        /* The silent pre-roll that opens the channel takes the whole slice or
+         * none of it, so there is nothing to bound here. */
         result = board_audio_start(data, (size_t)data_size, &written);
-        if (result == ESP_OK && written < (size_t)data_size) {
-            size_t remainder_written = 0;
-            result = board_audio_write(data + written, (size_t)data_size - written,
-                                       &remainder_written, 1000);
-            written += remainder_written;
-        }
     } else {
-        result = board_audio_write(data, (size_t)data_size, &written, 1000);
+        result = board_audio_write(data, (size_t)data_size, &written,
+                                   RADIO_DIRECT_OUTPUT_SLICE_MS);
+        /* The DMA had no room this pass. Everything still to go is held by the
+         * caller, so this is a wait, not a loss. */
+        if (result == ESP_ERR_TIMEOUT) result = ESP_OK;
     }
+    *written_out = written;
     radio->pcm_bytes += written;
-    radio->pcm_blocks++;
-    if (radio->pcm_blocks <= 4U) {
+    if (block_start) radio->pcm_blocks++;
+    if (block_start && radio->pcm_blocks <= 4U) {
         ESP_LOGI(TAG, "PCM progress: block=%u bytes=%u written=%u total=%u peak=%u",
                  (unsigned int)radio->pcm_blocks, (unsigned int)data_size,
                  (unsigned int)written, (unsigned int)radio->pcm_bytes, peak);
@@ -362,8 +396,8 @@ static esp_err_t radio_pcm_output(internet_radio_context_t *radio, const uint8_t
             (void)radio_sync_output(radio);
         }
     }
-    if (result != ESP_OK || written != data_size) {
-        ESP_LOGE(TAG, "PCM output failed: err=%s written=%u expected=%u",
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "PCM output failed: err=%s written=%u of %u",
                  esp_err_to_name(result), (unsigned int)written, (unsigned int)data_size);
         return ESP_FAIL;
     }
@@ -503,6 +537,12 @@ static void radio_direct_task(void *arg)
     /* Set on a chain source when the body ran out; cleared once the next track
      * is open. Nothing is read from the network while it is set. */
     bool track_ended = false;
+    /* A decoded block that has not fully reached the I2S DMA yet. The decoder
+     * writes into the same buffer, so nothing new is decoded while this is
+     * set; each pass places a slice and the socket read at the bottom of the
+     * loop runs in between. */
+    size_t pcm_pending = 0U;
+    size_t pcm_delivered = 0U;
     /* Ogg carries FLAC, Vorbis or Opus behind the one Content-Type, so the
      * codec name is read from the first page of the body rather than the
      * headers. Once per stream: the answer cannot change mid-stream, and the
@@ -532,6 +572,10 @@ static void radio_direct_task(void *arg)
                     radio_decoder_reset(radio->decoder);
                     available = 0U;
                     compressed_offset = 0U;
+                    /* The half-delivered block belongs to the same discarded
+                     * stretch as the backlog. */
+                    pcm_pending = 0U;
+                    pcm_delivered = 0U;
                 }
             }
             vTaskDelay(pdMS_TO_TICKS(20));
@@ -563,6 +607,8 @@ static void radio_direct_task(void *arg)
                 radio_decoder_reset(radio->decoder);
                 available = 0U;
                 compressed_offset = 0U;
+                pcm_pending = 0U;
+                pcm_delivered = 0U;
             }
             decode_error_retries = 0U;
             decoder_reset_tried = false;
@@ -623,6 +669,8 @@ static void radio_direct_task(void *arg)
              * it away rather than playing it out. */
             available = 0U;
             compressed_offset = 0U;
+            pcm_pending = 0U;
+            pcm_delivered = 0U;
             track_ended = true;
         }
         bool need_input = available == 0U;
@@ -653,7 +701,33 @@ static void radio_direct_task(void *arg)
         if (need_input && radio->output_started) {
             ++starvations;
         }
-        if (!need_input) {
+        if (pcm_pending > 0U) {
+            xSemaphoreTake(radio->direct_io_mutex, portMAX_DELAY);
+            const bool output_allowed =
+                !atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire) &&
+                !atomic_load_explicit(&radio->direct_paused, memory_order_acquire);
+            size_t placed = 0U;
+            const esp_err_t output_result =
+                output_allowed ? radio_pcm_output(radio, pcm + pcm_delivered, pcm_pending,
+                                                  pcm_delivered == 0U, &placed)
+                               : ESP_OK;
+            xSemaphoreGive(radio->direct_io_mutex);
+            if (output_result != ESP_OK) {
+                fatal = true;
+                break;
+            }
+            if (!output_allowed) {
+                /* Stopped or paused mid-block: the rest of it belongs to a
+                 * playback that is over. */
+                pcm_pending = 0U;
+            } else {
+                pcm_delivered += placed;
+                pcm_pending -= placed;
+            }
+            if (pcm_pending == 0U) pcm_delivered = 0U;
+        }
+
+        if (!need_input && pcm_pending == 0U) {
             if (!ogg_codec_named && radio_stream_format_is_ogg(radio->stream_format)) {
                 ogg_codec_named = true;
                 const radio_stream_format_t carried = radio_stream_format_from_ogg_page(
@@ -724,19 +798,11 @@ static void radio_direct_task(void *arg)
                     break;
                 }
                 radio_log_decoder_info(radio->stream_format, &info, &logged_info);
-                xSemaphoreTake(radio->direct_io_mutex, portMAX_DELAY);
-                const bool output_allowed =
-                    !atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire) &&
-                    !atomic_load_explicit(&radio->direct_paused, memory_order_acquire) &&
-                    pcm_bytes > 0U;
-                const esp_err_t output_result = output_allowed
-                                                    ? radio_pcm_output(radio, pcm, pcm_bytes)
-                                                    : ESP_OK;
-                xSemaphoreGive(radio->direct_io_mutex);
-                if (output_result != ESP_OK) {
-                    fatal = true;
-                    break;
-                }
+                /* Queued rather than written here: the delivery step at the top
+                 * of the loop places it a slice at a time, so the socket is
+                 * read while the block is going out instead of after it. */
+                pcm_pending = pcm_bytes;
+                pcm_delivered = 0U;
                 need_input = false;
             } else if (result == RADIO_DECODER_NEED_MORE_DATA) {
                 need_input = true;
@@ -791,6 +857,8 @@ static void radio_direct_task(void *arg)
                 }
                 available = 0U;
                 compressed_offset = 0U;
+                pcm_pending = 0U;
+                pcm_delivered = 0U;
                 decode_error_retries = 0U;
                 decoder_reset_tried = false;
                 last_pcm_tick = xTaskGetTickCount();
@@ -842,6 +910,8 @@ static void radio_direct_task(void *arg)
                 if (radio_direct_reconnect(radio)) {
                     available = 0U;
                     compressed_offset = 0U;
+                    pcm_pending = 0U;
+                    pcm_delivered = 0U;
                     decode_error_retries = 0U;
                     continue;
                 }
@@ -1110,6 +1180,9 @@ static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *ur
     const esp_err_t err = radio_http_connect(radio, url);
     if (err != ESP_OK) return err;
 
+    /* Headers are in; from here the client only reads the body, so the long
+     * connect timeout has to go - see RADIO_HTTP_STREAM_TIMEOUT_MS. */
+    esp_http_client_set_timeout_ms(radio->http, RADIO_HTTP_STREAM_TIMEOUT_MS);
     icy_metadata_init(&radio->icy, radio->icy_interval, radio_set_title, radio);
     // Headers have been parsed by now, so Content-Type may have corrected the
     // format guessed from the URL; republish the codec name to match.

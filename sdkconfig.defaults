@@ -32,8 +32,17 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
 CONFIG_PARTITION_TABLE_OFFSET=0x8000
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
-CONFIG_LWIP_TCP_WND_DEFAULT=16384
-CONFIG_LWIP_TCP_RECVMBOX_SIZE=16
+# The decode loop reads the socket once per decoded frame, and a frame is held
+# by a blocking I2S write - about 85 ms for FLAC. So the most a station can
+# deliver is one receive window per frame, and a 16 KB window put the ceiling
+# at roughly 140 KB/s once a French server's round trip is counted. That is
+# under what 48 kHz 24-bit FLAC needs: those stations ran at 86% of real time
+# with ~120 underruns per 10 s until this was doubled, and at 98-100% after.
+# 48 KB was measured too and is far worse - 23-73% with hundreds of underruns,
+# the window outgrowing what the Wi-Fi RX buffers can absorb.
+CONFIG_LWIP_TCP_WND_DEFAULT=32768
+# Has to cover the window in MSS-sized segments: 32768/1440 is 22.8.
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=24
 CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
 CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
@@ -79,3 +88,13 @@ CONFIG_FATFS_LFN_HEAP=y
 CONFIG_FATFS_MAX_LFN=255
 CONFIG_FATFS_API_ENCODING_UTF_8=y
 CONFIG_FATFS_CODEPAGE_866=y
+# One lost segment used to cost the whole window. Without SACK the sender
+# retransmits everything from the loss onwards, and with room for only four
+# out-of-order packets - the default - everything that arrives behind the gap
+# is thrown away and has to come again. At 128 kbps that is invisible; at the
+# 1.2 Mbps of a 24-bit FLAC station it is most of a second each time, and the
+# backlog never got above 16 KB no matter how big the buffer was. With both of
+# these the same station holds 130 KB of backlog and reports no underruns at
+# all. 24 out-of-order buffers is one receive window's worth at this MSS.
+CONFIG_LWIP_TCP_SACK_OUT=y
+CONFIG_LWIP_TCP_OOSEQ_MAX_PBUFS=24

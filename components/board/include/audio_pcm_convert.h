@@ -63,6 +63,32 @@ size_t audio_pcm_stereo_bytes(size_t source_bytes, uint8_t channels);
 bool audio_pcm_mono_to_stereo_inplace_s16(uint8_t *buffer, size_t mono_bytes,
                                           size_t capacity, size_t *written);
 
+/* Narrows 24- or 32-bit PCM to the 16-bit samples the output stage takes.
+ *
+ * A FLAC station is free to broadcast at 24 bits, and several do; esp_audio_codec
+ * hands those frames over as packed three-byte samples. The I2S channel is
+ * configured once at 16-bit slots and is never reconfigured per track, so the
+ * extra byte has to go before the block reaches the output stage - and handing
+ * three-byte samples to a 16-bit channel is the same class of fault as handing
+ * it mono: the frame boundaries move and everything after is noise.
+ *
+ * Conversion is in place and forwards. Two bytes are written for every three
+ * or four read, so the write cursor never overtakes the read cursor and no
+ * second buffer is needed. `written` receives the byte count produced. Only
+ * the top two bytes of each sample survive - truncation, not rounding, which
+ * is inaudible at this depth and costs nothing.
+ *
+ * 16-bit input passes through untouched and reports its own size, so callers
+ * that do not know the depth in advance can narrow unconditionally. Any other
+ * depth, or a byte count that is not a whole number of samples, is refused and
+ * the buffer is left alone. */
+bool audio_pcm_narrow_to_s16(uint8_t *buffer, size_t source_bytes, uint8_t bits_per_sample,
+                             size_t *written);
+
+/* Bytes `audio_pcm_narrow_to_s16` would produce, for sizing a buffer before
+ * decoding into it. Zero for the same input that conversion refuses. */
+size_t audio_pcm_narrowed_bytes(size_t source_bytes, uint8_t bits_per_sample);
+
 #ifdef __cplusplus
 }
 #endif

@@ -79,3 +79,49 @@ bool audio_pcm_mono_to_stereo_inplace_s16(uint8_t *buffer, size_t mono_bytes,
     *written = output_bytes;
     return true;
 }
+
+/* Bytes per sample for a depth this can narrow. Zero rejects the depth. */
+static size_t narrow_source_sample_bytes(uint8_t bits_per_sample)
+{
+    if (bits_per_sample == 16U) return 2U;
+    if (bits_per_sample == 24U) return 3U;
+    if (bits_per_sample == 32U) return 4U;
+    return 0U;
+}
+
+size_t audio_pcm_narrowed_bytes(size_t source_bytes, uint8_t bits_per_sample)
+{
+    const size_t sample_bytes = narrow_source_sample_bytes(bits_per_sample);
+    if (sample_bytes == 0U) return 0U;
+    if (source_bytes % sample_bytes != 0U) return 0U;
+    return source_bytes / sample_bytes * AUDIO_PCM_SAMPLE_BYTES;
+}
+
+bool audio_pcm_narrow_to_s16(uint8_t *buffer, size_t source_bytes, uint8_t bits_per_sample,
+                             size_t *written)
+{
+    if (buffer == NULL || written == NULL) return false;
+    const size_t sample_bytes = narrow_source_sample_bytes(bits_per_sample);
+    if (sample_bytes == 0U) return false;
+    /* A partial sample means the caller's framing is already wrong; carrying
+     * on would shift every sample after it by a byte. */
+    if (source_bytes % sample_bytes != 0U) return false;
+
+    if (sample_bytes == AUDIO_PCM_SAMPLE_BYTES) {
+        *written = source_bytes;
+        return true;
+    }
+
+    /* Forwards: sample `n` is read at `n * sample_bytes` and written at
+     * `n * 2`, which is never above it, so nothing still to be read has been
+     * overwritten. Little-endian, so the two most significant bytes are the
+     * last two of the sample. */
+    size_t out = 0U;
+    for (size_t offset = 0U; offset < source_bytes; offset += sample_bytes) {
+        buffer[out] = buffer[offset + sample_bytes - 2U];
+        buffer[out + 1U] = buffer[offset + sample_bytes - 1U];
+        out += AUDIO_PCM_SAMPLE_BYTES;
+    }
+    *written = out;
+    return true;
+}

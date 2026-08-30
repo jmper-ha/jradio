@@ -216,6 +216,103 @@ static void test_in_place_expansion_checks_its_room(void)
     assert(written == 8U);
 }
 
+static void test_24_bit_keeps_the_top_two_bytes(void)
+{
+    /* Three-byte little-endian samples: the low byte is dropped, so what is
+     * left is the same value at 16 bits. A 24-bit FLAC station is what makes
+     * this path run at all. */
+    uint8_t buffer[16];
+    fill_guarded(buffer, sizeof(buffer));
+    const uint8_t source[] = {0x99, 0x34, 0x12, 0x01, 0x00, 0x80, 0xfe, 0xff, 0x7f};
+    memcpy(buffer, source, sizeof(source));
+    size_t written = 0U;
+
+    assert(audio_pcm_narrow_to_s16(buffer, sizeof(source), 24U, &written));
+    assert(written == 6U);
+    const uint8_t expected[] = {0x34, 0x12, 0x00, 0x80, 0xff, 0x7f};
+    assert(memcmp(buffer, expected, sizeof(expected)) == 0);
+    /* Written in place and forwards, so the tail of the input is left as it
+     * was rather than cleared - only the first `written` bytes are output. */
+    assert_guard_intact(buffer, sizeof(source), sizeof(buffer));
+    assert(audio_pcm_narrowed_bytes(sizeof(source), 24U) == 6U);
+}
+
+static void test_32_bit_keeps_the_top_two_bytes(void)
+{
+    uint8_t buffer[16];
+    fill_guarded(buffer, sizeof(buffer));
+    const uint8_t source[] = {0x77, 0x99, 0x34, 0x12, 0x01, 0x02, 0x00, 0x80};
+    memcpy(buffer, source, sizeof(source));
+    size_t written = 0U;
+
+    assert(audio_pcm_narrow_to_s16(buffer, sizeof(source), 32U, &written));
+    assert(written == 4U);
+    const uint8_t expected[] = {0x34, 0x12, 0x00, 0x80};
+    assert(memcmp(buffer, expected, sizeof(expected)) == 0);
+    assert_guard_intact(buffer, sizeof(source), sizeof(buffer));
+    assert(audio_pcm_narrowed_bytes(sizeof(source), 32U) == 4U);
+}
+
+static void test_16_bit_passes_through_untouched(void)
+{
+    /* Callers narrow unconditionally, without checking the depth first, so
+     * the already-16-bit case has to be a no-op that still reports its size. */
+    uint8_t buffer[8];
+    fill_guarded(buffer, sizeof(buffer));
+    const uint8_t source[] = {0x34, 0x12, 0x00, 0x80};
+    memcpy(buffer, source, sizeof(source));
+    size_t written = 0U;
+
+    assert(audio_pcm_narrow_to_s16(buffer, sizeof(source), 16U, &written));
+    assert(written == sizeof(source));
+    assert(memcmp(buffer, source, sizeof(source)) == 0);
+    assert_guard_intact(buffer, sizeof(source), sizeof(buffer));
+    assert(audio_pcm_narrowed_bytes(sizeof(source), 16U) == sizeof(source));
+}
+
+static void test_a_24_bit_frame_narrows_into_the_default_pcm_buffer(void)
+{
+    /* The measured case: 4096 samples of 24-bit stereo arrive as 24576 bytes,
+     * which is half again the 16384-byte buffer the decode loop hands over.
+     * Narrowed, it is exactly that buffer. */
+    assert(audio_pcm_narrowed_bytes(24576U, 24U) == 16384U);
+    /* A 4608-sample block does not fit even narrowed - that one the caller has
+     * to grow its buffer for. */
+    assert(audio_pcm_narrowed_bytes(18432U, 16U) == 18432U);
+}
+
+static void test_an_unsupported_depth_is_refused_untouched(void)
+{
+    uint8_t buffer[8];
+    fill_guarded(buffer, sizeof(buffer));
+    const uint8_t source[] = {0x34, 0x12, 0x00, 0x80};
+    memcpy(buffer, source, sizeof(source));
+    size_t written = 12345U;
+
+    assert(!audio_pcm_narrow_to_s16(buffer, sizeof(source), 8U, &written));
+    assert(!audio_pcm_narrow_to_s16(buffer, sizeof(source), 0U, &written));
+    assert(!audio_pcm_narrow_to_s16(buffer, sizeof(source), 20U, &written));
+    /* Not a whole number of three-byte samples. */
+    assert(!audio_pcm_narrow_to_s16(buffer, 4U, 24U, &written));
+    assert(!audio_pcm_narrow_to_s16(NULL, 3U, 24U, &written));
+    assert(!audio_pcm_narrow_to_s16(buffer, 3U, 24U, NULL));
+    assert(memcmp(buffer, source, sizeof(source)) == 0);
+    assert(written == 12345U);
+
+    assert(audio_pcm_narrowed_bytes(4U, 24U) == 0U);
+    assert(audio_pcm_narrowed_bytes(4U, 8U) == 0U);
+}
+
+static void test_an_empty_narrow_is_not_an_error(void)
+{
+    uint8_t buffer[4];
+    fill_guarded(buffer, sizeof(buffer));
+    size_t written = 12345U;
+    assert(audio_pcm_narrow_to_s16(buffer, 0U, 24U, &written));
+    assert(written == 0U);
+    assert_guard_intact(buffer, 0U, sizeof(buffer));
+}
+
 int main(void)
 {
     test_mono_is_duplicated_into_both_channels();
@@ -228,6 +325,12 @@ int main(void)
     test_null_arguments_are_refused();
     test_in_place_expansion_matches_the_copying_one();
     test_in_place_expansion_checks_its_room();
+    test_24_bit_keeps_the_top_two_bytes();
+    test_32_bit_keeps_the_top_two_bytes();
+    test_16_bit_passes_through_untouched();
+    test_a_24_bit_frame_narrows_into_the_default_pcm_buffer();
+    test_an_unsupported_depth_is_refused_untouched();
+    test_an_empty_narrow_is_not_an_error();
     puts("audio_pcm_convert tests passed");
     return 0;
 }

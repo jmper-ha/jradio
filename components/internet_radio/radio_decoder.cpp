@@ -329,6 +329,43 @@ extern "C" radio_decoder_result_t radio_decoder_decode(
             return RADIO_DECODER_ERROR;
         }
         if (frame.decoded_size > 0U) {
+            // A FLAC station is free to broadcast at 24 bits, and six of the
+            // stations here do; the decoder hands those over as packed
+            // three-byte samples. Narrowing happens first, in the decoder's own
+            // buffer, because everything below - the fit check, the mono
+            // expansion, the output stage - counts in 16-bit samples.
+            //
+            // The depth is what the decoder reports about its own output, not
+            // what the container claimed. Zero means it has not said yet, which
+            // only happens before the first frame; 16 is then the safe reading
+            // because that is what every other path here produces.
+            size_t decoded = frame.decoded_size;
+            const uint8_t decoded_bits =
+                decoder->info.bits_per_sample == 0U ? 16U : decoder->info.bits_per_sample;
+            if (!audio_pcm_narrow_to_s16(decode_buffer, decoded, decoded_bits, &decoded)) {
+                return RADIO_DECODER_ERROR;
+            }
+
+            // What the caller's buffer has to hold for this stream, which is
+            // not the 16 KB it starts with: a 4608-sample block is 18432 bytes
+            // even at 16 bits, and every FLAC station using one failed here
+            // until the size was reported back so the buffer could grow. The
+            // micro-flac path fills this from the stream header; this decoder
+            // never states a block size, so it is measured from a frame.
+            const size_t output_bytes = decoder->info.channels == 1U ? decoded * 2U : decoded;
+            decoder->info.pcm_frame_bytes = static_cast<uint32_t>(output_bytes);
+            if (info != nullptr) {
+                *info = decoder->info;
+            }
+            decoder->simple_info_ready = decoder->simple_info_ready || have_info;
+            if (output_bytes > pcm_capacity || pcm_output == nullptr) {
+                // This one frame is dropped - about 100 ms, once per station -
+                // so the caller can grow its buffer and take every frame after
+                // it. Decoding on into a buffer that can never be handed back
+                // is what used to end the stream with an error.
+                return RADIO_DECODER_HEADER_READY;
+            }
+
             // Mono has to be duplicated here for the same reason as on the MP3
             // path: the output stage only takes stereo. Measured, because the
             // reported channel count was not obviously trustworthy: a mono AAC
@@ -343,11 +380,10 @@ extern "C" radio_decoder_result_t radio_decoder_decode(
             if (decoder->info.channels == 1U) {
                 const bool expanded =
                     decode_buffer == pcm_output
-                        ? audio_pcm_mono_to_stereo_inplace_s16(pcm_output, frame.decoded_size,
-                                                               pcm_capacity, pcm_bytes)
-                        : (pcm_output != nullptr &&
-                           audio_pcm_to_stereo_s16(decode_buffer, frame.decoded_size, 1U,
-                                                   pcm_output, pcm_capacity, pcm_bytes));
+                        ? audio_pcm_mono_to_stereo_inplace_s16(pcm_output, decoded, pcm_capacity,
+                                                               pcm_bytes)
+                        : audio_pcm_to_stereo_s16(decode_buffer, decoded, 1U, pcm_output,
+                                                  pcm_capacity, pcm_bytes);
                 if (!expanded) {
                     return RADIO_DECODER_ERROR;
                 }
@@ -356,14 +392,10 @@ extern "C" radio_decoder_result_t radio_decoder_decode(
                 // the channel counts no station here has ever produced: a
                 // guess at how to fold them would be worse than the noise.
                 if (decode_buffer != pcm_output) {
-                    if (frame.decoded_size > pcm_capacity || pcm_output == nullptr) {
-                        return RADIO_DECODER_ERROR;
-                    }
-                    memcpy(pcm_output, decode_buffer, frame.decoded_size);
+                    memcpy(pcm_output, decode_buffer, decoded);
                 }
-                *pcm_bytes = frame.decoded_size;
+                *pcm_bytes = decoded;
             }
-            decoder->simple_info_ready = decoder->simple_info_ready || have_info;
             return RADIO_DECODER_PCM_READY;
         }
         if (have_info && !decoder->simple_info_ready) {

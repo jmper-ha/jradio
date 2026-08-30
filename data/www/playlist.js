@@ -28,8 +28,12 @@
   }
 
   let nextRowId = 1;
+  /* `icon` is the name of a picture the device already holds; `picture` is one
+     chosen or imported here that it does not, and the two are never both set.
+     A pending picture is uploaded when the playlist is saved - see
+     uploadPendingPictures() for why not sooner. */
   function makeRow(name, url, flag, icon) {
-    return {id: nextRowId++, name, url, flag: flag ? 1 : 0, icon: icon || ''};
+    return {id: nextRowId++, name, url, flag: flag ? 1 : 0, icon: icon || '', picture: null};
   }
 
   /* The same rule station_catalog_icon_is_valid() applies on the device: the
@@ -50,22 +54,30 @@
     return value !== null && typeof value === 'object' && !Array.isArray(value);
   }
 
-  // Mirrors station_catalog_parse_line() in
-  // components/internet_radio/station_catalog.c: exactly two tab
-  // separators, flag is strictly "0" or "1"; anything else is skipped.
+  /* Mirrors station_catalog_parse_line() in
+     components/internet_radio/station_catalog.c: the third column says which
+     dialect the line is written in. `S` or `L` is ours - which name to show -
+     and a picture may follow it. A number there is a volume correction from a
+     playlist written for another device, which this one has nowhere to put:
+     those lines are read for their name and address alone. */
   function parseCatalogLine(line) {
     const trimmed = line.replace(/[\r\n]+$/, '');
     if (trimmed.length === 0) return null;
     const parts = trimmed.split('\t');
-    // The picture is the optional fourth column: a playlist written before it
-    // existed has three and still loads.
-    if (parts.length !== 3 && parts.length !== 4) return null;
-    const [name, url, flagText] = parts;
-    const icon = parts.length === 4 ? parts[3] : '';
+    if (parts.length < 2 || parts.length > 4) return null;
+    const [name, url] = parts;
     if (name.length === 0 || url.length === 0) return null;
-    if (flagText !== '0' && flagText !== '1') return null;
-    if (!isIconName(icon)) return null;
-    return {name, url, flag: flagText === '1' ? 1 : 0, icon};
+    const kind = parts.length > 2 ? parts[2] : '';
+    if (kind === 'S' || kind === 'L') {
+      // The picture is the optional fourth column; an empty one is no picture.
+      const icon = parts.length === 4 ? parts[3] : '';
+      if (!isIconName(icon)) return null;
+      return {name, url, flag: kind === 'L' ? 1 : 0, icon};
+    }
+    // Not ours: at most the two columns every list has plus that correction.
+    if (parts.length > 3) return null;
+    if (kind !== '' && !/^[+-]?\d{1,12}$/.test(kind)) return null;
+    return {name, url, flag: 0, icon: ''};
   }
 
   function parseCatalogText(text) {
@@ -91,9 +103,146 @@
     // Three columns for a station with no picture: an untouched playlist comes
     // back byte for byte as it was.
     return rows.map((row) => {
-      const line = `${row.name}\t${row.url}\t${row.flag ? 1 : 0}`;
+      const line = `${row.name}\t${row.url}\t${row.flag ? 'L' : 'S'}`;
       return row.icon ? `${line}\t${row.icon}` : line;
     }).join('\n') + (rows.length > 0 ? '\n' : '');
+  }
+
+  /* Zip, both ways, because a playlist with pictures is more than one file and
+     a browser hands over one. Everything is stored rather than deflated: a PNG
+     or a JPEG is already compressed, and storing keeps the writer down to a
+     header, a directory and a CRC. Reading has to cope with deflate anyway -
+     an archive assembled by any other tool will use it - and that is what
+     DecompressionStream is for, and why there is no library here. */
+  const CRC_TABLE = (() => {
+    const table = new Uint32Array(256);
+    for (let index = 0; index < 256; index += 1) {
+      let value = index;
+      for (let bit = 0; bit < 8; bit += 1) {
+        value = (value & 1) !== 0 ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+      }
+      table[index] = value >>> 0;
+    }
+    return table;
+  })();
+
+  function crc32(bytes) {
+    let crc = 0xffffffff;
+    for (let index = 0; index < bytes.length; index += 1) {
+      crc = CRC_TABLE[(crc ^ bytes[index]) & 0xff] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  function buildZip(files) {
+    const entries = files.map((file) => ({
+      name: encoder.encode(file.name),
+      bytes: file.bytes,
+      crc: crc32(file.bytes),
+    }));
+    // Local header and central directory entry are 30 and 46 bytes plus the
+    // name; the end record is 22.
+    const total = entries.reduce(
+      (size, entry) => size + 76 + entry.name.length * 2 + entry.bytes.length, 22);
+    const out = new Uint8Array(total);
+    const view = new DataView(out.buffer);
+    let at = 0;
+    const u16 = (value) => { view.setUint16(at, value, true); at += 2; };
+    const u32 = (value) => { view.setUint32(at, value, true); at += 4; };
+    const raw = (bytes) => { out.set(bytes, at); at += bytes.length; };
+
+    const offsets = [];
+    entries.forEach((entry) => {
+      offsets.push(at);
+      // Flag 0x0800 says the name is UTF-8, which station names need.
+      u32(0x04034b50); u16(20); u16(0x0800); u16(0); u16(0); u16(0);
+      u32(entry.crc); u32(entry.bytes.length); u32(entry.bytes.length);
+      u16(entry.name.length); u16(0);
+      raw(entry.name); raw(entry.bytes);
+    });
+    const directoryAt = at;
+    entries.forEach((entry, index) => {
+      u32(0x02014b50); u16(20); u16(20); u16(0x0800); u16(0); u16(0); u16(0);
+      u32(entry.crc); u32(entry.bytes.length); u32(entry.bytes.length);
+      u16(entry.name.length); u16(0); u16(0); u16(0); u16(0); u32(0);
+      u32(offsets[index]);
+      raw(entry.name);
+    });
+    const directoryBytes = at - directoryAt;
+    u32(0x06054b50); u16(0); u16(0); u16(entries.length); u16(entries.length);
+    u32(directoryBytes); u32(directoryAt); u16(0);
+    return out;
+  }
+
+  function inflate(data) {
+    const stream = new DecompressionStream('deflate-raw');
+    const writer = stream.writable.getWriter();
+    writer.write(data);
+    writer.close();
+    const reader = stream.readable.getReader();
+    const parts = [];
+    let total = 0;
+    const pump = () => reader.read().then(({value, done}) => {
+      if (done) {
+        const out = new Uint8Array(total);
+        let at = 0;
+        parts.forEach((part) => { out.set(part, at); at += part.length; });
+        return out;
+      }
+      parts.push(value);
+      total += value.length;
+      return pump();
+    });
+    return pump();
+  }
+
+  /* Read through the central directory rather than by walking local headers:
+     a writer that does not know a file's size in advance leaves the sizes in
+     the local header at zero and puts them after the data, and the directory
+     is the copy that is always filled in. */
+  function readZip(bytes) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let end = -1;
+    // The comment that may follow the end record is at most 64 KB.
+    const first = Math.max(0, bytes.length - 66000);
+    for (let at = bytes.length - 22; at >= first && end < 0; at -= 1) {
+      if (view.getUint32(at, true) === 0x06054b50) end = at;
+    }
+    if (end < 0) throw new Error('not a zip');
+
+    const decoder = new TextDecoder();
+    const count = view.getUint16(end + 10, true);
+    let at = view.getUint32(end + 16, true);
+    const files = [];
+    const readOne = (index) => {
+      if (index >= count) return Promise.resolve(files);
+      if (view.getUint32(at, true) !== 0x02014b50) throw new Error('bad directory');
+      const method = view.getUint16(at + 10, true);
+      const compressed = view.getUint32(at + 20, true);
+      const nameLength = view.getUint16(at + 28, true);
+      const extraLength = view.getUint16(at + 30, true);
+      const commentLength = view.getUint16(at + 32, true);
+      const localAt = view.getUint32(at + 42, true);
+      const name = decoder.decode(bytes.subarray(at + 46, at + 46 + nameLength));
+      at += 46 + nameLength + extraLength + commentLength;
+      if (name.endsWith('/')) return readOne(index + 1);
+      /* The local header repeats the name and the extra field, and its own
+         lengths are the ones that place the data: writers pad the two
+         differently. */
+      const dataAt = localAt + 30 + view.getUint16(localAt + 26, true) +
+        view.getUint16(localAt + 28, true);
+      const data = bytes.subarray(dataAt, dataAt + compressed);
+      if (method === 0) {
+        files.push({name, bytes: data});
+        return readOne(index + 1);
+      }
+      if (method !== 8) throw new Error('unsupported compression');
+      return inflate(data).then((inflated) => {
+        files.push({name, bytes: inflated});
+        return readOne(index + 1);
+      });
+    };
+    return Promise.resolve().then(() => readOne(0));
   }
 
   function rowError(row) {
@@ -111,7 +260,8 @@
   }
 
   function isDirty() {
-    return serializeCatalog(state.rows) !== state.lastSyncedText;
+    return serializeCatalog(state.rows) !== state.lastSyncedText ||
+      state.rows.some((row) => row.picture !== null);
   }
 
   function updateSaveAvailability() {
@@ -258,14 +408,50 @@
     });
   }
 
-  function uploadIcon(file) {
-    return scaleImage(file).then((blob) => {
-      if (blob.size > ICON_MAX_BYTES) throw new Error('too large');
-      return window.fetch('/api/station-icon', {
-        method: 'POST',
-        headers: {'Content-Type': 'image/png'},
-        body: blob,
-      });
+  /* A picture that is not on the device yet. It carries a name of its own
+     because an export has to call it something before the device has named
+     it. */
+  let nextPictureId = 1;
+  function makePicture(blob) {
+    const type = blob.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+    return {
+      blob,
+      type,
+      name: `p${nextPictureId++}.${type === 'image/jpeg' ? 'jpg' : 'png'}`,
+      url: null,
+    };
+  }
+
+  function dropPicture(row) {
+    if (row.picture !== null && row.picture.url !== null) {
+      URL.revokeObjectURL(row.picture.url);
+    }
+    row.picture = null;
+  }
+
+  function pictureUrl(picture) {
+    if (picture.url === null) picture.url = URL.createObjectURL(picture.blob);
+    return picture.url;
+  }
+
+  /* Straight through when it already fits: a picture out of an archive was
+     scaled by whoever exported it, and decoding and re-encoding ninety-nine of
+     them would cost quality to arrive where it started. Anything the device
+     will not take goes through the same canvas a hand-picked file does. */
+  function fitPicture(blob) {
+    const known = blob.type === 'image/png' || blob.type === 'image/jpeg';
+    if (known && blob.size <= ICON_MAX_BYTES) return Promise.resolve(makePicture(blob));
+    return scaleImage(blob).then((scaled) => {
+      if (scaled.size > ICON_MAX_BYTES) throw new Error('too large');
+      return makePicture(scaled);
+    });
+  }
+
+  function uploadPicture(picture) {
+    return window.fetch('/api/station-icon', {
+      method: 'POST',
+      headers: {'Content-Type': picture.type},
+      body: picture.blob,
     }).then((response) => {
       if (!response || response.ok !== true) throw new Error('rejected');
       return response.json();
@@ -274,6 +460,21 @@
       if (!isIconName(name) || name === '') throw new Error('bad name');
       return name;
     });
+  }
+
+  /* Pictures go up when the playlist is saved, not when they are chosen: an
+     import that is then abandoned would otherwise leave up to ninety-nine
+     files behind, and the only thing that ever deletes an unused one is the
+     next save. One at a time, because esp_http_server runs a single worker -
+     parallel uploads only queue behind each other while holding sockets the
+     save itself needs. */
+  async function uploadPendingPictures() {
+    for (const row of state.rows) {
+      if (row.picture === null) continue;
+      const name = await uploadPicture(row.picture);
+      dropPicture(row);
+      row.icon = name;
+    }
   }
 
   function field(labelText, input) {
@@ -358,10 +559,10 @@
     flagInput.setAttribute('aria-label', flagCaption);
     flagLabel.append(flagInput, document.createTextNode(flagCaption));
 
-    /* The picture: a file chooser, a preview of what is stored, and a way to
-       take it off again. The file is scaled and uploaded at once - by the time
-       the playlist is saved the device already holds the picture, and the row
-       carries only its name. */
+    /* The picture: a file chooser, a preview of what the station will have,
+       and a way to take it off again. The file is scaled here and goes to the
+       device with the playlist, so what the preview shows before saving is the
+       local copy. */
     const iconRow = document.createElement('div');
     iconRow.className = 'playlist-row-icon';
     const iconPreview = document.createElement('img');
@@ -406,7 +607,9 @@
     item.append(head, editor);
 
     function paintIcon() {
-      const source = row.icon ? `/api/station-icon?file=${encodeURIComponent(row.icon)}` : '';
+      let source = '';
+      if (row.picture !== null) source = pictureUrl(row.picture);
+      else if (row.icon !== '') source = `/api/station-icon?file=${encodeURIComponent(row.icon)}`;
       thumb.hidden = source === '';
       iconPreview.hidden = source === '';
       iconClear.hidden = source === '';
@@ -417,7 +620,7 @@
         thumb.removeAttribute('src');
         iconPreview.removeAttribute('src');
       }
-      iconCaption.textContent = row.icon ? 'Заменить иконку' : 'Иконка станции';
+      iconCaption.textContent = source === '' ? 'Иконка станции' : 'Заменить иконку';
     }
 
     function paintHead() {
@@ -460,22 +663,25 @@
     iconInput.addEventListener('change', () => {
       const file = iconInput.files && iconInput.files[0];
       if (!file) return;
-      setRowNotice(item, 'Готовим и отправляем иконку…', false);
-      uploadIcon(file).then((name) => {
-        row.icon = name;
+      setRowNotice(item, 'Готовим иконку…', false);
+      scaleImage(file).then((blob) => {
+        if (blob.size > ICON_MAX_BYTES) throw new Error('too large');
+        dropPicture(row);
+        row.picture = makePicture(blob);
+        row.icon = '';
         paintIcon();
         updateSaveAvailability();
         setRowNotice(item,
-          'Иконка загружена. Нажмите «Сохранить на устройстве», чтобы закрепить её за станцией.',
-          false);
+          'Иконка готова. Нажмите «Сохранить на устройстве», чтобы отправить её.', false);
       }).catch(() => {
-        setRowNotice(item, 'Не удалось загрузить иконку', true);
+        setRowNotice(item, 'Не удалось подготовить иконку', true);
       }).then(() => {
         // Cleared so that choosing the same file again is a change.
         iconInput.value = '';
       });
     });
     iconClear.addEventListener('click', () => {
+      dropPicture(row);
       row.icon = '';
       paintIcon();
       updateSaveAvailability();
@@ -497,6 +703,7 @@
     });
     deleteButton.addEventListener('click', () => {
       if (test.browser === row.id) stopBrowserTest();
+      dropPicture(row);
       state.rows = state.rows.filter((candidate) => candidate.id !== row.id);
       renderRows();
       updateSaveAvailability();
@@ -561,84 +768,199 @@
     }
   }
 
-  function exportPlaylist() {
-    const text = serializeCatalog(state.rows);
-    const blob = new Blob([text], {type: 'text/plain;charset=utf-8'});
+  function download(blob, filename) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'playlist.csv';
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   }
 
+  // A picture the device holds against one that is still only here.
+  function iconNameOf(row) {
+    return row.picture !== null ? row.picture.name : row.icon;
+  }
+
+  function pictureBytes(row) {
+    if (row.picture !== null) {
+      return row.picture.blob.arrayBuffer().then((buffer) => new Uint8Array(buffer));
+    }
+    return window.fetch(`/api/station-icon?file=${encodeURIComponent(row.icon)}`)
+      .then((response) => {
+        if (!response || response.ok !== true) throw new Error('missing');
+        return response.arrayBuffer();
+      })
+      .then((buffer) => new Uint8Array(buffer));
+  }
+
+  /* A plain file while there are no pictures, so a list stays something any
+     other player can read; an archive once there is one, because a browser
+     downloads a file and a playlist with pictures is a folder. */
+  async function exportPlaylist() {
+    const named = state.rows.filter((row) => iconNameOf(row) !== '');
+    const text = serializeCatalog(
+      state.rows.map((row) => ({...row, icon: iconNameOf(row)})));
+    if (named.length === 0) {
+      download(new Blob([text], {type: 'text/plain;charset=utf-8'}), 'playlist.csv');
+      setStatus(`Экспортировано ${state.rows.length} станций`);
+      return;
+    }
+    setStatus('Собираем архив…');
+    try {
+      const files = [{name: 'playlist.csv', bytes: encoder.encode(text)}];
+      const taken = new Set();
+      for (const row of named) {
+        const name = iconNameOf(row);
+        // Two stations may share a picture; the archive keeps one copy.
+        if (taken.has(name)) continue;
+        taken.add(name);
+        files.push({name: `radio_img/${name}`, bytes: await pictureBytes(row)});
+      }
+      download(new Blob([buildZip(files)], {type: 'application/zip'}), 'playlist.zip');
+      setStatus(`Экспортировано ${state.rows.length} станций и ${files.length - 1} картинок`);
+    } catch (error) {
+      setStatus('Не удалось собрать архив: картинка не отдалась', true);
+    }
+  }
+
+  function readFileBytes(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener('load', () => resolve(new Uint8Array(reader.result)));
+      reader.addEventListener('error', () => reject(new Error('read failed')));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function pictureTypeOf(name) {
+    if (/\.jpe?g$/i.test(name)) return 'image/jpeg';
+    if (/\.png$/i.test(name)) return 'image/png';
+    return '';
+  }
+
+  /* Pictures are indexed by their bare name and the playlist is whatever is
+     not a picture: an archive written here puts them under radio_img/, but one
+     assembled by hand may nest them anywhere or not at all. */
+  function readArchive(bytes) {
+    return readZip(bytes).then((files) => {
+      const pictures = new Map();
+      let playlist = null;
+      files.forEach((file) => {
+        const type = pictureTypeOf(file.name);
+        if (type !== '') {
+          pictures.set(file.name.slice(file.name.lastIndexOf('/') + 1),
+                       new Blob([file.bytes], {type}));
+        } else if (playlist === null) {
+          playlist = file;
+        }
+      });
+      if (playlist === null) throw new Error('no playlist');
+      return {text: new TextDecoder().decode(playlist.bytes), pictures};
+    });
+  }
+
+  const ZIP_SIGNATURE = [0x50, 0x4b, 0x03, 0x04];
+
   function importPlaylist(file) {
     if (state.loaded && isDirty() &&
         !window.confirm('Несохранённые изменения будут потеряны. Импортировать файл?')) {
       return;
     }
-    const reader = new FileReader();
-    reader.addEventListener('load', () => {
-      const {rows, skipped, truncated} = parseCatalogText(String(reader.result));
-      state.rows = rows;
-      renderRows();
-      updateSaveAvailability();
-      const notes = [];
-      if (skipped > 0) notes.push(`${skipped} строк пропущено`);
-      if (truncated) notes.push(`оставлены первые ${STATION_MAX_ENTRIES} станций`);
-      setStatus(notes.length > 0
-        ? `Импортировано ${rows.length} станций (${notes.join(', ')})`
-        : `Импортировано ${rows.length} станций`);
-    });
-    reader.addEventListener('error', () => {
-      setStatus('Не удалось прочитать файл', true);
-    });
-    reader.readAsText(file);
+    setStatus('Читаем файл…');
+    readFileBytes(file)
+      .then((bytes) => {
+        const archive = bytes.length > ZIP_SIGNATURE.length &&
+          ZIP_SIGNATURE.every((value, index) => bytes[index] === value);
+        return archive
+          ? readArchive(bytes)
+          : {text: new TextDecoder().decode(bytes), pictures: new Map()};
+      })
+      .then(async ({text, pictures}) => {
+        const {rows, skipped, truncated} = parseCatalogText(text);
+        let missing = 0;
+        for (const row of rows) {
+          /* The name in the file names a picture in the archive, not one on
+             the device: it is cleared either way, and what is found takes its
+             place until the playlist is saved. */
+          const wanted = row.icon;
+          row.icon = '';
+          if (wanted === '') continue;
+          const blob = pictures.get(wanted);
+          if (blob === undefined) {
+            missing += 1;
+            continue;
+          }
+          try {
+            row.picture = await fitPicture(blob);
+          } catch (error) {
+            missing += 1;
+          }
+        }
+        state.rows.forEach(dropPicture);
+        state.rows = rows;
+        renderRows();
+        updateSaveAvailability();
+        const notes = [];
+        if (skipped > 0) notes.push(`${skipped} строк пропущено`);
+        if (truncated) notes.push(`оставлены первые ${STATION_MAX_ENTRIES} станций`);
+        if (missing > 0) notes.push(`${missing} картинок не нашлось`);
+        setStatus(notes.length > 0
+          ? `Импортировано ${rows.length} станций (${notes.join(', ')})`
+          : `Импортировано ${rows.length} станций`);
+      })
+      .catch(() => {
+        setStatus('Не удалось прочитать файл', true);
+      });
   }
 
-  function savePlaylist() {
+  async function savePlaylist() {
     if (hasErrors() || state.saving) return;
     state.saving = true;
     updateSaveAvailability();
-    setSaveStatus('Сохранение…');
-    const text = serializeCatalog(state.rows);
-    fetch('/api/playlist', {
-      method: 'POST',
-      headers: {'Content-Type': 'text/plain;charset=utf-8'},
-      body: text,
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          const message = await response.text().catch(() => '');
-          throw new Error(message || `HTTP ${response.status}`);
-        }
-        return response.json();
-      })
-      .then((payload) => {
-        const expected = state.rows.length;
-        const count = isObject(payload) && Number.isSafeInteger(payload.count) ? payload.count : expected;
-        if (count !== expected) {
-          // The device parsed fewer stations than were sent, so its playlist
-          // differs from what is on screen. Leave the editor marked dirty:
-          // treating this as a successful sync would hide the loss until the
-          // next page load.
-          setSaveStatus(
-            `Устройство приняло ${count} станций из ${expected}: часть строк отклонена. ` +
-            'Проверьте список и сохраните снова.', true);
-          return;
-        }
+    try {
+      /* The pictures go first: the playlist names them, and a line naming one
+         the device does not have yet is a line it will refuse. */
+      const pending = state.rows.filter((row) => row.picture !== null).length;
+      if (pending > 0) {
+        setSaveStatus(`Отправляем картинки: ${pending}…`);
+        await uploadPendingPictures();
+        renderRows();
+      }
+      setSaveStatus('Сохранение…');
+      const text = serializeCatalog(state.rows);
+      const response = await fetch('/api/playlist', {
+        method: 'POST',
+        headers: {'Content-Type': 'text/plain;charset=utf-8'},
+        body: text,
+      });
+      if (!response.ok) {
+        const message = await response.text().catch(() => '');
+        throw new Error(message || `HTTP ${response.status}`);
+      }
+      const payload = await response.json();
+      const expected = state.rows.length;
+      const count = isObject(payload) && Number.isSafeInteger(payload.count) ? payload.count : expected;
+      if (count !== expected) {
+        // The device parsed fewer stations than were sent, so its playlist
+        // differs from what is on screen. Leave the editor marked dirty:
+        // treating this as a successful sync would hide the loss until the
+        // next page load.
+        setSaveStatus(
+          `Устройство приняло ${count} станций из ${expected}: часть строк отклонена. ` +
+          'Проверьте список и сохраните снова.', true);
+      } else {
         state.lastSyncedText = text;
         setSaveStatus(`Сохранено: ${count} станций`);
-      })
-      .catch((error) => {
-        setSaveStatus(`Не удалось сохранить: ${error.message}`, true);
-      })
-      .finally(() => {
-        state.saving = false;
-        updateSaveAvailability();
-      });
+      }
+    } catch (error) {
+      setSaveStatus(`Не удалось сохранить: ${error.message}`, true);
+    } finally {
+      state.saving = false;
+      updateSaveAvailability();
+    }
   }
 
   addButton.addEventListener('click', addRow);
@@ -655,6 +977,6 @@
   loadPlaylist();
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {parseCatalogText, serializeCatalog, rowError};
+    module.exports = {parseCatalogText, serializeCatalog, rowError, buildZip, readZip};
   }
 })();

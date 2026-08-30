@@ -16,6 +16,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #ifdef ESP_PLATFORM
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
 
 #include "cJSON.h"
 #include "esp_check.h"
@@ -30,6 +31,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "ui_now_playing.h"
 #include "file_storage.h"
 #include "album_art.h"
+#include "image_decode.h"
 #include "esp_heap_caps.h"
 #include "esp_random.h"
 #include <dirent.h>
@@ -1040,13 +1042,45 @@ static esp_err_t web_server_station_icon_post(httpd_req_t *request)
         return ESP_FAIL;
     }
 
+    /* Streamed in kilobyte pieces: the whole picture never sits in RAM here,
+     * and the HTTP worker's stack is the scarce thing on this path. */
+    char chunk[1024];
+    /* The signature is read before the file is opened rather than streamed
+     * straight into it, because it is what picks the extension. The panel
+     * decodes by signature and would not care what the file is called, but the
+     * picture is also handed back over HTTP, and a JPEG served as image/png is
+     * a broken picture in the browser. It doubles as the only check there is
+     * that this is a picture at all: without it anything at all could be
+     * stored, and the panel found out at the far end with "could not be
+     * decoded". */
+    size_t received = 0U;
+    while (received < 8U && received < (size_t)request->content_len) {
+        const int read = httpd_req_recv(request, chunk + received, 8U - received);
+        if (read <= 0) {
+            httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Incomplete upload");
+            return ESP_FAIL;
+        }
+        received += (size_t)read;
+    }
+    const char *extension = NULL;
+    if (image_decode_is_png((const uint8_t *)chunk, received)) {
+        extension = "png";
+    } else if (received >= 3U && (unsigned char)chunk[0] == 0xFFU &&
+               (unsigned char)chunk[1] == 0xD8U && (unsigned char)chunk[2] == 0xFFU) {
+        extension = "jpg";
+    }
+    if (extension == NULL) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Unsupported picture format");
+        return ESP_FAIL;
+    }
+
     char name[STATION_CATALOG_ICON_MAX_LEN];
     char path[sizeof(STATION_ICON_DIR) + STATION_CATALOG_ICON_MAX_LEN + 1U];
     FILE *file = NULL;
     /* A few attempts rather than one: the name is random, and the only way to
      * find out it is taken is to look. */
     for (int attempt = 0; attempt < 8 && file == NULL; ++attempt) {
-        snprintf(name, sizeof(name), "s%08lx.png", (unsigned long)esp_random());
+        snprintf(name, sizeof(name), "s%08lx.%s", (unsigned long)esp_random(), extension);
         snprintf(path, sizeof(path), "%s/%s", STATION_ICON_DIR, name);
         struct stat existing;
         if (stat(path, &existing) == 0) continue;
@@ -1057,12 +1091,8 @@ static esp_err_t web_server_station_icon_post(httpd_req_t *request)
         return ESP_FAIL;
     }
 
-    /* Streamed in kilobyte pieces: the whole picture never sits in RAM here,
-     * and the HTTP worker's stack is the scarce thing on this path. */
-    char chunk[1024];
-    size_t received = 0U;
-    bool failed = false;
-    while (received < (size_t)request->content_len) {
+    bool failed = fwrite(chunk, 1U, received, file) != received;
+    while (!failed && received < (size_t)request->content_len) {
         const size_t want = (size_t)request->content_len - received;
         const int read = httpd_req_recv(request, chunk,
                                         want < sizeof(chunk) ? want : sizeof(chunk));
@@ -1108,7 +1138,14 @@ static esp_err_t web_server_station_icon_get(httpd_req_t *request)
      * gets. A new picture is a new name, so a cached one is never stale. */
     char relative[sizeof(STATION_ICON_DIR) + STATION_CATALOG_ICON_MAX_LEN];
     snprintf(relative, sizeof(relative), "radio_img/%s", name);
-    return web_server_send_file(request, relative, "image/png");
+    /* By the name, because that is all this handler has: the extension was
+     * chosen from the signature when the picture was stored. */
+    const char *dot = strrchr(name, '.');
+    const char *type = (dot != NULL && (strcasecmp(dot, ".jpg") == 0 ||
+                                        strcasecmp(dot, ".jpeg") == 0))
+                           ? "image/jpeg"
+                           : "image/png";
+    return web_server_send_file(request, relative, type);
 }
 
 /* Pictures nobody names any more are deleted when the playlist is saved. That

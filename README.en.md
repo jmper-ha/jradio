@@ -514,8 +514,8 @@ come to the page and to the screen from one function
 ([`ui_now_playing.h`](components/ui/include/ui_now_playing.h)) rather than being
 worked out twice. Worked out twice, they drifted: on files the page showed the
 file's name where the screen read its tags, and it named a station by whatever
-the stream called itself while the screen obeyed the playlist's flag - "Радио
-Шоколад" with the flag set is named from the list on the screen, and was named
+the stream called itself while the screen obeyed the playlist's third column -
+"Радио Шоколад" marked `L` is named from the list on the screen, and was named
 `DB91-TX` on the page, which is what the stream calls itself. Each also had its
 own way of splitting the ICY line into a performer and a track: the page knew
 about the en dash and repaired broken UTF-8, the screen did neither.
@@ -552,14 +552,51 @@ fetches it itself: the device pays nothing - only the address travels - and the
 page draws something four times as detailed as the 96 pixels the panel decodes
 it into.
 
-A station's own picture is the playlist's fourth column, after the name flag and
-a tab. The column is optional, and a three-field line still reads as it did. The
-browser scales the picture to 96 pixels on its longer side and re-encodes it as
-PNG before sending - kilobytes travel to the device, not a photograph - and the
-device names the file itself: a name that comes from a client is a name that can
-turn out to be a path. The files live in `/littlefs/radio_img/`, and saving the
-playlist deletes the ones nothing refers to any more - that is the one moment
-when the full list of names in use is known.
+A station's own picture is the playlist's fourth column, after the letter and a
+tab; the column is optional. A picture chosen in the browser is scaled there to
+96 pixels on its longer side and re-encoded as PNG - kilobytes travel to the
+device, not a photograph - and the device names the file itself: a name that
+comes from a client is a name that can turn out to be a path. The extension
+comes from the first bytes rather than from the request's header, so PNG and
+JPEG are each stored under their own: the picture is handed back over HTTP
+afterwards, and a JPEG served as `image/png` is a broken picture in the browser.
+It doubles as the only check that a picture arrived at all. The files live in
+`/littlefs/radio_img/`, and saving the playlist deletes the ones nothing refers
+to any more - that is the one moment when the full list of names in use is
+known.
+
+### The playlist format
+
+A line is `name<TAB>address<TAB>letter`, plus an optional fourth column naming
+the picture file. The letter says which name to show: `S` for the one the
+stream announces, `L` for the one kept in the list.
+
+The letter sits where playlists written for other devices - and there are many
+of those about - keep a volume correction: a signed integer, almost always
+zero. Those lines are read too, but only for their name and address: the volume
+here is one setting and there is no per-station gain in the model. The
+correction is dropped, the stream gets to announce the name, and nothing in
+that dialect could name a picture. Lists of two columns, with no third at all,
+read the same way.
+
+The letter is what makes the two tellable apart. The column used to hold 0 or
+1 - exactly what a correction of 0 or +1 dB is written with - so a foreign 1
+read as "name from the list", and every other correction took the whole line
+down as malformed.
+
+Export hands over `playlist.csv` while no station has a picture, which is a
+file anything can read. Once one does, it hands over `playlist.zip`: the same
+`playlist.csv` with a `radio_img/` folder beside it. Import takes either,
+telling them apart by the file's signature. The archive is built and read
+entirely in the browser - the device needs neither an unpacker nor a buffer of
+several megabytes - and it is written stored, since PNG and JPEG are already
+compressed, but read with deflate too, because an archive assembled by anything
+else will be compressed.
+
+Imported pictures travel to the device when Save is pressed rather than when
+the file is opened: an import that is then abandoned would otherwise leave up
+to 99 unwanted files there, and the only thing that ever deletes them is the
+next save.
 
 The picture is published through the same `album_art` that carries file and
 rotor covers, so the panel's tile and the browser's both draw it without a line

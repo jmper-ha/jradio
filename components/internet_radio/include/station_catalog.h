@@ -24,8 +24,8 @@
 #define STATION_CATALOG_ICON_MAX_LEN 32
 /* Where those pictures live. One directory, flat, one file per station. */
 #define STATION_ICON_DIR "/littlefs/radio_img"
-/* One line at its longest: name, separator, url, flag, the picture, newline,
- * and room to spare. */
+/* One line at its longest: name, separator, url, the letter, the picture,
+ * newline, and room to spare. */
 #define STATION_CATALOG_LINE_MAX_LEN \
     (STATION_CATALOG_NAME_MAX_LEN + STATION_CATALOG_URL_MAX_LEN + \
      STATION_CATALOG_ICON_MAX_LEN + 8U)
@@ -36,10 +36,14 @@
 typedef struct {
     char name[STATION_CATALOG_NAME_MAX_LEN];
     char url[STATION_CATALOG_URL_MAX_LEN];
+    /* Which name the station line shows: the one kept here, or the one the
+     * stream announces. Written as `L` or `S` in the file's third column -
+     * see station_catalog_parse_line() for why it is a letter and not the 0
+     * or 1 it holds here. */
     int flag;
-    /* Empty when the station has no picture of its own, which is every station
-     * written before the field existed: the fourth column is optional and a
-     * three-column line still parses. */
+    /* Empty when the station has no picture of its own: the fourth column is
+     * optional, and a playlist written for another device has no column to
+     * put one in. */
     char icon[STATION_CATALOG_ICON_MAX_LEN];
 } station_catalog_entry_t;
 

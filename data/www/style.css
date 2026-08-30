@@ -716,7 +716,13 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   flex: none;
 }
 
-.player-controls button:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+/* Pointer only. A tap on a phone leaves :hover stuck on the button until
+   something else is touched, and this rule outranks the marks below - the
+   heart that had just been filled kept the plain text colour, so the reaction
+   read as if it had not registered. */
+@media (hover: hover) {
+  .player-controls button:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+}
 
 .player-controls button svg { width: 24px; height: 24px; fill: currentColor; }
 
@@ -741,9 +747,11 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   stroke-linejoin: round;
 }
 
-.like-track.is-liked { color: var(--accent); }
+/* Same specificity as the hover rule above and later in the file, which is what
+   lets a mark that is on survive a pointer resting on its button. */
+.player-controls button.like-track.is-liked { color: var(--accent); }
 .like-track.is-liked svg { fill: currentColor; stroke: none; }
-.dislike-track.is-disliked { color: var(--bad); }
+.player-controls button.dislike-track.is-disliked { color: var(--bad); }
 
 /* The wide copy of the slash knocks a gap out of the heart's outline: without
    it the two outlines merge into a smudge - the same reason the device's

@@ -71,6 +71,9 @@
 #define UI_COLOR_TEXT 0xFFFFFF
 #define UI_COLOR_MUTED 0xB0BEC5
 #define UI_COLOR_DIM 0x78909C
+/* A row that is on the screen but cannot be started: dimmer than the
+ * unselected text, still plainly readable against the ground. */
+#define UI_COLOR_DISABLED 0x4E606C
 /* Only ever a warning; never decoration, so it stays out of the ramp above. */
 #define UI_COLOR_NOTICE 0xFFD54F
 /* Folder rows in the USB browser. Deliberately duller than the accent, which
@@ -346,6 +349,7 @@ static unsigned int s_files_listing_revision;
 static bool s_files_unavailable;
 // One per volume, as the snapshot last reported them, so the menu can answer
 // "can this source be opened" for whichever row the cursor is on.
+static bool s_last_wifi_connected;
 static file_browser_media_t s_last_usb_media = FILE_BROWSER_MEDIA_ABSENT;
 static file_browser_media_t s_last_sd_media = FILE_BROWSER_MEDIA_ABSENT;
 static size_t s_last_files_entry_count;
@@ -957,7 +961,11 @@ static void ui_update_feed_screen(void)
         lv_obj_set_pos(s_feed_icons[slot], centers[slot] - box / 2, UI_FEED_AXIS_Y - box / 2);
         /* An A8 bitmap has no colour of its own: LVGL blends it with the
          * recolour, which is what lets one image serve every slot. */
-        lv_obj_set_style_image_recolor(s_feed_icons[slot], lv_color_hex(colors[slot]), 0);
+        const bool enabled =
+            ui_menu_item_is_enabled((ui_menu_item_t)item, yandex, s_last_wifi_connected);
+        lv_obj_set_style_image_recolor(
+            s_feed_icons[slot],
+            lv_color_hex(enabled ? colors[slot] : UI_COLOR_DISABLED), 0);
         lv_obj_set_style_image_recolor_opa(s_feed_icons[slot], LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(s_feed_icons[slot], center ? 2 : 0, 0);
         lv_obj_set_style_border_color(s_feed_icons[slot], lv_color_hex(UI_COLOR_ACCENT), 0);
@@ -1068,6 +1076,7 @@ static void ui_update_menu_highlight(void)
         lv_obj_clear_flag(s_menu_icons[row], LV_OBJ_FLAG_HIDDEN);
         const ui_menu_item_t item = ui_menu_visible_item_at(row, yandex);
         const bool is_selected = (uint8_t)item == selected;
+        const bool enabled = ui_menu_item_is_enabled(item, yandex, s_last_wifi_connected);
         // Raised tile plus accent text, the way the player screen marks what
         // it is playing. The arrow the old highlight needed is gone: a filled
         // row says the same thing without spending a character on it.
@@ -1075,9 +1084,12 @@ static void ui_update_menu_highlight(void)
                                   lv_color_hex(is_selected ? UI_COLOR_SELECTED
                                                            : UI_COLOR_GROUND), 0);
         lv_obj_set_style_bg_opa(s_menu_rows[row], LV_OPA_COVER, 0);
+        /* The cursor still lands on it - the row is real, it just cannot be
+           started right now, and the press says why. */
         lv_obj_set_style_text_color(s_menu_rows[row],
-                                    lv_color_hex(is_selected ? UI_COLOR_ACCENT
-                                                             : UI_COLOR_MUTED), 0);
+                                    lv_color_hex(!enabled       ? UI_COLOR_DISABLED
+                                                 : is_selected  ? UI_COLOR_ACCENT
+                                                                : UI_COLOR_MUTED), 0);
         lv_label_set_text(s_menu_rows[row], ui_menu_item_label(item));
         lv_image_set_src(s_menu_icons[row],
                          ui_feed_icon_image((ui_feed_item_t)item, UI_FEED_ICON_SMALL));
@@ -1085,8 +1097,9 @@ static void ui_update_menu_highlight(void)
         // under the cursor should read as one thing, not as a bright mark with
         // dim writing next to it.
         lv_obj_set_style_image_recolor(s_menu_icons[row],
-                                       lv_color_hex(is_selected ? UI_COLOR_ACCENT
-                                                                : UI_COLOR_DIM), 0);
+                                       lv_color_hex(!enabled      ? UI_COLOR_DISABLED
+                                                    : is_selected ? UI_COLOR_ACCENT
+                                                                  : UI_COLOR_DIM), 0);
     }
 }
 
@@ -2697,6 +2710,20 @@ static void ui_load_source_screen(audio_source_t selected_source)
     }
 }
 
+/* The two sources that stream from the internet are refused rather than
+ * started when there is no network. A press that did nothing at all would read
+ * as a broken button, so it answers on the same notice line that explains a
+ * missing drive. */
+static bool ui_network_source_blocked(ui_menu_item_t item, lv_obj_t *notice)
+{
+    if (ui_menu_item_is_enabled(item, ui_menu_yandex_visible(&s_menu),
+                                s_last_wifi_connected)) {
+        return false;
+    }
+    ui_set_label_text_if_changed(notice, "Нет сети — см. Настройки");
+    return true;
+}
+
 static void ui_show_source(void)
 {
     const audio_source_t selected_source = ui_menu_activate(&s_menu);
@@ -3359,6 +3386,8 @@ static void ui_handle_input(board_input_action_t action)
             const ui_feed_item_t item = ui_feed_model_selected(&s_feed_model);
             if (item == UI_FEED_SETTINGS) {
                 ui_show_settings();
+            } else if (ui_network_source_blocked((ui_menu_item_t)item, s_feed_notice)) {
+                return;
             } else if (item == UI_FEED_YANDEX) {
                 /* Not a source yet - the account is linked here, and playback
                  * arrives in a later step. */
@@ -3386,6 +3415,10 @@ static void ui_handle_input(board_input_action_t action)
     } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
         if (ui_menu_selection_is_settings(&s_menu)) {
             ui_show_settings();
+            return;
+        }
+        if (ui_network_source_blocked((ui_menu_item_t)ui_menu_selected_index(&s_menu),
+                                      s_menu_notice)) {
             return;
         }
         if (ui_menu_selected_index(&s_menu) == (uint8_t)UI_MENU_ITEM_YANDEX_MUSIC) {
@@ -3478,6 +3511,7 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     if (snapshot == NULL) return;
     const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
     const audio_source_t old_source = ui_player_state_source(&s_player_ui);
+    s_last_wifi_connected = snapshot->wifi_connected;
     s_last_usb_media = snapshot->usb_media;
     s_last_sd_media = snapshot->sd_media;
     s_last_files_entry_count = snapshot->files_entry_count;

@@ -11,6 +11,15 @@
   const wifiIp = document.querySelector('#wifi-ip');
   const savedNetworks = document.querySelector('#saved-networks');
   const savedNetworksEmpty = document.querySelector('#saved-networks-empty');
+  const wifiAdd = document.querySelector('#wifi-add');
+  const wifiCancel = document.querySelector('#wifi-cancel');
+  const wifiScan = document.querySelector('#wifi-scan');
+  const wifiScanBlock = document.querySelector('#wifi-scan-block');
+  const scanNetworks = document.querySelector('#scan-networks');
+  const scanEmpty = document.querySelector('#scan-empty');
+  const wifiChosen = document.querySelector('#wifi-chosen');
+  const wifiChosenName = document.querySelector('#wifi-chosen-name');
+  const wifiSsidRow = document.querySelector('#wifi-ssid-row');
   const yandexStatus = document.querySelector('#yandex-status');
   const yandexCodeBlock = document.querySelector('#yandex-code-block');
   const yandexUrl = document.querySelector('#yandex-url');
@@ -58,6 +67,27 @@
   let saveAccepted = false;
   let expectedSsid = '';
   let pendingRequestId = '';
+  // Forgetting, reordering and switching a network off share one slot: the
+  // device runs them one at a time, and two at once would only queue anyway.
+  let editRequestId = '';
+  /* What the edit was supposed to do, kept until the list proves it happened.
+     The acknowledgement cannot: it says the command was queued, and the work
+     runs on the device afterwards - a name that is no longer saved, or a busy
+     device, is refused there with nothing sent back. So the answer is read off
+     the list itself, and a timeout says so when it never changes. */
+  let editPending = null;
+  let editTimer = null;
+  let apMode = false;
+  // The name the form is about to send. Empty means it is typed in instead,
+  // which is how a hidden network and "Другая сеть…" are reached.
+  let chosenSsid = '';
+  let scanTimer = null;
+  let scanning = false;
+  let scanRequested = false;
+  // The last Wi-Fi state the device sent. Read before an edit is sent: the
+  // device refuses one while a save is still waiting for its IP, and a refusal
+  // it never hears about is worse than a button that says why it is not ready.
+  let lastWifi = null;
   let yandexTimer = null;
   let yandexBusy = false;
   let deviceBusy = false;
@@ -81,8 +111,12 @@
       ip: safeString(wifi.ip),
       save_pending: wifi.save_pending === true,
       last_error: Number.isSafeInteger(wifi.last_error) ? wifi.last_error : 0,
-      saved_ssids: Array.isArray(wifi.saved_ssids)
-        ? wifi.saved_ssids.filter((ssid) => typeof ssid === 'string')
+      // The order is the order the device tries them in, so it is never sorted
+      // here: the first row is the one that gets the first attempt.
+      saved: Array.isArray(wifi.saved)
+        ? wifi.saved
+            .filter((item) => isObject(item) && typeof item.ssid === 'string' && item.ssid)
+            .map((item) => ({ssid: item.ssid, blocked: item.blocked === true}))
         : [],
     };
   }
@@ -96,10 +130,39 @@
     submitButton.disabled = !value || saveInFlight;
   }
 
-  function renderSavedNetworks(items) {
-    const rows = items.map((ssid) => {
+  function networkButton(label, action, ssid) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.classList.add('secondary-button');
+    button.dataset.action = action;
+    button.dataset.ssid = ssid;
+    button.addEventListener('click', () => editNetwork(action, ssid));
+    return button;
+  }
+
+  function tag(label) {
+    const node = document.createElement('span');
+    node.textContent = label;
+    node.classList.add('network-tag');
+    return node;
+  }
+
+  function renderSavedNetworks(wifi) {
+    const rows = wifi.saved.map((network, index) => {
       const row = document.createElement('li');
-      row.textContent = ssid;
+      const name = document.createElement('span');
+      name.textContent = network.ssid;
+      name.classList.add('network-name');
+      row.append(name);
+      // Only worth saying when there is a choice to be first among.
+      if (index === 0 && wifi.saved.length > 1) row.append(tag('первая'));
+      if (network.blocked) row.append(tag('выключена до перезагрузки'));
+      if (index > 0) row.append(networkButton('Сделать первой', 'wifi.prioritize', network.ssid));
+      if (wifi.mode === 'sta_connected' && network.ssid === wifi.active_ssid) {
+        row.append(networkButton('Отключиться', 'wifi.disconnect', network.ssid));
+      }
+      row.append(networkButton('Забыть', 'wifi.forget', network.ssid));
       return row;
     });
     savedNetworks.replaceChildren(...rows);
@@ -109,9 +172,82 @@
 
   function failureText(error) {
     if (passwordErrors.has(error)) return 'Неверный пароль или ошибка авторизации';
+    // ESP_ERR_NO_MEM as the device reports it: the list holds five networks and
+    // this one would have been the sixth. Worth its own words - the visitor can
+    // do something about it, unlike a write that failed.
+    if (error === 257) return 'Сохранено максимум 5 сетей — сначала забудьте лишнюю';
+    if (error === 258) return 'Некорректное название сети или пароль';
     if (error < 0 || error >= 256) return 'Не удалось записать настройки в память';
     if (error === 201) return 'Точка доступа не найдена';
     return `Не удалось подключиться (код ${error})`;
+  }
+
+  function setWifiStatus(message, error = false) {
+    wifiStatus.textContent = message;
+    wifiStatus.classList.toggle('is-error', error);
+    wifiStatus.classList.remove('is-success');
+  }
+
+  /* Forgetting and switching off both take the connection down with them when
+     they land on the network this very page is reachable over, so both ask
+     first and say so. */
+  function editConfirmText(action, ssid, isActive) {
+    if (action === 'wifi.forget') {
+      return isActive
+        ? `Забыть сеть «${ssid}»? Устройство отключится от неё, и эта страница перестанет отвечать.`
+        : `Забыть сеть «${ssid}»? Пароль придётся вводить заново.`;
+    }
+    return `Отключиться от сети «${ssid}»? Устройство не вернётся к ней до перезагрузки, ` +
+      'и эта страница перестанет отвечать.';
+  }
+
+  function editSatisfied(wifi) {
+    if (!editPending) return false;
+    if (editPending.action === 'wifi.forget') {
+      return !wifi.saved.some((network) => network.ssid === editPending.ssid);
+    }
+    if (editPending.action === 'wifi.prioritize') {
+      return wifi.saved.length > 0 && wifi.saved[0].ssid === editPending.ssid;
+    }
+    return wifi.saved.some((network) => network.ssid === editPending.ssid && network.blocked);
+  }
+
+  function finishEdit(message, error) {
+    if (editTimer !== null) {
+      window.clearTimeout(editTimer);
+      editTimer = null;
+    }
+    editPending = null;
+    editRequestId = '';
+    setWifiStatus(message, error);
+  }
+
+  function editNetwork(action, ssid) {
+    if (!connected || editPending || !socket || socket.readyState !== WebSocket.OPEN) return;
+    if (lastWifi && lastWifi.save_pending) {
+      setWifiStatus('Идёт подключение — подождите', true);
+      return;
+    }
+    const isActive = wifiActive.textContent === ssid;
+    if (action !== 'wifi.prioritize' &&
+        !window.confirm(editConfirmText(action, ssid, isActive))) {
+      return;
+    }
+    requestSequence += 1;
+    editRequestId = `settings-${requestSequence}`;
+    setWifiStatus(action === 'wifi.prioritize' ? 'Меняем порядок…' : 'Выполняем…');
+    const frame = action === 'wifi.disconnect'
+      ? {type: 'command', id: editRequestId, action}
+      : {type: 'command', id: editRequestId, action, ssid};
+    editPending = {action, ssid};
+    /* Switching off usually takes this page down with it - the device leaves
+       the network the page arrived over - so a timeout here is expected and
+       only spoken about while the socket is still up. */
+    editTimer = window.setTimeout(() => {
+      editTimer = null;
+      if (editPending && connected) finishEdit('Устройство не выполнило команду', true);
+    }, 5000);
+    socket.send(JSON.stringify(frame));
   }
 
   function finishSave(message, error = false) {
@@ -123,13 +259,145 @@
     pendingRequestId = '';
     expectedSsid = '';
     submitButton.disabled = !connected;
+    // The form has done its job; leaving it open invites a second attempt at
+    // something that already worked.
+    if (!error) hideForm();
+  }
+
+  function showForm(ssid) {
+    chosenSsid = ssid;
+    form.hidden = false;
+    // Picked off the list of what is around, the name is shown rather than
+    // typed: there is nothing to get wrong about it.
+    wifiChosen.hidden = !ssid;
+    wifiChosenName.textContent = ssid || '—';
+    wifiSsidRow.hidden = Boolean(ssid);
+    if (!ssid) ssidInput.value = '';
+    passwordInput.value = '';
+    submitButton.disabled = !connected || saveInFlight;
+  }
+
+  function hideForm() {
+    chosenSsid = '';
+    form.hidden = true;
+    ssidInput.value = '';
+    passwordInput.value = '';
+  }
+
+  function signalLabel(rssi) {
+    const bars = rssi >= -55 ? 4 : rssi >= -67 ? 3 : rssi >= -78 ? 2 : 1;
+    return '▮'.repeat(bars) + '▯'.repeat(4 - bars);
+  }
+
+  function renderScan(networks) {
+    const rows = networks
+      .filter((network) => isObject(network) && typeof network.ssid === 'string' && network.ssid)
+      .map((network) => {
+        const row = document.createElement('li');
+        const pick = document.createElement('button');
+        pick.type = 'button';
+        pick.textContent = network.ssid;
+        pick.classList.add('network-name');
+        pick.addEventListener('click', () => showForm(network.ssid));
+        row.append(pick);
+        const rssi = Number.isSafeInteger(network.rssi) ? network.rssi : -100;
+        row.append(tag(`${signalLabel(rssi)} ${rssi} dBm`));
+        if (network.secure === false) row.append(tag('без пароля'));
+        return row;
+      });
+    // A hidden network never announces itself, so there has to be a way in that
+    // does not go through the list.
+    const other = document.createElement('li');
+    const otherPick = document.createElement('button');
+    otherPick.type = 'button';
+    otherPick.textContent = 'Другая сеть…';
+    otherPick.classList.add('network-name');
+    otherPick.addEventListener('click', () => showForm(''));
+    other.append(otherPick);
+    rows.push(other);
+    scanNetworks.replaceChildren(...rows);
+    scanNetworks.hidden = false;
+    scanEmpty.hidden = true;
+  }
+
+  function pollScan(attempt) {
+    scanTimer = window.setTimeout(() => {
+      scanTimer = null;
+      window.fetch('/api/wifi-scan')
+        .then((response) => response.json())
+        .then((body) => {
+          const state = safeString(isObject(body) ? body.state : '', 'failed');
+          if (state === 'scanning' && attempt < 15) {
+            pollScan(attempt + 1);
+            return;
+          }
+          scanning = false;
+          if (state !== 'done') {
+            scanEmpty.textContent = 'Не удалось найти сети';
+            return;
+          }
+          renderScan(Array.isArray(body.networks) ? body.networks : []);
+        })
+        .catch(() => {
+          scanning = false;
+          scanEmpty.textContent = 'Не удалось найти сети';
+        });
+    }, 700);
+  }
+
+  function startScan() {
+    if (scanning) return;
+    if (scanTimer !== null) {
+      window.clearTimeout(scanTimer);
+      scanTimer = null;
+    }
+    scanning = true;
+    scanNetworks.replaceChildren();
+    scanNetworks.hidden = true;
+    scanEmpty.textContent = 'Ищем сети…';
+    scanEmpty.hidden = false;
+    window.fetch('/api/wifi-scan', {method: 'POST'})
+      .then((response) => {
+        if (!response.ok) throw new Error('refused');
+        pollScan(0);
+      })
+      .catch(() => {
+        scanning = false;
+        scanEmpty.textContent = 'Не удалось запустить поиск';
+      });
+  }
+
+  function applyWifiMode(wifi) {
+    const wasApMode = apMode;
+    /* The setup AP exactly, not merely "not connected": while an attempt is
+       still running the radio is busy with it, and a scan would interrupt the
+       very connection it is meant to help set up. */
+    apMode = wifi.mode === 'ap_setup';
+    wifiScanBlock.hidden = !apMode;
+    wifiScan.hidden = !apMode;
+    // With no network the list of what is around is the way in, so there is
+    // nothing for "Добавить сеть" to open that is not already open.
+    wifiAdd.hidden = apMode;
+    if (apMode && !wasApMode) hideForm();
+    if (apMode && !scanRequested) {
+      scanRequested = true;
+      startScan();
+    }
+    if (!apMode) scanRequested = false;
   }
 
   function applyWifi(value) {
     const wifi = normalizeWifi(value);
+    lastWifi = wifi;
+    const editDone = editSatisfied(wifi);
     wifiActive.textContent = wifi.active_ssid || '—';
     wifiIp.textContent = wifi.ip || '—';
-    renderSavedNetworks(wifi.saved_ssids);
+    renderSavedNetworks(wifi);
+    applyWifiMode(wifi);
+    if (editDone) {
+      finishEdit('Готово', false);
+      return;
+    }
 
     if (!saveInFlight) {
       if (wifi.save_pending) {
@@ -162,7 +430,8 @@
       return;
     }
     if (saveAccepted && wifi.mode === 'sta_connected' &&
-        wifi.active_ssid === expectedSsid && wifi.saved_ssids.includes(expectedSsid)) {
+        wifi.active_ssid === expectedSsid &&
+        wifi.saved.some((network) => network.ssid === expectedSsid)) {
       finishSave('Сохранено');
     }
   }
@@ -172,7 +441,20 @@
   }
 
   function handleCommandResult(message) {
-    if (!saveInFlight || safeString(message.id) !== pendingRequestId) return;
+    const id = safeString(message.id);
+    if (editRequestId && id === editRequestId) {
+      // A refusal is final; an acceptance only means it was queued, so that
+      // one keeps waiting for the list to change.
+      if (message.ok !== true) {
+        finishEdit(safeString(message.error, 'Команда не выполнена'), true);
+      } else if (lastWifi && editSatisfied(lastWifi)) {
+        // Already the way it was asked to be - a reorder of a network that is
+        // first anyway. Nothing will change, so nothing will arrive to prove it.
+        finishEdit('Готово', false);
+      }
+      return;
+    }
+    if (!saveInFlight || id !== pendingRequestId) return;
     if (message.ok === true) {
       saveAccepted = true;
       return;
@@ -213,7 +495,8 @@
 
   function submitWifi(event) {
     event.preventDefault();
-    const ssid = ssidInput.value.trim();
+    // Picked off the list of what is around, or typed in when it was not there.
+    const ssid = chosenSsid || ssidInput.value.trim();
     const password = passwordInput.value;
     passwordInput.value = '';
     if (!connected || saveInFlight || !socket || socket.readyState !== WebSocket.OPEN) return;
@@ -551,6 +834,9 @@
   }
 
   form.addEventListener('submit', submitWifi);
+  wifiAdd.addEventListener('click', () => showForm(''));
+  wifiCancel.addEventListener('click', () => hideForm());
+  wifiScan.addEventListener('click', () => startScan());
   bindDeviceFields();
   yandexLink.addEventListener('click', () => sendYandexAction('begin'));
   yandexCancel.addEventListener('click', () => sendYandexAction('cancel'));

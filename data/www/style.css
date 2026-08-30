@@ -308,6 +308,14 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 
 .source-tab:hover:not(:disabled) { color: var(--text); }
 
+/* Shown but not startable: the device has no network, and the two sources that
+   stream from the internet have nothing to play. Kept on screen rather than
+   removed so the row does not reshuffle every time the Wi-Fi drops. */
+.source-tab.is-unavailable {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
 .source-tab.is-active {
   background: var(--surface);
   color: var(--text);
@@ -1136,9 +1144,52 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
   min-height: 32px;
   display: flex;
   align-items: center;
-  padding: .2rem .8rem;
+  /* The buttons sit at the right edge and wrap under the name on a narrow
+     phone rather than squeezing it into a column of single letters. */
+  flex-wrap: wrap;
+  gap: .3rem;
+  padding: .3rem .8rem;
   border-bottom: 1px solid var(--line-soft);
   font-size: .85rem;
+}
+
+/* The name takes the row and pushes everything else to the right edge. */
+.saved-networks .network-name {
+  flex: 1 1 8rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* A button in the list of networks around: it is a name to press, not a
+   control, so it keeps the row's own type rather than a button's. */
+button.network-name {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.network-name:hover { color: var(--accent); }
+
+.network-tag {
+  flex: 0 0 auto;
+  padding: .05rem .4rem;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--muted);
+  font-size: .72rem;
+  white-space: nowrap;
+}
+
+.saved-networks .secondary-button {
+  flex: 0 0 auto;
+  padding: .15rem .5rem;
+  font-size: .75rem;
 }
 
 .settings-form {

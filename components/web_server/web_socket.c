@@ -176,6 +176,11 @@ static void write_player(web_json_writer_t *writer,
         web_json_literal(writer, ",\"wifi_rssi_dbm\":");
         web_json_format(writer, "%d", (int)player->wifi_rssi_dbm);
     }
+    /* Here rather than in the Wi-Fi section because the player page reads this
+     * one and the settings page reads that one, and what it decides - whether
+     * the radio and the rotor can be started at all - belongs to the player. */
+    web_json_literal(writer, ",\"wifi_connected\":");
+    web_json_literal(writer, player->wifi_connected ? "true" : "false");
     /* Only for a source that has a library to be in, the way the signal is
      * only sent when there is one. A field always present would make the web
      * UI draw an empty heart on a radio station, offering a button that would
@@ -254,15 +259,17 @@ static void write_wifi(web_json_writer_t *writer,
     web_json_literal(writer, wifi->save_pending ? "true" : "false");
     web_json_literal(writer, ",\"last_error\":");
     web_json_format(writer, "%ld", (long)wifi->last_error);
-    web_json_literal(writer, ",\"saved_ssids\":[");
+    /* Objects rather than bare names: the order is the priority the device
+     * connects in, and each row also carries whether it is switched off. */
+    web_json_literal(writer, ",\"saved\":[");
     const uint8_t count = wifi->saved_count <= WIFI_SETTINGS_MAX_NETWORKS
                               ? wifi->saved_count
                               : WIFI_SETTINGS_MAX_NETWORKS;
     for (uint8_t index = 0U; index < count; ++index) {
-        if (index > 0U) {
-            web_json_literal(writer, ",");
-        }
+        web_json_literal(writer, index > 0U ? ",{\"ssid\":" : "{\"ssid\":");
         web_json_string(writer, wifi->saved_ssids[index]);
+        web_json_literal(writer, ",\"blocked\":");
+        web_json_literal(writer, wifi->saved_blocked[index] ? "true}" : "false}");
     }
     web_json_literal(writer, "]}");
 }
@@ -382,7 +389,8 @@ static bool wifi_state_equal(const web_socket_wifi_state_t *left,
                               ? left->saved_count
                               : WIFI_SETTINGS_MAX_NETWORKS;
     for (uint8_t index = 0U; index < count; ++index) {
-        if (strcmp(left->saved_ssids[index], right->saved_ssids[index]) != 0) {
+        if (left->saved_blocked[index] != right->saved_blocked[index] ||
+            strcmp(left->saved_ssids[index], right->saved_ssids[index]) != 0) {
             return false;
         }
     }
@@ -469,6 +477,7 @@ uint32_t web_socket_committed_revision(uint32_t current, bool complete)
 
 typedef struct {
     bool in_use;
+    web_command_kind_t kind;
     wifi_network_t network;
 } wifi_secret_slot_t;
 
@@ -521,6 +530,7 @@ static void capture_wifi_state(web_socket_wifi_state_t *output)
     for (uint8_t index = 0U; index < output->saved_count; ++index) {
         snprintf(output->saved_ssids[index], sizeof(output->saved_ssids[index]),
                  "%s", saved.ssids[index]);
+        output->saved_blocked[index] = saved.blocked[index];
     }
     secure_zero(&saved, sizeof(saved));
 }
@@ -544,7 +554,7 @@ static void capture_settings_state(web_socket_settings_state_t *output)
     secure_zero(&settings, sizeof(settings));
 }
 
-static int wifi_secret_acquire(const wifi_network_t *network)
+static int wifi_secret_acquire(web_command_kind_t kind, const wifi_network_t *network)
 {
     int slot = -1;
     taskENTER_CRITICAL(&s_state_lock);
@@ -552,6 +562,7 @@ static int wifi_secret_acquire(const wifi_network_t *network)
         for (size_t index = 0U; index < WEB_SOCKET_WIFI_QUEUE_LENGTH; ++index) {
             if (!s_wifi_secrets[index].in_use) {
                 s_wifi_secrets[index].in_use = true;
+                s_wifi_secrets[index].kind = kind;
                 s_wifi_secrets[index].network = *network;
                 s_wifi_command_busy = true;
                 slot = (int)index;
@@ -886,15 +897,31 @@ static void wifi_worker_task(void *context)
             wifi_command_finish();
             continue;
         }
-        const esp_err_t err = wifi_provisioning_save_network(
-            s_wifi_secrets[slot].network.ssid,
-            s_wifi_secrets[slot].network.password);
+        const web_command_kind_t kind = s_wifi_secrets[slot].kind;
+        esp_err_t err;
+        switch (kind) {
+        case WEB_COMMAND_WIFI_FORGET:
+            err = wifi_provisioning_forget_network(s_wifi_secrets[slot].network.ssid);
+            break;
+        case WEB_COMMAND_WIFI_PRIORITIZE:
+            err = wifi_provisioning_prioritize_network(s_wifi_secrets[slot].network.ssid);
+            break;
+        case WEB_COMMAND_WIFI_DISCONNECT:
+            err = wifi_provisioning_disconnect_active();
+            break;
+        default:
+            err = wifi_provisioning_save_network(s_wifi_secrets[slot].network.ssid,
+                                                 s_wifi_secrets[slot].network.password);
+            break;
+        }
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "Wi-Fi settings apply failed err=%s",
+            ESP_LOGW(TAG, "Wi-Fi command %d failed err=%s", (int)kind,
                      esp_err_to_name(err));
         }
         wifi_secret_release(slot);
-        if (err == ESP_OK) {
+        /* Only a save has a second half to wait for: the others are finished
+         * the moment the file is written or the radio has been told to move. */
+        if (err == ESP_OK && kind == WEB_COMMAND_WIFI_SAVE) {
             while (atomic_load_explicit(&s_running, memory_order_acquire) &&
                    wifi_provisioning_status().save_pending) {
                 vTaskDelay(pdMS_TO_TICKS(100));
@@ -976,7 +1003,7 @@ static void broadcaster_task(void *context)
     vTaskDelete(NULL);
 }
 
-bool web_socket_queue_wifi(const wifi_network_t *network)
+bool web_socket_queue_wifi(web_command_kind_t kind, const wifi_network_t *network)
 {
     if (network == NULL ||
         !atomic_load_explicit(&s_running, memory_order_acquire)) {
@@ -988,7 +1015,7 @@ bool web_socket_queue_wifi(const wifi_network_t *network)
         atomic_fetch_sub_explicit(&s_wifi_posters, 1U, memory_order_acq_rel);
         return false;
     }
-    const int slot = wifi_secret_acquire(network);
+    const int slot = wifi_secret_acquire(kind, network);
     bool queued = false;
     if (slot >= 0) {
         const uint8_t slot_index = (uint8_t)slot;
@@ -1062,8 +1089,8 @@ static esp_err_t handle_text_frame(httpd_req_t *request, uint8_t *payload,
         request_id = command.request_id;
         if (command.kind == WEB_COMMAND_PLAYER) {
             accepted = player_control_post(&command.player);
-        } else if (command.kind == WEB_COMMAND_WIFI_SAVE) {
-            accepted = web_socket_queue_wifi(&command.wifi);
+        } else {
+            accepted = web_socket_queue_wifi(command.kind, &command.wifi);
         }
         error = accepted ? "" : "Устройство занято";
     }

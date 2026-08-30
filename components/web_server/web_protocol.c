@@ -806,17 +806,41 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
 static bool parse_wifi_action(const cJSON *root, uint32_t fields,
                               const char *action, web_command_t *parsed)
 {
-    if (strcmp(action, "wifi.save") != 0 ||
-        fields != (COMMON_FIELDS | FIELD_SSID | FIELD_PASSWORD)) {
+    if (strcmp(action, "wifi.save") == 0) {
+        if (fields != (COMMON_FIELDS | FIELD_SSID | FIELD_PASSWORD)) {
+            return false;
+        }
+        const cJSON *ssid = object_item(root, "ssid");
+        const cJSON *password = object_item(root, "password");
+        if (!json_string(ssid, WIFI_SETTINGS_SSID_MAX_LEN, false) ||
+            !cJSON_IsString(password)) {
+            return false;
+        }
+        parsed->kind = WEB_COMMAND_WIFI_SAVE;
+        memcpy(parsed->wifi.ssid, ssid->valuestring, strlen(ssid->valuestring) + 1U);
+        return true;
+    }
+    /* Which network to switch off is not asked: it is whichever one is
+     * carrying the connection, and only the device knows that for certain. */
+    if (strcmp(action, "wifi.disconnect") == 0) {
+        if (fields != COMMON_FIELDS) {
+            return false;
+        }
+        parsed->kind = WEB_COMMAND_WIFI_DISCONNECT;
+        return true;
+    }
+    const bool forget = strcmp(action, "wifi.forget") == 0;
+    if (!forget && strcmp(action, "wifi.prioritize") != 0) {
+        return false;
+    }
+    if (fields != (COMMON_FIELDS | FIELD_SSID)) {
         return false;
     }
     const cJSON *ssid = object_item(root, "ssid");
-    const cJSON *password = object_item(root, "password");
-    if (!json_string(ssid, WIFI_SETTINGS_SSID_MAX_LEN, false) ||
-        !cJSON_IsString(password)) {
+    if (!json_string(ssid, WIFI_SETTINGS_SSID_MAX_LEN, false)) {
         return false;
     }
-    parsed->kind = WEB_COMMAND_WIFI_SAVE;
+    parsed->kind = forget ? WEB_COMMAND_WIFI_FORGET : WEB_COMMAND_WIFI_PRIORITIZE;
     memcpy(parsed->wifi.ssid, ssid->valuestring, strlen(ssid->valuestring) + 1U);
     return true;
 }

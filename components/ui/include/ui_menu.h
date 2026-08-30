@@ -41,6 +41,14 @@ void ui_menu_init(ui_menu_state_t *state);
 void ui_menu_set_yandex_visible(ui_menu_state_t *state, bool visible);
 bool ui_menu_yandex_visible(const ui_menu_state_t *state);
 
+/* Whether the row can be started right now, as opposed to whether it is on the
+ * screen at all. Two sources need a network and are useless without one; the
+ * row stays, drawn dim, because a row that disappeared when the Wi-Fi dropped
+ * would move everything under it and leave the visitor wondering what they had
+ * lost. The build's own answer is checked first: a row that is not there
+ * cannot be enabled. */
+bool ui_menu_item_is_enabled(ui_menu_item_t item, bool yandex_visible, bool wifi_connected);
+
 /* The two home screens draw a run of rows; the model stores items. These
  * convert between them with the hidden items taken out, so neither screen has
  * to know which item that is. A hidden item has no position and reports 0. */

@@ -5,6 +5,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void wifi_settings_secure_zero(void *memory, size_t size)
+{
+    volatile unsigned char *bytes = memory;
+    while (size-- > 0U) {
+        *bytes++ = 0U;
+    }
+}
+
 #ifdef ESP_PLATFORM
 #include <errno.h>
 #include <stdio.h>
@@ -41,14 +49,6 @@
 
 static const char *TAG = "wifi_settings";
 static bool s_storage_mounted;
-
-static void wifi_settings_secure_zero(void *memory, size_t size)
-{
-    volatile unsigned char *bytes = memory;
-    while (size-- > 0U) {
-        *bytes++ = 0U;
-    }
-}
 
 static void wifi_settings_wipe_json(cJSON *item)
 {
@@ -114,6 +114,51 @@ wifi_settings_result_t wifi_settings_upsert(wifi_settings_t *settings, const cha
     strcpy(network->ssid, ssid);
     strcpy(network->password, password);
     return WIFI_SETTINGS_OK;
+}
+
+uint8_t wifi_settings_index_of(const wifi_settings_t *settings, const char *ssid)
+{
+    if (settings == NULL || ssid == NULL || settings->count > WIFI_SETTINGS_MAX_NETWORKS) {
+        return WIFI_SETTINGS_MAX_NETWORKS;
+    }
+    for (uint8_t index = 0; index < settings->count; ++index) {
+        if (strcmp(settings->networks[index].ssid, ssid) == 0) {
+            return index;
+        }
+    }
+    return WIFI_SETTINGS_MAX_NETWORKS;
+}
+
+bool wifi_settings_remove(wifi_settings_t *settings, const char *ssid)
+{
+    const uint8_t index = wifi_settings_index_of(settings, ssid);
+    if (index == WIFI_SETTINGS_MAX_NETWORKS) {
+        return false;
+    }
+    for (uint8_t slot = (uint8_t)(index + 1U); slot < settings->count; ++slot) {
+        settings->networks[slot - 1U] = settings->networks[slot];
+    }
+    --settings->count;
+    /* The slot the list no longer counts still holds a copy of a password, and
+     * the whole structure gets copied around by value. */
+    wifi_settings_secure_zero(&settings->networks[settings->count],
+                              sizeof(settings->networks[0]));
+    return true;
+}
+
+bool wifi_settings_promote(wifi_settings_t *settings, const char *ssid)
+{
+    const uint8_t index = wifi_settings_index_of(settings, ssid);
+    if (index == WIFI_SETTINGS_MAX_NETWORKS) {
+        return false;
+    }
+    wifi_network_t promoted = settings->networks[index];
+    for (uint8_t slot = index; slot > 0U; --slot) {
+        settings->networks[slot] = settings->networks[slot - 1U];
+    }
+    settings->networks[0] = promoted;
+    wifi_settings_secure_zero(&promoted, sizeof(promoted));
+    return true;
 }
 
 #ifdef ESP_PLATFORM

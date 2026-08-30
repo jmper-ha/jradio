@@ -186,6 +186,33 @@ static void test_hiding_yandex_takes_its_row_out_of_the_run(void)
 #endif
 }
 
+/* Visible and startable are different questions. A source that needs the
+   network keeps its row when there is none - moving every row below it would
+   be a worse answer than a dim one - but it cannot be started. */
+static void test_network_sources_need_a_network(void)
+{
+    assert(!ui_menu_item_is_enabled(UI_MENU_ITEM_INTERNET_RADIO, true, false));
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_INTERNET_RADIO, true));
+    assert(ui_menu_item_is_enabled(UI_MENU_ITEM_INTERNET_RADIO, true, true));
+
+    /* Settings is how the network gets set up again, so it is never the row
+       that goes dim. */
+    assert(ui_menu_item_is_enabled(UI_MENU_ITEM_SETTINGS, true, false));
+
+    if (ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, true)) {
+        assert(!ui_menu_item_is_enabled(UI_MENU_ITEM_YANDEX_MUSIC, true, false));
+        assert(ui_menu_item_is_enabled(UI_MENU_ITEM_YANDEX_MUSIC, true, true));
+        /* Switched off in Settings beats every other answer: there is no row. */
+        assert(!ui_menu_item_is_enabled(UI_MENU_ITEM_YANDEX_MUSIC, false, true));
+    }
+    if (ui_menu_item_is_visible(UI_MENU_ITEM_USB_FILES, true)) {
+        assert(ui_menu_item_is_enabled(UI_MENU_ITEM_USB_FILES, true, false));
+    }
+    if (ui_menu_item_is_visible(UI_MENU_ITEM_SD_CARD, true)) {
+        assert(ui_menu_item_is_enabled(UI_MENU_ITEM_SD_CARD, true, false));
+    }
+}
+
 int main(void)
 {
     test_encoder_navigation_wraps();
@@ -195,6 +222,7 @@ int main(void)
     test_only_the_parts_this_build_has_get_a_row();
     test_a_two_row_home_screen_is_not_worth_showing();
     test_hiding_yandex_takes_its_row_out_of_the_run();
+    test_network_sources_need_a_network();
     puts("ui_menu tests passed");
     return 0;
 }

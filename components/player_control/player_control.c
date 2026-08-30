@@ -971,6 +971,8 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
         atomic_load_explicit(&s_rssi_valid, memory_order_acquire);
     snapshot->wifi_rssi_dbm =
         (int8_t)atomic_load_explicit(&s_rssi_dbm, memory_order_relaxed);
+    snapshot->wifi_connected =
+        wifi_provisioning_status().mode == WIFI_PROVISIONING_STA_CONNECTED;
 
     if (audio_source_is_files(snapshot->active_source)) {
         file_player_status_t usb_status;

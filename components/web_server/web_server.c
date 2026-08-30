@@ -510,7 +510,7 @@ static esp_err_t web_server_wifi_post(httpd_req_t *request)
         httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "SSID or password is invalid");
         return ESP_FAIL;
     }
-    const bool queued = web_socket_queue_wifi(&network);
+    const bool queued = web_socket_queue_wifi(WEB_COMMAND_WIFI_SAVE, &network);
     web_server_secure_zero(&network, sizeof(network));
     if (!queued) {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
@@ -519,6 +519,87 @@ static esp_err_t web_server_wifi_post(httpd_req_t *request)
     }
     httpd_resp_set_status(request, "202 Accepted");
     return httpd_resp_send(request, NULL, 0);
+}
+
+/* Looking for a network to join. Two calls rather than one because a scan takes
+ * a few seconds and esp_http_server has a single worker task: a handler that
+ * waited for the result would hold up the cover, the track position and every
+ * other request behind it. The POST starts one, the GET asks whether it is done.
+ *
+ * Both refuse unless the setup AP is up. That is the only mode where a scan is
+ * free: nothing is playing, and the channel hopping it does costs nothing but
+ * a short stall of this very page. */
+static esp_err_t web_server_wifi_scan_post(httpd_req_t *request)
+{
+    const esp_err_t err = wifi_provisioning_scan_start();
+    if (err == ESP_ERR_INVALID_STATE) {
+        // esp_http_server has no 409 in httpd_err_code_t, and this is not one
+        // of the shapes httpd_resp_send_err() knows how to explain anyway.
+        httpd_resp_set_status(request, "409 Conflict");
+        httpd_resp_set_type(request, "application/json; charset=utf-8");
+        return httpd_resp_sendstr(request, "{\"state\":\"unavailable\"}");
+    }
+    if (err != ESP_OK) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Scan failed to start");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_status(request, "202 Accepted");
+    return httpd_resp_send(request, NULL, 0);
+}
+
+static esp_err_t web_server_wifi_scan_get(httpd_req_t *request)
+{
+    /* Handlers run one at a time on the single server task, so this is a
+     * static rather than 840 bytes of a 6 KB stack. */
+    static wifi_provisioning_scan_entry_t entries[WIFI_PROVISIONING_SCAN_MAX];
+    uint8_t count = 0U;
+    const esp_err_t err = wifi_provisioning_scan_result(entries, (uint8_t)(sizeof(entries) /
+                                                                          sizeof(entries[0])),
+                                                        &count);
+    httpd_resp_set_type(request, "application/json; charset=utf-8");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    web_json_writer_t writer;
+    web_json_init(&writer, s_file_chunk_buffer, sizeof(s_file_chunk_buffer),
+                  sizeof(s_file_chunk_buffer));
+    if (err != ESP_OK) {
+        /* "idle" is not an error: nothing has been asked for yet, or the last
+           answer has already been handed over. The page presses the button. */
+        const char *state = err == ESP_ERR_NOT_FINISHED  ? "scanning"
+                            : err == ESP_ERR_INVALID_STATE ? "idle"
+                                                           : "failed";
+        web_json_literal(&writer, "{\"state\":");
+        web_json_string(&writer, state);
+        web_json_literal(&writer, ",\"networks\":[]}");
+        return web_json_valid(&writer)
+                   ? httpd_resp_send(request, s_file_chunk_buffer, web_json_length(&writer))
+                   : ESP_FAIL;
+    }
+    web_json_literal(&writer, "{\"state\":\"done\",\"networks\":[");
+    for (uint8_t index = 0U; index < count; ++index) {
+        web_json_literal(&writer, index > 0U ? ",{\"ssid\":" : "{\"ssid\":");
+        web_json_string(&writer, entries[index].ssid);
+        web_json_literal(&writer, ",\"rssi\":");
+        web_json_format(&writer, "%d", (int)entries[index].rssi);
+        web_json_literal(&writer, ",\"secure\":");
+        web_json_literal(&writer, entries[index].secure ? "true}" : "false}");
+        if (!web_json_valid(&writer)) return ESP_FAIL;
+        /* Every character of a name can escape to six bytes, so flush before
+           the next one might not fit - the same rule the station list uses. */
+        if (web_json_length(&writer) + (WIFI_SETTINGS_SSID_MAX_LEN * 6U) + 48U >
+            sizeof(s_file_chunk_buffer)) {
+            const esp_err_t sent = httpd_resp_send_chunk(request, s_file_chunk_buffer,
+                                                         web_json_length(&writer));
+            if (sent != ESP_OK) return sent;
+            web_json_init(&writer, s_file_chunk_buffer, sizeof(s_file_chunk_buffer),
+                          sizeof(s_file_chunk_buffer));
+        }
+    }
+    web_json_literal(&writer, "]}");
+    if (!web_json_valid(&writer)) return ESP_FAIL;
+    const esp_err_t sent = httpd_resp_send_chunk(request, s_file_chunk_buffer,
+                                                 web_json_length(&writer));
+    if (sent != ESP_OK) return sent;
+    return httpd_resp_send_chunk(request, NULL, 0);
 }
 
 /* The USB listing goes over REST rather than the WebSocket because a directory
@@ -1445,6 +1526,8 @@ esp_err_t web_server_start(void)
             {.uri = "/playlist.js", .method = HTTP_GET, .handler = web_server_playlist_js_get},
             {.uri = "/api/status", .method = HTTP_GET, .handler = web_server_status_get},
             {.uri = "/api/wifi", .method = HTTP_POST, .handler = web_server_wifi_post},
+            {.uri = "/api/wifi-scan", .method = HTTP_POST, .handler = web_server_wifi_scan_post},
+            {.uri = "/api/wifi-scan", .method = HTTP_GET, .handler = web_server_wifi_scan_get},
             {.uri = "/api/files", .method = HTTP_GET, .handler = web_server_files_get},
             {.uri = "/api/stations", .method = HTTP_GET, .handler = web_server_stations_get},
             {.uri = "/api/playlist", .method = HTTP_GET, .handler = web_server_playlist_get},

@@ -146,14 +146,32 @@
             <p id="saved-networks-empty" class="empty-state">Сохранённых сетей пока нет</p>
           </div>
 
-          <form id="wifi-form" class="settings-form">
-            <label for="wifi-ssid">Название сети</label>
-            <input id="wifi-ssid" name="ssid" type="text" maxlength="32" autocomplete="off" required>
+          <div id="wifi-scan-block" class="device-group" hidden>
+            <h3>Сети вокруг</h3>
+            <ul id="scan-networks" class="saved-networks"></ul>
+            <p id="scan-empty" class="empty-state">Список пуст</p>
+          </div>
+
+          <div class="settings-actions">
+            <button id="wifi-add" class="secondary-button" type="button">Добавить сеть</button>
+            <button id="wifi-scan" class="secondary-button" type="button" hidden>Обновить список</button>
+          </div>
+
+          <form id="wifi-form" class="settings-form" hidden>
+            <p id="wifi-chosen" class="field-note" hidden>Сеть: <strong id="wifi-chosen-name">—</strong></p>
+            <div id="wifi-ssid-row" class="settings-form" hidden>
+              <label for="wifi-ssid">Название сети</label>
+              <input id="wifi-ssid" name="ssid" type="text" maxlength="32" autocomplete="off">
+            </div>
             <label for="wifi-password">Пароль</label>
             <input id="wifi-password" name="password" type="password" maxlength="64" autocomplete="new-password">
-            <button id="wifi-submit" class="primary-button" type="submit" disabled>Проверить и сохранить</button>
+            <div class="settings-actions">
+              <button id="wifi-submit" class="primary-button" type="submit" disabled>Проверить и сохранить</button>
+              <button id="wifi-cancel" class="secondary-button" type="button">Отмена</button>
+            </div>
           </form>
-          <p class="field-note">Пароль отправляется устройству один раз и сразу удаляется из поля.</p>
+          <p class="field-note">Пароль отправляется устройству один раз и сразу удаляется из поля.
+            Сети вокруг устройство ищет только пока не подключено ни к одной из них.</p>
         </section>
 
         <section class="card" aria-labelledby="yandex-title">

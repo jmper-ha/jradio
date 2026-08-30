@@ -331,6 +331,47 @@ static void test_accepts_bounded_wifi_credentials(void)
     web_protocol_clear_command(&command);
 }
 
+/* The three edits to a saved network carry a name and nothing else - the
+   device already holds the password and has never sent it here. */
+static void test_accepts_edits_to_a_saved_network(void)
+{
+    web_command_t command;
+
+    assert(parse("{\"type\":\"command\",\"id\":\"60\",\"action\":\"wifi.forget\","
+                 "\"ssid\":\"home\"}",
+                 &command) == WEB_PROTOCOL_OK);
+    assert(command.kind == WEB_COMMAND_WIFI_FORGET);
+    assert(strcmp(command.wifi.ssid, "home") == 0);
+    assert(strcmp(command.wifi.password, "") == 0);
+
+    assert(parse("{\"type\":\"command\",\"id\":\"61\",\"action\":\"wifi.prioritize\","
+                 "\"ssid\":\"guest\"}",
+                 &command) == WEB_PROTOCOL_OK);
+    assert(command.kind == WEB_COMMAND_WIFI_PRIORITIZE);
+    assert(strcmp(command.wifi.ssid, "guest") == 0);
+
+    /* Which network to switch off is not asked: it is whichever one is
+       carrying the connection. */
+    assert(parse("{\"type\":\"command\",\"id\":\"62\",\"action\":\"wifi.disconnect\"}",
+                 &command) == WEB_PROTOCOL_OK);
+    assert(command.kind == WEB_COMMAND_WIFI_DISCONNECT);
+    assert(strcmp(command.wifi.ssid, "") == 0);
+
+    const char *const invalid[] = {
+        // A password has no place in any of them.
+        "{\"type\":\"command\",\"id\":\"1\",\"action\":\"wifi.forget\","
+        "\"ssid\":\"home\",\"password\":\"secret\"}",
+        "{\"type\":\"command\",\"id\":\"1\",\"action\":\"wifi.forget\"}",
+        "{\"type\":\"command\",\"id\":\"1\",\"action\":\"wifi.forget\",\"ssid\":\"\"}",
+        "{\"type\":\"command\",\"id\":\"1\",\"action\":\"wifi.prioritize\",\"ssid\":7}",
+        "{\"type\":\"command\",\"id\":\"1\",\"action\":\"wifi.disconnect\","
+        "\"ssid\":\"home\"}",
+    };
+    for (size_t index = 0; index < sizeof(invalid) / sizeof(invalid[0]); ++index) {
+        assert(parse(invalid[index], &command) == WEB_PROTOCOL_INVALID);
+    }
+}
+
 static void test_rejects_bad_envelope_and_exact_schema_violations(void)
 {
     const char *invalid[] = {
@@ -635,6 +676,7 @@ int main(void)
     test_accepts_the_track_keys();
     test_accepts_the_seek_command();
     test_accepts_bounded_wifi_credentials();
+    test_accepts_edits_to_a_saved_network();
     test_rejects_bad_envelope_and_exact_schema_violations();
     test_rejects_invalid_request_ids();
     test_rejects_excessive_depth_before_cjson();

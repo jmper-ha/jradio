@@ -152,6 +152,9 @@
       bitrate_kbps: safeInteger(player.bitrate_kbps),
       sample_rate_hz: safeInteger(player.sample_rate_hz),
       error: safeString(player.error),
+      // What needs a network: with none, the two sources that stream from the
+      // internet are shown but cannot be started, as on the device itself.
+      wifi_connected: player.wifi_connected === true,
     };
     if (Number.isInteger(player.wifi_rssi_dbm)) {
       normalized.wifi_rssi_dbm = player.wifi_rssi_dbm;
@@ -183,7 +186,15 @@
 
   function updateControlAvailability() {
     document.querySelectorAll('button[data-command], #play-toggle').forEach((button) => {
-      button.disabled = !state.connected;
+      /* Two of them stream from the internet and have nothing to play without
+         one. Marked separately from a closed socket: that is this page losing
+         the device, this is the device having no network. */
+      const needsNetwork = button.dataset.source === 'internet_radio' ||
+                           button.dataset.source === 'yandex';
+      const noNetwork = needsNetwork && state.player.wifi_connected !== true;
+      button.disabled = !state.connected || noNetwork;
+      button.classList.toggle('is-unavailable', noNetwork);
+      button.title = noNetwork ? 'Нет сети' : '';
     });
   }
 

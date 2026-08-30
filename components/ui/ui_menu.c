@@ -52,6 +52,18 @@ bool ui_menu_item_is_visible(ui_menu_item_t item, bool yandex_visible)
     return item != UI_MENU_ITEM_YANDEX_MUSIC || yandex_visible;
 }
 
+bool ui_menu_item_is_enabled(ui_menu_item_t item, bool yandex_visible, bool wifi_connected)
+{
+    if (!ui_menu_item_is_visible(item, yandex_visible)) return false;
+    /* Both of these are streams off the internet and there is nothing they can
+     * do without one. Everything else - the drive, the card, Settings - works
+     * with the network down. */
+    if (item == UI_MENU_ITEM_INTERNET_RADIO || item == UI_MENU_ITEM_YANDEX_MUSIC) {
+        return wifi_connected;
+    }
+    return true;
+}
+
 bool ui_menu_home_screen_needed(uint8_t visible_count)
 {
     return visible_count > 2U;

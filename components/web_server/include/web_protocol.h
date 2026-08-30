@@ -35,6 +35,11 @@ typedef enum {
 typedef enum {
     WEB_COMMAND_PLAYER = 0,
     WEB_COMMAND_WIFI_SAVE,
+    /* Edits to an already saved network. Only the name travels: the device
+     * still holds the password and the page has never been shown it. */
+    WEB_COMMAND_WIFI_FORGET,
+    WEB_COMMAND_WIFI_PRIORITIZE,
+    WEB_COMMAND_WIFI_DISCONNECT,
 } web_command_kind_t;
 
 typedef struct {

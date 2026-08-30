@@ -68,6 +68,9 @@ typedef struct {
     uint8_t saved_count;
     char saved_ssids[WIFI_SETTINGS_MAX_NETWORKS]
                     [WIFI_SETTINGS_SSID_MAX_LEN + 1U];
+    /* Switched off from this page until the device reboots. Travels with the
+     * list because the button that undoes it sits on the same row. */
+    bool saved_blocked[WIFI_SETTINGS_MAX_NETWORKS];
 } web_socket_wifi_state_t;
 
 /* The device settings as they travel to the browser.
@@ -113,7 +116,11 @@ uint32_t web_socket_committed_revision(uint32_t current, bool complete);
 
 esp_err_t web_socket_start(httpd_handle_t server);
 esp_err_t web_socket_stop(void);
-bool web_socket_queue_wifi(const wifi_network_t *network);
+/* Hands a Wi-Fi command to the worker task. None of them belong on the HTTP
+ * server's own task: saving waits for a connection, forgetting and reordering
+ * write LittleFS, and switching a network off restarts the radio - and that
+ * task is the only one the server has. */
+bool web_socket_queue_wifi(web_command_kind_t kind, const wifi_network_t *network);
 #endif
 
 #ifdef __cplusplus

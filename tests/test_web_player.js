@@ -252,6 +252,9 @@ function player(title, rssi) {
     bitrate_kbps: 128,
     sample_rate_hz: 44100,
     error: '',
+    // The device is on a network unless a test says otherwise: without one the
+    // radio tab is deliberately unusable, which every other test would trip on.
+    wifi_connected: true,
   };
   if (rssi !== undefined) value.wifi_rssi_dbm = rssi;
   return value;
@@ -676,6 +679,24 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
   assert.deepEqual(JSON.parse(burst.at(-1).options.body),
                    {field: 'volume', value: 99});
   assert.equal(elements['#volume-input'].value, '99');
+
+  // No network: the two sources that stream from the internet stay on the
+  // strip and stop being pressable, the same answer the device's own screen
+  // gives. Removing them would reshuffle the strip every time the Wi-Fi drops.
+  sendEvent(second, {
+    type: 'player.update', revision: 900,
+    player: {...player('Радио'), wifi_connected: false},
+  });
+  const tabOf = (id) => elements['#source-tabs'].children.find(
+    (child) => child.dataset && child.dataset.source === id);
+  assert.equal(tabOf('internet_radio').disabled, true);
+  assert.ok(tabOf('internet_radio').classList.values.has('is-unavailable'));
+  sendEvent(second, {
+    type: 'player.update', revision: 901,
+    player: {...player('Радио'), wifi_connected: true},
+  });
+  assert.equal(tabOf('internet_radio').disabled, false);
+  assert.ok(!tabOf('internet_radio').classList.values.has('is-unavailable'));
 
   second.emit('close');
   assert.equal(elements['#socket-state'].textContent, 'Нет связи');

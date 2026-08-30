@@ -1,10 +1,11 @@
 #include "wifi_provisioning.h"
 
 #include <stddef.h>
+#include <string.h>
 
 #ifdef ESP_PLATFORM
 #include <stdio.h>
-#include <string.h>
+#include <stdlib.h>
 
 #include "esp_check.h"
 #include "esp_event.h"
@@ -19,6 +20,9 @@
 
 #define WIFI_PROVISIONING_RETRIES_PER_NETWORK 3
 #define WIFI_RECONNECT_TASK_STACK_SIZE 4096
+/* A scan of every channel takes a few seconds; well past that it is not slow,
+ * it is stuck, and the page needs an answer rather than another "wait". */
+#define WIFI_SCAN_TIMEOUT_MS 15000
 
 static const char *TAG = "wifi_mgr";
 
@@ -26,7 +30,9 @@ static bool s_initialized;
 static bool s_started;
 static bool s_wifi_started;
 static bool s_pending_commit;
-static uint8_t s_network_index;
+/* The network the current attempt belongs to, by name. */
+static char s_current_ssid[WIFI_SETTINGS_SSID_MAX_LEN + 1U];
+static wifi_blocked_ssids_t s_blocked;
 static uint8_t s_retry_count;
 static wifi_settings_t s_settings;
 static wifi_settings_t s_committed_settings;
@@ -42,6 +48,16 @@ static QueueHandle_t s_reconnect_queue;
 static TaskHandle_t s_reconnect_task;
 static bool s_disconnect_pending;
 static uint8_t s_disconnect_pending_reason;
+
+typedef enum {
+    WIFI_SCAN_IDLE = 0,
+    WIFI_SCAN_RUNNING,
+    WIFI_SCAN_DONE,
+} wifi_scan_state_t;
+
+static wifi_scan_state_t s_scan_state;
+static TickType_t s_scan_started_tick;
+static portMUX_TYPE s_scan_lock = portMUX_INITIALIZER_UNLOCKED;
 
 #define WIFI_RECONNECT_TASK_POLL_MS 1000
 
@@ -113,6 +129,18 @@ static void status_set_error(int32_t error)
     taskEXIT_CRITICAL(&s_status_lock);
 }
 
+/* snprintf inside a critical section is not worth the code it drags in, and
+ * every SSID here is already known to fit. */
+static void copy_ssid(char *destination, const char *source)
+{
+    size_t length = 0U;
+    while (source != NULL && length < WIFI_SETTINGS_SSID_MAX_LEN && source[length] != '\0') {
+        destination[length] = source[length];
+        ++length;
+    }
+    destination[length] = '\0';
+}
+
 static size_t bounded_length(const char *value, size_t maximum)
 {
     size_t length = 0;
@@ -172,7 +200,17 @@ static esp_err_t wifi_start_ap_setup(void)
     };
     memcpy(config.ap.ssid, ssid, strlen(ssid));
     config.ap.ssid_len = strlen(ssid);
-    ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_AP), TAG, "set AP mode");
+    /* APSTA rather than AP: esp_wifi_scan_start() refuses without a station
+     * interface, and the setup page's list of surrounding networks is the only
+     * reason the station side is up here. Nothing connects with it - scanning
+     * is offered only in this mode, where there is no stream to interrupt. */
+    ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_APSTA), TAG, "set AP mode");
+    /* And the station half is emptied on the way in: it still holds the
+     * credentials of the network that was just left, and nothing here is going
+     * to connect with them. The station side exists only so that
+     * esp_wifi_scan_start() has an interface to work on. */
+    wifi_config_t station = {0};
+    ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &station), TAG, "clear station");
     ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_AP, &config), TAG, "configure AP");
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "start AP");
     s_wifi_started = true;
@@ -180,14 +218,38 @@ static esp_err_t wifi_start_ap_setup(void)
     return ESP_OK;
 }
 
+/* Makes the next network to try the current one and reports whether there was
+ * one. False is the caller's cue to raise the setup AP: either the list is
+ * empty or everything left in it is switched off until the next boot. */
+static bool wifi_select_next_network(bool from_start)
+{
+    wifi_settings_t settings;
+    bool selected = false;
+    taskENTER_CRITICAL(&s_settings_lock);
+    settings = s_settings;
+    const uint8_t index = wifi_provisioning_next_network(
+        &settings, &s_blocked, from_start ? NULL : s_current_ssid);
+    if (index != WIFI_SETTINGS_MAX_NETWORKS) {
+        copy_ssid(s_current_ssid, settings.networks[index].ssid);
+        selected = true;
+    } else {
+        s_current_ssid[0] = '\0';
+    }
+    s_retry_count = 0;
+    taskEXIT_CRITICAL(&s_settings_lock);
+    secure_zero(&settings, sizeof(settings));
+    return selected;
+}
+
 static esp_err_t wifi_configure_current_network(void)
 {
     wifi_settings_t settings = wifi_provisioning_saved_networks();
+    char current[WIFI_SETTINGS_SSID_MAX_LEN + 1U];
     taskENTER_CRITICAL(&s_settings_lock);
-    const uint8_t network_index = s_network_index;
+    copy_ssid(current, s_current_ssid);
     const uint8_t retry_count = s_retry_count;
     taskEXIT_CRITICAL(&s_settings_lock);
-    const uint8_t index = wifi_provisioning_network_index(&settings, network_index);
+    const uint8_t index = wifi_settings_index_of(&settings, current);
     if (index == WIFI_SETTINGS_MAX_NETWORKS) {
         secure_zero(&settings, sizeof(settings));
         return ESP_ERR_NOT_FOUND;
@@ -219,18 +281,29 @@ static esp_err_t wifi_connect_current_network(void)
     return esp_wifi_connect();
 }
 
-static esp_err_t wifi_start_station(void)
+static esp_err_t wifi_start_current_station(void)
 {
-    taskENTER_CRITICAL(&s_settings_lock);
-    s_network_index = 0;
-    s_retry_count = 0;
-    taskEXIT_CRITICAL(&s_settings_lock);
     ESP_RETURN_ON_ERROR(wifi_stop_if_running(), TAG, "stop Wi-Fi before station");
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "set station mode");
     ESP_RETURN_ON_ERROR(wifi_configure_current_network(), TAG, "configure first station");
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "start station");
     s_wifi_started = true;
     return esp_wifi_connect();
+}
+
+/* The two ways the radio is put back to work, and both end at the setup AP
+ * when nothing is left to try: from the top of the list, and one past the
+ * network that has just been given up on. */
+static esp_err_t wifi_restart_from_top(void)
+{
+    return wifi_select_next_network(true) ? wifi_start_current_station()
+                                          : wifi_start_ap_setup();
+}
+
+static esp_err_t wifi_advance_to_next_network(void)
+{
+    return wifi_select_next_network(false) ? wifi_start_current_station()
+                                           : wifi_start_ap_setup();
 }
 
 static bool restore_pending_settings(int32_t error)
@@ -240,12 +313,11 @@ static bool restore_pending_settings(int32_t error)
     if (s_pending_commit) {
         s_settings = s_committed_settings;
         s_pending_commit = false;
-        // The reverted list can be shorter than the one s_network_index was
-        // chosen against (e.g. it pointed at a newly-added network that no
-        // longer exists after the revert); an out-of-range index would make
-        // every future reconnect attempt fail lookup with no way to recover.
-        if (s_network_index >= s_settings.count) {
-            s_network_index = 0;
+        // The reverted list no longer holds the network the attempt was for -
+        // it was the one being added. Forget the name so the next selection
+        // starts from the top instead of looking for something that is gone.
+        if (wifi_settings_index_of(&s_settings, s_current_ssid) == WIFI_SETTINGS_MAX_NETWORKS) {
+            s_current_ssid[0] = '\0';
             s_retry_count = 0;
         }
         restored = true;
@@ -352,39 +424,22 @@ static void wifi_reconnect_task(void *arg)
         if (pending_commit) {
             status_set_save(false, command.reason);
             ESP_LOGW(TAG, "pending Wi-Fi settings rejected; restoring committed settings");
-            if (restored.count > 0) {
-                (void)wifi_start_station();
-            } else {
-                (void)wifi_start_ap_setup();
-            }
+            // The reverted list no longer holds the network that was being
+            // added, so the walk has to start over rather than continue past a
+            // name that is gone.
+            taskENTER_CRITICAL(&s_settings_lock);
+            s_current_ssid[0] = '\0';
+            taskEXIT_CRITICAL(&s_settings_lock);
+            (void)wifi_restart_from_top();
             secure_zero(&restored, sizeof(restored));
             continue;
         }
         secure_zero(&restored, sizeof(restored));
 
-        taskENTER_CRITICAL(&s_settings_lock);
-        ++s_network_index;
-        s_retry_count = 0;
-        const uint8_t network_index = s_network_index;
-        taskEXIT_CRITICAL(&s_settings_lock);
-        wifi_settings_t settings = wifi_provisioning_saved_networks();
-        const bool have_next =
-            wifi_provisioning_network_index(&settings, network_index) !=
-            WIFI_SETTINGS_MAX_NETWORKS;
-        secure_zero(&settings, sizeof(settings));
-        if (have_next) {
-            ESP_LOGW(TAG, "moving to saved network=%u", (unsigned)network_index);
-            const esp_err_t err = wifi_connect_current_network();
-            if (err != ESP_OK) {
-                ESP_LOGE(TAG, "next station connection failed err=%s", esp_err_to_name(err));
-            }
-            continue;
-        }
-
-        ESP_LOGW(TAG, "all saved networks failed; starting setup AP");
-        const esp_err_t err = wifi_start_ap_setup();
+        ESP_LOGW(TAG, "network gave up; moving on");
+        const esp_err_t err = wifi_advance_to_next_network();
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "setup AP failed err=%s", esp_err_to_name(err));
+            ESP_LOGE(TAG, "moving to the next network failed err=%s", esp_err_to_name(err));
         }
     }
 }
@@ -412,6 +467,21 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         mark_disconnect_pending(disconnected->reason);
         ESP_LOGW(TAG, "Wi-Fi reconnect queue full; deferred to periodic poll");
     }
+}
+
+static void scan_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id,
+                               void *event_data)
+{
+    (void)arg;
+    (void)event_data;
+    if (event_base != WIFI_EVENT || event_id != WIFI_EVENT_SCAN_DONE) {
+        return;
+    }
+    taskENTER_CRITICAL(&s_scan_lock);
+    if (s_scan_state == WIFI_SCAN_RUNNING) {
+        s_scan_state = WIFI_SCAN_DONE;
+    }
+    taskEXIT_CRITICAL(&s_scan_lock);
 }
 
 static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id,
@@ -492,6 +562,9 @@ esp_err_t wifi_provisioning_init(void)
     ESP_RETURN_ON_ERROR(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
                                                     &wifi_event_handler, NULL),
                         TAG, "register Wi-Fi event handler");
+    ESP_RETURN_ON_ERROR(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_SCAN_DONE,
+                                                    &scan_event_handler, NULL),
+                        TAG, "register scan event handler");
     ESP_RETURN_ON_ERROR(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &ip_event_handler,
                                                     NULL),
                         TAG, "register IP event handler");
@@ -511,7 +584,8 @@ esp_err_t wifi_provisioning_start(void)
     s_settings = settings;
     s_committed_settings = settings;
     s_pending_commit = false;
-    s_network_index = 0;
+    s_blocked = (wifi_blocked_ssids_t){0};
+    s_current_ssid[0] = '\0';
     s_retry_count = 0;
     taskEXIT_CRITICAL(&s_settings_lock);
     status_set_save(false, 0);
@@ -519,7 +593,7 @@ esp_err_t wifi_provisioning_start(void)
     const esp_err_t result =
         wifi_provisioning_initial_mode(&settings) == WIFI_PROVISIONING_AP_SETUP
             ? wifi_start_ap_setup()
-            : wifi_start_station();
+            : wifi_restart_from_top();
     secure_zero(&settings, sizeof(settings));
     return result;
 }
@@ -536,6 +610,14 @@ wifi_provisioning_status_t wifi_provisioning_status(void)
 bool wifi_provisioning_get_rssi(int8_t *rssi)
 {
     if (rssi == NULL || !s_started) {
+        return false;
+    }
+    /* Asking a station that is not joined to anything is not free. While the
+     * setup AP is up the station interface exists - it is what scanning needs -
+     * and the driver answers every such question with "Haven't to connect to a
+     * suitable AP now!". This is asked once a second, which filled the log with
+     * one warning a second for as long as the device had no network. */
+    if (wifi_provisioning_status().mode != WIFI_PROVISIONING_STA_CONNECTED) {
         return false;
     }
     wifi_ap_record_t ap_info = {0};
@@ -562,7 +644,10 @@ wifi_provisioning_saved_ssids_t wifi_provisioning_committed_ssids(void)
     committed = s_committed_settings;
     taskEXIT_CRITICAL(&s_settings_lock);
     wifi_provisioning_saved_ssids_t output;
-    wifi_provisioning_extract_ssids(&committed, &output);
+    taskENTER_CRITICAL(&s_settings_lock);
+    const wifi_blocked_ssids_t blocked = s_blocked;
+    taskEXIT_CRITICAL(&s_settings_lock);
+    wifi_provisioning_extract_ssids(&committed, &blocked, &output);
     secure_zero(&committed, sizeof(committed));
     return output;
 }
@@ -584,13 +669,11 @@ esp_err_t wifi_provisioning_save_network(const char *ssid, const char *password)
     if (result == WIFI_SETTINGS_OK) {
         s_settings = updated;
         s_pending_commit = true;
-        s_network_index = 0;
-        for (uint8_t index = 0; index < updated.count; ++index) {
-            if (strcmp(updated.networks[index].ssid, ssid) == 0) {
-                s_network_index = index;
-                break;
-            }
-        }
+        /* Saving a network is also how the user takes it off the switched-off
+         * list: asking to connect to it is the opposite of the button that put
+         * it there. */
+        (void)wifi_blocked_remove(&s_blocked, ssid);
+        copy_ssid(s_current_ssid, ssid);
         s_retry_count = 0;
     }
     taskEXIT_CRITICAL(&s_settings_lock);
@@ -618,13 +701,7 @@ esp_err_t wifi_provisioning_save_network(const char *ssid, const char *password)
     if (operation != ESP_OK) {
         (void)restore_pending_settings((int32_t)operation);
         if (should_recover) {
-            bool have_committed_networks;
-            taskENTER_CRITICAL(&s_settings_lock);
-            have_committed_networks = s_committed_settings.count > 0U;
-            taskEXIT_CRITICAL(&s_settings_lock);
-            const esp_err_t recovery = have_committed_networks
-                                           ? wifi_start_station()
-                                           : wifi_start_ap_setup();
+            const esp_err_t recovery = wifi_restart_from_top();
             if (recovery != ESP_OK) {
                 ESP_LOGE(TAG, "restore previous Wi-Fi mode failed err=%s",
                          esp_err_to_name(recovery));
@@ -638,6 +715,244 @@ esp_err_t wifi_provisioning_save_network(const char *ssid, const char *password)
     return operation;
 }
 
+/* The three edits the settings page can make to the saved list. They share one
+ * shape: read the committed list, change the copy, write the file, and only
+ * then let the change into the state the reconnect task reads. Writing first
+ * means a failed write leaves nothing behind. */
+typedef enum {
+    WIFI_LIST_EDIT_FORGET = 0,
+    WIFI_LIST_EDIT_PROMOTE,
+} wifi_list_edit_t;
+
+static esp_err_t wifi_apply_list_edit(wifi_list_edit_t edit, const char *ssid)
+{
+    if (!s_initialized || ssid == NULL || ssid[0] == '\0') {
+        return ESP_ERR_INVALID_STATE;
+    }
+    wifi_settings_t updated;
+    taskENTER_CRITICAL(&s_settings_lock);
+    const bool busy = s_pending_commit;
+    updated = s_committed_settings;
+    taskEXIT_CRITICAL(&s_settings_lock);
+    /* A save that has not yet earned its IP would be rolled back onto the
+     * committed list, putting a network this edit removed straight back. */
+    if (busy) {
+        secure_zero(&updated, sizeof(updated));
+        return ESP_ERR_INVALID_STATE;
+    }
+    const bool changed = edit == WIFI_LIST_EDIT_FORGET ? wifi_settings_remove(&updated, ssid)
+                                                       : wifi_settings_promote(&updated, ssid);
+    if (!changed) {
+        secure_zero(&updated, sizeof(updated));
+        return ESP_ERR_NOT_FOUND;
+    }
+    const esp_err_t err = wifi_settings_save_atomic(&updated);
+    if (err == ESP_OK) {
+        taskENTER_CRITICAL(&s_settings_lock);
+        if (!s_pending_commit) {
+            s_settings = updated;
+            s_committed_settings = updated;
+        }
+        if (edit == WIFI_LIST_EDIT_FORGET) {
+            (void)wifi_blocked_remove(&s_blocked, ssid);
+        }
+        taskEXIT_CRITICAL(&s_settings_lock);
+    }
+    secure_zero(&updated, sizeof(updated));
+    return err;
+}
+
+esp_err_t wifi_provisioning_forget_network(const char *ssid)
+{
+    const wifi_provisioning_status_t status = wifi_provisioning_status();
+    const bool was_active = ssid != NULL && strcmp(status.active_ssid, ssid) == 0 &&
+                            wifi_provisioning_should_reconnect(status.mode);
+    const esp_err_t err = wifi_apply_list_edit(WIFI_LIST_EDIT_FORGET, ssid);
+    if (err != ESP_OK) {
+        return err;
+    }
+    ESP_LOGI(TAG, "saved network forgotten (active=%d)", (int)was_active);
+    if (!was_active) {
+        return ESP_OK;
+    }
+    /* Staying joined to a network the device no longer remembers is a state
+     * nothing else expects, so the connection goes with the credentials. The
+     * name is gone from the list, so the walk starts over. */
+    taskENTER_CRITICAL(&s_settings_lock);
+    s_current_ssid[0] = '\0';
+    taskEXIT_CRITICAL(&s_settings_lock);
+    return wifi_restart_from_top();
+}
+
+esp_err_t wifi_provisioning_prioritize_network(const char *ssid)
+{
+    /* Deliberately no reconnection: the order decides which network the next
+     * attempt starts from, and dropping a working stream to prove it would be
+     * a surprising price for a checkbox. */
+    const esp_err_t err = wifi_apply_list_edit(WIFI_LIST_EDIT_PROMOTE, ssid);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "saved network moved to the front of the list");
+    }
+    return err;
+}
+
+esp_err_t wifi_provisioning_disconnect_active(void)
+{
+    const wifi_provisioning_status_t status = wifi_provisioning_status();
+    if (!s_initialized || !wifi_provisioning_should_reconnect(status.mode) ||
+        status.active_ssid[0] == '\0') {
+        return ESP_ERR_INVALID_STATE;
+    }
+    bool blocked;
+    taskENTER_CRITICAL(&s_settings_lock);
+    const bool busy = s_pending_commit;
+    blocked = !busy && wifi_blocked_add(&s_blocked, status.active_ssid);
+    taskEXIT_CRITICAL(&s_settings_lock);
+    if (busy) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!blocked) {
+        return ESP_ERR_NO_MEM;
+    }
+    ESP_LOGI(TAG, "active network switched off until reboot");
+    return wifi_advance_to_next_network();
+}
+
+static void scan_set_state(wifi_scan_state_t state)
+{
+    taskENTER_CRITICAL(&s_scan_lock);
+    s_scan_state = state;
+    taskEXIT_CRITICAL(&s_scan_lock);
+}
+
+esp_err_t wifi_provisioning_scan_start(void)
+{
+    /* Only while the setup AP is up. Everywhere else there is a stream to
+     * interrupt, and the channel hopping a scan does would interrupt it. */
+    if (!s_initialized || !s_started ||
+        wifi_provisioning_status().mode != WIFI_PROVISIONING_AP_SETUP) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const TickType_t now = xTaskGetTickCount();
+    bool already_running;
+    taskENTER_CRITICAL(&s_scan_lock);
+    already_running = s_scan_state == WIFI_SCAN_RUNNING;
+    if (!already_running) {
+        s_scan_state = WIFI_SCAN_RUNNING;
+        s_scan_started_tick = now;
+    }
+    taskEXIT_CRITICAL(&s_scan_lock);
+    // A second press while one is in flight joins it rather than starting over.
+    if (already_running) {
+        return ESP_OK;
+    }
+    const esp_err_t err = esp_wifi_scan_start(NULL, false);
+    if (err != ESP_OK) {
+        scan_set_state(WIFI_SCAN_IDLE);
+        ESP_LOGE(TAG, "scan failed to start err=%s", esp_err_to_name(err));
+    }
+    return err;
+}
+
+static uint8_t scan_entry_position(const wifi_provisioning_scan_entry_t *entries, uint8_t count,
+                                   const char *ssid)
+{
+    for (uint8_t index = 0; index < count; ++index) {
+        if (strcmp(entries[index].ssid, ssid) == 0) {
+            return index;
+        }
+    }
+    return count;
+}
+
+esp_err_t wifi_provisioning_scan_result(wifi_provisioning_scan_entry_t *entries,
+                                        uint8_t capacity, uint8_t *count)
+{
+    if (entries == NULL || count == NULL || capacity == 0U) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *count = 0U;
+    wifi_scan_state_t state;
+    TickType_t started;
+    taskENTER_CRITICAL(&s_scan_lock);
+    state = s_scan_state;
+    started = s_scan_started_tick;
+    taskEXIT_CRITICAL(&s_scan_lock);
+    if (state == WIFI_SCAN_IDLE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (state == WIFI_SCAN_RUNNING) {
+        if (xTaskGetTickCount() - started < pdMS_TO_TICKS(WIFI_SCAN_TIMEOUT_MS)) {
+            return ESP_ERR_NOT_FINISHED;
+        }
+        (void)esp_wifi_scan_stop();
+        scan_set_state(WIFI_SCAN_IDLE);
+        return ESP_ERR_TIMEOUT;
+    }
+
+    /* The results are handed over once: esp_wifi_scan_get_ap_records() frees
+     * the driver's list as it copies it, so a second read would find nothing.
+     * The page keeps what it was given and presses the button again for more. */
+    scan_set_state(WIFI_SCAN_IDLE);
+    uint16_t found = 0U;
+    esp_err_t err = esp_wifi_scan_get_ap_num(&found);
+    if (err != ESP_OK) {
+        return err;
+    }
+    if (found == 0U) {
+        return ESP_OK;
+    }
+    if (found > WIFI_PROVISIONING_SCAN_MAX) {
+        found = WIFI_PROVISIONING_SCAN_MAX;
+    }
+    /* Around 80 bytes per record: too much for the stack of the HTTP task that
+     * asks for this. */
+    wifi_ap_record_t *records = calloc(found, sizeof(*records));
+    if (records == NULL) {
+        esp_wifi_clear_ap_list();
+        return ESP_ERR_NO_MEM;
+    }
+    err = esp_wifi_scan_get_ap_records(&found, records);
+    if (err != ESP_OK) {
+        free(records);
+        return err;
+    }
+    for (uint16_t index = 0; index < found && *count < capacity; ++index) {
+        char ssid[WIFI_SETTINGS_SSID_MAX_LEN + 1U];
+        copy_ssid(ssid, (const char *)records[index].ssid);
+        // A hidden network announces an empty name and cannot be joined by
+        // picking it off a list; the manual entry is what it is for.
+        if (ssid[0] == '\0') {
+            continue;
+        }
+        // One access point on two bands, or a mesh, appears several times.
+        // Keep the strongest sighting of each name.
+        const uint8_t existing = scan_entry_position(entries, *count, ssid);
+        if (existing < *count) {
+            if (records[index].rssi > entries[existing].rssi) {
+                entries[existing].rssi = records[index].rssi;
+            }
+            continue;
+        }
+        copy_ssid(entries[*count].ssid, ssid);
+        entries[*count].rssi = records[index].rssi;
+        entries[*count].secure = records[index].authmode != WIFI_AUTH_OPEN;
+        ++*count;
+    }
+    free(records);
+    // Strongest first, which is the order the list is worth reading in.
+    for (uint8_t index = 1; index < *count; ++index) {
+        const wifi_provisioning_scan_entry_t entry = entries[index];
+        uint8_t slot = index;
+        while (slot > 0U && entries[slot - 1U].rssi < entry.rssi) {
+            entries[slot] = entries[slot - 1U];
+            --slot;
+        }
+        entries[slot] = entry;
+    }
+    return ESP_OK;
+}
+
 esp_err_t wifi_provisioning_reset(void)
 {
     if (!s_initialized) {
@@ -647,7 +962,8 @@ esp_err_t wifi_provisioning_reset(void)
     taskENTER_CRITICAL(&s_settings_lock);
     wifi_provisioning_reset_saved_state(&s_settings, &s_committed_settings,
                                         &s_pending_commit);
-    s_network_index = 0;
+    s_blocked = (wifi_blocked_ssids_t){0};
+    s_current_ssid[0] = '\0';
     s_retry_count = 0;
     taskEXIT_CRITICAL(&s_settings_lock);
     status_set_save(false, 0);
@@ -663,13 +979,79 @@ wifi_provisioning_mode_t wifi_provisioning_initial_mode(const wifi_settings_t *s
                                                      : WIFI_PROVISIONING_STA_CONNECTING;
 }
 
-uint8_t wifi_provisioning_network_index(const wifi_settings_t *settings, uint8_t candidate)
+bool wifi_blocked_contains(const wifi_blocked_ssids_t *blocked, const char *ssid)
 {
-    if (settings == NULL || candidate >= settings->count ||
-        candidate >= WIFI_SETTINGS_MAX_NETWORKS) {
+    if (blocked == NULL || ssid == NULL || blocked->count > WIFI_SETTINGS_MAX_NETWORKS) {
+        return false;
+    }
+    for (uint8_t index = 0; index < blocked->count; ++index) {
+        if (strcmp(blocked->ssids[index], ssid) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool wifi_blocked_add(wifi_blocked_ssids_t *blocked, const char *ssid)
+{
+    if (blocked == NULL || ssid == NULL || ssid[0] == '\0' ||
+        blocked->count >= WIFI_SETTINGS_MAX_NETWORKS) {
+        return false;
+    }
+    if (wifi_blocked_contains(blocked, ssid)) {
+        return true;
+    }
+    size_t length = 0U;
+    while (length < WIFI_SETTINGS_SSID_MAX_LEN && ssid[length] != '\0') {
+        blocked->ssids[blocked->count][length] = ssid[length];
+        ++length;
+    }
+    blocked->ssids[blocked->count][length] = '\0';
+    ++blocked->count;
+    return true;
+}
+
+bool wifi_blocked_remove(wifi_blocked_ssids_t *blocked, const char *ssid)
+{
+    if (!wifi_blocked_contains(blocked, ssid)) {
+        return false;
+    }
+    uint8_t index = 0;
+    while (strcmp(blocked->ssids[index], ssid) != 0) {
+        ++index;
+    }
+    for (uint8_t slot = (uint8_t)(index + 1U); slot < blocked->count; ++slot) {
+        memcpy(blocked->ssids[slot - 1U], blocked->ssids[slot],
+               sizeof(blocked->ssids[0]));
+    }
+    --blocked->count;
+    memset(blocked->ssids[blocked->count], 0, sizeof(blocked->ssids[0]));
+    return true;
+}
+
+uint8_t wifi_provisioning_next_network(const wifi_settings_t *settings,
+                                       const wifi_blocked_ssids_t *blocked,
+                                       const char *after_ssid)
+{
+    if (settings == NULL || settings->count > WIFI_SETTINGS_MAX_NETWORKS) {
         return WIFI_SETTINGS_MAX_NETWORKS;
     }
-    return candidate;
+    uint8_t index = 0;
+    if (after_ssid != NULL) {
+        const uint8_t previous = wifi_settings_index_of(settings, after_ssid);
+        /* A name that is no longer in the list - it was just forgotten, say -
+         * starts the walk over rather than ending it: the networks below it
+         * have not been tried. */
+        if (previous != WIFI_SETTINGS_MAX_NETWORKS) {
+            index = (uint8_t)(previous + 1U);
+        }
+    }
+    for (; index < settings->count; ++index) {
+        if (!wifi_blocked_contains(blocked, settings->networks[index].ssid)) {
+            return index;
+        }
+    }
+    return WIFI_SETTINGS_MAX_NETWORKS;
 }
 
 bool wifi_provisioning_should_reconnect(wifi_provisioning_mode_t mode)
@@ -692,6 +1074,7 @@ void wifi_provisioning_reset_saved_state(wifi_settings_t *current, wifi_settings
 }
 
 void wifi_provisioning_extract_ssids(const wifi_settings_t *settings,
+                                     const wifi_blocked_ssids_t *blocked,
                                      wifi_provisioning_saved_ssids_t *output)
 {
     if (output == NULL) {
@@ -713,5 +1096,6 @@ void wifi_provisioning_extract_ssids(const wifi_settings_t *settings,
             ++length;
         }
         output->ssids[index][length] = '\0';
+        output->blocked[index] = wifi_blocked_contains(blocked, output->ssids[index]);
     }
 }

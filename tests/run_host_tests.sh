@@ -182,7 +182,8 @@ run_test file_track_progress tests/test_file_track_progress.c \
     components/file_player/file_track_progress.c
 run_test file_wav tests/test_file_wav.c components/file_player/file_wav.c
 run_test wifi_provisioning tests/test_wifi_provisioning.c \
-    components/jradio_wifi_provisioning/wifi_provisioning.c
+    components/jradio_wifi_provisioning/wifi_provisioning.c \
+    components/settings/wifi_settings.c
 run_test wifi_settings tests/test_wifi_settings.c components/settings/wifi_settings.c
 run_test web_server -I"${cjson_include}" tests/test_web_server.c \
     components/web_server/web_server.c components/web_server/web_socket.c \

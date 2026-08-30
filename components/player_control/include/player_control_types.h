@@ -151,6 +151,11 @@ typedef struct {
     uint32_t sample_rate_hz;
     bool wifi_rssi_valid;
     int8_t wifi_rssi_dbm;
+    /* Joined to a network. Separate from wifi_rssi_valid, which only says the
+     * driver answered: the setup AP has no signal to report either, and the
+     * two states want opposite things on screen. What needs the network - the
+     * radio, the rotor - reads this. */
+    bool wifi_connected;
     /* Whether the playing track can be marked at all, and which mark it
      * carries. Separate from the marks themselves, because "no mark" and "no
      * such thing as a mark here" are different pictures: only a Yandex track

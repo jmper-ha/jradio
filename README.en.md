@@ -76,8 +76,30 @@ many there were is in the log.
 
 The device needs Wi-Fi. On its first start it brings up an access point of its
 own: connect to it from a phone, open `http://192.168.4.1` and pick your
-network. Up to five networks are remembered, and after that it connects on its
+network. While the device is joined to no network at all, the settings page
+shows the networks around it with their signal levels - pick one and type the
+password. Up to five networks are remembered, and after that it connects on its
 own.
+
+Looking around is offered only in that mode. A scan takes the radio off its
+channel for a few seconds, which with a network already up would break the
+stream - so a connected device takes a new network by name, typed in behind the
+"Добавить сеть" button.
+
+### Saved networks
+
+Every remembered network on the settings page carries its own buttons:
+
+- **Забыть** (forget) - erases the network from `wifi.json`. It asks first, and
+  when it is the network this very page is reachable over the question says so:
+  the device disconnects with it, and the page stops answering.
+- **Отключиться** (disconnect, on the active one only) - the network stays
+  saved, but the device will not return to it until the next reboot. It moves
+  on to the next saved network, and to its own access point when there is none
+  left to try. This is how a network is changed without losing its password.
+- **Сделать первой** (make it first) - the order of the list is the priority:
+  the device walks it from the top. It takes effect on the next connection and
+  never interrupts a playing stream.
 
 The device shows the address of its web interface at the bottom of the settings
 screen - that is the only place it can be read. That band is the last stop the
@@ -131,6 +153,12 @@ of its own.
 Choosing the drive or the card when neither is there opens an explanation
 rather than an empty list: insert the medium, it cannot be read, or it holds no
 music - these are different things, and the advice differs.
+
+With no network, internet radio and Yandex Music go dim: the rows stay where
+they are and the cursor still lands on them, but a press answers "Нет сети -
+см. Настройки" instead of starting anything. They are not taken off the screen,
+or everything below them would shuffle up and back every time the Wi-Fi
+dropped. The player page shows the same two sources the same way.
 
 ## Lists
 
@@ -499,12 +527,14 @@ no npm and no bundler.
 | `GET /api/yandex` | Link state and the account's stations (never the token) |
 | `POST /api/yandex` | Link, cancel, unlink, refresh the stations |
 | `POST /api/wifi` | Saves a network |
+| `POST /api/wifi-scan` | Starts a scan for nearby networks (only with no connection) |
+| `GET /api/wifi-scan` | What it found: `scanning`, `done` with the list, or `idle` |
 | `/ws` | Commands and live updates |
 
 WebSocket commands: `player.play`, `player.pause`, `player.toggle`,
 `player.next`, `player.previous_item`, `player.next_item`, `player.seek`,
 `player.like`, `player.dislike`, `source.select`, `list.select`, `browse.up`,
-`wifi.save`. Live
+`wifi.save`, `wifi.forget`, `wifi.prioritize`, `wifi.disconnect`. Live
 state arrives as diffs - `player`, `list`, `wifi`, `settings`; anything large -
 the playlist, media directories - goes over REST, because it does not fit in a
 frame and must not spend internal SRAM.

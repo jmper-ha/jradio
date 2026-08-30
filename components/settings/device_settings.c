@@ -23,6 +23,36 @@ static bool save_value(device_settings_t *settings, const char *key, const char 
     return settings_csv_set(settings->storage_path, key, value);
 }
 
+/* One tab-separated field out of `text` into `out`, returning where the next
+ * one starts. A field that is missing altogether leaves `out` empty, which is
+ * what a station with no idForFrom looks like. */
+static const char *unpack_field(const char *text, char *out, size_t out_size)
+{
+    out[0] = '\0';
+    if (text == NULL) return NULL;
+    const char *tab = strchr(text, '\t');
+    const size_t length = tab == NULL ? strlen(text) : (size_t)(tab - text);
+    if (length < out_size) {
+        memcpy(out, text, length);
+        out[length] = '\0';
+    }
+    return tab == NULL ? NULL : tab + 1;
+}
+
+/* Copies `value`, turning into spaces everything that would break the file it
+ * is about to be written into: settings.csv splits a line on its first comma,
+ * and the tab is what separates the fields inside this one value. A station
+ * name is the account's own text - "Хиты 90-х, лучшее" is an ordinary name. */
+static void pack_field(char *out, size_t out_size, const char *value)
+{
+    size_t index = 0U;
+    for (; value[index] != '\0' && index + 1U < out_size; ++index) {
+        const char c = value[index];
+        out[index] = (c == ',' || c == '\t' || c == '\r' || c == '\n') ? ' ' : c;
+    }
+    out[index] = '\0';
+}
+
 static bool parse_bool(const char *value, bool *result)
 {
     if (strcmp(value, "0") == 0) {
@@ -99,6 +129,8 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
             settings->last_source = DEVICE_LAST_SOURCE_USB;
         } else if (strcmp(value, "sd") == 0) {
             settings->last_source = DEVICE_LAST_SOURCE_SD;
+        } else if (strcmp(value, "yandex") == 0) {
+            settings->last_source = DEVICE_LAST_SOURCE_YANDEX;
         }
     }
     /* Read into its own buffer: a path is far longer than the little `value`
@@ -108,6 +140,20 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
      * was not. */
     (void)settings_csv_get(path, "last_usb_file", settings->last_file,
                            sizeof(settings->last_file));
+    /* One key holding the three, tab-separated - the shape stations.csv uses
+     * for the same reason. Three keys would have needed three writes for one
+     * identity, and two of them can legitimately be empty, which is a value
+     * settings.csv refuses. */
+    char yandex[DEVICE_LAST_YANDEX_PACKED_MAX];
+    if (settings_csv_get(path, "last_yandex", yandex, sizeof(yandex))) {
+        const char *cursor = yandex;
+        cursor = unpack_field(cursor, settings->last_yandex_id,
+                              sizeof(settings->last_yandex_id));
+        cursor = unpack_field(cursor, settings->last_yandex_name,
+                              sizeof(settings->last_yandex_name));
+        (void)unpack_field(cursor, settings->last_yandex_from,
+                           sizeof(settings->last_yandex_from));
+    }
     return true;
 }
 
@@ -209,8 +255,9 @@ bool device_settings_set_last_source(device_settings_t *settings,
     const char *text = source == DEVICE_LAST_SOURCE_INTERNET_RADIO ? "internet_radio"
                      : source == DEVICE_LAST_SOURCE_USB           ? "usb"
                      : source == DEVICE_LAST_SOURCE_SD            ? "sd"
+                     : source == DEVICE_LAST_SOURCE_YANDEX        ? "yandex"
                                                                    : "none";
-    if (settings == NULL || source > DEVICE_LAST_SOURCE_SD) return false;
+    if (settings == NULL || source > DEVICE_LAST_SOURCE_YANDEX) return false;
     /* Skip the write when nothing changed: this is called as playback starts,
      * and settings.csv lives on flash with a finite erase budget. */
     if (settings->last_source == source) return true;
@@ -226,6 +273,47 @@ bool device_settings_set_last_file(device_settings_t *settings, const char *path
     if (strcmp(settings->last_file, path) == 0) return true;
     if (!save_value(settings, "last_usb_file", path)) return false;
     memcpy(settings->last_file, path, strlen(path) + 1U);
+    return true;
+}
+
+bool device_settings_set_last_yandex(device_settings_t *settings, const char *id,
+                                     const char *name, const char *from)
+{
+    if (settings == NULL) return false;
+    const char *station = id == NULL ? "" : id;
+    const char *title = name == NULL ? "" : name;
+    const char *origin = from == NULL ? "" : from;
+    // Refused rather than truncated: half an id names no station.
+    if (strlen(station) >= sizeof(settings->last_yandex_id) ||
+        strlen(title) >= sizeof(settings->last_yandex_name) ||
+        strlen(origin) >= sizeof(settings->last_yandex_from)) {
+        return false;
+    }
+    char packed_id[DEVICE_LAST_YANDEX_ID_MAX];
+    char packed_name[DEVICE_LAST_YANDEX_NAME_MAX];
+    char packed_from[DEVICE_LAST_YANDEX_FROM_MAX];
+    pack_field(packed_id, sizeof(packed_id), station);
+    pack_field(packed_name, sizeof(packed_name), title);
+    pack_field(packed_from, sizeof(packed_from), origin);
+    // Same reason last_source skips a write: this is called as playback
+    // starts, over and over, onto flash with a finite erase budget.
+    if (strcmp(settings->last_yandex_id, packed_id) == 0 &&
+        strcmp(settings->last_yandex_name, packed_name) == 0 &&
+        strcmp(settings->last_yandex_from, packed_from) == 0) {
+        return true;
+    }
+    /* One write for the three, so there is no moment where an id names a
+     * station and the name beside it belongs to the previous one. An id that
+     * is empty clears the point, and the value is still not - the two tabs
+     * remain, which is what settings.csv needs. */
+    char packed[DEVICE_LAST_YANDEX_PACKED_MAX];
+    const int written = snprintf(packed, sizeof(packed), "%s\t%s\t%s", packed_id, packed_name,
+                                 packed_from);
+    if (written < 0 || (size_t)written >= sizeof(packed)) return false;
+    if (!save_value(settings, "last_yandex", packed)) return false;
+    memcpy(settings->last_yandex_id, packed_id, strlen(packed_id) + 1U);
+    memcpy(settings->last_yandex_name, packed_name, strlen(packed_name) + 1U);
+    memcpy(settings->last_yandex_from, packed_from, strlen(packed_from) + 1U);
     return true;
 }
 

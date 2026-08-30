@@ -17,6 +17,7 @@
 #include "album_art.h"
 #include "audio_source.h"
 #include "board_features.h"
+#include "device_settings.h"
 #include "internet_radio.h"
 #include "station_catalog.h"
 #include "yandex_auth.h"
@@ -347,10 +348,63 @@ static void player_file_track_finished(void)
  * SIZE_MAX on purpose so that a reconnect never tries to reopen it by one. */
 static atomic_size_t s_yandex_item_index = ATOMIC_VAR_INIT(PLAYER_ITEM_NONE);
 
-/* Starts the station on `index` of the Yandex list as a chain of tracks. The
- * first link is fetched inside internet_radio_start_track_chain(), so this
- * blocks for as long as three API calls take - acceptable on this task, which
- * is the one that already blocks on opening a station. */
+/* Which station that is, by identity - the three strings starting one takes.
+ *
+ * Kept beside the row because the row does not survive anything: not a
+ * dashboard that comes back in another order, and not a reboot. This is what
+ * "play again" starts and what the resume point is written from, and it is
+ * seeded from settings.csv at boot so that autoplay has something to name.
+ *
+ * Written by this task and read by the UI task, so it is held under a
+ * spinlock: the three strings are one identity and must not be read as two
+ * halves of two different ones. */
+static portMUX_TYPE s_yandex_station_lock = portMUX_INITIALIZER_UNLOCKED;
+static yandex_station_t s_yandex_station;
+static bool s_yandex_station_known;
+
+/* The settings layer stores strings and knows nothing about Yandex, so its
+ * sizes are set by hand there. If the catalogue ever outgrows them a resume
+ * point would be silently refused, which is the sort of thing that is noticed
+ * a month later. */
+_Static_assert(DEVICE_LAST_YANDEX_ID_MAX > YANDEX_STATION_ID_MAX,
+               "settings cannot hold a Yandex station id");
+_Static_assert(DEVICE_LAST_YANDEX_NAME_MAX > YANDEX_STATION_NAME_MAX,
+               "settings cannot hold a Yandex station name");
+_Static_assert(DEVICE_LAST_YANDEX_FROM_MAX > YANDEX_STATION_FROM_MAX,
+               "settings cannot hold a Yandex idForFrom");
+
+static void player_yandex_remember(const yandex_station_t *station)
+{
+    taskENTER_CRITICAL(&s_yandex_station_lock);
+    s_yandex_station = *station;
+    s_yandex_station_known = true;
+    taskEXIT_CRITICAL(&s_yandex_station_lock);
+}
+
+/* Starts `station` as a chain of tracks. The first link is fetched inside
+ * internet_radio_start_track_chain(), so this blocks for as long as three API
+ * calls take - acceptable on this task, which is the one that already blocks
+ * on opening a station.
+ *
+ * `index` is the row it came from, or PLAYER_ITEM_NONE when it came from the
+ * resume point instead and the dashboard has not been read yet. */
+static bool player_yandex_start_station(const yandex_station_t *station, size_t index)
+{
+    /* idForFrom travels with the station from the dashboard precisely so this
+     * call does not have to fetch it again to name where the listening began. */
+    if (yandex_rotor_start(station->id, station->from) != ESP_OK) {
+        ESP_LOGE(TAG, "yandex rotor did not start for %s", station->id);
+        return false;
+    }
+    if (!internet_radio_start_track_chain(station->name)) {
+        return false;
+    }
+    atomic_store_explicit(&s_yandex_item_index, index, memory_order_release);
+    player_yandex_remember(station);
+    return true;
+}
+
+// Starts the station on `index` of the Yandex list.
 static bool player_yandex_start(size_t index)
 {
     yandex_station_t station;
@@ -358,17 +412,36 @@ static bool player_yandex_start(size_t index)
         ESP_LOGW(TAG, "yandex station %u is gone from the list", (unsigned int)index);
         return false;
     }
-    /* idForFrom travels with the station from the dashboard precisely so this
-     * call does not have to fetch it again to name where the listening began. */
-    if (yandex_rotor_start(station.id, station.from) != ESP_OK) {
-        ESP_LOGE(TAG, "yandex rotor did not start for %s", station.id);
-        return false;
+    return player_yandex_start_station(&station, index);
+}
+
+/* Which row of the dashboard holds `id`, or PLAYER_ITEM_NONE when the list
+ * does not have it - or does not exist yet, which is the boot case. */
+static size_t player_yandex_row_of(const char *id)
+{
+    const size_t count = yandex_catalog_count();
+    for (size_t row = 0U; row < count; ++row) {
+        yandex_station_t listed;
+        if (yandex_catalog_station_at(row, &listed) && strcmp(listed.id, id) == 0) {
+            return row;
+        }
     }
-    if (!internet_radio_start_track_chain(station.name)) {
-        return false;
-    }
-    atomic_store_explicit(&s_yandex_item_index, index, memory_order_release);
-    return true;
+    return PLAYER_ITEM_NONE;
+}
+
+/* Starts the station last played, whichever row it now sits on - or none at
+ * all, which is the boot case: the dashboard has not been fetched, and the
+ * identity came off settings.csv. Not finding the row is no reason to refuse;
+ * the station plays either way, and the row is picked up later. */
+static bool player_yandex_start_remembered(void)
+{
+    yandex_station_t station;
+    taskENTER_CRITICAL(&s_yandex_station_lock);
+    const bool known = s_yandex_station_known;
+    station = s_yandex_station;
+    taskEXIT_CRITICAL(&s_yandex_station_lock);
+    if (!known || station.id[0] == '\0') return false;
+    return player_yandex_start_station(&station, player_yandex_row_of(station.id));
 }
 
 static void player_file_media_removing(void)
@@ -651,12 +724,12 @@ static void player_control_task(void *arg)
             break;
         case PLAYER_OPERATION_START_SAVED:
             if (snapshot.active_source == AUDIO_SOURCE_YANDEX) {
-                /* There is no saved Yandex station, and the radio's saved one
-                 * belongs to a different source: play again means the station
-                 * that was last chosen here, and nothing at all before that. */
-                const size_t index =
-                    atomic_load_explicit(&s_yandex_item_index, memory_order_acquire);
-                if (index != PLAYER_ITEM_NONE) (void)player_yandex_start(index);
+                /* The radio's saved station belongs to a different source, so
+                 * play again means the station last chosen here - by identity,
+                 * because the row it sat on outlives neither a reordered
+                 * dashboard nor a reboot. At boot the identity is the resume
+                 * point, put here by autoplay before it asked for this. */
+                (void)player_yandex_start_remembered();
             } else if (audio_source_is_files(snapshot.active_source)) {
                 player_file_start_saved();
             } else if (player_adopt_internet_radio(snapshot.active_source)) {
@@ -927,8 +1000,24 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     if (snapshot->active_source == AUDIO_SOURCE_YANDEX) {
         /* The rotor's list, and the row this task remembers starting: the
          * radio status reports SIZE_MAX for a chain by design. */
-        snapshot->active_item_index =
-            atomic_load_explicit(&s_yandex_item_index, memory_order_acquire);
+        size_t row = atomic_load_explicit(&s_yandex_item_index, memory_order_acquire);
+        /* A station resumed at boot was started before the dashboard arrived,
+         * so it began with no row at all. Looked up here, where the answer is
+         * wanted, and only until it is found: without this the list showed
+         * nothing marked while that very station played. */
+        /* Only while something is on: stopping a station clears the row on
+         * purpose, and looking it up again here would put the mark straight
+         * back on a station that is no longer playing. */
+        if (row == PLAYER_ITEM_NONE && snapshot->playback_state != PLAYER_PLAYBACK_STOPPED) {
+            char id[YANDEX_STATION_ID_MAX + 1U];
+            if (player_control_playing_yandex_station(id, sizeof(id), NULL, 0U, NULL, 0U)) {
+                row = player_yandex_row_of(id);
+                if (row != PLAYER_ITEM_NONE) {
+                    atomic_store_explicit(&s_yandex_item_index, row, memory_order_release);
+                }
+            }
+        }
+        snapshot->active_item_index = row;
         snapshot->item_count = yandex_catalog_count();
         /* The like mark, which only this source has: a station and a file
          * belong to nobody's library. It travels in the snapshot because both
@@ -1036,6 +1125,44 @@ const station_catalog_entry_t *player_control_station_at(size_t index)
 bool player_control_file_entry_at(size_t index, file_browser_entry_t *entry)
 {
     return file_storage_entry_at(index, entry);
+}
+
+static bool copy_field(char *out, size_t out_size, const char *value)
+{
+    if (out == NULL) return true;  // the caller did not ask for this one
+    const size_t length = strlen(value);
+    if (length >= out_size) return false;
+    memcpy(out, value, length + 1U);
+    return true;
+}
+
+bool player_control_playing_yandex_station(char *id, size_t id_size, char *name,
+                                           size_t name_size, char *from, size_t from_size)
+{
+    yandex_station_t station;
+    taskENTER_CRITICAL(&s_yandex_station_lock);
+    const bool known = s_yandex_station_known;
+    station = s_yandex_station;
+    taskEXIT_CRITICAL(&s_yandex_station_lock);
+    if (!known || station.id[0] == '\0') return false;
+    return copy_field(id, id_size, station.id) && copy_field(name, name_size, station.name) &&
+           copy_field(from, from_size, station.from);
+}
+
+void player_control_set_yandex_station(const char *id, const char *name, const char *from)
+{
+    if (id == NULL || id[0] == '\0') return;
+    yandex_station_t station;
+    memset(&station, 0, sizeof(station));
+    // Refused rather than truncated: half an id names no station, and half a
+    // name would go on the screen.
+    if (!copy_field(station.id, sizeof(station.id), id) ||
+        !copy_field(station.name, sizeof(station.name), name == NULL ? "" : name) ||
+        !copy_field(station.from, sizeof(station.from), from == NULL ? "" : from)) {
+        ESP_LOGW(TAG, "the remembered yandex station does not fit; ignoring it");
+        return;
+    }
+    player_yandex_remember(&station);
 }
 
 bool player_control_file_resume_path(const char *path)

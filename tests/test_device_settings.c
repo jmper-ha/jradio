@@ -193,6 +193,53 @@ static void test_scroll_mode_persists(void)
     assert(!device_settings_set_scroll(&settings, (device_scroll_t)99));
 }
 
+static void test_the_yandex_resume_point_persists(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    assert(settings.last_source == DEVICE_LAST_SOURCE_NONE);
+    assert(settings.last_yandex_id[0] == '\0');
+
+    assert(device_settings_set_last_source(&settings, DEVICE_LAST_SOURCE_YANDEX));
+    assert(device_settings_set_last_yandex(&settings, "user:onyourwave", "Моя волна",
+                                           "user-onyourwave"));
+
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.last_source == DEVICE_LAST_SOURCE_YANDEX);
+    assert(strcmp(reloaded.last_yandex_id, "user:onyourwave") == 0);
+    // The name is the user's own text and travels whole, Cyrillic and all.
+    assert(strcmp(reloaded.last_yandex_name, "Моя волна") == 0);
+    assert(strcmp(reloaded.last_yandex_from, "user-onyourwave") == 0);
+
+    /* Written as playback starts, over and over: the same identity again must
+     * not cost the flash a write. */
+    assert(device_settings_set_last_yandex(&settings, "user:onyourwave", "Моя волна",
+                                           "user-onyourwave"));
+
+    // A name and an origin are optional - a station still starts without them.
+    assert(device_settings_set_last_yandex(&settings, "genre:jazz", "", ""));
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(strcmp(reloaded.last_yandex_id, "genre:jazz") == 0);
+    assert(reloaded.last_yandex_name[0] == '\0');
+
+    /* A station name is the account's own text, and settings.csv splits a line
+     * on its first comma: the name survives with the comma turned into a
+     * space rather than taking the resume point down with it. */
+    assert(device_settings_set_last_yandex(&settings, "genre:pop", "Хиты 90-х, лучшее", ""));
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(strcmp(reloaded.last_yandex_id, "genre:pop") == 0);
+    assert(strcmp(reloaded.last_yandex_name, "Хиты 90-х  лучшее") == 0);
+
+    // Refused rather than truncated: half an id names no station.
+    char oversized[DEVICE_LAST_YANDEX_ID_MAX + 8];
+    memset(oversized, 'x', sizeof(oversized) - 1U);
+    oversized[sizeof(oversized) - 1U] = '\0';
+    assert(!device_settings_set_last_yandex(&settings, oversized, "", ""));
+    assert(strcmp(settings.last_yandex_id, "genre:pop") == 0);
+}
+
 int main(void)
 {
     test_defaults_and_load();
@@ -203,6 +250,7 @@ int main(void)
     test_a_corrupt_volume_leaves_the_default();
     test_yandex_music_persists();
     test_scroll_mode_persists();
+    test_the_yandex_resume_point_persists();
     test_brightness_persists_and_refuses_a_dark_panel();
     test_a_corrupt_brightness_leaves_the_default();
     puts("device_settings tests passed");

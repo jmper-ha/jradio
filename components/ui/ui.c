@@ -3433,6 +3433,22 @@ static void ui_remember_playing(const player_snapshot_t *snapshot)
         (void)device_settings_set_last_source(&s_device_settings,
                                               DEVICE_LAST_SOURCE_INTERNET_RADIO);
         return;
+    case AUDIO_SOURCE_YANDEX: {
+        /* The station by identity, asked of the controller for the reason the
+         * file path is: the row on screen moves while a station plays on, and
+         * the dashboard can hand the rows out in another order next time. */
+        char id[DEVICE_LAST_YANDEX_ID_MAX];
+        char name[DEVICE_LAST_YANDEX_NAME_MAX];
+        char from[DEVICE_LAST_YANDEX_FROM_MAX];
+        if (!player_control_playing_yandex_station(id, sizeof(id), name, sizeof(name), from,
+                                                   sizeof(from))) {
+            // Nothing has been started yet - leave the previous point alone.
+            return;
+        }
+        (void)device_settings_set_last_source(&s_device_settings, DEVICE_LAST_SOURCE_YANDEX);
+        (void)device_settings_set_last_yandex(&s_device_settings, id, name, from);
+        return;
+    }
     case AUDIO_SOURCE_SD:
     case AUDIO_SOURCE_USB: {
         (void)device_settings_set_last_source(&s_device_settings,
@@ -3568,8 +3584,8 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
 {
     if (!s_autoplay_pending) return;
     const ui_autoplay_action_t action =
-        ui_autoplay_decide(&s_device_settings, snapshot->usb_media, snapshot->sd_media,
-                           false);
+        ui_autoplay_decide(&s_device_settings, snapshot->usb_media, snapshot->sd_media, false,
+                           BOARD_HAS_YANDEX_MUSIC);
     const bool waited =
         (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_FILE_WAIT_MS;
     // Hold off only while the answer could still change: a drive that has not
@@ -3604,6 +3620,31 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         // list after a moment. Autoplay has a station, so the only thing that
         // fallback could do here is flip away from the screen just loaded.
         s_waiting_for_radio_station = false;
+        return;
+    }
+    case UI_AUTOPLAY_YANDEX: {
+        /* The same two commands the radio is resumed with, and in the same
+         * order. What differs is the station: the radio keeps its own last URL
+         * down in station_resume, while a Yandex station is three strings that
+         * only settings.csv has at boot - so they are handed over before the
+         * play, and the controller starts what it was given. */
+        player_control_set_yandex_station(s_device_settings.last_yandex_id,
+                                          s_device_settings.last_yandex_name,
+                                          s_device_settings.last_yandex_from);
+        (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_YANDEX);
+        const player_command_t select = {
+            .kind = PLAYER_COMMAND_SELECT_SOURCE,
+            .source = AUDIO_SOURCE_YANDEX,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        if (!ui_submit_player_command(&select)) return;
+        const player_command_t play = {
+            .kind = PLAYER_COMMAND_PLAY,
+            .source = AUDIO_SOURCE_YANDEX,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        (void)ui_submit_player_command(&play);
+        ui_load_source_screen(AUDIO_SOURCE_YANDEX);
         return;
     }
     case UI_AUTOPLAY_FILE_UNAVAILABLE:
@@ -3920,8 +3961,8 @@ esp_err_t ui_init(void)
     // anything to wait for at all. What is actually there is settled later, by
     // ui_autoplay_step(), once the drive has had time to enumerate.
     s_autoplay_pending = ui_autoplay_decide(&s_device_settings, FILE_BROWSER_MEDIA_READY,
-                                            FILE_BROWSER_MEDIA_READY, true) !=
-                         UI_AUTOPLAY_HOME;
+                                            FILE_BROWSER_MEDIA_READY, true,
+                                            BOARD_HAS_YANDEX_MUSIC) != UI_AUTOPLAY_HOME;
     s_autoplay_started_ms = ui_tick_get_ms();
     /* Through the same call the rest of the firmware uses, so a device with no
      * home screen boots straight into the radio instead of onto a screen it

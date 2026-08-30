@@ -7,6 +7,7 @@ audio_source_t ui_autoplay_source(const device_settings_t *settings)
     if (settings == NULL) return AUDIO_SOURCE_NONE;
     switch (settings->last_source) {
     case DEVICE_LAST_SOURCE_INTERNET_RADIO: return AUDIO_SOURCE_INTERNET_RADIO;
+    case DEVICE_LAST_SOURCE_YANDEX: return AUDIO_SOURCE_YANDEX;
     case DEVICE_LAST_SOURCE_USB:
     case DEVICE_LAST_SOURCE_SD:
         /* The path wins over the remembered source, because the two are
@@ -31,7 +32,7 @@ audio_source_t ui_autoplay_source(const device_settings_t *settings)
 ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
                                         file_browser_media_t usb_media,
                                         file_browser_media_t sd_media,
-                                        bool file_present)
+                                        bool file_present, bool yandex_built)
 {
     if (settings == NULL || !settings->autoplay) return UI_AUTOPLAY_HOME;
 
@@ -41,6 +42,15 @@ ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
          * at the top of the catalogue, which is still a player screen with
          * sound - closer to what autoplay promises than the home screen. */
         return UI_AUTOPLAY_RADIO;
+    case DEVICE_LAST_SOURCE_YANDEX:
+        /* Nothing to resume without an identity to start: a station is opened
+         * by id, name and idForFrom together, and the id is what says the
+         * point was ever written. */
+        if (!yandex_built || !settings->yandex_music ||
+            settings->last_yandex_id[0] == '\0') {
+            return UI_AUTOPLAY_HOME;
+        }
+        return UI_AUTOPLAY_YANDEX;
     case DEVICE_LAST_SOURCE_USB:
     case DEVICE_LAST_SOURCE_SD: {
         // Asked of the volume that will actually be opened - see

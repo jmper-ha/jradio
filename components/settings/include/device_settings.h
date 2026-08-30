@@ -25,6 +25,7 @@ typedef enum {
     DEVICE_LAST_SOURCE_INTERNET_RADIO,
     DEVICE_LAST_SOURCE_USB,
     DEVICE_LAST_SOURCE_SD,
+    DEVICE_LAST_SOURCE_YANDEX,
 } device_last_source_t;
 
 #define DEVICE_SETTINGS_PATH "/littlefs/config/settings.csv"
@@ -33,6 +34,24 @@ typedef enum {
  * 256. The volume is part of the path, which is what tells a resume point on
  * the card from one on the drive. */
 #define DEVICE_LAST_FILE_MAX 256
+/* The Yandex station to come back to, as the three strings starting one takes.
+ *
+ * Not the row it sat on: the dashboard is fetched from the account and can
+ * come back in a different order, or a station short - a remembered row would
+ * then resume whatever had moved into it. Not the id alone either, because
+ * the dashboard is what turns an id into a name and an idForFrom, and waiting
+ * for that fetch before any sound is most of what autoplay is for.
+ *
+ * Sized here rather than from yandex_catalog.h: this layer stores strings and
+ * knows nothing about Yandex. The sizes are checked against that header where
+ * the two meet - see player_control.c. */
+#define DEVICE_LAST_YANDEX_ID_MAX 48
+#define DEVICE_LAST_YANDEX_NAME_MAX 96
+#define DEVICE_LAST_YANDEX_FROM_MAX 48
+/* The three in one settings.csv value, tab-separated. Under the file's own
+ * 256-byte cap on a value, which is what makes one key possible at all. */
+#define DEVICE_LAST_YANDEX_PACKED_MAX \
+    (DEVICE_LAST_YANDEX_ID_MAX + DEVICE_LAST_YANDEX_NAME_MAX + DEVICE_LAST_YANDEX_FROM_MAX + 2)
 /* Loud enough to be obviously working, quiet enough that a fresh flash does
  * not startle anyone. */
 #define DEVICE_VOLUME_DEFAULT 80
@@ -65,6 +84,9 @@ typedef struct {
     unsigned char brightness;
     device_last_source_t last_source;
     char last_file[DEVICE_LAST_FILE_MAX];
+    char last_yandex_id[DEVICE_LAST_YANDEX_ID_MAX];
+    char last_yandex_name[DEVICE_LAST_YANDEX_NAME_MAX];
+    char last_yandex_from[DEVICE_LAST_YANDEX_FROM_MAX];
     char storage_path[DEVICE_SETTINGS_PATH_MAX];
 } device_settings_t;
 
@@ -89,6 +111,17 @@ bool device_settings_set_brightness(device_settings_t *settings, unsigned char b
 bool device_settings_set_last_source(device_settings_t *settings,
                                      device_last_source_t source);
 bool device_settings_set_last_file(device_settings_t *settings, const char *path);
+/* The three together, because they are one identity and are only ever written
+ * as one - into one key, so that no power cut can leave an id beside the
+ * previous station's name. An empty id clears the point, which is what
+ * "nothing was played here" looks like. `name` and `from` may be empty - a
+ * station still starts without them, it is only named less well.
+ *
+ * A comma or a tab anywhere in them becomes a space on the way in: the first
+ * would cut the settings.csv line in two, the second is what separates the
+ * fields inside the value. */
+bool device_settings_set_last_yandex(device_settings_t *settings, const char *id,
+                                     const char *name, const char *from);
 bool device_settings_get(const device_settings_t *settings, device_settings_t *copy);
 
 /* Says that settings.csv was written by someone other than the UI task - today

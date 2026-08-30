@@ -106,6 +106,27 @@ bool player_control_playing_file_path(char *out, size_t out_size);
  * directory or the file is gone; the listing is then left on whatever did
  * open, so the browser has somewhere to show. */
 bool player_control_file_resume_path(const char *path);
+
+/* The Yandex station on the air, by identity rather than by row.
+ *
+ * The row is what the dashboard happened to hand out this time, and it is not
+ * what a resume can be written down as; this is. False when no station has
+ * been started since boot.
+ *
+ * `id`, `name` and `from` may each be NULL if the caller wants only some of
+ * them, and a buffer too short is refused rather than filled with half a
+ * value. */
+bool player_control_playing_yandex_station(char *id, size_t id_size, char *name,
+                                           size_t name_size, char *from, size_t from_size);
+
+/* Hands the controller the station to come back to, before asking it to play.
+ *
+ * Autoplay is the only caller: at boot nothing has been started, so "play
+ * again" has nothing to name until the point read off settings.csv is put
+ * here. Starting is a separate ask - PLAYER_COMMAND_PLAY - because it blocks
+ * on three API calls and must happen on the player task, not on whichever one
+ * read the settings. */
+void player_control_set_yandex_station(const char *id, const char *name, const char *from);
 #endif
 
 #ifdef __cplusplus

@@ -11,13 +11,12 @@ void ui_web_address_text(wifi_provisioning_mode_t mode, const char *ipv4, const 
     /* The setup AP's address is useless on its own: reaching it means joining
      * the box's own network first, and nothing else on the device says what
      * that network is called. This is where a user with no working Wi-Fi ends
-     * up, so it is the one place the name has to appear. */
+     * up, so it is the one place the name has to appear - and the only thing
+     * that appears. The address used to be printed beside it and was noise:
+     * it cannot be typed anywhere until the phone has joined, and by then the
+     * QR behind this band has already opened it. */
     if (mode == WIFI_PROVISIONING_AP_SETUP && ssid != NULL && ssid[0] != '\0') {
-        if (ipv4 != NULL && ipv4[0] != '\0') {
-            snprintf(out, out_size, english ? "join %s, %s" : "Сеть %s, %s", ssid, ipv4);
-        } else {
-            snprintf(out, out_size, english ? "join %s" : "Подключитесь к сети %s", ssid);
-        }
+        snprintf(out, out_size, english ? "join %s" : "Подключитесь к сети %s", ssid);
         return;
     }
 

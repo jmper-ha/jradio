@@ -84,7 +84,10 @@ own.
 Looking around is offered only in that mode. A scan takes the radio off its
 channel for a few seconds, which with a network already up would break the
 stream - so a connected device takes a new network by name, typed in behind the
-"Добавить сеть" button.
+"Добавить сеть" button. The list keeps what is no weaker than -80 dBm: below
+that a network will associate and will not carry a stream, and a list padded
+with them buries the two or three that are really there. A hidden network never
+appears in it at all - the "Другая сеть…" row at the bottom is for those.
 
 ### Saved networks
 
@@ -106,8 +109,9 @@ screen - that is the only place it can be read. That band is the last stop the
 cursor reaches on the screen: turn down to it and press the knob, and the
 device puts the address up as a QR code. On a joined network that is a link to
 the web interface; in setup mode it is an invitation to join the device's own
-access point instead, because `192.168.4.1` is useless until the phone is on
-that network. Another press takes the code down, and so does 30 seconds of
+access point instead. There the band names only that network: `192.168.4.1` is
+useless until the phone is on it, and once the phone is, the QR has already
+opened it. Another press takes the code down, and so does 30 seconds of
 nothing.
 
 The page opens dark, whatever the phone or the computer is set to. The sun in
@@ -158,7 +162,14 @@ With no network, internet radio and Yandex Music go dim: the rows stay where
 they are and the cursor still lands on them, but a press answers "Нет сети -
 см. Настройки" instead of starting anything. They are not taken off the screen,
 or everything below them would shuffle up and back every time the Wi-Fi
-dropped. The player page shows the same two sources the same way.
+dropped. The player page shows the same two sources the same way, and hides
+their station list with them - there is nothing to play it with.
+
+When the network goes away entirely while the radio or Yandex Music is
+playing, the device returns to the home screen on its own and stops the source:
+waiting on a screen for a stream that is not coming back serves no one.
+"Entirely" means it has come to the setup access point; a short break the
+device rides out by reconnecting does not throw anyone out of the player.
 
 ## Lists
 

@@ -156,6 +156,11 @@ typedef struct {
      * two states want opposite things on screen. What needs the network - the
      * radio, the rotor - reads this. */
     bool wifi_connected;
+    /* The device has given up and is running its own setup access point. Not
+     * the same as "not connected": between the two sits a retry that usually
+     * succeeds within seconds, and treating that as a lost network would throw
+     * the user out of the player every time the air went briefly quiet. */
+    bool wifi_setup_ap;
     /* Whether the playing track can be marked at all, and which mark it
      * carries. Separate from the marks themselves, because "no mark" and "no
      * such thing as a mark here" are different pictures: only a Yandex track

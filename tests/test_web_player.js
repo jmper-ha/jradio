@@ -93,7 +93,7 @@ const ids = [
   'progress-rail', 'progress-fill', 'progress-seek',
   'volume-control', 'volume-input', 'volume-value',
   'stream-meta', 'player-error', 'command-status', 'media-list',
-  'list-title', 'list-count', 'list-items', 'list-empty', 'list-loading', 'list-search',
+  'list-title', 'list-count', 'list-items', 'list-empty', 'list-offline', 'list-loading', 'list-search',
   'player-bar', 'player-expand',
 ];
 const buttonIds = new Set([
@@ -684,19 +684,28 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
   // strip and stop being pressable, the same answer the device's own screen
   // gives. Removing them would reshuffle the strip every time the Wi-Fi drops.
   sendEvent(second, {
-    type: 'player.update', revision: 900,
+    type: 'player.update', revision: 900, active_source: 'internet_radio',
     player: {...player('Радио'), wifi_connected: false},
   });
   const tabOf = (id) => elements['#source-tabs'].children.find(
     (child) => child.dataset && child.dataset.source === id);
   assert.equal(tabOf('internet_radio').disabled, true);
   assert.ok(tabOf('internet_radio').classList.values.has('is-unavailable'));
+  /* And the stations go with them: the page opens on internet radio, so a
+     device with no Wi-Fi used to be greeted by a full list nothing could
+     start. */
+  assert.equal(elements['#list-offline'].hidden, false);
+  assert.equal(elements['#list-items'].hidden, true);
+  assert.equal(elements['#list-empty'].hidden, true);
+  assert.equal(elements['#list-count'].hidden, true);
   sendEvent(second, {
-    type: 'player.update', revision: 901,
+    type: 'player.update', revision: 901, active_source: 'internet_radio',
     player: {...player('Радио'), wifi_connected: true},
   });
   assert.equal(tabOf('internet_radio').disabled, false);
   assert.ok(!tabOf('internet_radio').classList.values.has('is-unavailable'));
+  assert.equal(elements['#list-offline'].hidden, true);
+  assert.equal(elements['#list-count'].hidden, false);
 
   second.emit('close');
   assert.equal(elements['#socket-state'].textContent, 'Нет связи');

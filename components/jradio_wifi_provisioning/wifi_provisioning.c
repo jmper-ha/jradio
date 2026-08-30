@@ -23,6 +23,12 @@
 /* A scan of every channel takes a few seconds; well past that it is not slow,
  * it is stuck, and the page needs an answer rather than another "wait". */
 #define WIFI_SCAN_TIMEOUT_MS 15000
+/* Weaker than this and the network is not worth offering: it may associate and
+ * will not carry a stream, and a list padded with them buries the two or three
+ * networks the user actually has. Applied per sighting, before the strongest of
+ * each name is kept, so a network heard once faintly and once well still
+ * counts as the good one. */
+#define WIFI_SCAN_MIN_RSSI (-80)
 
 static const char *TAG = "wifi_mgr";
 
@@ -922,7 +928,7 @@ esp_err_t wifi_provisioning_scan_result(wifi_provisioning_scan_entry_t *entries,
         copy_ssid(ssid, (const char *)records[index].ssid);
         // A hidden network announces an empty name and cannot be joined by
         // picking it off a list; the manual entry is what it is for.
-        if (ssid[0] == '\0') {
+        if (ssid[0] == '\0' || records[index].rssi < WIFI_SCAN_MIN_RSSI) {
             continue;
         }
         // One access point on two bands, or a mesh, appears several times.

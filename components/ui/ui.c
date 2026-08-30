@@ -350,6 +350,7 @@ static bool s_files_unavailable;
 // One per volume, as the snapshot last reported them, so the menu can answer
 // "can this source be opened" for whichever row the cursor is on.
 static bool s_last_wifi_connected;
+static bool s_last_wifi_setup_ap;
 static file_browser_media_t s_last_usb_media = FILE_BROWSER_MEDIA_ABSENT;
 static file_browser_media_t s_last_sd_media = FILE_BROWSER_MEDIA_ABSENT;
 static size_t s_last_files_entry_count;
@@ -3506,12 +3507,33 @@ static void ui_remember_playing(const player_snapshot_t *snapshot)
     }
 }
 
+/* The network went away for good while one of the two streaming sources was
+ * playing. Waiting on a screen for a stream that cannot come back is worse than
+ * being taken home, and going home also stops the source rather than leaving it
+ * retrying behind a screen with nothing to say.
+ *
+ * Edge-triggered on the setup AP, not on "not connected": between losing a
+ * network and giving up there is a retry that usually succeeds within seconds,
+ * and throwing the user out of the player every time the air goes quiet would
+ * be worse than the wait. */
+static bool ui_network_lost_for_good(const player_snapshot_t *snapshot)
+{
+    const bool lost = snapshot->wifi_setup_ap && !s_last_wifi_setup_ap;
+    s_last_wifi_setup_ap = snapshot->wifi_setup_ap;
+    return lost && (snapshot->active_source == AUDIO_SOURCE_INTERNET_RADIO ||
+                    snapshot->active_source == AUDIO_SOURCE_YANDEX);
+}
+
 static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
 {
     if (snapshot == NULL) return;
     const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
     const audio_source_t old_source = ui_player_state_source(&s_player_ui);
     s_last_wifi_connected = snapshot->wifi_connected;
+    if (ui_network_lost_for_good(snapshot)) {
+        ui_show_menu();
+        return;
+    }
     s_last_usb_media = snapshot->usb_media;
     s_last_sd_media = snapshot->sd_media;
     s_last_files_entry_count = snapshot->files_entry_count;

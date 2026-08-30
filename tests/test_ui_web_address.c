@@ -29,11 +29,10 @@ static void test_the_narrow_band_drops_the_scheme(void)
     assert(ui_web_address_qr(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home",
                              payload, sizeof(payload)));
     assert(strcmp(payload, "http://192.168.1.182") == 0);
-    /* Setup mode already printed the address bare beside the network name, and
-     * still does either way round. */
+    /* Setup mode names the network and stops there, whichever way round. */
     ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "jradio-A1B2", false, false,
                         text, sizeof(text));
-    assert(strcmp(text, "Сеть jradio-A1B2, 192.168.4.1") == 0);
+    assert(strcmp(text, "Подключитесь к сети jradio-A1B2") == 0);
 }
 
 static void test_setup_mode_names_the_network_to_join(void)
@@ -42,14 +41,15 @@ static void test_setup_mode_names_the_network_to_join(void)
      * connected", answered no while the box ran its own access point, and hid
      * the one address that works there. Then it showed that address alone -
      * unreachable until the user knows which network to join, which nothing
-     * else on the device says. */
+     * else on the device says. The name is the whole answer here: the address
+     * means nothing until the phone has joined, and the QR does the joining. */
     char text[64];
     ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "jradio-A1B2", false, true,
                         text, sizeof(text));
-    assert(strcmp(text, "Сеть jradio-A1B2, 192.168.4.1") == 0);
+    assert(strcmp(text, "Подключитесь к сети jradio-A1B2") == 0);
     ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "jradio-A1B2", true, true,
                         text, sizeof(text));
-    assert(strcmp(text, "join jradio-A1B2, 192.168.4.1") == 0);
+    assert(strcmp(text, "join jradio-A1B2") == 0);
 }
 
 static void test_setup_mode_without_an_address_still_says_what_to_join(void)

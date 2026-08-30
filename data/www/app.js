@@ -34,6 +34,7 @@
   const listItems = document.querySelector('#list-items');
   const listEmpty = document.querySelector('#list-empty');
   const listLoading = document.querySelector('#list-loading');
+  const listOffline = document.querySelector('#list-offline');
   const listSearch = document.querySelector('#list-search');
   const playerBar = document.querySelector('#player-bar');
   const playerExpand = document.querySelector('#player-expand');
@@ -189,9 +190,8 @@
       /* Two of them stream from the internet and have nothing to play without
          one. Marked separately from a closed socket: that is this page losing
          the device, this is the device having no network. */
-      const needsNetwork = button.dataset.source === 'internet_radio' ||
-                           button.dataset.source === 'yandex';
-      const noNetwork = needsNetwork && state.player.wifi_connected !== true;
+      const noNetwork = needsNetworkSource(button.dataset.source) &&
+                        state.player.wifi_connected !== true;
       button.disabled = !state.connected || noNetwork;
       button.classList.toggle('is-unavailable', noNetwork);
       button.title = noNetwork ? 'Нет сети' : '';
@@ -247,6 +247,12 @@
       ' 11.52 8.02 9.50 3.93 12.84 7.09 13.27 3.62 14.64 6.90 16.71 4.86 16.30 7.68' +
       ' 19.05 6.89 17.28 9.11 20.27 9.70 17.43 10.77Z"/></svg>',
   });
+
+  // The two sources that stream from the internet, named in one place: the
+  // strip, the list and the playlist link all have to agree about them.
+  function needsNetworkSource(source) {
+    return source === 'internet_radio' || source === 'yandex';
+  }
 
   function renderSources() {
     const previousSignature = sourceTabs.dataset.signature || '';
@@ -934,9 +940,17 @@
        still asking - not that there is nothing. The other sources are read
        from the device itself and are empty only when they really are. */
     const waiting = rowCount === 0 && state.connected && state.activeSource === 'yandex';
-    listLoading.hidden = !waiting;
-    listEmpty.hidden = rowCount !== 0 || waiting;
-    listItems.hidden = rowCount === 0;
+    /* With no network these two have nothing to offer: the stations cannot be
+       played and the rotor's list was never fetched. The page opens on internet
+       radio, so without this it greeted a device with no Wi-Fi with a full list
+       of stations and no way to start any of them. */
+    const offline = needsNetworkSource(state.activeSource) &&
+                    state.player.wifi_connected !== true;
+    listOffline.hidden = !offline;
+    listCount.hidden = offline;
+    listLoading.hidden = offline || !waiting;
+    listEmpty.hidden = offline || rowCount !== 0 || waiting;
+    listItems.hidden = offline || rowCount === 0;
 
     listItems.querySelectorAll('button').forEach((button) => {
       button.disabled = !state.connected;

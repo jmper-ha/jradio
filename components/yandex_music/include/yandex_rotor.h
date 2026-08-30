@@ -53,6 +53,14 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track);
  * audio path keeps knowing nothing about Yandex. */
 const char *yandex_rotor_next_url(char *title, size_t title_size);
 
+/* A fresh link to the track already on the air, for reopening it where a pause
+ * left it. NULL when nothing is playing or the link will not sign again.
+ *
+ * Matches internet_radio_track_reopen_fn. It carries no title because there is
+ * no new track to name - the one on the screen is still the right one - and it
+ * reports nothing to the station: a track resumed was not played twice. */
+const char *yandex_rotor_current_url(void);
+
 /* Records that the listener asked for the next track rather than letting this
  * one finish, so that the track being left is reported as a skip. Consumed by
  * the next track change; harmless when nothing is playing.

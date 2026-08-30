@@ -407,6 +407,32 @@ esp_err_t yandex_rotor_last_error(void)
     return s_rotor.last_error;
 }
 
+const char *yandex_rotor_current_url(void)
+{
+    if (s_rotor.scratch == NULL) return NULL;
+    char id[YANDEX_TRACK_ID_MAX + 1U];
+    taskENTER_CRITICAL(&s_playing_lock);
+    const bool playing = s_rotor.playing;
+    memcpy(id, s_rotor.playing_id, sizeof(id));
+    taskEXIT_CRITICAL(&s_playing_lock);
+    if (!playing || id[0] == '\0') return NULL;
+
+    /* Only the link is fetched again. The batch does not move, no start or end
+     * is reported, and the cover is not republished: this is the same track,
+     * still on the air, and everything that says "a track began" has already
+     * been said about it. Reporting it twice would teach the station that it
+     * was played twice.
+     *
+     * last_error is left alone for the same reason - it is what the screen
+     * shows about getting music out of the station, and a link that would not
+     * re-sign is not that. */
+    if (yandex_rotor_resolve(id, s_rotor.url, YANDEX_LINK_URL_MAX + 1U) != ESP_OK) {
+        ESP_LOGW(TAG, "could not sign %s again", id);
+        return NULL;
+    }
+    return s_rotor.url;
+}
+
 const char *yandex_rotor_next_url(char *title, size_t title_size)
 {
     yandex_track_t track;

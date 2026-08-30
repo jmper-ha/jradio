@@ -155,6 +155,18 @@ typedef struct {
      * body is then the end of a track, not a dropped connection. */
     bool track_chain;
     internet_radio_track_source_fn track_source;
+    internet_radio_track_reopen_fn track_reopen;
+    /* Bytes of the current track's body already taken off the socket, and the
+     * offset the next open should ask for with a Range header (0 for the whole
+     * body, which is every open but the one that resumes a paused track).
+     *
+     * Raw body bytes, counted before the ICY layer strips anything, because
+     * that is the coordinate a Range is in. */
+    size_t track_offset;
+    size_t range_offset;
+    // Whether the last open answered 206 rather than 200 - that is, whether
+    // the Range was honoured and what is buffered is still the continuation.
+    bool range_granted;
     atomic_bool skip_requested;
     atomic_bool direct_stop_requested;
     atomic_bool direct_paused;
@@ -170,6 +182,8 @@ static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static bool radio_direct_reconnect(internet_radio_context_t *radio);
 static bool radio_direct_advance(internet_radio_context_t *radio);
+static bool radio_direct_resume_track(internet_radio_context_t *radio);
+static bool radio_stream_is_open(const internet_radio_context_t *radio);
 /* Defined below, past the HLS layer they dispatch to. */
 static esp_err_t radio_stream_open(internet_radio_context_t *radio, const char *url);
 static void radio_stream_close(internet_radio_context_t *radio);
@@ -494,9 +508,59 @@ static void radio_direct_task(void *arg)
     while (!fatal &&
            !atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire)) {
         if (atomic_load_explicit(&radio->direct_paused, memory_order_acquire)) {
+            /* Nothing reads the socket while paused, so the server drops us
+             * anyway - it just does it on its own schedule, and the reconnect
+             * then lands minutes later in the middle of the music. Letting go
+             * here makes the moment ours, and hands the TLS session's internal
+             * SRAM back for as long as the pause lasts.
+             *
+             * Not while a chain is playing out a finished track: its body is
+             * already consumed and the next act is to open the following one,
+             * so there is nothing here to reopen. */
+            if (radio_stream_is_open(radio) && !track_ended) {
+                radio_stream_close(radio);
+                if (!radio->track_chain) {
+                    /* A live stream has no position to hold. What is buffered
+                     * is a few seconds of a broadcast that has since moved on,
+                     * and playing it out on resume is how a pause turned into
+                     * a delay. */
+                    radio_decoder_reset(radio->decoder);
+                    available = 0U;
+                    compressed_offset = 0U;
+                }
+            }
             vTaskDelay(pdMS_TO_TICKS(20));
             /* A pause decodes nothing by design, so it must not age into a
              * stall the moment playback resumes. */
+            last_pcm_tick = xTaskGetTickCount();
+            continue;
+        }
+
+        /* Resumed, with the pause having closed the stream. A station comes
+         * back on the live edge, a track where it left off - which is the
+         * whole difference between the two, and the only place it is spelled
+         * out. A pending skip is left to the branch below: reopening a track
+         * the listener has already asked to leave would cost an API call to
+         * throw the answer away. */
+        if (!radio_stream_is_open(radio) && !track_ended &&
+            !atomic_load_explicit(&radio->skip_requested, memory_order_acquire)) {
+            const bool reopened = radio->track_chain ? radio_direct_resume_track(radio)
+                                                     : radio_direct_reconnect(radio);
+            if (!reopened) {
+                fatal = !atomic_load_explicit(&radio->direct_stop_requested,
+                                              memory_order_acquire);
+                break;
+            }
+            if (!radio->track_chain || !radio->range_granted) {
+                // Either a station, whose backlog the pause already dropped,
+                // or a server that ignored the Range and is sending the track
+                // from its start: what is held is no longer its continuation.
+                radio_decoder_reset(radio->decoder);
+                available = 0U;
+                compressed_offset = 0U;
+            }
+            decode_error_retries = 0U;
+            decoder_reset_tried = false;
             last_pcm_tick = xTaskGetTickCount();
             continue;
         }
@@ -769,6 +833,14 @@ static void radio_direct_task(void *arg)
                                               memory_order_acquire);
                 break;
             }
+            /* Counted before the ICY layer takes its bytes out, because a
+             * Range is in body coordinates. HLS is left out: its reads are
+             * segments, and a resumed byte offset would mean nothing across
+             * them - a live playlist is not something a pause holds a place
+             * in anyway. */
+            if (radio->track_chain && !radio->hls.active) {
+                radio->track_offset += (size_t)received;
+            }
             int chunk = received;
             const TickType_t topup_started = xTaskGetTickCount();
             for (;;) {
@@ -917,6 +989,12 @@ static esp_err_t radio_http_connect(internet_radio_context_t *radio, const char 
     }
 
     esp_err_t err = esp_http_client_set_header(radio->http, "Icy-MetaData", "1");
+    radio->range_granted = false;
+    if (err == ESP_OK && radio->range_offset > 0U) {
+        char range[32];
+        snprintf(range, sizeof(range), "bytes=%u-", (unsigned int)radio->range_offset);
+        err = esp_http_client_set_header(radio->http, "Range", range);
+    }
     unsigned int redirects = 0U;
     while (err == ESP_OK) {
         // MALLOC_CAP_DMA is reported separately and deliberately: it is a
@@ -954,10 +1032,12 @@ static esp_err_t radio_http_connect(internet_radio_context_t *radio, const char 
 
         const int status_code = esp_http_client_get_status_code(radio->http);
         if (!radio_http_status_is_redirect(status_code)) {
-            if (status_code != 200) {
+            const radio_http_body_t body = radio_http_body_kind(status_code);
+            if (body == RADIO_HTTP_BODY_FAILED) {
                 err = ESP_FAIL;
                 ESP_LOGE(TAG, "HTTP status %d", status_code);
             }
+            radio->range_granted = body == RADIO_HTTP_BODY_PARTIAL;
             break;
         }
         if (redirects >= RADIO_HTTP_MAX_REDIRECTS) {
@@ -989,6 +1069,9 @@ static esp_err_t radio_http_connect(internet_radio_context_t *radio, const char 
 static void radio_stream_reset_status(internet_radio_context_t *radio)
 {
     radio->icy_interval = 0;
+    // A body about to be read from the start, unless the open that follows
+    // asked for a Range and got one - which is where this is set again.
+    radio->track_offset = 0U;
     radio->pcm_bytes = 0;
     radio->pcm_blocks = 0;
     radio->output_logged = false;
@@ -1503,6 +1586,15 @@ static void radio_stream_close(internet_radio_context_t *radio)
     radio_hls_stop(radio);
 }
 
+/* Whether there is a connection to read from. False between a pause closing
+ * one and the resume reopening it, which is the only moment the decode loop
+ * has to tell apart - a chain playing out the tail of a finished track still
+ * has its connection, it simply has nothing left to give. */
+static bool radio_stream_is_open(const internet_radio_context_t *radio)
+{
+    return radio->http != NULL || radio->hls.active;
+}
+
 static int radio_stream_read_blocking(internet_radio_context_t *radio, uint8_t *buffer,
                                       int length)
 {
@@ -1575,6 +1667,57 @@ static bool radio_direct_reconnect(internet_radio_context_t *radio)
  * minute - fetching it in advance would mean holding a link that dies while
  * the previous track is still playing. It costs three API calls, which the
  * backlog this runs at the end of is there to cover. */
+/* Reopens the track a pause closed, at the byte it stopped on.
+ *
+ * The link is asked for again rather than kept: a signed link is short-lived,
+ * and after a pause of any length the one that was playing has usually
+ * expired. What comes back names the same track - that is the whole point of
+ * a separate source from the one that hands out the next one.
+ *
+ * The output counters are carried across for the reason radio_direct_advance
+ * gives: the I2S channel is still running, and starting a running channel
+ * fails in a way the decode task treats as fatal.
+ *
+ * A server that ignores the Range answers 200 and starts the track again;
+ * radio->range_granted says which happened, and the caller throws its backlog
+ * away when the answer is no. */
+static bool radio_direct_resume_track(internet_radio_context_t *radio)
+{
+    if (radio->track_reopen == NULL) {
+        ESP_LOGW(TAG, "no way to reopen the paused track; moving on");
+        return false;
+    }
+    const char *url = radio->track_reopen();
+    if (url == NULL) {
+        ESP_LOGW(TAG, "the paused track could not be resolved again");
+        return false;
+    }
+    const bool output_was_started = radio->output_started;
+    const bool output_was_logged = radio->output_logged;
+    const uint32_t output_rate = radio->output_sample_rate;
+    const size_t played_bytes = radio->pcm_bytes;
+    const size_t played_blocks = radio->pcm_blocks;
+    const size_t resume_offset = radio->track_offset;
+    radio->range_offset = resume_offset;
+    const esp_err_t err = radio_stream_open(radio, url);
+    radio->range_offset = 0U;
+    radio->output_started = output_was_started;
+    radio->output_logged = output_was_logged;
+    radio->output_sample_rate = output_rate;
+    radio->pcm_bytes = played_bytes;
+    radio->pcm_blocks = played_blocks;
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "the paused track did not reopen: %s", esp_err_to_name(err));
+        return false;
+    }
+    // The open reset the counter to zero; the body it returned starts where
+    // the pause stopped, unless the Range was refused.
+    radio->track_offset = radio->range_granted ? resume_offset : 0U;
+    ESP_LOGI(TAG, "resumed the track at %u bytes%s", (unsigned int)resume_offset,
+             radio->range_granted ? "" : " - the server ignored it and started over");
+    return true;
+}
+
 static bool radio_direct_advance(internet_radio_context_t *radio)
 {
     if (radio->track_source == NULL) return false;
@@ -1988,6 +2131,11 @@ bool internet_radio_skip_track(void)
 void internet_radio_set_track_source(internet_radio_track_source_fn source)
 {
     s_radio.track_source = source;
+}
+
+void internet_radio_set_track_reopen(internet_radio_track_reopen_fn reopen)
+{
+    s_radio.track_reopen = reopen;
 }
 
 bool internet_radio_start_track_chain(const char *display_name)

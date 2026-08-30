@@ -103,7 +103,13 @@ void app_main(void)
      * HTTP stream that arrives one track at a time, and this is the seam
      * between the two - the audio path asks for the next link, and the rotor
      * is what answers, without either component naming the other. */
-    if (BOARD_HAS_YANDEX_MUSIC) internet_radio_set_track_source(yandex_rotor_next_url);
+    if (BOARD_HAS_YANDEX_MUSIC) {
+        internet_radio_set_track_source(yandex_rotor_next_url);
+        // The other half of that seam: a pause closes the connection, and this
+        // is what signs the same track again so it can be reopened where it
+        // stopped rather than abandoned for the next one.
+        internet_radio_set_track_reopen(yandex_rotor_current_url);
+    }
     ESP_ERROR_CHECK(player_control_init());
     ESP_ERROR_CHECK(ui_init());
     start_optional("web server", web_server_start());

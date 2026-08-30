@@ -37,6 +37,16 @@ typedef struct {
 typedef const char *(*internet_radio_track_source_fn)(char *title, size_t title_size);
 void internet_radio_set_track_source(internet_radio_track_source_fn source);
 
+/* The link for the track already on the air, for reopening it where a pause
+ * left it. Returns NULL when it cannot be had, and the chain then moves on to
+ * the next track the way it always did.
+ *
+ * Separate from the source above because the two ask opposite questions - "the
+ * next one" against "this one again" - and because this must teach the station
+ * nothing: a track resumed is not a track played twice. */
+typedef const char *(*internet_radio_track_reopen_fn)(void);
+void internet_radio_set_track_reopen(internet_radio_track_reopen_fn reopen);
+
 /* Starts such a chain under `display_name`. The first track is fetched here,
  * so this blocks for as long as the API calls take. */
 bool internet_radio_start_track_chain(const char *display_name);

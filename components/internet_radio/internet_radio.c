@@ -503,6 +503,11 @@ static void radio_direct_task(void *arg)
     /* Set on a chain source when the body ran out; cleared once the next track
      * is open. Nothing is read from the network while it is set. */
     bool track_ended = false;
+    /* Ogg carries FLAC, Vorbis or Opus behind the one Content-Type, so the
+     * codec name is read from the first page of the body rather than the
+     * headers. Once per stream: the answer cannot change mid-stream, and the
+     * bytes it needs are only there before the first decode call. */
+    bool ogg_codec_named = false;
     TickType_t next_report = xTaskGetTickCount() + pdMS_TO_TICKS(RADIO_STARVATION_REPORT_MS);
 
     while (!fatal &&
@@ -649,6 +654,20 @@ static void radio_direct_task(void *arg)
             ++starvations;
         }
         if (!need_input) {
+            if (!ogg_codec_named && radio_stream_format_is_ogg(radio->stream_format)) {
+                ogg_codec_named = true;
+                const radio_stream_format_t carried = radio_stream_format_from_ogg_page(
+                    compressed + compressed_offset, available, radio->stream_format);
+                if (carried != radio->stream_format) {
+                    radio->stream_format = carried;
+                    taskENTER_CRITICAL(&s_status_lock);
+                    snprintf(radio->status.codec, sizeof(radio->status.codec), "%s",
+                             radio_stream_format_codec_name(carried));
+                    taskEXIT_CRITICAL(&s_status_lock);
+                    ESP_LOGI(TAG, "Ogg stream carries %s",
+                             radio_stream_format_codec_name(carried));
+                }
+            }
             size_t consumed = 0U;
             size_t pcm_bytes = 0U;
             radio_decoder_info_t info = {0};
@@ -2095,8 +2114,15 @@ static bool radio_start_stream(const char *url, const char *name, size_t station
     /* 10 KB rather than 8: a chain source resolves its next track on this very
      * task, and that is three TLS handshakes deep inside the decode loop.
      * Measured least-seen headroom fell from 5660 to 2676 bytes the first time
-     * a chain advanced, and a stack overflow here is a reboot, not a glitch. */
-    if (xTaskCreatePinnedToCore(radio_direct_task, "radio_decode", 10240, &s_radio, 6,
+     * a chain advanced, and a stack overflow here is a reboot, not a glitch.
+     *
+     * 16 KB rather than 10 since Opus: the Opus decoder keeps its working set
+     * on the caller's stack, and the first Opus station overflowed 10 KB
+     * within a frame of being named - a reboot loop, because the device comes
+     * back up on the station it was playing. FLAC leaves about 4.9 KB free of
+     * the 10, so the extra 6 KB is what Opus needs on top of the deepest path
+     * anything else here takes. */
+    if (xTaskCreatePinnedToCore(radio_direct_task, "radio_decode", 16384, &s_radio, 6,
                                 &direct_task_handle, 1) != pdPASS) {
         ESP_LOGE(TAG, "failed to create direct decoder task");
         radio_decoder_destroy(s_radio.decoder);

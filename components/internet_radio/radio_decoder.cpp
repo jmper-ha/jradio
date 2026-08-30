@@ -8,6 +8,8 @@
 #include "esp_heap_caps.h"
 #include "decoder/impl/esp_aac_dec.h"
 #include "decoder/impl/esp_flac_dec.h"
+#include "decoder/impl/esp_opus_dec.h"
+#include "decoder/impl/esp_vorbis_dec.h"
 #include "simple_dec/esp_audio_simple_dec.h"
 #include "simple_dec/impl/esp_ogg_dec.h"
 #include "micro_flac/flac_decoder.h"
@@ -160,7 +162,7 @@ static bool normalize_pcm(const int32_t *input, size_t sample_count, uint8_t cha
 extern "C" bool radio_decoder_is_supported(radio_stream_format_t format)
 {
     return format == RADIO_STREAM_FORMAT_MP3 || format == RADIO_STREAM_FORMAT_AAC ||
-           format == RADIO_STREAM_FORMAT_FLAC || format == RADIO_STREAM_FORMAT_OGG_FLAC;
+           format == RADIO_STREAM_FORMAT_FLAC || radio_stream_format_is_ogg(format);
 }
 
 extern "C" radio_decoder_t *radio_decoder_create(radio_stream_format_t format)
@@ -194,15 +196,25 @@ extern "C" radio_decoder_t *radio_decoder_create(radio_stream_format_t format)
             delete decoder;
             return nullptr;
         }
-    } else if (format == RADIO_STREAM_FORMAT_OGG_FLAC) {
-        const esp_audio_err_t flac_register_result = esp_flac_dec_register();
-        const esp_audio_err_t ogg_register_result = esp_ogg_dec_register();
-        if ((flac_register_result != ESP_AUDIO_ERR_OK &&
-             flac_register_result != ESP_AUDIO_ERR_ALREADY_EXIST) ||
-            (ogg_register_result != ESP_AUDIO_ERR_OK &&
-             ogg_register_result != ESP_AUDIO_ERR_ALREADY_EXIST)) {
-            delete decoder;
-            return nullptr;
+    } else if (radio_stream_format_is_ogg(format)) {
+        // The Ogg decoder is only the container: it hands each packet to
+        // whichever codec decoder is registered for what the stream carries,
+        // and refuses with ESP_AUDIO_ERR_NOT_SUPPORT if that one is missing.
+        // Registering FLAC alone is what silenced every Vorbis and Opus
+        // station - the container opened, the first packet came back
+        // unsupported, and the stream ended with a decode error.
+        const esp_audio_err_t registrations[] = {
+            esp_flac_dec_register(),
+            esp_vorbis_dec_register(),
+            esp_opus_dec_register(),
+            esp_ogg_dec_register(),
+        };
+        for (const esp_audio_err_t registration : registrations) {
+            if (registration != ESP_AUDIO_ERR_OK &&
+                registration != ESP_AUDIO_ERR_ALREADY_EXIST) {
+                delete decoder;
+                return nullptr;
+            }
         }
         esp_audio_simple_dec_cfg_t simple_cfg = {
             .dec_type = ESP_AUDIO_SIMPLE_DEC_TYPE_OGG,
@@ -264,7 +276,7 @@ extern "C" radio_decoder_result_t radio_decoder_decode(
     *pcm_bytes = 0U;
 
     if (decoder->format == RADIO_STREAM_FORMAT_AAC ||
-        decoder->format == RADIO_STREAM_FORMAT_OGG_FLAC) {
+        radio_stream_format_is_ogg(decoder->format)) {
         if (decoder->simple == nullptr || pcm_output == nullptr || pcm_capacity == 0U) {
             return RADIO_DECODER_ERROR;
         }

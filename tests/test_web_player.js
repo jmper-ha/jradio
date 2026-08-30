@@ -698,6 +698,11 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
   assert.equal(elements['#list-items'].hidden, true);
   assert.equal(elements['#list-empty'].hidden, true);
   assert.equal(elements['#list-count'].hidden, true);
+  /* And the play key with them: it restarts the last station, so leaving it
+     live turned a hidden list into a connection attempt that ends in
+     "Connection error" on the device. */
+  assert.equal(elements['#play-toggle'].disabled, true);
+  assert.ok(elements['#play-toggle'].classList.values.has('is-unavailable'));
   sendEvent(second, {
     type: 'player.update', revision: 901, active_source: 'internet_radio',
     player: {...player('Радио'), wifi_connected: true},
@@ -706,6 +711,20 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
   assert.ok(!tabOf('internet_radio').classList.values.has('is-unavailable'));
   assert.equal(elements['#list-offline'].hidden, true);
   assert.equal(elements['#list-count'].hidden, false);
+  assert.equal(elements['#play-toggle'].disabled, false);
+
+  /* The case that got through: nothing has been selected yet, so the source is
+     "none" and reads as needing nothing - while the list the device describes
+     there is the station catalogue, and the play key restarts the last station
+     out of it. This is the state the page opens in. */
+  sendEvent(second, {
+    type: 'snapshot', revision: 910, ...baseSnapshot,
+    active_source: 'none',
+    player: {...player('Радио'), wifi_connected: false},
+  });
+  assert.equal(elements['#list-offline'].hidden, false);
+  assert.equal(elements['#list-items'].hidden, true);
+  assert.equal(elements['#play-toggle'].disabled, true);
 
   second.emit('close');
   assert.equal(elements['#socket-state'].textContent, 'Нет связи');

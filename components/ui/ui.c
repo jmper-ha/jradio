@@ -76,6 +76,11 @@
 #define UI_COLOR_DISABLED 0x4E606C
 /* Only ever a warning; never decoration, so it stays out of the ramp above. */
 #define UI_COLOR_NOTICE 0xFFD54F
+/* A state that is a failure rather than a step: "Connection error" and nothing
+ * else so far. Red because it is the one line on the player screen the user is
+ * meant to stop at, and in plain text it read like "Connecting..." at a
+ * glance. */
+#define UI_COLOR_ERROR 0xEF5350
 /* Folder rows in the USB browser. Deliberately duller than the accent, which
  * means "this is the one playing" - a folder is a place, not a state. */
 #define UI_COLOR_FOLDER 0xC08A1E
@@ -753,10 +758,15 @@ static void ui_update_playback_marks(const player_snapshot_t *snapshot)
  * performer being empty whenever a state was worth showing - which is false on
  * pause, where the title is still there and the two drew on top of each
  * other. */
-static void ui_set_state_line(const char *state, const char *artist)
+static void ui_set_state_line(const char *state, const char *artist, bool error)
 {
     const bool show_state = state != NULL && state[0] != '\0';
     ui_set_label_text_if_changed(s_source_status, show_state ? state : "");
+    /* Set on every pass rather than only when it changes: the label is shared
+     * by every state the screen shows, and a colour left behind would paint the
+     * next "Connecting..." in the failure's red. */
+    lv_obj_set_style_text_color(s_source_status,
+                                lv_color_hex(error ? UI_COLOR_ERROR : UI_COLOR_DIM), 0);
     ui_set_label_text_if_changed(s_source_artist, show_state ? "" : artist);
     if (show_state) {
         lv_obj_add_flag(s_source_artist, LV_OBJ_FLAG_HIDDEN);
@@ -795,8 +805,10 @@ static void ui_update_files_status(const player_snapshot_t *snapshot)
     ui_scroller_set_text(&s_source_detail, now.title);
     // The performer row is the state line's whenever there is a state worth
     // naming. Pause is not one - the badge says it.
+    /* A file that will not open is a failure too, and it reaches this line the
+     * same way the radio's does. */
     ui_set_state_line(snapshot->playback_state == PLAYER_PLAYBACK_STOPPED ? "Выберите файл" : "",
-                      now.artist);
+                      now.artist, snapshot->playback_state == PLAYER_PLAYBACK_ERROR);
     ui_set_stream_readings(snapshot);
 }
 
@@ -864,7 +876,7 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
     const bool settled = snapshot->playback_state == PLAYER_PLAYBACK_PLAYING ||
                          snapshot->playback_state == PLAYER_PLAYBACK_PAUSED;
     ui_set_state_line(settled ? "" : ui_radio_state_text(snapshot->playback_state),
-                      now.artist);
+                      now.artist, snapshot->playback_state == PLAYER_PLAYBACK_ERROR);
 
     ui_set_stream_readings(snapshot);
 }
@@ -2684,7 +2696,7 @@ static void ui_load_source_screen(audio_source_t selected_source)
     lv_label_set_text(s_source_title, ui_menu_item_label((ui_menu_item_t)index));
     lv_screen_load(s_source_screen);
     if (selected_source == AUDIO_SOURCE_INTERNET_RADIO) {
-        ui_set_state_line("Connecting...", "");
+        ui_set_state_line("Connecting...", "", false);
         ui_scroller_set_text(&s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
         s_waiting_for_radio_station = true;
@@ -2693,19 +2705,19 @@ static void ui_load_source_screen(audio_source_t selected_source)
         /* Connecting like a station, but without the wait that falls back to
          * the radio list: this source has its own screen to fall back to, and
          * its station name is known before the first byte arrives. */
-        ui_set_state_line("Connecting...", "");
+        ui_set_state_line("Connecting...", "", false);
         ui_set_label_text_if_changed(s_source_stream, "");
         s_waiting_for_radio_station = false;
     } else if (audio_source_is_files(selected_source)) {
         s_waiting_for_radio_station = false;
         // Nothing plays until a file is chosen, so this screen opens idle
         // rather than pretending to connect.
-        ui_set_state_line("Выберите файл", "");
+        ui_set_state_line("Выберите файл", "", false);
         ui_scroller_set_text(&s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
     } else {
         s_waiting_for_radio_station = false;
-        ui_set_state_line("Not implemented", "");
+        ui_set_state_line("Not implemented", "", false);
         ui_scroller_set_text(&s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
     }
@@ -3237,7 +3249,7 @@ static void ui_handle_input(board_input_action_t action)
                               ui_menu_item_label(source == AUDIO_SOURCE_SD
                                                      ? UI_MENU_ITEM_SD_CARD
                                                      : UI_MENU_ITEM_USB_FILES));
-            ui_set_state_line("Открытие файла", "");
+            ui_set_state_line("Открытие файла", "", false);
             ui_scroller_set_text(&s_source_detail, file_browser_display_name(entry.name));
             ui_set_label_text_if_changed(s_source_stream,
                                          file_browser_entry_type_label(&entry));
@@ -3254,7 +3266,7 @@ static void ui_handle_input(board_input_action_t action)
             if (!ui_submit_player_command(&command)) return;
             ui_load_source_screen(AUDIO_SOURCE_INTERNET_RADIO);
             if (entry != NULL) lv_label_set_text(s_source_title, entry->name);
-            ui_set_state_line("Connecting", "");
+            ui_set_state_line("Connecting", "", false);
             ui_scroller_set_text(&s_source_detail,
                                          entry == NULL ? "" : entry->name);
             char stream_text[32];

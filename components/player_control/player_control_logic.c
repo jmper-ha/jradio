@@ -96,6 +96,19 @@ bool player_snapshot_equal(const player_snapshot_t *left,
            memcmp(left->error, right->error, sizeof(left->error)) == 0;
 }
 
+/* Nothing that streams from the internet can be started without one, and the
+ * only thing further down the road is a connection attempt that ends in
+ * "Connection error" on the screen. Both faces refuse it before it is offered,
+ * but the refusal belongs here as well: a page loaded before the network went
+ * away still has live buttons, and a browser that kept it open is exactly how
+ * this was found. */
+static bool player_source_needs_absent_network(const player_snapshot_t *state,
+                                               audio_source_t source)
+{
+    return !state->wifi_connected && (source == AUDIO_SOURCE_INTERNET_RADIO ||
+                                      source == AUDIO_SOURCE_YANDEX);
+}
+
 player_operation_t player_control_decide(const player_snapshot_t *state,
                                          const player_command_t *command)
 {
@@ -116,13 +129,19 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
                                 : command->source == AUDIO_SOURCE_SD  ? PLAYER_CAP_SD
                                 : command->source == AUDIO_SOURCE_YANDEX ? PLAYER_CAP_YANDEX
                                                                       : 0U;
-        const bool supported = needed != 0U && (state->capabilities & needed) != 0U;
+        const bool supported = needed != 0U && (state->capabilities & needed) != 0U &&
+                               !player_source_needs_absent_network(state, command->source);
         return supported ? PLAYER_OPERATION_SELECT_SOURCE : PLAYER_OPERATION_INVALID;
     }
     case PLAYER_COMMAND_STOP_SOURCE:
         return state->active_source == AUDIO_SOURCE_NONE ? PLAYER_OPERATION_NONE
                                                           : PLAYER_OPERATION_STOP;
     case PLAYER_COMMAND_PLAY:
+        // Whatever is already playing may keep playing; nothing starts.
+        if (state->playback_state != PLAYER_PLAYBACK_PLAYING &&
+            player_source_needs_absent_network(state, state->active_source)) {
+            return PLAYER_OPERATION_INVALID;
+        }
         if (state->playback_state == PLAYER_PLAYBACK_PAUSED) return PLAYER_OPERATION_RESUME;
         if (state->playback_state == PLAYER_PLAYBACK_STOPPED ||
             state->playback_state == PLAYER_PLAYBACK_ERROR) return PLAYER_OPERATION_START_SAVED;
@@ -136,6 +155,9 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
                                                                 : PLAYER_OPERATION_INVALID;
     case PLAYER_COMMAND_TOGGLE:
         if (state->playback_state == PLAYER_PLAYBACK_PLAYING) return PLAYER_OPERATION_PAUSE;
+        if (player_source_needs_absent_network(state, state->active_source)) {
+            return PLAYER_OPERATION_INVALID;
+        }
         if (state->playback_state == PLAYER_PLAYBACK_PAUSED) return PLAYER_OPERATION_RESUME;
         if (state->playback_state == PLAYER_PLAYBACK_STOPPED ||
             state->playback_state == PLAYER_PLAYBACK_ERROR) return PLAYER_OPERATION_START_SAVED;
@@ -153,6 +175,9 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
                               state->active_source == AUDIO_SOURCE_NONE;
         if ((!stations && !audio_source_is_files(state->active_source)) ||
             command->item_index >= state->item_count) return PLAYER_OPERATION_INVALID;
+        /* Every station list is a list of streams, including the one the
+         * snapshot describes before any source is chosen. */
+        if (stations && !state->wifi_connected) return PLAYER_OPERATION_INVALID;
         // On USB an entry can be a directory, and re-selecting the directory
         // the cursor is already in still has to navigate; only a station list
         // can treat "same index, still healthy" as a no-op.

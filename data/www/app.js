@@ -185,13 +185,25 @@
     renderPlayer();
   }
 
+  /* Whether what this control is pointed at can do anything without a network:
+     one of the two sources that stream from the internet, or - before any
+     source has been chosen - the station list the device describes by default,
+     which is the state the page opens in.
+
+     Marked separately from a closed socket: that is this page losing the
+     device, this is the device having no network. */
+  function offlineNow(source, kind) {
+    if (state.player.wifi_connected === true) return false;
+    return needsNetworkSource(source) || kind === 'stations';
+  }
+
   function updateControlAvailability() {
     document.querySelectorAll('button[data-command], #play-toggle').forEach((button) => {
-      /* Two of them stream from the internet and have nothing to play without
-         one. Marked separately from a closed socket: that is this page losing
-         the device, this is the device having no network. */
-      const noNetwork = needsNetworkSource(button.dataset.source) &&
-                        state.player.wifi_connected !== true;
+      // A source tab answers for the source it names; every other control - the
+      // play key above all - answers for whatever is active.
+      const noNetwork = button.dataset.source !== undefined
+        ? offlineNow(button.dataset.source, '')
+        : offlineNow(state.activeSource, state.list.kind);
       button.disabled = !state.connected || noNetwork;
       button.classList.toggle('is-unavailable', noNetwork);
       button.title = noNetwork ? 'Нет сети' : '';
@@ -941,11 +953,12 @@
        from the device itself and are empty only when they really are. */
     const waiting = rowCount === 0 && state.connected && state.activeSource === 'yandex';
     /* With no network these two have nothing to offer: the stations cannot be
-       played and the rotor's list was never fetched. The page opens on internet
-       radio, so without this it greeted a device with no Wi-Fi with a full list
+       played and the rotor's list was never fetched. Judged by the kind rather
+       than by the active source, because the page opens before any source is
+       chosen and the device still describes the station catalogue there - which
+       is exactly how a device with no Wi-Fi came to be greeted by a full list
        of stations and no way to start any of them. */
-    const offline = needsNetworkSource(state.activeSource) &&
-                    state.player.wifi_connected !== true;
+    const offline = offlineNow(state.activeSource, kind);
     listOffline.hidden = !offline;
     listCount.hidden = offline;
     listLoading.hidden = offline || !waiting;

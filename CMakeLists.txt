@@ -16,11 +16,18 @@ project(jradio)
 # tried first and went stale after edits to data/ (e.g. an on-device
 # playlist edit synced back into data/config/stations.csv), silently baking
 # an outdated copy into littlefs.bin.
+#
+# The compression step runs under ESP-IDF's own Python rather than a shell.
+# It used to be a bash script, which cost nothing on Linux and made the build
+# impossible on Windows: `bash` is not on PATH there, this target failed on
+# every build, and the image came out with no web interface in it. Python is
+# the one interpreter every host running idf.py is guaranteed to have.
 set(littlefs_stage_dir "${CMAKE_BINARY_DIR}/littlefs_data")
+idf_build_get_property(python PYTHON)
 add_custom_target(littlefs_stage
     COMMAND ${CMAKE_COMMAND} -E remove_directory "${littlefs_stage_dir}"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data" "${littlefs_stage_dir}"
-    COMMAND bash "${CMAKE_SOURCE_DIR}/tools/gzip_www_assets.sh" "${littlefs_stage_dir}/www"
+    COMMAND ${python} "${CMAKE_SOURCE_DIR}/tools/gzip_www_assets.py" "${littlefs_stage_dir}/www"
     VERBATIM
 )
 

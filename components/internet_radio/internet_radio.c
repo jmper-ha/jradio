@@ -62,8 +62,23 @@
  *
  * Short here means the call returns with whatever it has, which is what the
  * caller wants anyway. The waiting is done by the loop above, which has its own
- * idle budget and knows what it is waiting for. */
-#define RADIO_HTTP_STREAM_TIMEOUT_MS 100
+ * idle budget and knows what it is waiting for.
+ *
+ * Zero, not a hundred: this is the only thing that bounds how long one pass
+ * stays away from the I2S driver, and the DMA holds 93 ms. A hundred did not
+ * bound it to a hundred either - the top-up burst checks its budget between
+ * reads, so a read that outlasts the budget cannot be caught, and select()
+ * promising one segment while the request asks for a chunk means the client
+ * waits for a segment the server has not sent yet. Measured on a 1.2 Mbps FLAC
+ * station: passes went 100-300 ms without feeding the DAC and it ticked 13
+ * times in 100 s; at zero the longest pass was 75 ms and it ticked once. A
+ * station whose backlog never reaches the read target - which is every station
+ * paced at its own bitrate - reads on every single pass, so this is not a rare
+ * path.
+ *
+ * The urgent path does not lose its wait: radio_http_read_blocking() retries
+ * around this call and keeps its own 3 s idle budget. */
+#define RADIO_HTTP_STREAM_TIMEOUT_MS 0
 #define RADIO_HTTP_RECONNECT_DELAY_MS 500U
 /* Backlog held ahead of the decoder. 16 KB was about a second at 128 kbps but
  * only 90 ms of a 1441 kbps FLAC stream - less cushion than the I2S DMA
@@ -79,16 +94,25 @@
  * which is exactly what an uncapped version did. */
 #define RADIO_DIRECT_TOPUP_BUDGET_MS 20U
 #define RADIO_DIRECT_NETWORK_CHUNK 2048U
-/* How long one pass may spend handing PCM to the I2S driver.
+/* How long one write may wait on the I2S driver for room.
  *
- * The block is placed a slice at a time rather than all at once, because the
- * socket is only read between passes: a blocking write of a whole 4096-sample
- * FLAC block holds the loop for ~85 ms, and a station can then deliver no more
- * than one TCP receive window per block. That put a hard ceiling of roughly
- * 250 KB/s on this task no matter how fast the link was, and the fastest FLAC
- * stations sit right under it. Slicing at 20 ms cycles the loop four times per
- * block instead of once, and the ceiling moves with it. */
-#define RADIO_DIRECT_OUTPUT_SLICE_MS 20U
+ * Not a slice length, which is what this used to claim: i2s_channel_write()'s
+ * timeout bounds one DMA buffer acquisition, not the whole call, and a buffer
+ * frees every ~11 ms - so twenty never trips while the DAC is draining, a
+ * 4096-sample FLAC block still goes out in a single ~85 ms write, and the
+ * socket is still read once per block. The health line says so outright:
+ * `writes=117 short=0` for 117 blocks in ten seconds.
+ *
+ * Bounding the write in bytes instead, so the loop really did cycle four times
+ * per block, was measured on 2026-09-01 and is worse: 85% of realtime with
+ * ~100 underruns per 10 s, against 99-100% and 0-5 the way it stands. The
+ * extra socket reads cost the loop more than reading earlier wins it. What the
+ * ticking actually came from was the read timeout above.
+ *
+ * So what this bounds is the wait when the DMA cannot free a buffer at all -
+ * a channel being restarted for a new sample rate, or the audio mutex held
+ * elsewhere - and the remainder is then carried to the next pass. */
+#define RADIO_DIRECT_OUTPUT_WAIT_MS 20U
 #define RADIO_DIRECT_PCM_SIZE 16384U
 #define RADIO_DIRECT_STOP_TIMEOUT_MS 12000U
 #define RADIO_STARVATION_REPORT_MS 10000U
@@ -351,9 +375,10 @@ static void radio_set_title(void *context, const char *title)
 }
 
 /* Hands as much of `data` to the output as the DMA will take within
- * RADIO_DIRECT_OUTPUT_SLICE_MS, and reports how much went. A short write is
- * the normal case, not a failure: the caller keeps the remainder and comes
- * back on its next pass, having read the socket in between.
+ * RADIO_DIRECT_OUTPUT_WAIT_MS, and reports how much went. A short write is not
+ * a failure - the caller keeps the remainder and comes back for it on its next
+ * pass - but it is not the common case either: in ordinary playback the whole
+ * block goes in one call.
  *
  * `block_start` is true only for the first slice of a decoded block, so the
  * block counter still counts blocks. */
@@ -369,7 +394,7 @@ static esp_err_t radio_pcm_output(internet_radio_context_t *radio, const uint8_t
         result = board_audio_start(data, (size_t)data_size, &written);
     } else {
         result = board_audio_write(data, (size_t)data_size, &written,
-                                   RADIO_DIRECT_OUTPUT_SLICE_MS);
+                                   RADIO_DIRECT_OUTPUT_WAIT_MS);
         /* The DMA had no room this pass. Everything still to go is held by the
          * caller, so this is a wait, not a loss. */
         if (result == ESP_ERR_TIMEOUT) result = ESP_OK;
@@ -539,8 +564,10 @@ static void radio_direct_task(void *arg)
     bool track_ended = false;
     /* A decoded block that has not fully reached the I2S DMA yet. The decoder
      * writes into the same buffer, so nothing new is decoded while this is
-     * set; each pass places a slice and the socket read at the bottom of the
-     * loop runs in between. */
+     * set. A pass normally places the whole block - see
+     * RADIO_DIRECT_OUTPUT_WAIT_MS - so what this really carries is the
+     * remainder of a write that came back short, which would otherwise be the
+     * lost tail of a block. */
     size_t pcm_pending = 0U;
     size_t pcm_delivered = 0U;
     /* Ogg carries FLAC, Vorbis or Opus behind the one Content-Type, so the
@@ -798,9 +825,10 @@ static void radio_direct_task(void *arg)
                     break;
                 }
                 radio_log_decoder_info(radio->stream_format, &info, &logged_info);
-                /* Queued rather than written here: the delivery step at the top
-                 * of the loop places it a slice at a time, so the socket is
-                 * read while the block is going out instead of after it. */
+                /* Queued rather than written here so that one place owns the
+                 * write: the delivery step at the top of the loop, which can
+                 * resume a block that went out short instead of dropping its
+                 * tail, and which stops mid-block on a pause or a stop. */
                 pcm_pending = pcm_bytes;
                 pcm_delivered = 0U;
                 need_input = false;

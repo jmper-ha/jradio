@@ -93,8 +93,16 @@ CONFIG_FATFS_CODEPAGE_866=y
 # out-of-order packets - the default - everything that arrives behind the gap
 # is thrown away and has to come again. At 128 kbps that is invisible; at the
 # 1.2 Mbps of a 24-bit FLAC station it is most of a second each time, and the
-# backlog never got above 16 KB no matter how big the buffer was. With both of
-# these the same station holds 130 KB of backlog and reports no underruns at
-# all. 24 out-of-order buffers is one receive window's worth at this MSS.
+# backlog never got above 16 KB no matter how big the buffer was. With SACK on,
+# the same station holds 130 KB of backlog.
+#
+# Twelve, not the 24 this line asked for until 2026-09-02: Kconfig's range is
+# 0-12, so 24 was silently dropped on every reconfigure and the device ran the
+# default 4 the whole time - including for the measurement above, which is
+# therefore about SACK alone. Twelve was then measured against 4 on the same
+# FLAC station with alternating builds: 1 underrun per 90 s against 7, and
+# never worse. Both are swamped by how the link behaves minute to minute, so
+# this is a small edge and not the cure; what the ticking actually came from is
+# RADIO_HTTP_STREAM_TIMEOUT_MS in internet_radio.c.
 CONFIG_LWIP_TCP_SACK_OUT=y
-CONFIG_LWIP_TCP_OOSEQ_MAX_PBUFS=24
+CONFIG_LWIP_TCP_OOSEQ_MAX_PBUFS=12

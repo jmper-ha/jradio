@@ -688,6 +688,16 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   color: var(--muted);
 }
 
+/* The two lines under the title come and go with what the stream sends: one
+   station names the performer and the track, the next only itself. Their space
+   is held either way, because the panel's height is the list's top edge - a
+   station that says less pulled the list up by two lines under the pointer,
+   and the row that got clicked was not the row that was aimed at. `1lh` is one
+   line box of that element's own text, so a held line is exactly as tall as a
+   filled one. */
+.track-artist:empty,
+.track-context:empty { min-height: 1lh; }
+
 /* The transport sits on its own line, centred under the copy: it is the one
    thing on the panel that is reached for without reading first. */
 .player-transport {
@@ -1345,6 +1355,34 @@ button.network-name:hover { color: var(--accent); }
 .playlist-row.has-error { background: var(--bad-soft); }
 .playlist-row.has-error .playlist-row-name { color: var(--bad); }
 
+/* The grip a row is dragged by. `touch-action: none` is what makes it work
+   with a finger at all: without it the browser takes the first movement for a
+   scroll and the row never leaves its place. */
+.playlist-row-handle {
+  width: 22px;
+  height: 28px;
+  cursor: grab;
+  touch-action: none;
+  /* Ahead of the number, which is the head's ::before and so would otherwise
+     come first whatever the markup says. The grip starts the row: it is the
+     part that is reached for, and the number is there to be read. */
+  order: -1;
+}
+
+.playlist-row-handle:active { cursor: grabbing; }
+
+/* The row being dragged rides above its neighbours and keeps its own
+   background, so the rows it passes stay readable underneath. */
+.playlist-row.is-dragging {
+  position: relative;
+  z-index: 2;
+  background: var(--surface-2);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgb(0 0 0 / .35);
+  cursor: grabbing;
+  user-select: none;
+}
+
 .playlist-row-edit,
 .playlist-row-delete {
   width: 28px;
@@ -1603,4 +1641,7 @@ button.network-name:hover { color: var(--accent); }
      panel shows in full anyway. */
   .playlist-row-url { display: none; }
   .playlist-row-editor { padding-left: 1.6rem; }
+  /* The grip is dragged with a finger here, so it gets a finger's worth of
+     row to be grabbed by. */
+  .playlist-row-handle { width: 32px; height: 36px; }
 }

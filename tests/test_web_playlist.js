@@ -339,6 +339,43 @@ function zipWithDeflatedEntry(name, bytes) {
   assert.match(elements['#playlist-save-status'].textContent, /не удалось сохранить/i);
   assert.equal(elements['#playlist-save'].disabled, false);
 
+  /* Reordering. The arrow keys on a row's grip and a drag of that same grip
+     commit the same model change - a drag needs a layout to measure and there
+     is none here, so the keyboard path is what stands in for both. What is
+     checked is that the order sent to the device follows the list on screen. */
+  ['Y', 'Z'].forEach((name) => {
+    elements['#playlist-add'].emit('click');
+    const added = elements['#playlist-rows'].children[
+      elements['#playlist-rows'].children.length - 1];
+    added.querySelector('.playlist-row-name-input').value = name;
+    added.querySelector('.playlist-row-name-input').emit('input');
+    added.querySelector('.playlist-row-url-input').value = `http://${name.toLowerCase()}`;
+    added.querySelector('.playlist-row-url-input').emit('input');
+  });
+  const rowNames = () => elements['#playlist-rows'].children
+    .map((item) => item.querySelector('.playlist-row-name').textContent);
+  assert.deepEqual(rowNames(), ['X', 'Y', 'Z']);
+
+  const handleAt = (index) =>
+    elements['#playlist-rows'].children[index].querySelector('.playlist-row-handle');
+  handleAt(0).emit('keydown', {key: 'ArrowDown'});
+  assert.deepEqual(rowNames(), ['Y', 'X', 'Z']);
+  handleAt(2).emit('keydown', {key: 'ArrowUp'});
+  assert.deepEqual(rowNames(), ['Y', 'Z', 'X']);
+  // The ends hold: a row already first does not fall off the top of the list.
+  handleAt(0).emit('keydown', {key: 'ArrowUp'});
+  assert.deepEqual(rowNames(), ['Y', 'Z', 'X']);
+  // Any other key on the grip is not a move.
+  handleAt(0).emit('keydown', {key: 'Enter'});
+  assert.deepEqual(rowNames(), ['Y', 'Z', 'X']);
+
+  nextPostResponse = () => ({ok: true, status: 200, json: async () => ({count: 3})});
+  elements['#playlist-save'].emit('click');
+  await flush();
+  await flush();
+  assert.equal(fetchCalls[fetchCalls.length - 1].options.body,
+    'Y\thttp://y\tS\nZ\thttp://z\tS\nX\thttp://x\tS\n');
+
   console.log('web playlist tests passed');
 })().catch((error) => {
   console.error(error);

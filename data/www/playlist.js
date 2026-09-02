@@ -498,6 +498,18 @@
     const head = document.createElement('div');
     head.className = 'playlist-row-head';
 
+    /* The grip is what a row is dragged by: dragging the row itself would take
+       the list away from anyone reading it with a finger, and there would be
+       no way left to scroll. */
+    const handle = document.createElement('button');
+    handle.type = 'button';
+    handle.className = 'icon-button playlist-row-handle';
+    handle.setAttribute('aria-label', 'Переставить станцию');
+    handle.title = 'Перетащите, чтобы переставить; стрелки вверх и вниз — то же с клавиатуры';
+    handle.innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+      '<path d="M9 7h.01M15 7h.01M9 12h.01M15 12h.01M9 17h.01M15 17h.01"/></svg>';
+
     const nameText = document.createElement('span');
     nameText.className = 'playlist-row-name';
     const urlText = document.createElement('span');
@@ -530,7 +542,7 @@
     thumb.alt = '';
     thumb.hidden = true;
 
-    head.append(thumb, nameText, urlText, editButton, deleteButton);
+    head.append(handle, thumb, nameText, urlText, editButton, deleteButton);
 
     const editor = document.createElement('div');
     editor.className = 'playlist-row-editor';
@@ -637,7 +649,34 @@
     }
     item.setOpen = setOpen;
     item.focusName = () => nameInput.focus();
+    item.focusHandle = () => handle.focus();
 
+    handle.addEventListener('pointerdown', (event) => {
+      // Only the primary button, and only one row at a time.
+      if (event.button !== undefined && event.button > 0) return;
+      if (drag.item !== null) return;
+      closeAllEditors();
+      drag.item = item;
+      drag.id = row.id;
+      drag.pointerId = event.pointerId;
+      drag.grabY = event.clientY;
+      drag.startIndex = Array.prototype.indexOf.call(rowsEl.children, item);
+      item.classList.add('is-dragging');
+      /* On the list, not on the grip - see the note above the drag state for
+         what capturing on the grip costs. */
+      if (typeof rowsEl.setPointerCapture === 'function') {
+        rowsEl.setPointerCapture(event.pointerId);
+      }
+      event.preventDefault();
+    });
+    /* Without a pointer at all: the grip is a button, and the arrows on it
+       move the row it belongs to. */
+    handle.addEventListener('keydown', (event) => {
+      const step = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
+      if (step === 0) return;
+      event.preventDefault();
+      if (moveRowTo(row.id, rowIndex(row.id) + step)) focusRowHandle(row.id);
+    });
     editButton.addEventListener('click', () => {
       const opening = editor.hidden;
       closeAllEditors();
@@ -711,6 +750,107 @@
 
     updateRowErrorDisplay(item, row);
     return item;
+  }
+
+  function rowIndex(id) {
+    return state.rows.findIndex((row) => row.id === id);
+  }
+
+  /* The one place the order changes, whether a row was dragged or walked with
+     the arrow keys. */
+  function moveRowTo(id, index) {
+    const from = rowIndex(id);
+    if (from < 0 || index < 0 || index >= state.rows.length || index === from) return false;
+    const [row] = state.rows.splice(from, 1);
+    state.rows.splice(index, 0, row);
+    renderRows();
+    updateSaveAvailability();
+    setStatus('Порядок изменён — сохраните список на устройстве');
+    return true;
+  }
+
+  function focusRowHandle(id) {
+    const item = Array.from(rowsEl.children)
+      .find((candidate) => candidate.dataset.rowId === String(id));
+    if (item && typeof item.focusHandle === 'function') item.focusHandle();
+  }
+
+  /* Reordering is done with pointer events rather than HTML5 drag and drop,
+     which a finger cannot start at all - and a list of ninety-nine stations is
+     exactly what gets sorted on a phone. The row follows the pointer and
+     changes place as its middle passes a neighbour's, so the order on screen
+     is already the new one when the finger lifts.
+
+     The pointer is captured by the list, and the moves are listened for there
+     rather than on the grip that started them. Capturing on the grip looks
+     like the obvious thing and does not work: reordering moves the row - grip
+     and all - with insertBefore, a DOM move is a removal followed by an
+     insertion, and a removal releases the capture the moved element held. The
+     row then only followed the pointer while the pointer happened to stay over
+     the grip's own 22-pixel column, so the smallest sideways drift stopped it
+     dead and even the release went unnoticed. The list is never moved, so its
+     capture holds for the whole drag. */
+  const drag = {item: null, id: 0, pointerId: -1, grabY: 0, startIndex: -1};
+
+  function middleOf(element) {
+    const box = element.getBoundingClientRect();
+    return box.top + box.height / 2;
+  }
+
+  function dragTo(clientY) {
+    const item = drag.item;
+    item.style.transform = `translateY(${clientY - drag.grabY}px)`;
+    const middle = middleOf(item);
+    const previous = item.previousElementSibling;
+    const next = item.nextElementSibling;
+    const wasAt = item.getBoundingClientRect().top;
+    if (previous !== null && middle < middleOf(previous)) {
+      rowsEl.insertBefore(item, previous);
+    } else if (next !== null && middle > middleOf(next)) {
+      rowsEl.insertBefore(item, next.nextElementSibling);
+    } else {
+      return;
+    }
+    /* The row has just been laid out one slot away; the grab point moves with
+       it by the same amount, or the row jumps out from under the pointer. */
+    drag.grabY += item.getBoundingClientRect().top - wasAt;
+    item.style.transform = `translateY(${clientY - drag.grabY}px)`;
+  }
+
+  function endDrag() {
+    const item = drag.item;
+    if (item === null) return;
+    item.classList.remove('is-dragging');
+    item.style.transform = '';
+    const index = Array.prototype.indexOf.call(rowsEl.children, item);
+    const id = drag.id;
+    const from = drag.startIndex;
+    const pointerId = drag.pointerId;
+    drag.item = null;
+    drag.pointerId = -1;
+    if (typeof rowsEl.hasPointerCapture === 'function' &&
+        rowsEl.hasPointerCapture(pointerId)) {
+      rowsEl.releasePointerCapture(pointerId);
+    }
+    if (index === from) return;
+    moveRowTo(id, index);
+  }
+
+  if (typeof rowsEl.addEventListener === 'function') {
+    rowsEl.addEventListener('pointermove', (event) => {
+      if (drag.item === null || event.pointerId !== drag.pointerId) return;
+      dragTo(event.clientY);
+    });
+    const finishDrag = (event) => {
+      if (drag.item === null || event.pointerId !== drag.pointerId) return;
+      endDrag();
+    };
+    rowsEl.addEventListener('pointerup', finishDrag);
+    rowsEl.addEventListener('pointercancel', finishDrag);
+    /* Whatever else takes the pointer away - a system gesture, a context menu -
+       leaves the row where it is rather than stuck to a pointer that is no
+       longer reporting. */
+    rowsEl.addEventListener('lostpointercapture', finishDrag);
   }
 
   /* Only one panel is open at a time: with several the list is again a wall of

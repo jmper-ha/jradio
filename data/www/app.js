@@ -572,11 +572,15 @@
     playbackState.textContent = stateLabel(player.state);
     playbackState.dataset.state = safeString(player.state, 'unknown');
     trackTitle.textContent = safeString(player.title) || safeString(player.context) || 'Нет воспроизведения';
+    /* Emptied rather than hidden: the panel's height is the list's top edge,
+       and a station that names no performer used to pull the list up by two
+       lines - the row under the pointer was then not the row it clicked. CSS
+       holds an empty line's space; hiding it cannot, because `hidden` takes
+       the line out of the layout altogether. */
     trackArtist.textContent = safeString(player.artist);
-    trackArtist.hidden = trackArtist.textContent.length === 0;
-    trackContext.textContent = safeString(player.context);
-    trackContext.hidden = trackContext.textContent.length === 0 ||
-      trackContext.textContent === trackTitle.textContent;
+    const context = safeString(player.context);
+    // The context repeats the title on a station that sends nothing else.
+    trackContext.textContent = context === trackTitle.textContent ? '' : context;
 
     /* Only the rotor has a next track. A station has none, and a file list
        advances on its own when a track ends. */

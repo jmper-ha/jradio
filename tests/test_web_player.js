@@ -726,6 +726,30 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
   assert.equal(elements['#list-items'].hidden, true);
   assert.equal(elements['#play-toggle'].disabled, true);
 
+  /* The performer and the context line stay in the layout with nothing in
+     them. The panel's height is the list's top edge, and a station naming only
+     itself used to shorten the panel by two lines - the list jumped up, and
+     the row under the pointer was no longer the one about to be clicked. An
+     emptied line is what CSS can hold the space for; a hidden one it cannot. */
+  sendEvent(second, {
+    type: 'player.update', revision: 911, active_source: 'internet_radio',
+    player: {...player('Never Ending Moment'), artist: 'Des Rocs', context: 'Радио Шоколад'},
+  });
+  assert.equal(elements['#track-artist'].textContent, 'Des Rocs');
+  assert.equal(elements['#track-context'].textContent, 'Радио Шоколад');
+  /* A station sending no track name puts its own name in the title, and the
+     context line would then say it twice: it is emptied rather than filled and
+     hidden, so the line it occupies stays exactly as tall. */
+  sendEvent(second, {
+    type: 'player.update', revision: 912, active_source: 'internet_radio',
+    player: {...player('Европа плюс'), context: 'Европа плюс'},
+  });
+  assert.equal(elements['#track-title'].textContent, 'Европа плюс');
+  assert.equal(elements['#track-artist'].textContent, '');
+  assert.equal(elements['#track-artist'].hidden, false);
+  assert.equal(elements['#track-context'].textContent, '');
+  assert.equal(elements['#track-context'].hidden, false);
+
   second.emit('close');
   assert.equal(elements['#socket-state'].textContent, 'Нет связи');
   assert.equal(elements['#play-toggle'].disabled, true);

@@ -630,6 +630,14 @@ The letter is what makes the two tellable apart. The column used to hold 0 or
 read as "name from the list", and every other correction took the whole line
 down as malformed.
 
+The order is changed by dragging a row by the grip left of its name. The grip
+is what moves, not the whole row: the list is scrolled with a finger, and a row
+that followed it would take away the only way to scroll at all. It is built on
+pointer events rather than the drag and drop built into HTML, which a finger
+cannot start at all - and a list of 99 stations is exactly what gets sorted on
+a phone. The up and down arrows on that same grip move a row from the keyboard,
+and the order, like any other edit, reaches the device on Save.
+
 Export hands over `playlist.csv` while no station has a picture, which is a
 file anything can read. Once one does, it hands over `playlist.zip`: the same
 `playlist.csv` with a `radio_img/` folder beside it. Import takes either,

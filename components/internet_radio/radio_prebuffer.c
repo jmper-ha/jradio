@@ -7,8 +7,13 @@ void radio_prebuffer_config_init(radio_prebuffer_config_t *config, size_t capaci
     config->capacity = capacity;
     /* Half the buffer: enough cushion to ride out a stall without the loop
      * spending its life reading, and it leaves room for the decoder to keep
-     * consuming while a refill is in flight. */
+     * consuming while a refill is in flight. Capped, because half of a buffer
+     * that has since quadrupled is no longer a cushion - see
+     * RADIO_PREBUFFER_TARGET_MAX. */
     config->target = capacity / 2U;
+    if (config->target > RADIO_PREBUFFER_TARGET_MAX) {
+        config->target = RADIO_PREBUFFER_TARGET_MAX;
+    }
     /* Roughly one chunk of slack. Below this the next decode call may find
      * nothing, so the pass is allowed to block. */
     config->critical = chunk;

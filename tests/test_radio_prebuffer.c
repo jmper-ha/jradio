@@ -150,6 +150,28 @@ static void test_fill_percent_rounds_to_nearest(void)
     assert(radio_prebuffer_percent(16384U, 32768U) == 50U);
 }
 
+static void test_the_target_is_a_cushion_and_stops_growing_with_the_buffer(void)
+{
+    /* At the size the target was written for, half the buffer stands. */
+    radio_prebuffer_config_t small;
+    radio_prebuffer_config_init(&small, 65536U, CHUNK);
+    assert(small.target == 32768U);
+
+    /* Once the buffer is bigger than that, the target holds still. Chasing
+     * half of a 256 KB buffer is eight seconds of an ordinary station, and the
+     * reading it takes lands on the seconds just after the output opens, when
+     * the DAC has nothing behind it. */
+    radio_prebuffer_config_t large;
+    radio_prebuffer_config_init(&large, 262144U, CHUNK);
+    assert(large.target == RADIO_PREBUFFER_TARGET_MAX);
+    assert(large.capacity == 262144U);
+
+    /* The cap is on the target only: a buffer that big is still allowed to
+     * hold what a fast station delivers. */
+    const radio_prebuffer_plan_t plan = radio_prebuffer_plan(&large, 0U, true);
+    assert(plan.max_bytes == 262144U);
+}
+
 int main(void)
 {
     test_an_empty_buffer_is_allowed_to_wait_for_data();
@@ -165,6 +187,7 @@ int main(void)
     test_fill_percent_reads_the_whole_buffer_not_the_target();
     test_fill_percent_keeps_both_ends_honest();
     test_fill_percent_rounds_to_nearest();
+    test_the_target_is_a_cushion_and_stops_growing_with_the_buffer();
     puts("radio_prebuffer tests passed");
     return 0;
 }

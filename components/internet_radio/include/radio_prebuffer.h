@@ -27,6 +27,19 @@
  * the buffer is nearly empty (there is nothing to lose) and little once it is
  * comfortable. */
 
+/* The most backlog the loop will ever chase, whatever the buffer's size.
+ *
+ * The target is a cushion, not a store, and it was written as half the buffer
+ * back when the buffer was 64 KB. When the buffer grew to 256 KB the target
+ * silently became 128 KB - eight seconds of an ordinary station - so the loop
+ * spent the first seconds of every station reading hard, which is exactly the
+ * moment the output has just opened and has nothing behind it but the ~93 ms
+ * of I2S DMA. Measured on the same station across builds: 1-3 dropped DMA
+ * buffers on the start before the buffer grew, 18-24 after, and 0-2 with this
+ * cap in place. Stations whose backlog is limited by the server, which is
+ * every high-bitrate one, never approach either number and are unaffected. */
+#define RADIO_PREBUFFER_TARGET_MAX 32768U
+
 typedef struct {
     size_t capacity;
     size_t target;

@@ -79,6 +79,10 @@
  * The urgent path does not lose its wait: radio_http_read_blocking() retries
  * around this call and keeps its own 3 s idle budget. */
 #define RADIO_HTTP_STREAM_TIMEOUT_MS 0
+/* How long the starved path may wait on the socket between reads. It bounds
+ * nothing important - the idle timeout above is what decides a stream is dead -
+ * so it only has to be short enough to keep the loop answering a stop request. */
+#define RADIO_HTTP_READ_WAIT_MS 20U
 #define RADIO_HTTP_RECONNECT_DELAY_MS 500U
 /* Backlog held ahead of the decoder. 16 KB was about a second at 128 kbps but
  * only 90 ms of a 1441 kbps FLAC stream - less cushion than the I2S DMA
@@ -248,6 +252,7 @@ static bool radio_stream_is_open(const internet_radio_context_t *radio);
 /* Defined below, past the HLS layer they dispatch to. */
 static esp_err_t radio_stream_open(internet_radio_context_t *radio, const char *url);
 static void radio_stream_close(internet_radio_context_t *radio);
+static int radio_http_wait_readable(internet_radio_context_t *radio, uint32_t budget_ms);
 static int radio_stream_read_blocking(internet_radio_context_t *radio, uint8_t *buffer,
                                       int length);
 static int radio_stream_read_ready(internet_radio_context_t *radio, uint8_t *buffer, int length,
@@ -311,7 +316,15 @@ static int radio_http_read_blocking(internet_radio_context_t *radio, uint8_t *bu
             ESP_LOGW(TAG, "HTTP stream idle for %u ms", RADIO_HTTP_IDLE_TIMEOUT_MS);
             return -1;
         }
-        vTaskDelay(pdMS_TO_TICKS(20));
+        /* Wait on the socket, not on the clock. A fixed sleep here is a rate
+         * limit: the read above takes whatever has arrived and returns at once,
+         * so a tick of sleep between reads caps this path at one read per tick
+         * however fast the link is. At 2048 bytes per read that is about
+         * 100 KB/s - under what a 1.4 Mbps FLAC station needs - and a station
+         * with no backlog left lives on this path, which is exactly when it can
+         * least afford it. Measured: 49-65% of realtime with the sleep, on a
+         * link the same station was being served at 166 KB/s. */
+        (void)radio_http_wait_readable(radio, RADIO_HTTP_READ_WAIT_MS);
     }
 }
 
@@ -327,28 +340,37 @@ static int radio_http_read_blocking(internet_radio_context_t *radio, uint8_t *bu
  *
  * So: poll first, then read only as much as is already buffered. That caps
  * each call at one socket's worth of data and keeps the decoder running. */
+/* Waits for the socket to have something, up to `budget_ms`. Returns >0 when
+ * it does, 0 on the budget running out, <0 on a broken socket.
+ *
+ * select() on the transport's own socket rather than a private
+ * esp_http_client call: get_socket is the only readiness hook the public API
+ * offers. Over TLS this is a lower bound - esp-tls may already hold a decrypted
+ * record with the socket quiet - so every caller reads before it waits, and
+ * this only decides how to spend the time when a read came back empty. A
+ * missing socket is reported as readable, which just sends the caller to a read
+ * that will report the real error. */
+static int radio_http_wait_readable(internet_radio_context_t *radio, uint32_t budget_ms)
+{
+    const int fd = esp_http_client_get_socket(radio->http);
+    if (fd < 0) return 1;
+    fd_set readable;
+    FD_ZERO(&readable);
+    FD_SET(fd, &readable);
+    struct timeval timeout = {
+        .tv_sec = (time_t)(budget_ms / 1000U),
+        .tv_usec = (suseconds_t)((budget_ms % 1000U) * 1000U),
+    };
+    return select(fd + 1, &readable, NULL, NULL, &timeout);
+}
+
 static int radio_http_read_ready(internet_radio_context_t *radio, uint8_t *buffer,
                                  int length, uint32_t budget_ms)
 {
     if (length <= 0) return 0;
-    /* select() on the transport's own socket rather than a private
-     * esp_http_client call: get_socket is the only readiness hook the public
-     * API offers. Over TLS this is a lower bound - esp-tls may already hold a
-     * decrypted record with the socket quiet - but that only costs one skipped
-     * top-up, never a stall, because the urgent path still blocks. */
-    const int fd = esp_http_client_get_socket(radio->http);
-    if (fd >= 0) {
-        fd_set readable;
-        FD_ZERO(&readable);
-        FD_SET(fd, &readable);
-        struct timeval timeout = {
-            .tv_sec = (time_t)(budget_ms / 1000U),
-            .tv_usec = (suseconds_t)((budget_ms % 1000U) * 1000U),
-        };
-        const int ready = select(fd + 1, &readable, NULL, NULL, &timeout);
-        if (ready < 0) return -1;
-        if (ready == 0) return 0;
-    }
+    const int ready = radio_http_wait_readable(radio, budget_ms);
+    if (ready < 0) return -1;
+    if (ready == 0) return 0;
     /* One MSS at a time: asking for more would make the client block waiting
      * for the rest of the request even though the poll only promised one
      * segment. */

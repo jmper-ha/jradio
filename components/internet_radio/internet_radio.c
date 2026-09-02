@@ -128,11 +128,22 @@
  * need-more-data for as long as it was left running, with the input buffer
  * full, the player still reporting "playing", and nothing in the log.
  *
- * Two seconds is far past any legitimate gap - the I2S DMA holds ~93 ms, and
- * while data is buffered the decoder should answer in milliseconds - and still
- * short enough that the listener hears an interruption rather than a station
- * that never comes back. */
-#define RADIO_DIRECT_DECODE_STALL_MS 2000U
+ * Four hundred milliseconds, once the decoder is in its stride. Measured
+ * across eleven stations and about fifteen minutes of MP3, AAC and FLAC: while
+ * playing, the longest it ever went without producing while holding input was
+ * 41 ms, and nearly every ten-second window reported none at all. Two seconds
+ * was therefore mostly silence spent waiting for permission to act - one such
+ * stall printed `the DMA ran dry (174 buffers)`, which is 2.0 s of a dead DAC
+ * where 0.4 s would have done. The I2S DMA covers the first ~93 ms of it. */
+#define RADIO_DIRECT_DECODE_STALL_MS 400U
+/* And what applies while the decoder is still looking for its first frame -
+ * before it has produced anything, and again after a reset has sent it back to
+ * looking. That search legitimately took up to 430 ms in the same measurement,
+ * so the short limit cannot cover it: applied there it would fire on every
+ * station change and turn an ordinary start into a needless reconnect. Two
+ * seconds is what used to be in force everywhere, kept for the one case it
+ * suits. */
+#define RADIO_DIRECT_DECODE_SYNC_STALL_MS 2000U
 /* Room for one HLS playlist. Relax FM's is 653 bytes; the ceiling is a master
  * playlist listing many variants, which is still text and still small. */
 #define RADIO_HLS_TEXT_SIZE 8192U
@@ -559,6 +570,10 @@ static void radio_direct_task(void *arg)
     TickType_t last_pcm_tick = xTaskGetTickCount();
     unsigned int decode_stalls = 0U;
     bool decoder_reset_tried = false;
+    /* Whether the decoder has found its way into this stream, which is what
+     * picks the stall limit. Cleared wherever `last_pcm_tick` is re-armed -
+     * every one of those is a point where the search for a frame starts over. */
+    bool decoder_synced = false;
     /* Set on a chain source when the body ran out; cleared once the next track
      * is open. Nothing is read from the network while it is set. */
     bool track_ended = false;
@@ -609,6 +624,7 @@ static void radio_direct_task(void *arg)
             /* A pause decodes nothing by design, so it must not age into a
              * stall the moment playback resumes. */
             last_pcm_tick = xTaskGetTickCount();
+            decoder_synced = false;
             continue;
         }
 
@@ -640,6 +656,7 @@ static void radio_direct_task(void *arg)
             decode_error_retries = 0U;
             decoder_reset_tried = false;
             last_pcm_tick = xTaskGetTickCount();
+            decoder_synced = false;
             continue;
         }
 
@@ -717,6 +734,7 @@ static void radio_direct_task(void *arg)
             decode_error_retries = 0U;
             decoder_reset_tried = false;
             last_pcm_tick = xTaskGetTickCount();
+            decoder_synced = false;
             continue;
         }
         if (available < min_available) {
@@ -849,12 +867,15 @@ static void radio_direct_task(void *arg)
                 break;
             }
 
+            const uint32_t stall_limit_ms = internet_radio_decode_stall_limit(
+                decoder_synced, RADIO_DIRECT_DECODE_STALL_MS, RADIO_DIRECT_DECODE_SYNC_STALL_MS);
             if (pcm_bytes > 0U) {
                 last_pcm_tick = xTaskGetTickCount();
                 decoder_reset_tried = false;
+                decoder_synced = true;
             } else if (internet_radio_decode_stalled(
                            (uint32_t)((xTaskGetTickCount() - last_pcm_tick) * portTICK_PERIOD_MS),
-                           available, RADIO_DIRECT_DECODE_STALL_MS)) {
+                           available, stall_limit_ms)) {
                 ++decode_stalls;
                 if (!decoder_reset_tried) {
                     // Try the decoder before the network, because the decoder is
@@ -867,11 +888,11 @@ static void radio_direct_task(void *arg)
                     ESP_LOGW(TAG,
                              "decoder produced nothing for %ums with %u bytes buffered; "
                              "resetting the decoder",
-                             (unsigned int)RADIO_DIRECT_DECODE_STALL_MS,
-                             (unsigned int)available);
+                             (unsigned int)stall_limit_ms, (unsigned int)available);
                     decoder_reset_tried = true;
                     radio_decoder_reset(radio->decoder);
                     last_pcm_tick = xTaskGetTickCount();
+                    decoder_synced = false;
                     continue;
                 }
                 // The decoder was already given a clean start and still produces
@@ -890,6 +911,7 @@ static void radio_direct_task(void *arg)
                 decode_error_retries = 0U;
                 decoder_reset_tried = false;
                 last_pcm_tick = xTaskGetTickCount();
+                decoder_synced = false;
                 continue;
             }
         }

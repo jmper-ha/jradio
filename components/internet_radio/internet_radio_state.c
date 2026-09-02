@@ -88,3 +88,9 @@ bool internet_radio_decode_stalled(uint32_t elapsed_ms, size_t available, uint32
      * nothing counts as stalled. A zero limit disables the check outright. */
     return available > 0U && limit_ms > 0U && elapsed_ms >= limit_ms;
 }
+
+uint32_t internet_radio_decode_stall_limit(bool decoder_synced, uint32_t running_limit_ms,
+                                           uint32_t sync_limit_ms)
+{
+    return decoder_synced ? running_limit_ms : sync_limit_ms;
+}

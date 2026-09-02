@@ -45,3 +45,14 @@ bool internet_radio_input_buffer_stalled(bool need_input, size_t available, size
  * input steadily and still emit nothing, which looks like healthy progress
  * from every other angle and sounds like silence. */
 bool internet_radio_decode_stalled(uint32_t elapsed_ms, size_t available, uint32_t limit_ms);
+
+/* Which limit the check above runs with. A decoder that was producing and then
+ * stopped is broken within milliseconds; one that has not produced yet is still
+ * hunting for its first frame, which is slower and entirely normal - measured at
+ * up to 430 ms on a fresh stream against 41 ms for the worst gap seen during
+ * playback. That gap between the two is why this is a choice rather than one
+ * compromise value, and why the short limit must never reach the hunting case:
+ * there it would fire on every station change and turn an ordinary start into a
+ * reset and then a reconnect. */
+uint32_t internet_radio_decode_stall_limit(bool decoder_synced, uint32_t running_limit_ms,
+                                           uint32_t sync_limit_ms);

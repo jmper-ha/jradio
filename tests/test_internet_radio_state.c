@@ -98,6 +98,34 @@ static void test_a_decoder_that_eats_input_without_producing_is_a_stall(void)
     assert(!internet_radio_decode_stalled(60000U, 65536U, 0U));
 }
 
+static void test_the_stall_limit_leaves_room_for_a_decoder_still_finding_a_frame(void)
+{
+    /* The two measured regimes, 2026-09-02, eleven stations across MP3, AAC and
+     * FLAC: 41 ms was the longest gap during playback, while finding the first
+     * frame of a fresh stream took up to 430 ms. */
+    assert(internet_radio_decode_stall_limit(true, 400U, 2000U) == 400U);
+    assert(internet_radio_decode_stall_limit(false, 400U, 2000U) == 2000U);
+
+    /* Which is the whole point: at 430 ms a decoder that has yet to produce is
+     * doing its job, and resetting it there would fire on every station change.
+     * The same 430 ms from a decoder that was playing is the fault this
+     * watchdog exists for. */
+    assert(!internet_radio_decode_stalled(
+        430U, 65536U, internet_radio_decode_stall_limit(false, 400U, 2000U)));
+    assert(internet_radio_decode_stalled(
+        430U, 65536U, internet_radio_decode_stall_limit(true, 400U, 2000U)));
+
+    /* A reset sends the decoder back to hunting, so the long limit covers the
+     * second wait too - otherwise a reset that was about to work would be cut
+     * short into a reconnect. */
+    assert(!internet_radio_decode_stalled(
+        1999U, 65536U, internet_radio_decode_stall_limit(false, 400U, 2000U)));
+
+    /* Nothing to decode is still ordinary starvation under either limit. */
+    assert(!internet_radio_decode_stalled(
+        60000U, 0U, internet_radio_decode_stall_limit(true, 400U, 2000U)));
+}
+
 int main(void)
 {
     test_start_pause_resume_stop();
@@ -108,6 +136,7 @@ int main(void)
     test_http_read_results_are_classified();
     test_full_input_buffer_is_fatal_only_when_decoder_needs_more_data();
     test_a_decoder_that_eats_input_without_producing_is_a_stall();
+    test_the_stall_limit_leaves_room_for_a_decoder_still_finding_a_frame();
     puts("internet_radio_state tests passed");
     return 0;
 }

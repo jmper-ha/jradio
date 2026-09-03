@@ -4041,6 +4041,7 @@ static void ui_task(void *arg)
          * except as a frozen screen. */
         {
             const int64_t started = esp_timer_get_time();
+            lv_timer_handler();
             const int64_t took = (esp_timer_get_time() - started) / 1000;
             // A screen change legitimately repaints all 76800 pixels and costs
             // about 200 ms, so the threshold sits well above that: what this

@@ -117,14 +117,24 @@ static void test_a_full_buffer_of_high_bitrate_audio_still_beats_the_dma(void)
 }
 
 
-static void test_fill_percent_reads_the_whole_buffer_not_the_target(void)
+static void test_fill_percent_is_read_against_the_level_the_source_holds(void)
 {
-    /* The read loop stops at half the buffer, so a perfectly healthy stream
-     * reads 50 here. Scaling to the target instead would show 100 for a stream
-     * holding exactly as much as one holding twice that. */
-    assert(radio_prebuffer_percent(32768U, 65536U) == 50U);
-    assert(radio_prebuffer_percent(65536U, 65536U) == 100U);
-    assert(radio_prebuffer_percent(0U, 65536U) == 0U);
+    /* The caller passes the level its source aims to hold, so a stream holding
+     * everything it ever holds reads 100. Passing the buffer instead is what
+     * pinned every station at 13: the radio stops reading at a target that is
+     * an eighth of its buffer, so seven eighths of the scale were unreachable
+     * however healthy the stream. */
+    radio_prebuffer_config_t cfg;
+    radio_prebuffer_config_init(&cfg, 262144U, CHUNK);
+    assert(radio_prebuffer_percent(cfg.target, cfg.target) == 100U);
+    assert(radio_prebuffer_percent(cfg.target / 2U, cfg.target) == 50U);
+    /* A server that paces at real time leaves the backlog short of the target
+     * for good, and the number says so instead of showing the same 13 as the
+     * station that is two seconds ahead. */
+    assert(radio_prebuffer_percent(14336U, cfg.target) == 44U);
+    /* Over the target - the loop reads into the room above it - is just full. */
+    assert(radio_prebuffer_percent(cfg.capacity, cfg.target) == 100U);
+    assert(radio_prebuffer_percent(0U, cfg.target) == 0U);
 }
 
 static void test_fill_percent_keeps_both_ends_honest(void)
@@ -184,7 +194,7 @@ int main(void)
     test_a_missing_or_degenerate_config_reads_nothing();
     test_backlog_converts_to_playing_time();
     test_a_full_buffer_of_high_bitrate_audio_still_beats_the_dma();
-    test_fill_percent_reads_the_whole_buffer_not_the_target();
+    test_fill_percent_is_read_against_the_level_the_source_holds();
     test_fill_percent_keeps_both_ends_honest();
     test_fill_percent_rounds_to_nearest();
     test_the_target_is_a_cushion_and_stops_growing_with_the_buffer();

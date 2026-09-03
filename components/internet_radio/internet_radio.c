@@ -715,10 +715,12 @@ static void radio_direct_task(void *arg)
             taskEXIT_CRITICAL(&s_status_lock);
             ESP_LOGI(TAG,
                      "stream health: i2s_underruns=%u starvations=%u decode_stalls=%u "
-                     "min_backlog=%u/%u (%ums) pcm=%u%% of realtime",
+                     "min_backlog=%u/%u (%ums) target=%u (%ums) pcm=%u%% of realtime",
                      underruns - last_underruns, starvations, decode_stalls,
                      (unsigned int)min_available, (unsigned int)RADIO_DIRECT_INPUT_SIZE,
                      (unsigned int)radio_prebuffer_millis(min_available, bitrate),
+                     (unsigned int)prebuffer.target,
+                     (unsigned int)radio_prebuffer_millis(prebuffer.target, bitrate),
                      expected > 0U ? (unsigned int)((pcm_delta * 100U) / expected) : 0U);
             last_pcm_bytes = radio->pcm_bytes;
             last_underruns = underruns;
@@ -762,8 +764,11 @@ static void radio_direct_task(void *arg)
         if (available < min_available) {
             min_available = available;
         }
+        /* Against the target the loop actually chases, not the buffer it lives
+         * in: reading stops at the target, so a station in perfect health
+         * could never show more than the 13% that is 32 KB of 256 KB. */
         atomic_store_explicit(&radio->input_fill_percent,
-                              radio_prebuffer_percent(available, RADIO_DIRECT_INPUT_SIZE),
+                              radio_prebuffer_percent(available, prebuffer.target),
                               memory_order_relaxed);
         if (need_input && radio->output_started) {
             ++starvations;

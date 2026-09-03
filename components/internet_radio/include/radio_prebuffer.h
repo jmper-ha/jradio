@@ -37,7 +37,24 @@
  * of I2S DMA. Measured on the same station across builds: 1-3 dropped DMA
  * buffers on the start before the buffer grew, 18-24 after, and 0-2 with this
  * cap in place. Stations whose backlog is limited by the server, which is
- * every high-bitrate one, never approach either number and are unaffected. */
+ * every high-bitrate one, never approach either number and are unaffected.
+ *
+ * A target measured in *time* was tried on 2026-09-03 and measured worse -
+ * do not try it again without reading this. The reasoning was sound on paper:
+ * 32 KB is 2.0 s of a 128 kbps station and 0.18 s of a 1442 kbps FLAC one, so
+ * the stream with the least margin gets the smallest cushion. Asking for 2 s
+ * everywhere (capped at three quarters of the buffer, 196 KB, 1.09 s of FLAC)
+ * gave this, on the same station, same procedure, ten-second windows:
+ *
+ *   target 32 KB:  min_backlog 79-90 ms,  i2s_underruns 0 in every window
+ *   target 196 KB: min_backlog 6-34 ms,   i2s_underruns 4,12,15,9,1,5,9
+ *
+ * Because the 79 ms is the *server's* pacing, not our target's doing. Radio
+ * Paradise hands out about 14 KB of headroom and then sends at real time, so
+ * a backlog below target can never reach it, and the top-up loop below spends
+ * every pass waiting on a socket that has nothing yet - time the decoder
+ * needed. A cushion can only be built from a server that is ahead of real
+ * time; against one that is not, asking for more buffer costs playback. */
 #define RADIO_PREBUFFER_TARGET_MAX 32768U
 
 typedef struct {
@@ -72,12 +89,19 @@ uint32_t radio_prebuffer_millis(size_t available, uint32_t bitrate_kbps);
 
 /* How full the input buffer is, 0..100, for display.
  *
- * Deliberately a fraction of the whole buffer and not of the read target, so
- * the number means one thing: how much audio is actually held. A healthy radio
- * stream therefore sits near 50, because radio_prebuffer_config_init() aims at
- * half the buffer and stops reading there - it is not a stream in trouble. The
- * USB path refills to the brim and reads near 100. What matters either way is
- * the number falling, which is the only thing a dropout looks like from here.
+ * Pass the level the source aims to hold - `config->target` for the radio, the
+ * whole buffer for a file, which refills to the brim - so that 100 means "as
+ * much in hand as this source ever keeps" whichever source is playing.
+ *
+ * It was read against the radio's *buffer* until 2026-09-03, and the user
+ * reported the result: every station displayed 13% and nothing ever moved it.
+ * The loop stops reading at the target, the target is capped at 32 KB and the
+ * buffer is 256 KB, so 12.5% was the ceiling of a scale that ran to 100. The
+ * number still carries what it is for - a dropout is the number falling - but
+ * it now has the whole scale to fall through, and it separates the stations
+ * the old one could not: a 128 kbps station holds its full 32 KB and reads
+ * 100, while a FLAC station the server paces at real time holds 14 KB of it
+ * and reads 44.
  *
  * RADIO_PREBUFFER_PERCENT_NONE means the source has no input backlog at all,
  * which is not the same as an empty one: the WAV path reads a chunk straight

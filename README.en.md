@@ -271,9 +271,17 @@ An account can be unlinked from the web interface.
 
 ## Settings
 
-Language, the look of the home screen, how long lines scroll, autoplay, Yandex
-Music, screen brightness, flipping the picture vertically and horizontally,
-volume. They apply at once and are saved.
+Language, the look of the home screen, how long lines scroll, how the buffer
+reading is shown, autoplay, Yandex Music, screen brightness, flipping the
+picture vertically and horizontally, volume. They apply at once and are saved.
+
+"Buffer" picks what the footer's left corner holds on the player screen: a
+number ("Буфер 88%") or a strip. The strip is the same percentage, taken every
+0.7 s and stood up as a bar; a new bar arrives at the left and the older ones
+walk right, and about twenty seconds fit on it. The number answers how much is
+held right now, the strip answers whether it has been holding - a dropout is
+the number falling, and a fall is what a single figure cannot show, because by
+the time anyone looks it is back.
 
 Scrolling is about lines that do not fit: the track name on the player screen,
 and the list row the cursor is on. "Left-right" runs the line out to its end

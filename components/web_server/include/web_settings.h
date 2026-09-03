@@ -30,6 +30,7 @@ typedef enum {
     WEB_SETTINGS_FIELD_LANGUAGE = 0,
     WEB_SETTINGS_FIELD_HOME_SCREEN,
     WEB_SETTINGS_FIELD_SCROLL,
+    WEB_SETTINGS_FIELD_BUFFER_VIEW,
     WEB_SETTINGS_FIELD_AUTOPLAY,
     WEB_SETTINGS_FIELD_YANDEX_MUSIC,
     WEB_SETTINGS_FIELD_FLIP_VERTICAL,
@@ -71,6 +72,7 @@ typedef struct {
     uint8_t language;
     uint8_t home_screen;
     uint8_t scroll;
+    uint8_t buffer_view;
     uint8_t volume;
     uint8_t brightness;
     bool autoplay;

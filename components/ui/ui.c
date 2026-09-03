@@ -20,6 +20,7 @@
 #include "player_control.h"
 #include "wifi_provisioning.h"
 #include "ui_autoplay.h"
+#include "ui_buffer_graph.h"
 #include "ui_click_gesture.h"
 #include "ui_draw_buffer.h"
 #include "ui_fonts.h"
@@ -154,6 +155,13 @@ typedef struct {
 static ui_scroller_t s_source_detail;
 static lv_obj_t *s_source_stream;
 static lv_obj_t *s_source_buffer;
+/* The same reading as a strip: one object, whose bars are drawn into it from
+ * the model below rather than being objects of their own. Both faces exist for
+ * the life of the screen and one of them is hidden - building either on demand
+ * would mean allocating on the poll loop, and the setting can change while the
+ * player is on screen. */
+static lv_obj_t *s_source_buffer_graph;
+static ui_buffer_graph_t s_buffer_graph;
 static lv_obj_t *s_source_artist;
 /* Every screen carries the same strip, so it is built once and each screen
  * gets its own instance - LVGL objects belong to one parent, so they cannot be
@@ -626,6 +634,80 @@ static void ui_status_strip_update(ui_status_strip_t *strip,
     ui_set_label_text_if_changed(strip->rssi, rssi_text);
 }
 
+/* Draws the bars, called by LVGL once the strip's own background is down.
+ *
+ * They are drawn rather than being objects of their own, and the difference is
+ * not a matter of taste: LVGL's pool is 64 KB and mostly spoken for, twenty
+ * eight more objects ran it dry, and with LV_USE_LOG off an allocation that
+ * fails ends in LV_ASSERT_NULL - a bare `while(1)` inside the refresh, which
+ * showed up as the UI task pinning its core from the first frame and the
+ * screen never appearing at all. One object costs nothing per bar. */
+static void ui_buffer_graph_draw(lv_event_t *event)
+{
+    lv_obj_t *object = lv_event_get_target(event);
+    lv_layer_t *layer = lv_event_get_layer(event);
+    if (object == NULL || layer == NULL) return;
+    lv_area_t box;
+    lv_obj_get_coords(object, &box);
+
+    lv_draw_rect_dsc_t bar;
+    lv_draw_rect_dsc_init(&bar);
+    bar.bg_color = lv_color_hex(UI_COLOR_MUTED);
+    bar.bg_opa = LV_OPA_COVER;
+
+    for (size_t column = 0U; column < UI_BUFFER_GRAPH_BARS; ++column) {
+        uint8_t percent = 0U;
+        if (!ui_buffer_graph_bar(&s_buffer_graph, column, &percent)) continue;
+        const int height = ui_buffer_graph_bar_height(percent, UI_SRC_BUFFER_GRAPH_H);
+        /* A column with no bar at all - the strip still filling, or a buffer
+         * that ran dry - is left as ground rather than drawn one pixel high,
+         * which would read as "a little" where there is none. */
+        if (height <= 0) continue;
+        const int32_t left = box.x1 + (int32_t)column * UI_BUFFER_GRAPH_PITCH;
+        // Bars stand on the strip's floor, so they grow upwards.
+        const lv_area_t area = {
+            .x1 = left,
+            .x2 = left + UI_BUFFER_GRAPH_BAR_W - 1,
+            .y1 = box.y2 - height + 1,
+            .y2 = box.y2,
+        };
+        lv_draw_rect(layer, &bar, &area);
+    }
+}
+
+/* Puts the strip on screen or takes it off, and while it is on, walks it.
+ *
+ * `known` is false where the source has no backlog to report at all: the
+ * strip is emptied then rather than fed zeroes, because a buffer nobody is
+ * filling is not a buffer running dry. */
+static void ui_show_buffer_graph(bool visible, bool known, uint8_t percent)
+{
+    if (s_source_buffer_graph == NULL) return;
+    if (!visible) {
+        if (!lv_obj_has_flag(s_source_buffer_graph, LV_OBJ_FLAG_HIDDEN)) {
+            lv_obj_add_flag(s_source_buffer_graph, LV_OBJ_FLAG_HIDDEN);
+            /* Emptied on the way out, not on the way in: the bars of the
+             * station that was playing say nothing about the next one, and
+             * clearing here means the strip is already right when it returns.
+             */
+            ui_buffer_graph_reset(&s_buffer_graph, ui_tick_get_ms());
+        }
+        return;
+    }
+    const bool was_hidden = lv_obj_has_flag(s_source_buffer_graph, LV_OBJ_FLAG_HIDDEN);
+    if (was_hidden) lv_obj_clear_flag(s_source_buffer_graph, LV_OBJ_FLAG_HIDDEN);
+    if (!known) {
+        ui_buffer_graph_reset(&s_buffer_graph, ui_tick_get_ms());
+        return;
+    }
+    /* Invalidated only when a bar was actually taken, or when the strip has
+     * just come back: the draw runs from the refresh, and asking for one every
+     * poll would redraw the footer a hundred times a second. */
+    if (ui_buffer_graph_step(&s_buffer_graph, ui_tick_get_ms(), percent) || was_hidden) {
+        lv_obj_invalidate(s_source_buffer_graph);
+    }
+}
+
 /* Runs every poll rather than only on a snapshot change: both readings here
  * come straight from the owning subsystem and move far too often to belong in
  * a structure the web diffs against. */
@@ -642,6 +724,12 @@ static void ui_update_footer(void)
     // Two hour-long times and a separator: 12 + 3 + 12 and room to spare, so
     // the compiler can see it never truncates.
     char left_text[32];
+    /* Set only where the buffer is what the footer's left slot is showing. The
+     * strip is the same reading in another form, so it belongs to that one
+     * branch and not to the time a file or a track shows there. */
+    bool buffer_slot = false;
+    uint8_t buffer_fill = 0U;
+    bool buffer_known = false;
     uint8_t played_percent = 0U;
     const bool have_track = player_control_track_progress(&elapsed, &total);
     bool have_bar = have_track && file_track_progress_percent(elapsed, total,
@@ -674,16 +762,24 @@ static void ui_update_footer(void)
          * rather than opening the screen with a number about nothing. */
         left_text[0] = '\0';
     } else {
-        uint8_t fill = 0U;
-        if (player_control_input_fill(&fill)) {
-            snprintf(left_text, sizeof(left_text), "Буфер %u%%", (unsigned int)fill);
+        buffer_slot = true;
+        buffer_known = player_control_input_fill(&buffer_fill);
+        if (buffer_known) {
+            snprintf(left_text, sizeof(left_text), "Буфер %u%%", (unsigned int)buffer_fill);
         } else {
             // Nothing playing, or a source with no backlog at all. A dash says
             // that; a zero would claim the buffer had run dry.
             snprintf(left_text, sizeof(left_text), "Буфер --");
         }
     }
-    ui_set_label_text_if_changed(s_source_buffer, left_text);
+    /* One reading, two faces, and exactly one of them on screen: the strip
+     * only when the setting asks for it and the slot is the buffer's, so a
+     * file's elapsed time is never drawn over by bars about a buffer it does
+     * not have. */
+    const bool graph_slot = buffer_slot &&
+                            s_device_settings.buffer_view == DEVICE_BUFFER_VIEW_GRAPH;
+    ui_show_buffer_graph(graph_slot, buffer_known, buffer_fill);
+    ui_set_label_text_if_changed(s_source_buffer, graph_slot ? "" : left_text);
 
     if (have_bar) {
         lv_obj_clear_flag(s_source_progress, LV_OBJ_FLAG_HIDDEN);
@@ -1519,6 +1615,12 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
                      ? (english ? "Left" : "Влево")
                      : (english ? "Left-right" : "Влево-вправо"));
         break;
+    case UI_SETTINGS_ROW_BUFFER_FIELD:
+        snprintf(text, text_size, "  %s: %s", english ? "Buffer" : "Буфер",
+                 s_device_settings.buffer_view == DEVICE_BUFFER_VIEW_GRAPH
+                     ? (english ? "Graph" : "График")
+                     : (english ? "Text" : "Текст"));
+        break;
     case UI_SETTINGS_ROW_AUTOPLAY_FIELD:
         snprintf(text, text_size, "  %s: %s", english ? "Autoplay" : "Автовоспроизведение",
                  s_device_settings.autoplay ? "ON" : "OFF");
@@ -2209,6 +2311,17 @@ static void ui_settings_change_selected(void)
                                                  ? DEVICE_SCROLL_BOUNCE
                                                  : DEVICE_SCROLL_LEFT);
         break;
+    case UI_SETTINGS_ROW_BUFFER_FIELD:
+        changed = device_settings_set_buffer_view(
+            &s_device_settings,
+            s_device_settings.buffer_view == DEVICE_BUFFER_VIEW_GRAPH
+                ? DEVICE_BUFFER_VIEW_TEXT
+                : DEVICE_BUFFER_VIEW_GRAPH);
+        /* The strip starts empty whichever way the switch went: coming back to
+         * one holding a station that stopped being watched minutes ago says
+         * nothing about the one playing now. */
+        if (changed) ui_buffer_graph_reset(&s_buffer_graph, ui_tick_get_ms());
+        break;
     case UI_SETTINGS_ROW_AUTOPLAY_FIELD:
         changed = device_settings_set_autoplay(&s_device_settings,
                                                !s_device_settings.autoplay);
@@ -2578,6 +2691,26 @@ static void ui_create_source_screen(void)
     s_source_buffer = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_buffer, 10, UI_SRC_FOOT_Y);
     lv_obj_set_style_text_color(s_source_buffer, lv_color_hex(UI_COLOR_DIM), 0);
+
+    /* The same reading as a strip, in the same place and about the same size,
+     * on a ground a shade lighter than the screen so the empty part of it is
+     * still a shape rather than a hole. Hidden until the setting asks for it,
+     * and until the footer's left slot is the buffer's to use. */
+    s_source_buffer_graph = lv_obj_create(s_source_screen);
+    lv_obj_set_pos(s_source_buffer_graph, UI_CONTENT_X, UI_SRC_BUFFER_GRAPH_Y);
+    lv_obj_set_size(s_source_buffer_graph, UI_BUFFER_GRAPH_W, UI_SRC_BUFFER_GRAPH_H);
+    lv_obj_set_style_bg_color(s_source_buffer_graph, lv_color_hex(UI_COLOR_TILE), 0);
+    lv_obj_set_style_border_width(s_source_buffer_graph, 0, 0);
+    lv_obj_set_style_radius(s_source_buffer_graph, 2, 0);
+    lv_obj_set_style_pad_all(s_source_buffer_graph, 0, 0);
+    lv_obj_clear_flag(s_source_buffer_graph, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_source_buffer_graph, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(s_source_buffer_graph, ui_buffer_graph_draw,
+                        LV_EVENT_DRAW_MAIN_END, NULL);
+    /* Armed against the clock rather than left at zero: a strip whose deadline
+     * is in the past takes its first bar on the very first poll, which is the
+     * device still booting and no station open. */
+    ui_buffer_graph_reset(&s_buffer_graph, ui_tick_get_ms());
 
     /* Between the two readings, in the gap the buffer line does not reach: the
      * footer is where the things you can do to what is playing live, and the
@@ -3908,7 +4041,6 @@ static void ui_task(void *arg)
          * except as a frozen screen. */
         {
             const int64_t started = esp_timer_get_time();
-            lv_timer_handler();
             const int64_t took = (esp_timer_get_time() - started) / 1000;
             // A screen change legitimately repaints all 76800 pixels and costs
             // about 200 ms, so the threshold sits well above that: what this

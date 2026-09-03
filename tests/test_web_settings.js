@@ -47,7 +47,8 @@ const ids = [
   'yandex-refresh', 'yandex-stations-block', 'yandex-stations',
   'yandex-stations-empty',
   'device-status', 'device-language', 'device-home-screen', 'device-home-screen-row',
-  'device-scroll', 'device-autoplay', 'device-yandex', 'device-yandex-row',
+  'device-scroll', 'device-buffer-view',
+  'device-autoplay', 'device-yandex', 'device-yandex-row',
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal',
 ];
@@ -92,7 +93,8 @@ let yandexFetchFails = false;
 // What GET /api/settings would answer. Deliberately not the defaults: a page
 // that ignored the document entirely would still look right against them.
 let settingsReply = {
-  language: 'ru', home_screen: 'text', scroll: 'bounce', autoplay: false,
+  language: 'ru', home_screen: 'text', scroll: 'bounce', buffer_view: 'graph',
+  autoplay: false,
   yandex_music: true, flip_vertical: false, flip_horizontal: true,
   brightness: 45, volume: 62,
   available: {home_screen: true, yandex_music: false},
@@ -414,6 +416,7 @@ function lastYandexTimer() {
   assert.equal(elements['#device-status'].textContent, 'Готово');
   assert.equal(elements['#device-language'].value, 'ru');
   assert.equal(elements['#device-scroll'].value, 'bounce');
+  assert.equal(elements['#device-buffer-view'].value, 'graph');
   assert.equal(elements['#device-autoplay'].checked, false);
   assert.equal(elements['#device-flip-horizontal'].checked, true);
   assert.equal(elements['#device-brightness'].value, '45');
@@ -490,11 +493,14 @@ function lastYandexTimer() {
      and there is no signal in it that anything has changed. */
   sendEvent(second, {
     type: 'settings.update', revision: 9,
-    settings: {...settingsReply, brightness: 70, scroll: 'left'},
+    settings: {...settingsReply, brightness: 70, scroll: 'left', buffer_view: 'text'},
   });
   assert.equal(elements['#device-brightness'].value, '70');
   assert.equal(elements['#device-brightness-value'].textContent, '70');
   assert.equal(elements['#device-scroll'].value, 'left');
+  /* The buffer reading has the same two-way life as the rest: it is changed
+     on the device screen as readily as here. */
+  assert.equal(elements['#device-buffer-view'].value, 'text');
 
   // A push landing while a slider is held must not pull it out from under the
   // pointer; the next one is 250 ms away.

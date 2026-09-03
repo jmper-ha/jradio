@@ -44,6 +44,12 @@ static void test_choices_are_named_not_numbered(void)
     assert(change.field == WEB_SETTINGS_FIELD_SCROLL);
     assert(change.value == DEVICE_SCROLL_LEFT);
 
+    assert(parse_one("{\"field\":\"buffer_view\",\"value\":\"graph\"}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_BUFFER_VIEW);
+    assert(change.value == DEVICE_BUFFER_VIEW_GRAPH);
+    assert(parse_one("{\"field\":\"buffer_view\",\"value\":\"text\"}", &change));
+    assert(change.value == DEVICE_BUFFER_VIEW_TEXT);
+
     /* A name this build does not know is refused rather than falling back to
      * the first choice: the page would then show a value nobody asked for. */
     assert(!parse_one("{\"field\":\"language\",\"value\":\"de\"}", &change));
@@ -125,6 +131,10 @@ static void test_apply_writes_through_to_the_file(void)
     const web_settings_change_t scroll = {WEB_SETTINGS_FIELD_SCROLL, DEVICE_SCROLL_LEFT};
     assert(web_settings_apply(&settings, &scroll));
 
+    const web_settings_change_t buffer = {WEB_SETTINGS_FIELD_BUFFER_VIEW,
+                                          DEVICE_BUFFER_VIEW_GRAPH};
+    assert(web_settings_apply(&settings, &buffer));
+
     /* Read back through a second copy, the way the device's UI task does after
      * it is told the file changed: that round trip is the whole mechanism by
      * which a browser change reaches the panel. */
@@ -132,6 +142,7 @@ static void test_apply_writes_through_to_the_file(void)
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.brightness == 35);
     assert(reloaded.scroll == DEVICE_SCROLL_LEFT);
+    assert(reloaded.buffer_view == DEVICE_BUFFER_VIEW_GRAPH);
 
     char value[64];
     assert(settings_csv_get(test_path, "station_url", value, sizeof(value)));
@@ -155,6 +166,7 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"language\":\"en\"") != NULL);
     assert(strstr(document, "\"home_screen\":\"text\"") != NULL);
     assert(strstr(document, "\"scroll\":\"bounce\"") != NULL);
+    assert(strstr(document, "\"buffer_view\":\"text\"") != NULL);
     assert(strstr(document, "\"autoplay\":true") != NULL);
     assert(strstr(document, "\"volume\":42") != NULL);
     assert(strstr(document, "\"brightness\":50") != NULL);
@@ -198,6 +210,9 @@ static void test_view_comparison_notices_every_field(void)
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.scroll = DEVICE_SCROLL_LEFT;
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.buffer_view = DEVICE_BUFFER_VIEW_GRAPH;
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.autoplay = !base.autoplay;

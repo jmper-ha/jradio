@@ -24,6 +24,7 @@ static const field_descriptor_t k_fields[] = {
     {"language", WEB_SETTINGS_FIELD_LANGUAGE, "ru", "en", false},
     {"home_screen", WEB_SETTINGS_FIELD_HOME_SCREEN, "text", "feed", false},
     {"scroll", WEB_SETTINGS_FIELD_SCROLL, "bounce", "left", false},
+    {"buffer_view", WEB_SETTINGS_FIELD_BUFFER_VIEW, "text", "graph", false},
     {"autoplay", WEB_SETTINGS_FIELD_AUTOPLAY, NULL, NULL, false},
     {"yandex_music", WEB_SETTINGS_FIELD_YANDEX_MUSIC, NULL, NULL, false},
     {"flip_vertical", WEB_SETTINGS_FIELD_FLIP_VERTICAL, NULL, NULL, false},
@@ -127,6 +128,9 @@ bool web_settings_apply(device_settings_t *settings,
                                                (device_home_screen_t)change->value);
     case WEB_SETTINGS_FIELD_SCROLL:
         return device_settings_set_scroll(settings, (device_scroll_t)change->value);
+    case WEB_SETTINGS_FIELD_BUFFER_VIEW:
+        return device_settings_set_buffer_view(settings,
+                                               (device_buffer_view_t)change->value);
     case WEB_SETTINGS_FIELD_AUTOPLAY:
         return device_settings_set_autoplay(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_YANDEX_MUSIC:
@@ -157,6 +161,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .language = (uint8_t)settings->language,
         .home_screen = (uint8_t)settings->home_screen,
         .scroll = (uint8_t)settings->scroll,
+        .buffer_view = (uint8_t)settings->buffer_view,
         .volume = settings->volume,
         .brightness = settings->brightness,
         .autoplay = settings->autoplay,
@@ -178,7 +183,8 @@ bool web_settings_view_equal(const web_settings_view_t *left,
      * decide whether the browser gets told. */
     return left->language == right->language &&
            left->home_screen == right->home_screen &&
-           left->scroll == right->scroll && left->volume == right->volume &&
+           left->scroll == right->scroll &&
+           left->buffer_view == right->buffer_view && left->volume == right->volume &&
            left->brightness == right->brightness &&
            left->autoplay == right->autoplay &&
            left->yandex_music == right->yandex_music &&
@@ -203,6 +209,9 @@ void web_settings_write(web_json_writer_t *writer,
                     view->home_screen == DEVICE_HOME_SCREEN_FEED ? "feed" : "text");
     web_json_literal(writer, ",\"scroll\":");
     web_json_string(writer, view->scroll == DEVICE_SCROLL_LEFT ? "left" : "bounce");
+    web_json_literal(writer, ",\"buffer_view\":");
+    web_json_string(writer,
+                    view->buffer_view == DEVICE_BUFFER_VIEW_GRAPH ? "graph" : "text");
     web_json_literal(writer, ",\"autoplay\":");
     web_json_literal(writer, view->autoplay ? "true" : "false");
     web_json_literal(writer, ",\"yandex_music\":");

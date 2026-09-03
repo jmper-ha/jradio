@@ -31,6 +31,9 @@ static void test_defaults_and_load(void)
     assert(settings.brightness == DEVICE_BRIGHTNESS_DEFAULT);
     /* Bounce is what the device did before the setting existed. */
     assert(settings.scroll == DEVICE_SCROLL_BOUNCE);
+    /* And a number is what the buffer reading was before it could be a strip:
+     * a card written by an older build gets the screen it used to have. */
+    assert(settings.buffer_view == DEVICE_BUFFER_VIEW_TEXT);
     assert(strcmp(settings.storage_path, test_path) == 0);
 }
 
@@ -43,6 +46,7 @@ static void test_values_and_unknown_lines_are_saved(void)
     assert(device_settings_set_home_screen(&settings, DEVICE_HOME_SCREEN_FEED));
     assert(device_settings_set_flip_vertical(&settings, true));
     assert(device_settings_set_flip_horizontal(&settings, true));
+    assert(device_settings_set_buffer_view(&settings, DEVICE_BUFFER_VIEW_GRAPH));
 
     char value[32];
     assert(settings_csv_get(test_path, "unknown", value, sizeof(value)));
@@ -53,6 +57,12 @@ static void test_values_and_unknown_lines_are_saved(void)
     assert(strcmp(value, "feed") == 0);
     assert(settings_csv_get(test_path, "display_flip_vertical", value, sizeof(value)));
     assert(strcmp(value, "1") == 0);
+    assert(settings_csv_get(test_path, "buffer_view", value, sizeof(value)));
+    assert(strcmp(value, "graph") == 0);
+
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.buffer_view == DEVICE_BUFFER_VIEW_GRAPH);
 }
 
 static void test_invalid_values_do_not_change_model(void)
@@ -63,9 +73,11 @@ static void test_invalid_values_do_not_change_model(void)
     assert(!device_settings_set_language(&settings, (device_language_t)99));
     assert(!device_settings_set_home_screen(&settings, (device_home_screen_t)99));
     assert(!device_settings_set_flip_vertical_value(&settings, 2));
+    assert(!device_settings_set_buffer_view(&settings, (device_buffer_view_t)99));
     assert(settings.language == DEVICE_LANGUAGE_RU);
     assert(settings.home_screen == DEVICE_HOME_SCREEN_TEXT);
     assert(!settings.flip_vertical);
+    assert(settings.buffer_view == DEVICE_BUFFER_VIEW_TEXT);
 }
 
 

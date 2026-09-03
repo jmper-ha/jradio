@@ -92,6 +92,10 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         if (strcmp(value, "left") == 0) settings->scroll = DEVICE_SCROLL_LEFT;
         else if (strcmp(value, "bounce") != 0) settings->scroll = DEVICE_SCROLL_BOUNCE;
     }
+    if (read_value(path, "buffer_view", value, sizeof(value))) {
+        if (strcmp(value, "graph") == 0) settings->buffer_view = DEVICE_BUFFER_VIEW_GRAPH;
+        else if (strcmp(value, "text") != 0) settings->buffer_view = DEVICE_BUFFER_VIEW_TEXT;
+    }
     if (read_value(path, "display_flip_vertical", value, sizeof(value))) {
         (void)parse_bool(value, &settings->flip_vertical);
     }
@@ -186,6 +190,18 @@ bool device_settings_set_scroll(device_settings_t *settings, device_scroll_t scr
     if (!save_value(settings, "scroll",
                     scroll == DEVICE_SCROLL_LEFT ? "left" : "bounce")) return false;
     settings->scroll = scroll;
+    return true;
+}
+
+bool device_settings_set_buffer_view(device_settings_t *settings,
+                                     device_buffer_view_t buffer_view)
+{
+    if (settings == NULL || buffer_view > DEVICE_BUFFER_VIEW_GRAPH) return false;
+    if (!save_value(settings, "buffer_view",
+                    buffer_view == DEVICE_BUFFER_VIEW_GRAPH ? "graph" : "text")) {
+        return false;
+    }
+    settings->buffer_view = buffer_view;
     return true;
 }
 

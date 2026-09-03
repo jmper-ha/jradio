@@ -20,6 +20,15 @@ typedef enum {
     DEVICE_SCROLL_LEFT,
 } device_scroll_t;
 
+/* How the player screen shows what the input buffer holds: the reading as a
+ * percentage, or a strip of bars that keeps the last few seconds of it. The
+ * number answers "how much is held right now" and the graph answers "is it
+ * holding steady", which is the question a dropout is an answer to. */
+typedef enum {
+    DEVICE_BUFFER_VIEW_TEXT = 0,
+    DEVICE_BUFFER_VIEW_GRAPH,
+} device_buffer_view_t;
+
 typedef enum {
     DEVICE_LAST_SOURCE_NONE = 0,
     DEVICE_LAST_SOURCE_INTERNET_RADIO,
@@ -63,6 +72,7 @@ typedef struct {
     device_language_t language;
     device_home_screen_t home_screen;
     device_scroll_t scroll;
+    device_buffer_view_t buffer_view;
     bool flip_vertical;
     bool flip_horizontal;
     /* Resume what was playing at power-off instead of opening the home
@@ -96,6 +106,8 @@ bool device_settings_set_language(device_settings_t *settings, device_language_t
 bool device_settings_set_home_screen(device_settings_t *settings,
                                      device_home_screen_t home_screen);
 bool device_settings_set_scroll(device_settings_t *settings, device_scroll_t scroll);
+bool device_settings_set_buffer_view(device_settings_t *settings,
+                                     device_buffer_view_t buffer_view);
 bool device_settings_set_flip_vertical(device_settings_t *settings, bool enabled);
 bool device_settings_set_flip_horizontal(device_settings_t *settings, bool enabled);
 bool device_settings_set_flip_vertical_value(device_settings_t *settings, int value);

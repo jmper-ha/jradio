@@ -68,6 +68,7 @@ static web_socket_settings_state_t sample_settings(void)
             .language = DEVICE_LANGUAGE_RU,
             .home_screen = DEVICE_HOME_SCREEN_FEED,
             .scroll = DEVICE_SCROLL_BOUNCE,
+            .buffer_view = DEVICE_BUFFER_VIEW_TEXT,
             .volume = 62U,
             .brightness = 45U,
             .autoplay = true,

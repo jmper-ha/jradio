@@ -168,6 +168,7 @@ run_test ui_now_playing tests/test_ui_now_playing.c components/ui/ui_now_playing
 run_test ui_seek tests/test_ui_seek.c components/ui/ui_seek.c
 run_test ui_web_address tests/test_ui_web_address.c components/ui/ui_web_address.c
 run_test ui_settings_model tests/test_ui_settings_model.c components/ui/ui_settings_model.c
+run_test ui_buffer_graph tests/test_ui_buffer_graph.c components/ui/ui_buffer_graph.c
 run_test ui_status_bar tests/test_ui_status_bar.c components/ui/ui_status_bar.c
 run_test ui_text_scroll tests/test_ui_text_scroll.c components/ui/ui_text_scroll.c
 run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c

@@ -3,6 +3,7 @@
 #include <stdbool.h>
 
 #include "board_display_profile.h"
+#include "ui_buffer_graph.h"
 #include "ui_font_metrics.h"
 
 /* Where every screen's geometry lives.
@@ -162,6 +163,13 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
  * and now that the face is the shape's to choose, they follow it rather than
  * standing as the 19 and 23 the two known panels happen to need. */
 #define UI_SRC_LINE_H UI_FONT_BODY_LINE_H
+/* The buffer reading drawn as a strip of bars instead of a number, standing
+ * where the text stands. Its width belongs to the strip - see
+ * ui_buffer_graph.h, where the bar count decides how much history it holds -
+ * and only its height is the layout's, one body line less the space the face
+ * leaves under its baseline, so the two forms occupy the same row. */
+#define UI_SRC_BUFFER_GRAPH_H (UI_SRC_LINE_H - 4)
+#define UI_SRC_BUFFER_GRAPH_Y (UI_SRC_FOOT_Y + 2)
 #define UI_SRC_TRACK_H UI_FONT_TITLE_LINE_H
 #define UI_SRC_VU_BLOCK_H 10
 #define UI_SRC_VU_PITCH 18
@@ -253,6 +261,12 @@ _Static_assert(UI_SRC_STREAM_X >= UI_SRC_ART_X + UI_SRC_ART_SIZE ||
                    UI_SRC_STREAM_X + UI_SRC_STREAM_W <= UI_SRC_ART_X ||
                    UI_SRC_STREAM_Y >= UI_SRC_ART_Y + UI_SRC_ART_SIZE,
                "the player's stream readings run over its cover art");
+/* The strip stands in the footer's left margin, where the reading's text
+ * stands, and must stop short of the like mark that follows it. */
+_Static_assert(UI_CONTENT_X + UI_BUFFER_GRAPH_W <= UI_SRC_LIKE_X,
+               "the buffer graph runs into the like mark");
+_Static_assert(UI_SRC_BUFFER_GRAPH_Y + UI_SRC_BUFFER_GRAPH_H <= TFT_HEIGHT,
+               "the buffer graph runs off the bottom of the panel");
 /* Three digits of volume, and the right margin every other block keeps. */
 _Static_assert(UI_SRC_VOLUME_TEXT_X + 26 <= TFT_WIDTH,
                "the player's volume reading runs off the panel");

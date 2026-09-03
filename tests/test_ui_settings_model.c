@@ -107,22 +107,25 @@ static void test_each_group_has_expected_fields(void)
     ui_settings_model_init(&model, true);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    /* General holds home screen, scrolling and autoplay, plus the Yandex Music
-     * switch in a build that has the feature - the one row here that a board
-     * option can take away. */
-    assert(ui_settings_model_row_count(&model) == 6U + BOARD_HAS_YANDEX_MUSIC);
+    /* General holds home screen, scrolling, the buffer reading and autoplay,
+     * plus the Yandex Music switch in a build that has the feature - the one
+     * row here that a board option can take away. */
+    assert(ui_settings_model_row_count(&model) == 7U + BOARD_HAS_YANDEX_MUSIC);
     assert(ui_settings_model_row_at(&model, 2U).id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_SCROLL_FIELD);
-    assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_AUTOPLAY_FIELD);
+    assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_BUFFER_FIELD);
+    assert(ui_settings_model_row_at(&model, 5U).id == UI_SETTINGS_ROW_AUTOPLAY_FIELD);
 
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_SCROLL_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_BUFFER_FIELD);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_AUTOPLAY_FIELD);
 #if BOARD_HAS_YANDEX_MUSIC
-    assert(ui_settings_model_row_at(&model, 5U).id == UI_SETTINGS_ROW_YANDEX_FIELD);
+    assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_YANDEX_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_YANDEX_FIELD);
 #endif
@@ -302,7 +305,8 @@ static void test_a_device_with_no_home_screen_drops_that_row(void)
     /* Scrolling is what the row above it becomes, so nothing below shifts by
      * more than the one row that went. */
     assert(ui_settings_model_row_at(&model, 2U).id == UI_SETTINGS_ROW_SCROLL_FIELD);
-    assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_AUTOPLAY_FIELD);
+    assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_BUFFER_FIELD);
+    assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_AUTOPLAY_FIELD);
 
     /* And the cursor cannot reach it: walking the whole group never lands on
      * a row the model does not hand out. */
@@ -325,7 +329,7 @@ static void test_the_longest_list_needs_the_window(void)
         const size_t count = ui_settings_model_row_count(&model);
         if (count > longest) longest = count;
     }
-    assert(longest == 6U + BOARD_HAS_YANDEX_MUSIC);
+    assert(longest == 7U + BOARD_HAS_YANDEX_MUSIC);
     /* Whatever the longest is, every row of it is reachable with the window. */
     ui_settings_model_init(&model, true);
     model.expanded_group = (int)UI_SETTINGS_GROUP_GENERAL;

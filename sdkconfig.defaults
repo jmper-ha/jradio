@@ -26,6 +26,18 @@ CONFIG_LV_FONT_MONTSERRAT_48=y
 # is the only way a phone gets to the web UI without someone typing an IP by
 # hand - and in setup mode the only way it joins the box's access point at all.
 CONFIG_LV_USE_QRCODE=y
+# LVGL's own heap: every object and style, and at draw time every layer and
+# draw task, comes out of it. It is not internal SRAM - LV_MEM_POOL_ALLOC is
+# lvgl_pool_alloc(), which takes PSRAM and falls back to internal - so this
+# number costs the tight heap nothing.
+#
+# The default 64 KB left 9 KB free once the six screens were built: 85% used
+# before a single frame was drawn, measured with lv_mem_monitor() on
+# 2026-09-03. Nothing had failed yet, but a refresh allocates as it draws, and
+# with CONFIG_LV_USE_LOG off there is no report when it cannot - LVGL neither
+# says so nor stops, and the panel simply keeps the last thing written to it.
+# Room to add a screen is worth more here than PSRAM is.
+CONFIG_LV_MEM_SIZE_KILOBYTES=192
 CONFIG_FREERTOS_HZ=1000
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"

@@ -111,3 +111,25 @@ uint32_t radio_prebuffer_millis(size_t available, uint32_t bitrate_kbps);
  * least 1, so an almost-empty buffer is not displayed as an empty one. */
 #define RADIO_PREBUFFER_PERCENT_NONE 0xFFU
 uint8_t radio_prebuffer_percent(size_t available, size_t capacity);
+
+/* How long a window of raw readings is averaged before one figure is folded
+ * into the display, and how much of its past the display keeps.
+ *
+ * The raw backlog moves a whole frame at a time - the decoder takes one, the
+ * next read puts one back - so sampled at any instant it jumps. Measured on
+ * Radio Paradise FLAC, one sample a second: 69, 100, 100, 100, 63, 56. Every
+ * one of those is true and none of them is the number a person wants to read.
+ * A FLAC frame is ~85 ms and the backlog swings by one of them, so a window
+ * of 100 ms averaged barely a whole frame and left the display moving 15
+ * points; 250 ms covers three and settles it. The weight then decides how many
+ * windows a real change takes - a quarter each, so a second to arrive, which
+ * is still faster than a buffer can empty. */
+#define RADIO_PREBUFFER_SMOOTH_MS 250U
+#define RADIO_PREBUFFER_SMOOTH_WEIGHT 4U
+
+/* One step of the displayed figure towards a fresh reading.
+ *
+ * Always moves by at least one while the two differ: integer division alone
+ * stops a quarter-weighted average three points short, and a meter that
+ * settles near the answer and never arrives is worse than a jumpy one. */
+uint8_t radio_prebuffer_smooth(uint8_t shown, uint8_t sample);

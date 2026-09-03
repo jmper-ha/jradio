@@ -54,6 +54,15 @@ uint32_t radio_prebuffer_millis(size_t available, uint32_t bitrate_kbps)
     return (uint32_t)((uint64_t)available * 8U / bitrate_kbps);
 }
 
+uint8_t radio_prebuffer_smooth(uint8_t shown, uint8_t sample)
+{
+    if (sample == shown) return shown;
+    const int difference = (int)sample - (int)shown;
+    int step = difference / (int)RADIO_PREBUFFER_SMOOTH_WEIGHT;
+    if (step == 0) step = difference > 0 ? 1 : -1;
+    return (uint8_t)((int)shown + step);
+}
+
 uint8_t radio_prebuffer_percent(size_t available, size_t capacity)
 {
     if (capacity == 0U) return 0U;

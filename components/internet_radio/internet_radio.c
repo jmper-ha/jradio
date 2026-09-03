@@ -592,6 +592,13 @@ static void radio_direct_task(void *arg)
     TickType_t last_pcm_tick = xTaskGetTickCount();
     unsigned int decode_stalls = 0U;
     bool decoder_reset_tried = false;
+    /* The displayed backlog and the window it is averaged over. Kept here
+     * rather than published raw: see RADIO_PREBUFFER_SMOOTH_MS for what the
+     * raw figure looks like on a screen. */
+    uint8_t fill_shown = 0U;
+    size_t fill_sum = 0U;
+    unsigned int fill_samples = 0U;
+    TickType_t fill_window = xTaskGetTickCount();
     /* Whether the decoder has found its way into this stream, which is what
      * picks the stall limit. Cleared wherever `last_pcm_tick` is re-armed -
      * every one of those is a point where the search for a frame starts over. */
@@ -766,10 +773,26 @@ static void radio_direct_task(void *arg)
         }
         /* Against the target the loop actually chases, not the buffer it lives
          * in: reading stops at the target, so a station in perfect health
-         * could never show more than the 13% that is 32 KB of 256 KB. */
-        atomic_store_explicit(&radio->input_fill_percent,
-                              radio_prebuffer_percent(available, prebuffer.target),
-                              memory_order_relaxed);
+         * could never show more than the 13% that is 32 KB of 256 KB.
+         *
+         * Averaged over a window and then eased towards, because this loop
+         * runs far faster than anything watching it: the UI redraws every
+         * 10 ms and would show every frame the decoder takes out of the
+         * buffer. What is published is the same measurement, at a rate a
+         * person can read. */
+        fill_sum += radio_prebuffer_percent(available, prebuffer.target);
+        ++fill_samples;
+        if ((uint32_t)((xTaskGetTickCount() - fill_window) * portTICK_PERIOD_MS) >=
+            RADIO_PREBUFFER_SMOOTH_MS) {
+            const uint8_t window_average = (uint8_t)((fill_sum + fill_samples / 2U) /
+                                                     fill_samples);
+            fill_shown = radio_prebuffer_smooth(fill_shown, window_average);
+            atomic_store_explicit(&radio->input_fill_percent, fill_shown,
+                                  memory_order_relaxed);
+            fill_sum = 0U;
+            fill_samples = 0U;
+            fill_window = xTaskGetTickCount();
+        }
         if (need_input && radio->output_started) {
             ++starvations;
         }

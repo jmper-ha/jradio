@@ -182,6 +182,53 @@ static void test_the_target_is_a_cushion_and_stops_growing_with_the_buffer(void)
     assert(plan.max_bytes == 262144U);
 }
 
+static void test_the_shown_figure_eases_towards_a_new_reading(void)
+{
+    /* A quarter of the way per window: far enough to follow a real change
+     * within half a second, short enough that one frame leaving the buffer
+     * does not move the display. */
+    assert(radio_prebuffer_smooth(100U, 60U) == 90U);
+    assert(radio_prebuffer_smooth(0U, 100U) == 25U);
+    /* Down as readily as up: a buffer draining is the one thing this number
+     * exists to show. */
+    assert(radio_prebuffer_smooth(60U, 0U) < 60U);
+}
+
+static void test_the_shown_figure_always_arrives(void)
+{
+    /* Integer division stops three points short of the answer and stays
+     * there, which is a meter that never agrees with itself. */
+    uint8_t shown = 0U;
+    for (int step = 0; step < 200; ++step) shown = radio_prebuffer_smooth(shown, 100U);
+    assert(shown == 100U);
+    for (int step = 0; step < 200; ++step) shown = radio_prebuffer_smooth(shown, 44U);
+    assert(shown == 44U);
+    /* Already there: nothing moves, and in particular it does not step past. */
+    assert(radio_prebuffer_smooth(44U, 44U) == 44U);
+    assert(radio_prebuffer_smooth(0U, 0U) == 0U);
+    assert(radio_prebuffer_smooth(100U, 100U) == 100U);
+}
+
+static void test_the_shown_figure_rides_out_a_single_jump(void)
+{
+    /* The reading the user reported: 69, 100, 100, 100, 63, 56 a second apart
+     * on one station. Whatever the sequence, the display must stay inside the
+     * range it is fed and move by a fraction of each jump. */
+    const uint8_t samples[] = {69U, 100U, 100U, 100U, 63U, 56U};
+    uint8_t shown = 70U;
+    uint8_t lowest = 100U;
+    uint8_t highest = 0U;
+    for (size_t index = 0U; index < sizeof(samples) / sizeof(samples[0]); ++index) {
+        const uint8_t previous = shown;
+        shown = radio_prebuffer_smooth(shown, samples[index]);
+        const int moved = (int)shown - (int)previous;
+        assert(moved <= 11 && moved >= -11);
+        if (shown < lowest) lowest = shown;
+        if (shown > highest) highest = shown;
+    }
+    assert(lowest >= 56U && highest <= 100U);
+}
+
 int main(void)
 {
     test_an_empty_buffer_is_allowed_to_wait_for_data();
@@ -198,6 +245,9 @@ int main(void)
     test_fill_percent_keeps_both_ends_honest();
     test_fill_percent_rounds_to_nearest();
     test_the_target_is_a_cushion_and_stops_growing_with_the_buffer();
+    test_the_shown_figure_eases_towards_a_new_reading();
+    test_the_shown_figure_always_arrives();
+    test_the_shown_figure_rides_out_a_single_jump();
     puts("radio_prebuffer tests passed");
     return 0;
 }

@@ -663,6 +663,15 @@ and the UI task re-reads `settings.csv` and re-applies the brightness, the
 panel rotation, the volume and the Yandex row - a stored value does none of
 that by itself.
 
+The rotation is the one exception: there is no way to turn the boot splash over
+once it has been drawn. MADCTL decides where *arriving* pixels land and moves
+nothing already on the glass, and the splash is drawn at the end of
+`board_init()`, long before the UI task exists. So `app_main()` mounts LittleFS
+and reads the two flip flags before the board, and passes them into
+`board_init()` - the only settings it needs. If they cannot be read the flips
+are off, which is the panel's own baseline. It costs the screen nothing: the
+backlight sits at zero until the splash is on the glass.
+
 They come back as a `settings` section on the socket rather than by polling:
 the knob changes the volume without telling anyone, and `settings.csv` is
 eleven consecutive reads - far too much to ask on a timer. The UI task

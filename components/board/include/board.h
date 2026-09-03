@@ -6,7 +6,13 @@
 
 #include "esp_err.h"
 
-esp_err_t board_init(void);
+/* The display's two flip settings are arguments, and no other setting is,
+ * because this ends by drawing the boot splash: MADCTL steers where arriving
+ * pixels land and moves nothing already on the glass, so a splash drawn before
+ * the switches are known stays the way it was written. Everything else the
+ * settings decide - brightness, volume - is applied later by the UI, which is
+ * why only these two have to be here. */
+esp_err_t board_init(bool flip_vertical, bool flip_horizontal);
 esp_err_t board_backlight_set(uint8_t percent);
 esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
                             uint32_t timeout_ms);

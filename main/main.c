@@ -7,6 +7,7 @@
 #include "board_features.h"
 #include "board_input.h"
 #include "device_clock.h"
+#include "device_settings.h"
 #include "internet_radio.h"
 #include "player_control.h"
 #include "sd_storage.h"
@@ -17,6 +18,7 @@
 #include "usb_storage.h"
 #include "web_server.h"
 #include "wifi_provisioning.h"
+#include "wifi_settings.h"
 #include "yandex_auth.h"
 #include "yandex_catalog.h"
 #include "yandex_feedback.h"
@@ -59,10 +61,25 @@ void app_main(void)
     // exist by the time player_control and ui are running, and app_main is
     // still the only task at this point.
     settings_csv_init();
+    /* The settings are read here, before the board, for two of them: the boot
+     * splash is drawn at the end of board_init(), and the panel's flip is the
+     * one thing that cannot be applied to a picture after it has been drawn.
+     * The mount is what settings.csv lives on and happens anyway a moment
+     * later, inside Wi-Fi; asking for it early is free, it is idempotent, and
+     * the screen is still black at this point - the backlight comes up only
+     * once the splash is on the glass. If either the mount or the file fails,
+     * the flips read as off, which is the panel's own baseline. */
+    device_settings_t boot_settings;
+    const bool settings_read =
+        wifi_settings_storage_init() == ESP_OK && device_settings_init(&boot_settings);
+    if (!settings_read) {
+        ESP_LOGW(TAG, "settings unreadable at boot; splash drawn unflipped");
+    }
     // Fatal on purpose: without the board there is no screen, no sound and no
     // controls, and without player_control and the UI there is nothing to
     // drive them with. A reboot loop is at least an honest signal there.
-    ESP_ERROR_CHECK(board_init());
+    ESP_ERROR_CHECK(board_init(settings_read && boot_settings.flip_vertical,
+                               settings_read && boot_settings.flip_horizontal));
     start_optional("Wi-Fi", wifi_provisioning_init());
     start_optional("Wi-Fi", wifi_provisioning_start());
     // After Wi-Fi is up so the first query has somewhere to go, but it does

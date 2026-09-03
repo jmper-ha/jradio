@@ -760,7 +760,7 @@ static esp_err_t board_display_splash(void)
     return ESP_OK;
 }
 
-static esp_err_t board_display_init(void)
+static esp_err_t board_display_init(bool flip_vertical, bool flip_horizontal)
 {
     s_lcd_transfer_done = xSemaphoreCreateBinary();
     if (s_lcd_transfer_done == NULL) {
@@ -803,10 +803,15 @@ static esp_err_t board_display_init(void)
                         "create " BOARD_PANEL_NAME " panel failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_swap_xy(panel, TFT_SWAP_XY), TAG,
                         "set landscape rotation failed");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(panel, TFT_MIRROR_X, TFT_MIRROR_Y), TAG,
+    s_panel = panel;
+    /* Before the splash, and through the same call the settings screen uses:
+     * the baseline mirror and the user's two switches compose in exactly one
+     * place, and the picture is written under the mapping it will be read
+     * back through. Mirroring after it is drawn would not move it - see
+     * board_display_set_rotation(). */
+    ESP_RETURN_ON_ERROR(board_display_set_rotation(flip_vertical, flip_horizontal), TAG,
                         "set LCD mirror failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(panel, true), TAG, "turn LCD on failed");
-    s_panel = panel;
     return board_display_splash();
 }
 
@@ -836,13 +841,13 @@ esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal)
                                 flip_vertical != (bool)TFT_MIRROR_Y);
 }
 
-esp_err_t board_init(void)
+esp_err_t board_init(bool flip_vertical, bool flip_horizontal)
 {
     ESP_LOGI(TAG, "initializing input, PWM backlight, I2S and " BOARD_PANEL_NAME);
     ESP_RETURN_ON_ERROR(board_input_init(), TAG, "configure input GPIOs failed");
     ESP_RETURN_ON_ERROR(board_backlight_init(), TAG, "initialize backlight failed");
     ESP_RETURN_ON_ERROR(board_audio_init(), TAG, "initialize PCM5102 I2S output failed");
-    ESP_RETURN_ON_ERROR(board_display_init(), TAG,
+    ESP_RETURN_ON_ERROR(board_display_init(flip_vertical, flip_horizontal), TAG,
                         "initialize " BOARD_PANEL_NAME " failed");
     ESP_RETURN_ON_ERROR(board_backlight_set(50), TAG, "set initial backlight failed");
     ESP_LOGI(TAG, "board initialized; display shows the boot splash");

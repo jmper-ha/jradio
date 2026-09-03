@@ -27,6 +27,12 @@ SESSION_CONTEXT.md
 .superpowers/
 docs/
 .worktrees/
+# Agent skills installed by `npx skills add`: .agents/ holds them, .claude/ is
+# symlinks into it, and the lock file names the upstream repository. All three
+# are this machine's tooling, not the firmware.
+.agents/
+.claude/
+skills-lock.json
 *.md
 !README.md
 !README.en.md

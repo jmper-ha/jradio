@@ -16,11 +16,17 @@ CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=1024
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
-# 14 is not decoration: ui_font_cyrillic_14 falls back to it for the LV_SYMBOL_*
-# glyphs, which its own ASCII+Cyrillic ranges do not cover. 24 and 48 are the
-# feed carousel's icons.
+# The icon faces. None of these is decoration: the text faces are DejaVu with
+# no symbol block at all, so every LV_SYMBOL_* on the device is drawn in one of
+# these, and 14 is additionally LVGL's own LV_FONT_DEFAULT.
+#
+# 24 is what the 320 px panels use for a row's mark, 32 what the 480x320 one
+# does, and 48 is the single large glyph - the note in an empty cover tile,
+# the Yandex pairing code. A layout that names a size not listed here fails
+# the build in ui_fonts.h rather than at the link.
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
+CONFIG_LV_FONT_MONTSERRAT_32=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
 # The settings screen turns its address band into a QR code on a click, which
 # is the only way a phone gets to the web UI without someone typing an IP by

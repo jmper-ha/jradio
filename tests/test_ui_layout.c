@@ -72,6 +72,7 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
     assert(UI_FONT_ICON_PX == 24 && UI_FONT_DISPLAY_PX == 48);
     assert(UI_SRC_LINE_H == 19 && UI_SRC_TRACK_H == 24);
     assert(UI_SRC_ART_SIZE == 96);
+    assert(UI_LIST_ICON_W == 30);
 #elif TFT_WIDTH == 480 && TFT_HEIGHT == 320
     /* The 480x320 panel asks for its own pair, and these are those faces' own
      * line heights. 18 and 20 share a height for the reason ui_font_metrics.h
@@ -79,12 +80,18 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
      * grow the body text from 14 and typed 20 would get no more height at all;
      * pinning the pair here is what catches that. */
     assert(UI_FONT_BODY_PX == 18 && UI_FONT_TITLE_PX == 26);
-    assert(UI_FONT_ICON_PX == 24 && UI_FONT_DISPLAY_PX == 48);
+    /* The icon face steps up with the text; the display face cannot, 48 being
+     * the largest Montserrat LVGL carries. Both have to be enabled in
+     * sdkconfig - ui_fonts.h turns a missing one into a build error, and this
+     * is the reminder of which sizes that means. */
+    assert(UI_FONT_ICON_PX == 32 && UI_FONT_DISPLAY_PX == 48);
     assert(UI_SRC_LINE_H == 24 && UI_SRC_TRACK_H == 35);
     /* The tile the layout keeps for the cover is also the square covers are
      * decoded into, so a change here is a change to the picture and not only
      * to its frame. Pinned for the same reason the row counts are. */
     assert(UI_SRC_ART_SIZE == 160);
+    /* And the column the mark stands in follows the face it is drawn with. */
+    assert(UI_LIST_ICON_W == 38);
 #endif
 }
 

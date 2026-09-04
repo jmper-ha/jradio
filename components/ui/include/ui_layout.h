@@ -155,9 +155,12 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
  * paragraph. */
 #define UI_LIST_ROW_PITCH (UI_FONT_TITLE_LINE_H + 12)
 #define UI_LIST_ROW_H (UI_FONT_TITLE_LINE_H + 6)
-/* Width the folder glyph reserves at the left of a row: 24 px of Montserrat 24
- * (its adv_w) plus the gap before the name. */
-#define UI_LIST_ICON_W 30
+/* Width the folder glyph reserves at the left of a row: the icon face's own
+ * size, which is what a Montserrat symbol advances by, plus the gap before the
+ * name. Written as the face rather than as the 30 it came to on the first
+ * panel, so a shape that asks for a bigger icon gets a column to put it in
+ * instead of one the glyph overhangs. */
+#define UI_LIST_ICON_W (UI_FONT_ICON_PX + 6)
 /* Width the index reserves on a station row: two digits of the 20 px face
  * (12.7 px of advance each) and the gap before the name. A station row is
  * never a directory, so this and the folder mark never both apply; a file row

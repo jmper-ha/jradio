@@ -247,6 +247,12 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
  * is what decides whether it lands on the panel. */
 _Static_assert(UI_SET_CHEVRON_X + UI_FONT_ICON_PX <= TFT_WIDTH - UI_CONTENT_X,
                "the settings screen's scroll chevron runs off the right edge");
+/* And it stands level with a row, in that row's own band - there is nowhere
+ * else for it to go, with ten pixels between the strip and the first row and
+ * the notice line and the address band under the last. So it has to fit the
+ * row's height as well as the margin's width. */
+_Static_assert(UI_FONT_ICON_PX <= UI_SET_ROW_H,
+               "the settings screen's scroll chevron is taller than the row it stands beside");
 /* And the index has to be wider than the digits that go in it, or the number
  * is printed against the name it labels. */
 _Static_assert(UI_LIST_NUMBER_W > UI_FONT_TITLE_PX * 1274 / 1000,

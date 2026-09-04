@@ -16,7 +16,16 @@
  * drag in LVGL: the layout is arithmetic, and the host tests compile it. */
 
 #define UI_FONT_CYRILLIC_14_LINE_H 19
+#define UI_FONT_CYRILLIC_18_LINE_H 24
 #define UI_FONT_CYRILLIC_20_LINE_H 24
+#define UI_FONT_CYRILLIC_26_LINE_H 35
+/* 18 and 20 sharing a line height is not a typo. Line height is set by the
+ * tallest glyph in the face, and the 20 px one was built over a narrower
+ * Cyrillic range that stops at 0x045F - it simply does not contain the letters
+ * that make the others tall. The 14, 18 and 26 px faces all carry the range in
+ * full, and their heights are a consistent 1.35 of the size. Which is the
+ * better trade depends on the row: a face that drops a letter draws a box, and
+ * the title face is what station names and track titles arrive in. */
 
 /* Two levels, so the argument is expanded before it is pasted: the roles below
  * are given a size macro, not a literal. */

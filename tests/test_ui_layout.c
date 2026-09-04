@@ -35,6 +35,16 @@ static void test_the_derived_counts_match_the_measured_panels(void)
     /* The outer pair of the carousel sits 132 px from the centre, which is off
      * a 240 px panel on both sides. */
     assert(UI_FEED_SLOTS == 3);
+#elif TFT_WIDTH == 480 && TFT_HEIGHT == 320
+    /* Bigger faces, so more panel does not mean more rows: at a 35 px title
+     * line this holds what the 320x240 panel held at 24, and that is the trade
+     * layout_480x320.h states. A count that came out at seven here would mean
+     * the shape file's faces had been reverted without its comment. */
+    assert(UI_STATION_LIST_MAX_ROWS == 5U);
+    assert(UI_SETTINGS_MAX_ROWS == 6U);
+    /* 20*17 + 20*5 = 440 px from x=30, ending at 465 on a 480 px panel. */
+    assert(UI_VU_SEGMENT_W == 17 && UI_VU_SEGMENT_GAP == 5);
+    assert(UI_FEED_SLOTS == 5);
 #endif
 }
 
@@ -61,6 +71,15 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
     assert(UI_FONT_BODY_PX == 14 && UI_FONT_TITLE_PX == 20);
     assert(UI_FONT_ICON_PX == 24 && UI_FONT_DISPLAY_PX == 48);
     assert(UI_SRC_LINE_H == 19 && UI_SRC_TRACK_H == 24);
+#elif TFT_WIDTH == 480 && TFT_HEIGHT == 320
+    /* The 480x320 panel asks for its own pair, and these are those faces' own
+     * line heights. 18 and 20 share a height for the reason ui_font_metrics.h
+     * records - the 20 px face covers fewer letters - so a shape that meant to
+     * grow the body text from 14 and typed 20 would get no more height at all;
+     * pinning the pair here is what catches that. */
+    assert(UI_FONT_BODY_PX == 18 && UI_FONT_TITLE_PX == 26);
+    assert(UI_FONT_ICON_PX == 24 && UI_FONT_DISPLAY_PX == 48);
+    assert(UI_SRC_LINE_H == 24 && UI_SRC_TRACK_H == 35);
 #endif
 }
 

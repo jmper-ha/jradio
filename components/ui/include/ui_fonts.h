@@ -23,7 +23,9 @@
  * it is caught below rather than at the link. */
 
 extern const lv_font_t ui_font_cyrillic_14;
+extern const lv_font_t ui_font_cyrillic_18;
 extern const lv_font_t ui_font_cyrillic_20;
+extern const lv_font_t ui_font_cyrillic_26;
 
 /* Two levels so the size macro is expanded before it is pasted. */
 #define UI_FONT_TEXT_(px) ui_font_cyrillic_##px

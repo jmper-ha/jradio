@@ -1,4 +1,9 @@
 # key,value
+language,ru
 home_screen,feed
-volume,36
+scroll,bounce
+buffer_view,graph
 autoplay,1
+yandex_music,1
+volume,56
+brightness,45

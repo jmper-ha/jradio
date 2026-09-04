@@ -74,6 +74,9 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
     assert(UI_SRC_ART_SIZE == 96);
     assert(UI_LIST_ICON_W == 30);
     assert(UI_LIST_NUMBER_W == 34);
+    assert(UI_FEED_ICON_SMALL_PX == 24 && UI_FEED_ICON_MEDIUM_PX == 32 &&
+           UI_FEED_ICON_LARGE_PX == 48);
+    assert(UI_FEED_TILE == 84);
 #elif TFT_WIDTH == 480 && TFT_HEIGHT == 320
     /* The 480x320 panel asks for its own pair, and these are those faces' own
      * line heights. 18 and 20 share a height for the reason ui_font_metrics.h
@@ -98,6 +101,10 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
     assert(UI_SET_CHEVRON_X == 438);
     /* Every row stops eight pixels short of the arrows, whatever it carries. */
     assert(UI_SET_ROW_RIGHT == 430);
+    /* The ring is drawn at sizes the bitmap generator has to have emitted. */
+    assert(UI_FEED_ICON_SMALL_PX == 32 && UI_FEED_ICON_MEDIUM_PX == 44 &&
+           UI_FEED_ICON_LARGE_PX == 64);
+    assert(UI_FEED_TILE == 120);
 #endif
 }
 

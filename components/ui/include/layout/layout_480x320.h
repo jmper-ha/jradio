@@ -18,10 +18,26 @@
  * starting before the one above it had finished - and again after the cover
  * did. */
 
-/* Home screen carousel: the axis the ring of icons is centred on. Held at the
- * same fraction of the panel's height as the 320x240 layout puts it, which is
- * below the middle - closer to the row of dots than centring would be. */
-#define UI_FEED_AXIS_Y 184
+/* Home screen carousel. Half again as wide a panel is half again as much room
+ * for the ring, and at the 320 px sizes it sat in the middle of a lot of
+ * nothing: the icons are 32/44/64 against 24/32/48, the tile 120 against 84,
+ * and the neighbours stand further out to match - 100 and 190 against 68 and
+ * 132. The outer pair still lands on the panel with 34 px to spare, so this
+ * shape keeps all five slots.
+ *
+ * The sizes have to be ones tools/gen_feed_icons.py draws; it is told the
+ * union of what every shape asks for. */
+#define UI_FEED_INNER_DX 100
+#define UI_FEED_OUTER_DX 190
+#define UI_FEED_TILE 120
+#define UI_FEED_ICON_LARGE_PX 64
+#define UI_FEED_ICON_MEDIUM_PX 44
+#define UI_FEED_ICON_SMALL_PX 32
+
+/* The axis the ring is centred on. Six pixels above where it was, which is the
+ * middle of what the title above and the dots below leave once the tile is
+ * 120 tall rather than 84. */
+#define UI_FEED_AXIS_Y 178
 
 /* The empty-browser screen: a drive above the sentence that says what is wrong
  * with it, together in the middle of the space the rows leave behind. Seven

@@ -8,6 +8,16 @@
  * through the blocks below. ui_layout.h's assertions say when a number is
  * wrong; nothing here can be left out. */
 
+/* The carousel: the ring's three icon sizes, how far the neighbours sit from
+ * the centre, and the selected tile. These are the numbers the home screen was
+ * designed on. */
+#define UI_FEED_INNER_DX 68
+#define UI_FEED_OUTER_DX 132
+#define UI_FEED_TILE 84
+#define UI_FEED_ICON_LARGE_PX 48
+#define UI_FEED_ICON_MEDIUM_PX 32
+#define UI_FEED_ICON_SMALL_PX 24
+
 /* Home screen carousel: the axis the ring of icons is centred on. It sits
  * between the title under the strip and the row of dots, closer to the dots
  * than centring would put it. */

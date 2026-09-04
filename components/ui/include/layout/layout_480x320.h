@@ -13,9 +13,10 @@
  * hold on these values, so nothing here runs off an edge or collides with its
  * neighbour. That is a different claim from looking good.
  *
- * The rows below were spaced a second time, after the faces grew: at 26 px a
- * title line is 35 px tall, and the first placement had the track row starting
- * before the one above it had finished. */
+ * The rows below have been spaced twice since: once after the faces grew - at
+ * 26 px a title line is 35 px tall, and the first placement had the track row
+ * starting before the one above it had finished - and again after the cover
+ * did. */
 
 /* Home screen carousel: the axis the ring of icons is centred on. Held at the
  * same fraction of the panel's height as the 320x240 layout puts it, which is
@@ -37,17 +38,27 @@
 
 /* Player screen: the cover on the left, the names in a column beside it.
  *
- * The tile stays 96 px - UI_SRC_ART_SIZE is not the shape file's to set - so
- * the width this panel adds goes to the text column, which is 352 px against
- * the 192 it had. That is the change most worth looking at on the screen: a
- * station name that used to be dotted now fits, and the tile may look small
- * beside it. */
+ * The tile is 160 px here, not the 96 the smaller panels use. It was 96 in the
+ * first two builds of this shape and read as a stamp beside the text - which
+ * it was: the panel grew by half in width and a third in height while the
+ * cover did not move at all. 160 is a half of this panel's height, and it is
+ * the largest square that still finishes above the rule.
+ *
+ * The number is not only the tile. Covers are *decoded* into this square -
+ * see album_art_set_square() - so a bigger tile is a bigger picture and not
+ * the same picture in a wider frame. The station icons the playlist editor
+ * uploads are scaled in the browser to the same figure.
+ *
+ * What the text column loses to it, 288 px against 352, is worth having: a
+ * name that fits in 288 was already fitting, and one that does not was being
+ * dotted either way. */
+#define UI_SRC_ART_SIZE 160
 #define UI_SRC_ART_X 10
-#define UI_SRC_ART_Y 40
-#define UI_SRC_TEXT_X 118
-#define UI_SRC_TEXT_W 352
+#define UI_SRC_ART_Y 36
+#define UI_SRC_TEXT_X 182
+#define UI_SRC_TEXT_W 288
 #define UI_SRC_ROW_TITLE UI_SRC_ART_Y
-#define UI_SRC_ROW_TRACK 78
+#define UI_SRC_ROW_TRACK 76
 #define UI_SRC_ROW_ARTIST 116
 /* One line across the text column, under the performer. It clears the bottom
  * of the tile here, where on the 320x240 panel it sat beside it - either is
@@ -55,9 +66,9 @@
 #define UI_SRC_STREAM_X UI_SRC_TEXT_X
 #define UI_SRC_STREAM_W UI_SRC_TEXT_W
 #define UI_SRC_STREAM_H UI_SRC_LINE_H
-#define UI_SRC_STREAM_Y 146
-#define UI_SRC_RULE_TOP 190
-#define UI_SRC_VU_Y 205
+#define UI_SRC_STREAM_Y 148
+#define UI_SRC_RULE_TOP 202
+#define UI_SRC_VU_Y 217
 
 /* The footer, left to right: the buffer or the time on the left margin, the
  * like mark in the gap neither reading reaches, then the volume. The volume

@@ -71,6 +71,7 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
     assert(UI_FONT_BODY_PX == 14 && UI_FONT_TITLE_PX == 20);
     assert(UI_FONT_ICON_PX == 24 && UI_FONT_DISPLAY_PX == 48);
     assert(UI_SRC_LINE_H == 19 && UI_SRC_TRACK_H == 24);
+    assert(UI_SRC_ART_SIZE == 96);
 #elif TFT_WIDTH == 480 && TFT_HEIGHT == 320
     /* The 480x320 panel asks for its own pair, and these are those faces' own
      * line heights. 18 and 20 share a height for the reason ui_font_metrics.h
@@ -80,6 +81,10 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
     assert(UI_FONT_BODY_PX == 18 && UI_FONT_TITLE_PX == 26);
     assert(UI_FONT_ICON_PX == 24 && UI_FONT_DISPLAY_PX == 48);
     assert(UI_SRC_LINE_H == 24 && UI_SRC_TRACK_H == 35);
+    /* The tile the layout keeps for the cover is also the square covers are
+     * decoded into, so a change here is a change to the picture and not only
+     * to its frame. Pinned for the same reason the row counts are. */
+    assert(UI_SRC_ART_SIZE == 160);
 #endif
 }
 

@@ -62,6 +62,16 @@ static uint8_t *alloc_buffer(size_t size)
     return buffer;
 }
 
+/* Defaults to the ceiling, so a build whose UI never sets it still fits every
+ * picture into something it can hold. */
+static uint16_t s_square = (uint16_t)ALBUM_ART_MAX_SIZE;
+
+void album_art_set_square(uint16_t square)
+{
+    if (square == 0U) return;
+    s_square = square > (uint16_t)ALBUM_ART_MAX_SIZE ? (uint16_t)ALBUM_ART_MAX_SIZE : square;
+}
+
 esp_err_t album_art_init(void)
 {
     if (s_lock != NULL) return ESP_OK;
@@ -82,7 +92,7 @@ esp_err_t album_art_init(void)
 }
 
 /* Reduces straight into the published buffer rather than into a temporary.
- * The temporary would be 18 KB, and the task that calls this has eight of
+ * The temporary would be 50 KB at the largest square, and the task that calls this has eight of
  * stack; holding the lock for the few milliseconds the resampling takes costs
  * nothing but a poll of the screen. */
 static bool reduce_into_cover(const uint16_t *source, uint16_t source_width,
@@ -211,8 +221,8 @@ static int decode_output(JDEC *decoder, void *bitmap, JRECT *rect)
 static uint8_t scale_for(uint16_t width, uint16_t height)
 {
     uint8_t scale = 0U;
-    while (scale < 3U && (width >> (scale + 1U)) >= ALBUM_ART_SIZE &&
-           (height >> (scale + 1U)) >= ALBUM_ART_SIZE) {
+    while (scale < 3U && (width >> (scale + 1U)) >= s_square &&
+           (height >> (scale + 1U)) >= s_square) {
         ++scale;
     }
     return scale;
@@ -231,7 +241,7 @@ static bool decode_with_stb_and_publish(const uint8_t *data, size_t length)
     uint16_t height = 0U;
     if (!image_decode_rgb565(data, length, &pixels, &width, &height)) return false;
 
-    const image_rect_t rect = image_fit_square(width, height, (uint16_t)ALBUM_ART_SIZE);
+    const image_rect_t rect = image_fit_square(width, height, s_square);
     const bool published = reduce_into_cover(pixels, width, height, &rect, data, length);
     if (published) {
         ESP_LOGI(TAG, "cover %ux%u shown as %ux%u", (unsigned int)width, (unsigned int)height,
@@ -296,7 +306,7 @@ static bool decode_and_publish(const uint8_t *data, size_t length)
                 ESP_LOGW(TAG, "cover failed to decode: tjpgd result=%d", (int)result);
             } else {
                 const image_rect_t rect =
-                    image_fit_square(context.width, context.height, (uint16_t)ALBUM_ART_SIZE);
+                    image_fit_square(context.width, context.height, s_square);
                 if (reduce_into_cover(context.pixels, context.width, context.height, &rect,
                                       data, length)) {
                     published = true;

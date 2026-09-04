@@ -371,11 +371,17 @@
   }
 
   /* The device draws the picture through the same album_art the covers of
-     files go through, and that fits everything into a 96 px square before it
-     publishes it. Scaling here rather than there means the device stores a few
+     files go through, and that fits everything into the square its panel keeps
+     for the tile. Scaling here rather than there means the device stores a few
      kilobytes instead of a photograph, and decodes something it has already
-     been told the size of. */
-  const ICON_SIZE = 96;
+     been told the size of.
+
+     160 is the largest of those squares - ALBUM_ART_MAX_SIZE - and not the one
+     any particular panel uses: the browser cannot know which panel it is
+     talking to, and a picture larger than the tile is reduced on decode while
+     a smaller one can never be made sharper. A 160 px PNG is still a few
+     kilobytes, so sending the ceiling costs the flash almost nothing. */
+  const ICON_SIZE = 160;
   const ICON_MAX_BYTES = 32768;
 
   function scaleImage(file) {

@@ -73,6 +73,7 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
     assert(UI_SRC_LINE_H == 19 && UI_SRC_TRACK_H == 24);
     assert(UI_SRC_ART_SIZE == 96);
     assert(UI_LIST_ICON_W == 30);
+    assert(UI_LIST_NUMBER_W == 34);
 #elif TFT_WIDTH == 480 && TFT_HEIGHT == 320
     /* The 480x320 panel asks for its own pair, and these are those faces' own
      * line heights. 18 and 20 share a height for the reason ui_font_metrics.h
@@ -92,6 +93,9 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
     assert(UI_SRC_ART_SIZE == 160);
     /* And the column the mark stands in follows the face it is drawn with. */
     assert(UI_LIST_ICON_W == 38);
+    /* 33 px of digits and 11 of gap, against 25 and 9 on the smaller panels. */
+    assert(UI_LIST_NUMBER_W == 44);
+    assert(UI_SET_CHEVRON_X == 438);
 #endif
 }
 

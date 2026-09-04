@@ -3,10 +3,10 @@ idf_component_register(
          "board_audio_startup.c" "board_input.c" "boot_splash_image.c"
          "pcm_diagnostics.c"
          # One per display controller; the unselected ones compile to nothing.
-         "display/ili9341.c" "display/st7789.c"
+         "display/ili9341.c" "display/st7789.c" "display/ili9488.c"
     # The project root carries board_options.h, the single place every external
     # device's wiring is declared. It is public here so the components that
     # REQUIRE board (ui, internet_radio, file_player) see it too.
     INCLUDE_DIRS "include" "${CMAKE_SOURCE_DIR}"
-    REQUIRES esp_lcd esp_lcd_ili9341 esp_driver_gpio esp_driver_i2s esp_driver_ledc
+    REQUIRES esp_lcd esp_lcd_ili9341 esp_lcd_ili9488 esp_driver_gpio esp_driver_i2s esp_driver_ledc
 )

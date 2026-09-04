@@ -1,2 +1,5 @@
 dependencies:
   esp_lcd_ili9341: "^1.0"
+  # Not Espressif's: there is no ILI9488 driver in esp_lcd or in the registry's
+  # espressif namespace. This one is what the 18-bit SPI conversion lives in.
+  atanisoft/esp_lcd_ili9488: "^1.0.7"

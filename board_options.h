@@ -40,10 +40,12 @@
  * _320_240 is the module lying down, _240_320 the same glass stood on end.
  * See board_parts.h for the catalogue and display/<part>.h for what each
  * choice decides. */
-#define DISPLAY DISPLAY_ILI9341_320_240
+/* #define DISPLAY DISPLAY_ILI9341_320_240 */
 /* #define DISPLAY DISPLAY_ILI9341_240_320 */
 /* #define DISPLAY DISPLAY_ST7789_320_240 */
 /* #define DISPLAY DISPLAY_ST7789_240_320 */
+#define DISPLAY DISPLAY_ILI9488_480_320
+/* #define DISPLAY DISPLAY_ILI9488_320_480 */
 
 /* SPI peripheral index: 2 selects SPI2, 3 selects SPI3. Mapped to the driver's
  * host enum in board.c, since the numbering of that enum is not the peripheral

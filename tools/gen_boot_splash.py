@@ -56,6 +56,13 @@ TUBE = dict(cx=158.0, cy=108.0, r_screen=52.0, r_hub=25.0, r_rim=57.0)
 SHAPES = {
     (320, 240): dict(tube=(158.0, 108.0), wordmark=(160, 165)),
     (240, 320): dict(tube=(120.0, 124.0), wordmark=(120, 224)),
+    # 480x320: the same arrangement as the 320x240 panel, at the same fraction
+    # of the canvas - the eye a little above the middle, the wordmark centred
+    # on the rim's bottom edge so it crosses the lit target the way it does
+    # there. The tube does not grow with the panel, so the group sits in more
+    # empty ground than on the smaller screen; that is the rule this file
+    # already states rather than a placement nobody thought about.
+    (480, 320): dict(tube=(237.0, 144.0), wordmark=(239, 201)),
 }
 WEDGE_CENTER_DEG = 90.0  # 6 o'clock, the way a 6E5 is normally seen
 WEDGE_HALF_DEG = 33.0

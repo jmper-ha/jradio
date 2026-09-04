@@ -39,11 +39,13 @@
 #error "unsupported DISPLAY_SPI_PERIPHERAL"
 #endif
 
-/* Height of one flush band, and whether to block until the panel has taken it.
- * Both are firmware tradeoffs rather than facts about the hardware: LVGL is
- * given a single draw buffer, so the flush must complete before that buffer is
- * reused. */
-#define LCD_DRAW_LINES 20
+/* Whether to block until the panel has taken a band. A firmware tradeoff
+ * rather than a fact about the hardware: LVGL is given a single draw buffer,
+ * so the flush must complete before that buffer is reused.
+ *
+ * The height of a band used to be here beside it and is now the panel's, in
+ * board_display_profile.h: what it really sizes is two static buffers, and on
+ * a 480 px panel twenty rows costs half again what it costs on a 320 px one. */
 #define LCD_WAIT_FOR_TRANSFER 1
 /* Zero the DMA buffer after each callback so a stalled writer clocks out
  * silence rather than replaying the last block. */
@@ -710,7 +712,12 @@ esp_err_t board_display_draw_rgb565(int x1, int y1, int x2, int y2, const uint16
         const int lines = (y2 - y) < LCD_DRAW_LINES ? (y2 - y) : LCD_DRAW_LINES;
         for (int index = 0; index < width * lines; ++index) {
             const int source_row = (y - y1) + index / width;
-            s_draw_buffer[index] = __builtin_bswap16(pixels[source_row * width + (index % width)]);
+            const uint16_t pixel = pixels[source_row * width + (index % width)];
+            /* Constant per build, so one arm of this is compiled away. The
+             * 16-bit panels want the two bytes the other way round on the
+             * wire; a converting driver reads the buffer as native uint16_t
+             * and would take a swapped pixel as a different colour. */
+            s_draw_buffer[index] = TFT_PIXEL_BYTE_SWAP ? __builtin_bswap16(pixel) : pixel;
         }
         ESP_RETURN_ON_ERROR(esp_lcd_panel_draw_bitmap(s_panel, x1, y, x2, y + lines, s_draw_buffer), TAG,
                             "draw display rectangle failed");
@@ -773,7 +780,11 @@ static esp_err_t board_display_init(bool flip_vertical, bool flip_horizontal)
         .miso_io_num = -1,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = TFT_WIDTH * LCD_DRAW_LINES * sizeof(uint16_t),
+        /* What leaves the chip, not what this file holds: a band is handed
+         * over as RGB565, and on a panel that takes 18-bit colour the driver
+         * expands every pixel to three bytes before the transfer. Sizing this
+         * from sizeof(uint16_t) would cut such a transfer in half. */
+        .max_transfer_sz = TFT_WIDTH * LCD_DRAW_LINES * TFT_PIXEL_WIRE_BYTES,
     };
     ESP_RETURN_ON_ERROR(spi_bus_initialize(LCD_HOST, &bus_config, SPI_DMA_CH_AUTO), TAG,
                         "initialize LCD SPI bus failed");

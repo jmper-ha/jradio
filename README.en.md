@@ -344,7 +344,7 @@ player screen the cover art and the three stream readings stand side by side
 above the names rather than beside them. This is a
 build option and not a setting: each screen's geometry is compiled for one
 shape, and a box is mounted one way round once. The boot splash has a version
-for each orientation and both are compiled in, so nothing needs regenerating.
+for each panel shape and all of them are compiled in, so nothing needs regenerating.
 
 The panel does not have to be an ILI9341. Each controller has a profile of its
 own in
@@ -359,6 +359,21 @@ ST7789, which with INVON renders the whole screen as a negative - and one
 horizontal mirror. Portrait has not been built yet and
 [`st7789.h`](components/board/include/display/st7789.h) marks it as derived
 rather than measured. The driver that was not selected costs no flash at all.
+
+The third panel in the catalogue is an ILI9488 480x320, measured on the board
+on 2026-09-04. It takes the same six wires as the ILI9341 but differs in one
+place, and the difference is not a detail: over SPI this controller accepts
+18-bit colour only. Three bytes per pixel instead of two, with the RGB565 to
+RGB666 conversion done by the driver (`atanisoft/esp_lcd_ili9488` from the
+registry - ESP-IDF carries no ILI9488 driver of its own), and the profile
+declares `TFT_PIXEL_WIRE_BYTES` and `TFT_PIXEL_BYTE_SWAP`, from which `board.c`
+sizes the SPI transfer and decides whether to swap the bytes. Firmware built
+for an ILI9341 will not drive this panel at all - not because the resolution
+differs but because of those three bytes. A frame costs 460 800 bytes here
+against 153 600, about 184 ms at 20 MHz; the band was narrowed to ten rows so
+the buffers cost the same internal memory as they do on the narrow panel. The
+portrait `DISPLAY_ILI9488_320_480` is declared in the catalogue but has no
+320x480 layout: the build stops with a message naming the file to copy.
 
 The screen layout lives in [`ui_layout.h`](components/ui/include/ui_layout.h)
 and is checked by a host test. Everything that follows from the panel's size -
@@ -419,10 +434,10 @@ receiver module of its own.
 
 | Signal | GPIO | | Signal | GPIO |
 |---|---:|---|---|---:|
-| ILI9341 CS | 10 | | Encoder button | 6 |
-| ILI9341 DC | 47 | | F1 | 45 |
-| ILI9341 MOSI | 11 | | F2 | 21 |
-| ILI9341 SCLK | 12 | | F3 | 46 |
+| TFT CS | 10 | | Encoder button | 6 |
+| TFT DC | 47 | | F1 | 45 |
+| TFT MOSI | 11 | | F2 | 21 |
+| TFT SCLK | 12 | | F3 | 46 |
 | Backlight | 2 | | F4 | 9 |
 | Encoder right | 5 | | PCM5102 DOUT | 16 |
 | Encoder left | 7 | | PCM5102 BCLK | 18 |

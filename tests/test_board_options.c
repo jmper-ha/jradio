@@ -24,7 +24,8 @@ static void test_a_selected_part_resolves_to_a_real_catalogue_entry(void)
 static void test_display_group_is_complete_and_consistent(void)
 {
     assert(DISPLAY == DISPLAY_ILI9341_320_240 || DISPLAY == DISPLAY_ILI9341_240_320 ||
-           DISPLAY == DISPLAY_ST7789_320_240 || DISPLAY == DISPLAY_ST7789_240_320);
+           DISPLAY == DISPLAY_ST7789_320_240 || DISPLAY == DISPLAY_ST7789_240_320 ||
+           DISPLAY == DISPLAY_ILI9488_480_320 || DISPLAY == DISPLAY_ILI9488_320_480);
     /* Only SPI2 and SPI3 can drive a panel on this part; SPI1 is the flash bus. */
     assert(DISPLAY_SPI_PERIPHERAL == 2 || DISPLAY_SPI_PERIPHERAL == 3);
     assert(TFT_CS_GPIO == 10);
@@ -43,6 +44,25 @@ static void test_display_group_is_complete_and_consistent(void)
     assert(TFT_RGB_ORDER_BGR == 1);
     assert(TFT_INVERT_COLOR == 0);
 #endif
+
+    /* What a pixel costs on the wire, and whether it is turned round first.
+     * Defaulted in board_display_profile.h to what a 16-bit panel needs, so
+     * the pair is checked for every profile and pinned for the one that
+     * differs: over SPI the ILI9488 takes 18-bit colour only, and its driver
+     * reads the buffer as native uint16_t to convert it. Getting either wrong
+     * puts noise on the glass and nothing in the log. */
+    assert(TFT_PIXEL_WIRE_BYTES == 2 || TFT_PIXEL_WIRE_BYTES == 3);
+    assert(TFT_PIXEL_BYTE_SWAP == 0 || TFT_PIXEL_BYTE_SWAP == 1);
+    assert((TFT_PIXEL_WIRE_BYTES == 3) == (TFT_PIXEL_BYTE_SWAP == 0));
+#if DISPLAY == DISPLAY_ILI9488_480_320 || DISPLAY == DISPLAY_ILI9488_320_480
+    assert(TFT_PIXEL_WIRE_BYTES == 3);
+    assert(TFT_PIXEL_BYTE_SWAP == 0);
+    /* Measured on the panel 2026-09-04 with a probe that drew a frame and four
+     * coloured corners: colours came back as drawn under BGR, and the ground
+     * needed no inversion. */
+    assert(TFT_RGB_ORDER_BGR == 1);
+    assert(TFT_INVERT_COLOR == 0);
+#endif
 }
 
 static void test_every_panel_in_the_catalogue_has_its_own_number(void)
@@ -54,6 +74,7 @@ static void test_every_panel_in_the_catalogue_has_its_own_number(void)
         DISPLAY_NONE,
         DISPLAY_ILI9341_320_240, DISPLAY_ILI9341_240_320,
         DISPLAY_ST7789_320_240, DISPLAY_ST7789_240_320,
+        DISPLAY_ILI9488_480_320, DISPLAY_ILI9488_320_480,
     };
     const size_t count = sizeof(panels) / sizeof(panels[0]);
     for (size_t i = 0; i < count; ++i) {
@@ -71,19 +92,23 @@ static void test_the_orientation_decides_the_geometry_and_nothing_else(void)
      * DISPLAY_NONE - zero, to the preprocessor - and the profile header has no
      * branch for it. */
     assert(BOARD_DISPLAY_PORTRAIT == (DISPLAY == DISPLAY_ILI9341_240_320 ||
-                                      DISPLAY == DISPLAY_ST7789_240_320));
+                                      DISPLAY == DISPLAY_ST7789_240_320 ||
+                                      DISPLAY == DISPLAY_ILI9488_320_480));
 
     /* The same panel either way up: the orientation decides which of the two
      * numbers is the width and buys no pixels. Written as the sum and the
      * product rather than as two comparisons, so a profile that shrank the
      * panel while swapping it fails here instead of looking plausible.
      *
-     * Both parts in the catalogue happen to be 320x240 panels; a part of some
-     * other size would state its own pair here rather than share this one. */
+     * The first two parts in the catalogue are 320x240 panels and the third is
+     * a 480x320 one, so each states its own pair rather than sharing one. */
 #if DISPLAY == DISPLAY_ILI9341_320_240 || DISPLAY == DISPLAY_ILI9341_240_320 || \
     DISPLAY == DISPLAY_ST7789_320_240 || DISPLAY == DISPLAY_ST7789_240_320
     assert(TFT_WIDTH + TFT_HEIGHT == 560);
     assert(TFT_WIDTH * TFT_HEIGHT == 76800);
+#elif DISPLAY == DISPLAY_ILI9488_480_320 || DISPLAY == DISPLAY_ILI9488_320_480
+    assert(TFT_WIDTH + TFT_HEIGHT == 800);
+    assert(TFT_WIDTH * TFT_HEIGHT == 153600);
 #endif
 
     /* Portrait is how the controller addresses the panel natively; landscape

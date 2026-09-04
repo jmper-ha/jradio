@@ -38,6 +38,19 @@
  * managed component. */
 #define DISPLAY_ST7789_320_240 3
 #define DISPLAY_ST7789_240_320 4
+/* ILI9488 controller over SPI, on the 480x320 panel. Read the same way as the
+ * pairs above - one part, two orientations - with one difference that is not
+ * cosmetic: this controller cannot be driven at 16 bits per pixel over SPI at
+ * all. Three bytes go down the wire for every pixel, which is why its profile
+ * carries TFT_PIXEL_WIRE_BYTES and why an ILI9341 driver cannot be pointed at
+ * it however similar the wiring looks.
+ *
+ * Measured on the panel 2026-09-04: 320x480 native, BGR, no inversion, 20 MHz.
+ * The 480x320 name is the one this board uses - the module is mounted lying
+ * down, which the probe established by drawing a pattern and being told which
+ * corner each colour landed in. */
+#define DISPLAY_ILI9488_480_320 5
+#define DISPLAY_ILI9488_320_480 6
 
 #define DAC_NONE 0
 /* PCM5102 / PCM5102A I2S stereo DAC, no MCLK input, line level out. */

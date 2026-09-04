@@ -1,4 +1,14 @@
 dependencies:
+  atanisoft/esp_lcd_ili9488:
+    component_hash: 1bbdbec8ae5b5c32db45ace2c19a8d79c0eaa919209ce190a0be3dada703ddcf
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.4.2'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.1.1
   esphome/micro-flac:
     component_hash: d2e75ea77eaa45b83ed4ba968040957b27f53a7344b04d1c27495321b95bd44e
     dependencies:
@@ -99,6 +109,7 @@ dependencies:
       type: service
     version: 9.5.0
 direct_dependencies:
+- atanisoft/esp_lcd_ili9488
 - esphome/micro-flac
 - esphome/micro-mp3
 - espressif/esp_audio_codec
@@ -107,6 +118,6 @@ direct_dependencies:
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: 93c9f754ec27c429011729953826a67e9e0992a000b0eaaf239ba8defcca4396
+manifest_hash: 293147fc1618ca9bde81e81cfddf4e939ca7d439e89916861a0929855adf9fb4
 target: esp32s3
 version: 2.0.0

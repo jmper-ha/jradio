@@ -120,8 +120,14 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
 /* The scroll chevrons sit in the right margin, and a row that carries a switch
  * stops short of them. A row that does not is full width and runs past: its
  * text is dotted long before it reaches the column, and giving it the same
- * stop would waste the width the longest field names need. */
-#define UI_SET_CHEVRON_X UI_CONTENT_W
+ * stop would waste the width the longest field names need.
+ *
+ * This is where the glyph *starts*, and a label is drawn to the right of its
+ * position, so the face's width has to come out of it or the arrow hangs off
+ * the panel. UI_CONTENT_W alone did exactly that - by four pixels at 24 px and
+ * by twelve at 32 - and nobody saw it, because until the chevrons were given
+ * a font that has arrows in it they were drawing LVGL's placeholder box. */
+#define UI_SET_CHEVRON_X (UI_CONTENT_X + UI_CONTENT_W - UI_FONT_ICON_PX)
 /* Text column of a row with a switch: the switch is 42 px at the left margin,
  * and the label starts after it. */
 #define UI_SET_SWITCH_TEXT_X 58
@@ -161,11 +167,18 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
  * panel, so a shape that asks for a bigger icon gets a column to put it in
  * instead of one the glyph overhangs. */
 #define UI_LIST_ICON_W (UI_FONT_ICON_PX + 6)
-/* Width the index reserves on a station row: two digits of the 20 px face
- * (12.7 px of advance each) and the gap before the name. A station row is
- * never a directory, so this and the folder mark never both apply; a file row
- * has no index and keeps the left edge it always had. */
-#define UI_LIST_NUMBER_W 34
+/* Width the index reserves on a station row: two digits of the title face and
+ * the gap before the name. A station row is never a directory, so this and the
+ * folder mark never both apply; a file row has no index and keeps the left
+ * edge it always had.
+ *
+ * Both halves are measured off the face rather than typed. A DejaVu digit
+ * advances by 0.637 of the face's size - 12.75 px at 20, 16.56 at 26, read out
+ * of the generated fonts themselves - and the gap is a little under half a
+ * size, which is the 9 px the 20 px face had. Written as 34 it was a column
+ * the 26 px face filled to within a pixel, and the number sat against the
+ * name. */
+#define UI_LIST_NUMBER_W (UI_FONT_TITLE_PX * 1274 / 1000 + UI_FONT_TITLE_PX * 45 / 100)
 /* What the rule and the position bar need below the last row. */
 #define UI_LIST_TAIL_H 18
 #define UI_LIST_NOTICE_ICON 48
@@ -230,6 +243,14 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
 #define UI_SETTINGS_MAX_ROWS                                                    \
     (1U + (unsigned)((UI_SET_BAND_Y - UI_SET_NOTICE_H - UI_SET_ROW_Y - UI_SET_ROW_H) / \
                      UI_SET_ROW_PITCH))
+/* The chevron is drawn from its position rightwards, so the face's own width
+ * is what decides whether it lands on the panel. */
+_Static_assert(UI_SET_CHEVRON_X + UI_FONT_ICON_PX <= TFT_WIDTH - UI_CONTENT_X,
+               "the settings screen's scroll chevron runs off the right edge");
+/* And the index has to be wider than the digits that go in it, or the number
+ * is printed against the name it labels. */
+_Static_assert(UI_LIST_NUMBER_W > UI_FONT_TITLE_PX * 1274 / 1000,
+               "the station index leaves no gap before the name");
 _Static_assert(UI_STATION_LIST_MAX_ROWS >= 3U,
                "fewer than three list rows fit this panel");
 _Static_assert(UI_SETTINGS_MAX_ROWS >= 3U,

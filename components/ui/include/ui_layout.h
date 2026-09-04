@@ -128,6 +128,17 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
  * by twelve at 32 - and nobody saw it, because until the chevrons were given
  * a font that has arrows in it they were drawing LVGL's placeholder box. */
 #define UI_SET_CHEVRON_X (UI_CONTENT_X + UI_CONTENT_W - UI_FONT_ICON_PX)
+/* And where every row stops, so the column the arrows stand in is a column.
+ *
+ * Only the rows carrying a switch used to stop here; the rest ran the full
+ * content width and passed under the arrow. The reasoning was about text - a
+ * field name is dotted long before it reaches this far, so the extra width was
+ * free - and it was wrong about the tile: a row's background is opaque and
+ * reaches wherever the row does, so the right edge came out ragged, with the
+ * upper arrow sitting inside a rectangle and the lower one flush against the
+ * end of a shorter one. Eight pixels of air, and both arrows have a column to
+ * themselves that nothing else enters. */
+#define UI_SET_ROW_RIGHT (UI_SET_CHEVRON_X - 8)
 /* Text column of a row with a switch: the switch is 42 px at the left margin,
  * and the label starts after it. */
 #define UI_SET_SWITCH_TEXT_X 58
@@ -253,6 +264,10 @@ _Static_assert(UI_SET_CHEVRON_X + UI_FONT_ICON_PX <= TFT_WIDTH - UI_CONTENT_X,
  * row's height as well as the margin's width. */
 _Static_assert(UI_FONT_ICON_PX <= UI_SET_ROW_H,
                "the settings screen's scroll chevron is taller than the row it stands beside");
+/* A row with a switch starts past the switch and ends at that column; what is
+ * left has to be enough to read a field name in. */
+_Static_assert(UI_SET_ROW_RIGHT - UI_SET_SWITCH_TEXT_X >= 120,
+               "the settings screen's switch rows have no room left for their text");
 /* And the index has to be wider than the digits that go in it, or the number
  * is printed against the name it labels. */
 _Static_assert(UI_LIST_NUMBER_W > UI_FONT_TITLE_PX * 1274 / 1000,

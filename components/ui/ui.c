@@ -1469,7 +1469,7 @@ static void ui_create_settings_screen(void)
     for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
         s_settings_rows[row] = lv_label_create(s_settings_screen);
         lv_obj_set_pos(s_settings_rows[row], 10, UI_SET_ROW_Y + (int)row * UI_SET_ROW_PITCH);
-        lv_obj_set_width(s_settings_rows[row], UI_CONTENT_W);
+        lv_obj_set_width(s_settings_rows[row], UI_SET_ROW_RIGHT - UI_CONTENT_X);
         lv_obj_set_height(s_settings_rows[row], UI_SET_ROW_H);
         lv_obj_set_style_pad_left(s_settings_rows[row], 6, 0);
         lv_obj_set_style_pad_top(s_settings_rows[row], 2, 0);
@@ -1836,9 +1836,12 @@ static void ui_update_settings(void)
         size_t switch_index = 0U;
         bool enabled = false;
         const bool has_switch = ui_settings_row_switch(item.id, &switch_index, &enabled);
-        lv_obj_set_x(s_settings_rows[row], has_switch ? UI_SET_SWITCH_TEXT_X : UI_CONTENT_X);
-        lv_obj_set_width(s_settings_rows[row],
-                         has_switch ? UI_SET_CHEVRON_X - UI_SET_SWITCH_TEXT_X : UI_CONTENT_W);
+        /* Both kinds of row end at the same edge; only where they start
+         * differs. A ragged right side was what made the arrows look like two
+         * unrelated marks rather than one column. */
+        const int row_left = has_switch ? UI_SET_SWITCH_TEXT_X : UI_CONTENT_X;
+        lv_obj_set_x(s_settings_rows[row], row_left);
+        lv_obj_set_width(s_settings_rows[row], UI_SET_ROW_RIGHT - row_left);
         lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(background), 0);
         if (has_switch) {
             lv_obj_t *toggle = s_settings_switches[switch_index];

@@ -96,6 +96,8 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
     /* 33 px of digits and 11 of gap, against 25 and 9 on the smaller panels. */
     assert(UI_LIST_NUMBER_W == 44);
     assert(UI_SET_CHEVRON_X == 438);
+    /* Every row stops eight pixels short of the arrows, whatever it carries. */
+    assert(UI_SET_ROW_RIGHT == 430);
 #endif
 }
 

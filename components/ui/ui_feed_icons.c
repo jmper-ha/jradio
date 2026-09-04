@@ -3,9 +3,19 @@
 #include <stddef.h>
 
 #include "ui_feed_icon_bitmaps.h"
+#include "ui_layout.h"
 
-#define UI_FEED_ICON_SET(name) \
-    {&ui_feed_icon_##name##_24, &ui_feed_icon_##name##_32, &ui_feed_icon_##name##_48}
+/* Two levels so the size macro is expanded before it is pasted, the same shape
+ * ui_fonts.h uses for its faces. The sizes are the layout's, so a panel that
+ * wants a bigger ring says so in its shape file and the table follows; the
+ * generator emits every size any of them asks for, and --gc-sections drops the
+ * ones this build does not name. */
+#define UI_FEED_ICON_AT_(name, px) ui_feed_icon_##name##_##px
+#define UI_FEED_ICON_AT(name, px) UI_FEED_ICON_AT_(name, px)
+#define UI_FEED_ICON_SET(name)                             \
+    {&UI_FEED_ICON_AT(name, UI_FEED_ICON_SMALL_PX),        \
+     &UI_FEED_ICON_AT(name, UI_FEED_ICON_MEDIUM_PX),       \
+     &UI_FEED_ICON_AT(name, UI_FEED_ICON_LARGE_PX)}
 
 /* One row per feed item, three sizes each. Bluetooth, the SD card and settings
  * keep the meaning they always had and only change their drawing; the other

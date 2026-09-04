@@ -28,9 +28,12 @@ import sys
 
 from PIL import Image, ImageDraw, ImageFont
 
-# Outer neighbours, inner neighbours, selected tile. Kept in this order because
-# ui_feed_icons.h indexes the table with the same enum.
-SIZES = (24, 32, 48)
+# Every size any panel's layout asks for. Not a triple of roles any more: the
+# carousel takes its three from UI_FEED_ICON_SMALL_PX, _MEDIUM_PX and
+# _LARGE_PX, which are the shape file's, so a 320 px panel draws 24/32/48 and
+# a 480x320 one 32/44/64. Emitting all of them costs nothing in the image -
+# the table names three, and --gc-sections drops the rest.
+SIZES = (24, 32, 44, 48, 64)
 
 # Icons that are not carousel slots and need only their own size.
 EXTRA_SIZES = {"volume": (16,), "heart": (16,), "heart_filled": (16,),

@@ -4,6 +4,16 @@
  * the note at the top of ui_layout.h for why these are a file rather than a
  * formula. */
 
+/* The carousel, the same ring as the landscape panel: it is 240 px wide, so
+ * the outer pair falls off the edge and UI_FEED_SLOTS comes out at three - the
+ * sizes themselves have never needed to differ. */
+#define UI_FEED_INNER_DX 68
+#define UI_FEED_OUTER_DX 132
+#define UI_FEED_TILE 84
+#define UI_FEED_ICON_LARGE_PX 48
+#define UI_FEED_ICON_MEDIUM_PX 32
+#define UI_FEED_ICON_SMALL_PX 24
+
 /* The ring drops to the middle of the taller screen. */
 #define UI_FEED_AXIS_Y 168
 

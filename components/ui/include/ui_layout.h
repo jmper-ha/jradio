@@ -60,12 +60,12 @@
  * inset because each FontAwesome symbol had its own height, and the inset only
  * ever fitted one of them. */
 #define UI_FEED_CENTER_X (TFT_WIDTH / 2)
-#define UI_FEED_INNER_DX 68
-#define UI_FEED_OUTER_DX 132
-#define UI_FEED_TILE 84
-#define UI_FEED_ICON_LARGE_PX 48
-#define UI_FEED_ICON_MEDIUM_PX 32
-#define UI_FEED_ICON_SMALL_PX 24
+/* The ring's three icon sizes, how far the neighbours sit from the centre and
+ * how big the selected tile is, all in the shape file: they are what the
+ * carousel looks like, and a panel half again as wide has room for a bigger
+ * one. The sizes have to be sizes tools/gen_feed_icons.py emits - it is told
+ * the union of what every shape asks for, and a name it never drew is a link
+ * error rather than a blank slot. */
 /* Five slots or three, decided by whether the outer pair fits rather than by
  * which panel this is. Only the centre slot is tile-sized; the neighbours are
  * exactly icon-sized, which is why the edge is measured against the icon and
@@ -76,10 +76,6 @@
  * order, wrapping the same way - only how many of them are in view. */
 #define UI_FEED_SLOTS \
     ((UI_FEED_CENTER_X - UI_FEED_OUTER_DX - UI_FEED_ICON_SMALL_PX / 2 >= 4) ? 5 : 3)
-/* Three is the narrowest the ring goes, so a panel where even that runs off
- * the edge has no carousel at all and has to be caught here. */
-_Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 >= 4,
-               "the carousel does not fit this panel even at three slots");
 
 /* One dot per item, so a ring of eight does not feel endless. */
 #define UI_FEED_DOT 6
@@ -254,6 +250,19 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
 #define UI_SETTINGS_MAX_ROWS                                                    \
     (1U + (unsigned)((UI_SET_BAND_Y - UI_SET_NOTICE_H - UI_SET_ROW_Y - UI_SET_ROW_H) / \
                      UI_SET_ROW_PITCH))
+/* Three is the narrowest the ring goes, so a panel where even that runs off
+ * the edge has no carousel at all and has to be caught here. */
+_Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 >= 4,
+               "the carousel does not fit this panel even at three slots");
+/* The selected tile is the tallest thing between the title and the row of
+ * dots, and it grows about its own axis. Down here rather than beside the
+ * carousel's other numbers because both the axis and the dot row are settled
+ * later - one by the shape file, one by the panel's height. */
+_Static_assert(UI_FEED_AXIS_Y + UI_FEED_TILE / 2 <= UI_FEED_DOT_Y - 6,
+               "the carousel's tile reaches the row of dots below it");
+_Static_assert(UI_FEED_ICON_LARGE_PX <= UI_FEED_TILE,
+               "the carousel's selected icon is bigger than the tile it sits in");
+
 /* The chevron is drawn from its position rightwards, so the face's own width
  * is what decides whether it lands on the panel. */
 _Static_assert(UI_SET_CHEVRON_X + UI_FONT_ICON_PX <= TFT_WIDTH - UI_CONTENT_X,

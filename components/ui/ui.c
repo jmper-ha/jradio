@@ -371,11 +371,13 @@ static size_t s_last_files_entry_count;
  * notice would name a USB drive while the user was asking for the card, and
  * the pick-up below would select the wrong source when a volume appeared. */
 static audio_source_t s_files_unavailable_source = AUDIO_SOURCE_NONE;
-// Autoplay runs once, and only after the drive has had time to appear: USB
-// mounts around five seconds in, later still when the root port needs
-// re-enumerating, so deciding "no drive" any earlier would be deciding it
-// before the answer exists.
-#define UI_AUTOPLAY_FILE_WAIT_MS 12000U
+// Autoplay runs once, and only after what it depends on has had time to
+// appear. USB mounts around five seconds in, later still when the root port
+// needs re-enumerating, and a DHCP lease has arrived by three or four - so
+// deciding "no drive" or "no network" any earlier would be deciding it before
+// the answer exists. It is also a cap and not only a wait: a device that will
+// never get either has to stop waiting and show something.
+#define UI_AUTOPLAY_WAIT_MS 12000U
 static bool s_autoplay_pending;
 static uint32_t s_autoplay_started_ms;
 static bool s_files_list_open_requested;
@@ -3788,10 +3790,26 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         ui_autoplay_decide(&s_device_settings, snapshot->usb_media, snapshot->sd_media, false,
                            BOARD_HAS_YANDEX_MUSIC);
     const bool waited =
-        (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_FILE_WAIT_MS;
+        (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_WAIT_MS;
     // Hold off only while the answer could still change: a drive that has not
     // shown up yet may still mount.
     if (action == UI_AUTOPLAY_FILE_UNAVAILABLE && !waited) return;
+    /* And a station cannot be selected before there is a network to reach it
+     * over. player_control_decide() answers INVALID for a network source while
+     * the Wi-Fi is down, which is what "invalid player command kind=0" in the
+     * boot log was - kind 0 being SELECT_SOURCE, the first enumerator.
+     *
+     * That the radio started anyway was luck, not design: the two commands
+     * queued below are gated on different fields - the select on the source it
+     * names, the play on whatever source is already active - so the play only
+     * got through *because* the select had failed and left the active source
+     * at none. Half a second's difference in the DHCP lease and it would have
+     * been the other way round. Waiting here settles it before either command
+     * is written, and takes the failed DNS lookup and its retry with it. */
+    if ((action == UI_AUTOPLAY_RADIO || action == UI_AUTOPLAY_YANDEX) &&
+        !snapshot->wifi_connected && !waited) {
+        return;
+    }
     s_autoplay_pending = false;
 
     switch (action) {

@@ -1487,15 +1487,23 @@ static void ui_create_settings_screen(void)
      * fallback, so LVGL walks the chain to NULL and draws its placeholder box
      * (LV_USE_FONT_PLACEHOLDER is on). Two hollow rectangles where the arrows
      * should be, on every panel, for as long as this screen has existed. */
+    /* Level with the first row and with the last, rather than fifteen pixels
+     * above the list and a whole pitch below it. There is no room outside the
+     * rows for a glyph this size: ten pixels separate the strip from the first
+     * row, and the notice line and the address band take everything under the
+     * last one - so the arrow that was meant to sit above the list was landing
+     * inside the status strip, and the one below it was being cut in half by
+     * the band. The right margin they stand in is theirs either way, which is
+     * what the rows with switches already stop short for. */
     s_settings_more_above = lv_label_create(s_settings_screen);
-    lv_obj_set_pos(s_settings_more_above, UI_SET_CHEVRON_X, UI_SET_ROW_Y - 15);
+    lv_obj_set_pos(s_settings_more_above, UI_SET_CHEVRON_X, UI_SET_ROW_Y);
     lv_obj_set_style_text_font(s_settings_more_above, UI_FONT_ICON, 0);
     lv_obj_set_style_text_color(s_settings_more_above, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_settings_more_above, "");
 
     s_settings_more_below = lv_label_create(s_settings_screen);
     lv_obj_set_pos(s_settings_more_below, UI_SET_CHEVRON_X,
-                   UI_SET_ROW_Y + UI_SETTINGS_MAX_ROWS * UI_SET_ROW_PITCH);
+                   UI_SET_ROW_Y + (int)(UI_SETTINGS_MAX_ROWS - 1U) * UI_SET_ROW_PITCH);
     lv_obj_set_style_text_font(s_settings_more_below, UI_FONT_ICON, 0);
     lv_obj_set_style_text_color(s_settings_more_below, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_settings_more_below, "");
@@ -1515,7 +1523,10 @@ static void ui_create_settings_screen(void)
         lv_obj_add_flag(s_settings_switches[index], LV_OBJ_FLAG_HIDDEN);
     }
     s_settings_notice = lv_label_create(s_settings_screen);
-    lv_obj_set_pos(s_settings_notice, 10, UI_SET_BAND_Y - 24);
+    /* Its own height above the band, rather than the 24 that was that height
+     * on the first panel: the line is one of the body face, and the body face
+     * is the shape's now. */
+    lv_obj_set_pos(s_settings_notice, 10, UI_SET_BAND_Y - UI_SET_NOTICE_H);
     // Stops short of the chevron column, which shares this line.
     lv_obj_set_width(s_settings_notice, TFT_WIDTH - 34);
     lv_label_set_long_mode(s_settings_notice, LV_LABEL_LONG_DOT);
@@ -1734,8 +1745,13 @@ static void ui_update_settings_web_band(void)
                                              payload, sizeof(payload));
     /* The offer only appears when there is something behind it. While the box
      * is still joining a network there is no address to encode, and a line
-     * that says "press for QR" and then does nothing is a fault report. */
-    ui_set_label_text_if_changed(s_settings_web_hint, available ? "press for QR" : "");
+     * that says "press for QR" and then does nothing is a fault report.
+     *
+     * In the language the rest of the screen is in: this line was the one
+     * string on it that ignored the switch, and on a Russian device it read as
+     * the only English on the panel. */
+    ui_set_label_text_if_changed(s_settings_web_hint,
+                                 available ? (english ? "press for QR" : "QR по нажатию") : "");
 
     /* The band is the last cursor stop, so it highlights like a row: the same
      * tile colour and the same accent, or the screen has a selection nobody

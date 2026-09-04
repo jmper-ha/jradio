@@ -26,8 +26,11 @@
  * layout that was already signed off on both panels, which is a worse outcome
  * than asking for a file. */
 
-/* Height of the status strip every screen carries. */
-#define UI_STRIP_H 26
+/* Height of the status strip every screen carries. It holds one line of the
+ * body face - the screen's name, the clock, the signal reading - so it follows
+ * that face rather than standing as the 26 the first panel needed. Seven
+ * pixels of air is what 26 was on the 14 px face. */
+#define UI_STRIP_H (UI_FONT_BODY_LINE_H + 7)
 
 /* The margin every full-width block keeps, and what is left of the panel
  * between two of them. Written against TFT_WIDTH so one layout serves both
@@ -91,8 +94,13 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
  * soon as the SD card row appeared. The icon column is the carousel's 24 px
  * bitmap, so both home screens name an item the same way. */
 #define UI_MENU_ROW_Y (UI_STRIP_H + 4)
-#define UI_MENU_ROW_PITCH 24
-#define UI_MENU_ROW_H 24
+/* A row is one line of the title face, and the rows are flush: the pitch and
+ * the height are the same number because the face's own line height already
+ * carries the space between lines. Written as the face rather than as 24, so a
+ * shape that asks for bigger text gets rows to match instead of clipped
+ * letters. */
+#define UI_MENU_ROW_PITCH UI_FONT_TITLE_LINE_H
+#define UI_MENU_ROW_H UI_FONT_TITLE_LINE_H
 #define UI_MENU_ROW_X 6
 #define UI_MENU_ROW_W (TFT_WIDTH - 12)
 #define UI_MENU_ICON_X 12
@@ -102,11 +110,13 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
  * them stay at 14, so the three groups read as the structure of the screen
  * rather than as rows of equal weight.
  *
- * The pitch has to clear the 20 px heading, and 24 px does - the same height
- * the home screen's rows use for the same face. */
-#define UI_SET_ROW_Y 36
-#define UI_SET_ROW_PITCH 25
-#define UI_SET_ROW_H 24
+ * The pitch has to clear the heading, which is one line of the title face -
+ * the same height the home screen's rows use for the same face, plus a pixel
+ * so two groups do not touch. The first row sits ten pixels under the strip,
+ * and the strip moves with the body face, so this follows it. */
+#define UI_SET_ROW_Y (UI_STRIP_H + 10)
+#define UI_SET_ROW_PITCH (UI_FONT_TITLE_LINE_H + 1)
+#define UI_SET_ROW_H UI_FONT_TITLE_LINE_H
 /* The scroll chevrons sit in the right margin, and a row that carries a switch
  * stops short of them. A row that does not is full width and runs past: its
  * text is dotted long before it reaches the column, and giving it the same
@@ -123,8 +133,9 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
 #define UI_SET_BAND_Y (TFT_HEIGHT - 30)
 #define UI_SET_BAND_H 30
 #define UI_SET_BAND_PAD 12
-/* What the notice line above the band keeps for itself. */
-#define UI_SET_NOTICE_H 24
+/* What the notice line above the band keeps for itself: one line of the body
+ * face and five pixels of air. */
+#define UI_SET_NOTICE_H (UI_FONT_BODY_LINE_H + 5)
 
 /* The QR code and the white card behind it. The card is the quiet zone: the
  * generator fills its canvas edge to edge whenever the modules divide into it
@@ -138,8 +149,12 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
 /* List screens: rows start straight under the strip, and a rule and the
  * position bar close the screen the way they close the player's. */
 #define UI_LIST_ROW_Y (UI_STRIP_H + 6)
-#define UI_LIST_ROW_PITCH 36
-#define UI_LIST_ROW_H 30
+/* A list row carries the name in the title face, and unlike the home screen's
+ * rows it is spaced apart: six pixels inside the row and six more between
+ * them, so a highlighted row reads as a block and not as one line of a
+ * paragraph. */
+#define UI_LIST_ROW_PITCH (UI_FONT_TITLE_LINE_H + 12)
+#define UI_LIST_ROW_H (UI_FONT_TITLE_LINE_H + 6)
 /* Width the folder glyph reserves at the left of a row: 24 px of Montserrat 24
  * (its adv_w) plus the gap before the name. */
 #define UI_LIST_ICON_W 30

@@ -13,13 +13,9 @@
  * hold on these values, so nothing here runs off an edge or collides with its
  * neighbour. That is a different claim from looking good.
  *
- * The faces stay at 14 and 20 px, which is worth stating because it looks like
- * an oversight. This panel is physically bigger but not much finer - roughly
- * 165 dpi against the 143 of the 2.8" it replaces - so the same face is nearly
- * the same size to the eye, and the extra room buys rows instead: seven in a
- * list where there were five, nine settings rows where there were six. Larger
- * faces are one run of tools/gen_ui_fonts.sh plus a line in ui_font_metrics.h
- * if that turns out to be the wrong call. */
+ * The rows below were spaced a second time, after the faces grew: at 26 px a
+ * title line is 35 px tall, and the first placement had the track row starting
+ * before the one above it had finished. */
 
 /* Home screen carousel: the axis the ring of icons is centred on. Held at the
  * same fraction of the panel's height as the 320x240 layout puts it, which is
@@ -51,24 +47,24 @@
 #define UI_SRC_TEXT_X 118
 #define UI_SRC_TEXT_W 352
 #define UI_SRC_ROW_TITLE UI_SRC_ART_Y
-#define UI_SRC_ROW_TRACK 76
-#define UI_SRC_ROW_ARTIST 110
+#define UI_SRC_ROW_TRACK 78
+#define UI_SRC_ROW_ARTIST 116
 /* One line across the text column, under the performer. It clears the bottom
  * of the tile here, where on the 320x240 panel it sat beside it - either is
  * allowed, and the assertion in ui_layout.h checks both ways. */
 #define UI_SRC_STREAM_X UI_SRC_TEXT_X
 #define UI_SRC_STREAM_W UI_SRC_TEXT_W
 #define UI_SRC_STREAM_H UI_SRC_LINE_H
-#define UI_SRC_STREAM_Y 142
-#define UI_SRC_RULE_TOP 192
-#define UI_SRC_VU_Y 207
+#define UI_SRC_STREAM_Y 146
+#define UI_SRC_RULE_TOP 190
+#define UI_SRC_VU_Y 205
 
 /* The footer, left to right: the buffer or the time on the left margin, the
  * like mark in the gap neither reading reaches, then the volume. The volume
  * bar takes 100 px here against 60: it is a control, and this is the one place
  * the extra width is worth spending on the same element rather than on more
  * of them. */
-#define UI_SRC_FOOT_Y 285
+#define UI_SRC_FOOT_Y 288
 #define UI_SRC_LIKE_X 200
 #define UI_SRC_VOLUME_ICON_X 280
 #define UI_SRC_VOLUME_BAR_X 306
@@ -84,8 +80,20 @@
 
 /* The faces this shape is laid out for. Every row pitch and every line height
  * below follows from them. The text sizes have to exist in ui_font_metrics.h;
- * the icon sizes have to be enabled in sdkconfig. */
-#define UI_FONT_BODY_PX 14
-#define UI_FONT_TITLE_PX 20
+ * the icon sizes have to be enabled in sdkconfig.
+ *
+ * 18 and 26, not the 14 and 20 the smaller panels use. The first build of this
+ * shape kept those, on the reasoning that the panel is bigger but not much
+ * finer - 167 dpi against 143 - so the same face would be nearly the same size
+ * to the eye. On the screen it read as small, and the arithmetic says why:
+ * against the panel rather than against a ruler, 14 px of a 320 px-tall screen
+ * became 14 px of a 480x320 one, which is a quarter smaller as a share of what
+ * the eye takes in at once. These two restore that share, and a little more.
+ *
+ * They cost rows, and that is the trade: five list rows where 14 px fitted
+ * seven, six settings rows where it fitted nine. Both are what the panel this
+ * board shipped with holds, at text half again the size. */
+#define UI_FONT_BODY_PX 18
+#define UI_FONT_TITLE_PX 26
 #define UI_FONT_ICON_PX 24
 #define UI_FONT_DISPLAY_PX 48

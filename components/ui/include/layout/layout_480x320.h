@@ -106,5 +106,9 @@
  * board shipped with holds, at text half again the size. */
 #define UI_FONT_BODY_PX 18
 #define UI_FONT_TITLE_PX 26
-#define UI_FONT_ICON_PX 24
+/* 32, a step up like the text faces. The display face cannot follow: 48 is the
+ * largest Montserrat LVGL ships, so the note standing in for a missing cover
+ * is the one glyph on this panel still sized for the smaller one - inside a
+ * 160 px tile it has room it cannot use. */
+#define UI_FONT_ICON_PX 32
 #define UI_FONT_DISPLAY_PX 48

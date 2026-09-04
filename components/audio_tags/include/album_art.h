@@ -10,11 +10,16 @@
 extern "C" {
 #endif
 
-/* The side of the square the player screen keeps for the cover. Everything is
- * reduced to this before it is published, so the memory this module holds is
- * fixed however large the pictures in the files are. */
-#define ALBUM_ART_SIZE 96U
-#define ALBUM_ART_PIXELS (ALBUM_ART_SIZE * ALBUM_ART_SIZE)
+/* The largest square this module will ever publish, and so the size of the one
+ * buffer it holds - fixed however large the pictures in the files are.
+ *
+ * It is a ceiling and not the answer: how much of the screen the cover is
+ * given belongs to the panel's layout, and a 480x320 panel can afford a
+ * bigger tile than the 320x240 one this started on. The layout says which
+ * square it wants through album_art_set_square(); this is only what the
+ * allocation has to cover so that saying it costs nothing. */
+#define ALBUM_ART_MAX_SIZE 160U
+#define ALBUM_ART_PIXELS (ALBUM_ART_MAX_SIZE * ALBUM_ART_MAX_SIZE)
 
 typedef struct {
     /* Changes whenever the published cover does. A screen that has drawn
@@ -35,6 +40,17 @@ typedef struct {
 } album_art_status_t;
 
 esp_err_t album_art_init(void);
+
+/* The square pictures are fitted into from here on, in pixels, clamped to
+ * ALBUM_ART_MAX_SIZE. Called by the UI once at start-up with the tile its
+ * layout keeps for the cover.
+ *
+ * Settable rather than compiled in because the two ends cannot see each other:
+ * the size belongs to ui_layout.h, and this component is a leaf that nothing
+ * else depends on - including the layout here would mean depending on the
+ * display, which is a strange thing for a tag decoder to do. Order does not
+ * matter; it is read when a cover is decoded, which is long after boot. */
+void album_art_set_square(uint16_t square);
 
 /* Decodes a picture and publishes it as the current cover. JPEG, baseline or
  * progressive, and PNG - the caller hands over bytes and does not care which,

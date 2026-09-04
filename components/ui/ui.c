@@ -4101,6 +4101,10 @@ esp_err_t ui_init(void)
     s_waiting_for_radio_station = false;
     /* PSRAM, and not fatal if it fails: without it the tile keeps showing its
      * placeholder and everything else on the screen still works. */
+    /* The decoder fits pictures into whatever the layout keeps for them, and
+     * it cannot read the layout itself - album_art is a leaf component. Set
+     * before anything can decode a cover, which is before any source starts. */
+    album_art_set_square(UI_SRC_ART_SIZE);
     s_source_cover_pixels = heap_caps_malloc(ALBUM_ART_PIXELS * sizeof(uint16_t),
                                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (s_source_cover_pixels == NULL) {

@@ -52,9 +52,9 @@ static void web_server_secure_zero(void *memory, size_t size)
 /* The playlist editor's test request carries a whole station: a 256-byte URL,
  * a 96-byte name and the JSON around them. */
 #define WEB_SERVER_STATION_TEST_MAX_LEN 512
-/* A picture already scaled to ALBUM_ART_SIZE by the browser. PNG of a 96 px
- * square is a few kilobytes; the cap is there to stop a mistake, not to fit a
- * photograph. */
+/* A picture already scaled to ALBUM_ART_MAX_SIZE by the browser. PNG of a
+ * 160 px square is a few kilobytes; the cap is there to stop a mistake, not to
+ * fit a photograph. */
 #define WEB_SERVER_STATION_ICON_MAX_LEN 32768U
 /* The upload has to be able to carry a full catalogue, so it is derived from
  * the catalogue rather than typed - otherwise raising the station count leaves
@@ -1102,7 +1102,7 @@ static esp_err_t web_server_settings_api_get(httpd_req_t *request)
  * written - not the catalogue, not the resume point - so a station that turns
  * out to be dead leaves no trace. An empty URL stops the test. */
 /* The picture of a station, uploaded from the playlist editor. The browser has
- * already scaled it to ALBUM_ART_SIZE and re-encoded it, so what arrives is a
+ * already scaled it to ALBUM_ART_MAX_SIZE and re-encoded it, so what arrives is a
  * few kilobytes of PNG - the device only stores the bytes and hands them to
  * album_art when the station plays, which is the same decoder a file's cover
  * goes through.

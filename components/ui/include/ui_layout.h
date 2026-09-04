@@ -172,7 +172,6 @@ _Static_assert(UI_FEED_CENTER_X - UI_FEED_INNER_DX - UI_FEED_ICON_MEDIUM_PX / 2 
  * bottom row pairs the two things that answer "is it going to keep playing,
  * and how loud": buffer on the left, volume on the right. */
 #define UI_SRC_STATUS_H 26
-#define UI_SRC_ART_SIZE 96
 /* One line of each face, from the generated fonts' own line_height. Rows are
  * spaced by these rather than by eye, so nothing can overlap its neighbour -
  * and now that the face is the shape's to choose, they follow it rather than
@@ -289,6 +288,13 @@ _Static_assert(UI_SRC_VOLUME_TEXT_X + 26 <= TFT_WIDTH,
                "the player's volume reading runs off the panel");
 _Static_assert(UI_SRC_FOOT_Y + UI_SRC_LINE_H <= TFT_HEIGHT,
                "the player's footer runs off the bottom of the panel");
+/* The cover is drawn as a square tile and everything below it runs the full
+ * width, so the tile has to finish above the first of those. Nothing checked
+ * this while every panel used the same 96 px square; the moment the size
+ * became the shape's to choose, a tile grown one step too far would have been
+ * a rule drawn across the album art. */
+_Static_assert(UI_SRC_ART_Y + UI_SRC_ART_SIZE <= UI_SRC_RULE_TOP,
+               "the player's cover art runs into the rule below it");
 /* The rows a shape file places have to stay in order and clear the footer;
  * a transposed pair reads as a plausible layout right up to the screen. */
 _Static_assert(UI_SRC_ROW_TITLE <= UI_SRC_ROW_TRACK &&

@@ -31,6 +31,9 @@
  *
  * The title shares the tile's top edge, which is what ties the two columns
  * together on a wide panel. */
+/* The cover tile. 96 px is what every screen was designed around, and on a
+ * 320 px panel it is already a third of the width. */
+#define UI_SRC_ART_SIZE 96
 #define UI_SRC_ART_X 10
 #define UI_SRC_ART_Y 36
 #define UI_SRC_TEXT_X 118

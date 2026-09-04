@@ -35,6 +35,9 @@
  * Those three rows are centred on the panel, not on the column beside the cover
  * - they are the width of the screen, and anything else reads as a landscape
  * screen that fell over. */
+/* The cover tile, the same square the landscape panel uses: this one is
+ * narrower still, and the readings sit beside it. */
+#define UI_SRC_ART_SIZE 96
 #define UI_SRC_ART_X (UI_CONTENT_X + 10)
 #define UI_SRC_ART_Y 32
 #define UI_SRC_TEXT_X UI_CONTENT_X

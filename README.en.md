@@ -1,823 +1,97 @@
 # jradio
 
-A desktop audio player: internet radio, music from a USB drive or an SD card,
-and Yandex Music. Driven by a knob and four buttons on the device itself, or
-from a browser on your phone or computer.
-
-Built on an ESP32-S3, with a 320x240 screen and a separate DAC with a line
-output.
+A desktop audio player: internet radio, music from a USB drive and an SD card,
+Yandex Music. Driven by a knob and four buttons on the device itself, or from a
+browser on a phone or a computer.
 
 *[Русская версия](README.md)*
 
 ---
 
-# What it does
+## Specifications
 
-| Feature | State | Details |
+| | |
+|---|---|
+| SoC | ESP32-S3 in a QFN56 package, 16 MB flash, 8 MB PSRAM |
+| Display | over SPI: ILI9341 or ST7789 320x240, ILI9488 480x320 - each of them either way up |
+| Audio | PCM5102 DAC over I2S, line output; 16-bit stereo |
+| Media | USB host for a flash drive and a microSD slot, FAT16 or FAT32 |
+| Network | 2.4 GHz Wi-Fi, up to five saved networks, a web interface on the LAN |
+| Controls | a rotary encoder with a push button and four buttons |
+| Firmware | ESP-IDF 5.5.x, target `esp32s3` |
+
+Which parts are fitted and how they are wired is one line each in
+[`board_options.h`](board_options.h), and that file also decides what ends up on
+the home screen. Details in [Hardware](doc/hardware.en.md).
+
+## What it does
+
+| Feature | State | More |
 |---|---|---|
-| **Internet radio** | works | Your own station list, the track name straight off the air, reconnection when a stream drops |
-| **Music from a USB drive** | works | Walk through folders, tags, cover art, scrubbing, moves on to the next track |
-| **Music from an SD card** | works | The same; the card is recognised when its source is entered |
-| **Playlists on the media** | works | `.m3u`, `.m3u8` and `.pls` files open like a folder: their own track order, gathered from any folders |
-| **Yandex Music** | works | "My wave" and your account's stations, album art, next track, like and dislike. Can be taken off the home screen |
-| **Web interface** | works | Player with cover art, scrubbing, volume and track keys, the device settings, station-list editor, file browsing, Wi-Fi, linking Yandex Music |
+| **Internet radio** | works | Your own station list, the track name straight off the air, reconnects when a stream drops |
+| **Music from a USB drive** | works | Folders, tags, cover art, seeking, automatic advance to the next track |
+| **Music from an SD card** | works | The same; the card is found when the source is opened |
+| **Playlists on the media** | works | `.m3u`, `.m3u8` and `.pls` files open as a folder - [more](doc/usage.en.md#playlists-on-the-media) |
+| **Yandex Music** | works | "My Wave" and the account's stations, cover art, like and dislike - [more](doc/yandex.en.md) |
+| **Web interface** | works | Player, device settings, station list editor, file browser, Wi-Fi - [more](doc/web.en.md) |
 | **Clock** | works | Time from the internet, on every screen |
-| **Volume** | works | On the knob, remembered across restarts |
-| **Autoplay** | works | Starts whatever was playing when the power went off |
-| **Cover art** | works | From the file's tag, from a `cover.jpg` beside the music, from Yandex |
-| **Interface language** | partly | The switch is there, but it only changes the labels on the settings screen itself |
-| **Likes in Yandex Music** | works | "Like" and "dislike" - on F3 and in the web interface |
-| **Yandex Music categories** | not built | Only the account's own stations are shown; there is no general catalogue of genres, moods and epochs |
-| **Bluetooth, FM, DLNA** | not built | They have no menu entries: the device only shows what it can actually do |
+| **Volume** | works | The knob, the web player and Settings; remembered |
+| **Autoplay** | works | Starts whatever was playing when the device was switched off |
+| **Cover art** | works | From the file's tag, from `cover.jpg` beside the music, from Yandex |
+| **Interface language** | partly | The switch exists but relabels the settings screen only |
+| **Yandex categories** | not done | Only the account's own stations; there is no catalogue of genres and moods |
+| **Bluetooth, FM, DLNA** | not done | No menu entries: the device shows only what it can actually do |
 
-## Formats
+### Formats
 
 | Format | Radio | Files | Notes |
 |---|:---:|:---:|---|
 | MP3 | yes | `.mp3` | |
-| AAC | yes | `.aac`, `.adts` | Raw ADTS only. `.m4a` is AAC in an MP4 container and cannot be read |
-| FLAC | yes | `.flac` | |
-| Ogg | yes | `.ogg`, `.oga` | It may hold FLAC, Vorbis or Opus - which one is read from the stream's first page, not from the extension |
+| AAC | yes | `.aac`, `.adts` | Raw ADTS only. `.m4a` is AAC in an MP4 container and is not read |
+| FLAC | yes | `.flac` | Plays at 24 bits too |
+| Ogg | yes | `.ogg`, `.oga` | May hold FLAC, Vorbis or Opus - which one is read from the stream |
 | WAV | - | `.wav` | 16-bit, mono or stereo |
-| HLS (`.m3u8`) | yes | - | Segments in MP3 or AAC. A stream wrapped in MPEG-TS is not demuxed |
+| HLS (`.m3u8`) | yes | - | Segments in MP3 or AAC. A stream wrapped in MPEG-TS is not parsed |
 
-Radio works over both HTTP and HTTPS. A station whose address ends in `.m3u8`
-is not a stream but an index of short files; the device handles such an index
-by itself, with nothing to configure. On the media the same extension means
-something else - an ordinary playlist, see below.
+Radio works over both HTTP and HTTPS. Seeking is files-only: neither a radio
+stream nor a Yandex station has a length or a position to jump to. The details
+and the caveats are in [Formats in detail](doc/usage.en.md#formats-in-detail).
 
-FLAC plays at 24 bits too. The I2S slots are 16-bit and are not reconfigured on
-the fly, so the sample is narrowed to 16 bits as it leaves the decoder; a frame
-of such a stream is 24 KB rather than 16, and the output buffer grows to fit it
-by itself.
+## Where the project stands
 
-Only files can be scrubbed: neither a radio stream nor a Yandex station has a
-length or a position to move to. Track length is worked out from the file size
-and the bitrate - exact for WAV and for constant bitrate, taken from the header
-for FLAC, and drifting a little on a variable-bitrate file.
+The device is built and in daily use; everything marked "works" above has been
+checked on live hardware, not only in tests.
 
-### Playlists on the media
+Limits worth knowing about in advance:
 
-Besides the audio the device reads playlist files on a drive and on a card -
-`.m3u`, `.m3u8` and `.pls`. They have nothing to do with the station list:
-they are ordinary files beside the music, written by whatever player put the
-media together.
+- **The translation is unfinished.** The language switch relabels the settings
+  screen only; the rest are in Russian. Deliberately left for last: while the
+  screens are still being reworked, the strings would have to be translated
+  again.
+- **The web interface assumes a trusted LAN.** There is no authentication and
+  `Origin` is not checked. Do not expose it to the internet.
+- **At most 99 stations** in the playlist and **256 entries** in one directory
+  on the media; anything past that is dropped with a warning.
+- **exFAT is not supported** - drives of 64 GB and up usually ship formatted
+  that way and have to be reformatted.
+- **On the board with the ILI9488 480x320 the screen shimmers slightly** on
+  mid-tones, worst on album art, more with brightness and under load. The
+  firmware has been ruled out by measurement: neither the bus clock, nor the
+  animation rate, nor the backlight PWM frequency changes it, and under 5% of a
+  frame's pixels are repainted per second. It is the module's supply - see
+  [Diagnostics](doc/diagnostics.en.md).
 
-A playlist is not played but opened, the way a folder is. Its tracks are what
-the list then shows, in the order the file writes them in, and from there
-everything works as it does in a folder: the track keys and auto-advance move
-along the playlist, and browsing up lands in the folder the file sits in. The
-tracks themselves may be anywhere on the media, across as many folders as they
-like.
+The full list of limits, with numbers, is in
+[Diagnostics and limits](doc/diagnostics.en.md).
 
-Paths inside a playlist are read relative to the folder the file itself is in:
-an `.m3u` in the root of a drive writes `Music/Album/1.mp3`, while a `.pls`
-inside `Music` writes `Album/1.mp3`. Backslashes, as Windows writes them, are
-understood as separators too. Lines the device cannot open - `http://` links,
-drive letters, paths with `..`, formats with no decoder - are skipped, and how
-many there were is in the log.
+## Documentation
 
-## First run
-
-The device needs Wi-Fi. On its first start it brings up an access point of its
-own: connect to it from a phone, open `http://192.168.4.1` and pick your
-network. While the device is joined to no network at all, the settings page
-shows the networks around it with their signal levels - pick one and type the
-password. Up to five networks are remembered, and after that it connects on its
-own.
-
-Looking around is offered only in that mode. A scan takes the radio off its
-channel for a few seconds, which with a network already up would break the
-stream - so a connected device takes a new network by name, typed in behind the
-"Добавить сеть" button. The list keeps what is no weaker than -80 dBm: below
-that a network will associate and will not carry a stream, and a list padded
-with them buries the two or three that are really there. A hidden network never
-appears in it at all - the "Другая сеть…" row at the bottom is for those.
-
-### Saved networks
-
-Every remembered network on the settings page carries its own buttons:
-
-- **Забыть** (forget) - erases the network from `wifi.json`. It asks first, and
-  when it is the network this very page is reachable over the question says so:
-  the device disconnects with it, and the page stops answering.
-- **Отключиться** (disconnect, on the active one only) - the network stays
-  saved, but the device will not return to it until the next reboot. It moves
-  on to the next saved network, and to its own access point when there is none
-  left to try. This is how a network is changed without losing its password.
-- **Сделать первой** (make it first) - the order of the list is the priority:
-  the device walks it from the top. It takes effect on the next connection and
-  never interrupts a playing stream.
-
-The device shows the address of its web interface at the bottom of the settings
-screen - that is the only place it can be read. That band is the last stop the
-cursor reaches on the screen: turn down to it and press the knob, and the
-device puts the address up as a QR code. On a joined network that is a link to
-the web interface; in setup mode it is an invitation to join the device's own
-access point instead. There the band names only that network: `192.168.4.1` is
-useless until the phone is on it, and once the phone is, the QR has already
-opened it. Another press takes the code down, and so does 30 seconds of
-nothing.
-
-The page opens dark, whatever the phone or the computer is set to. The sun in
-the header switches it to light; the choice is remembered by the browser and
-holds until it is changed back.
-
-On a portrait panel the band shows the address without the `http://`: seven
-characters that tell the reader nothing, on a band 240 px wide that also has to
-carry the QR hint. The code itself keeps the scheme - without it a camera opens
-nothing.
-
-## Controls
-
-| Gesture | What it does |
+| Page | About |
 |---|---|
-| Turn the knob | Volume on the player screen, selection in lists |
-| Press | Play and pause |
-| Double press | Open the station or file list; the music keeps playing |
-| Triple press | Scrub: the knob picks a position, a press applies it |
-| Long press | Home screen; playback stops |
-| F2 | Back |
-| F3 | Previous track or station |
-| F4 | Next track or station |
-
-A single press lands after a short delay - before that it cannot be told from
-the beginning of a double press.
-
-While scrubbing, the knob and the press are busy choosing a position, so the
-volume does not change there. Any other button leaves the mode without changing
-anything. The music plays on throughout.
-
-Scrubbing in the web interface is simpler: the position bar under the track
-name is an ordinary slider - drag it, or move it with the arrow keys. It does
-not twitch under the pointer while the position is being polled; let go and the
-device jumps and answers.
-
-## Home screen
-
-Two looks, chosen in the settings: a list of entries or a carousel of large
-icons. Every source - radio, drive, card, Yandex Music, settings - has an icon
-of its own.
-
-Choosing the drive or the card when neither is there opens an explanation
-rather than an empty list: insert the medium, it cannot be read, or it holds no
-music - these are different things, and the advice differs.
-
-With no network, internet radio and Yandex Music go dim: the rows stay where
-they are and the cursor still lands on them, but a press answers "Нет сети -
-см. Настройки" instead of starting anything. They are not taken off the screen,
-or everything below them would shuffle up and back every time the Wi-Fi
-dropped. The player page shows the same two sources the same way, and hides
-their station list with them - there is nothing to play it with.
-
-When the network goes away entirely while the radio or Yandex Music is
-playing, the device returns to the home screen on its own and stops the source:
-waiting on a screen for a stream that is not coming back serves no one.
-"Entirely" means it has come to the setup access point; a short break the
-device rides out by reconnecting does not throw anyone out of the player.
-
-## Lists
-
-Stations are numbered - `01`, `02` and on, in playlist order. The number stays
-where it is even while a long name under the cursor travels as a marquee: it
-belongs to the row, not to the name.
-
-Files are not numbered. The first row of the browser is the way out of the
-folder, and directories and playlists carry a mark each of their own; neither
-is an nth of anything.
-
-The cursor stays on the middle row and the list moves under it. The bar below
-the list says where in it you are.
-
-## Player screen
-
-The clock and the Wi-Fi level are at the top. Below them the cover, the station
-name, and the track and performer in large type. At the bottom, the volume
-scale, the position bar and a level meter.
-
-The codec, the bitrate and the sample rate are shown beside them: as a line
-under the performer on the wide panel, and as a column next to the cover on the
-tall one, where that line would not fit.
-
-Cover art comes from the file itself, and where the file has none, from a
-`cover.jpg`, `cover.jpeg` or `cover.png` beside the music. For Yandex Music the
-service provides it. With no picture anywhere, an icon stays in its place.
-
-Names for files are read from their tags, including Russian ones in older
-encodings. Whatever the tags do not say is replaced by what is known: the
-folder in place of the album, the file name in place of the title.
-
-## Yandex Music
-
-An active subscription is required.
-
-**Linking an account.** The device shows an address and a short code: open the
-address on a phone or a computer and enter the code. No password is typed on
-the device - it is never transmitted and never stored there.
-
-**Stations.** The ones Yandex itself offers your account: "My wave" and a few
-picked for your taste. The list is personal, Yandex composes it, and it is the
-same list the phone app shows.
-
-**What you can do.** Play a station, pause it, skip to the next track - with F4
-on the device or with the button in the web interface. There is no
-previous-track button: a station only moves forward, and there is no going back
-to a track already played, which is why F3 does something else here - it carries
-both marks on the playing track, "like" and "dislike".
-
-**The like mark.** The same one the app has: the track joins your liked tracks
-or leaves them. On the player screen a heart beside the volume shows it -
-outline while the track is not marked, solid once it is. What you liked earlier
-comes from Yandex with the track itself, so the heart is solid for songs marked
-from the phone too. It fills in only after the service has answered, never on
-the press alone: otherwise the screen would show something the account does not
-have. The same heart is in the web interface.
-
-**The dislike.** The same F3, pressed twice: the track joins your rejected ones
-and the station stops offering it. The heart is struck through. Any further
-press of that key takes it back - single or double, because while a track is
-rejected the key can do only one thing and that is undo it. The single press now
-lands a third of a second late, which is how long the key waits for a possible
-second one; on a mark nothing is waiting for, it is not felt.
-
-In the web interface the dislike is a button of its own beside the heart: there
-is room for both, and no reason to make one press mean two things. The two marks
-exclude each other - setting one clears the other - and that is how Yandex
-itself behaves, not only this end.
-
-Yandex does not hand a rejected track back, so there is nothing to tell it about
-the mark afterwards: on the device it is visible only while the track you
-rejected is still playing. Nothing is lost by that - next time the song simply
-is not there.
-
-**The device tells the station what you listened to.** What you put on, what
-played to the end, what you skipped - the same events the phone app sends.
-Without them the rotor never learns that a song has already been heard, and a
-station opened tomorrow starts where it started today; so this is not
-decoration, it is what stopped tracks from repeating. The reports go out on
-their own task a few seconds late, deliberately clear of the track change, so
-they do not lengthen the gap between songs.
-
-**If you do not want it.** Settings > General has a "Yandex Music" switch.
-Turned off, the source disappears from the home screen and the device stops
-mentioning it; the account stays linked, and it can be turned back on at any
-time.
-
-To leave it out of the firmware altogether, use the `YANDEX_MUSIC` line in
-`board_options.h`: `FEATURE_OFF` - or the line deleted - means there is neither
-the source nor the switch in Settings. See "What the home screen shows".
-
-An account can be unlinked from the web interface.
-
-## Settings
-
-Language, the look of the home screen, how long lines scroll, how the buffer
-reading is shown, autoplay, Yandex Music, screen brightness, flipping the
-picture vertically and horizontally, volume. They apply at once and are saved.
-
-"Buffer" picks what the footer's left corner holds on the player screen: a
-number ("Буфер 88%") or a strip. The strip is the same percentage, taken every
-0.7 s and stood up as a bar; a new bar arrives at the left and the older ones
-walk right, and about twenty seconds fit on it. The number answers how much is
-held right now, the strip answers whether it has been holding - a dropout is
-the number falling, and a fall is what a single figure cannot show, because by
-the time anyone looks it is back.
-
-Scrolling is about lines that do not fit: the track name on the player screen,
-and the list row the cursor is on. "Left-right" runs the line out to its end
-and back again; "Left" runs it out, holds for a second, and shows it whole from
-the start. Either way the pause before the next pass is 3 seconds.
-
-Brightness is a number from 10 to 90 rather than a switch: click the row, the
-number is taken into angle brackets, and turning the knob then changes it. The
-panel follows on every detent. Clicking again releases the knob, and it moves
-through the list as before.
-
-The language switch still only changes the labels on the settings screen
-itself.
-
-The same settings are in the web interface, on its Settings page, in the same
-words and the same order - except the volume, which has a knob on the device and
-a slider in the player itself; a third place to set it only confused matters. It
-works both ways: a change made in the browser
-takes effect at once, as if it had been made on the knob, and a volume or
-brightness turned on the device reaches an open page within a quarter of a
-second. A slider being held with the pointer does not jump - the update is
-dropped until it is let go.
-
----
-
-# Building and hacking on it
-
-What follows is the technical half: how to build the firmware, how to rebuild
-the board, and what to know when changing things.
-
-## Hardware
-
-ESP32-S3 in a QFN56 package, 16 MB flash, 8 MB PSRAM; an ILI9341 320x240
-display over SPI; a rotary encoder with a push button and four buttons; a
-PCM5102 DAC over I2S with a line output; a USB host port for a FAT-formatted
-drive; a microSD slot over SPI.
-
-The wiring lives in [`board_options.h`](board_options.h), which is the source
-of truth; the table below is for convenience. Each part is chosen on one line,
-and everything that follows from that choice sits in profiles beside the
-driver:
-
-```c
-#define DISPLAY   DISPLAY_ILI9341_320_240
-#define AUDIO_DAC DAC_PCM5102
-```
-
-The parts with drivers are listed in
-[`board_parts.h`](components/board/include/board_parts.h). A typo fails the
-build rather than producing a device that misbehaves.
-
-Which way up the panel stands is part of its name too: `DISPLAY_ILI9341_240_320`
-is the same module on its end. The orientation decides the layout of all six
-screens and cannot be derived from the wiring - the same reason the resolution
-was already in the name.
-
-In portrait the station list shows seven rows instead of five, Settings nine
-instead of six, the home carousel three tiles instead of five, and on the
-player screen the cover art and the three stream readings stand side by side
-above the names rather than beside them. This is a
-build option and not a setting: each screen's geometry is compiled for one
-shape, and a box is mounted one way round once. The boot splash has a version
-for each panel shape and all of them are compiled in, so nothing needs regenerating.
-
-The panel does not have to be an ILI9341. Each controller has a profile of its
-own in
-[`components/board/include/display/`](components/board/include/display/) and a
-driver file in `components/board/display/`; `board.c` does not know which one
-was selected - it calls `board_panel_create()` and works through the common
-esp_lcd interface from there. Besides the ILI9341 the catalogue carries the
-ST7789 320x240, in two orientations as well; its driver ships inside ESP-IDF,
-so it needs no dependency of its own. The landscape profile was taken off a
-panel: RGB colour order, inversion off - against the usual advice for an
-ST7789, which with INVON renders the whole screen as a negative - and one
-horizontal mirror. Portrait has not been built yet and
-[`st7789.h`](components/board/include/display/st7789.h) marks it as derived
-rather than measured. The driver that was not selected costs no flash at all.
-
-The third panel in the catalogue is an ILI9488 480x320, measured on the board
-on 2026-09-04. It takes the same six wires as the ILI9341 but differs in one
-place, and the difference is not a detail: over SPI this controller accepts
-18-bit colour only. Three bytes per pixel instead of two, with the RGB565 to
-RGB666 conversion done by the driver (`atanisoft/esp_lcd_ili9488` from the
-registry - ESP-IDF carries no ILI9488 driver of its own), and the profile
-declares `TFT_PIXEL_WIRE_BYTES` and `TFT_PIXEL_BYTE_SWAP`, from which `board.c`
-sizes the SPI transfer and decides whether to swap the bytes. Firmware built
-for an ILI9341 will not drive this panel at all - not because the resolution
-differs but because of those three bytes. A frame costs 460 800 bytes here
-against 153 600, about 184 ms at 20 MHz; the band was narrowed to ten rows so
-the buffers cost the same internal memory as they do on the narrow panel. The
-portrait `DISPLAY_ILI9488_320_480` is declared in the catalogue but has no
-320x480 layout: the build stops with a message naming the file to copy.
-
-The screen layout lives in [`ui_layout.h`](components/ui/include/ui_layout.h)
-and is checked by a host test. Everything that follows from the panel's size -
-how many rows the list and Settings hold, how wide the level meter's blocks are,
-how many tiles the carousel shows - is computed from `TFT_WIDTH` and
-`TFT_HEIGHT` rather than picked per orientation. The numbers that were placed by
-eye on a screen (the carousel axis, the player's rows, the footer) sit in one
-file per panel shape under [`layout/`](components/ui/include/layout/): deriving
-them was tried and does not work - centring the carousel misses the two measured
-positions by 7 px and 3 px, in opposite directions.
-
-A panel of a new size is a copy of that file and one line in the dispatcher; a
-shape with no file fails the build with a message saying what to create. Checked
-against a 480x320 panel that does not exist: the list gets 7 rows instead of 5,
-Settings 9 instead of 6, the carousel 5 tiles, and the meter's blocks 17 px
-instead of 11.
-
-Fonts are part of the shape too. Screens ask for a role rather than a size -
-body, title, icon, display
-([`ui_fonts.h`](components/ui/include/ui_fonts.h)) - and which size each role
-gets is the shape file's decision. The Cyrillic faces are made by
-[`tools/gen_ui_fonts.sh`](tools/gen_ui_fonts.sh) from DejaVu Sans, because
-LVGL's built-in Montserrat is Latin only; the icon faces are Montserrat
-precisely because what is drawn with them is not text but the symbol block
-bundled into it, and a missing `CONFIG_LV_FONT_MONTSERRAT_<size>` fails the
-build with a message instead of failing at the link.
-
-The faces cover more than the interface's own language. The UI is Russian, but
-file names, ICY titles and tags arrive as whoever wrote them wrote them, so
-accented Latin reaches the screen as readily as Cyrillic - and a character with
-no glyph is drawn by LVGL as a box, which makes an album read as damaged rather
-than as unsupported. So the faces carry Latin-1 Supplement, Latin Extended-A,
-the punctuation a tagger reaches for, and the combining marks 0x0300-0x030F.
-The last of those because a name can arrive decomposed - "u" followed by a
-separate diaeresis - and FATFS hands it over exactly as it was written. The
-converter gives such a mark zero advance and a negative offset, so LVGL draws it
-back over the letter before it and nothing has to be composed. The Cyrillic
-bound is the one thing left where it was: the 14 px and 20 px faces do not agree
-on it, and 0x0460-0x048F by itself raises the 20 px line height from 23 to 26.
-
-Each face's line height is copied into
-[`ui_font_metrics.h`](components/ui/include/ui_font_metrics.h): the layout has
-to be computed before there is a program, and a font knows its own metrics only
-once LVGL is up. `ui.c` checks the copy against the font at start-up and logs
-the disagreement. Checked both ways: a face no layout selects is dropped by the
-linker - a build carrying a spare 18 px face came out the same size to the byte
-- and pointing the panel at that face instead moves the line height to 24 and
-every row spacing with it. It earned its keep at once: widening the character
-set moved the 20 px face from 23 to 24, and the row spacings followed on their
-own.
-
-The same file names the parts this board does not carry: an FM tuner and
-Bluetooth. Their blocks are commented out rather than deleted - the file should
-answer "can this firmware drive one" with a no as well as with a yes. For
-Bluetooth the answer is final: the ESP32-S3 has no classic Bluetooth, only BLE,
-and A2DP is a classic-Bluetooth profile, so playing from a phone would need a
-receiver module of its own.
-
-| Signal | GPIO | | Signal | GPIO |
-|---|---:|---|---|---:|
-| TFT CS | 10 | | Encoder button | 6 |
-| TFT DC | 47 | | F1 | 45 |
-| TFT MOSI | 11 | | F2 | 21 |
-| TFT SCLK | 12 | | F3 | 46 |
-| Backlight | 2 | | F4 | 9 |
-| Encoder right | 5 | | PCM5102 DOUT | 16 |
-| Encoder left | 7 | | PCM5102 BCLK | 18 |
-| USB D- | 19 | | PCM5102 LRCK | 17 |
-| USB D+ | 20 | | microSD CS | 1 |
-| microSD SCK | 41 | | microSD MISO | 40 |
-| microSD MOSI | 42 | | | |
-
-The display's RST is tied to the ESP32's reset and takes no GPIO. On modules
-that bring RST out separately the pin is declared by a `TFT_RESET_GPIO` line;
-`board_options.h` carries one, commented out. The ST7789 tried here did not
-need one, though these boards are known to.
-
-Worth knowing if you build the board:
-
-- there is no MISO to the display, the bus is one-way; the panel wants BGR
-  order;
-- the PCM5102 runs without MCLK, I2S slots are 16-bit stereo, BCLK = 32 x Fs.
-  The DMA ring of 8 x 512 frames (~93 ms) was chosen to stop clicking and must
-  not be shrunk;
-- **tie the PCM5102 module's SCK to ground and XSMT to 3.3 V.** Left floating
-  they produce rare dropouts with a perfectly healthy digital path;
-- debouncing is done in software. Internal pull-ups are enabled for the buttons
-  (GPIO 45, 46 and 21 are unstable without them) and disabled for the encoder,
-  where the external ones suffice;
-- USB VBUS is permanently powered; a drive left on the bus across a reboot is
-  re-enumerated by a logical power cycle of the root port;
-- the microSD slot has an SPI bus of its own, SPI3: the display has no MISO
-  wired, which a card cannot work without. GPIO 40, 41 and 42 are the external
-  JTAG pins, and the card takes them over;
-- the slot has no card-detect line, so an inserted card can only be found by
-  trying to mount it - which is also why the card is not held mounted, see
-  "Limits". FAT16/FAT32 only, no exFAT.
-
-## What the home screen shows
-
-The home screen shows exactly what the firmware can make use of, and nothing
-else. `board_options.h` decides, in two different ways:
-
-- **hardware**, by its wiring. USB, microSD, an FM tuner: a block of pins is
-  there, so the source is there. Comment the block out or delete it, and the
-  entry disappears from the device's screen, from the web interface and from
-  autoplay;
-- **features**, by a `FEATURE_ON` / `FEATURE_OFF` line. That is how
-  `YANDEX_MUSIC` and `DLNA` are declared; a missing line means `FEATURE_OFF`.
-
-Internet radio and Settings are always there: the first needs nothing beyond
-the Wi-Fi already on the chip, and without the second there would be no way to
-configure the device. Yandex Music has a second step as well - the switch in
-Settings, which hides the source in a firmware that was built with it.
-
-One case is its own: a build with nothing left but the radio and Settings. A
-home screen of two rows offers no choice, so there is none at all - the device
-starts straight into the station list, and a long press (or F2) switches
-between the list and Settings. Going into Settings stops the radio, exactly as
-a long press on the player screen does. The "Home screen" row in Settings is
-hidden in such a build too: there is nothing to choose between.
-
-## Building and flashing
-
-ESP-IDF 5.5.x, target `esp32s3`.
-
-The shortest way in is VS Code: open the project folder and it offers the
-recommended extensions - ESP-IDF and C/C++. The ESP-IDF extension opens its own
-setup wizard on first run, which downloads the framework and the toolchain;
-pick 5.5.x. After that `Ctrl+Shift+B` builds, and the rest is under
-Terminal - Run Task: flashing, the device log, the host tests. For a blank
-board there is "ESP-IDF: First flash (app + data)", which writes the firmware
-and the data partition both.
-
-The tasks go through [`tools/idf.sh`](tools/idf.sh), or
-[`tools/idf.ps1`](tools/idf.ps1) on Windows, which finds an installed ESP-IDF -
-the extension's copy included - and activates it, so `export.sh` never has to
-be sourced by hand. The port is detected when the machine has one board on it;
-with several attached, name the right one in `ESPPORT`.
-
-Every task works on Windows except "Host tests": those want a POSIX shell and a
-gcc with sanitizers, so Linux, macOS or WSL.
-
-**The first build reaches the internet,** and not only for the framework. The
-component manager fetches what `idf_component.yml` names - LVGL, the codecs,
-the panel drivers - and the littlefs component builds a virtualenv of its own
-and installs `littlefs-python` from PyPI into it, which is what turns `data/`
-into a partition image. After that everything lives in `managed_components/`
-and `build/` and is not fetched again.
-
-A network hiccup during that step ends the build like this:
-
-```
-ERROR: Could not find a version that satisfies the requirement littlefs-python==0.15.0
-ninja: build stopped: subcommand failed.
-```
-
-The message misleads - you are building firmware and not thinking about a data
-image - but running `idf.py build` again is the whole fix: what compiled is
-kept and only the missing piece is fetched. Where PyPI is permanently out of
-reach (a corporate network, a proxy), pip's ordinary settings apply to this
-virtualenv too - `PIP_INDEX_URL` and `PIP_PROXY`.
-
-One more network step exists but only when regenerating fonts:
-[`tools/gen_ui_fonts.sh`](tools/gen_ui_fonts.sh) calls `npx lv_font_conv` from
-npm. An ordinary build needs none of it - the generated faces are in the
-repository.
-
-The same from a terminal:
-
-```bash
-idf.py set-target esp32s3
-idf.py build
-idf.py -p PORT flash              # application only, leaves LittleFS alone
-idf.py -p PORT littlefs-flash     # overwrites the whole data partition
-idf.py -p PORT monitor
-```
-
-`littlefs-flash` **destroys user data** - playlist edits, saved networks,
-device settings and the Yandex Music account link: all of it lives on that one
-partition. Compare the live state first: `curl http://<ip>/api/playlist`,
-`curl http://<ip>/api/settings` and `curl http://<ip>/api/yandex`. The settings
-return to their defaults after the flash, and the account has to be linked
-again.
-
-## Tests
-
-```bash
-bash tests/run_host_tests.sh
-```
-
-70 suites, no ESP-IDF activation needed. They compile the real component
-sources rather than mocks, with `-Werror` and the address and undefined
-behaviour sanitizers. That is why format parsing, state machines and view
-derivation live in files with no ESP-IDF dependencies - new logic belongs
-there. Browser JavaScript runs under Node against a hand-written fake DOM, with
-no npm and no bundler.
-
-## Web interface
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/status` | Wi-Fi and player state in one snapshot |
-| `GET /api/playlist` | Station list as CSV |
-| `POST /api/playlist` | Replaces the station list wholesale |
-| `GET /api/files` | Contents of the current directory on the active medium |
-| `GET /api/settings` | The device settings, the same ones its own screen has |
-| `POST /api/settings` | Changes one setting: `{"field":…,"value":…}` |
-| `GET /api/progress` | Track position, buffer fill, cover signature |
-| `GET /api/cover` | The current cover, 96x96, as a BMP |
-| `GET /api/stations` | The station names of the active source |
-| `POST /api/station-test` | Plays an address on the device without touching the playlist |
-| `GET /api/station-icon` | An uploaded station picture, by file name |
-| `POST /api/station-icon` | Uploads a station picture; the device names the file |
-| `GET /api/yandex` | Link state and the account's stations (never the token) |
-| `POST /api/yandex` | Link, cancel, unlink, refresh the stations |
-| `POST /api/wifi` | Saves a network |
-| `POST /api/wifi-scan` | Starts a scan for nearby networks (only with no connection) |
-| `GET /api/wifi-scan` | What it found: `scanning`, `done` with the list, or `idle` |
-| `/ws` | Commands and live updates |
-
-WebSocket commands: `player.play`, `player.pause`, `player.toggle`,
-`player.next`, `player.previous_item`, `player.next_item`, `player.seek`,
-`player.like`, `player.dislike`, `source.select`, `list.select`, `browse.up`,
-`wifi.save`, `wifi.forget`, `wifi.prioritize`, `wifi.disconnect`. Live
-state arrives as diffs - `player`, `list`, `wifi`, `settings`; anything large -
-the playlist, media directories - goes over REST, because it does not fit in a
-frame and must not spend internal SRAM.
-
-The player's three lines - what is being listened to, the performer, the track -
-come to the page and to the screen from one function
-([`ui_now_playing.h`](components/ui/include/ui_now_playing.h)) rather than being
-worked out twice. Worked out twice, they drifted: on files the page showed the
-file's name where the screen read its tags, and it named a station by whatever
-the stream called itself while the screen obeyed the playlist's third column -
-"Радио Шоколад" marked `L` is named from the list on the screen, and was named
-`DB91-TX` on the page, which is what the stream calls itself. Each also had its
-own way of splitting the ICY line into a performer and a track: the page knew
-about the en dash and repaired broken UTF-8, the screen did neither.
-
-The tags themselves still stay out of the snapshot: it is copied onto the stack
-of every task that polls it, and three more strings would cost 384 bytes on each
-of them. What travels is `track_tag_revision` - the tags are read after the
-track has already started, and without a counter the page would go on showing
-the file name until the track ended.
-
-`player.seek` carries a second rather than a percentage: seconds are what the
-device turns into a byte offset, and a percentage would have to be turned back
-into seconds using a length the browser only has an estimate of.
-
-The track position and the cover go over REST too, for a different reason: the
-snapshot is diffed and broadcast on every change, and a counter that ticks
-would push a frame a second to every open browser. The page polls
-`/api/progress` once a second while something is playing and rarely otherwise.
-The cover is served as a BMP - the device holds it already decoded to RGB565
-and no longer has the original bytes, so anything compressed would mean a PNG
-encoder in firmware for a picture that travels over a LAN; 27 KB uncompressed
-is the cheaper answer. The URL carries the cover's signature - a checksum of the
-bytes it was decoded from - and the answer itself is marked `no-store`.
-
-The URL used to carry the generation instead, and the answer was cached for a
-day. The generation counts from zero at every boot, so `?g=1` meant one picture
-on Tuesday and another on Wednesday, and three browsers showed three different
-covers for one track, each the one it had cached first. A signature cannot do
-that: one picture, one URL; different pictures, different URLs.
-
-The rotor's covers do not come from the device at all. `/api/progress` hands the
-page the picture's address on `avatars.yandex.net` at 400x400 and the browser
-fetches it itself: the device pays nothing - only the address travels - and the
-page draws something four times as detailed as the 96 pixels the panel decodes
-it into.
-
-A station's own picture is the playlist's fourth column, after the letter and a
-tab; the column is optional. A picture chosen in the browser is scaled there to
-96 pixels on its longer side and re-encoded as PNG - kilobytes travel to the
-device, not a photograph - and the device names the file itself: a name that
-comes from a client is a name that can turn out to be a path. The extension
-comes from the first bytes rather than from the request's header, so PNG and
-JPEG are each stored under their own: the picture is handed back over HTTP
-afterwards, and a JPEG served as `image/png` is a broken picture in the browser.
-It doubles as the only check that a picture arrived at all. The files live in
-`/littlefs/radio_img/`, and saving the playlist deletes the ones nothing refers
-to any more - that is the one moment when the full list of names in use is
-known.
-
-### The playlist format
-
-A line is `name<TAB>address<TAB>letter`, plus an optional fourth column naming
-the picture file. The letter says which name to show: `S` for the one the
-stream announces, `L` for the one kept in the list.
-
-The letter sits where playlists written for other devices - and there are many
-of those about - keep a volume correction: a signed integer, almost always
-zero. Those lines are read too, but only for their name and address: the volume
-here is one setting and there is no per-station gain in the model. The
-correction is dropped, the stream gets to announce the name, and nothing in
-that dialect could name a picture. Lists of two columns, with no third at all,
-read the same way.
-
-The letter is what makes the two tellable apart. The column used to hold 0 or
-1 - exactly what a correction of 0 or +1 dB is written with - so a foreign 1
-read as "name from the list", and every other correction took the whole line
-down as malformed.
-
-The order is changed by dragging a row by the grip left of its name. The grip
-is what moves, not the whole row: the list is scrolled with a finger, and a row
-that followed it would take away the only way to scroll at all. It is built on
-pointer events rather than the drag and drop built into HTML, which a finger
-cannot start at all - and a list of 99 stations is exactly what gets sorted on
-a phone. The up and down arrows on that same grip move a row from the keyboard,
-and the order, like any other edit, reaches the device on Save.
-
-Export hands over `playlist.csv` while no station has a picture, which is a
-file anything can read. Once one does, it hands over `playlist.zip`: the same
-`playlist.csv` with a `radio_img/` folder beside it. Import takes either,
-telling them apart by the file's signature. The archive is built and read
-entirely in the browser - the device needs neither an unpacker nor a buffer of
-several megabytes - and it is written stored, since PNG and JPEG are already
-compressed, but read with deflate too, because an archive assembled by anything
-else will be compressed.
-
-Imported pictures travel to the device when Save is pressed rather than when
-the file is opened: an import that is then abandoned would otherwise leave up
-to 99 unwanted files there, and the only thing that ever deletes them is the
-next save.
-
-The picture is published through the same `album_art` that carries file and
-rotor covers, so the panel's tile and the browser's both draw it without a line
-of new UI code. The key is the file name rather than the station index: replace
-the picture of the station that is playing and it updates.
-
-The device settings are written by both the panel and the web, through the same
-setters, serialised at the file level. A write from the browser raises a flag,
-and the UI task re-reads `settings.csv` and re-applies the brightness, the
-panel rotation, the volume and the Yandex row - a stored value does none of
-that by itself.
-
-The rotation is the one exception: there is no way to turn the boot splash over
-once it has been drawn. MADCTL decides where *arriving* pixels land and moves
-nothing already on the glass, and the splash is drawn at the end of
-`board_init()`, long before the UI task exists. So `app_main()` mounts LittleFS
-and reads the two flip flags before the board, and passes them into
-`board_init()` - the only settings it needs. If they cannot be read the flips
-are off, which is the panel's own baseline. It costs the screen nothing: the
-backlight sits at zero until the splash is on the glass.
-
-They come back as a `settings` section on the socket rather than by polling:
-the knob changes the volume without telling anyone, and `settings.csv` is
-eleven consecutive reads - far too much to ask on a timer. The UI task
-publishes a copy in memory, the broadcaster reads it every 250 ms and sends a
-diff only when something has moved. That section grew the complete snapshot by
-270 bytes and pushed it past 4096, so the frame limit is now 4608;
-`test_web_server.c` builds the worst case - 32 stations named in nothing but
-quotes and backslashes - and asserts the margin is still there.
-
-Static assets are served with `Cache-Control: no-cache` and an `ETag` over the
-file's bytes: the browser keeps them but asks before showing them. An unchanged
-file costs one `304` with no body, and after `littlefs-flash` an ordinary reload
-picks up the new styles and scripts. They were cached for an hour before that,
-and that hour meant a page running against a device that had already moved on.
-
-**There is no authentication and `Origin` is not checked. Do not expose the
-device.**
-
-## Diagnostics
-
-Every 10 seconds the firmware logs two lines about the audio, one for the
-output and one for the incoming stream:
-
-```
-board: audio health: realtime=100% peak=21533 silent=0 zero_run=0 underruns=0
-internet_radio: stream health: i2s_underruns=0 starvations=0 min_backlog=131072/262144 (819ms) pcm=100%
-```
-
-A healthy picture is `realtime` at 99-100% with every other counter at zero. If
-there is still no sound, the fault is past the handover to DMA - in the DAC's
-wiring, not in the firmware. Separate `audio gap`, `audio silence` and
-`audio zero-run` warnings pin the moment an event happened, and `slow repaint`
-reports a display pass that took longer than 400 ms. `decode_stalls` counts the
-times the decoder consumed input without producing audio: two seconds of that
-and the stream is restarted, because otherwise the device sits silent behind a
-stream that looks perfectly alive.
-
-Once a minute it reports the resources that run out quietly:
-
-```
-health: reset reason: power-on
-health: uptime=120s internal_free=52027/min 52027 largest=30720/min 30720 dma_largest=30720 psram_free=8053800
-health: stack headroom, least seen: player_control=3780 ui=2524 usb_play=5184 usb_msc=2692 ...
-```
-
-The minima are the point, not the current values: a stack that has been
-shrinking for months overflows the first time the compiler inlines a little
-more, and internal memory runs out as "HTTPS will not connect" or "the file
-will not play" rather than as anything about memory. The reason for the last
-restart is the first line printed - after a reboot loop that is the difference
-between someone pulling the power and a panic.
-
-`largest` is the biggest contiguous block, and it cannot be read on its own: it
-may well be sitting in RTC RAM, which a task stack cannot be allocated from. If
-something fails with `ESP_ERR_NO_MEM` while `internal_free` looks ample, get
-the breakdown by region - `heap_caps_print_heap_info()` says which piece of
-memory actually ran out.
-
-## Data on the device
-
-The `littlefs` partition holds both the web assets and user data: `data/www/`
-(gzipped at build time), `data/config/stations.csv`,
-`data/config/settings.csv`, `data/radio_img/` with the station pictures, and
-`wifi.json` and `yandex.json`, which the device creates itself and which are not
-in Git. Everything under `data/` goes into the image, so station pictures survive
-`littlefs-flash` - one uploaded through the browser and never put in the
-repository will not. Do not commit passwords, tokens or
-keys.
-
-## Limits
-
-- **At most 99 stations in the playlist.** Lines beyond that are dropped as the
-  file is parsed, and the reply to an upload says how many stations were
-  actually read - the file itself is stored whole, so the number of lines in it
-  and the number of stations in the device need not agree. A station name is
-  limited to 96 bytes and its URL to 256; a longer line is dropped entirely.
-  The catalogue is 35 KB and lives in PSRAM.
-- **At most 256 entries per directory.** The rest are dropped with a warning;
-  each entry costs about 264 bytes of PSRAM. The listing is one for both
-  volumes - only one directory is on screen anyway, and a second copy would
-  cost another 68 KB.
-- **FAT32 or FAT16 only.** exFAT is not built in, and media of 64 GB and up
-  usually ship formatted that way.
-- **The card is not held mounted.** It is mounted when its source is entered
-  (about 110 ms) and released when it is left: a mount costs some 2.4 KB of
-  internal SRAM. The larger point is the missing card-detect line - a card
-  inserted later is found only by the next attempt to enter the source, and
-  that attempt is the detection.
-- **About 1.7 s of silence between Yandex Music tracks.** A track link is valid
-  for about a minute, so it is fetched at the last moment, and those requests
-  run on the same task that decodes the audio.
-- **The web interface assumes a trusted local network.** There is no
-  authentication and `Origin` is not checked. Do not expose the device.
-- Internal SRAM is the board's scarcest resource, and most of the large buffers
-  live in PSRAM: the stream buffer, the directory listing, the station
-  catalogue, LVGL's heap. Each of
-  those allocations keeps a fallback to internal memory so that a board without
-  PSRAM still works - keep that fallback in new ones too.
-
-`.vscode/tasks.json` carries build, flash and monitor tasks; they take `idf.py`
-from the terminal's environment.
+| [Using the device](doc/usage.en.md) | First run and Wi-Fi, buttons and gestures, the screens, settings, playlists on the media |
+| [Yandex Music](doc/yandex.en.md) | Linking an account, stations, the marks, what the device reports back |
+| [Web interface](doc/web.en.md) | Pages, API endpoints, the station list format |
+| [Hardware](doc/hardware.en.md) | Pinout, choosing parts, panels and screen layouts, fonts |
+| [Setting up the development environment](doc/toolchain.en.md) | VS Code, the ESP-IDF extension, Python and everything else to install |
+| [Building, flashing and tests](doc/build.en.md) | Building, flashing, host tests, data on the device |
+| [Diagnostics and limits](doc/diagnostics.en.md) | What the log says and how to read it, the full list of limits |

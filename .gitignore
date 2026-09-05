@@ -36,6 +36,9 @@ skills-lock.json
 *.md
 !README.md
 !README.en.md
+# The pages the READMEs link into. `docs/` above stays ignored - that one is
+# internal agent notes; `doc/` is the documentation that ships with the project.
+!doc/*.md
 
 # Local photos and scratch images of the device
 img/

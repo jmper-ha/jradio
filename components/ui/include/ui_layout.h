@@ -237,6 +237,42 @@
 /* Everything below follows from the panel and from the shape file, and is the
  * same arithmetic for every panel. */
 
+/* The one number in this file that is time rather than geometry, and it is
+ * here for the same reason as the rest: it is arithmetic over the panel, so it
+ * can be checked without one.
+ *
+ * ui_task warns when a single lv_timer_handler() pass takes longer than this.
+ * What it is watching for is a pass that never returns - LVGL looping inside
+ * one call, which from the outside is only a frozen screen - so the threshold
+ * has to sit above what a legitimate full repaint costs, and a full repaint is
+ * what every screen change is.
+ *
+ * That cost is two things. The frame's time on the wire is exact: every pixel,
+ * at what the panel takes per pixel, at the bus clock. The rest is per-pixel
+ * and not per-byte - LVGL producing the pixels, and the copy and colour
+ * conversion between its buffer and the bus - so it is written as a rate. The
+ * rate here, 1.81 us/px, is the 320x240 panel's: it is what that screen's
+ * roughly 200 ms change leaves once its 61 ms of wire is taken out, and it is
+ * what keeps this expression at exactly the 400 ms that used to be typed here.
+ *
+ * The 480x320 panel was measured directly on 2026-09-05 and comes out lower,
+ * 1.03 us/px - 249 ms for a full frame, of which 92 is the wire at 40 MHz - so
+ * it gets margin rather than a tighter number. That is the right way round: a
+ * warning about a pass that never ends wants to be quiet about every pass that
+ * does. One pass there still trips it and the reading is not the panel's: the
+ * player screen's first draw at boot takes a second and more, of which only
+ * 217 ms is the flush, and it lands inside the HTTPS handshake - three
+ * certificate validations fall within the one call. Whether the rest is the UI
+ * task losing the core to that work or the cost of drawing that screen the
+ * first time has not been separated; either way it does not recur, and the
+ * screen really is frozen for it.
+ *
+ * Twice the modelled cost, so an ordinary screen change never trips it. */
+#define UI_FRAME_WIRE_MS \
+    ((TFT_WIDTH * TFT_HEIGHT * TFT_PIXEL_WIRE_BYTES * 8) / (DISPLAY_PIXEL_CLOCK_HZ / 1000))
+#define UI_FRAME_RENDER_MS ((TFT_WIDTH * TFT_HEIGHT * 181) / 100000)
+#define UI_REPAINT_WARN_MS (2 * (UI_FRAME_WIRE_MS + UI_FRAME_RENDER_MS))
+
 /* Rows fit or they do not, and the count is the space left over divided by the
  * pitch rather than a number per panel. Landscape comes out at 5 list rows and
  * 6 settings rows, portrait at 7 and 9 - the four literals these replace.

@@ -91,13 +91,30 @@
 #define BOARD_DISPLAY_PORTRAIT 0
 #endif
 
-/* Measured 2026-09-04 at 20 MHz, which is what this board's ILI9341 runs at
- * and was kept deliberately: a panel that stayed dark had to not have "maybe
- * the clock was too high" as an available excuse. It is also the number worth
- * revisiting first if the UI feels slow - a full frame here is 460 800 bytes,
- * about 184 ms at this clock, against 153 600 and 61 ms on the panel this
- * board shipped with. Raising it needs a scope on the bus, not a guess. */
-#define DISPLAY_PIXEL_CLOCK_HZ (20 * 1000 * 1000)
+/* 40 MHz. Brought up at 20 on 2026-09-04 - what this board's ILI9341 runs at,
+ * kept deliberately so a panel that stayed dark could not blame the clock -
+ * and raised on 2026-09-05 once there was a picture to compare.
+ *
+ * The reason to raise it is that this panel spends three bytes on a pixel: a
+ * full frame is 460 800 bytes against the 153 600 of the screen this board
+ * shipped with, and at 20 MHz that is 184 ms of a 344 ms screen change. The
+ * measurement either side, on the player screen's first draw:
+ *
+ *     20 MHz   344 ms, of which 252 in the flush
+ *     40 MHz   249 ms, of which 157 in the flush
+ *
+ * The 95 ms is the wire time halving and nothing else: what the flush costs
+ * beyond it, 65-68 ms of copying and converting 153 600 pixels, does not move,
+ * and neither does the 92 ms LVGL spends producing them.
+ *
+ * Above the ILI9488's own 50 ns write cycle, which is 20 MHz, so this is the
+ * panel being run past its datasheet and holding - the SPI2 pins here are the
+ * ESP32-S3's IOMUX ones (SCLK 12, MOSI 11, CS 10), which is what makes that
+ * plausible rather than lucky. Nothing here was seen on a scope; what was seen
+ * is the picture, which is the check that matters for a bus that is written to
+ * and never read. If a panel on another board shows torn or speckled pixels,
+ * this line is the first thing to put back to 20. */
+#define DISPLAY_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
 
 /* Named for the log line and the error messages, so a boot log says which
  * panel the firmware was built for without anyone reading board_options.h. */

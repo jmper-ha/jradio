@@ -372,12 +372,21 @@ static size_t s_last_files_entry_count;
  * the pick-up below would select the wrong source when a volume appeared. */
 static audio_source_t s_files_unavailable_source = AUDIO_SOURCE_NONE;
 // Autoplay runs once, and only after what it depends on has had time to
-// appear. USB mounts around five seconds in, later still when the root port
-// needs re-enumerating, and a DHCP lease has arrived by three or four - so
-// deciding "no drive" or "no network" any earlier would be deciding it before
-// the answer exists. It is also a cap and not only a wait: a device that will
-// never get either has to stop waiting and show something.
+// appear: deciding "no drive" or "no network" any earlier would be deciding it
+// before the answer exists. Both are caps and not only waits - a device that
+// will never get either has to stop waiting and show something.
+//
+// A drive mounts around five seconds in, later still when the root port needs
+// re-enumerating, so twelve seconds covers it.
 #define UI_AUTOPLAY_WAIT_MS 12000U
+// The network gets its own, longer cap, because it stopped being the three or
+// four seconds a DHCP lease takes. Joining a network whose name is served by
+// more than one access point means walking them until one finishes the
+// handshake, and on the network this was measured on (2026-09-05) the broken
+// one is the louder and is therefore tried first: the address arrives at 10 to
+// 12 seconds, and twelve would have been a coin toss decided by how many times
+// that access point answered the scan.
+#define UI_AUTOPLAY_NETWORK_WAIT_MS 25000U
 static bool s_autoplay_pending;
 static uint32_t s_autoplay_started_ms;
 static bool s_files_list_open_requested;
@@ -3806,8 +3815,10 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
      * at none. Half a second's difference in the DHCP lease and it would have
      * been the other way round. Waiting here settles it before either command
      * is written, and takes the failed DNS lookup and its retry with it. */
+    const bool waited_for_network =
+        (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_NETWORK_WAIT_MS;
     if ((action == UI_AUTOPLAY_RADIO || action == UI_AUTOPLAY_YANDEX) &&
-        !snapshot->wifi_connected && !waited) {
+        !snapshot->wifi_connected && !waited_for_network) {
         return;
     }
     s_autoplay_pending = false;

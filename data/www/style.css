@@ -1053,6 +1053,26 @@ select { min-width: 8.5rem; }
 input[type="text"],
 input[type="password"] { width: 100%; }
 
+/* The field and the button that reveals it, on one line: underneath it would
+   read as a second control rather than as part of the field. The input keeps
+   its width: 100% from above, so it needs a basis of its own here and
+   min-width: 0, or a flex item refuses to shrink below its content and the
+   button is pushed off the card on a narrow phone. */
+.password-field {
+  display: flex;
+  align-items: stretch;
+  gap: .4rem;
+}
+
+.password-field input[type="text"],
+.password-field input[type="password"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+.password-field .secondary-button { flex: 0 0 auto; }
+
 /* A switch rather than a checkbox: beside the volume slider a square box
    looks borrowed, and its state reads worse. */
 input[type="checkbox"] {

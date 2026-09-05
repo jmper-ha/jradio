@@ -26,7 +26,10 @@ class Element {
     this.disabled = false;
     this.dataset = {};
     this.type = '';
+    this.attributes = {};
   }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  getAttribute(name) { return Object.hasOwn(this.attributes, name) ? this.attributes[name] : null; }
   addEventListener(type, callback) { (this.listeners[type] ||= []).push(callback); }
   emit(type, event = {}) {
     event.preventDefault ||= () => {};
@@ -37,7 +40,8 @@ class Element {
 }
 
 const ids = [
-  'socket-state', 'wifi-form', 'wifi-ssid', 'wifi-password', 'wifi-submit',
+  'socket-state', 'wifi-form', 'wifi-ssid', 'wifi-password', 'wifi-password-reveal',
+  'wifi-submit',
   'wifi-status', 'wifi-active', 'wifi-ip', 'saved-networks',
   'saved-networks-empty', 'wifi-add', 'wifi-cancel', 'wifi-scan',
   'wifi-scan-block', 'scan-networks', 'scan-empty', 'wifi-chosen',
@@ -187,10 +191,31 @@ sendEvent(first, snapshot(5, {
 assert.equal(elements['#wifi-active'].textContent, 'home');
 assert.equal(elements['#saved-networks'].children.length, 1);
 
+// The field starts hidden, whatever the markup happened to say.
+assert.equal(elements['#wifi-password'].type, 'password');
+assert.equal(elements['#wifi-password-reveal'].textContent, 'Показать');
+assert.equal(elements['#wifi-password-reveal'].getAttribute('aria-pressed'), 'false');
+
+// And the button shows it, then hides it again.
+elements['#wifi-password-reveal'].emit('click');
+assert.equal(elements['#wifi-password'].type, 'text');
+assert.equal(elements['#wifi-password-reveal'].textContent, 'Скрыть');
+assert.equal(elements['#wifi-password-reveal'].getAttribute('aria-pressed'), 'true');
+elements['#wifi-password-reveal'].emit('click');
+assert.equal(elements['#wifi-password'].type, 'password');
+assert.equal(elements['#wifi-password-reveal'].textContent, 'Показать');
+
 elements['#wifi-ssid'].value = 'new-ap';
 elements['#wifi-password'].value = 'topsecret42';
+// Revealed while it is being typed, which is the whole point of the button.
+elements['#wifi-password-reveal'].emit('click');
+assert.equal(elements['#wifi-password'].type, 'text');
 elements['#wifi-form'].emit('submit');
 assert.equal(elements['#wifi-password'].value, '');
+/* Sending empties the field, and a field left in "text" would then show the
+   next password before anyone asked. */
+assert.equal(elements['#wifi-password'].type, 'password');
+assert.equal(elements['#wifi-password-reveal'].getAttribute('aria-pressed'), 'false');
 assert.equal(elements['#wifi-submit'].disabled, true);
 assert.equal(elements['#wifi-status'].textContent, 'Проверка…');
 assert.deepEqual(JSON.parse(first.sent.at(-1)), {

@@ -5,6 +5,7 @@
   const form = document.querySelector('#wifi-form');
   const ssidInput = document.querySelector('#wifi-ssid');
   const passwordInput = document.querySelector('#wifi-password');
+  const passwordReveal = document.querySelector('#wifi-password-reveal');
   const submitButton = document.querySelector('#wifi-submit');
   const wifiStatus = document.querySelector('#wifi-status');
   const wifiActive = document.querySelector('#wifi-active');
@@ -265,6 +266,29 @@
     if (!error) hideForm();
   }
 
+  /* Shows the password while it is being typed. A field that hides what is in
+     it is where a wrong character goes unnoticed, and on a phone keyboard that
+     is most of them - so the reveal exists. Kept in a variable rather than read
+     back off the input: the state belongs to this page, and reading a DOM
+     attribute to decide what to do to it is how the two drift apart.
+
+     Every path that empties the field turns it off again. The field is cleared
+     the moment a password is sent, and a form left in "text" would then show
+     the *next* password before anyone asked it to. */
+  let passwordVisible = false;
+
+  function setPasswordVisible(visible) {
+    passwordVisible = visible;
+    passwordInput.type = visible ? 'text' : 'password';
+    passwordReveal.textContent = visible ? 'Скрыть' : 'Показать';
+    passwordReveal.setAttribute('aria-pressed', visible ? 'true' : 'false');
+  }
+
+  function clearPassword() {
+    passwordInput.value = '';
+    setPasswordVisible(false);
+  }
+
   function showForm(ssid) {
     chosenSsid = ssid;
     form.hidden = false;
@@ -274,7 +298,7 @@
     wifiChosenName.textContent = ssid || '—';
     wifiSsidRow.hidden = Boolean(ssid);
     if (!ssid) ssidInput.value = '';
-    passwordInput.value = '';
+    clearPassword();
     submitButton.disabled = !connected || saveInFlight;
   }
 
@@ -282,7 +306,7 @@
     chosenSsid = '';
     form.hidden = true;
     ssidInput.value = '';
-    passwordInput.value = '';
+    clearPassword();
   }
 
   function signalLabel(rssi) {
@@ -499,7 +523,7 @@
     // Picked off the list of what is around, or typed in when it was not there.
     const ssid = chosenSsid || ssidInput.value.trim();
     const password = passwordInput.value;
-    passwordInput.value = '';
+    clearPassword();
     if (!connected || saveInFlight || !socket || socket.readyState !== WebSocket.OPEN) return;
     if (!ssid) {
       wifiStatus.textContent = 'Введите название сети';
@@ -837,6 +861,10 @@
   form.addEventListener('submit', submitWifi);
   wifiAdd.addEventListener('click', () => showForm(''));
   wifiCancel.addEventListener('click', () => hideForm());
+  passwordReveal.addEventListener('click', () => setPasswordVisible(!passwordVisible));
+  /* Puts the button's label and aria-pressed where the markup says the field
+     is, rather than trusting the two to have been written to agree. */
+  setPasswordVisible(false);
   wifiScan.addEventListener('click', () => startScan());
   bindDeviceFields();
   yandexLink.addEventListener('click', () => sendYandexAction('begin'));

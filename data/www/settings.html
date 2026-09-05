@@ -171,7 +171,11 @@
               <input id="wifi-ssid" name="ssid" type="text" maxlength="32" autocomplete="off">
             </div>
             <label for="wifi-password">Пароль</label>
-            <input id="wifi-password" name="password" type="password" maxlength="64" autocomplete="new-password">
+            <div class="password-field">
+              <input id="wifi-password" name="password" type="password" maxlength="64" autocomplete="new-password">
+              <button id="wifi-password-reveal" class="secondary-button" type="button"
+                      aria-controls="wifi-password" aria-pressed="false">Показать</button>
+            </div>
             <div class="settings-actions">
               <button id="wifi-submit" class="primary-button" type="submit" disabled>Проверить и сохранить</button>
               <button id="wifi-cancel" class="secondary-button" type="button">Отмена</button>

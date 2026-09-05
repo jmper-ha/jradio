@@ -45,6 +45,21 @@ static void test_the_derived_counts_match_the_measured_panels(void)
     /* 20*17 + 20*5 = 440 px from x=30, ending at 465 on a 480 px panel. */
     assert(UI_VU_SEGMENT_W == 17 && UI_VU_SEGMENT_GAP == 5);
     assert(UI_FEED_SLOTS == 5);
+#elif TFT_WIDTH == 320 && TFT_HEIGHT == 480
+    /* The one shape here no panel has been held up to. These are what the
+     * arithmetic gives on the numbers layout_320x480.h places, and they are
+     * pinned for the same reason as the others: a shape file edited without
+     * looking at what it costs is exactly what this file is for. Nine rows and
+     * ten settings rows is what the extra 160 px of height buys at the bigger
+     * faces - the landscape panel of the same glass gets five and six. */
+    assert(UI_STATION_LIST_MAX_ROWS == 9U);
+    assert(UI_SETTINGS_MAX_ROWS == 10U);
+    /* 20*11 + 19*3 = 277 px from x=30, ending at 307 on a 320 px panel - the
+     * same meter the 320x240 panel draws, since it is the same width. */
+    assert(UI_VU_SEGMENT_W == 11 && UI_VU_SEGMENT_GAP == 3);
+    /* The ring is the landscape ILI9488's, and at 320 px wide its outer pair
+     * falls off both edges - which is the whole of what UI_FEED_SLOTS decides. */
+    assert(UI_FEED_SLOTS == 3);
 #endif
 }
 
@@ -102,6 +117,24 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
     /* Every row stops eight pixels short of the arrows, whatever it carries. */
     assert(UI_SET_ROW_RIGHT == 430);
     /* The ring is drawn at sizes the bitmap generator has to have emitted. */
+    assert(UI_FEED_ICON_SMALL_PX == 32 && UI_FEED_ICON_MEDIUM_PX == 44 &&
+           UI_FEED_ICON_LARGE_PX == 64);
+    assert(UI_FEED_TILE == 120);
+#elif TFT_WIDTH == 320 && TFT_HEIGHT == 480
+    /* The same four faces as the landscape panel of the same glass, for the
+     * reason layout_320x480.h gives: it is the same pitch, and the share of
+     * the screen a face takes is what the eye reads. */
+    assert(UI_FONT_BODY_PX == 18 && UI_FONT_TITLE_PX == 26);
+    assert(UI_FONT_ICON_PX == 32 && UI_FONT_DISPLAY_PX == 48);
+    assert(UI_SRC_LINE_H == 24 && UI_SRC_TRACK_H == 35);
+    /* The tile covers are decoded into, which a portrait panel can afford at
+     * the landscape figure because it is height it is spending, not width. */
+    assert(UI_SRC_ART_SIZE == 160);
+    assert(UI_LIST_ICON_W == 38);
+    assert(UI_LIST_NUMBER_W == 44);
+    /* The chevron column, on a panel 160 px narrower than the landscape one. */
+    assert(UI_SET_CHEVRON_X == 278);
+    assert(UI_SET_ROW_RIGHT == 270);
     assert(UI_FEED_ICON_SMALL_PX == 32 && UI_FEED_ICON_MEDIUM_PX == 44 &&
            UI_FEED_ICON_LARGE_PX == 64);
     assert(UI_FEED_TILE == 120);

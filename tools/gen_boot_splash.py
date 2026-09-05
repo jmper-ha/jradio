@@ -63,6 +63,13 @@ SHAPES = {
     # empty ground than on the smaller screen; that is the rule this file
     # already states rather than a placement nobody thought about.
     (480, 320): dict(tube=(237.0, 144.0), wordmark=(239, 201)),
+    # 320x480: the portrait arrangement, which is the wordmark straight under
+    # the eye rather than crossing it - on a narrow panel there is no room
+    # beside the rim for lettering this wide. The tube is the same part at the
+    # same size as everywhere else, so what is placed is the group: 100 px
+    # between the two, as on the 240x320 panel, and the pair centred on a
+    # canvas half again as tall.
+    (320, 480): dict(tube=(160.0, 204.0), wordmark=(160, 304)),
 }
 WEDGE_CENTER_DEG = 90.0  # 6 o'clock, the way a 6E5 is normally seen
 WEDGE_HALF_DEG = 33.0

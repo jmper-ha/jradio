@@ -819,7 +819,18 @@ static void send_job_work(void *context)
             !send_prepared_frame(job->target_fd, WEB_SOCKET_EVENT_SNAPSHOT,
                                  &frame) ||
             !ready_client_add(job->target_fd)) {
+            /* Four ways to fail and only two of them said so: a frame that
+             * would not serialise and a send that failed log their own reason,
+             * a socket that stopped being a WebSocket logged nothing at all. */
+            ESP_LOGW(TAG, "initial snapshot not delivered fd=%d prepared=%d websocket=%d",
+                     job->target_fd, (int)prepared, (int)websocket);
             close_failed_client(job->target_fd);
+        } else {
+            /* And the size, because the page going empty while the device is
+             * playing is the difference between no snapshot and one the page
+             * could not read. */
+            ESP_LOGI(TAG, "initial snapshot sent fd=%d bytes=%u", job->target_fd,
+                     (unsigned)frame.len);
         }
         secure_zero(&player, sizeof(player));
         secure_zero(&wifi, sizeof(wifi));
@@ -1139,6 +1150,12 @@ static esp_err_t websocket_handler(httpd_req_t *request)
             return ESP_FAIL;
         }
         const int fd = httpd_req_to_sockfd(request);
+        /* The only line that says a handshake arrived. Without it a device
+         * whose player card stays empty logs exactly the same as one nobody
+         * opened the page on, and telling "the browser never reached /ws" from
+         * "it did and the page could not use the answer" needed the user to
+         * open a browser console. */
+        ESP_LOGI(TAG, "WebSocket client connected fd=%d clients=%u", fd, (unsigned)clients);
         ready_client_remove(fd);
         if (!queue_initial_snapshot(fd)) {
             ESP_LOGW(TAG, "initial snapshot queue is busy");

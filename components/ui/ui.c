@@ -4099,10 +4099,15 @@ static void ui_task(void *arg)
             const int64_t started = esp_timer_get_time();
             lv_timer_handler();
             const int64_t took = (esp_timer_get_time() - started) / 1000;
-            // A screen change legitimately repaints all 76800 pixels and costs
-            // about 200 ms, so the threshold sits well above that: what this
-            // is watching for is a pass that never ends.
-            if (took > 400) {
+            // A screen change legitimately repaints every pixel on the panel,
+            // and what that costs is the panel's, not a constant: 200 ms on
+            // the 320x240 screen this was written against, 442 on the
+            // 480x320 one - which warned about the first draw of its player
+            // screen every boot, for a frame that was doing exactly what it
+            // had been asked to. The threshold is derived from the panel in
+            // ui_layout.h and still comes out at the 400 ms that used to be
+            // typed here on the first one.
+            if (took > UI_REPAINT_WARN_MS) {
                 lv_obj_t *active = lv_screen_active();
                 ESP_LOGW(TAG, "slow repaint: %dms on %s", (int)took,
                          active == s_source_screen    ? "player"

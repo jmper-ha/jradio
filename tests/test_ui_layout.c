@@ -108,6 +108,23 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
 #endif
 }
 
+static void test_the_slow_repaint_threshold_follows_the_panel(void)
+{
+    /* Above a full repaint on every panel, or the warning fires on an
+     * ordinary screen change - which is what it did on the 480x320 panel
+     * while it was a constant. */
+    assert(UI_REPAINT_WARN_MS > UI_FRAME_WIRE_MS + UI_FRAME_RENDER_MS);
+    /* And not so far above it that a pass which never ends looks normal. Ten
+     * seconds is the frozen screen this exists to name. */
+    assert(UI_REPAINT_WARN_MS < 10000);
+#if TFT_WIDTH == 320 && TFT_HEIGHT == 240
+    /* The panel the number was measured on, and the reason it is written as a
+     * derivation rather than a table: it reproduces what was there. */
+    assert(UI_FRAME_WIRE_MS == 61);
+    assert(UI_REPAINT_WARN_MS == 400);
+#endif
+}
+
 static void test_the_windows_hold_together(void)
 {
     /* Rows start below the strip and the last one leaves room for what closes
@@ -166,6 +183,7 @@ int main(void)
 {
     test_the_derived_counts_match_the_measured_panels();
     test_the_layout_measures_in_the_faces_it_declares();
+    test_the_slow_repaint_threshold_follows_the_panel();
     test_the_windows_hold_together();
     test_the_strip_slots_stay_in_their_lanes();
     test_the_player_stacks_downwards();

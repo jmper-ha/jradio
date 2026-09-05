@@ -230,6 +230,8 @@
 #include "layout/layout_240x320.h"
 #elif TFT_WIDTH == 480 && TFT_HEIGHT == 320
 #include "layout/layout_480x320.h"
+#elif TFT_WIDTH == 320 && TFT_HEIGHT == 480
+#include "layout/layout_320x480.h"
 #else
 #error "no layout for this panel shape - copy components/ui/include/layout/layout_320x240.h to layout_<TFT_WIDTH>x<TFT_HEIGHT>.h, place the blocks it lists on the screen, and add an arm above"
 #endif

@@ -106,6 +106,14 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
            UI_FEED_ICON_LARGE_PX == 64);
     assert(UI_FEED_TILE == 120);
 #endif
+
+    /* The note on an empty cover tile is a bitmap sized by the shape, and the
+     * whole point of that is that it follows the tile. Two thirds of the
+     * square on every panel: the glyph it replaced was 48 px of ink in a 96 px
+     * tile, and 0.75 of a 64 px box is that same 48. A shape that grew its
+     * tile and left the note behind - which is what the display face forced
+     * for a while - would pass every assertion in the header. */
+    assert(UI_SRC_ART_NOTE_PX == (UI_SRC_ART_SIZE * 2 + 1) / 3);
 }
 
 static void test_the_slow_repaint_threshold_follows_the_panel(void)

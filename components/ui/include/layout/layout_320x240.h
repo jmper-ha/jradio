@@ -88,3 +88,10 @@
 #define UI_FONT_TITLE_PX 20
 #define UI_FONT_ICON_PX 24
 #define UI_FONT_DISPLAY_PX 48
+
+/* The note drawn on an empty cover tile. It was the display face's one glyph
+ * until 2026-09-05 and is a bitmap now, because a face cannot follow a tile
+ * this one outgrew - see tools/gen_feed_icons.py. Two thirds of the 96 px
+ * tile, which is a note half its height: the same ink the FontAwesome glyph
+ * at Montserrat 48 put there, so this panel does not change. */
+#define UI_SRC_ART_NOTE_PX 64

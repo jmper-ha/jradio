@@ -122,9 +122,18 @@
  * board shipped with holds, at text half again the size. */
 #define UI_FONT_BODY_PX 18
 #define UI_FONT_TITLE_PX 26
-/* 32, a step up like the text faces. The display face cannot follow: 48 is the
- * largest Montserrat LVGL ships, so the note standing in for a missing cover
- * is the one glyph on this panel still sized for the smaller one - inside a
- * 160 px tile it has room it cannot use. */
+/* 32, a step up like the text faces. */
 #define UI_FONT_ICON_PX 32
+/* The display face cannot take that step - 48 is the largest Montserrat LVGL
+ * ships - and for a while that made the note standing in for a missing cover
+ * the one glyph on this panel still sized for the smaller one, with room
+ * inside a 160 px tile it could not use. The note is a bitmap now and this
+ * face is left with the one job that is genuinely text: the Yandex pairing
+ * code, read off the panel from a distance. */
 #define UI_FONT_DISPLAY_PX 48
+
+/* The note itself, at the same share of the tile the smaller panels give it -
+ * two thirds of the square, which is a note half its height. A size
+ * tools/gen_feed_icons.py has to have drawn; one it never drew is a link
+ * error rather than a blank tile. */
+#define UI_SRC_ART_NOTE_PX 107

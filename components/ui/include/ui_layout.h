@@ -385,6 +385,12 @@ _Static_assert(UI_SRC_FOOT_Y + UI_SRC_LINE_H <= TFT_HEIGHT,
  * a rule drawn across the album art. */
 _Static_assert(UI_SRC_ART_Y + UI_SRC_ART_SIZE <= UI_SRC_RULE_TOP,
                "the player's cover art runs into the rule below it");
+/* And the note that stands in for a missing cover has to sit inside the tile
+ * it is centred on. It is a bitmap and not a face any more, so nothing bounds
+ * it from above the way LVGL's largest Montserrat bounded the glyph: a shape
+ * that asked for a note bigger than its square would draw one clipped to it. */
+_Static_assert(UI_SRC_ART_NOTE_PX <= UI_SRC_ART_SIZE,
+               "the player's empty-cover note is bigger than the tile it sits in");
 /* The rows a shape file places have to stay in order and clear the footer;
  * a transposed pair reads as a plausible layout right up to the screen. */
 _Static_assert(UI_SRC_ROW_TITLE <= UI_SRC_ROW_TRACK &&

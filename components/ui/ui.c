@@ -48,6 +48,14 @@
 #include "album_art.h"
 #include "ui_vu_meter.h"
 
+/* The note on an empty cover tile, named at the size the shape file asks for.
+ * Two levels so the size macro is expanded before it is pasted, the same shape
+ * ui_fonts.h uses for its faces and ui_feed_icons.c for the carousel's
+ * bitmaps; a size the generator never drew is a link error rather than a
+ * blank tile. */
+#define UI_SRC_ART_NOTE_(px) ui_feed_icon_music_note_##px
+#define UI_SRC_ART_NOTE(px) UI_SRC_ART_NOTE_(px)
+
 #define UI_DRAW_BUFFER_LINES 20
 #define UI_DRAW_BUFFER_SIZE ui_rgb565_draw_buffer_size(TFT_WIDTH, UI_DRAW_BUFFER_LINES)
 #define UI_INPUT_QUEUE_LENGTH 16
@@ -189,6 +197,12 @@ static ui_status_strip_t s_feed_strip;
 static ui_status_strip_t s_list_strip;
 static ui_status_strip_t s_yandex_strip;
 static lv_obj_t *s_source_art;
+/* The note drawn on the empty tile, its own object rather than the tile's
+ * text: it is a bitmap now, and it is hidden while a cover is up. It used to
+ * be left underneath, which was invisible only as long as every cover was
+ * square and filled the tile - a portrait picture is fitted inside the square
+ * and leaves a margin down each side for the note to show through. */
+static lv_obj_t *s_source_art_note;
 /* The cover sits on top of the placeholder tile rather than replacing it. The
  * two change over often - every track, and back to nothing the moment the
  * radio is selected - and showing or hiding one object is steadier than
@@ -2557,7 +2571,13 @@ static void ui_update_cover(void)
         // Back to the placeholder, which is what the tile shows for a file
         // with no cover and for the radio.
         lv_obj_add_flag(s_source_cover, LV_OBJ_FLAG_HIDDEN);
+        if (s_source_art_note != NULL) {
+            lv_obj_clear_flag(s_source_art_note, LV_OBJ_FLAG_HIDDEN);
+        }
         return;
+    }
+    if (s_source_art_note != NULL) {
+        lv_obj_add_flag(s_source_art_note, LV_OBJ_FLAG_HIDDEN);
     }
 
     s_source_cover_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
@@ -2591,9 +2611,9 @@ static void ui_create_source_screen(void)
 
     ui_status_strip_create(s_source_screen, &s_source_strip, "");
 
-    // Stands in for the cover art that is not implemented yet. A symbol on a
-    // tile keeps the composition; an empty square would read as a fault.
-    s_source_art = lv_label_create(s_source_screen);
+    // Stands in for a cover the track does not carry. A note on a tile keeps
+    // the composition; an empty square would read as a fault.
+    s_source_art = lv_obj_create(s_source_screen);
     lv_obj_set_pos(s_source_art, UI_SRC_ART_X, UI_SRC_ART_Y);
     lv_obj_set_size(s_source_art, UI_SRC_ART_SIZE, UI_SRC_ART_SIZE);
     lv_obj_set_style_bg_color(s_source_art, lv_color_hex(UI_COLOR_TILE), 0);
@@ -2601,11 +2621,20 @@ static void ui_create_source_screen(void)
     lv_obj_set_style_border_color(s_source_art, lv_color_hex(UI_COLOR_TILE_EDGE), 0);
     lv_obj_set_style_border_width(s_source_art, 1, 0);
     lv_obj_set_style_radius(s_source_art, 3, 0);
-    lv_obj_set_style_text_color(s_source_art, lv_color_hex(0x3E5060), 0);
-    lv_obj_set_style_text_font(s_source_art, UI_FONT_DISPLAY, 0);
-    lv_obj_set_style_text_align(s_source_art, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_pad_top(s_source_art, 24, 0);
-    lv_label_set_text(s_source_art, LV_SYMBOL_AUDIO);
+    lv_obj_set_style_pad_all(s_source_art, 0, 0);
+    lv_obj_clear_flag(s_source_art, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* An A8 bitmap and not a glyph in the display face. The face stops at
+     * Montserrat 48, which LVGL ships nothing larger than, so on the 480x320
+     * panel the note stayed the size it had been drawn at for a 96 px tile
+     * while the tile around it grew to 160. The size is the shape file's now,
+     * and the colour is the recolour LVGL blends an alpha-only image with -
+     * the same mechanism the carousel dims its neighbours through. */
+    s_source_art_note = lv_image_create(s_source_art);
+    lv_image_set_src(s_source_art_note, &UI_SRC_ART_NOTE(UI_SRC_ART_NOTE_PX));
+    lv_obj_set_style_image_recolor(s_source_art_note, lv_color_hex(0x3E5060), 0);
+    lv_obj_set_style_image_recolor_opa(s_source_art_note, LV_OPA_COVER, 0);
+    lv_obj_center(s_source_art_note);
 
     // Created here and left empty: it is given a source the first time a file
     // with a cover is opened, and hidden again whenever there is none.

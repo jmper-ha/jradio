@@ -517,6 +517,31 @@ with several attached, name the right one in `ESPPORT`.
 Every task works on Windows except "Host tests": those want a POSIX shell and a
 gcc with sanitizers, so Linux, macOS or WSL.
 
+**The first build reaches the internet,** and not only for the framework. The
+component manager fetches what `idf_component.yml` names - LVGL, the codecs,
+the panel drivers - and the littlefs component builds a virtualenv of its own
+and installs `littlefs-python` from PyPI into it, which is what turns `data/`
+into a partition image. After that everything lives in `managed_components/`
+and `build/` and is not fetched again.
+
+A network hiccup during that step ends the build like this:
+
+```
+ERROR: Could not find a version that satisfies the requirement littlefs-python==0.15.0
+ninja: build stopped: subcommand failed.
+```
+
+The message misleads - you are building firmware and not thinking about a data
+image - but running `idf.py build` again is the whole fix: what compiled is
+kept and only the missing piece is fetched. Where PyPI is permanently out of
+reach (a corporate network, a proxy), pip's ordinary settings apply to this
+virtualenv too - `PIP_INDEX_URL` and `PIP_PROXY`.
+
+One more network step exists but only when regenerating fonts:
+[`tools/gen_ui_fonts.sh`](tools/gen_ui_fonts.sh) calls `npx lv_font_conv` from
+npm. An ordinary build needs none of it - the generated faces are in the
+repository.
+
 The same from a terminal:
 
 ```bash

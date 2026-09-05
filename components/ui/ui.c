@@ -3513,15 +3513,30 @@ static void ui_handle_input(board_input_action_t action)
             ui_click_gesture_cancel(&s_player_click);
             ui_click_gesture_cancel(&s_like_click);
             ui_show_menu();
-        } else if (has_list && action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
-            // Double click opens the list, triple click starts scrubbing, and
-            // both leave playback alone; the single click that toggles
-            // play/pause is delivered later, from the poll loop, once no
-            // further press has arrived.
+        } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
+            /* Every press, whether or not this screen has a list behind it.
+             *
+             * It used to be taken only when it had one, and a source of none
+             * is a screen with none: after a boot where autoplay opened the
+             * player and the start it asked for never happened, the screen sat
+             * saying "stopped" with the press dead - the home screen was the
+             * only way out, and the one control that means "play" did nothing.
+             * The command was never the problem: TOGGLE on a stopped player
+             * decides START_SAVED, and the executor adopts the radio when no
+             * source has been chosen yet, which is exactly what a press there
+             * should do.
+             *
+             * Double click opens the list, triple click starts scrubbing, and
+             * both leave playback alone; the single click that toggles
+             * play/pause is delivered later, from the poll loop, once no
+             * further press has arrived. */
             switch (ui_click_gesture_press(&s_player_click, ui_tick_get_ms(),
                                            ui_seek_available())) {
             case UI_CLICK_DOUBLE:
-                ui_open_source_list(source);
+                /* Only where there is one to open. With no source the double
+                 * is spent rather than acted on, and the single that follows
+                 * it is what starts the music. */
+                if (has_list) ui_open_source_list(source);
                 break;
             case UI_CLICK_TRIPLE:
                 ui_begin_seek();

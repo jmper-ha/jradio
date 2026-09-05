@@ -24,6 +24,32 @@ static void test_active_station_is_not_restarted(void)
     assert(player_control_decide(&state, &command) == PLAYER_OPERATION_NONE);
 }
 
+/* The same reboot, seen from the player screen rather than the list: autoplay
+   opens it, the start it asked for never happens, and what is left is a screen
+   saying "stopped" with no source. A press of the encoder is a TOGGLE, and it
+   has to start something - the executor adopts the radio when nothing has been
+   chosen. ui.c used to drop the press before it got this far, which is what
+   made that screen a dead end. */
+static void test_toggle_starts_the_saved_station_without_a_selected_source(void)
+{
+    player_snapshot_t state = {.wifi_connected = true, .active_source = AUDIO_SOURCE_NONE,
+                               .playback_state = PLAYER_PLAYBACK_STOPPED};
+    player_command_t command = {.kind = PLAYER_COMMAND_TOGGLE};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_START_SAVED);
+    /* And after a failed attempt, which is the other way that screen is
+       reached. */
+    state.playback_state = PLAYER_PLAYBACK_ERROR;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_START_SAVED);
+    /* Accepted even with no network, unlike a press on a row in the list. The
+       asymmetry is deliberate: the row press has a station to refuse, while
+       this one is the only control on a screen that is otherwise doing
+       nothing. Started, the radio reports a connection error - which is an
+       answer. Refusing in silence is the fault this test exists for. */
+    state.wifi_connected = false;
+    state.playback_state = PLAYER_PLAYBACK_STOPPED;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_START_SAVED);
+}
+
 /* After a reboot no source is selected, yet both screens already show the
    station list: a press on a row must start the station rather than vanish. */
 static void test_station_starts_without_a_selected_source(void)
@@ -619,6 +645,7 @@ int main(void)
     test_usb_state_maps_to_public_playback_state();
     test_active_station_is_not_restarted();
     test_failed_active_station_can_be_retried();
+    test_toggle_starts_the_saved_station_without_a_selected_source();
     test_station_starts_without_a_selected_source();
     test_station_index_past_the_catalog_is_refused_without_a_source();
     test_a_stream_test_is_always_accepted();

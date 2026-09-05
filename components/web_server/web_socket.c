@@ -504,6 +504,11 @@ static wifi_secret_slot_t s_wifi_secrets[WEB_SOCKET_WIFI_QUEUE_LENGTH];
 static bool s_wifi_command_busy;
 static int s_ready_clients[WEB_SOCKET_MAX_CLIENTS];
 static bool s_ready_client_used[WEB_SOCKET_MAX_CLIENTS];
+/* Clients whose snapshot is queued but not yet sent. Without it the sweep
+ * below would queue a second one for every client in the window between the
+ * handshake and the job running. */
+static int s_snapshot_requested[WEB_SOCKET_MAX_CLIENTS];
+static bool s_snapshot_requested_used[WEB_SOCKET_MAX_CLIENTS];
 static player_snapshot_t s_published_player;
 static web_socket_wifi_state_t s_published_wifi;
 static web_socket_settings_state_t s_published_settings;
@@ -591,8 +596,51 @@ static void wifi_secret_release(uint8_t slot)
     taskEXIT_CRITICAL(&s_state_lock);
 }
 
+static void snapshot_requested_remove(int fd)
+{
+    for (size_t index = 0U; index < WEB_SOCKET_MAX_CLIENTS; ++index) {
+        if (s_snapshot_requested_used[index] && s_snapshot_requested[index] == fd) {
+            s_snapshot_requested_used[index] = false;
+            s_snapshot_requested[index] = -1;
+        }
+    }
+}
+
+static void snapshot_requested_add(int fd)
+{
+    snapshot_requested_remove(fd);
+    for (size_t index = 0U; index < WEB_SOCKET_MAX_CLIENTS; ++index) {
+        if (!s_snapshot_requested_used[index]) {
+            s_snapshot_requested_used[index] = true;
+            s_snapshot_requested[index] = fd;
+            return;
+        }
+    }
+}
+
+static bool client_is_known(int fd)
+{
+    for (size_t index = 0U; index < WEB_SOCKET_MAX_CLIENTS; ++index) {
+        if (s_ready_client_used[index] && s_ready_clients[index] == fd) return true;
+        if (s_snapshot_requested_used[index] && s_snapshot_requested[index] == fd) return true;
+    }
+    return false;
+}
+
+static size_t known_client_count(void)
+{
+    size_t count = 0U;
+    for (size_t index = 0U; index < WEB_SOCKET_MAX_CLIENTS; ++index) {
+        if (s_ready_client_used[index] || s_snapshot_requested_used[index]) ++count;
+    }
+    return count;
+}
+
+/* Every path that lets a client go calls this, so clearing the queued mark
+ * here keeps the two lists from drifting apart in any of them. */
 static void ready_client_remove(int fd)
 {
+    snapshot_requested_remove(fd);
     for (size_t index = 0U; index < WEB_SOCKET_MAX_CLIENTS; ++index) {
         if (s_ready_client_used[index] && s_ready_clients[index] == fd) {
             s_ready_client_used[index] = false;
@@ -892,7 +940,11 @@ static bool queue_initial_snapshot(int fd)
     }
     job->initial_snapshot = true;
     job->target_fd = fd;
-    return queue_send_job(job);
+    if (!queue_send_job(job)) {
+        return false;
+    }
+    snapshot_requested_add(fd);
+    return true;
 }
 
 static void wifi_worker_task(void *context)
@@ -946,12 +998,69 @@ static void wifi_worker_task(void *context)
     vTaskDelete(NULL);
 }
 
+/* Runs on the HTTP server task, where the client lists live.
+ *
+ * The handshake handler is not a reliable place to learn that a client
+ * arrived. Up to ESP-IDF 5.5.4 httpd_uri() answered the handshake and then
+ * called the URI handler, which is where the snapshot was queued from; 5.5.5
+ * returns as soon as the handshake is answered - "If the request is websocket
+ * handshake, then do not call the uri->handler" - so on that version nothing
+ * of ours ever heard about the client. The browser got its 101, the page waited
+ * for a snapshot that was never queued, and every REST-driven part of the web
+ * UI went on working, which is what made it look like anything but this.
+ *
+ * So the truth is taken from the server instead of from being called: any
+ * socket the server counts as a WebSocket and we have neither answered nor
+ * queued for is a client that has just arrived. That holds on both versions
+ * and needs no version test - on 5.5.4 the handler has already queued the
+ * snapshot and this finds nothing to do.
+ *
+ * The client limit rides along for the same reason: it used to be enforced in
+ * the handshake handler, which 5.5.5 does not call either. */
+static void adopt_new_clients(void)
+{
+    if (s_server == NULL) return;
+    int fds[WEB_SOCKET_CLIENT_FD_CAPACITY];
+    size_t count = WEB_SOCKET_CLIENT_FD_CAPACITY;
+    if (httpd_get_client_list(s_server, &count, fds) != ESP_OK) return;
+    for (size_t index = 0U; index < count; ++index) {
+        const int fd = fds[index];
+        if (httpd_ws_get_fd_info(s_server, fd) != HTTPD_WS_CLIENT_WEBSOCKET) continue;
+        if (client_is_known(fd)) continue;
+        if (known_client_count() >= WEB_SOCKET_MAX_CLIENTS) {
+            ESP_LOGW(TAG, "WebSocket client limit reached: %u of %u",
+                     (unsigned)known_client_count() + 1U, (unsigned)WEB_SOCKET_MAX_CLIENTS);
+            (void)httpd_sess_trigger_close(s_server, fd);
+            continue;
+        }
+        ESP_LOGI(TAG, "WebSocket client adopted fd=%d clients=%u", fd,
+                 (unsigned)known_client_count() + 1U);
+        if (!queue_initial_snapshot(fd)) {
+            // Out of job slots for the moment; the next sweep picks it up.
+            ESP_LOGW(TAG, "initial snapshot queue is busy");
+        }
+    }
+}
+
+static void adopt_work(void *context)
+{
+    (void)context;
+    adopt_new_clients();
+}
+
 static void broadcaster_task(void *context)
 {
     (void)context;
     TickType_t last_wake = xTaskGetTickCount();
 
     while (atomic_load_explicit(&s_running, memory_order_acquire)) {
+        /* Cheap enough to do every cycle: it is one message on the server's
+         * control socket, and the alternative - waiting for something to
+         * broadcast - would leave a page blank for as long as the device had
+         * nothing to say, which on a stopped player is forever. */
+        if (s_server != NULL) {
+            (void)httpd_queue_work(s_server, adopt_work, NULL);
+        }
         player_snapshot_t player;
         web_socket_wifi_state_t wifi;
         web_socket_settings_state_t settings;

@@ -46,7 +46,7 @@ static void test_the_derived_counts_match_the_measured_panels(void)
     assert(UI_VU_SEGMENT_W == 17 && UI_VU_SEGMENT_GAP == 5);
     assert(UI_FEED_SLOTS == 5);
 #elif TFT_WIDTH == 320 && TFT_HEIGHT == 480
-    /* The one shape here no panel has been held up to. These are what the
+    /* Derived, then seen on the panel 2026-09-05. These are what the
      * arithmetic gives on the numbers layout_320x480.h places, and they are
      * pinned for the same reason as the others: a shape file edited without
      * looking at what it costs is exactly what this file is for. Nine rows and

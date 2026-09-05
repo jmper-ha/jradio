@@ -2,11 +2,12 @@
 
 /* Portrait 320x480: the ILI9488 stood on end, added 2026-09-05.
  *
- * Placed, not measured. No portrait ILI9488 has been built - display/ili9488.h
- * says the same about its MADCTL baseline - so every number here is a first
- * placement and a candidate to be moved once somebody has looked at the
- * result. What is not a guess is that it fits: ui_layout.h's assertions and
- * tests/test_ui_layout.c hold on these values.
+ * Placed by arithmetic rather than moved about on a screen - what fits is
+ * ui_layout.h's assertions and tests/test_ui_layout.c - and then built,
+ * flashed and looked at the same day, which is where it stopped being a
+ * proposal. Nothing needed moving, so every number below is a first placement
+ * that happened to be right, not one that was worked for; a later eye is more
+ * likely to find something here than in the 320x240 file beside it.
  *
  * It is the 240x320 shape's arrangement - the cover above the names, the
  * readings in the column beside it - carried onto a panel a third wider and

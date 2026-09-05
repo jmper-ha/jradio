@@ -13,7 +13,7 @@
  * differently coloured corners, and the answers came back off the glass. The
  * panel bus has no MISO, so nothing here could be read out of the controller -
  * every value is what the screen showed, and that is the only way it can be.
- * Portrait has not been built and says so where it guesses. */
+ * Portrait was brought up the same way on 2026-09-05, on the same glass. */
 
 /* Measured 2026-09-04: red, green, blue and yellow all came back as drawn with
  * the driver put in BGR, the same way round as the ILI9341. */
@@ -62,10 +62,11 @@
 #define TFT_WIDTH 320
 #define TFT_HEIGHT 480
 #define TFT_SWAP_XY 0
-/* Not measured: no portrait ILI9488 has been built. The pair below is what
- * clearing MV from the measured landscape baseline suggests, which on the
- * ILI9341 was exactly the reasoning that came out wrong - it is here so the
- * build works and not because anybody has seen it. Look at the screen. */
+/* Confirmed on the panel 2026-09-05. This pair is what clearing MV from the
+ * measured landscape baseline suggests, and it was written down as a guess
+ * because on the ILI9341 that same reasoning came out wrong - so it stood
+ * until somebody had looked. Somebody has: the firmware was built for this
+ * shape and the picture came up the right way up. */
 #define TFT_MIRROR_X 0
 #define TFT_MIRROR_Y 0
 

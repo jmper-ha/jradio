@@ -267,6 +267,31 @@ static esp_err_t wifi_configure_current_network(void)
     const size_t password_length = bounded_length(network->password, WIFI_SETTINGS_PASSWORD_MAX_LEN);
     memcpy(config.sta.ssid, network->ssid, ssid_length);
     memcpy(config.sta.password, network->password, password_length);
+    /* One name can stand for several access points, and they do not all work.
+     * A default connect is a fast scan: it walks the channels from the first
+     * and stops at the first answer to the name, which on a flash with no
+     * stored last-connection is whichever access point happens to sit on the
+     * low channels. Seen on 2026-09-05: a repeater on channel 1 associated and
+     * then let the WPA2 handshake time out (reason 15, which reads exactly
+     * like a wrong password) while the router on channel 8 took the same
+     * password without complaint. Scanning every channel and sorting by signal
+     * costs about two seconds per connect and picks the one that can be heard.
+     *
+     * failure_retry_cnt is the other half and only works with the full scan:
+     * without it the driver reports the failure and we start over from a fresh
+     * config, which erases its memory of what just refused us - so every retry
+     * repeated the first one and the radio never reached the other access
+     * point at all.
+     *
+     * One retry, not three. The bad access point is the *stronger* of the two
+     * here, so sorting by signal offers it first at every boot and whatever is
+     * spent on it is spent every time: measured 2026-09-05, three retries cost
+     * four attempts of three seconds each and reached the router at 16 s, one
+     * retry reaches it at 7 s. A network that really is just flaky loses
+     * nothing - it comes round again on the next attempt. */
+    config.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    config.sta.failure_retry_cnt = 1;
     char ssid[WIFI_SETTINGS_SSID_MAX_LEN + 1U];
     snprintf(ssid, sizeof(ssid), "%s", network->ssid);
     status_set_connection(WIFI_PROVISIONING_STA_CONNECTING, ssid, "");
@@ -393,15 +418,12 @@ static void wifi_reconnect_task(void *arg)
         status_set_connection(WIFI_PROVISIONING_STA_CONNECTING,
                               status.active_ssid, "");
         status_set_error(command.reason);
-        wifi_ap_record_t ap_info = {0};
-        const esp_err_t ap_info_err = esp_wifi_sta_get_ap_info(&ap_info);
-        if (ap_info_err == ESP_OK) {
-            ESP_LOGI(TAG, "AP diagnostics: rssi=%d channel=%u authmode=%u pairwise=%u",
-                     ap_info.rssi, (unsigned)ap_info.primary, (unsigned)ap_info.authmode,
-                     (unsigned)ap_info.pairwise_cipher);
-        } else {
-            ESP_LOGI(TAG, "AP diagnostics unavailable err=%s", esp_err_to_name(ap_info_err));
-        }
+        /* This is where the access point used to be described, from
+         * esp_wifi_sta_get_ap_info(). It never once answered: by the time a
+         * disconnect has reached this task there is no connection left to ask
+         * about, so the line only ever printed "unavailable" and buried the
+         * reason it was printed next to. The event handler logs the address
+         * and signal instead, from the event, where they actually are. */
         taskENTER_CRITICAL(&s_settings_lock);
         const bool retry_current = s_retry_count < WIFI_PROVISIONING_RETRIES_PER_NETWORK;
         if (retry_current) {
@@ -410,8 +432,8 @@ static void wifi_reconnect_task(void *arg)
         const uint8_t retry_count = s_retry_count;
         taskEXIT_CRITICAL(&s_settings_lock);
         if (retry_current) {
-            ESP_LOGW(TAG, "station disconnected reason=%u retry=%u", (unsigned)command.reason,
-                     (unsigned)retry_count);
+            ESP_LOGW(TAG, "retrying after reason=%u retry=%u/%u", (unsigned)command.reason,
+                     (unsigned)retry_count, (unsigned)WIFI_PROVISIONING_RETRIES_PER_NETWORK);
             const esp_err_t err = wifi_connect_current_network();
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "station reconnect failed err=%s", esp_err_to_name(err));
@@ -458,6 +480,15 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         return;
     }
     const wifi_event_sta_disconnected_t *disconnected = event_data;
+    /* Which access point refused, not just why. A reason on its own cannot be
+     * read: reason 15 is the handshake timing out, and that is what a wrong
+     * password looks like *and* what one bad access point of a multi-AP
+     * network looks like. The address separates them at a glance. It has to be
+     * taken here because it exists nowhere else - esp_wifi_sta_get_ap_info()
+     * needs a connection, which by now is exactly what is missing. */
+    ESP_LOGW(TAG, "station disconnected from " MACSTR " reason=%u rssi=%d",
+             MAC2STR(disconnected->bssid), (unsigned)disconnected->reason,
+             (int)disconnected->rssi);
     const wifi_provisioning_status_t status = wifi_provisioning_status();
     if (!wifi_provisioning_should_reconnect(status.mode) || s_reconnect_queue == NULL) {
         return;

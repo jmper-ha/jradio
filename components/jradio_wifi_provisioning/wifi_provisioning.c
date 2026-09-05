@@ -32,6 +32,33 @@
 
 static const char *TAG = "wifi_mgr";
 
+/* Where the last working access point of each network was found. Scanning
+ * every channel and walking the answers is what makes joining reliable, and it
+ * costs ten seconds on a network whose broken access point is the louder one -
+ * every boot, because the sort puts it first every time. The address of the
+ * one that worked turns that back into about a second, and is worth keeping
+ * across a reboot for exactly that reason.
+ *
+ * Kept in RAM and written through to NVS, so the connect path never reads
+ * flash. An entry survives the network being deleted; it is only ever looked
+ * up by name, so a stale one is never consulted. */
+#define WIFI_AP_HINT_NAMESPACE "jradio_wifi"
+#define WIFI_AP_HINT_KEY "ap_hints"
+
+typedef struct {
+    char ssid[WIFI_SETTINGS_SSID_MAX_LEN + 1U];
+    uint8_t bssid[6];
+    uint8_t channel;
+} wifi_ap_hint_t;
+
+static wifi_ap_hint_t s_ap_hints[WIFI_SETTINGS_MAX_NETWORKS];
+/* Filled when the association succeeds, promoted to the table only once an
+ * address has arrived: an access point that completes the handshake and then
+ * has no lease to give is not one worth going back to first. */
+static wifi_ap_hint_t s_ap_hint_seen;
+static bool s_ap_hint_confirmed;
+static portMUX_TYPE s_ap_hint_lock = portMUX_INITIALIZER_UNLOCKED;
+
 static bool s_initialized;
 static bool s_started;
 static bool s_wifi_started;
@@ -108,6 +135,86 @@ static bool take_pending_disconnect(uint8_t *reason)
     }
     taskEXIT_CRITICAL(&s_pending_lock);
     return pending;
+}
+
+static void wifi_ap_hints_load(void)
+{
+    nvs_handle_t handle;
+    if (nvs_open(WIFI_AP_HINT_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) {
+        return;
+    }
+    size_t size = sizeof(s_ap_hints);
+    /* A blob of any other length was written by a different layout of this
+     * struct; discarding it costs one slow connect and is the whole of the
+     * versioning this needs. */
+    if (nvs_get_blob(handle, WIFI_AP_HINT_KEY, s_ap_hints, &size) != ESP_OK ||
+        size != sizeof(s_ap_hints)) {
+        memset(s_ap_hints, 0, sizeof(s_ap_hints));
+    }
+    nvs_close(handle);
+}
+
+static void wifi_ap_hints_save(void)
+{
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(WIFI_AP_HINT_NAMESPACE, NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "cannot store the access point hint err=%s", esp_err_to_name(err));
+        return;
+    }
+    err = nvs_set_blob(handle, WIFI_AP_HINT_KEY, s_ap_hints, sizeof(s_ap_hints));
+    if (err == ESP_OK) err = nvs_commit(handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "cannot store the access point hint err=%s", esp_err_to_name(err));
+    }
+    nvs_close(handle);
+}
+
+static bool wifi_ap_hint_lookup(const char *ssid, wifi_ap_hint_t *hint)
+{
+    for (size_t index = 0U; index < WIFI_SETTINGS_MAX_NETWORKS; ++index) {
+        if (s_ap_hints[index].ssid[0] != '\0' &&
+            strncmp(s_ap_hints[index].ssid, ssid, WIFI_SETTINGS_SSID_MAX_LEN) == 0) {
+            *hint = s_ap_hints[index];
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Called from the reconnect task, so it may touch flash. Writes only when the
+ * access point actually changed - a reboot onto the same one must not cost an
+ * erase cycle. */
+static void wifi_ap_hint_flush(void)
+{
+    wifi_ap_hint_t hint = {0};
+    taskENTER_CRITICAL(&s_ap_hint_lock);
+    const bool confirmed = s_ap_hint_confirmed;
+    if (confirmed) {
+        hint = s_ap_hint_seen;
+        s_ap_hint_confirmed = false;
+    }
+    taskEXIT_CRITICAL(&s_ap_hint_lock);
+    if (!confirmed || hint.ssid[0] == '\0') return;
+
+    size_t slot = WIFI_SETTINGS_MAX_NETWORKS;
+    for (size_t index = 0U; index < WIFI_SETTINGS_MAX_NETWORKS; ++index) {
+        if (strncmp(s_ap_hints[index].ssid, hint.ssid, WIFI_SETTINGS_SSID_MAX_LEN) == 0) {
+            slot = index;
+            break;
+        }
+        if (s_ap_hints[index].ssid[0] == '\0' && slot == WIFI_SETTINGS_MAX_NETWORKS) {
+            slot = index;
+        }
+    }
+    /* The table is as long as the list of networks, so a full one means every
+     * slot belongs to a network that was deleted. Any of them will do. */
+    if (slot == WIFI_SETTINGS_MAX_NETWORKS) slot = 0U;
+    if (memcmp(&s_ap_hints[slot], &hint, sizeof(hint)) == 0) return;
+    s_ap_hints[slot] = hint;
+    wifi_ap_hints_save();
+    ESP_LOGI(TAG, "remembered " MACSTR " channel=%u for ssid=%s", MAC2STR(hint.bssid),
+             (unsigned)hint.channel, hint.ssid);
 }
 
 static void status_set_connection(wifi_provisioning_mode_t mode, const char *ssid,
@@ -289,15 +396,36 @@ static esp_err_t wifi_configure_current_network(void)
      * four attempts of three seconds each and reached the router at 16 s, one
      * retry reaches it at 7 s. A network that really is just flaky loses
      * nothing - it comes round again on the next attempt. */
-    config.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
-    config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
-    config.sta.failure_retry_cnt = 1;
+    /* Unless we already know where this network answered last time. Naming the
+     * access point and its channel skips the scan and the walk entirely - a
+     * second instead of ten - and the first attempt is the only one that gets
+     * to try it: if it is wrong, whatever it cost is not spent twice, and the
+     * retry below falls back to the search that always works. */
+    wifi_ap_hint_t hint;
+    const bool pinned = retry_count == 0U && wifi_ap_hint_lookup(network->ssid, &hint);
+    if (pinned) {
+        config.sta.bssid_set = true;
+        memcpy(config.sta.bssid, hint.bssid, sizeof(config.sta.bssid));
+        config.sta.channel = hint.channel;
+    } else {
+        config.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+        config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+        config.sta.failure_retry_cnt = 1;
+    }
     char ssid[WIFI_SETTINGS_SSID_MAX_LEN + 1U];
     snprintf(ssid, sizeof(ssid), "%s", network->ssid);
     status_set_connection(WIFI_PROVISIONING_STA_CONNECTING, ssid, "");
     const esp_err_t config_result = esp_wifi_set_config(WIFI_IF_STA, &config);
-    ESP_LOGI(TAG, "connecting ssid=%s network=%u retry=%u password_len=%u", network->ssid,
-             (unsigned)index, (unsigned)retry_count, (unsigned)password_length);
+    if (pinned) {
+        ESP_LOGI(TAG, "connecting ssid=%s network=%u retry=%u password_len=%u via " MACSTR
+                      " channel=%u",
+                 network->ssid, (unsigned)index, (unsigned)retry_count,
+                 (unsigned)password_length, MAC2STR(hint.bssid), (unsigned)hint.channel);
+    } else {
+        ESP_LOGI(TAG, "connecting ssid=%s network=%u retry=%u password_len=%u scanning",
+                 network->ssid, (unsigned)index, (unsigned)retry_count,
+                 (unsigned)password_length);
+    }
     secure_zero(&config, sizeof(config));
     secure_zero(&settings, sizeof(settings));
     if (config_result != ESP_OK) {
@@ -364,6 +492,7 @@ static void wifi_reconnect_task(void *arg)
 {
     (void)arg;
     while (true) {
+        wifi_ap_hint_flush();
         wifi_disconnect_command_t command;
         if (xQueueReceive(s_reconnect_queue, &command,
                           pdMS_TO_TICKS(WIFI_RECONNECT_TASK_POLL_MS)) != pdTRUE) {
@@ -476,9 +605,24 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
                                void *event_data)
 {
     (void)arg;
-    if (event_base != WIFI_EVENT || event_id != WIFI_EVENT_STA_DISCONNECTED || !s_started) {
+    if (event_base != WIFI_EVENT || !s_started) return;
+    if (event_id == WIFI_EVENT_STA_CONNECTED) {
+        /* Held rather than stored: the address it names is only worth going
+         * back to first once a lease has proved the network behind it works. */
+        const wifi_event_sta_connected_t *connected = event_data;
+        wifi_ap_hint_t hint = {0};
+        const size_t ssid_length = connected->ssid_len > WIFI_SETTINGS_SSID_MAX_LEN
+                                       ? WIFI_SETTINGS_SSID_MAX_LEN
+                                       : connected->ssid_len;
+        memcpy(hint.ssid, connected->ssid, ssid_length);
+        memcpy(hint.bssid, connected->bssid, sizeof(hint.bssid));
+        hint.channel = connected->channel;
+        taskENTER_CRITICAL(&s_ap_hint_lock);
+        s_ap_hint_seen = hint;
+        taskEXIT_CRITICAL(&s_ap_hint_lock);
         return;
     }
+    if (event_id != WIFI_EVENT_STA_DISCONNECTED) return;
     const wifi_event_sta_disconnected_t *disconnected = event_data;
     /* Which access point refused, not just why. A reason on its own cannot be
      * read: reason 15 is the handshake timing out, and that is what a wrong
@@ -534,6 +678,9 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
     snprintf(ip, sizeof(ip), IPSTR, IP2STR(&got_ip->ip_info.ip));
     status_set_connection(WIFI_PROVISIONING_STA_CONNECTED,
                           previous.active_ssid, ip);
+    taskENTER_CRITICAL(&s_ap_hint_lock);
+    s_ap_hint_confirmed = s_ap_hint_seen.ssid[0] != '\0';
+    taskEXIT_CRITICAL(&s_ap_hint_lock);
     taskENTER_CRITICAL(&s_settings_lock);
     s_retry_count = 0;
     const bool pending_commit = s_pending_commit;
@@ -572,6 +719,7 @@ esp_err_t wifi_provisioning_init(void)
         return ESP_OK;
     }
     ESP_RETURN_ON_ERROR(wifi_init_nvs(), TAG, "initialize NVS");
+    wifi_ap_hints_load();
     ESP_RETURN_ON_ERROR(wifi_init_once(esp_netif_init), TAG, "initialize netif");
     ESP_RETURN_ON_ERROR(wifi_init_once(esp_event_loop_create_default), TAG, "create event loop");
 
@@ -596,6 +744,9 @@ esp_err_t wifi_provisioning_init(void)
         s_reconnect_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
+    ESP_RETURN_ON_ERROR(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED,
+                                                  &wifi_event_handler, NULL),
+                        TAG, "register connect handler");
     ESP_RETURN_ON_ERROR(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
                                                     &wifi_event_handler, NULL),
                         TAG, "register Wi-Fi event handler");

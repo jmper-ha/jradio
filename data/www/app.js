@@ -34,6 +34,7 @@
   const listItems = document.querySelector('#list-items');
   const listEmpty = document.querySelector('#list-empty');
   const listLoading = document.querySelector('#list-loading');
+  const listLoadingText = document.querySelector('#list-loading-text');
   const listOffline = document.querySelector('#list-offline');
   const listSearch = document.querySelector('#list-search');
   const playerBar = document.querySelector('#player-bar');
@@ -866,12 +867,47 @@
     return owner ? owner.id : null;
   }
 
+  /* A browse the device has been asked for and has not answered yet.
+     Opening a container on a media server is an HTTP round trip on the device's
+     side, and a large one is several: the rows on the page do not move for a
+     second or two, so without this the click reads as ignored. The revision is
+     what says the answer arrived - it is the only field that moves when a
+     listing is replaced by one of the same length. */
+  let listBusyRevision = null;
+  let listBusySince = 0;
+  /* Long enough for the slowest browse the device makes, short enough that a
+     container that will not open stops claiming to be loading. */
+  const LIST_BUSY_TIMEOUT_MS = 20000;
+
+  function noteBrowseStarted() {
+    listBusyRevision = state.list.revision;
+    listBusySince = Date.now();
+    renderList(state.list);
+  }
+
+  function listIsBusy() {
+    if (listBusyRevision === null) return false;
+    if (state.list.revision !== listBusyRevision) {
+      listBusyRevision = null;
+      return false;
+    }
+    if (Date.now() - listBusySince >= LIST_BUSY_TIMEOUT_MS) {
+      listBusyRevision = null;
+      return false;
+    }
+    return true;
+  }
+
   function selectListItem(index) {
     const owner = listOwnerSource();
     // Two commands rather than one: the device takes them off its queue in
     // order, and by the time the second is read the source is already set.
     if (owner !== null) sendCommand('source.select', {source: owner});
     sendCommand('list.select', {index});
+    /* Only for a row that opens something: a track starts playing and the
+       player block answers for itself. */
+    const row = state.list.items.find((item) => item.index === index);
+    if (row && row.isDirectory) noteBrowseStarted();
   }
 
   function focusedListIndex() {
@@ -895,6 +931,7 @@
     button.append(label);
     button.addEventListener('click', () => {
       sendCommand('browse.up');
+      noteBrowseStarted();
     });
     button.disabled = !state.connected;
     row.append(button);
@@ -990,7 +1027,9 @@
        selected, so an empty list right after the switch means the device is
        still asking - not that there is nothing. The other sources are read
        from the device itself and are empty only when they really are. */
-    const waiting = rowCount === 0 && state.connected && state.activeSource === 'yandex';
+    const browsing = listIsBusy();
+    const waiting = browsing ||
+      (rowCount === 0 && state.connected && state.activeSource === 'yandex');
     /* With no network these two have nothing to offer: the stations cannot be
        played and the rotor's list was never fetched. Judged by the kind rather
        than by the active source, because the page opens before any source is
@@ -1000,9 +1039,19 @@
     const offline = offlineNow(state.activeSource, kind);
     listOffline.hidden = !offline;
     listCount.hidden = offline;
+    /* Two different waits share this line, and they are not the same news: one
+       is a list being fetched for the first time, the other is a container the
+       device is opening while its rows are still on screen. */
+    if (listLoadingText) {
+      listLoadingText.textContent = browsing ? 'Открываем папку…' : 'Загружаем станции…';
+    }
     listLoading.hidden = offline || !waiting;
     listEmpty.hidden = offline || rowCount !== 0 || waiting;
     listItems.hidden = offline || rowCount === 0;
+    /* The rows stay up while a browse is in flight - they are still what the
+       device is showing - but dimmed, so the loading line above them is not
+       contradicted by a list that looks current. */
+    listItems.classList.toggle('is-stale', waiting && rowCount !== 0);
 
     listItems.querySelectorAll('button').forEach((button) => {
       /* Two reasons a row can be dead, and this pass runs after the rows are

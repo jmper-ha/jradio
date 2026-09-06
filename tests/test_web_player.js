@@ -93,7 +93,7 @@ const ids = [
   'progress-rail', 'progress-fill', 'progress-seek',
   'volume-control', 'volume-input', 'volume-value',
   'stream-meta', 'player-error', 'command-status', 'media-list',
-  'list-title', 'list-count', 'list-items', 'list-empty', 'list-offline', 'list-loading', 'list-search',
+  'list-title', 'list-count', 'list-items', 'list-empty', 'list-offline', 'list-loading', 'list-loading-text', 'list-search',
   'player-bar', 'player-expand',
 ];
 const buttonIds = new Set([

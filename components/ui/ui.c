@@ -419,6 +419,17 @@ static bool s_autoplay_pending;
 static uint32_t s_autoplay_started_ms;
 static bool s_files_list_open_requested;
 static unsigned int s_files_list_open_revision;
+/* A browse the device has been asked for and has not answered yet.
+ *
+ * Opening a container on a media server is an HTTP round trip, and a large one
+ * is several: the listing on screen does not move for a second or two, and
+ * nothing else on the screen changes either, so the press reads as ignored.
+ * The revision is what says the answer arrived - it is the only field that
+ * moves when a listing is replaced by one of the same length - and until it
+ * does, the notice line says so. */
+static bool s_browse_waiting;
+static unsigned int s_browse_waiting_revision;
+static uint32_t s_browse_waiting_started_ms;
 
 static bool ui_list_shows_files(void)
 {
@@ -3276,10 +3287,32 @@ static void ui_show_menu(void)
     }
 }
 
+/* Says a browse has been asked for, and puts the word on the notice line.
+ *
+ * Immediately rather than on the next poll: the whole point is the moment
+ * between the press and the answer, and a label written one poll later is a
+ * label written after the frame the user was looking at. */
+static void ui_note_browse_started(void)
+{
+    s_browse_waiting = true;
+    s_browse_waiting_revision = player_control_listing_revision();
+    s_browse_waiting_started_ms = ui_tick_get_ms();
+    if (s_station_list_notice != NULL) {
+        ui_set_label_text_if_changed(s_station_list_notice, "Загрузка…");
+    }
+}
+
+/* Long enough that no browse this device makes is cut short - the slowest
+ * measured is a container fetched in eight round trips - and short enough that
+ * a server which stopped answering does not leave the word up for ever. */
+#define UI_BROWSE_WAIT_TIMEOUT_MS 20000U
+
 // Re-seeds the list state from a fresh snapshot. Split out because the USB
 // browser has to do it again on every directory change, not just on open.
 static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
 {
+    // The listing it was waiting for has arrived.
+    s_browse_waiting = false;
     size_t count = snapshot->item_count;
     size_t active_index = snapshot->active_item_index;
     if (s_files_unavailable) {
@@ -3679,7 +3712,7 @@ static void ui_handle_input(board_input_action_t action)
                     .source = AUDIO_SOURCE_DLNA,
                     .item_index = PLAYER_ITEM_NONE,
                 };
-                (void)ui_submit_player_command(&up);
+                if (ui_submit_player_command(&up)) ui_note_browse_started();
                 return;
             }
             const size_t index = row - ui_browser_row_offset();
@@ -3697,7 +3730,13 @@ static void ui_handle_input(board_input_action_t action)
             if (!ui_submit_player_command(&command)) return;
             // Opening a container keeps the browser on screen; the new listing
             // arrives through the snapshot poll. Only a track switches away.
-            if (entry.kind == DLNA_ENTRY_CONTAINER) return;
+            if (entry.kind == DLNA_ENTRY_CONTAINER) {
+                /* And it takes a round trip, or several for a large one. The
+                 * rows do not move while it does, so without a word here the
+                 * press looks like it was dropped. */
+                ui_note_browse_started();
+                return;
+            }
             /* And it leaves the list in the view state too, for the reason the
              * file browser does: the automatic list-to-player transition only
              * fires for the radio, so without this the encoder stays bound to
@@ -4140,6 +4179,16 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
 
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
         const unsigned int revision = player_control_listing_revision();
+        /* A browse that never answered. The listing is unchanged and correct -
+         * the container simply would not open - so the rows stay and only the
+         * word goes, rather than leaving "Загрузка…" up for the rest of the
+         * session. */
+        if (s_browse_waiting && revision == s_browse_waiting_revision &&
+            (uint32_t)(ui_tick_get_ms() - s_browse_waiting_started_ms) >=
+                UI_BROWSE_WAIT_TIMEOUT_MS) {
+            s_browse_waiting = false;
+            ui_set_label_text_if_changed(s_station_list_notice, "");
+        }
         if (ui_list_shows_files() && !s_files_unavailable &&
             !ui_files_media_present(
                 ui_media_for_source(ui_player_state_source(&s_player_ui)))) {

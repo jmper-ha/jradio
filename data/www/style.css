@@ -579,6 +579,12 @@ button:disabled { cursor: not-allowed; opacity: .45; }
    hiding them looks like a server with files missing - but they are dimmed and
    refuse the click, and the marker slot says why instead of pretending the row
    is about to play. */
+/* While the device is opening a container its rows are still the ones it is
+   showing, so they stay - dimmed, and deaf to clicks, because a list that looks
+   current under a "loading" line invites a second press that only queues
+   another browse. */
+.list-items.is-stale { opacity: .5; pointer-events: none; }
+
 .list-item.is-unplayable { opacity: .45; cursor: default; }
 .list-item.is-unplayable .active-marker { display: none; }
 .list-item.is-unplayable::after {

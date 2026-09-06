@@ -838,6 +838,12 @@ static void player_control_task(void *arg)
             const bool forward = operation == PLAYER_OPERATION_NEXT_ITEM;
             if (audio_source_is_files(snapshot.active_source)) {
                 player_file_step(forward);
+            } else if (snapshot.active_source == AUDIO_SOURCE_DLNA) {
+                /* The neighbouring playable row of the open container, which
+                 * only the source can find: the rows between are containers
+                 * and formats with no decoder. Forward is the chain's own
+                 * "this track is done", so it costs no extra request. */
+                (void)dlna_source_skip(forward);
             } else {
                 /* The station either side of the one playing. The bounds were
                  * checked by player_control_decide(), which had the same

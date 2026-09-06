@@ -45,8 +45,14 @@ extern "C" {
  *
  * It is a starting point rather than a promise: nothing bounds how much a
  * server chooses to say about an object, so an answer that fills the buffer is
- * detected and the page halved. See dlna_client_browse(). */
-#define DLNA_SOAP_BROWSE_PAGE 8U
+ * detected and the page halved. See dlna_client_browse().
+ *
+ * Raised from eight because the round trips are what the wait is made of: a
+ * container is fetched a page at a time over a fresh connection each time, so
+ * a 52-entry folder was seven exchanges and felt like it. Sixteen of the
+ * largest rows measured is about 55 KB, inside DLNA_CLIENT_RESPONSE_MAX, and
+ * the halving is there for the server that is wordier still. */
+#define DLNA_SOAP_BROWSE_PAGE 16U
 
 /* Writes the Browse request body for the children of `object_id` ("0" is the
  * root). Returns the length to send, or 0 when it does not fit - a truncated

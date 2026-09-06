@@ -262,11 +262,13 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
          * starting something would be a different gesture than the one asked
          * for. */
         if (state->active_item_index == PLAYER_ITEM_NONE) return PLAYER_OPERATION_NONE;
-        if (audio_source_is_files(state->active_source)) {
-            /* Which row holds the neighbouring *file* cannot be worked out
-             * here: a directory listing holds directories too, and this
-             * function cannot see them. The ends of the directory are refused
-             * by the executor, which can. */
+        if (audio_source_is_files(state->active_source) ||
+            state->active_source == AUDIO_SOURCE_DLNA) {
+            /* Which row holds the neighbouring *track* cannot be worked out
+             * here: a directory listing holds directories too, and a media
+             * server's listing holds containers and rows this build cannot
+             * decode. This function sees none of that. The ends are refused by
+             * the executor, which can. */
             return step;
         }
         /* Not the rotor, even though it is a station source: its chain has no

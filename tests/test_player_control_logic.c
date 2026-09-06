@@ -704,6 +704,34 @@ static void test_a_row_on_a_server_always_reaches_the_executor(void)
     assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
 }
 
+/* The track keys on a media server work the way they do on a drive: they step
+   to the neighbouring *track*, and which row that is cannot be decided here -
+   the listing holds containers, and rows this build has no decoder for, and
+   this function sees neither. It used to answer INVALID, so both keys were
+   dead on the source. */
+static void test_the_track_keys_step_through_a_server_listing(void)
+{
+    player_snapshot_t state = {.wifi_connected = true, .active_source = AUDIO_SOURCE_DLNA,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING,
+                               .active_item_index = 3U, .item_count = 15U};
+    player_command_t next = {.kind = PLAYER_COMMAND_NEXT_ITEM};
+    player_command_t previous = {.kind = PLAYER_COMMAND_PREVIOUS_ITEM};
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NEXT_ITEM);
+    assert(player_control_decide(&state, &previous) == PLAYER_OPERATION_PREVIOUS_ITEM);
+
+    /* The ends are the executor's to refuse, exactly as on a volume: the row
+       above the first track may be a container rather than the top of the
+       list. */
+    state.active_item_index = 0U;
+    assert(player_control_decide(&state, &previous) == PLAYER_OPERATION_PREVIOUS_ITEM);
+    state.active_item_index = 14U;
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NEXT_ITEM);
+
+    /* With nothing playing there is no place in the listing to step from. */
+    state.active_item_index = PLAYER_ITEM_NONE;
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NONE);
+}
+
 int main(void)
 {
     test_the_track_keys_stop_at_the_ends_of_the_catalog();
@@ -720,6 +748,7 @@ int main(void)
     test_dlna_needs_the_network();
     test_browsing_up_works_on_a_server_and_not_on_a_station_list();
     test_a_row_on_a_server_always_reaches_the_executor();
+    test_the_track_keys_step_through_a_server_listing();
     test_a_yandex_station_starts_and_is_not_restarted();
     test_a_yandex_chain_never_advances_by_itself();
     test_toggle_maps_playing_to_pause();

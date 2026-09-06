@@ -17,14 +17,16 @@ static const char *TAG = "dlna_client";
 /* Room for a page of a listing.
  *
  * Sized from the real library on this LAN rather than from a guess: the most
- * expensive rows there are artist containers at about 3.7 KB each, so a page of
- * DLNA_SOAP_BROWSE_PAGE of them is around 30 KB. This is that with half again
- * on top, for a server that says more about an object than this one does.
+ * expensive rows there are artist containers, and they are not uniform - four
+ * of them came to 14.9 KB and twelve to 38.6 KB, with the later ones costing
+ * more than the earlier. A page of DLNA_SOAP_BROWSE_PAGE of those is around
+ * 55 KB, and this leaves room above it for a server that says more about an
+ * object than this one does.
  *
  * It is still only a buffer, not a guarantee - which is why filling it is
  * reported rather than passed off as an empty container. See `truncated`
  * below. */
-#define DLNA_CLIENT_RESPONSE_MAX (48U * 1024U)
+#define DLNA_CLIENT_RESPONSE_MAX (64U * 1024U)
 
 /* A description is a few kilobytes at most; this one is Plex's at about 3 KB
  * with its icon list. Read into the same buffer as a listing, since the two

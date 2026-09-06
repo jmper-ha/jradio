@@ -103,7 +103,7 @@ const ids = [
   'progress-rail', 'progress-fill', 'progress-seek',
   'volume-control', 'volume-input', 'volume-value',
   'stream-meta', 'player-error', 'command-status', 'media-list',
-  'list-title', 'list-count', 'list-items', 'list-empty', 'list-offline', 'list-loading', 'list-search',
+  'list-title', 'list-count', 'list-items', 'list-empty', 'list-offline', 'list-loading', 'list-loading-text', 'list-search',
   'player-bar', 'player-expand',
 ];
 const buttonIds = new Set([
@@ -626,6 +626,45 @@ socket.emit('open');
   assert.equal(dlnaRows[2].disabled, false, 'трек остаётся нажимаемым');
   assert.ok(!dlnaRows[2].classList.contains('is-unplayable'));
   assert.ok(dlnaRows[1].classList.contains('is-directory'));
+
+  /* Opening a container on a media server is a round trip on the device's
+     side, and a large one is several. Nothing on the page moves while it runs -
+     the rows are still the ones the device is showing - so a click with no
+     answer for a second or two reads as ignored. */
+  socket.sent.length = 0;
+  rows()[1].emit('click');
+  assert.deepEqual(JSON.parse(socket.sent.at(-1)).action, 'list.select');
+  assert.equal(elements['#list-loading'].hidden, false, 'клик по папке показывает ожидание');
+  assert.equal(elements['#list-loading-text'].textContent, 'Открываем папку…',
+    'ждём папку, а не список станций');
+  assert.ok(elements['#list-items'].classList.contains('is-stale'),
+    'старые строки гаснут, пока идёт запрос');
+
+  /* Selecting a track is not a browse: the player block answers for it, and a
+     loading line over the list would be about the wrong thing. */
+  const trackRow = rows()[2];
+  trackRow.emit('click');
+  assert.equal(elements['#list-loading'].hidden, false,
+    'предыдущее ожидание ещё не завершилось');
+
+  /* The answer is a moved revision. The wait ends there rather than when the
+     rows arrive: the device has already changed container, and the fetch that
+     follows is the page catching up. */
+  sendEvent(socket, {
+    type: 'list.update',
+    revision: 21,
+    list: {kind: 'files', active_index: null, path: 'Ещё альбомы', revision: 21,
+           has_parent: true, count: 1},
+  });
+  assert.equal(elements['#list-loading'].hidden, true, 'ответ снимает ожидание');
+  assert.ok(!elements['#list-items'].classList.contains('is-stale'));
+  await respond({
+    path: 'Ещё альбомы',
+    revision: 21,
+    has_parent: true,
+    items: [{index: 0, name: 'Deuce', kind: 'file', playable: true, format: 'MP3'}],
+  });
+  assert.deepEqual(labels(), ['.. (наверх)', 'Deuce']);
 
   console.log('web usb tests passed');
 })().catch((error) => {

@@ -20,6 +20,9 @@ __pycache__/
 .vscode/.history/
 # The ESP-IDF extension writes an absolute path to the local install into this
 .vscode/settings.json
+# Written by the same extension for clangd: it strips the GCC flags clangd does
+# not understand, and it names this machine's toolchain to do it.
+.clangd
 .DS_Store
 
 # Internal session notes and agent planning

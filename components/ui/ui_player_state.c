@@ -73,21 +73,35 @@ bool ui_player_state_can_select_item(const ui_player_state_t *state,
      * here left the press doing nothing whatsoever: the handler returns
      * without a command, without a notice and without a log line, so the
      * encoder simply looked dead. */
+    /* A media server's rows are here too, and for the opposite reason files
+     * are not: a row on a server is not browsed *past* the pending machinery,
+     * it is fed *through* this check on its way to being posted, and refusing
+     * it left the encoder dead on every row of the browser - no command, no
+     * notice, no log line. Which of open-or-play the row means is the source's
+     * business, not this one's. */
     return state != NULL &&
            (audio_source_is_stations(state->confirmed_source) ||
+            state->confirmed_source == AUDIO_SOURCE_DLNA ||
             state->confirmed_source == AUDIO_SOURCE_NONE) &&
            item_index < state->item_count;
 }
 
-/* Browsing a filesystem stays outside the pending machinery. That machinery
- * exists for the radio, where switching stations blocks for seconds while the
- * decoder task exits and the UI must not accept a second command meanwhile.
- * Opening a directory changes the listing rather than the active item, so no
- * snapshot could ever confirm it, and it would sit pending until the timeout -
- * with every further press refused for as long as it did. */
-static bool ui_player_state_is_files_browse(const player_command_t *command)
+/* Browsing a tree stays outside the pending machinery. That machinery exists
+ * for the radio, where switching stations blocks for seconds while the decoder
+ * task exits and the UI must not accept a second command meanwhile. Opening a
+ * directory changes the listing rather than the active item, so no snapshot
+ * could ever confirm it, and it would sit pending until the timeout - with
+ * every further press refused for as long as it did.
+ *
+ * A media server is browsed the same way and needs saying so explicitly. Worse
+ * than a volume, in fact: ui_player_state_snapshot_confirms() only accepts a
+ * SELECT_ITEM against a station source, so a press on a container would have
+ * hung the whole browser for the full thirteen seconds and then reverted the
+ * screen - which is exactly what it did. */
+static bool ui_player_state_is_browse(const player_command_t *command)
 {
-    return audio_source_is_files(command->source) &&
+    return (audio_source_is_files(command->source) ||
+            command->source == AUDIO_SOURCE_DLNA) &&
            (command->kind == PLAYER_COMMAND_SELECT_ITEM ||
             command->kind == PLAYER_COMMAND_BROWSE_UP ||
             command->kind == PLAYER_COMMAND_BROWSE_REVEAL);
@@ -97,7 +111,7 @@ bool ui_player_state_can_post(const ui_player_state_t *state,
                               const player_command_t *command)
 {
     if (state == NULL || command == NULL) return false;
-    if (ui_player_state_is_files_browse(command)) return !state->pending;
+    if (ui_player_state_is_browse(command)) return !state->pending;
     switch (command->kind) {
     case PLAYER_COMMAND_SELECT_SOURCE:
         return !state->pending && command->source != AUDIO_SOURCE_NONE;
@@ -157,7 +171,7 @@ bool ui_player_state_apply_post_result(ui_player_state_t *state,
         command->kind == PLAYER_COMMAND_TOGGLE_DISLIKE ||
         command->kind == PLAYER_COMMAND_PREVIOUS_ITEM ||
         command->kind == PLAYER_COMMAND_NEXT_ITEM ||
-        ui_player_state_is_files_browse(command)) return true;
+        ui_player_state_is_browse(command)) return true;
 
     const bool superseding_stop =
         command->kind == PLAYER_COMMAND_STOP_SOURCE && state->pending;
@@ -277,9 +291,13 @@ void ui_player_state_apply_snapshot(ui_player_state_t *state,
 
 bool ui_player_state_show_station_list(ui_player_state_t *state)
 {
-    // Every source that has a list shares this view: stations for the radio,
-    // the current directory for the drive and the card.
+    /* Every source that has a list shares this view: stations for the radio,
+     * the current directory for the drive and the card, the open container for
+     * a media server. Leaving the last one out is what made the browser
+     * unreachable - the screen simply refused to open, and a press that opens
+     * nothing and says nothing reads as a source that does not work. */
     if (state == NULL || (state->source != AUDIO_SOURCE_INTERNET_RADIO &&
+                          state->source != AUDIO_SOURCE_DLNA &&
                           !audio_source_is_files(state->source))) {
         return false;
     }

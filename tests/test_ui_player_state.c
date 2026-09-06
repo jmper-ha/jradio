@@ -613,6 +613,95 @@ static void test_the_marks_reach_the_player_without_going_pending(void)
     assert(ui_player_state_can_post(&state, &again));
 }
 
+/* The media server was finished and working and the screen would not let
+   anyone at it: the browser refused to open, and every press on a row was
+   dropped without a command, a notice or a log line. Three separate refusals
+   in this file, and each of them is invisible from the outside - the source
+   simply looked broken. */
+static void test_a_media_server_gets_the_browser_and_its_rows(void)
+{
+    ui_player_state_t state;
+    ui_player_state_init(&state);
+    player_snapshot_t server = snapshot(AUDIO_SOURCE_DLNA, PLAYER_ITEM_NONE, 3);
+    ui_player_state_apply_snapshot(&state, &server, 10);
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+
+    /* The list view is what the browser is. Without this the screen never
+       opened and the source had nothing behind it. */
+    assert(ui_player_state_show_station_list(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
+
+    /* A row has to be selectable. It was not: the check only knew stations and
+       "no source", so a server's own rows fell through it. */
+    assert(ui_player_state_can_select_item(&state, 0));
+    assert(ui_player_state_can_select_item(&state, 2));
+    assert(!ui_player_state_can_select_item(&state, 3));
+
+    /* And opening a container must not go pending. Nothing could confirm it -
+       the confirmation only accepts a station source - so it would have held
+       the browser for the whole timeout and then reverted the screen. */
+    player_command_t open = command(PLAYER_COMMAND_SELECT_ITEM, AUDIO_SOURCE_DLNA, 1);
+    assert(ui_player_state_can_post(&state, &open));
+    assert(ui_player_state_apply_post_result(&state, &open, true, 20));
+    assert(!ui_player_state_is_pending(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
+
+    player_command_t up = command(PLAYER_COMMAND_BROWSE_UP, AUDIO_SOURCE_DLNA,
+                                  PLAYER_ITEM_NONE);
+    assert(ui_player_state_can_post(&state, &up));
+    assert(ui_player_state_apply_post_result(&state, &up, true, 30));
+    assert(!ui_player_state_is_pending(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
+}
+
+/* Selecting the source blocks the player task for as long as the search
+   listens, so the confirmation has to survive that wait rather than time out
+   and drop the screen back to the home view. */
+static void test_selecting_a_media_server_survives_the_search(void)
+{
+    ui_player_state_t state;
+    ui_player_state_init(&state);
+    player_snapshot_t idle = snapshot(AUDIO_SOURCE_NONE, PLAYER_ITEM_NONE, 0);
+    ui_player_state_apply_snapshot(&state, &idle, 0);
+
+    player_command_t select =
+        command(PLAYER_COMMAND_SELECT_SOURCE, AUDIO_SOURCE_DLNA, PLAYER_ITEM_NONE);
+    assert(ui_player_state_can_post(&state, &select));
+    assert(ui_player_state_apply_post_result(&state, &select, true, 100));
+    assert(ui_player_state_is_pending(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+
+    /* Several seconds of searching, with the snapshot still saying nothing is
+       active. The screen stays on the source. */
+    ui_player_state_apply_snapshot(&state, &idle, 3000);
+    assert(ui_player_state_is_pending(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+
+    player_snapshot_t open = snapshot(AUDIO_SOURCE_DLNA, PLAYER_ITEM_NONE, 3);
+    ui_player_state_apply_snapshot(&state, &open, 3500);
+    assert(!ui_player_state_is_pending(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+    assert(ui_player_state_source(&state) == AUDIO_SOURCE_DLNA);
+}
+
+/* A source started from the web has to raise the player screen on the panel
+   the way a press on the knob does - the device was left on its home screen
+   with music coming out of it. */
+static void test_a_server_started_elsewhere_raises_the_player(void)
+{
+    ui_player_state_t state;
+    ui_player_state_init(&state);
+    player_snapshot_t idle = snapshot(AUDIO_SOURCE_NONE, PLAYER_ITEM_NONE, 0);
+    ui_player_state_apply_snapshot(&state, &idle, 0);
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_MENU);
+
+    player_snapshot_t playing = snapshot(AUDIO_SOURCE_DLNA, 2, 12);
+    playing.playback_state = PLAYER_PLAYBACK_PLAYING;
+    ui_player_state_apply_snapshot(&state, &playing, 500);
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+    assert(ui_player_state_source(&state) == AUDIO_SOURCE_DLNA);
+}
+
 int main(void)
 {
     test_the_card_gets_the_same_views_as_the_drive();
@@ -622,6 +711,9 @@ int main(void)
     test_rejected_commands_preserve_current_view();
     test_list_view_opens_for_both_sources_with_a_list();
     test_usb_browsing_does_not_go_pending();
+    test_a_media_server_gets_the_browser_and_its_rows();
+    test_selecting_a_media_server_survives_the_search();
+    test_a_server_started_elsewhere_raises_the_player();
     test_first_snapshot_is_authoritative();
     test_stale_snapshot_keeps_pending_command_then_timeout_restores();
     test_confirmed_snapshot_clears_pending_command();

@@ -13,8 +13,13 @@ static const char *TAG = "dlna_discovery";
 
 /* How long a server may wait before answering, in seconds. Servers spread
  * their replies over this window so a busy network does not deliver them all
- * at once, so listening for less than it means missing the slow ones. */
-#define DLNA_DISCOVERY_MX 2U
+ * at once, so listening for less than it means missing the slow ones.
+ *
+ * One rather than two: this is the delay a user waits through every time the
+ * source is opened, and the window only has to be wide enough that a handful
+ * of servers do not all answer in the same millisecond. A home network is not
+ * the crowd the specification's larger values are for. */
+#define DLNA_DISCOVERY_MX 1U
 
 /* The search goes out twice. SSDP is UDP with nothing to retransmit it, and a
  * single lost datagram is a server that silently is not there - which reads to
@@ -25,6 +30,16 @@ static const char *TAG = "dlna_discovery";
 /* A datagram larger than this is not an SSDP reply. The one measured here is
  * 400 bytes; the headers are few and short by design. */
 #define DLNA_DISCOVERY_DATAGRAM_MAX 1024U
+
+/* How long to keep listening after the last server answered.
+ *
+ * The search would otherwise always cost its whole window, and that window is
+ * the wait a user sits through every time the source is opened - the server
+ * here answers in well under a hundred milliseconds and the remaining two
+ * seconds bought nothing. Quiet for this long, with at least one answer in
+ * hand, means the rest of the network has had its turn: replies are spread
+ * over MX, so a gap this size is longer than the spacing between them. */
+#define DLNA_DISCOVERY_QUIET_MS 600
 
 static bool already_seen(const dlna_server_t *servers, size_t count,
                          const dlna_ssdp_response_t *response)
@@ -87,9 +102,19 @@ static size_t collect(dlna_server_t *servers, size_t capacity, uint32_t listen_m
 
     size_t count = 0U;
     const int64_t deadline = esp_timer_get_time() + (int64_t)listen_ms * 1000;
+    int64_t last_answer_us = 0;
     char datagram[DLNA_DISCOVERY_DATAGRAM_MAX];
 
     while (esp_timer_get_time() < deadline && count < capacity) {
+        /* Stop as soon as the network has gone quiet with something in hand.
+         * Waiting out the full window regardless is what made opening the
+         * source feel broken: seconds of nothing, on the common network that
+         * has exactly one server and answered at once. */
+        if (count > 0U &&
+            esp_timer_get_time() - last_answer_us >= (int64_t)DLNA_DISCOVERY_QUIET_MS * 1000) {
+            break;
+        }
+
         struct sockaddr_in from;
         socklen_t from_length = sizeof(from);
         const int received = recvfrom(socket_handle, datagram, sizeof(datagram) - 1U, 0,
@@ -99,6 +124,9 @@ static size_t collect(dlna_server_t *servers, size_t capacity, uint32_t listen_m
 
         dlna_ssdp_response_t response;
         if (!dlna_ssdp_parse_response(datagram, (size_t)received, &response)) continue;
+        /* A repeat still counts as the network being noisy - this server
+         * answers every search twice - so the quiet timer restarts on it. */
+        last_answer_us = esp_timer_get_time();
         if (already_seen(servers, count, &response)) continue;
 
         memset(&servers[count], 0, sizeof(servers[count]));

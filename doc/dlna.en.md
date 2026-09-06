@@ -11,9 +11,17 @@ Jellyfin, miniDLNA, a media server on a PC. Tested against Plex Media Server
 1.42 (Platinum stack) on a NAS.
 
 **Finding one.** Pick the DLNA source on the device, or press the DLNA tab in
-the web interface. The search takes a couple of seconds: the device sends a
-query across the network and waits for answers. The server that replies opens
-at its top level, with its name as the heading of the list.
+the web interface. The device sends a query across the network and waits for
+answers, saying "Поиск медиасервера" while it does. Usually about a second: the
+wait ends when the network goes quiet rather than when the whole window
+expires. The server that replies opens at its top level, with its name as the
+heading of the list.
+
+**What the rest costs.** Opening a folder is one request to the server, or
+several for a large one. Measured on this network: a small folder about 0.1 s,
+a 52-row folder 0.6 s. While a request is out the list says "Загрузка…", and in
+the web interface the rows dim - they are still correct, but there is no point
+pressing them.
 
 The search runs every time the source is entered rather than once at start-up.
 That is deliberate: a server may be switched off, may move to another address,

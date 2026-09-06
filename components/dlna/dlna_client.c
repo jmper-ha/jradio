@@ -6,6 +6,7 @@
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -188,8 +189,14 @@ esp_err_t dlna_client_browse(const char *control_url, const char *object_id,
     xSemaphoreTake(s_lock, portMAX_DELAY);
     size_t length = 0U;
     bool truncated = false;
+    /* Timed because the wait is the thing being complained about and a guess
+     * about where it goes is worthless: the server answers a page in about
+     * 100 ms from a PC on the same network, so anything much above that is
+     * ours - the connection, the Wi-Fi, the parse. */
+    const int64_t started_us = esp_timer_get_time();
     esp_err_t err = request(control_url, DLNA_SOAP_ACTION_BROWSE, body, s_response,
                             DLNA_CLIENT_RESPONSE_MAX, &length, &truncated);
+    const int64_t fetched_us = esp_timer_get_time();
 
     if (err == ESP_OK && truncated) {
         ESP_LOGI(TAG, "'%s' x%u filled the %u byte buffer; asking for fewer",
@@ -222,6 +229,11 @@ esp_err_t dlna_client_browse(const char *control_url, const char *object_id,
             size_t seen = 0U;
             page->count = dlna_didl_parse(payload, unescaped, entries, capacity, &seen);
             page->total_matches = envelope.total_matches;
+            ESP_LOGI(TAG, "browse x%u: %u bytes in %lld ms, parsed in %lld ms, %u rows",
+                     (unsigned)requested_count, (unsigned)length,
+                     (long long)((fetched_us - started_us) / 1000),
+                     (long long)((esp_timer_get_time() - fetched_us) / 1000),
+                     (unsigned)page->count);
             if (seen > page->count) {
                 /* More in the answer than the caller had room for. Not an
                  * error - the next page starts where this one stopped - but

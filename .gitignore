@@ -26,6 +26,7 @@ __pycache__/
 SESSION_CONTEXT.md
 .superpowers/
 docs/
+.scratch/
 .worktrees/
 # Agent skills installed by `npx skills add`: .agents/ holds them, .claude/ is
 # symlinks into it, and the lock file names the upstream repository. All three

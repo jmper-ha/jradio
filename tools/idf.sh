@@ -47,8 +47,15 @@ jradio_add() {
     return 0   # a miss is the normal case, and must not trip set -e
 }
 
-# IDF_PATH is deliberately not a candidate here - it is handled below as an
-# override. The build directory used to be one: it recorded IDF_PATH in its
+# A candidate like any other, and deliberately not an override: inside VS Code
+# this variable is not a person's choice at all - the ESP-IDF extension exports
+# whatever idf.currentSetup happens to name into the task's environment, which
+# on this machine was 5.5.4. Letting it win is what made the pin above useless
+# in the one place it was written for. JRADIO_IDF below is the override, and
+# nothing sets that by accident.
+jradio_add "${IDF_PATH:-}"
+
+# The build directory used to be a candidate too: it recorded IDF_PATH in its
 # CMakeCache, and reusing that avoided a reconfigure. As of 5.5.5 the cache no
 # longer carries the variable at all, and what it does carry can name two
 # different versions at once after a build on each - which is the state that
@@ -82,12 +89,15 @@ jradio_pick() {
 }
 
 jradio_idf=""
-if jradio_is_idf "${IDF_PATH:-}"; then
-    # An explicit IDF_PATH is somebody's deliberate choice - testing another
-    # version, or a shell where export.sh has been sourced - and it wins
-    # outright. Being redirected to the pinned version without being told is
-    # no way to test one.
-    jradio_idf="${IDF_PATH}"
+if [ -n "${JRADIO_IDF:-}" ]; then
+    # The way to build with another version on purpose. A variable of this
+    # project's own, because every general-purpose one - IDF_PATH first among
+    # them - is already being set by somebody else's tooling.
+    if ! jradio_is_idf "${JRADIO_IDF}"; then
+        echo "tools/idf.sh: JRADIO_IDF=${JRADIO_IDF} is not an ESP-IDF checkout" >&2
+        exit 1
+    fi
+    jradio_idf="${JRADIO_IDF}"
 elif ! jradio_pick "${jradio_want}"; then
     if jradio_pick "${jradio_want_family}"; then
         echo "tools/idf.sh: ESP-IDF ${jradio_want} is not installed; using ${jradio_idf}" >&2
@@ -95,6 +105,13 @@ elif ! jradio_pick "${jradio_want}"; then
         jradio_idf="${jradio_found[0]}"
         echo "tools/idf.sh: using ${jradio_idf}; this project is built with ESP-IDF ${jradio_want}" >&2
     fi
+fi
+
+# Says so rather than leaving the difference to be discovered in a build error:
+# a stale IDF_PATH is exactly what this script now steps around, and stepping
+# around it in silence is how the next person loses an afternoon.
+if [ -n "${jradio_idf}" ] && [ -n "${IDF_PATH:-}" ] && [ "${IDF_PATH}" != "${jradio_idf}" ]; then
+    echo "tools/idf.sh: ignoring IDF_PATH=${IDF_PATH}; set JRADIO_IDF to override" >&2
 fi
 
 if [ -z "${jradio_idf}" ]; then

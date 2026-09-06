@@ -27,8 +27,13 @@ that has ever upgraded two versions sit side by side, and taking the first one
 found meant the VS Code tasks built on one while a terminal that had sourced
 `export.sh` built on the other - and a build on the wrong one rewrites
 `dependencies.lock`. With 5.5.5 absent any 5.5.x is used and the script says so.
-An `IDF_PATH` that is set overrides the choice, which is how another version is
-built with on purpose.
+
+`IDF_PATH` does **not** override that, and the omission is deliberate: inside
+VS Code that variable is not set by a person but by the ESP-IDF extension,
+which exports whatever `idf.currentSetup` names into the task's environment.
+To build with another version on purpose, point `JRADIO_IDF` at it - nothing
+else sets that one. When `IDF_PATH` names something other than what the script
+picked, it says so on the first line of the build.
 
 Every task works on Windows except "Host tests": those want a POSIX shell and a
 gcc with sanitizers, so Linux, macOS or WSL.
@@ -52,6 +57,12 @@ image - but running `idf.py build` again is the whole fix: what compiled is
 kept and only the missing piece is fetched. Where PyPI is permanently out of
 reach (a corporate network, a proxy), pip's ordinary settings apply to this
 virtualenv too - `PIP_INDEX_URL` and `PIP_PROXY`.
+
+So does pip's cache, if the package has ever been installed: it lives in
+`~/.cache/pip` and survives the `fullclean` that removes the virtualenv itself.
+The build then needs no network at all - `PIP_NO_INDEX=1` with `PIP_FIND_LINKS`
+pointing at a directory holding the wheel. Used on 2026-09-06, when `pypi.org`
+answered over neither IPv4 nor IPv6 while `files.pythonhosted.org` was fine.
 
 One more network step exists but only when regenerating fonts:
 [`tools/gen_ui_fonts.sh`](../tools/gen_ui_fonts.sh) calls `npx lv_font_conv` from

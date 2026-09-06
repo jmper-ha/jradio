@@ -42,8 +42,15 @@ function Add-Candidate([string] $path) {
     }
 }
 
-# IDF_PATH is deliberately not a candidate here - it is handled below as an
-# override. The build directory used to be one: it recorded IDF_PATH in its
+# A candidate like any other, and deliberately not an override: inside VS Code
+# this variable is not a person's choice at all - the ESP-IDF extension exports
+# whatever idf.currentSetup happens to name into the task's environment.
+# Letting it win is what made the pin above useless in the one place it was
+# written for. JRADIO_IDF below is the override, and nothing sets that by
+# accident.
+Add-Candidate $env:IDF_PATH
+
+# The build directory used to be a candidate too: it recorded IDF_PATH in its
 # CMakeCache, and reusing that avoided a reconfigure. As of 5.5.5 the cache no
 # longer carries the variable at all, and what it does carry can name two
 # different versions at once after a build on each - which is the state that
@@ -71,13 +78,16 @@ foreach ($pattern in @(
     }
 }
 
-# An explicit IDF_PATH is somebody's deliberate choice - testing another
-# version, or a shell where export.ps1 has been run - and it wins outright.
-# Being redirected to the pinned version without being told is no way to test
-# one.
+# JRADIO_IDF is the way to build with another version on purpose: a variable of
+# this project's own, because every general-purpose one - IDF_PATH first among
+# them - is already being set by somebody else's tooling.
 $idf = $null
-if (Test-IdfPath $env:IDF_PATH) {
-    $idf = (Resolve-Path -LiteralPath $env:IDF_PATH).Path
+if ($env:JRADIO_IDF) {
+    if (-not (Test-IdfPath $env:JRADIO_IDF)) {
+        Write-Host "tools/idf.ps1: JRADIO_IDF=$($env:JRADIO_IDF) is not an ESP-IDF checkout"
+        exit 1
+    }
+    $idf = (Resolve-Path -LiteralPath $env:JRADIO_IDF).Path
 } else {
     $idf = $found | Where-Object { $_ -like "*$want*" } | Select-Object -First 1
     if (-not $idf) {
@@ -89,6 +99,12 @@ if (Test-IdfPath $env:IDF_PATH) {
             Write-Host "tools/idf.ps1: using $idf; this project is built with ESP-IDF $want"
         }
     }
+}
+
+# Says so rather than leaving the difference to be discovered in a build error:
+# a stale IDF_PATH is exactly what this script now steps around.
+if ($idf -and $env:IDF_PATH -and $env:IDF_PATH -ne $idf) {
+    Write-Host "tools/idf.ps1: ignoring IDF_PATH=$($env:IDF_PATH); set JRADIO_IDF to override"
 }
 
 if (-not $idf) {

@@ -19,6 +19,7 @@
 #include "device_settings.h"
 #include "player_control.h"
 #include "wifi_provisioning.h"
+#include "ui_about.h"
 #include "ui_autoplay.h"
 #include "ui_buffer_graph.h"
 #include "ui_click_gesture.h"
@@ -259,6 +260,17 @@ static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
 static lv_obj_t *s_settings_web_hint;
+/* The About overlay, built with the settings screen and hidden until asked
+ * for - the same shape as the QR overlay below it, and for the same reason:
+ * the settings loop is already running, so a screen of its own would mean a
+ * second copy of everything that keeps one up to date. */
+static lv_obj_t *s_about_overlay;
+static lv_obj_t *s_about_rows[UI_ABOUT_ROWS];
+static lv_obj_t *s_about_author;
+static lv_obj_t *s_about_hint;
+static bool s_about_open;
+static uint32_t s_about_opened_ms;
+
 static lv_obj_t *s_qr_overlay;
 static lv_obj_t *s_qr_code;
 static lv_obj_t *s_qr_caption;
@@ -1471,6 +1483,10 @@ static bool ui_submit_player_command(const player_command_t *command);
 static void ui_show_station_list(void);
 static void ui_render_player_state(void);
 
+/* Defined below, beside the overlay's own helpers rather than up here among
+ * the screen's. */
+static void ui_create_about_overlay(void);
+
 static void ui_create_settings_screen(void)
 {
     s_settings_screen = lv_obj_create(NULL);
@@ -1623,6 +1639,70 @@ static void ui_create_settings_screen(void)
     lv_obj_set_style_text_align(s_qr_back, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(s_qr_back, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_qr_back, "");
+
+    ui_create_about_overlay();
+}
+
+/* The About overlay: what the device is, and who to write to about it.
+ *
+ * Built once with the screen rather than on demand. LVGL's heap is 192 KB in
+ * PSRAM since the pool moved there, and seven labels are nothing against it -
+ * building and tearing down on every press would trade that for a chance of
+ * failing at the moment somebody asked, and a failed lv_obj_create is a hang
+ * in the refresh rather than an error anybody sees. */
+static void ui_create_about_overlay(void)
+{
+    s_about_overlay = lv_obj_create(s_settings_screen);
+    lv_obj_remove_style_all(s_about_overlay);
+    lv_obj_set_pos(s_about_overlay, 0, 0);
+    lv_obj_set_size(s_about_overlay, TFT_WIDTH, TFT_HEIGHT);
+    lv_obj_set_style_bg_color(s_about_overlay, lv_color_hex(UI_COLOR_GROUND), 0);
+    lv_obj_set_style_bg_opa(s_about_overlay, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_about_overlay, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *title = lv_label_create(s_about_overlay);
+    lv_obj_set_pos(title, UI_CONTENT_X, UI_ABOUT_TITLE_Y);
+    lv_obj_set_width(title, UI_CONTENT_W);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(title, UI_FONT_TITLE, 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(UI_COLOR_ACCENT), 0);
+    /* Not translated, and not "О устройстве": it is the name of the thing. */
+    lv_label_set_text(title, "jradio");
+
+    for (size_t row = 0U; row < UI_ABOUT_ROWS; ++row) {
+        s_about_rows[row] = lv_label_create(s_about_overlay);
+        lv_obj_set_pos(s_about_rows[row], UI_CONTENT_X,
+                       UI_ABOUT_ROW_Y + (int)row * UI_ABOUT_ROW_PITCH);
+        lv_obj_set_width(s_about_rows[row], UI_CONTENT_W);
+        /* One line each, dotted rather than wrapped: a version that did not
+         * fit would otherwise push every row below it down. */
+        lv_obj_set_height(s_about_rows[row], UI_SRC_LINE_H);
+        lv_label_set_long_mode(s_about_rows[row], LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_color(s_about_rows[row], lv_color_hex(UI_COLOR_TEXT), 0);
+        lv_label_set_text(s_about_rows[row], "");
+    }
+    /* The last row is the notice, which is the only one that is ever a
+     * problem - so it is the only one that is not the ordinary text colour. */
+    lv_obj_set_style_text_color(s_about_rows[UI_ABOUT_ROWS - 1U],
+                                lv_color_hex(UI_COLOR_ACCENT), 0);
+
+    s_about_author = lv_label_create(s_about_overlay);
+    lv_obj_set_pos(s_about_author, UI_CONTENT_X, UI_ABOUT_AUTHOR_Y);
+    lv_obj_set_width(s_about_author, UI_CONTENT_W);
+    lv_obj_set_style_text_align(s_about_author, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_about_author, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_color(s_about_author, lv_color_hex(UI_COLOR_MUTED), 0);
+    lv_label_set_text(s_about_author, VERSION_INFO_AUTHOR);
+
+    lv_obj_t *hint = lv_label_create(s_about_overlay);
+    lv_obj_set_pos(hint, UI_CONTENT_X, UI_ABOUT_HINT_Y);
+    lv_obj_set_width(hint, UI_CONTENT_W);
+    lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(UI_COLOR_DIM), 0);
+    /* Filled when the screen opens, because the language can change between
+     * the overlay being built and anybody looking at it. */
+    lv_label_set_text(hint, "");
+    s_about_hint = hint;
 }
 
 static const char *ui_settings_group_text(ui_settings_group_t group, bool english)
@@ -1689,6 +1769,11 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         snprintf(text, text_size, "  %s: %s", english ? "Flip horizontal" : "Поворот по горизонтали",
                  s_device_settings.flip_horizontal ? "ON" : "OFF");
         break;
+    case UI_SETTINGS_ROW_ABOUT:
+        /* No indent and no value: it is not a field inside a group, and there
+         * is nothing beside it to show - a press opens something instead. */
+        snprintf(text, text_size, "%s", english ? "About" : "Об устройстве");
+        break;
     default:
         text[0] = '\0';
         break;
@@ -1721,6 +1806,40 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     default:
         return false;
     }
+}
+
+/* Fills the overlay and puts it up.
+ *
+ * The versions are read here rather than kept: the web half means opening a
+ * file, and that belongs to the moment somebody asks rather than to a poll
+ * loop that runs every 10 ms. Neither figure can change while the device is
+ * running, so once per press is once too often already. */
+static void ui_show_about(void)
+{
+    if (s_about_open || s_about_overlay == NULL) return;
+    s_about_open = true;
+    s_about_opened_ms = ui_tick_get_ms();
+
+    const bool english = s_device_settings.language == DEVICE_LANGUAGE_EN;
+    version_info_t info;
+    version_info_read(&info);
+    ui_about_lines_t lines;
+    ui_about_build(&info, english, &lines);
+
+    const char *const text[UI_ABOUT_ROWS] = {
+        lines.firmware, lines.built, lines.web, lines.idf, lines.notice,
+    };
+    for (size_t row = 0U; row < UI_ABOUT_ROWS; ++row) {
+        lv_label_set_text(s_about_rows[row], text[row]);
+    }
+    lv_label_set_text(s_about_hint, english ? "press to go back" : "нажмите для возврата");
+    lv_obj_clear_flag(s_about_overlay, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void ui_hide_about(void)
+{
+    s_about_open = false;
+    if (s_about_overlay != NULL) lv_obj_add_flag(s_about_overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void ui_hide_qr(void)
@@ -1919,6 +2038,9 @@ static void ui_close_settings(void)
     if (!s_settings_open) return;
     s_settings_open = false;
     ui_hide_qr();
+    /* Both overlays, or the screen would come back with one still up over a
+     * list nobody asked to hide. */
+    ui_hide_about();
     /* Disarmed on the way out: coming back to a screen whose knob still edits
      * the row it was left on is the sort of thing nobody expects. */
     s_settings_model.editing = false;
@@ -3358,6 +3480,16 @@ static void ui_handle_input(board_input_action_t action)
         return;
     }
     if (s_settings_open) {
+        if (s_about_open) {
+            /* One thing on screen and one way off it, like the QR overlay: any
+             * button returns, and the knob has nothing to move. */
+            if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON ||
+                action == BOARD_INPUT_ACTION_ENCODER_LONG ||
+                action == BOARD_INPUT_ACTION_F2) {
+                ui_hide_about();
+            }
+            return;
+        }
         if (s_qr_open) {
             /* One thing on screen and one way off it: any button returns, and
              * the knob has nothing to move. */
@@ -3384,6 +3516,8 @@ static void ui_handle_input(board_input_action_t action)
                 &s_settings_model, s_settings_model.cursor);
             if (row.kind == UI_SETTINGS_ROW_BAND) {
                 ui_show_qr();
+            } else if (row.kind == UI_SETTINGS_ROW_ACTION) {
+                ui_show_about();
             } else if (ui_settings_row_is_number(row.id)) {
                 /* The click arms and disarms the knob rather than changing
                  * anything: a number has no next value to step to the way a
@@ -4097,6 +4231,12 @@ static void ui_task(void *arg)
             if (s_qr_open &&
                 (uint32_t)(ui_tick_get_ms() - s_qr_opened_ms) >= UI_QR_IDLE_TIMEOUT_MS) {
                 ui_hide_qr();
+            }
+            /* The same timeout, and the same reasoning: nothing on either
+             * overlay changes, so one left up is one nobody is reading. */
+            if (s_about_open &&
+                (uint32_t)(ui_tick_get_ms() - s_about_opened_ms) >= UI_QR_IDLE_TIMEOUT_MS) {
+                ui_hide_about();
             }
             ui_update_settings();
         } else if (s_yandex_open) {

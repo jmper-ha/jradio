@@ -28,6 +28,11 @@ typedef enum {
     UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
     UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD,
     UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD,
+    /* The last row of the list, and in no group: what it opens is not a
+     * setting and has nothing to change. It sits after the groups rather than
+     * inside one because it is about the device as a whole - the versions it
+     * is running and who wrote it. */
+    UI_SETTINGS_ROW_ABOUT,
     /* The band along the bottom of the screen, which shows the address of the
      * web UI. It is not a setting and it is not in the list - it is drawn
      * where it always is - but it is the last thing the cursor reaches, so it
@@ -39,6 +44,10 @@ typedef enum {
 typedef enum {
     UI_SETTINGS_ROW_GROUP = 0,
     UI_SETTINGS_ROW_FIELD,
+    /* Drawn in the list like a field, but it belongs to no group and holds no
+     * value - a press opens something instead of changing something. Its own
+     * kind so the screen does not have to test the id to know that. */
+    UI_SETTINGS_ROW_ACTION,
     UI_SETTINGS_ROW_BAND,
 } ui_settings_row_kind_t;
 
@@ -83,9 +92,10 @@ void ui_settings_model_init(ui_settings_model_t *model, bool home_screen);
 ui_settings_model_result_t ui_settings_model_move(ui_settings_model_t *model, int direction);
 ui_settings_model_result_t ui_settings_model_activate(ui_settings_model_t *model);
 ui_settings_row_id_t ui_settings_model_selected(const ui_settings_model_t *model);
-/* How many rows the list holds - what the screen draws. The address band is
- * one past that: it is a cursor position, not a row to draw, so counting it
- * here would scroll the list to make room for something already on screen. */
+/* How many rows the list holds - what the screen draws, including the About
+ * row at the end. The address band is one past that: it is a cursor position,
+ * not a row to draw, so counting it here would scroll the list to make room
+ * for something already on screen. */
 size_t ui_settings_model_row_count(const ui_settings_model_t *model);
 /* Answers the band for `index == ui_settings_model_row_count()`, which is how
  * the cursor's position past the end of the list is read back. */

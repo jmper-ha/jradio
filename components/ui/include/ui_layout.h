@@ -324,6 +324,26 @@ _Static_assert(UI_STATION_LIST_MAX_ROWS >= 3U,
 _Static_assert(UI_SETTINGS_MAX_ROWS >= 3U,
                "fewer than three settings rows fit above the web band");
 
+/* The About overlay: a title, a few readings, and the address at the bottom.
+ * Sized off the faces rather than typed, like everything else here, so the
+ * 480x320 panel spaces it out and the 240x320 one does not run off the end.
+ *
+ * It covers the settings screen whole, strip included - there is nothing on
+ * that screen it needs to leave visible, and a cover is what the QR overlay
+ * beside it already does. */
+#define UI_ABOUT_TITLE_Y 12
+#define UI_ABOUT_ROW_Y (UI_ABOUT_TITLE_Y + UI_FONT_TITLE_LINE_H + 10)
+#define UI_ABOUT_ROW_PITCH (UI_SRC_LINE_H + 2)
+/* Firmware, when it was built, the web assets, the framework, and a line that
+ * speaks up only when the first and the third disagree. */
+#define UI_ABOUT_ROWS 5U
+/* The two lines pinned to the bottom: who to write to, and how to leave. */
+#define UI_ABOUT_AUTHOR_Y (TFT_HEIGHT - 2 * UI_SRC_LINE_H - 12)
+#define UI_ABOUT_HINT_Y (TFT_HEIGHT - UI_SRC_LINE_H - 6)
+_Static_assert(UI_ABOUT_ROW_Y + (int)UI_ABOUT_ROWS * UI_ABOUT_ROW_PITCH <= UI_ABOUT_AUTHOR_Y,
+               "the About screen's rows run into the address at the bottom");
+
+
 #define UI_LIST_RULE_Y (UI_LIST_ROW_Y + (int)UI_STATION_LIST_MAX_ROWS * UI_LIST_ROW_PITCH + 6)
 #define UI_LIST_PROGRESS_Y (UI_LIST_RULE_Y + 8)
 _Static_assert(UI_LIST_PROGRESS_Y + UI_SRC_PROGRESS_H <= TFT_HEIGHT,

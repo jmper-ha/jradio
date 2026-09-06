@@ -21,6 +21,12 @@
   const wifiChosen = document.querySelector('#wifi-chosen');
   const wifiChosenName = document.querySelector('#wifi-chosen-name');
   const wifiSsidRow = document.querySelector('#wifi-ssid-row');
+  const aboutFirmware = document.querySelector('#about-firmware');
+  const aboutBuilt = document.querySelector('#about-built');
+  const aboutWeb = document.querySelector('#about-web');
+  const aboutIdf = document.querySelector('#about-idf');
+  const aboutNotice = document.querySelector('#about-notice');
+  const aboutAuthor = document.querySelector('#about-author');
   const yandexStatus = document.querySelector('#yandex-status');
   const yandexCodeBlock = document.querySelector('#yandex-code-block');
   const yandexUrl = document.querySelector('#yandex-url');
@@ -820,6 +826,45 @@
     }, fast ? 2000 : 15000);
   }
 
+  /* Versions never change while the device is running, so this is fetched
+     once when the page loads and never polled. */
+  function applyAbout(payload) {
+    if (!isObject(payload)) return;
+    const firmware = isObject(payload.firmware) ? payload.firmware : {};
+    const web = isObject(payload.web) ? payload.web : {};
+    const named = (value) => (typeof value === 'string' && value ? value : 'неизвестно');
+    aboutFirmware.textContent = named(firmware.version);
+    aboutBuilt.textContent = named(firmware.built);
+    aboutWeb.textContent = named(web.version);
+    aboutIdf.textContent = named(payload.idf);
+    /* Only when the two are known and differ. A web half that could not be
+       read is old, not mismatched, and the "неизвестно" beside it has already
+       said so - the same rule the device's own screen follows. */
+    const mismatched = firmware.present === true && web.present === true &&
+                       payload.matched === false;
+    aboutNotice.hidden = !mismatched;
+    aboutNotice.textContent = mismatched
+      ? 'Версии прошивки и веб-интерфейса не совпадают'
+      : '';
+    if (typeof payload.author === 'string' && payload.author) {
+      aboutAuthor.textContent = payload.author;
+      aboutAuthor.href = `mailto:${payload.author}`;
+    }
+  }
+
+  function refreshAbout() {
+    return window.fetch('/api/about', {cache: 'no-store'})
+      .then((response) => {
+        if (!response || response.ok !== true) throw new Error('request failed');
+        return response.json();
+      })
+      .then(applyAbout)
+      /* A device that cannot answer leaves the dashes that are already there:
+         this card is informational, and a failure notice for it would sit
+         beside the connection state the page already shows. */
+      .catch(() => {});
+  }
+
   function refreshYandex() {
     return window.fetch('/api/yandex', {cache: 'no-store'})
       .then((response) => {
@@ -875,4 +920,5 @@
   connect();
   refreshDeviceSettings();
   refreshYandex();
+  refreshAbout();
 })();

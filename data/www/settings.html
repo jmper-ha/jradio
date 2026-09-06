@@ -214,6 +214,25 @@
           <p class="field-note">Пароль от Яндекса устройству не нужен: код подтверждается на сайте
             Яндекса, сюда возвращается только токен доступа.</p>
         </section>
+
+        <section class="card" aria-labelledby="about-title">
+          <div class="card-head">
+            <h2 id="about-title">Об устройстве</h2>
+          </div>
+
+          <dl class="about-list">
+            <dt>Прошивка</dt><dd id="about-firmware">—</dd>
+            <dt>Собрана</dt><dd id="about-built">—</dd>
+            <dt>Веб-интерфейс</dt><dd id="about-web">—</dd>
+            <dt>ESP-IDF</dt><dd id="about-idf">—</dd>
+          </dl>
+
+          <p id="about-notice" class="settings-status is-error" hidden></p>
+
+          <p class="field-note">Прошивка и веб-интерфейс пишутся разными командами, поэтому
+            у них свои версии. Если они разошлись, перепрошейте раздел данных.</p>
+          <p class="field-note"><a id="about-author" href="#">—</a></p>
+        </section>
       </div>
     </div>
   </main>

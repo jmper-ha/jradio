@@ -1271,6 +1271,25 @@ button.network-name:hover { color: var(--accent); }
 
 .file-button { cursor: pointer; }
 
+/* Name on the left, value on the right, aligned down the card. A table would
+   say the same thing with more markup, and a definition list is what this is. */
+.about-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .25rem .8rem;
+  padding: .6rem .8rem;
+  margin: 0;
+  font-size: .85rem;
+}
+
+.about-list dt { color: var(--muted); }
+
+.about-list dd {
+  margin: 0;
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
 .yandex-code { padding: .6rem .8rem; display: grid; gap: .3rem; }
 .yandex-code-lead { font-size: .85rem; }
 .yandex-code a { color: var(--accent-2); }

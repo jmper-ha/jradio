@@ -8,6 +8,38 @@ ESP-IDF 5.5.x, target `esp32s3`. Built and verified on 5.5.5; the version it
 was built with is recorded in [`dependencies.lock`](../dependencies.lock).
 Setting the environment up from scratch has [a page of its own](toolchain.en.md).
 
+### Versions
+
+The firmware version is not typed in anywhere: ESP-IDF runs `git describe
+--always --tags --dirty` and puts the result in the app header, which is where
+both the boot log and the About screen read it from. It refreshes on a commit by
+itself - CMake watches the branch's ref file and re-reads the version when it
+moves.
+
+**Use tags.** Without them the version is a short hash, and no hash tells you
+which build is newer. With `git tag v1.0.0` it becomes `v1.0.0-3-gabc1234`: the
+release, how many commits followed it, and the hash.
+
+The `-dirty` suffix can go stale. It is computed at configure time, and editing
+a file does not move the branch ref, so a build from a dirty tree may report a
+version without it. For a build made from a commit this does not arise.
+
+**The web interface has a version of its own**, because it and the firmware are
+written by different commands. [`tools/stamp_version.py`](../tools/stamp_version.py)
+writes it to `config/version.json` inside the data image on every build, from the
+same `PROJECT_VER`. The device shows both side by side and says so when they
+differ. The generated file lives only in the build directory, never in `data/`.
+
+To build with another version without touching git:
+
+```bash
+idf.py -DPROJECT_VER=v1.2.3-test build
+```
+
+That value sticks in the CMake cache - to go back to git, delete the
+`PROJECT_VER` line from `build/CMakeCache.txt` (an empty `-DPROJECT_VER=` gives
+you version `1`, which is not what you wanted).
+
 The shortest way in is VS Code: open the project folder and it offers the
 recommended extensions - ESP-IDF and C/C++. The ESP-IDF extension opens its own
 setup wizard on first run, which downloads the framework and the toolchain;

@@ -73,9 +73,18 @@ static const ui_settings_row_t s_field_rows[] = {
 
 #define UI_SETTINGS_FIELD_ROW_COUNT (sizeof(s_field_rows) / sizeof(s_field_rows[0]))
 
-/* Not in either table above, because nothing that walks the groups should ever
- * meet it: the band belongs to no group and is drawn nowhere in the list. It
- * is one cursor position past the last row, and that is all it is. */
+/* Neither of these is in the tables above, because nothing that walks the
+ * groups should ever meet them - they belong to no group.
+ *
+ * About is the last row of the list and is drawn; the band is one cursor
+ * position past the list and is drawn along the bottom whatever the cursor is
+ * doing. That difference is the whole reason they are two things. */
+static const ui_settings_row_t s_about_row = {
+    .id = UI_SETTINGS_ROW_ABOUT,
+    .group = UI_SETTINGS_GROUP_COUNT,
+    .kind = UI_SETTINGS_ROW_ACTION,
+};
+
 static const ui_settings_row_t s_band_row = {
     .id = UI_SETTINGS_ROW_ADDRESS_BAND,
     .group = UI_SETTINGS_GROUP_COUNT,
@@ -110,7 +119,10 @@ static size_t row_count_for_group(const ui_settings_model_t *model, ui_settings_
     return 1U + (model->expanded_group == (int)group ? field_count(model, group) : 0U);
 }
 
-static size_t total_row_count(const ui_settings_model_t *model)
+/* The headings and whatever the expanded group shows - everything the group
+ * walk above can reach. Kept apart from the total below so that walk needs no
+ * special case for the row that follows it. */
+static size_t group_row_count(const ui_settings_model_t *model)
 {
     size_t count = 0U;
     for (ui_settings_group_t group = UI_SETTINGS_GROUP_LANGUAGE;
@@ -118,6 +130,15 @@ static size_t total_row_count(const ui_settings_model_t *model)
         count += row_count_for_group(model, group);
     }
     return count;
+}
+
+/* Plus About, which is always there and always last. Everything downstream -
+ * where the band sits, how far the cursor may travel, which rows the window
+ * shows - is written against this, so the row appears in all of them by
+ * arithmetic rather than by being added to each. */
+static size_t total_row_count(const ui_settings_model_t *model)
+{
+    return group_row_count(model) + 1U;
 }
 
 static void movement_bounds(const ui_settings_model_t *model, size_t *first, size_t *last)
@@ -243,6 +264,7 @@ ui_settings_row_t ui_settings_model_row_at(const ui_settings_model_t *model, siz
     if (!valid_model(model)) return invalid;
     if (index == total_row_count(model)) return s_band_row;
     if (index > total_row_count(model)) return invalid;
+    if (index == group_row_count(model)) return s_about_row;
 
     size_t offset = 0U;
     for (ui_settings_group_t group = UI_SETTINGS_GROUP_LANGUAGE;

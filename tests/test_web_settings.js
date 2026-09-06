@@ -42,6 +42,8 @@ class Element {
 const ids = [
   'socket-state', 'wifi-form', 'wifi-ssid', 'wifi-password', 'wifi-password-reveal',
   'wifi-submit',
+  'about-firmware', 'about-built', 'about-web', 'about-idf', 'about-notice',
+  'about-author',
   'wifi-status', 'wifi-active', 'wifi-ip', 'saved-networks',
   'saved-networks-empty', 'wifi-add', 'wifi-cancel', 'wifi-scan',
   'wifi-scan-block', 'scan-networks', 'scan-empty', 'wifi-chosen',
@@ -105,6 +107,14 @@ let settingsReply = {
   brightness_min: 10, brightness_max: 90,
 };
 let settingsPostFails = false;
+// GET /api/about. The versions differ on purpose: a page that ignored the
+// answer and printed the same string twice would still look right if they
+// matched.
+let aboutReply = {
+  firmware: {version: 'v1.2.0', built: 'Sep  6 2026', present: true},
+  web: {version: 'v1.1.0', built: '2026-09-01', present: true},
+  idf: 'v5.5.5', matched: false, author: 'someone@example.com',
+};
 // What window.confirm() answers, and every question it was asked.
 let confirmAnswer = true;
 const confirmCalls = [];
@@ -149,6 +159,9 @@ const context = {
           ok: true,
           json: () => Promise.resolve(settingsReply),
         });
+      }
+      if (String(url).startsWith('/api/about')) {
+        return Promise.resolve({ok: true, json: () => Promise.resolve(aboutReply)});
       }
       if (yandexFetchFails) return Promise.reject(new Error('offline'));
       return Promise.resolve({
@@ -300,6 +313,18 @@ async function settle() {
   // Deep enough for the longest chain on the page: a refused settings write
   // falls into its catch, re-reads the document and only then reports.
   for (let step = 0; step < 24; step += 1) await Promise.resolve();
+}
+
+/* Runs the page again, which is the only way to see what a different answer
+   to a load-time request produces: the About card is fetched once and never
+   polled, because versions cannot change while the device runs.
+
+   The second run re-queries the same fake elements and adds another set of
+   listeners to them, so this is only safe at the very end of the file - which
+   is where the About assertions are. */
+async function reload() {
+  vm.runInContext(fs.readFileSync('data/www/settings.js', 'utf8'), context);
+  await settle();
 }
 
 function lastYandexTimer() {
@@ -708,6 +733,41 @@ function lastYandexTimer() {
   scanRows[2].children[0].emit('click');
   assert.equal(elements['#wifi-ssid-row'].hidden, false);
   assert.equal(elements['#wifi-chosen'].hidden, true);
+
+  // The About card. Its whole reason for existing is the case where the two
+  // halves disagree, so that is what the reply above sets up.
+  assert.ok(fetchCalls.some((call) => call.url === '/api/about'));
+  assert.equal(elements['#about-firmware'].textContent, 'v1.2.0');
+  assert.equal(elements['#about-built'].textContent, 'Sep  6 2026');
+  assert.equal(elements['#about-web'].textContent, 'v1.1.0');
+  assert.equal(elements['#about-idf'].textContent, 'v5.5.5');
+  assert.equal(elements['#about-notice'].hidden, false);
+  // The address is the device's answer, not a string written into the page,
+  // and it is offered as something to write to.
+  assert.equal(elements['#about-author'].textContent, 'someone@example.com');
+  assert.equal(elements['#about-author'].href, 'mailto:someone@example.com');
+
+  // Agreement is the quiet case.
+  aboutReply = {
+    firmware: {version: 'v1.2.0', built: 'Sep  6 2026', present: true},
+    web: {version: 'v1.2.0', built: '2026-09-06', present: true},
+    idf: 'v5.5.5', matched: true, author: 'someone@example.com',
+  };
+  await reload();
+  assert.equal(elements['#about-web'].textContent, 'v1.2.0');
+  assert.equal(elements['#about-notice'].hidden, true);
+
+  // A web half the device could not read says so, and does *not* raise the
+  // mismatch notice: an image flashed before the stamp existed is old, not
+  // mismatched, and crying wolf there would teach the reader to ignore it.
+  aboutReply = {
+    firmware: {version: 'v1.2.0', built: 'Sep  6 2026', present: true},
+    web: {version: '', built: '', present: false},
+    idf: 'v5.5.5', matched: false, author: 'someone@example.com',
+  };
+  await reload();
+  assert.equal(elements['#about-web'].textContent, 'неизвестно');
+  assert.equal(elements['#about-notice'].hidden, true);
 
   console.log('web settings tests passed');
 })().catch((error) => {

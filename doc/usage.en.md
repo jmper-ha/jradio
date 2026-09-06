@@ -159,6 +159,25 @@ through the list as before.
 The language switch still only changes the labels on the settings screen
 itself.
 
+### About
+
+The last item in the list. It opens a page naming the firmware version and the
+date it was built, the web interface's version, the ESP-IDF version and an
+address to write to; any button closes it, or it closes itself after 30 seconds.
+
+There are two versions, and that is not pedantry: the firmware and the web
+interface live in different partitions and are written by different commands -
+`idf.py flash` does not touch the pages and `littlefs-flash` does not touch the
+firmware. So they drift apart easily, and before this screen existed the only
+way to notice was a log on the serial port. When they differ the page says so;
+the cure is `littlefs-flash`, see [Building and flashing](build.en.md).
+
+"unknown" in place of the web version means the data partition was written by a
+build too old to stamp its version there. That is not a mismatch, and the screen
+does not raise the alarm about it.
+
+The same card is at the bottom of the web interface's Settings page.
+
 The same settings are in the web interface, on its Settings page, in the same
 words and the same order - except the volume, which has a knob on the device and
 a slider in the player itself; a third place to set it only confused matters. It

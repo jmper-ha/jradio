@@ -22,12 +22,23 @@ project(jradio)
 # impossible on Windows: `bash` is not on PATH there, this target failed on
 # every build, and the image came out with no web interface in it. Python is
 # the one interpreter every host running idf.py is guaranteed to have.
+#
+# The same staging step stamps the web assets with the version they were built
+# from. It is the firmware's own PROJECT_VER - the one ESP-IDF derives with
+# `git describe` and writes into the app header - so both halves of the device
+# answer with one string, and a mismatch means what it says: the two were
+# flashed from different commits. Which happens, because they are flashed by
+# two different commands.
 set(littlefs_stage_dir "${CMAKE_BINARY_DIR}/littlefs_data")
 idf_build_get_property(python PYTHON)
+idf_build_get_property(jradio_project_ver PROJECT_VER)
 add_custom_target(littlefs_stage
     COMMAND ${CMAKE_COMMAND} -E remove_directory "${littlefs_stage_dir}"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data" "${littlefs_stage_dir}"
     COMMAND ${python} "${CMAKE_SOURCE_DIR}/tools/gzip_www_assets.py" "${littlefs_stage_dir}/www"
+    COMMAND ${python} "${CMAKE_SOURCE_DIR}/tools/stamp_version.py"
+            --version "${jradio_project_ver}"
+            --out "${littlefs_stage_dir}/config/version.json"
     VERBATIM
 )
 

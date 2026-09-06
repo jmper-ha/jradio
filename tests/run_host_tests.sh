@@ -34,6 +34,7 @@ include_flags=(
     -I"${project_dir}/components/file_storage/include"
     -I"${project_dir}/components/sd_storage/include"
     -I"${project_dir}/components/usb_storage/include"
+    -I"${project_dir}/components/version_info/include"
     -I"${project_dir}/components/web_server"
     -I"${project_dir}/components/web_server/include"
     -I"${project_dir}/components/yandex_music"
@@ -126,8 +127,15 @@ run_test board_audio_health tests/test_board_audio_health.c \
     components/board/board_audio_health.c
 run_test board_audio_startup tests/test_board_audio_startup.c \
     components/board/board_audio_startup.c
+# The half of version_info that has no device in it: the stamp comes off a
+# filesystem, so refusing a truncated or hand-edited one is the part worth
+# testing, and none of it needs ESP-IDF.
+run_test version_info tests/test_version_info.c components/version_info/version_info_parse.c
 run_test board_options tests/test_board_options.c
 run_test ui_layout tests/test_ui_layout.c
+# What the About screen says about the two versions - which is a set of
+# decisions, and the reason the screen exists is the one where they disagree.
+run_test ui_about tests/test_ui_about.c components/ui/ui_about.c
 run_test board_input tests/test_board_input.c components/board/board_input.c
 run_test board_button_gesture tests/test_board_button_gesture.c components/board/board_input.c
 run_test hls_playlist tests/test_hls_playlist.c \

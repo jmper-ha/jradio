@@ -12,20 +12,26 @@ static void test_collapsed_groups_and_cursor(void)
 {
     ui_settings_model_t model;
     ui_settings_model_init(&model, true);
-    assert(ui_settings_model_row_count(&model) == 3U);
+    /* Three headings and About, which is always the last row of the list. */
+    assert(ui_settings_model_row_count(&model) == 4U);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_LANGUAGE_GROUP);
 
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_GENERAL_GROUP);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DISPLAY_GROUP);
-    /* One more stop past the last heading: the address band along the bottom.
-     * It is where the cursor ends up, and only then does the screen stop. */
+    /* Then About, the last row that is drawn... */
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_ABOUT);
+    assert(ui_settings_model_row_at(&model, model.cursor).kind == UI_SETTINGS_ROW_ACTION);
+    /* ...and one stop past it the address band along the bottom, which is a
+     * cursor position and not a row. It is where the cursor ends up, and only
+     * then does the screen stop. */
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_ADDRESS_BAND);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_NO_CHANGE);
     assert(ui_settings_model_move(&model, -1) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DISPLAY_GROUP);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_ABOUT);
 }
 
 static void test_the_address_band_is_a_stop_not_a_row(void)
@@ -35,8 +41,10 @@ static void test_the_address_band_is_a_stop_not_a_row(void)
     const size_t count = ui_settings_model_row_count(&model);
     /* The band is not counted among the rows the screen draws: it is painted
      * along the bottom whatever the list is doing, and counting it would make
-     * the window scroll to reveal something already on screen. */
-    assert(count == 3U);
+     * the window scroll to reveal something already on screen. Three headings
+     * and About are what is counted - About *is* drawn, which is exactly the
+     * difference between the two. */
+    assert(count == 4U);
     const ui_settings_row_t band = ui_settings_model_row_at(&model, count);
     assert(band.id == UI_SETTINGS_ROW_ADDRESS_BAND);
     assert(band.kind == UI_SETTINGS_ROW_BAND);
@@ -58,7 +66,47 @@ static void test_the_address_band_is_a_stop_not_a_row(void)
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
     while (ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED) {
         assert(ui_settings_model_selected(&model) != UI_SETTINGS_ROW_ADDRESS_BAND);
+        /* About follows the same rule, and for the same reason: it is in no
+         * group, so an open group pens the cursor away from it. */
+        assert(ui_settings_model_selected(&model) != UI_SETTINGS_ROW_ABOUT);
     }
+}
+
+static void test_about_is_the_last_row_and_opens_rather_than_changes(void)
+{
+    ui_settings_model_t model;
+    ui_settings_model_init(&model, true);
+    const size_t count = ui_settings_model_row_count(&model);
+    const ui_settings_row_t about = ui_settings_model_row_at(&model, count - 1U);
+    assert(about.id == UI_SETTINGS_ROW_ABOUT);
+    /* Its own kind, so the screen can tell "press opens something" from
+     * "press changes a value" without testing the id. */
+    assert(about.kind == UI_SETTINGS_ROW_ACTION);
+    /* In no group, like the band - it is about the device, not about one of
+     * the three things the groups collect. */
+    assert(about.group == UI_SETTINGS_GROUP_COUNT);
+
+    model.cursor = count - 1U;
+    /* Holds no number and is no group, so neither the knob nor an expand can
+     * be armed on it. What a press does is the screen's business. */
+    assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_ABOUT));
+    assert(ui_settings_model_toggle_edit(&model) == UI_SETTINGS_MODEL_NO_CHANGE);
+    assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_NO_CHANGE);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_ABOUT);
+
+    /* It is there whatever else the screen is showing: opening a group adds
+     * that group's fields above it and leaves it last. */
+    ui_settings_model_init(&model, true);
+    (void)ui_settings_model_move(&model, 1);
+    (void)ui_settings_model_activate(&model);
+    const size_t expanded = ui_settings_model_row_count(&model);
+    assert(ui_settings_model_row_at(&model, expanded - 1U).id == UI_SETTINGS_ROW_ABOUT);
+
+    /* And on a device with no home screen, where a row is taken away rather
+     * than added. */
+    ui_settings_model_init(&model, false);
+    const size_t no_home = ui_settings_model_row_count(&model);
+    assert(ui_settings_model_row_at(&model, no_home - 1U).id == UI_SETTINGS_ROW_ABOUT);
 }
 
 static void test_the_band_does_not_scroll_the_list(void)
@@ -85,7 +133,7 @@ static void test_expand_limits_cursor_to_group(void)
     ui_settings_model_t model;
     ui_settings_model_init(&model, true);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_row_count(&model) == 4U);
+    assert(ui_settings_model_row_count(&model) == 5U);
     assert(ui_settings_model_row_at(&model, 0U).id == UI_SETTINGS_ROW_LANGUAGE_GROUP);
     assert(ui_settings_model_row_at(&model, 1U).id == UI_SETTINGS_ROW_LANGUAGE_FIELD);
     assert(ui_settings_model_row_at(&model, 1U).kind == UI_SETTINGS_ROW_FIELD);
@@ -97,7 +145,7 @@ static void test_expand_limits_cursor_to_group(void)
     assert(ui_settings_model_move(&model, -1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_LANGUAGE_GROUP);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_row_count(&model) == 3U);
+    assert(ui_settings_model_row_count(&model) == 4U);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_LANGUAGE_GROUP);
 }
 
@@ -110,7 +158,7 @@ static void test_each_group_has_expected_fields(void)
     /* General holds home screen, scrolling, the buffer reading and autoplay,
      * plus the Yandex Music switch in a build that has the feature - the one
      * row here that a board option can take away. */
-    assert(ui_settings_model_row_count(&model) == 7U + BOARD_HAS_YANDEX_MUSIC);
+    assert(ui_settings_model_row_count(&model) == 8U + BOARD_HAS_YANDEX_MUSIC);
     assert(ui_settings_model_row_at(&model, 2U).id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_SCROLL_FIELD);
     assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_BUFFER_FIELD);
@@ -143,7 +191,7 @@ static void test_the_display_group_holds_a_number_the_knob_edits(void)
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DISPLAY_GROUP);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_row_count(&model) == 6U);
+    assert(ui_settings_model_row_count(&model) == 7U);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD);
     assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD);
 
@@ -224,7 +272,14 @@ static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
     const size_t count = ui_settings_model_row_count(&model);
-    assert(count == 6U);
+    assert(count == 7U);
+    /* The furthest the cursor goes: the last field of the open group. About
+     * is the row after it and belongs to no group, so an open group cannot
+     * reach it - hence "count - 2" rather than "count - 1". */
+    const size_t bottom = count - 2U;
+    /* And how far the window has to move to show that row: just enough, which
+     * is what "follows the cursor and otherwise holds still" means. */
+    const size_t scrolled = bottom - visible + 1U;
     /* The cursor is still on the heading at row 2, which is on screen, so the
      * window has not moved. */
     assert(ui_settings_model_window_top(&model, visible) == 0U);
@@ -240,17 +295,19 @@ static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
     /* The last field is the one that does not fit, and it pulls the window by
      * exactly one row - enough to show the cursor, and no more. */
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
-    assert(model.cursor == count - 1U);
-    assert(ui_settings_model_window_top(&model, visible) == count - visible);
+    assert(model.cursor == bottom);
+    assert(ui_settings_model_window_top(&model, visible) == scrolled);
     assert(ui_settings_model_has_rows_above(&model));
-    assert(!ui_settings_model_has_rows_below(&model, visible));
+    /* About is still below the window, so the list does still continue - it
+     * is simply not somewhere this cursor can go. */
+    assert(ui_settings_model_has_rows_below(&model, visible));
 
     /* Coming back up, the window holds rather than snapping back: every row
      * of the open group is still visible from where it is, and a list that
      * scrolled on each step would move under a cursor that never left the
      * screen. */
     while (ui_settings_model_move(&model, -1) == UI_SETTINGS_MODEL_CHANGED) {
-        assert(ui_settings_model_window_top(&model, visible) == count - visible);
+        assert(ui_settings_model_window_top(&model, visible) == scrolled);
     }
     /* The cursor is back on the Display heading, which is the top of what the
      * group can reach - so this is the whole group seen without the window
@@ -329,7 +386,8 @@ static void test_the_longest_list_needs_the_window(void)
         const size_t count = ui_settings_model_row_count(&model);
         if (count > longest) longest = count;
     }
-    assert(longest == 7U + BOARD_HAS_YANDEX_MUSIC);
+    /* Three headings, the deepest group's fields, and About. */
+    assert(longest == 8U + BOARD_HAS_YANDEX_MUSIC);
     /* Whatever the longest is, every row of it is reachable with the window. */
     ui_settings_model_init(&model, true);
     model.expanded_group = (int)UI_SETTINGS_GROUP_GENERAL;
@@ -344,6 +402,7 @@ int main(void)
 {
     test_collapsed_groups_and_cursor();
     test_the_address_band_is_a_stop_not_a_row();
+    test_about_is_the_last_row_and_opens_rather_than_changes();
     test_the_band_does_not_scroll_the_list();
     test_expand_limits_cursor_to_group();
     test_each_group_has_expected_fields();

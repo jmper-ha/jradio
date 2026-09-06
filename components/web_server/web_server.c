@@ -29,6 +29,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "player_control.h"
 #include "station_catalog.h"
 #include "ui_now_playing.h"
+#include "version_info.h"
 #include "file_storage.h"
 #include "album_art.h"
 #include "image_decode.h"
@@ -661,6 +662,50 @@ static const char *web_server_yandex_catalog_name(yandex_catalog_state_t state)
     default:
         return "empty";
     }
+}
+
+/* What this device is running: the firmware's version and the web assets'
+ * version, which are two answers because they are flashed by two commands.
+ *
+ * The device is the single source for both, so the panel and the page cannot
+ * end up describing the same box differently - the page could read the stamp
+ * itself, being served off the same partition, but then a browser holding an
+ * old copy would report the version of a file it no longer has. */
+static esp_err_t web_server_about_get(httpd_req_t *request)
+{
+    version_info_t info;
+    version_info_read(&info);
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON *firmware = root == NULL ? NULL : cJSON_AddObjectToObject(root, "firmware");
+    cJSON *web = root == NULL ? NULL : cJSON_AddObjectToObject(root, "web");
+    if (root == NULL || firmware == NULL || web == NULL) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_FAIL;
+    }
+    cJSON_AddStringToObject(firmware, "version", info.firmware.version);
+    cJSON_AddStringToObject(firmware, "built", info.firmware.built);
+    cJSON_AddBoolToObject(firmware, "present", info.firmware.present);
+    cJSON_AddStringToObject(web, "version", info.web.version);
+    cJSON_AddStringToObject(web, "built", info.web.built);
+    /* Absent is not the same as different, and the page needs to tell them
+     * apart to say the right thing. */
+    cJSON_AddBoolToObject(web, "present", info.web.present);
+    cJSON_AddStringToObject(root, "idf", info.idf);
+    cJSON_AddBoolToObject(root, "matched", version_info_matched(&info));
+    cJSON_AddStringToObject(root, "author", VERSION_INFO_AUTHOR);
+
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (json == NULL) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(request, "application/json");
+    const esp_err_t err = httpd_resp_sendstr(request, json);
+    cJSON_free(json);
+    return err;
 }
 
 static esp_err_t web_server_yandex_get(httpd_req_t *request)
@@ -1532,6 +1577,7 @@ esp_err_t web_server_start(void)
             {.uri = "/api/stations", .method = HTTP_GET, .handler = web_server_stations_get},
             {.uri = "/api/playlist", .method = HTTP_GET, .handler = web_server_playlist_get},
             {.uri = "/api/playlist", .method = HTTP_POST, .handler = web_server_playlist_post},
+            {.uri = "/api/about", .method = HTTP_GET, .handler = web_server_about_get},
             {.uri = "/api/yandex", .method = HTTP_GET, .handler = web_server_yandex_get},
             {.uri = "/api/yandex", .method = HTTP_POST, .handler = web_server_yandex_post},
             {.uri = "/api/settings", .method = HTTP_GET, .handler = web_server_settings_api_get},

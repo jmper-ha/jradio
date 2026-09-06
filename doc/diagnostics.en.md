@@ -45,33 +45,46 @@ something fails with `ESP_ERR_NO_MEM` while `internal_free` looks ample, get
 the breakdown by region - `heap_caps_print_heap_info()` says which piece of
 memory actually ran out.
 
-## Screen shimmer on the ILI9488 board
+## Screen flicker: the panel needs a supply of its own
 
-On the board built here with the 480x320 panel the picture shimmers slightly,
-and it is not the drawing. What was measured, and what it is not:
+**Solved 2026-09-06, and recorded here because it is a condition for repeating
+the board rather than the story of one fault.** The panel must not be powered
+from the ESP32-S3 module's 3V3 pin: the module's own LDO will not carry it
+along with everything else, and the picture flickers. The fix is a separate
+regulator - an AMS1117-3.3 fed from USB +5 V, feeding the panel.
 
-- **not the bus.** 20 MHz and 40 MHz shimmer identically;
+**Capacitors did not help**, and that is the useful part: 470 uF and 100 nF
+right at the module's pins changed nothing, while a separate regulator removed
+the flicker outright. So it was never ripple that decoupling could shunt - it
+was the module's regulator not delivering the current. Do not reach for
+capacitors instead of a second regulator.
+
+What it looks like, and why it misleads:
+
+- worst on mid-tones and on album art, nearly invisible on white and on black;
+- worse with brightness - much worse at 75 than at 10;
+- worse under load - worse while playing than paused;
+- **it follows the individual module.** Two ESP32-S3 modules on the same board,
+  with the same panel and the same firmware: one flickers, the other does not.
+  That is the spread you would expect from different LDOs.
+
+What was ruled out by measurement before the cause was found, so that nobody
+walks the circle again:
+
+- **not the firmware.** Identical on the current build and on one from two days
+  earlier, and identical on ESP-IDF 5.5.4 and 5.5.5;
+- **not the panel bus.** 20 MHz and 40 MHz are the same;
 - **not the redraw rate.** Thinning the animations from 100 a second to 30
   changed nothing;
-- **not the backlight PWM.** 5 kHz and 25 kHz are the same, if anything worse
-  at 25;
+- **not the backlight PWM.** 5 kHz and 25 kHz are the same;
 - **not the amount redrawn.** One second on the player screen is 11-23 flush
   calls and 4000-7700 pixels against 153 600 in a frame: the panel is idle over
-  97% of the time, and only changed rectangles are ever sent.
+  97% of the time, and only changed rectangles are ever sent;
+- **not the panel.** The same panel on the other module does not flicker at all.
 
-What it does track: mid-tones - a white QR card and the near-black settings
-screen stand perfectly still, album art shimmers worst; brightness - much less
-at 10 than at 75; and load - worse while playing than paused. A flicker that is
-invisible on white and on black but visible in the middle of the scale is the
-signature of VCOM, the panel's analogue reference. That comes from the module's
-own converter, which is fed from the board's rail - the same rail the backlight
-current runs through.
-
-From here it is hardware: put a meter on the module's supply at brightness 10
-and 75, stopped and playing; fit 100 uF and 100 nF right at the connector; move
-the backlight onto a rail of its own. The ILI9341 board does not shimmer at
-all - but it is a different board as well as a different module, so that
-confirms the picture rather than separating the causes.
+One experiment separated all of it: swap the two modules, leaving the board,
+the panel, the firmware and the brightness the same. Equalise the brightness
+first - an unequal comparison will "prove" whatever you like.
 
 ## Limits
 

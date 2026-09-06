@@ -74,12 +74,6 @@ Limits worth knowing about in advance:
   on the media; anything past that is dropped with a warning.
 - **exFAT is not supported** - drives of 64 GB and up usually ship formatted
   that way and have to be reformatted.
-- **On the board with the ILI9488 480x320 the screen shimmers slightly** on
-  mid-tones, worst on album art, more with brightness and under load. The
-  firmware has been ruled out by measurement: neither the bus clock, nor the
-  animation rate, nor the backlight PWM frequency changes it, and under 5% of a
-  frame's pixels are repainted per second. It is the module's supply - see
-  [Diagnostics](doc/diagnostics.en.md).
 
 The full list of limits, with numbers, is in
 [Diagnostics and limits](doc/diagnostics.en.md).

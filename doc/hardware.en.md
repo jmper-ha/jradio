@@ -148,6 +148,12 @@ need one, though these boards are known to.
 
 Worth knowing if you build the board:
 
+- **the panel gets a regulator of its own, not the module's 3V3 pin.** An
+  AMS1117-3.3 fed from USB +5 V. Powered from the module the picture flickers:
+  its LDO will not carry the panel along with everything else, and how badly
+  depends on the individual module. Capacitors at the module's pins do not fix
+  it - that was tried; the details and everything that was ruled out are in
+  [Diagnostics](diagnostics.en.md#screen-flicker-the-panel-needs-a-supply-of-its-own);
 - there is no MISO to the display, the bus is one-way; the panel wants BGR
   order;
 - the PCM5102 runs without MCLK, I2S slots are 16-bit stereo, BCLK = 32 x Fs.

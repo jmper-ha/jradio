@@ -15,10 +15,18 @@ $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 
-# main/idf_component.yml asks for >=5.5,<5.6. Several versions side by side is
-# the normal state of an ESP-IDF machine, so a candidate whose path says 5.5 is
-# taken ahead of one that does not, rather than the newest winning.
-$want = '5.5'
+# The version this project is built and verified with, and the one
+# dependencies.lock names.
+#
+# Pinned exactly rather than by family, because "5.5" is not one answer on a
+# machine that has ever upgraded: two patch versions sit side by side, the
+# globs below find both, and taking whichever came first meant the VS Code
+# tasks quietly built on the older one while an activated terminal built on the
+# newer. See tools/idf.sh, which this mirrors.
+$want = '5.5.5'
+# What main/idf_component.yml actually allows, >=5.5,<5.6. The fallback when
+# the pinned version is not installed.
+$wantFamily = '5.5'
 
 function Test-IdfPath([string] $path) {
     if ([string]::IsNullOrWhiteSpace($path)) { return $false }
@@ -34,15 +42,12 @@ function Add-Candidate([string] $path) {
     }
 }
 
-Add-Candidate $env:IDF_PATH
-
-# The build directory remembers the framework it was configured with, which is
-# the one that can rebuild it without a full reconfigure.
-$cache = Join-Path $root 'build/CMakeCache.txt'
-if (Test-Path $cache) {
-    $line = Select-String -Path $cache -Pattern '^IDF_PATH:PATH=(.*)$' | Select-Object -First 1
-    if ($line) { Add-Candidate $line.Matches[0].Groups[1].Value }
-}
+# IDF_PATH is deliberately not a candidate here - it is handled below as an
+# override. The build directory used to be one: it recorded IDF_PATH in its
+# CMakeCache, and reusing that avoided a reconfigure. As of 5.5.5 the cache no
+# longer carries the variable at all, and what it does carry can name two
+# different versions at once after a build on each - which is the state that
+# motivated the pin above, not a source to trust.
 
 # Already activated in this shell: idf.py sits in $IDF_PATH\tools.
 $onPath = Get-Command idf.py -ErrorAction SilentlyContinue
@@ -66,10 +71,24 @@ foreach ($pattern in @(
     }
 }
 
-$idf = $found | Where-Object { $_ -like "*$want*" } | Select-Object -First 1
-if (-not $idf -and $found.Count -gt 0) {
-    $idf = $found[0]
-    Write-Host "tools/idf.ps1: using $idf; this project is built with ESP-IDF $want.x"
+# An explicit IDF_PATH is somebody's deliberate choice - testing another
+# version, or a shell where export.ps1 has been run - and it wins outright.
+# Being redirected to the pinned version without being told is no way to test
+# one.
+$idf = $null
+if (Test-IdfPath $env:IDF_PATH) {
+    $idf = (Resolve-Path -LiteralPath $env:IDF_PATH).Path
+} else {
+    $idf = $found | Where-Object { $_ -like "*$want*" } | Select-Object -First 1
+    if (-not $idf) {
+        $idf = $found | Where-Object { $_ -like "*$wantFamily*" } | Select-Object -First 1
+        if ($idf) {
+            Write-Host "tools/idf.ps1: ESP-IDF $want is not installed; using $idf"
+        } elseif ($found.Count -gt 0) {
+            $idf = $found[0]
+            Write-Host "tools/idf.ps1: using $idf; this project is built with ESP-IDF $want"
+        }
+    }
 }
 
 if (-not $idf) {
@@ -82,7 +101,7 @@ toolchain. Choose version 5.5.x.
 
 Outside VS Code, install it by hand and either set IDF_PATH or run its
 export.ps1 before this script:
-https://docs.espressif.com/projects/esp-idf/en/v5.5.4/esp32s3/get-started/
+https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32s3/get-started/
 '@
     exit 1
 }

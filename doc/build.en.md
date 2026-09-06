@@ -22,6 +22,14 @@ the extension's copy included - and activates it, so `export.sh` never has to
 be sourced by hand. The port is detected when the machine has one board on it;
 with several attached, name the right one in `ESPPORT`.
 
+What it looks for is **5.5.5 exactly**, not "something from 5.5". On a machine
+that has ever upgraded two versions sit side by side, and taking the first one
+found meant the VS Code tasks built on one while a terminal that had sourced
+`export.sh` built on the other - and a build on the wrong one rewrites
+`dependencies.lock`. With 5.5.5 absent any 5.5.x is used and the script says so.
+An `IDF_PATH` that is set overrides the choice, which is how another version is
+built with on purpose.
+
 Every task works on Windows except "Host tests": those want a POSIX shell and a
 gcc with sanitizers, so Linux, macOS or WSL.
 

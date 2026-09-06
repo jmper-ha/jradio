@@ -21,10 +21,21 @@ set -euo pipefail
 
 jradio_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# main/idf_component.yml asks for >=5.5,<5.6. Several versions side by side is
-# the normal state of an ESP-IDF machine, so a candidate whose path says 5.5 is
-# taken ahead of one that does not, rather than the newest winning.
-jradio_want="5.5"
+# The version this project is built and verified with, and the one
+# dependencies.lock names.
+#
+# Pinned exactly rather than by family, because "5.5" is not one answer on a
+# machine that has ever upgraded: 5.5.4 and 5.5.5 sit side by side under
+# ~/.espressif, the glob below finds both, and taking whichever came first
+# meant the VS Code tasks quietly built on 5.5.4 while a terminal that had
+# sourced export.sh built on 5.5.5. That mix does not stay quiet for long -
+# a build on the other version rewrites dependencies.lock and turns up in the
+# diff - but by then it has already produced firmware nobody meant to make.
+jradio_want="5.5.5"
+# What main/idf_component.yml actually allows, >=5.5,<5.6. The fallback when
+# the pinned version is not installed, so a machine carrying only 5.5.6 builds
+# instead of being told no.
+jradio_want_family="5.5"
 
 jradio_is_idf() { [ -f "${1}/export.sh" ] && [ -f "${1}/tools/idf.py" ]; }
 
@@ -36,13 +47,12 @@ jradio_add() {
     return 0   # a miss is the normal case, and must not trip set -e
 }
 
-jradio_add "${IDF_PATH:-}"
-
-# The build directory remembers the framework it was configured with, which is
-# the one that can rebuild it without a full reconfigure.
-if [ -f "${jradio_root}/build/CMakeCache.txt" ]; then
-    jradio_add "$(sed -n 's/^IDF_PATH:PATH=//p' "${jradio_root}/build/CMakeCache.txt" | head -n 1)"
-fi
+# IDF_PATH is deliberately not a candidate here - it is handled below as an
+# override. The build directory used to be one: it recorded IDF_PATH in its
+# CMakeCache, and reusing that avoided a reconfigure. As of 5.5.5 the cache no
+# longer carries the variable at all, and what it does carry can name two
+# different versions at once after a build on each - which is the state that
+# motivated the pin above, not a source to trust.
 
 # Already activated in this shell: idf.py sits in $IDF_PATH/tools.
 if command -v idf.py >/dev/null 2>&1; then
@@ -60,16 +70,30 @@ for jradio_glob in \
     jradio_add "${jradio_glob}"
 done
 
-jradio_idf=""
-if [ "${#jradio_found[@]}" -gt 0 ]; then
-    for jradio_glob in "${jradio_found[@]}"; do
-        case "${jradio_glob}" in
-            *"${jradio_want}"*) jradio_idf="${jradio_glob}"; break ;;
+# Takes the first candidate whose path contains $1, if any.
+jradio_pick() {
+    [ "${#jradio_found[@]}" -gt 0 ] || return 1
+    for jradio_candidate in "${jradio_found[@]}"; do
+        case "${jradio_candidate}" in
+            *"$1"*) jradio_idf="${jradio_candidate}"; return 0 ;;
         esac
     done
-    if [ -z "${jradio_idf}" ]; then
+    return 1
+}
+
+jradio_idf=""
+if jradio_is_idf "${IDF_PATH:-}"; then
+    # An explicit IDF_PATH is somebody's deliberate choice - testing another
+    # version, or a shell where export.sh has been sourced - and it wins
+    # outright. Being redirected to the pinned version without being told is
+    # no way to test one.
+    jradio_idf="${IDF_PATH}"
+elif ! jradio_pick "${jradio_want}"; then
+    if jradio_pick "${jradio_want_family}"; then
+        echo "tools/idf.sh: ESP-IDF ${jradio_want} is not installed; using ${jradio_idf}" >&2
+    elif [ "${#jradio_found[@]}" -gt 0 ]; then
         jradio_idf="${jradio_found[0]}"
-        echo "tools/idf.sh: using ${jradio_idf}; this project is built with ESP-IDF ${jradio_want}.x" >&2
+        echo "tools/idf.sh: using ${jradio_idf}; this project is built with ESP-IDF ${jradio_want}" >&2
     fi
 fi
 
@@ -83,7 +107,7 @@ toolchain. Choose version 5.5.x.
 
 Outside VS Code, install it by hand and either export IDF_PATH or source its
 export.sh before running this script:
-https://docs.espressif.com/projects/esp-idf/en/v5.5.4/esp32s3/get-started/
+https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32s3/get-started/
 MSG
     exit 1
 fi

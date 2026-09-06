@@ -1475,6 +1475,22 @@ static bool ui_playback_running(const player_snapshot_t *snapshot)
            snapshot->playback_state == PLAYER_PLAYBACK_RECONNECTING;
 }
 
+/* Repaints whichever home screen is on show, and nothing when neither is.
+ *
+ * The active screen decides, not the setting: the setting says which one this
+ * device uses, while what has to be redrawn is what the panel is displaying
+ * right now - and most of the time that is the player or a list, where these
+ * two have nothing to say. */
+static void ui_refresh_home_screen(void)
+{
+    lv_obj_t *active = lv_screen_active();
+    if (active == s_feed_screen && s_feed_screen != NULL) {
+        ui_update_feed_screen();
+    } else if (active == s_menu_screen && s_menu_screen != NULL) {
+        ui_update_menu_highlight();
+    }
+}
+
 static void ui_load_menu_screen(void);
 /* Defined with the rest of the player plumbing, further down; the Yandex
  * screen needs them before that - to post its commands, to open the list the
@@ -3898,7 +3914,21 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     if (snapshot == NULL) return;
     const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
     const audio_source_t old_source = ui_player_state_source(&s_player_ui);
+    /* The home screens grey out the sources that need a network, and until now
+     * nothing redrew them when one arrived: both are painted when the screen
+     * is loaded and when a button is pressed, so a device that reached the
+     * home screen before the Wi-Fi did - which is the ordinary case, the join
+     * takes about three seconds - sat there with the radio and Yandex dimmed
+     * until somebody moved the cursor and back. The row was live all along;
+     * only the paint was stale.
+     *
+     * Watched here rather than in the loop because this is where the flag the
+     * two screens read is written, and only on the edge: repainting either of
+     * them every pass would be a hundred redraws a second for a thing that
+     * changes twice a day. */
+    const bool wifi_changed = snapshot->wifi_connected != s_last_wifi_connected;
     s_last_wifi_connected = snapshot->wifi_connected;
+    if (wifi_changed) ui_refresh_home_screen();
     if (ui_network_lost_for_good(snapshot)) {
         ui_show_menu();
         return;

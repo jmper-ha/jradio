@@ -55,10 +55,13 @@ bool ui_menu_item_is_visible(ui_menu_item_t item, bool yandex_visible)
 bool ui_menu_item_is_enabled(ui_menu_item_t item, bool yandex_visible, bool wifi_connected)
 {
     if (!ui_menu_item_is_visible(item, yandex_visible)) return false;
-    /* Both of these are streams off the internet and there is nothing they can
-     * do without one. Everything else - the drive, the card, Settings - works
-     * with the network down. */
-    if (item == UI_MENU_ITEM_INTERNET_RADIO || item == UI_MENU_ITEM_YANDEX_MUSIC) {
+    /* These three are reached over the network and there is nothing they can do
+     * without it. The media server is on the LAN rather than on the internet,
+     * but with no join there is nothing to search for and nothing to stream.
+     * Everything else - the drive, the card, Settings - works with the network
+     * down. */
+    if (item == UI_MENU_ITEM_INTERNET_RADIO || item == UI_MENU_ITEM_YANDEX_MUSIC ||
+        item == UI_MENU_ITEM_DLNA) {
         return wifi_connected;
     }
     return true;

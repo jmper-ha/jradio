@@ -957,6 +957,33 @@ static void ui_update_files_status(const player_snapshot_t *snapshot)
     ui_set_stream_readings(snapshot);
 }
 
+/* A media server has no list to take a name from and no tags of its own to
+ * read: what it knows arrives the way a station's does, in the two strings the
+ * chain filled - the container it is playing out of, and "performer - track".
+ * So it is drawn by the station derivation with no list behind it, which is
+ * exactly what web_socket.c falls back to, and the panel and the page cannot
+ * end up saying different things about the same track. */
+static void ui_update_dlna_status(const player_snapshot_t *snapshot)
+{
+    ui_now_playing_t now;
+    ui_now_playing_for_station(false, "", snapshot->context, snapshot->stream_title, &now);
+
+    ui_set_label_text_if_changed(s_source_title, now.heading);
+    ui_scroller_set_text(&s_source_detail, now.title);
+
+    /* Nothing playing yet is a browser waiting to be used, not a failure - the
+     * same line the volumes show, worded for a server. */
+    const char *state = "";
+    if (snapshot->playback_state == PLAYER_PLAYBACK_STOPPED) {
+        state = "Выберите трек";
+    } else if (snapshot->playback_state != PLAYER_PLAYBACK_PLAYING &&
+               snapshot->playback_state != PLAYER_PLAYBACK_PAUSED) {
+        state = ui_radio_state_text(snapshot->playback_state);
+    }
+    ui_set_state_line(state, now.artist, snapshot->playback_state == PLAYER_PLAYBACK_ERROR);
+    ui_set_stream_readings(snapshot);
+}
+
 static void ui_update_radio_status(const player_snapshot_t *snapshot)
 {
     if (snapshot == NULL) return;
@@ -969,6 +996,10 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
      * it, and one line of state. Only where the name comes from differs - the
      * catalog file for the radio, the account's list for Yandex. */
     const audio_source_t source = ui_player_state_source(&s_player_ui);
+    if (source == AUDIO_SOURCE_DLNA) {
+        ui_update_dlna_status(snapshot);
+        return;
+    }
     if (!audio_source_is_stations(source)) return;
 
     // While a station switch is pending confirmation, snapshot->active_item_index
@@ -3091,6 +3122,15 @@ static void ui_load_source_screen(audio_source_t selected_source)
         // Nothing plays until a file is chosen, so this screen opens idle
         // rather than pretending to connect.
         ui_set_state_line("Выберите файл", "", false);
+        ui_scroller_set_text(&s_source_detail, "");
+        ui_set_label_text_if_changed(s_source_stream, "");
+    } else if (selected_source == AUDIO_SOURCE_DLNA) {
+        s_waiting_for_radio_station = false;
+        /* Nothing plays until a track is chosen, as on a volume - but unlike a
+         * volume the listing is not there yet: the search listens for a couple
+         * of seconds before the browser can open. Saying so beats an idle
+         * screen that looks like nothing happened. */
+        ui_set_state_line("Поиск медиасервера", "", false);
         ui_scroller_set_text(&s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
     } else {

@@ -205,6 +205,13 @@ static void test_network_sources_need_a_network(void)
         /* Switched off in Settings beats every other answer: there is no row. */
         assert(!ui_menu_item_is_enabled(UI_MENU_ITEM_YANDEX_MUSIC, false, true));
     }
+    /* The media server sits on the LAN rather than on the internet, and it
+       still needs the join: with none there is nothing to search for and
+       nothing to stream. */
+    if (ui_menu_item_is_visible(UI_MENU_ITEM_DLNA, true)) {
+        assert(!ui_menu_item_is_enabled(UI_MENU_ITEM_DLNA, true, false));
+        assert(ui_menu_item_is_enabled(UI_MENU_ITEM_DLNA, true, true));
+    }
     if (ui_menu_item_is_visible(UI_MENU_ITEM_USB_FILES, true)) {
         assert(ui_menu_item_is_enabled(UI_MENU_ITEM_USB_FILES, true, false));
     }

@@ -59,6 +59,12 @@ static void test_activation_maps_only_the_implemented_sources(void)
     assert(source == AUDIO_SOURCE_SD);
     assert(ui_feed_model_activate(UI_FEED_USB, &source));
     assert(source == AUDIO_SOURCE_USB);
+    /* The media server plays like the rest, so the carousel has to open it
+       like the rest. It did not, and the icon answered "функция пока
+       недоступна" on a source that was finished and working - the one place
+       where forgetting a case is invisible until somebody presses it. */
+    assert(ui_feed_model_activate(UI_FEED_DLNA, &source));
+    assert(source == AUDIO_SOURCE_DLNA);
 
     /* Unimplemented modes must report failure rather than silently selecting
      * nothing, or the feed would look like it opened them. */
@@ -66,7 +72,6 @@ static void test_activation_maps_only_the_implemented_sources(void)
     assert(!ui_feed_model_activate(UI_FEED_BLUETOOTH, &source));
     assert(source == AUDIO_SOURCE_NONE);
     assert(!ui_feed_model_activate(UI_FEED_FM, &source));
-    assert(!ui_feed_model_activate(UI_FEED_DLNA, &source));
     assert(!ui_feed_model_activate(UI_FEED_YANDEX, &source));
     assert(!ui_feed_model_activate(UI_FEED_SETTINGS, &source));
 

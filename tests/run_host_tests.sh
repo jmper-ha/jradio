@@ -25,6 +25,7 @@ include_flags=(
     -I"${project_dir}/components/audio_tags/tjpgd"
     -I"${project_dir}/components/board/include"
     -I"${project_dir}/components/diagnostics/include"
+    -I"${project_dir}/components/dlna/include"
     -I"${project_dir}/components/internet_radio/include"
     -I"${project_dir}/components/jradio_wifi_provisioning/include"
     -I"${project_dir}/components/player_control/include"
@@ -138,6 +139,19 @@ run_test ui_layout tests/test_ui_layout.c
 run_test ui_about tests/test_ui_about.c components/ui/ui_about.c
 run_test board_input tests/test_board_input.c components/board/board_input.c
 run_test board_button_gesture tests/test_board_button_gesture.c components/board/board_input.c
+# Reading a media server on the LAN. Every fixture in these is bytes taken off
+# the wire from the server here, not something written from the specification:
+# the escaping, the namespace prefixes and the relative service URL are all
+# things a client written on paper gets wrong on the first real server.
+run_test dlna_xml tests/test_dlna_xml.c components/dlna/dlna_xml.c
+run_test dlna_discovery tests/test_dlna_discovery.c components/dlna/dlna_ssdp.c \
+    components/dlna/dlna_device.c components/dlna/dlna_url.c components/dlna/dlna_xml.c
+run_test dlna_browse tests/test_dlna_browse.c components/dlna/dlna_soap.c \
+    components/dlna/dlna_didl.c components/dlna/dlna_xml.c \
+    components/internet_radio/radio_stream_format.c
+run_test dlna_browse_stack tests/test_dlna_browse_stack.c \
+    components/dlna/dlna_browse_stack.c components/dlna/dlna_didl.c \
+    components/dlna/dlna_xml.c components/internet_radio/radio_stream_format.c
 run_test hls_playlist tests/test_hls_playlist.c \
     components/internet_radio/hls_playlist.c
 run_test icy_metadata tests/test_icy_metadata.c components/internet_radio/icy_metadata.c

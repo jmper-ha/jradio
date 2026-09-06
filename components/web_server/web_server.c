@@ -31,6 +31,8 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "ui_now_playing.h"
 #include "version_info.h"
 #include "file_storage.h"
+#include "dlna_source.h"
+#include "radio_stream_format.h"
 #include "album_art.h"
 #include "image_decode.h"
 #include "esp_heap_caps.h"
@@ -982,6 +984,100 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
     return httpd_resp_send_chunk(request, NULL, 0);
 }
 
+/* The media server's listing, the counterpart of /api/files.
+ *
+ * Its own endpoint rather than a shape bolted onto that one: the two answer
+ * about different things - a path on a volume against a place in a server's
+ * tree - and the only reason they look alike is that a browser is a browser.
+ * Sharing the handler would mean one function asking which source is active
+ * twice on every row.
+ *
+ * REST rather than the WebSocket for the reason the file listing is: 64 rows
+ * of names is far past WEB_PROTOCOL_EVENT_MAX, and none of it changes between
+ * browses.
+ */
+static esp_err_t web_server_dlna_get(httpd_req_t *request)
+{
+    if (!dlna_source_is_open()) {
+        /* Not an error the page should show as a failure: it means the source
+         * has not been selected, or the search found nothing. */
+        httpd_resp_send_err(request, HTTPD_404_NOT_FOUND, "No media server");
+        return ESP_FAIL;
+    }
+
+    web_json_writer_t writer;
+    web_json_init(&writer, s_file_chunk_buffer, sizeof(s_file_chunk_buffer),
+                  sizeof(s_file_chunk_buffer));
+    web_json_literal(&writer, "{\"path\":");
+    web_json_string(&writer, dlna_source_heading());
+    web_json_literal(&writer, ",\"revision\":");
+    web_json_format(&writer, "%u", player_control_listing_revision());
+    web_json_literal(&writer, ",\"has_parent\":");
+    web_json_literal(&writer, dlna_source_at_root() ? "false" : "true");
+    web_json_literal(&writer, ",\"items\":[");
+    if (!web_json_valid(&writer)) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
+                            "Listing too large");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(request, "application/json; charset=utf-8");
+    // Live state, not a file: a cached copy would describe a container the
+    // device has already left.
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+
+    const size_t count = dlna_source_entry_count();
+    for (size_t index = 0U; index < count; ++index) {
+        dlna_entry_t entry;
+        if (!dlna_source_entry_at(index, &entry)) {
+            // Browsed away mid-walk. Stop cleanly rather than emit a document
+            // that claims more entries than it carries.
+            break;
+        }
+        web_json_literal(&writer, index > 0U ? ",{\"index\":" : "{\"index\":");
+        web_json_format(&writer, "%u", (unsigned)index);
+        web_json_literal(&writer, ",\"name\":");
+        web_json_string(&writer, entry.title);
+        web_json_literal(&writer, ",\"kind\":");
+        web_json_literal(&writer,
+                         entry.kind == DLNA_ENTRY_CONTAINER ? "\"dir\"" : "\"file\"");
+        if (entry.kind != DLNA_ENTRY_CONTAINER) {
+            /* Said outright rather than left to be guessed from a missing
+             * format: a row the device cannot play still belongs on the list -
+             * hiding it looks exactly like a server with missing files - and
+             * the page needs to know to draw it dimmed. */
+            web_json_literal(&writer, ",\"playable\":");
+            web_json_literal(&writer, entry.playable ? "true" : "false");
+            if (entry.playable) {
+                web_json_literal(&writer, ",\"format\":");
+                web_json_string(&writer, radio_stream_format_codec_name(entry.format));
+            }
+        }
+        web_json_literal(&writer, "}");
+        if (!web_json_valid(&writer)) {
+            ESP_LOGE(TAG, "DLNA listing entry %u did not fit the chunk buffer",
+                     (unsigned)index);
+            return ESP_FAIL;
+        }
+        // Flushed whenever the next row might not fit, so one buffer serves a
+        // container of any size.
+        if (web_json_length(&writer) + sizeof(entry.title) + sizeof(entry.artist) >
+            sizeof(s_file_chunk_buffer)) {
+            const esp_err_t err = httpd_resp_send_chunk(request, s_file_chunk_buffer,
+                                                        web_json_length(&writer));
+            if (err != ESP_OK) return err;
+            web_json_init(&writer, s_file_chunk_buffer, sizeof(s_file_chunk_buffer),
+                          sizeof(s_file_chunk_buffer));
+        }
+    }
+
+    web_json_literal(&writer, "]}");
+    if (!web_json_valid(&writer)) return ESP_FAIL;
+    const esp_err_t err = httpd_resp_send_chunk(request, s_file_chunk_buffer,
+                                                web_json_length(&writer));
+    if (err != ESP_OK) return err;
+    return httpd_resp_send_chunk(request, NULL, 0);
+}
+
 static esp_err_t web_server_playlist_get(httpd_req_t *request)
 {
     FILE *file = fopen(STATION_CATALOG_PATH, "r");
@@ -1574,6 +1670,7 @@ esp_err_t web_server_start(void)
             {.uri = "/api/wifi-scan", .method = HTTP_POST, .handler = web_server_wifi_scan_post},
             {.uri = "/api/wifi-scan", .method = HTTP_GET, .handler = web_server_wifi_scan_get},
             {.uri = "/api/files", .method = HTTP_GET, .handler = web_server_files_get},
+            {.uri = "/api/dlna", .method = HTTP_GET, .handler = web_server_dlna_get},
             {.uri = "/api/stations", .method = HTTP_GET, .handler = web_server_stations_get},
             {.uri = "/api/playlist", .method = HTTP_GET, .handler = web_server_playlist_get},
             {.uri = "/api/playlist", .method = HTTP_POST, .handler = web_server_playlist_post},

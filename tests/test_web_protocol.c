@@ -281,6 +281,17 @@ static void test_accepts_source_and_station_selection(void)
     assert(command.player.kind == PLAYER_COMMAND_SELECT_SOURCE);
     assert(command.player.source == AUDIO_SOURCE_YANDEX);
 
+    /* The media server. Named "dlna" here because that is what the view model
+       already calls it going the other way - one spelling for both directions,
+       or the page selects a source the device reports under another name. */
+    const char *dlna =
+        "{\"type\":\"command\",\"id\":\"source-4\","
+        "\"action\":\"source.select\",\"source\":\"dlna\"}";
+    assert(parse(dlna, &command) == WEB_PROTOCOL_OK);
+    assert(command.kind == WEB_COMMAND_PLAYER);
+    assert(command.player.kind == PLAYER_COMMAND_SELECT_SOURCE);
+    assert(command.player.source == AUDIO_SOURCE_DLNA);
+
     const char *station =
         "{\"type\":\"command\",\"id\":\"43\",\"action\":\"list.select\",\"index\":3}";
     assert(parse(station, &command) == WEB_PROTOCOL_OK);

@@ -1,8 +1,8 @@
 # jradio
 
-A desktop audio player: internet radio, music from a USB drive and an SD card,
-Yandex Music. Driven by a knob and four buttons on the device itself, or from a
-browser on a phone or a computer.
+A desktop audio player: internet radio, music from a USB drive, an SD card and
+a media server on the home network, Yandex Music. Driven by a knob and four
+buttons on the device itself, or from a browser on a phone or a computer.
 
 *[Русская версия](README.md)*
 
@@ -33,6 +33,7 @@ the home screen. Details in [Hardware](doc/hardware.en.md).
 | **Music from an SD card** | works | The same; the card is found when the source is opened |
 | **Playlists on the media** | works | `.m3u`, `.m3u8` and `.pls` files open as a folder - [more](doc/usage.en.md#playlists-on-the-media) |
 | **Yandex Music** | works | "My Wave" and the account's stations, cover art, like and dislike - [more](doc/yandex.en.md) |
+| **Media server (DLNA)** | works | Finds a server on the network by itself, walks its tree, tags and cover - [more](doc/dlna.en.md) |
 | **Web interface** | works | Player, device settings, station list editor, file browser, Wi-Fi - [more](doc/web.en.md) |
 | **Clock** | works | Time from the internet, on every screen |
 | **Volume** | works | The knob, the web player and Settings; remembered |
@@ -40,7 +41,7 @@ the home screen. Details in [Hardware](doc/hardware.en.md).
 | **Cover art** | works | From the file's tag, from `cover.jpg` beside the music, from Yandex |
 | **Interface language** | partly | The switch exists but relabels the settings screen only |
 | **Yandex categories** | not done | Only the account's own stations; there is no catalogue of genres and moods |
-| **Bluetooth, FM, DLNA** | not done | No menu entries: the device shows only what it can actually do |
+| **Bluetooth, FM** | not done | No menu entries: the device shows only what it can actually do |
 
 ### Formats
 
@@ -84,6 +85,7 @@ The full list of limits, with numbers, is in
 |---|---|
 | [Using the device](doc/usage.en.md) | First run and Wi-Fi, buttons and gestures, the screens, settings, playlists on the media |
 | [Yandex Music](doc/yandex.en.md) | Linking an account, stations, the marks, what the device reports back |
+| [Media server (DLNA)](doc/dlna.en.md) | Finding a server, walking its tree, what plays and what is missing |
 | [Web interface](doc/web.en.md) | Pages, API endpoints, the station list format |
 | [Hardware](doc/hardware.en.md) | Pinout, choosing parts, panels and screen layouts, fonts |
 | [Setting up the development environment](doc/toolchain.en.md) | VS Code, the ESP-IDF extension, Python and everything else to install |

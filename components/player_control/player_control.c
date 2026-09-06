@@ -18,6 +18,7 @@
 #include "audio_source.h"
 #include "board_features.h"
 #include "device_settings.h"
+#include "dlna_source.h"
 #include "internet_radio.h"
 #include "station_catalog.h"
 #include "yandex_auth.h"
@@ -478,6 +479,19 @@ static bool player_stop_active_source(audio_source_t source)
             atomic_store_explicit(&s_yandex_item_index, PLAYER_ITEM_NONE,
                                   memory_order_release);
         }
+    } else if (source == AUDIO_SOURCE_DLNA) {
+        /* A media server's tracks play through the radio's own path - they are
+         * HTTP streams that end - so this stops the same way a station does.
+         * What is different is the release afterwards: a listing, a response
+         * buffer and the search results are some 130 KB of PSRAM that nothing
+         * needs while another source is playing. */
+        const esp_err_t result = internet_radio_stop();
+        if (result != ESP_OK) {
+            ESP_LOGW(TAG, "internet radio stop failed: %s", esp_err_to_name(result));
+            return false;
+        }
+        album_art_clear();
+        dlna_source_close();
     } else if (audio_source_is_files(source)) {
         const esp_err_t result = file_player_stop();
         if (result != ESP_OK) {
@@ -678,6 +692,23 @@ static void player_control_task(void *arg)
              * the user was picking a station and the box had already chosen
              * one. Autoplay wants that resume, and asks for it by posting
              * PLAY after this; nothing else does. */
+            if (command.source == AUDIO_SOURCE_DLNA) {
+                /* The search happens here and nowhere else, for the reason the
+                 * card is mounted here: nothing tells the device a server has
+                 * appeared, so the user asking for the source *is* the
+                 * detection. It blocks for the couple of seconds a search
+                 * listens - on this task, which is the one that already blocks
+                 * to open a station.
+                 *
+                 * A search that finds nothing is not an error to recover from:
+                 * the listing is empty, and the browser screen turns that into
+                 * a line the user can act on. */
+                const esp_err_t opened = dlna_source_open();
+                if (opened != ESP_OK) {
+                    ESP_LOGW(TAG, "no media server to browse: %s", esp_err_to_name(opened));
+                }
+                atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
+            }
             if (audio_source_is_files(command.source)) {
                 /* The card is mounted here and nowhere else. It is the only
                  * moment that can: nothing detects it being inserted, so the
@@ -716,6 +747,13 @@ static void player_control_task(void *arg)
         case PLAYER_OPERATION_START_ITEM:
             if (audio_source_is_files(snapshot.active_source)) {
                 player_file_select_item(command.item_index, snapshot.playback_state);
+            } else if (snapshot.active_source == AUDIO_SOURCE_DLNA) {
+                /* One row, two meanings, and the row decides - a container is
+                 * opened, a track is played. Both replace what the browser is
+                 * looking at, so both move the revision. */
+                if (dlna_source_activate(command.item_index) == DLNA_ACTIVATE_BROWSED) {
+                    atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
+                }
             } else if (snapshot.active_source == AUDIO_SOURCE_YANDEX) {
                 (void)player_yandex_start(command.item_index);
             } else if (player_adopt_internet_radio(snapshot.active_source)) {
@@ -841,7 +879,13 @@ static void player_control_task(void *arg)
             break;
         }
         case PLAYER_OPERATION_BROWSE_UP:
-            player_file_browse_up();
+            if (snapshot.active_source == AUDIO_SOURCE_DLNA) {
+                if (dlna_source_leave() == ESP_OK) {
+                    atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
+                }
+            } else {
+                player_file_browse_up();
+            }
             break;
         case PLAYER_OPERATION_BROWSE_REVEAL:
             player_file_reveal_playing();
@@ -958,6 +1002,11 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     if (BOARD_HAS_YANDEX_MUSIC && yandex_auth_is_authorized()) {
         snapshot->capabilities |= PLAYER_CAP_YANDEX;
     }
+    // Always, when the build has it: see PLAYER_CAP_DLNA. Whether a server
+    // answered is discovered by selecting the source, not before.
+    if (BOARD_HAS_DLNA) {
+        snapshot->capabilities |= PLAYER_CAP_DLNA;
+    }
     snapshot->active_source =
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
 
@@ -1034,11 +1083,33 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
             snapshot->track_liked = liked;
             snapshot->track_disliked = disliked;
         }
+    } else if (snapshot->active_source == AUDIO_SOURCE_DLNA) {
+        /* The server's listing, and the row inside it that is playing. The
+         * radio status reports SIZE_MAX for a chain by design, exactly as it
+         * does for the rotor, so the row comes from the source instead.
+         *
+         * `context` is left to the radio's station name below: it holds the
+         * album or folder handed to internet_radio_start_track_chain(), which
+         * is what the player block should say a media server's tracks came
+         * from. */
+        const size_t row = dlna_source_playing_index();
+        snapshot->active_item_index = row < DLNA_SOURCE_ENTRY_MAX ? row : PLAYER_ITEM_NONE;
+        snapshot->item_count = dlna_source_entry_count();
+        snapshot->browse_has_parent = !dlna_source_at_root();
     } else {
         snapshot->active_item_index = radio_status.station_index;
         snapshot->item_count = internet_radio_station_count();
     }
-    snprintf(snapshot->context, sizeof(snapshot->context), "%s", radio_status.station);
+    if (snapshot->active_source == AUDIO_SOURCE_DLNA) {
+        /* The container being browsed, which is what a volume puts here too:
+         * on both, `context` is where the rows come from. The album a track
+         * came from is not lost by this - it is the heading of the container
+         * the track was started in, and browsing away from it is the same
+         * gesture that changes a file browser's path under a playing file. */
+        snprintf(snapshot->context, sizeof(snapshot->context), "%s", dlna_source_heading());
+    } else {
+        snprintf(snapshot->context, sizeof(snapshot->context), "%s", radio_status.station);
+    }
     snprintf(snapshot->stream_title, sizeof(snapshot->stream_title), "%s",
              radio_status.title);
     snprintf(snapshot->codec, sizeof(snapshot->codec), "%s", radio_status.codec);

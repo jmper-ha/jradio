@@ -252,6 +252,18 @@
       '<path class="stroke" d="M16.2 2.4 18.6 4.8V19a2.4 2.4 0 0 1-2.4 2.4H7.8A2.4 2.4 0 0 1 5.4 19' +
       'V4.8a2.4 2.4 0 0 1 2.4-2.4Z"/>' +
       '<path class="stroke" d="M8.6 6.2v2.6M11.2 6.2v2.6M13.8 6.2v2.6"/></svg>',
+    /* The same mark the panel draws - a disc with three keyholes; see
+       draw_dlna() in tools/gen_feed_icons.py. The slits reach the rim, which is
+       what makes it recognisable, so the disc is painted as a square clipped to
+       a circle and the keyholes are punched out of it: a slit that stopped
+       short of the edge reads as a dented circle instead. */
+    dlna:
+      '<svg class="source-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+      '<defs><clipPath id="dlna-disc"><circle cx="12" cy="12" r="10.9"/></clipPath></defs>' +
+      '<path clip-path="url(#dlna-disc)" fill-rule="evenodd" d="M0 0h24v24H0Z' +
+      'M0 5.6h12.69a2.7 2.7 0 1 0 0 2.8H0Z' +
+      'M24 10.6H11.31a2.7 2.7 0 1 1 0 2.8H24Z' +
+      'M0 15.6h12.69a2.7 2.7 0 1 0 0 2.8H0Z"/></svg>',
     yandex:
       '<svg class="source-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
       '<path d="M20.43 12.93 16.86 12.18 19.55 16.11 15.83 13.15 17.02 18.79 14.26 13.63' +
@@ -260,10 +272,12 @@
       ' 19.05 6.89 17.28 9.11 20.27 9.70 17.43 10.77Z"/></svg>',
   });
 
-  // The two sources that stream from the internet, named in one place: the
-  // strip, the list and the playlist link all have to agree about them.
+  /* The sources that need the network, named in one place: the strip, the list
+     and the playlist link all have to agree about them. A media server is on
+     the LAN rather than on the internet, but with no join there is nothing to
+     search for and nothing to stream. */
   function needsNetworkSource(source) {
-    return source === 'internet_radio' || source === 'yandex';
+    return source === 'internet_radio' || source === 'yandex' || source === 'dlna';
   }
 
   function renderSources() {
@@ -655,7 +669,8 @@
   function listSignature(items) {
     return items
       .map((item) => `${item.index}\u0000${item.label}\u0000${item.meta || ''}` +
-                     `\u0000${item.isPlaylist ? 'p' : item.isDirectory ? 'd' : 'f'}`)
+                     `\u0000${item.isPlaylist ? 'p' : item.isDirectory ? 'd' : 'f'}` +
+                     `\u0000${item.isPlayable === false ? '0' : '1'}`)
       .join('\u0001');
   }
 
@@ -703,6 +718,11 @@
         // place on the drive, it names tracks from anywhere on it.
         isDirectory: item.kind === 'dir' || item.kind === 'playlist',
         isPlaylist: item.kind === 'playlist',
+        /* Only a media server says this, and only about a track: a video, or a
+           codec the firmware has no decoder for. Absent means playable, which
+           is what every row on a volume is - the drive's listing already leaves
+           out what cannot be opened. */
+        isPlayable: item.playable !== false,
       }));
   }
 
@@ -714,16 +734,24 @@
       .map((item) => ({index: item.index, label: item.label, meta: ''}));
   }
 
+  /* Two kinds of list, and for the browsable one the address depends on which
+     source is open: a media server browses exactly like a volume - a tree, a
+     place in it, somewhere above - so the page draws it the same way, and the
+     only difference is where the row names come from. Keying the URL off the
+     kind alone would send a DLNA browse to /api/files and get the drive's
+     files back under the server's heading. */
   const listingSources = {
     files: {
-      url: '/api/files',
+      url: (source) => (source === 'dlna' ? '/api/dlna' : '/api/files'),
       parse: normalizeFileEntries,
-      error: 'Не удалось прочитать флешку',
+      error: (source) => (source === 'dlna'
+        ? 'Не удалось прочитать медиасервер'
+        : 'Не удалось прочитать флешку'),
     },
     stations: {
-      url: '/api/stations',
+      url: () => '/api/stations',
       parse: normalizeStationEntries,
-      error: 'Не удалось прочитать список станций',
+      error: () => 'Не удалось прочитать список станций',
     },
   };
 
@@ -741,7 +769,7 @@
     listFetchSource = activeSource;
     listFetchRevision = revision;
     try {
-      const response = await fetch(source.url, {cache: 'no-store'});
+      const response = await fetch(source.url(activeSource), {cache: 'no-store'});
       if (!response.ok) throw new Error(`status ${response.status}`);
       const payload = await response.json();
       const entries = source.parse(payload);
@@ -777,7 +805,7 @@
       listShownRevision = Number.isSafeInteger(payload.revision) ? payload.revision : revision;
       renderList(previousList);
     } catch (error) {
-      commandStatus.textContent = source.error;
+      commandStatus.textContent = source.error(activeSource);
       commandStatus.classList.add('is-error');
     } finally {
       if (listFetchKind === kind && listFetchSource === activeSource &&
@@ -893,6 +921,12 @@
       // Modifier through classList, matching how is-active is applied below.
       button.classList.toggle('is-directory', Boolean(item.isDirectory));
       button.classList.toggle('is-playlist', Boolean(item.isPlaylist));
+      /* Shown and refused rather than hidden: a listing that drops what it
+         cannot play looks exactly like a server with files missing, and the
+         user would go looking on the server for a track that is right there. */
+      const unplayable = item.isPlayable === false;
+      button.classList.toggle('is-unplayable', unplayable);
+      button.disabled = unplayable;
       button.dataset.command = 'list.select';
       button.dataset.index = String(item.index);
       label.className = 'list-item-label';
@@ -900,7 +934,8 @@
       marker.className = 'active-marker';
       // A directory is opened, never played, so the playing marker would be
       // meaningless on one.
-      marker.textContent = item.isDirectory ? 'Открыть' : 'Играет';
+      marker.textContent = item.isDirectory ? 'Открыть'
+        : unplayable ? 'Не поддерживается' : 'Играет';
       marker.setAttribute('aria-hidden', 'true');
       /* CSS draws two of the bars as pseudo-elements; the third has to be a
          node, because one element has only two of them. */
@@ -970,7 +1005,10 @@
     listItems.hidden = offline || rowCount === 0;
 
     listItems.querySelectorAll('button').forEach((button) => {
-      button.disabled = !state.connected;
+      /* Two reasons a row can be dead, and this pass runs after the rows are
+         built: without the second term it would hand the click back to a row
+         the device has said it cannot play. */
+      button.disabled = !state.connected || button.classList.contains('is-unplayable');
       if (button.dataset.index === undefined) return;
       const active = Number(button.dataset.index) === state.list.active_index;
       button.classList.toggle('is-active', active);

@@ -581,6 +581,52 @@ socket.emit('open');
   assert.deepEqual(labels(), ['Радио Шоколад'],
     'каталог радио принимается и до выбора источника');
 
+  /* A media server browses the way a volume does, so the page draws the same
+     kind of list - but the names come from somewhere else. Keying the address
+     off the kind alone would fetch the drive's files and show them under the
+     server's heading. */
+  pendingFetch.length = 0;
+  fetchCalls.length = 0;
+  sendEvent(socket, {
+    type: 'snapshot',
+    revision: 20,
+    capabilities: [
+      {id: 'internet_radio', label: 'Интернет-радио', list_kind: 'stations'},
+      {id: 'dlna', label: 'DLNA', list_kind: 'files'},
+    ],
+    active_source: 'dlna',
+    player: {...usbPlayer(), mode: 'DLNA', context: 'Alive!'},
+    list: {kind: 'files', active_index: null, path: 'Alive!', revision: 20, has_parent: true},
+    wifi: {},
+  });
+  assert.equal(fetchCalls.length, 1, 'выбор медиасервера запрашивает список');
+  assert.equal(fetchCalls[0].url, '/api/dlna',
+    'список медиасервера берётся не с /api/files');
+
+  await respond({
+    path: 'Alive!',
+    revision: 20,
+    has_parent: true,
+    items: [
+      {index: 0, name: 'Ещё альбомы', kind: 'dir'},
+      {index: 1, name: 'Deuce', kind: 'file', playable: true, format: 'MP3'},
+      {index: 2, name: 'Клип', kind: 'file', playable: false},
+    ],
+  });
+  /* The way out of a container is a row like the volume's, and it is there
+     because the device said so: a server's tree has no path to test for a
+     root, so `has_parent` travels with the listing. */
+  assert.deepEqual(labels(), ['.. (наверх)', 'Ещё альбомы', 'Deuce', 'Клип']);
+
+  /* The row the device cannot play stays on the list - hiding it looks exactly
+     like a server with files missing - and refuses the click instead. */
+  const dlnaRows = rows();
+  assert.equal(dlnaRows[3].disabled, true, 'нечитаемая строка не нажимается');
+  assert.ok(dlnaRows[3].classList.contains('is-unplayable'));
+  assert.equal(dlnaRows[2].disabled, false, 'трек остаётся нажимаемым');
+  assert.ok(!dlnaRows[2].classList.contains('is-unplayable'));
+  assert.ok(dlnaRows[1].classList.contains('is-directory'));
+
   console.log('web usb tests passed');
 })().catch((error) => {
   console.error(error);

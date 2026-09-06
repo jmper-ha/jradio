@@ -45,6 +45,7 @@
 
 #include "audio_volume.h"
 #include "device_clock.h"
+#include "dlna_source.h"
 #include "ui_files_notice.h"
 #include "album_art.h"
 #include "ui_vu_meter.h"
@@ -374,9 +375,10 @@ static ui_click_gesture_t s_like_click;
 static ui_seek_t s_player_seek;
 static bool s_waiting_for_radio_station;
 static uint32_t s_radio_station_wait_started_ms;
-// The USB browser reuses this list screen. Outside the drive's root it shows a
-// ".." row above the entries, so every listing index is one below its row.
-static bool s_file_browser_has_parent_row;
+/* Both browsers reuse this list screen - the volumes' and the media server's.
+ * Anywhere but at the top of the tree it shows a ".." row above the entries, so
+ * every listing index is one below its row. */
+static bool s_browser_has_parent_row;
 static unsigned int s_files_listing_revision;
 // The USB source screen has nothing to show until a file is picked, so
 // selecting the source jumps straight to the browser. The jump waits for the
@@ -423,6 +425,15 @@ static bool ui_list_shows_files(void)
     return audio_source_is_files(ui_player_state_source(&s_player_ui));
 }
 
+/* The third kind of list. A media server browses like a volume - a tree, a
+ * ".." row, containers to open - and plays like a station, through the radio's
+ * own path. So it shares this screen with the volumes and shares the transport
+ * with the radio, and the two questions have to be asked separately. */
+static bool ui_list_shows_dlna(void)
+{
+    return ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_DLNA;
+}
+
 static file_browser_media_t ui_media_for_source(audio_source_t source)
 {
     return source == AUDIO_SOURCE_SD ? s_last_sd_media : s_last_usb_media;
@@ -443,12 +454,13 @@ static const lv_image_dsc_t *ui_source_icon(audio_source_t source)
 // Short name for the strip and the list title.
 static const char *ui_source_short_name(audio_source_t source)
 {
+    if (source == AUDIO_SOURCE_DLNA) return "DLNA";
     return source == AUDIO_SOURCE_SD ? "SD" : "USB";
 }
 
-static size_t ui_files_row_offset(void)
+static size_t ui_browser_row_offset(void)
 {
-    return s_file_browser_has_parent_row ? 1U : 0U;
+    return s_browser_has_parent_row ? 1U : 0U;
 }
 
 static uint32_t ui_tick_get_ms(void);
@@ -1312,7 +1324,7 @@ static bool ui_list_row_text(size_t list_index, char *text, size_t text_size,
 {
     *active = false;
     *mark = NULL;
-    if (!ui_list_shows_files()) {
+    if (!ui_list_shows_files() && !ui_list_shows_dlna()) {
         const station_catalog_entry_t *entry = player_control_station_at(list_index);
         /* The name alone. The index used to be part of this string and
          * travelled with it when the row scrolled, which put the number
@@ -1323,12 +1335,32 @@ static bool ui_list_row_text(size_t list_index, char *text, size_t text_size,
         *active = list_index == station_list_active_index(&s_station_list);
         return true;
     }
-    if (s_file_browser_has_parent_row && list_index == 0U) {
+    if (s_browser_has_parent_row && list_index == 0U) {
         snprintf(text, text_size, "..");
         return true;
     }
+    if (ui_list_shows_dlna()) {
+        dlna_entry_t entry;
+        if (!dlna_source_entry_at(list_index - ui_browser_row_offset(), &entry)) {
+            text[0] = '\0';
+            return false;
+        }
+        /* Three kinds of row, and the mark is what tells them apart before the
+         * encoder is pressed. A container opens; a track plays; and a row that
+         * is neither - a video, or a codec this build has no decoder for - is
+         * crossed out rather than hidden, because a listing that silently drops
+         * what it cannot play looks exactly like a server with missing files. */
+        if (entry.kind == DLNA_ENTRY_CONTAINER) {
+            *mark = LV_SYMBOL_DIRECTORY;
+        } else if (!entry.playable) {
+            *mark = LV_SYMBOL_CLOSE;
+        }
+        snprintf(text, text_size, "%s", entry.title);
+        *active = list_index == station_list_active_index(&s_station_list);
+        return true;
+    }
     file_browser_entry_t entry;
-    if (!player_control_file_entry_at(list_index - ui_files_row_offset(), &entry)) {
+    if (!player_control_file_entry_at(list_index - ui_browser_row_offset(), &entry)) {
         text[0] = '\0';
         return false;
     }
@@ -1402,7 +1434,7 @@ static void ui_update_station_list(void)
          * directory, and neither is an nth of anything. A station row is never
          * marked, so the number and the folder mark never share a row and the
          * two indents never add up. */
-        const bool numbered = !ui_list_shows_files();
+        const bool numbered = !ui_list_shows_files() && !ui_list_shows_dlna();
         if (numbered) {
             /* Two digits for any catalogue this list can scroll, and room for
              * what an unsigned can actually print - the compiler checks the
@@ -3118,7 +3150,12 @@ static void ui_show_source(void)
         ui_show_station_list();
         return;
     }
-    if (audio_source_is_files(selected_source)) {
+    /* The volumes and the media server all open onto a browser rather than a
+     * player: there is nothing to show until something is chosen. For the
+     * server the wait is longer - the search listens for a couple of seconds
+     * before there is a listing at all - which is exactly why the jump waits
+     * on the revision rather than happening here. */
+    if (audio_source_is_files(selected_source) || selected_source == AUDIO_SOURCE_DLNA) {
         s_files_list_open_revision = player_control_listing_revision();
         s_files_list_open_requested = true;
     }
@@ -3220,7 +3257,7 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
         if (icon != NULL) lv_image_set_src(s_station_list_notice_icon, icon);
         lv_obj_clear_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_station_list_rule, LV_OBJ_FLAG_HIDDEN);
-        s_file_browser_has_parent_row = false;
+        s_browser_has_parent_row = false;
         station_list_init(&s_station_list, 0U, 0U, PLAYER_ITEM_NONE);
         ui_update_station_list();
         return;
@@ -3228,20 +3265,46 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
     ui_set_label_text_if_changed(s_station_list_notice, "");
     lv_obj_add_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_station_list_rule, LV_OBJ_FLAG_HIDDEN);
-    if (ui_list_shows_files()) {
-        s_file_browser_has_parent_row = !file_browser_path_is_root(snapshot->context);
-        const size_t offset = ui_files_row_offset();
+    if (ui_list_shows_dlna()) {
+        /* The trail says whether there is anywhere above, because a server's
+         * tree has no path to cut: the ids are opaque and the way back is
+         * remembered rather than derived. */
+        s_browser_has_parent_row = !dlna_source_at_root();
+        const size_t offset = ui_browser_row_offset();
+        count += offset;
+        active_index = active_index == PLAYER_ITEM_NONE ? PLAYER_ITEM_NONE
+                                                        : active_index + offset;
+        /* The container's own title, or the server's name at the root where
+         * the container has none. */
+        ui_set_label_text_if_changed(s_station_list_title, dlna_source_heading());
+        /* An empty root is the one case worth a line rather than a blank
+         * screen: it means the search found no server, which the user can act
+         * on - the NAS is off, or on another network. Deeper in the tree an
+         * empty container is just an empty container, and the ".." row is
+         * already the way out of it. */
+        if (count == 0U) {
+            ui_set_label_text_if_changed(s_station_list_title, "DLNA");
+            ui_set_label_text_if_changed(s_station_list_notice,
+                                         "Медиасервер не найден в сети");
+            const lv_image_dsc_t *icon = ui_source_icon(AUDIO_SOURCE_DLNA);
+            if (icon != NULL) lv_image_set_src(s_station_list_notice_icon, icon);
+            lv_obj_clear_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_station_list_rule, LV_OBJ_FLAG_HIDDEN);
+        }
+    } else if (ui_list_shows_files()) {
+        s_browser_has_parent_row = !file_browser_path_is_root(snapshot->context);
+        const size_t offset = ui_browser_row_offset();
         count += offset;
         // The ".." row pushes every entry down, including the playing one.
         active_index = active_index == PLAYER_ITEM_NONE ? PLAYER_ITEM_NONE
                                                         : active_index + offset;
         ui_set_label_text_if_changed(s_station_list_title, ui_path_leaf(snapshot->context));
     } else {
-        s_file_browser_has_parent_row = false;
+        s_browser_has_parent_row = false;
         ui_set_label_text_if_changed(s_station_list_title, "Станции");
     }
     const size_t initial_index =
-        station_list_initial_index(count, active_index, ui_files_row_offset());
+        station_list_initial_index(count, active_index, ui_browser_row_offset());
     station_list_init(&s_station_list, count, initial_index, active_index);
     station_list_note_activity(&s_station_list, ui_tick_get_ms());
     ui_update_station_list();
@@ -3567,10 +3630,51 @@ static void ui_handle_input(board_input_action_t action)
         } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
                    action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
             if (station_list_handle_input(&s_station_list, action)) ui_update_station_list();
+        } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON && ui_list_shows_dlna()) {
+            size_t row;
+            if (!station_list_get_selection(&s_station_list, &row)) return;
+            if (s_browser_has_parent_row && row == 0U) {
+                const player_command_t up = {
+                    .kind = PLAYER_COMMAND_BROWSE_UP,
+                    .source = AUDIO_SOURCE_DLNA,
+                    .item_index = PLAYER_ITEM_NONE,
+                };
+                (void)ui_submit_player_command(&up);
+                return;
+            }
+            const size_t index = row - ui_browser_row_offset();
+            dlna_entry_t entry;
+            if (!dlna_source_entry_at(index, &entry)) return;
+            /* A row the device cannot play swallows the press rather than
+             * sending a command that would be refused further down. The cross
+             * on the row has already said why. */
+            if (entry.kind == DLNA_ENTRY_ITEM && !entry.playable) return;
+            const player_command_t command = {
+                .kind = PLAYER_COMMAND_SELECT_ITEM,
+                .source = AUDIO_SOURCE_DLNA,
+                .item_index = index,
+            };
+            if (!ui_submit_player_command(&command)) return;
+            // Opening a container keeps the browser on screen; the new listing
+            // arrives through the snapshot poll. Only a track switches away.
+            if (entry.kind == DLNA_ENTRY_CONTAINER) return;
+            /* And it leaves the list in the view state too, for the reason the
+             * file browser does: the automatic list-to-player transition only
+             * fires for the radio, so without this the encoder stays bound to
+             * "select this row" while the player screen is up. */
+            ui_leave_station_list();
+            ui_load_source_screen(AUDIO_SOURCE_DLNA);
+            lv_label_set_text(s_source_title, ui_menu_item_label(UI_MENU_ITEM_DLNA));
+            /* Not "opening a file": the track is fetched over the network, and
+             * the wait before sound is the server's rather than a disc's. */
+            ui_set_state_line("Подключение", "", false);
+            ui_scroller_set_text(&s_source_detail, entry.title);
+            ui_set_label_text_if_changed(s_source_stream,
+                                         radio_stream_format_codec_name(entry.format));
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON && ui_list_shows_files()) {
             size_t row;
             if (!station_list_get_selection(&s_station_list, &row)) return;
-            if (s_file_browser_has_parent_row && row == 0U) {
+            if (s_browser_has_parent_row && row == 0U) {
                 const player_command_t up = {
                     .kind = PLAYER_COMMAND_BROWSE_UP,
                     .source = ui_player_state_source(&s_player_ui),
@@ -3579,7 +3683,7 @@ static void ui_handle_input(board_input_action_t action)
                 (void)ui_submit_player_command(&up);
                 return;
             }
-            const size_t index = row - ui_files_row_offset();
+            const size_t index = row - ui_browser_row_offset();
             file_browser_entry_t entry;
             if (!player_control_file_entry_at(index, &entry)) return;
             const audio_source_t source = ui_player_state_source(&s_player_ui);
@@ -3636,8 +3740,9 @@ static void ui_handle_input(board_input_action_t action)
     }
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_SOURCE) {
         const audio_source_t source = ui_player_state_source(&s_player_ui);
-        const bool has_list =
-            audio_source_is_stations(source) || audio_source_is_files(source);
+        const bool has_list = audio_source_is_stations(source) ||
+                              audio_source_is_files(source) ||
+                              source == AUDIO_SOURCE_DLNA;
         if (ui_seek_is_active(&s_player_seek)) {
             // Scrubbing owns the knob and the press while it is open, so the
             // volume and the play/pause click are unreachable and cannot be
@@ -3976,7 +4081,8 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     }
 
     if (s_files_list_open_requested &&
-        audio_source_is_files(ui_player_state_source(&s_player_ui)) &&
+        (audio_source_is_files(ui_player_state_source(&s_player_ui)) ||
+         ui_list_shows_dlna()) &&
         ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_SOURCE &&
         player_control_listing_revision() != s_files_list_open_revision) {
         s_files_list_open_requested = false;
@@ -4004,18 +4110,20 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
             s_files_unavailable_source = ui_player_state_source(&s_player_ui);
             s_files_listing_revision = revision;
             ui_reset_list_from_snapshot(snapshot);
-        } else if (ui_list_shows_files() && revision != s_files_listing_revision) {
-            // A directory was opened or left: the rows now describe different
-            // files, so the cursor cannot keep its position.
+        } else if ((ui_list_shows_files() || ui_list_shows_dlna()) &&
+                   revision != s_files_listing_revision) {
+            // A directory or a container was opened or left: the rows now
+            // describe different things, so the cursor cannot keep its
+            // position.
             s_files_listing_revision = revision;
             ui_reset_list_from_snapshot(snapshot);
         } else if (!s_files_unavailable &&
                    station_list_sync_counts(&s_station_list,
-                                            snapshot->item_count + ui_files_row_offset(),
+                                            snapshot->item_count + ui_browser_row_offset(),
                                             snapshot->active_item_index == PLAYER_ITEM_NONE
                                                 ? PLAYER_ITEM_NONE
                                                 : snapshot->active_item_index +
-                                                      ui_files_row_offset())) {
+                                                      ui_browser_row_offset())) {
             /* The playlist can be replaced from the web UI while this screen is
              * open, so the count captured at open time may be stale.
              *

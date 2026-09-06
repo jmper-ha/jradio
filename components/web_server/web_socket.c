@@ -144,6 +144,20 @@ static void write_capabilities(web_json_writer_t *writer,
         web_json_literal(writer,
                        "{\"id\":\"yandex\",\"label\":"
                        "\"ЯМузыка\",\"list_kind\":\"stations\"}");
+        written = true;
+    }
+    /* Offered whenever the build has it, unlike the volumes: whether a server
+     * is on the network is only discovered by searching, and that happens when
+     * the source is chosen. A tree of containers browses the way a directory
+     * does, so the page treats it as one - what differs is only where the row
+     * names are fetched from. */
+    if ((player->capabilities & PLAYER_CAP_DLNA) != 0U) {
+        if (written) {
+            web_json_literal(writer, ",");
+        }
+        web_json_literal(writer,
+                       "{\"id\":\"dlna\",\"label\":"
+                       "\"DLNA\",\"list_kind\":\"files\"}");
     }
     web_json_literal(writer, "]");
 }
@@ -225,23 +239,32 @@ static void write_active_index(web_json_writer_t *writer,
  * same number of stations is invisible in every other field here. */
 static void write_list(web_json_writer_t *writer, const player_snapshot_t *player)
 {
+    /* A media server browses the way a volume does - a tree, a place in it,
+     * and somewhere above - so the page is told it is the same kind of list.
+     * What differs is only where the row names are fetched from. */
     const bool files = audio_source_is_files(player->active_source);
+    const bool browsable = files || player->active_source == AUDIO_SOURCE_DLNA;
     web_json_literal(writer, "\"list\":{\"kind\":");
-    web_json_literal(writer, files ? "\"files\"" : "\"stations\"");
+    web_json_literal(writer, browsable ? "\"files\"" : "\"stations\"");
     web_json_literal(writer, ",\"active_index\":");
     write_active_index(writer, player);
     web_json_literal(writer, ",\"revision\":");
     web_json_format(writer, "%u", player->listing_revision);
     web_json_literal(writer, ",\"count\":");
     web_json_format(writer, "%u", (unsigned)player->item_count);
-    if (files) {
+    if (browsable) {
         /* The browser needs to know where it is and whether it can go up;
-         * a station list has neither question. */
+         * a station list has neither question.
+         *
+         * A volume answers the second from its own path, because the mount
+         * root is a prefix anyone can test for. A server's containers have no
+         * path to test, so the answer travels in the snapshot instead. */
         web_json_literal(writer, ",\"path\":");
         web_json_string(writer, player->context);
         web_json_literal(writer, ",\"has_parent\":");
-        web_json_literal(writer,
-                         file_browser_path_is_root(player->context) ? "false" : "true");
+        const bool has_parent = files ? !file_browser_path_is_root(player->context)
+                                      : player->browse_has_parent;
+        web_json_literal(writer, has_parent ? "true" : "false");
     }
     web_json_literal(writer, "}");
 }

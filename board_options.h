@@ -192,9 +192,17 @@
  * FEATURE_OFF and deleting the line mean the same thing. */
 #define YANDEX_MUSIC FEATURE_ON
 
-/* DLNA renderer: play what a phone or a PC on the LAN pushes to the device.
- * Nothing implements it yet, and it is off for the same reason FM is
- * commented out - the option is written down so that turning it on is one
- * line here, and so that the home screen does not offer what the firmware
- * cannot do. */
-#define DLNA FEATURE_OFF
+/* DLNA: browse a media server on the LAN and play from it.
+ *
+ * The direction matters, and this line used to promise the other one. A
+ * renderer (DMR) is pushed to by a phone; this is a player (DMP) that goes and
+ * fetches - it finds servers with an SSDP search, walks the tree a server
+ * offers, and plays the tracks it names. That is the half worth having on a
+ * device with a screen and an encoder, and it is nearly free: a server hands
+ * out an ordinary HTTP URL with a MIME type, which is what internet_radio
+ * already opens.
+ *
+ * On. What it costs when no server is on the network is one SSDP search when
+ * the source is selected, and a line on the browser screen saying nothing
+ * answered. */
+#define DLNA FEATURE_ON

@@ -81,8 +81,8 @@ device jumps and answers.
 ## Home screen
 
 Two looks, chosen in the settings: a list of entries or a carousel of large
-icons. Every source - radio, drive, card, Yandex Music, settings - has an icon
-of its own.
+icons. Every source - radio, drive, card, Yandex Music, media server, settings
+- has an icon of its own.
 
 Choosing the drive or the card when neither is there opens an explanation
 rather than an empty list: insert the medium, it cannot be read, or it holds no

@@ -1,0 +1,65 @@
+# Music from a media server (DLNA)
+
+[← README](../README.en.md) · [Русский](dlna.md)
+
+The device finds a media server on the home network by itself and plays what is
+on it. Nothing needs setting up: no server address to type, no folders to
+declare.
+
+**Which servers.** Any DLNA/UPnP media server on the same network: a NAS, Plex,
+Jellyfin, miniDLNA, a media server on a PC. Tested against Plex Media Server
+1.42 (Platinum stack) on a NAS.
+
+**Finding one.** Pick the DLNA source on the device, or press the DLNA tab in
+the web interface. The search takes a couple of seconds: the device sends a
+query across the network and waits for answers. The server that replies opens
+at its top level, with its name as the heading of the list.
+
+The search runs every time the source is entered rather than once at start-up.
+That is deliberate: a server may be switched off, may move to another address,
+or may appear after the device has already booted.
+
+**Walking the server.** Exactly like a flash drive. The knob scrolls, a press
+opens a folder or starts a track, and the `..` row at the top goes back up. A
+long press, or F2, leaves the source.
+
+Every server lays its tree out differently. On Plex it is `Music → your library
+→ By Album / By Folder / All Artists → …`; the `Video` and `Photos` folders are
+visible too, though there is nothing there to play.
+
+**What plays.** Whatever this firmware can decode: MP3, AAC, FLAC, WAV, Ogg.
+The server hands out an ordinary HTTP link, and from there the same decoder
+runs as for internet radio.
+
+Rows that cannot be played - a video, or a format with no decoder - stay on the
+list, marked and unclickable. They are not hidden on purpose: a list without
+them would look like a server with files missing.
+
+**What is shown.** The performer and the title come from the tags the server
+sent, not from the file name. The cover comes from there too. When a server
+offers two pictures the device takes the smaller one: only 160 pixels reach the
+panel, and the rest would be bytes fetched to be thrown away.
+
+**Through the album.** When a track ends the next one in the same listing
+starts, as on a flash drive. F3 and F4 step to the neighbouring track.
+
+## Limits
+
+**The first 64 rows of a container.** Libraries get large - "By Album" on the
+test server holds 769 of them - and no amount of them can be scrolled with a
+knob anyway. Go in through folders or artists.
+
+**No search on the server.** The device only walks the tree; the search box in
+the web interface filters what is already on screen.
+
+**No seeking inside a track.** The server allows it, but the device plays the
+stream from start to end, the way it plays radio.
+
+**The place in the tree is not remembered.** Leaving the source starts the next
+visit at the top level again, and autoplay cannot resume from a media server.
+
+**No choice between servers.** If several answer, the device opens the first.
+There is no "switch server" entry yet.
+
+**Plain HTTP only.** A media server on a home network does not encrypt, and the
+device does not expect it to.

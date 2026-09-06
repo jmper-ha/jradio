@@ -82,6 +82,7 @@ bool player_snapshot_equal(const player_snapshot_t *left,
            left->playback_state == right->playback_state &&
            left->active_item_index == right->active_item_index &&
            left->item_count == right->item_count &&
+           left->browse_has_parent == right->browse_has_parent &&
            memcmp(left->context, right->context, sizeof(left->context)) == 0 &&
            memcmp(left->stream_title, right->stream_title,
                   sizeof(left->stream_title)) == 0 &&
@@ -106,7 +107,12 @@ static bool player_source_needs_absent_network(const player_snapshot_t *state,
                                                audio_source_t source)
 {
     return !state->wifi_connected && (source == AUDIO_SOURCE_INTERNET_RADIO ||
-                                      source == AUDIO_SOURCE_YANDEX);
+                                      source == AUDIO_SOURCE_YANDEX ||
+                                      /* The server is on the LAN rather than
+                                       * on the internet, but it is still the
+                                       * network: with no join there is nothing
+                                       * to search and nothing to stream. */
+                                      source == AUDIO_SOURCE_DLNA);
 }
 
 player_operation_t player_control_decide(const player_snapshot_t *state,
@@ -128,6 +134,7 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
                                 : command->source == AUDIO_SOURCE_USB ? PLAYER_CAP_USB
                                 : command->source == AUDIO_SOURCE_SD  ? PLAYER_CAP_SD
                                 : command->source == AUDIO_SOURCE_YANDEX ? PLAYER_CAP_YANDEX
+                                : command->source == AUDIO_SOURCE_DLNA ? PLAYER_CAP_DLNA
                                                                       : 0U;
         const bool supported = needed != 0U && (state->capabilities & needed) != 0U &&
                                !player_source_needs_absent_network(state, command->source);
@@ -173,11 +180,21 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
          * active source when it accepts such a command. */
         const bool stations = audio_source_is_stations(state->active_source) ||
                               state->active_source == AUDIO_SOURCE_NONE;
-        if ((!stations && !audio_source_is_files(state->active_source)) ||
-            command->item_index >= state->item_count) return PLAYER_OPERATION_INVALID;
+        /* The lists a row can mean two things in: a volume's directory and a
+         * media server's container both hold things to open beside things to
+         * play. */
+        const bool browsable = audio_source_is_files(state->active_source) ||
+                               state->active_source == AUDIO_SOURCE_DLNA;
+        if ((!stations && !browsable) || command->item_index >= state->item_count) {
+            return PLAYER_OPERATION_INVALID;
+        }
         /* Every station list is a list of streams, including the one the
-         * snapshot describes before any source is chosen. */
-        if (stations && !state->wifi_connected) return PLAYER_OPERATION_INVALID;
+         * snapshot describes before any source is chosen - and a media server's
+         * rows are streams too, only from the LAN. */
+        if ((stations || state->active_source == AUDIO_SOURCE_DLNA) &&
+            !state->wifi_connected) {
+            return PLAYER_OPERATION_INVALID;
+        }
         // On USB an entry can be a directory, and re-selecting the directory
         // the cursor is already in still has to navigate; only a station list
         // can treat "same index, still healthy" as a no-op.
@@ -196,10 +213,15 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
          * the executor refuses an empty one. */
         return PLAYER_OPERATION_TEST_STREAM;
     case PLAYER_COMMAND_BROWSE_UP:
-        // Whether there is anywhere to go depends on the path, which this pure
-        // function cannot see; the executor refuses at the mount root.
-        return audio_source_is_files(state->active_source) ? PLAYER_OPERATION_BROWSE_UP
-                                                        : PLAYER_OPERATION_INVALID;
+        /* Whether there is anywhere to go depends on where the browser is,
+         * which this pure function cannot see; the executor refuses at the
+         * root. A media server is a tree like a volume is, and going up in one
+         * is the same gesture - the difference is only that a server's trail
+         * is remembered rather than cut off a path. */
+        return audio_source_is_files(state->active_source) ||
+                       state->active_source == AUDIO_SOURCE_DLNA
+                   ? PLAYER_OPERATION_BROWSE_UP
+                   : PLAYER_OPERATION_INVALID;
     case PLAYER_COMMAND_BROWSE_REVEAL:
         if (!audio_source_is_files(state->active_source)) return PLAYER_OPERATION_INVALID;
         // With nothing playing there is nothing to reveal, and the file the

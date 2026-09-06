@@ -620,6 +620,90 @@ static void test_streaming_sources_are_refused_without_a_network(void)
     assert(player_control_decide(&paused_files, &play) == PLAYER_OPERATION_RESUME);
 }
 
+/* A media server is on the LAN, not on the internet - but it is still reached
+   over the network, and the whole source is a search followed by HTTP. Without
+   a join there is nothing to find and nothing to stream, so it is refused the
+   way the radio is rather than opened onto an empty list the user cannot act
+   on. */
+static void test_dlna_needs_the_network(void)
+{
+    player_snapshot_t state = {.wifi_connected = true,
+                               .capabilities = PLAYER_CAP_INTERNET_RADIO | PLAYER_CAP_DLNA,
+                               .active_source = AUDIO_SOURCE_NONE,
+                               .playback_state = PLAYER_PLAYBACK_STOPPED};
+    player_command_t command = {.kind = PLAYER_COMMAND_SELECT_SOURCE,
+                                .source = AUDIO_SOURCE_DLNA};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_SELECT_SOURCE);
+
+    /* No join: refused, like the radio and the rotor. */
+    state.wifi_connected = false;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+
+    /* A build without DLNA at all. Not the same statement as "no server
+       answered": that one is discovered by searching, which is what selecting
+       the source does, and it comes back as a line on the browser screen. */
+    state.wifi_connected = true;
+    state.capabilities = PLAYER_CAP_INTERNET_RADIO;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+
+    /* And the capability is its own: a linked Yandex account is not a media
+       server on the LAN. */
+    state.capabilities = PLAYER_CAP_INTERNET_RADIO | PLAYER_CAP_YANDEX;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+}
+
+/* A media server is a tree, so the browser needs the same way out of it that a
+   folder has. Only the sources that have somewhere above them get it: a flat
+   list of stations has no "up", and offering one there would put a row on the
+   screen that does nothing. */
+static void test_browsing_up_works_on_a_server_and_not_on_a_station_list(void)
+{
+    player_snapshot_t state = {.wifi_connected = true, .active_source = AUDIO_SOURCE_DLNA,
+                               .playback_state = PLAYER_PLAYBACK_STOPPED};
+    player_command_t command = {.kind = PLAYER_COMMAND_BROWSE_UP};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_BROWSE_UP);
+
+    /* Still the volumes' answer, unchanged. */
+    state.active_source = AUDIO_SOURCE_USB;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_BROWSE_UP);
+    state.active_source = AUDIO_SOURCE_SD;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_BROWSE_UP);
+
+    state.active_source = AUDIO_SOURCE_INTERNET_RADIO;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+    state.active_source = AUDIO_SOURCE_YANDEX;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+}
+
+/* A row on a media server means what a row in a directory means: it opens or
+   it plays, and which one is the row's business, not this function's. So the
+   press has to reach the executor - including a press on the row the cursor is
+   already on, because re-entering a container is navigation and not a repeat
+   of what is already playing. */
+static void test_a_row_on_a_server_always_reaches_the_executor(void)
+{
+    player_snapshot_t state = {.wifi_connected = true, .active_source = AUDIO_SOURCE_DLNA,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING,
+                               .active_item_index = 2U, .item_count = 8U};
+    player_command_t command = {.kind = PLAYER_COMMAND_SELECT_ITEM, .item_index = 2U};
+    /* The same row, while something from it is playing: a station list would
+       call this a no-op, and a tree must not. */
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_START_ITEM);
+
+    command.item_index = 5U;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_START_ITEM);
+
+    /* Past the end of the listing is nothing to select. */
+    command.item_index = 8U;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+
+    /* And the tracks come over the network, so with no join there is nothing
+       to fetch - refused like a station rather than attempted like a file. */
+    command.item_index = 1U;
+    state.wifi_connected = false;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_INVALID);
+}
+
 int main(void)
 {
     test_the_track_keys_stop_at_the_ends_of_the_catalog();
@@ -633,6 +717,9 @@ int main(void)
     test_each_volume_answers_for_itself();
     test_every_file_operation_works_on_the_card_too();
     test_yandex_needs_a_linked_account();
+    test_dlna_needs_the_network();
+    test_browsing_up_works_on_a_server_and_not_on_a_station_list();
+    test_a_row_on_a_server_always_reaches_the_executor();
     test_a_yandex_station_starts_and_is_not_restarted();
     test_a_yandex_chain_never_advances_by_itself();
     test_toggle_maps_playing_to_pause();

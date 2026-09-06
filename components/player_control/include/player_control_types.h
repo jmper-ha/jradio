@@ -36,6 +36,18 @@
  * to discover by trying: without a token every request fails the same way, so
  * offering the source would only produce an error screen. */
 #define PLAYER_CAP_YANDEX (1U << 3)
+/* A media server on the LAN. Always set in a build that has DLNA, and it is
+ * the card slot's kind of statement rather than the drive's.
+ *
+ * A drive announces itself and an account is either linked or not, so both can
+ * be answered before the source is offered. A media server can only be found
+ * by searching for one, and a search takes a couple of seconds - too long to
+ * run before drawing a home screen, and pointless to run when nobody is asking
+ * for it. Gating the source on the last search would also make a NAS switched
+ * on after boot unreachable: never offered, so never searched for, so never
+ * found. The source is therefore always offered, the search happens when it is
+ * selected, and "no server answered" is a line on the browser screen. */
+#define PLAYER_CAP_DLNA (1U << 4)
 
 #ifdef __cplusplus
 extern "C" {
@@ -144,6 +156,14 @@ typedef struct {
      * the menu that is the station catalog, so it says nothing about the
      * drive. This is what the "drive is empty" notice has to read. */
     size_t files_entry_count;
+    /* Whether the browser has somewhere above it.
+     *
+     * A volume answers this from its own path - the mount root is a prefix
+     * anyone can test for. A media server cannot: its containers are named by
+     * opaque ids and the way back is a trail that only the source remembers,
+     * so the answer has to travel rather than be re-derived. Meaningless for a
+     * source that is a flat list. */
+    bool browse_has_parent;
     char context[PLAYER_NAME_MAX_LEN];
     char stream_title[PLAYER_TITLE_MAX_LEN];
     char codec[PLAYER_CODEC_MAX_LEN];

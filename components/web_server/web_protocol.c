@@ -723,6 +723,8 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
             parsed->player.source = AUDIO_SOURCE_SD;
         } else if (strcmp(source->valuestring, "yandex") == 0) {
             parsed->player.source = AUDIO_SOURCE_YANDEX;
+        } else if (strcmp(source->valuestring, "dlna") == 0) {
+            parsed->player.source = AUDIO_SOURCE_DLNA;
         } else {
             return false;
         }

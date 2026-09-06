@@ -574,6 +574,21 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .list-item.is-directory .active-marker::after,
 .list-item.is-directory .active-marker > i { animation: none; }
 
+/* A media server lists what it holds, including tracks this firmware has no
+   decoder for and files that are not audio at all. They stay on the list -
+   hiding them looks like a server with files missing - but they are dimmed and
+   refuse the click, and the marker slot says why instead of pretending the row
+   is about to play. */
+.list-item.is-unplayable { opacity: .45; cursor: default; }
+.list-item.is-unplayable .active-marker { display: none; }
+.list-item.is-unplayable::after {
+  content: 'Не поддерживается';
+  margin-left: auto;
+  font-size: .72rem;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
 @keyframes vu {
   0%, 100% { transform: scaleY(.45); }
   50% { transform: scaleY(1); }

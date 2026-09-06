@@ -1961,11 +1961,19 @@ static void ui_update_settings(void)
         ui_settings_row_text(&item, text, sizeof(text));
         ui_set_label_text_if_changed(s_settings_rows[row], text);
         const bool is_group = item.kind == UI_SETTINGS_ROW_GROUP;
-        // Set per row rather than at creation: which row is a heading changes
-        // as groups open and close.
+        /* The title face for the headings and for About, the body face for the
+         * fields under them. About is not a heading, but it stands where they
+         * stand - at the top level of the list rather than inside a group -
+         * and the two sizes on this screen say exactly that: this is the
+         * structure, that is a setting within it. Drawn small, it read as a
+         * field of the group above it, which it is not.
+         *
+         * Set per row rather than at creation: which row is a heading changes
+         * as groups open and close. */
+        const bool top_level = is_group || item.kind == UI_SETTINGS_ROW_ACTION;
         lv_obj_set_style_text_font(s_settings_rows[row],
-                                   is_group ? UI_FONT_TITLE : UI_FONT_BODY, 0);
-        lv_obj_set_style_pad_top(s_settings_rows[row], is_group ? 1 : 4, 0);
+                                   top_level ? UI_FONT_TITLE : UI_FONT_BODY, 0);
+        lv_obj_set_style_pad_top(s_settings_rows[row], top_level ? 1 : 4, 0);
         const bool selected_row = item.id == selected;
         /* Field tiles darker than they were, for the same reason: the gap to
          * the cursor is what makes it visible, and both ends of it moved. */

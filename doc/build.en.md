@@ -20,6 +20,18 @@ moves.
 which build is newer. With `git tag v1.0.0` it becomes `v1.0.0-3-gabc1234`: the
 release, how many commits followed it, and the hash.
 
+```bash
+git tag -a v1.1.0 -m "what is in this release"
+git push origin v1.1.0        # a plain git push does not carry tags
+```
+
+**A new tag is not picked up on its own.** The version is read when CMake
+configures, and what it watches is the branch's ref file - a commit moves that,
+a tag does not. So the first build after `git tag` still reports the old string.
+Any reconfigure fixes it, `touch CMakeLists.txt` being the shortest; in ordinary
+use it does not arise, because a tag is put on a commit that has just been
+made.
+
 The `-dirty` suffix can go stale. It is computed at configure time, and editing
 a file does not move the branch ref, so a build from a dirty tree may report a
 version without it. For a build made from a commit this does not arise.

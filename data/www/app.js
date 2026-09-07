@@ -1069,12 +1069,14 @@
         : browsing ? 'Открываем папку…'
         : 'Загружаем станции…';
     }
-    /* An empty media server is not an empty list, it is a network with no
-       server answering on it - which is something the user can act on, and
-       the same words the panel puts on its own screen. */
-    listEmpty.textContent = state.activeSource === 'dlna'
-      ? 'Медиасервер не найден в сети'
-      : 'Список пока пуст';
+    /* An empty root on a media server is not an empty list, it is a network
+       with no server answering on it - which is something the user can act on,
+       and the same words the panel puts on its own screen. An empty *folder*
+       is an ordinary empty folder, and saying the server was not found there
+       is a lie about a server that plainly answered. */
+    listEmpty.textContent = state.activeSource !== 'dlna' ? 'Список пока пуст'
+      : state.list.has_parent ? 'В этой папке ничего нет'
+      : 'Медиасервер не найден в сети';
     listLoading.hidden = offline || !waiting;
     listEmpty.hidden = offline || rowCount !== 0 || waiting;
     listItems.hidden = offline || rowCount === 0;

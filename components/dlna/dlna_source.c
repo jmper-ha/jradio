@@ -37,6 +37,14 @@ static size_t s_selected;
 
 static dlna_browse_stack_t s_stack;
 static dlna_entry_t *s_entries;
+/* The listing being read, which the browse writes into while holding no lock,
+ * and which is swapped with the one above in a few instructions once it is
+ * complete. Two buffers rather than one because a browse is several HTTP round
+ * trips and everything that draws the browser polls the listing: with the lock
+ * held across the requests, the UI task and the web server's single worker
+ * both stopped dead on it. Measured: one container that would not open blocked
+ * /api/dlna for 10.2 seconds and froze the panel for the same. */
+static dlna_entry_t *s_staging;
 static size_t s_entry_count;
 static bool s_open;
 /* Set for the whole of dlna_source_open(), which blocks for a second or two.
@@ -78,42 +86,59 @@ static void set_searching(bool searching)
  * happened or to get past it. So an empty result is refused: the rows go back
  * exactly as the server sent them, and the guess is written off rather than
  * acted on. */
-static void keep_music_sections(void)
+static size_t keep_music_sections(dlna_entry_t *entries, size_t count)
 {
     size_t kept = 0U;
-    for (size_t index = 0U; index < s_entry_count; ++index) {
-        if (s_entries[index].kind == DLNA_ENTRY_CONTAINER &&
-            !dlna_root_filter_is_music(s_entries[index].title)) {
+    for (size_t index = 0U; index < count; ++index) {
+        if (entries[index].kind == DLNA_ENTRY_CONTAINER &&
+            !dlna_root_filter_is_music(entries[index].title)) {
             continue;
         }
-        if (kept != index) s_entries[kept] = s_entries[index];
+        if (kept != index) entries[kept] = entries[index];
         ++kept;
     }
     if (kept == 0U) {
         ESP_LOGI(TAG, "no section of the root looks like music; showing all %u",
-                 (unsigned)s_entry_count);
-        return;
+                 (unsigned)count);
+        return count;
     }
-    if (kept < s_entry_count) {
-        ESP_LOGI(TAG, "root: %u of %u sections kept", (unsigned)kept,
-                 (unsigned)s_entry_count);
-        s_entry_count = kept;
+    if (kept < count) {
+        ESP_LOGI(TAG, "root: %u of %u sections kept", (unsigned)kept, (unsigned)count);
     }
+    return kept;
 }
 
 /* Reads the container the stack is pointing at, a page at a time, until the
  * listing is full or the server has no more to give.
  *
- * Called with the lock held. A failed read empties the listing rather than
- * leaving the previous container's rows under the new one's heading, which
- * would be a browser offering to play files from somewhere else. */
+ * Called **without** the lock, and only from the player task, which is the one
+ * thing that ever writes a listing. The lock is taken twice and briefly: once
+ * to copy out where to read from, once to publish what came back. In between
+ * are the HTTP round trips, and they are why: everything that draws the
+ * browser polls this listing, so a lock held across the network is a frozen
+ * panel and a web server that answers nothing.
+ *
+ * A failed read publishes nothing at all. The previous container's rows stay
+ * on screen, which is where the user still is - the stack is only committed by
+ * the caller once this has succeeded. */
 static esp_err_t read_current_container(void)
 {
-    s_entry_count = 0U;
-    s_playing = DLNA_SOURCE_ENTRY_MAX;
+    char control_url[DLNA_URL_MAX];
+    char object_id[DLNA_OBJECT_ID_MAX + 1U];
+    bool at_root;
 
-    const char *control_url = s_servers[s_selected].device.control_url;
-    const char *object_id = dlna_browse_stack_id(&s_stack);
+    lock();
+    if (!s_open || s_staging == NULL) {
+        unlock();
+        return ESP_ERR_INVALID_STATE;
+    }
+    snprintf(control_url, sizeof(control_url), "%s",
+             s_servers[s_selected].device.control_url);
+    snprintf(object_id, sizeof(object_id), "%s", dlna_browse_stack_id(&s_stack));
+    at_root = dlna_browse_stack_at_root(&s_stack);
+    unlock();
+
+    size_t count = 0U;
 
     /* How much to ask for at a time. It starts at the measured page and comes
      * down when a server answers with more than the buffer holds - see
@@ -126,9 +151,8 @@ static esp_err_t read_current_container(void)
     for (;;) {
         dlna_client_page_t page;
         const esp_err_t err = dlna_client_browse(control_url, object_id, starting_index,
-                                                 page_size, s_entries + s_entry_count,
-                                                 DLNA_SOURCE_ENTRY_MAX - s_entry_count,
-                                                 &page);
+                                                 page_size, s_staging + count,
+                                                 DLNA_SOURCE_ENTRY_MAX - count, &page);
         if (err == ESP_ERR_INVALID_SIZE) {
             /* Ask again for half as much, from the same place. What has been
              * read so far is kept - it is complete and correct, the answer was
@@ -136,29 +160,24 @@ static esp_err_t read_current_container(void)
              * container this device genuinely cannot read. */
             if (page_size <= 1U) {
                 ESP_LOGW(TAG, "'%s' says more about one entry than fits in a browse",
-                         dlna_browse_stack_title(&s_stack));
-                s_entry_count = 0U;
+                         object_id);
                 return err;
             }
             page_size /= 2U;
             continue;
         }
-        if (err != ESP_OK) {
-            s_entry_count = 0U;
-            return err;
-        }
+        if (err != ESP_OK) return err;
 
-        s_entry_count += page.count;
+        count += page.count;
         /* Advanced by what was *asked for* rather than by what came back: rows
          * the parser could not use still occupy the server's numbering, and
          * counting only the kept ones would ask for the same page for ever. */
         starting_index += page_size;
 
         if (starting_index >= page.total_matches) break;
-        if (s_entry_count >= DLNA_SOURCE_ENTRY_MAX) {
-            ESP_LOGW(TAG, "'%s' holds %u entries; showing the first %u",
-                     dlna_browse_stack_title(&s_stack), (unsigned)page.total_matches,
-                     (unsigned)s_entry_count);
+        if (count >= DLNA_SOURCE_ENTRY_MAX) {
+            ESP_LOGW(TAG, "'%s' holds %u entries; showing the first %u", object_id,
+                     (unsigned)page.total_matches, (unsigned)count);
             break;
         }
         if (page.count == 0U) {
@@ -170,7 +189,18 @@ static esp_err_t read_current_container(void)
     /* The root of a server is its sections - video, music, pictures - and this
      * device plays one of the three. The rest are rows that can only be walked
      * into and come back from empty-handed. */
-    if (dlna_browse_stack_at_root(&s_stack)) keep_music_sections();
+    if (at_root) count = keep_music_sections(s_staging, count);
+
+    /* Published by swapping the pointers, so the listing on screen changes
+     * between two instructions rather than being rewritten row by row under
+     * the eyes of whoever is reading it. */
+    lock();
+    dlna_entry_t *const previous = s_entries;
+    s_entries = s_staging;
+    s_staging = previous;
+    s_entry_count = count;
+    s_playing = DLNA_SOURCE_ENTRY_MAX;
+    unlock();
     return ESP_OK;
 }
 
@@ -263,6 +293,17 @@ static const char *dlna_current_url(void)
     return playing ? s_playing_url : NULL;
 }
 
+static dlna_entry_t *alloc_listing(void)
+{
+    dlna_entry_t *listing = heap_caps_malloc(DLNA_SOURCE_ENTRY_MAX * sizeof(*listing),
+                                             MALLOC_CAP_SPIRAM);
+    if (listing == NULL) {
+        listing = heap_caps_malloc(DLNA_SOURCE_ENTRY_MAX * sizeof(*listing),
+                                   MALLOC_CAP_INTERNAL);
+    }
+    return listing;
+}
+
 esp_err_t dlna_source_open(void)
 {
     if (s_lock == NULL) {
@@ -279,21 +320,17 @@ esp_err_t dlna_source_open(void)
     }
 
     lock();
-    if (s_entries == NULL) {
-        s_entries = heap_caps_malloc(DLNA_SOURCE_ENTRY_MAX * sizeof(*s_entries),
-                                     MALLOC_CAP_SPIRAM);
-        if (s_entries == NULL) {
-            s_entries = heap_caps_malloc(DLNA_SOURCE_ENTRY_MAX * sizeof(*s_entries),
-                                         MALLOC_CAP_INTERNAL);
-        }
-        if (s_entries == NULL) {
-            s_searching = false;
-            unlock();
-            ESP_LOGE(TAG, "no memory for a listing of %u entries",
-                     (unsigned)DLNA_SOURCE_ENTRY_MAX);
-            dlna_client_close();
-            return ESP_ERR_NO_MEM;
-        }
+    /* Two of them, the one on screen and the one being read - see
+     * read_current_container(). PSRAM first, as everything of this size is. */
+    if (s_entries == NULL) s_entries = alloc_listing();
+    if (s_staging == NULL) s_staging = alloc_listing();
+    if (s_entries == NULL || s_staging == NULL) {
+        s_searching = false;
+        unlock();
+        ESP_LOGE(TAG, "no memory for two listings of %u entries",
+                 (unsigned)DLNA_SOURCE_ENTRY_MAX);
+        dlna_client_close();
+        return ESP_ERR_NO_MEM;
     }
     unlock();
 
@@ -318,9 +355,10 @@ esp_err_t dlna_source_open(void)
         return ESP_ERR_NOT_FOUND;
     }
     dlna_browse_stack_reset(&s_stack, s_servers[0].device.friendly_name);
-    err = read_current_container();
-    s_searching = false;
     unlock();
+
+    err = read_current_container();
+    set_searching(false);
 
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "open on '%s' with %u entries at the root",
@@ -339,6 +377,8 @@ void dlna_source_close(void)
     s_playing = DLNA_SOURCE_ENTRY_MAX;
     free(s_entries);
     s_entries = NULL;
+    free(s_staging);
+    s_staging = NULL;
     unlock();
     dlna_client_close();
 }
@@ -448,15 +488,18 @@ esp_err_t dlna_source_enter(size_t index)
         unlock();
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t err = read_current_container();
+    unlock();
+
+    const esp_err_t err = read_current_container();
     if (err != ESP_OK) {
         /* Back where it was, so a container that would not read leaves the
          * browser showing the one it came from rather than an empty screen
-         * with no way out. */
+         * with no way out. Only the trail has to be put back: a failed read
+         * publishes nothing, so the rows on screen are still the parent's. */
+        lock();
         (void)dlna_browse_stack_leave(&s_stack);
-        (void)read_current_container();
+        unlock();
     }
-    unlock();
     return err;
 }
 
@@ -467,17 +510,13 @@ esp_err_t dlna_source_leave(void)
         unlock();
         return ESP_ERR_NOT_FOUND;
     }
-    const esp_err_t err = read_current_container();
     unlock();
-    return err;
+    return read_current_container();
 }
 
 esp_err_t dlna_source_refresh(void)
 {
-    lock();
-    const esp_err_t err = s_open ? read_current_container() : ESP_ERR_INVALID_STATE;
-    unlock();
-    return err;
+    return dlna_source_is_open() ? read_current_container() : ESP_ERR_INVALID_STATE;
 }
 
 dlna_activate_t dlna_source_activate(size_t index)
@@ -487,7 +526,7 @@ dlna_activate_t dlna_source_activate(size_t index)
 
     if (entry.kind == DLNA_ENTRY_CONTAINER) {
         return dlna_source_enter(index) == ESP_OK ? DLNA_ACTIVATE_BROWSED
-                                                  : DLNA_ACTIVATE_REFUSED;
+                                                  : DLNA_ACTIVATE_BROWSE_FAILED;
     }
     return dlna_source_play(index) ? DLNA_ACTIVATE_PLAYING : DLNA_ACTIVATE_REFUSED;
 }

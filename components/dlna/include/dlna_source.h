@@ -106,6 +106,11 @@ typedef enum {
     DLNA_ACTIVATE_BROWSED,
     /* A track started, and the tracks after it in this listing follow. */
     DLNA_ACTIVATE_PLAYING,
+    /* A container that was asked for and would not open. Its own answer,
+     * because it is the one outcome the user has to be told about: the rows do
+     * not change, so without a word the press looks like it was dropped -
+     * which on a server here means ten seconds of a screen doing nothing. */
+    DLNA_ACTIVATE_BROWSE_FAILED,
 } dlna_activate_t;
 
 /* Opens the row on `index` if it is a container, plays it if it is a track.

@@ -124,6 +124,9 @@ bool player_control_playing_file_path(char *out, size_t out_size)
  * player, and there is no event that would clear it - the source stays exactly
  * as stopped as it was. */
 static atomic_uint s_no_resume_at_ms = ATOMIC_VAR_INIT(0U);
+/* And when a container on a media server refused to open, for the same reason
+ * and with the same lifetime. */
+static atomic_uint s_browse_failed_at_ms = ATOMIC_VAR_INIT(0U);
 /* Long enough to read at arm's length, short enough that it cannot be mistaken
  * for a description of the source. */
 #define PLAYER_NO_RESUME_NOTICE_MS 6000U
@@ -778,7 +781,19 @@ static void player_control_task(void *arg)
                 /* One row, two meanings, and the row decides - a container is
                  * opened, a track is played. Both replace what the browser is
                  * looking at, so both move the revision. */
-                if (dlna_source_activate(command.item_index) == DLNA_ACTIVATE_BROWSED) {
+                const dlna_activate_t activated = dlna_source_activate(command.item_index);
+                if (activated == DLNA_ACTIVATE_BROWSE_FAILED) {
+                    /* The revision moves anyway. Nothing about the listing has
+                     * changed - which is the problem: both faces are waiting
+                     * for it to move before they take their "opening…" down,
+                     * and without this they wait out the full twenty seconds
+                     * over rows that are already correct. */
+                    atomic_store_explicit(&s_browse_failed_at_ms,
+                                          (uint32_t)(esp_timer_get_time() / 1000),
+                                          memory_order_release);
+                }
+                if (activated == DLNA_ACTIVATE_BROWSED ||
+                    activated == DLNA_ACTIVATE_BROWSE_FAILED) {
                     atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
                 }
             } else if (snapshot.active_source == AUDIO_SOURCE_YANDEX) {
@@ -1065,9 +1080,15 @@ bool player_control_post(const player_command_t *command)
  * the easiest to mistake for a broken encoder. */
 static void player_note_nothing_started(player_snapshot_t *snapshot)
 {
+    const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    const uint32_t failed =
+        atomic_load_explicit(&s_browse_failed_at_ms, memory_order_acquire);
+    if (failed != 0U && (uint32_t)(now_ms - failed) < PLAYER_NO_RESUME_NOTICE_MS) {
+        snprintf(snapshot->error, sizeof(snapshot->error), "Папка не открылась");
+        return;
+    }
     const uint32_t at = atomic_load_explicit(&s_no_resume_at_ms, memory_order_acquire);
     if (at == 0U) return;
-    const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
     if ((uint32_t)(now_ms - at) >= PLAYER_NO_RESUME_NOTICE_MS) return;
     snprintf(snapshot->error, sizeof(snapshot->error), "Нечего продолжить - выберите");
 }

@@ -816,11 +816,18 @@ static void ui_update_footer(void)
             // position already is, and is worth showing on its own.
             snprintf(left_text, sizeof(left_text), "%s", elapsed_text);
         }
-    } else if (audio_source_is_files(ui_player_state_source(&s_player_ui))) {
+    } else if (audio_source_is_files(ui_player_state_source(&s_player_ui)) ||
+               ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_DLNA) {
         /* A file's buffer sits at the brim from the first block, so the
          * reading says nothing; and until the decoder has found its first
          * frame there is no position to show either. The slot stays empty
-         * rather than opening the screen with a number about nothing. */
+         * rather than opening the screen with a number about nothing.
+         *
+         * A media server is here for a blunter reason: nothing feeds the
+         * reading at all. player_control_input_fill() answers only for files
+         * and for stations, so this source got the slot, the strip and a
+         * permanent "Буфер --" - a gauge with no needle, which is worse than
+         * no gauge. */
         left_text[0] = '\0';
     } else {
         buffer_slot = true;

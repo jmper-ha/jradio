@@ -699,25 +699,44 @@ socket.emit('open');
   assert.equal(elements['#list-empty'].hidden, false);
   assert.equal(elements['#list-empty'].textContent, 'Медиасервер не найден в сети');
 
+  /* Inside the tree the same emptiness is a different thing, and "the media
+     server was not found" would be a lie about a server that has plainly
+     answered. It never gets the chance to be said: a container with nothing in
+     it still offers the way back, so there is a row to click and the empty
+     notice stays down. The wording is corrected anyway - the notice is one
+     `has_parent` away from being shown, and it should not be waiting there
+     with the wrong sentence in it. */
+  sendEvent(socket, {
+    type: 'list.update',
+    revision: 26,
+    list: {kind: 'files', active_index: null, path: 'Shared Music', revision: 26,
+           has_parent: true},
+  });
+  await respond({path: 'Shared Music', revision: 26, has_parent: true,
+                 searching: false, items: []});
+  assert.deepEqual(labels(), ['.. (наверх)']);
+  assert.equal(elements['#list-empty'].hidden, true);
+  assert.equal(elements['#list-empty'].textContent, 'В этой папке ничего нет');
+
   /* And a read that really fails still says so - then stops saying it as soon
      as a listing arrives. A complaint that outlives what it was about is how
      the red line came to be sitting over a server playing music. */
   sendEvent(socket, {
     type: 'list.update',
-    revision: 24,
-    list: {kind: 'files', active_index: null, path: 'Alive!', revision: 24, has_parent: true},
+    revision: 27,
+    list: {kind: 'files', active_index: null, path: 'Alive!', revision: 27, has_parent: true},
   });
   await respond({}, {ok: false, status: 500});
   assert.equal(elements['#command-status'].textContent, 'Не удалось прочитать медиасервер');
 
   sendEvent(socket, {
     type: 'list.update',
-    revision: 25,
-    list: {kind: 'files', active_index: null, path: 'Alive!', revision: 25, has_parent: true},
+    revision: 28,
+    list: {kind: 'files', active_index: null, path: 'Alive!', revision: 28, has_parent: true},
   });
   await respond({
     path: 'Alive!',
-    revision: 25,
+    revision: 28,
     has_parent: true,
     items: [{index: 0, name: 'Deuce', kind: 'file', playable: true, format: 'MP3'}],
   });

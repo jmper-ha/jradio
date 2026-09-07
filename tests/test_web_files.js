@@ -666,6 +666,64 @@ socket.emit('open');
   });
   assert.deepEqual(labels(), ['.. (наверх)', 'Deuce']);
 
+  /* Selecting the media server is answered before the device has found one:
+     the search blocks the player task for a second or two, and the active
+     source and the listing revision are published before it starts. So the
+     first listing of a session is routinely empty, and it used to be reported
+     as a failed read - a red line over a server that was about to work, left
+     standing because nothing that succeeded afterwards took it down.
+
+     The device now says which of the two it is, and the page waits rather than
+     complaining. */
+  sendEvent(socket, {
+    type: 'list.update',
+    revision: 22,
+    list: {kind: 'files', active_index: null, path: '', revision: 22, has_parent: false},
+  });
+  await respond({path: '', revision: 22, has_parent: false, searching: true, items: []});
+  assert.equal(elements['#list-loading'].hidden, false, 'поиск сервера - это ожидание');
+  assert.equal(elements['#list-loading-text'].textContent, 'Ищем медиасервер…');
+  assert.equal(elements['#list-empty'].hidden, true, 'пустой список пока не новость');
+  assert.equal(elements['#command-status'].textContent, '',
+    'ожидание не должно выглядеть как ошибка');
+
+  /* The search finished and found nothing. Now the empty list *is* the news,
+     and it says what it means rather than "список пока пуст". */
+  sendEvent(socket, {
+    type: 'list.update',
+    revision: 23,
+    list: {kind: 'files', active_index: null, path: '', revision: 23, has_parent: false},
+  });
+  await respond({path: '', revision: 23, has_parent: false, searching: false, items: []});
+  assert.equal(elements['#list-loading'].hidden, true);
+  assert.equal(elements['#list-empty'].hidden, false);
+  assert.equal(elements['#list-empty'].textContent, 'Медиасервер не найден в сети');
+
+  /* And a read that really fails still says so - then stops saying it as soon
+     as a listing arrives. A complaint that outlives what it was about is how
+     the red line came to be sitting over a server playing music. */
+  sendEvent(socket, {
+    type: 'list.update',
+    revision: 24,
+    list: {kind: 'files', active_index: null, path: 'Alive!', revision: 24, has_parent: true},
+  });
+  await respond({}, {ok: false, status: 500});
+  assert.equal(elements['#command-status'].textContent, 'Не удалось прочитать медиасервер');
+
+  sendEvent(socket, {
+    type: 'list.update',
+    revision: 25,
+    list: {kind: 'files', active_index: null, path: 'Alive!', revision: 25, has_parent: true},
+  });
+  await respond({
+    path: 'Alive!',
+    revision: 25,
+    has_parent: true,
+    items: [{index: 0, name: 'Deuce', kind: 'file', playable: true, format: 'MP3'}],
+  });
+  assert.equal(elements['#command-status'].textContent, '',
+    'успешный список снимает жалобу на неудачный');
+
   console.log('web usb tests passed');
 })().catch((error) => {
   console.error(error);

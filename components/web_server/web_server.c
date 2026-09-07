@@ -998,12 +998,29 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
  */
 static esp_err_t web_server_dlna_get(httpd_req_t *request)
 {
-    if (!dlna_source_is_open()) {
-        /* Not an error the page should show as a failure: it means the source
-         * has not been selected, or the search found nothing. */
+    /* 404 only when the page is asking about a source the device is not on -
+     * a stale tab, or a request that crossed a switch away from the server.
+     *
+     * Everything else answers 200, empty listing and all, and that is the fix
+     * for a red "could not read the media server" appearing over a server that
+     * was read perfectly well. Selecting the source publishes the new active
+     * source and bumps the listing revision *before* the search runs, because
+     * the search blocks the player task for a second or two; the page saw the
+     * change, asked for the listing at once, and got a 404 from a device that
+     * was in the middle of finding the server. The listing arrived a moment
+     * later and played - and the error line stayed up, because nothing that
+     * succeeds afterwards had any reason to take it down.
+     *
+     * So the two are said apart here instead. "searching" is a wait, an empty
+     * listing that is not searching is a network with no server on it, and a
+     * failure is now only a failure. */
+    player_snapshot_t dlna_snapshot;
+    player_control_get_snapshot(&dlna_snapshot);
+    if (dlna_snapshot.active_source != AUDIO_SOURCE_DLNA) {
         httpd_resp_send_err(request, HTTPD_404_NOT_FOUND, "No media server");
         return ESP_FAIL;
     }
+    const bool searching = dlna_source_is_searching();
 
     web_json_writer_t writer;
     web_json_init(&writer, s_file_chunk_buffer, sizeof(s_file_chunk_buffer),
@@ -1014,6 +1031,8 @@ static esp_err_t web_server_dlna_get(httpd_req_t *request)
     web_json_format(&writer, "%u", player_control_listing_revision());
     web_json_literal(&writer, ",\"has_parent\":");
     web_json_literal(&writer, dlna_source_at_root() ? "false" : "true");
+    web_json_literal(&writer, ",\"searching\":");
+    web_json_literal(&writer, searching ? "true" : "false");
     web_json_literal(&writer, ",\"items\":[");
     if (!web_json_valid(&writer)) {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
@@ -1025,7 +1044,9 @@ static esp_err_t web_server_dlna_get(httpd_req_t *request)
     // device has already left.
     httpd_resp_set_hdr(request, "Cache-Control", "no-store");
 
-    const size_t count = dlna_source_entry_count();
+    // Zero while the search runs, and zero when it found nothing: the page is
+    // told which by the flag above rather than by the emptiness.
+    const size_t count = dlna_source_is_open() ? dlna_source_entry_count() : 0U;
     for (size_t index = 0U; index < count; ++index) {
         dlna_entry_t entry;
         if (!dlna_source_entry_at(index, &entry)) {

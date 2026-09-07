@@ -54,6 +54,17 @@ void dlna_source_close(void);
 /* True while a server is open and its listing can be read. */
 bool dlna_source_is_open(void);
 
+/* True from the moment the source is asked for until the search has finished
+ * and the root has been read.
+ *
+ * The two are different answers and the difference is visible to the user: not
+ * open *yet* is a second of waiting, not open *at all* is a network with no
+ * server on it. Told apart, a browser can show a busy line for the first and
+ * "nothing found" for the second; run together, as they were, the wait was
+ * reported as a failure - and the failure arrived while everything was in fact
+ * about to work. */
+bool dlna_source_is_searching(void);
+
 size_t dlna_source_server_count(void);
 /* The name to show for one of the servers found. False for an index past the
  * end. */

@@ -750,6 +750,23 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
   assert.equal(elements['#track-context'].textContent, '');
   assert.equal(elements['#track-context'].hidden, false);
 
+  /* A media server is a list source too, so the two track keys belong to it -
+     an open container is a run of tracks and the keys walk it. They were
+     missing on the page while the same two buttons on the front of the device
+     worked: which sources are a list is decided here by a list of its own, and
+     this one had never been added to it. */
+  sendEvent(second, {
+    type: 'player.update', revision: 913, active_source: 'dlna',
+    player: {...player('Steam Powered Stories'), context: 'The Cog Is Dead'},
+  });
+  assert.equal(elements['#previous-item'].hidden, false);
+  assert.equal(elements['#next-item'].hidden, false);
+  assert.equal(elements['#next-item'].disabled, false);
+  elements['#next-item'].emit('click');
+  assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.next_item');
+  elements['#previous-item'].emit('click');
+  assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
+
   second.emit('close');
   assert.equal(elements['#socket-state'].textContent, 'Нет связи');
   assert.equal(elements['#play-toggle'].disabled, true);

@@ -12,6 +12,7 @@
 #include "album_art.h"
 #include "dlna_browse_stack.h"
 #include "dlna_client.h"
+#include "dlna_root_filter.h"
 #include "dlna_soap.h"
 #include "internet_radio.h"
 
@@ -38,6 +39,10 @@ static dlna_browse_stack_t s_stack;
 static dlna_entry_t *s_entries;
 static size_t s_entry_count;
 static bool s_open;
+/* Set for the whole of dlna_source_open(), which blocks for a second or two.
+ * Everything that reads the listing meanwhile needs to know the difference
+ * between "not yet" and "not at all". */
+static bool s_searching;
 
 /* The row being played, and the URL and title handed to the audio path.
  *
@@ -56,6 +61,44 @@ static void lock(void)
 static void unlock(void)
 {
     if (s_lock != NULL) xSemaphoreGive(s_lock);
+}
+
+static void set_searching(bool searching)
+{
+    lock();
+    s_searching = searching;
+    unlock();
+}
+
+/* Drops the root's non-audio sections. Called with the lock held, and only at
+ * the root - see dlna_root_filter.h for why the name is all there is to go on.
+ *
+ * A filter that emptied the listing would be indistinguishable from a server
+ * that answered nothing, and the user would have no way to tell which had
+ * happened or to get past it. So an empty result is refused: the rows go back
+ * exactly as the server sent them, and the guess is written off rather than
+ * acted on. */
+static void keep_music_sections(void)
+{
+    size_t kept = 0U;
+    for (size_t index = 0U; index < s_entry_count; ++index) {
+        if (s_entries[index].kind == DLNA_ENTRY_CONTAINER &&
+            !dlna_root_filter_is_music(s_entries[index].title)) {
+            continue;
+        }
+        if (kept != index) s_entries[kept] = s_entries[index];
+        ++kept;
+    }
+    if (kept == 0U) {
+        ESP_LOGI(TAG, "no section of the root looks like music; showing all %u",
+                 (unsigned)s_entry_count);
+        return;
+    }
+    if (kept < s_entry_count) {
+        ESP_LOGI(TAG, "root: %u of %u sections kept", (unsigned)kept,
+                 (unsigned)s_entry_count);
+        s_entry_count = kept;
+    }
 }
 
 /* Reads the container the stack is pointing at, a page at a time, until the
@@ -124,6 +167,10 @@ static esp_err_t read_current_container(void)
             break;
         }
     }
+    /* The root of a server is its sections - video, music, pictures - and this
+     * device plays one of the three. The rest are rows that can only be walked
+     * into and come back from empty-handed. */
+    if (dlna_browse_stack_at_root(&s_stack)) keep_music_sections();
     return ESP_OK;
 }
 
@@ -223,8 +270,13 @@ esp_err_t dlna_source_open(void)
         if (s_lock == NULL) return ESP_ERR_NO_MEM;
     }
 
+    set_searching(true);
+
     esp_err_t err = dlna_client_open();
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK) {
+        set_searching(false);
+        return err;
+    }
 
     lock();
     if (s_entries == NULL) {
@@ -235,6 +287,7 @@ esp_err_t dlna_source_open(void)
                                          MALLOC_CAP_INTERNAL);
         }
         if (s_entries == NULL) {
+            s_searching = false;
             unlock();
             ESP_LOGE(TAG, "no memory for a listing of %u entries",
                      (unsigned)DLNA_SOURCE_ENTRY_MAX);
@@ -260,11 +313,13 @@ esp_err_t dlna_source_open(void)
     s_playing = DLNA_SOURCE_ENTRY_MAX;
     s_open = count > 0U;
     if (!s_open) {
+        s_searching = false;
         unlock();
         return ESP_ERR_NOT_FOUND;
     }
     dlna_browse_stack_reset(&s_stack, s_servers[0].device.friendly_name);
     err = read_current_container();
+    s_searching = false;
     unlock();
 
     if (err == ESP_OK) {
@@ -278,6 +333,7 @@ void dlna_source_close(void)
 {
     lock();
     s_open = false;
+    s_searching = false;
     s_entry_count = 0U;
     s_server_count = 0U;
     s_playing = DLNA_SOURCE_ENTRY_MAX;
@@ -293,6 +349,14 @@ bool dlna_source_is_open(void)
     const bool open = s_open;
     unlock();
     return open;
+}
+
+bool dlna_source_is_searching(void)
+{
+    lock();
+    const bool searching = s_searching;
+    unlock();
+    return searching;
 }
 
 size_t dlna_source_server_count(void)

@@ -632,12 +632,13 @@
     /* The two track keys, the browser's copy of the buttons on the front of
        the device. They move what is playing along the list it came from - the
        neighbouring file in the directory, the neighbouring station in the
-       catalog - so they belong to the sources that are a list. The rotor is
+       catalog, the neighbouring track of an open container on a media server -
+       so they belong to the sources that are a list. The rotor is
        not one: its next track is the skip button above, and it has no previous
        one at all. Nothing wraps, so at either end of the list the key does
        nothing; the device refuses it rather than rolling over. */
     const steppable = state.activeSource === 'usb' || state.activeSource === 'sd' ||
-      state.activeSource === 'internet_radio';
+      state.activeSource === 'internet_radio' || state.activeSource === 'dlna';
     const stepReady = steppable && state.connected &&
       player.state !== 'stopped' && player.state !== 'error';
     previousItem.hidden = !steppable;
@@ -800,12 +801,26 @@
         items: entries,
         path: files ? safeString(payload.path, state.list.path) : '',
         has_parent: files && payload.has_parent === true,
+        /* Only a media server sends this, and only while its search is still
+           running. An empty listing means two different things either side of
+           it - "still looking" and "nothing on this network" - and the page
+           has no way to tell them apart on its own. */
+        searching: files && payload.searching === true,
       };
       listShownKind = kind;
       listShownSource = activeSource;
       listShownRevision = Number.isSafeInteger(payload.revision) ? payload.revision : revision;
       renderList(previousList);
+      /* A listing that arrives takes down the complaint that one could not
+         be read. Only that complaint: the line is shared with command results,
+         and clearing it wholesale would swallow somebody else's message. */
+      if (listingErrorShown) {
+        listingErrorShown = false;
+        commandStatus.textContent = '';
+        commandStatus.classList.remove('is-error');
+      }
     } catch (error) {
+      listingErrorShown = true;
       commandStatus.textContent = source.error(activeSource);
       commandStatus.classList.add('is-error');
     } finally {
@@ -873,6 +888,9 @@
      second or two, so without this the click reads as ignored. The revision is
      what says the answer arrived - it is the only field that moves when a
      listing is replaced by one of the same length. */
+  /* Whether the line currently showing is ours, so that a listing which
+     succeeds can retract a listing error without touching anything else. */
+  let listingErrorShown = false;
   let listBusyRevision = null;
   let listBusySince = 0;
   /* Long enough for the slowest browse the device makes, short enough that a
@@ -1028,7 +1046,11 @@
        still asking - not that there is nothing. The other sources are read
        from the device itself and are empty only when they really are. */
     const browsing = listIsBusy();
-    const waiting = browsing ||
+    /* The device is still looking for a server. It says so itself rather than
+       being guessed at from an empty list, because the search takes a second
+       or two and used to look exactly like a network with nothing on it. */
+    const searching = state.list.searching === true;
+    const waiting = browsing || searching ||
       (rowCount === 0 && state.connected && state.activeSource === 'yandex');
     /* With no network these two have nothing to offer: the stations cannot be
        played and the rotor's list was never fetched. Judged by the kind rather
@@ -1043,8 +1065,16 @@
        is a list being fetched for the first time, the other is a container the
        device is opening while its rows are still on screen. */
     if (listLoadingText) {
-      listLoadingText.textContent = browsing ? 'Открываем папку…' : 'Загружаем станции…';
+      listLoadingText.textContent = searching ? 'Ищем медиасервер…'
+        : browsing ? 'Открываем папку…'
+        : 'Загружаем станции…';
     }
+    /* An empty media server is not an empty list, it is a network with no
+       server answering on it - which is something the user can act on, and
+       the same words the panel puts on its own screen. */
+    listEmpty.textContent = state.activeSource === 'dlna'
+      ? 'Медиасервер не найден в сети'
+      : 'Список пока пуст';
     listLoading.hidden = offline || !waiting;
     listEmpty.hidden = offline || rowCount !== 0 || waiting;
     listItems.hidden = offline || rowCount === 0;

@@ -22,6 +22,7 @@
 #include "ui_about.h"
 #include "ui_autoplay.h"
 #include "ui_buffer_graph.h"
+#include "ui_busy_bar.h"
 #include "ui_click_gesture.h"
 #include "ui_draw_buffer.h"
 #include "ui_fonts.h"
@@ -1441,6 +1442,55 @@ static const char *ui_path_leaf(const char *path)
     return file_browser_path_is_root(path) || leaf[0] == '\0' ? fallback : leaf;
 }
 
+/* Whether the bar at the foot of the list is currently sweeping rather than
+ * showing a position. Kept because the two are different bar modes, and
+ * setting the mode on every pass would restart the widget's own bookkeeping
+ * ten times a second. */
+static bool s_list_progress_busy;
+
+/* The line under the list is the position in it - and, while the device is
+ * waiting on a server, the one thing on the screen that says it has not hung.
+ *
+ * That slot rather than a new widget, and a moving segment rather than a word:
+ * it is where the player screen keeps the buffer, so it is where the eye
+ * already goes to ask whether anything is happening, and a container being
+ * opened has no percentage to show - there is no denominator, only a request
+ * outstanding. */
+static void ui_update_list_progress(void)
+{
+    if (s_station_list_progress == NULL) return;
+
+    if (s_browse_waiting) {
+        /* Shown even with no rows: opening the source itself is a wait, and
+         * that is exactly the moment the list is empty. */
+        lv_obj_clear_flag(s_station_list_progress, LV_OBJ_FLAG_HIDDEN);
+        if (!s_list_progress_busy) {
+            lv_bar_set_mode(s_station_list_progress, LV_BAR_MODE_RANGE);
+            s_list_progress_busy = true;
+        }
+        const ui_busy_bar_span_t span =
+            ui_busy_bar_span(ui_tick_get_ms(), s_browse_waiting_started_ms);
+        lv_bar_set_start_value(s_station_list_progress, span.start, LV_ANIM_OFF);
+        lv_bar_set_value(s_station_list_progress, span.end, LV_ANIM_OFF);
+        return;
+    }
+
+    if (s_list_progress_busy) {
+        lv_bar_set_mode(s_station_list_progress, LV_BAR_MODE_NORMAL);
+        lv_bar_set_start_value(s_station_list_progress, 0, LV_ANIM_OFF);
+        s_list_progress_busy = false;
+    }
+    // Hidden when there is nothing to scroll through at all - on the "no
+    // drive" screen a full bar under an empty list would be nonsense.
+    if (s_station_list.count == 0U) {
+        lv_obj_add_flag(s_station_list_progress, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_clear_flag(s_station_list_progress, LV_OBJ_FLAG_HIDDEN);
+        lv_bar_set_value(s_station_list_progress,
+                         station_list_progress_percent(&s_station_list), LV_ANIM_OFF);
+    }
+}
+
 static void ui_update_station_list(void)
 {
     size_t cursor_row = 0U;
@@ -1527,15 +1577,7 @@ static void ui_update_station_list(void)
         ui_scroller_set_scrolling(&s_station_list_rows[row], selected);
         ui_scroller_set_text(&s_station_list_rows[row], text);
     }
-    // Hidden when there is nothing to scroll through at all - on the "no
-    // drive" screen a full bar under an empty list would be nonsense.
-    if (s_station_list.count == 0U) {
-        lv_obj_add_flag(s_station_list_progress, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_clear_flag(s_station_list_progress, LV_OBJ_FLAG_HIDDEN);
-        lv_bar_set_value(s_station_list_progress,
-                         station_list_progress_percent(&s_station_list), LV_ANIM_OFF);
-    }
+    ui_update_list_progress();
 }
 
 /* Whether there is a player screen worth returning to. The idle timers on the
@@ -4189,6 +4231,11 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
             s_browse_waiting = false;
             ui_set_label_text_if_changed(s_station_list_notice, "");
         }
+        /* Every pass, not only when the rows change: the sweeping bar is the
+         * one thing on this screen that moves while nothing else does, and it
+         * moves because this is called. The rest of the pass costs nothing
+         * when the bar is idle - the widget only redraws on a new value. */
+        ui_update_list_progress();
         if (ui_list_shows_files() && !s_files_unavailable &&
             !ui_files_media_present(
                 ui_media_for_source(ui_player_state_source(&s_player_ui)))) {

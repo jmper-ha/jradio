@@ -4,6 +4,7 @@
 # only ever built here.
 idf_component_register(SRCS "dlna_xml.c" "dlna_url.c" "dlna_ssdp.c" "dlna_device.c"
                             "dlna_soap.c" "dlna_didl.c" "dlna_browse_stack.c"
+                            "dlna_root_filter.c"
                             "dlna_client.c" "dlna_discovery.c" "dlna_source.c"
                        INCLUDE_DIRS "include"
                        # radio_stream_format.h: a server hands out an HTTP URL

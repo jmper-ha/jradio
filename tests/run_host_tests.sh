@@ -144,6 +144,7 @@ run_test board_button_gesture tests/test_board_button_gesture.c components/board
 # the escaping, the namespace prefixes and the relative service URL are all
 # things a client written on paper gets wrong on the first real server.
 run_test dlna_xml tests/test_dlna_xml.c components/dlna/dlna_xml.c
+run_test dlna_root_filter tests/test_dlna_root_filter.c components/dlna/dlna_root_filter.c
 run_test dlna_discovery tests/test_dlna_discovery.c components/dlna/dlna_ssdp.c \
     components/dlna/dlna_device.c components/dlna/dlna_url.c components/dlna/dlna_xml.c
 run_test dlna_browse tests/test_dlna_browse.c components/dlna/dlna_soap.c \
@@ -181,6 +182,7 @@ run_test ui_click_gesture tests/test_ui_click_gesture.c components/ui/ui_click_g
 run_test ui_deferred_start tests/test_ui_deferred_start.c components/ui/ui_deferred_start.c
 run_test ui_draw_buffer tests/test_ui_draw_buffer.c components/ui/ui_draw_buffer.c
 run_test ui_menu tests/test_ui_menu.c components/ui/ui_menu.c
+run_test ui_busy_bar tests/test_ui_busy_bar.c components/ui/ui_busy_bar.c
 run_test ui_feed_model tests/test_ui_feed_model.c components/ui/ui_feed_model.c \
     components/ui/ui_menu.c
 run_test ui_player_state tests/test_ui_player_state.c components/ui/ui_player_state.c

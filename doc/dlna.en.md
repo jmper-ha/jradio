@@ -20,10 +20,14 @@ heading of the list.
 **What the rest costs.** Opening a folder is one request to the server, or
 several for a large one. Measured on this network: a small folder about 0.1 s,
 a 52-row folder 0.6 s. While a request is out, the bar under the list - the slot
-the player screen gives the buffer - sweeps a segment back and forth, and the
-list says "Загрузка…"; in the web interface the rows dim, since they are still
-correct but there is no point pressing them. The movement is the point: a
-caption that sits still looks exactly like a device that has hung.
+the player screen gives the buffer - sweeps a segment back and forth; in the web
+interface the rows dim, since they are still correct but there is no point
+pressing them. The movement is the point: a caption that sits still looks
+exactly like a device that has hung, which is why there is no caption, only the
+bar.
+
+A folder that will not open says so - "Папка не открылась" - rather than
+leaving the wait to run out.
 
 The search runs every time the source is entered rather than once at start-up.
 That is deliberate: a server may be switched off, may move to another address,

@@ -3359,19 +3359,21 @@ static void ui_show_menu(void)
     }
 }
 
-/* Says a browse has been asked for, and puts the word on the notice line.
+/* Says a browse has been asked for. The bar at the foot of the list answers
+ * for it from here on - see ui_update_list_progress().
  *
- * Immediately rather than on the next poll: the whole point is the moment
- * between the press and the answer, and a label written one poll later is a
- * label written after the frame the user was looking at. */
+ * No word on the notice line any more. It sat across the middle of the rows it
+ * was describing, and a caption that does not move is what a hung device looks
+ * like anyway; the moving bar says the same thing without covering anything.
+ *
+ * The flag is set immediately rather than on the next poll: the whole point is
+ * the moment between the press and the answer, and a state written one poll
+ * later is written after the frame the user was looking at. */
 static void ui_note_browse_started(void)
 {
     s_browse_waiting = true;
     s_browse_waiting_revision = player_control_listing_revision();
     s_browse_waiting_started_ms = ui_tick_get_ms();
-    if (s_station_list_notice != NULL) {
-        ui_set_label_text_if_changed(s_station_list_notice, "Загрузка…");
-    }
 }
 
 /* Long enough that no browse this device makes is cut short - the slowest
@@ -4251,15 +4253,19 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
 
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
         const unsigned int revision = player_control_listing_revision();
-        /* A browse that never answered. The listing is unchanged and correct -
-         * the container simply would not open - so the rows stay and only the
-         * word goes, rather than leaving "Загрузка…" up for the rest of the
-         * session. */
+        /* A browse that never answered at all - no listing, and not even the
+         * revision a refusal moves. The rows are unchanged and correct, so
+         * they stay; the bar simply stops sweeping rather than running for the
+         * rest of the session.
+         *
+         * Nothing is written to the notice line here. It is not ours: it
+         * carries "Медиасервер не найден в сети" and the drive's messages, and
+         * blanking it on the way out of a wait would take one of those with
+         * it. */
         if (s_browse_waiting && revision == s_browse_waiting_revision &&
             (uint32_t)(ui_tick_get_ms() - s_browse_waiting_started_ms) >=
                 UI_BROWSE_WAIT_TIMEOUT_MS) {
             s_browse_waiting = false;
-            ui_set_label_text_if_changed(s_station_list_notice, "");
         }
         /* Every pass, not only when the rows change: the sweeping bar is the
          * one thing on this screen that moves while nothing else does, and it

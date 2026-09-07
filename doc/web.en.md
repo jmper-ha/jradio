@@ -8,7 +8,7 @@
 | `GET /api/playlist` | Station list as CSV |
 | `POST /api/playlist` | Replaces the station list wholesale |
 | `GET /api/files` | Contents of the current directory on the active medium |
-| `GET /api/dlna` | Contents of the container open on the media server |
+| `GET /api/dlna` | Contents of the container open on the media server; `searching` means it is still being looked for |
 | `GET /api/about` | The firmware and web versions, ESP-IDF, the author's address |
 | `GET /api/settings` | The device settings, the same ones its own screen has |
 | `POST /api/settings` | Changes one setting: `{"field":…,"value":…}` |

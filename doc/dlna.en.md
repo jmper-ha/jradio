@@ -19,9 +19,11 @@ heading of the list.
 
 **What the rest costs.** Opening a folder is one request to the server, or
 several for a large one. Measured on this network: a small folder about 0.1 s,
-a 52-row folder 0.6 s. While a request is out the list says "Загрузка…", and in
-the web interface the rows dim - they are still correct, but there is no point
-pressing them.
+a 52-row folder 0.6 s. While a request is out, the bar under the list - the slot
+the player screen gives the buffer - sweeps a segment back and forth, and the
+list says "Загрузка…"; in the web interface the rows dim, since they are still
+correct but there is no point pressing them. The movement is the point: a
+caption that sits still looks exactly like a device that has hung.
 
 The search runs every time the source is entered rather than once at start-up.
 That is deliberate: a server may be switched off, may move to another address,
@@ -32,8 +34,15 @@ opens a folder or starts a track, and the `..` row at the top goes back up. A
 long press, or F2, leaves the source.
 
 Every server lays its tree out differently. On Plex it is `Music → your library
-→ By Album / By Folder / All Artists → …`; the `Video` and `Photos` folders are
-visible too, though there is nothing there to play.
+→ By Album / By Folder / All Artists → …`.
+
+At the very top level the device shows only the music sections: `Video`,
+`Photos` and their like are hidden - they can be walked into, but there is
+nothing to listen to in them. The name is all there is to tell them apart: a
+server marks every section the same way and says nothing about what is inside.
+So only what is recognised for certain is hidden, an unfamiliar section stays
+where it is - and if everything were hidden the listing would come back whole
+rather than empty.
 
 **What plays.** Whatever this firmware can decode: MP3, AAC, FLAC, WAV, Ogg.
 The server hands out an ordinary HTTP link, and from there the same decoder
@@ -49,7 +58,8 @@ offers two pictures the device takes the smaller one: only 160 pixels reach the
 panel, and the rest would be bytes fetched to be thrown away.
 
 **Through the album.** When a track ends the next one in the same listing
-starts, as on a flash drive. F3 and F4 step to the neighbouring track.
+starts, as on a flash drive. F3 and F4 step to the neighbouring track, and so
+do the back and forward buttons in the web interface.
 
 ## Limits
 

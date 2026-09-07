@@ -43,9 +43,10 @@
   const deviceBrightness = document.querySelector('#device-brightness');
   /* The device's own settings screen, field for field, in the order and with
      the wording it uses - so that "Скроллинг: Влево-вправо" means the same
-     thing in both places. `row` and `gate` belong to the two fields the device
-     itself can be without: a build with no Yandex Music has no switch for it,
-     and a board with only one place to go has no home screen to choose. */
+     thing in both places. `row` and `gate` belong to the fields the device
+     itself can be without: a build with no Yandex Music or no media server has
+     no switch for it, and a board with only one place to go has no home screen
+     to choose. */
   const deviceFields = [
     {field: 'language', kind: 'choice', node: document.querySelector('#device-language')},
     {field: 'home_screen', kind: 'choice', node: document.querySelector('#device-home-screen'),
@@ -55,6 +56,8 @@
     {field: 'autoplay', kind: 'switch', node: document.querySelector('#device-autoplay')},
     {field: 'yandex_music', kind: 'switch', node: document.querySelector('#device-yandex'),
      row: document.querySelector('#device-yandex-row'), gate: 'yandex_music'},
+    {field: 'dlna', kind: 'switch', node: document.querySelector('#device-dlna'),
+     row: document.querySelector('#device-dlna-row'), gate: 'dlna'},
     {field: 'brightness', kind: 'number', node: deviceBrightness,
      output: document.querySelector('#device-brightness-value')},
     {field: 'flip_vertical', kind: 'switch', node: document.querySelector('#device-flip-vertical')},

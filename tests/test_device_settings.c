@@ -28,6 +28,7 @@ static void test_defaults_and_load(void)
     /* On by default: a device whose firmware has Yandex Music should show it
      * without the user first going to find a switch. */
     assert(settings.yandex_music);
+    assert(settings.dlna);
     assert(settings.brightness == DEVICE_BRIGHTNESS_DEFAULT);
     /* Bounce is what the device did before the setting existed. */
     assert(settings.scroll == DEVICE_SCROLL_BOUNCE);
@@ -146,6 +147,29 @@ static void test_yandex_music_persists(void)
     assert(!reloaded.yandex_music);
 }
 
+/* The same rules as the switch above, and written out rather than assumed:
+   the two are separate keys, and one being off must not take the other with
+   it. */
+static void test_dlna_persists(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    assert(settings.dlna);
+    assert(device_settings_set_dlna(&settings, false));
+    assert(!settings.dlna);
+    assert(settings.yandex_music);
+
+    char value[32];
+    assert(settings_csv_get(test_path, "dlna", value, sizeof(value)));
+    assert(strcmp(value, "0") == 0);
+
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(!reloaded.dlna);
+    assert(reloaded.yandex_music);
+}
+
 static void test_brightness_persists_and_refuses_a_dark_panel(void)
 {
     reset_file();
@@ -261,6 +285,7 @@ int main(void)
     test_volume_defaults_and_persists();
     test_a_corrupt_volume_leaves_the_default();
     test_yandex_music_persists();
+    test_dlna_persists();
     test_scroll_mode_persists();
     test_the_yandex_resume_point_persists();
     test_brightness_persists_and_refuses_a_dark_panel();

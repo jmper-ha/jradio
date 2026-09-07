@@ -156,9 +156,10 @@ static void test_each_group_has_expected_fields(void)
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
     /* General holds home screen, scrolling, the buffer reading and autoplay,
-     * plus the Yandex Music switch in a build that has the feature - the one
-     * row here that a board option can take away. */
-    assert(ui_settings_model_row_count(&model) == 8U + BOARD_HAS_YANDEX_MUSIC);
+     * plus the Yandex Music and DLNA switches in a build that has those
+     * features - the rows here that a board option can take away. */
+    assert(ui_settings_model_row_count(&model) ==
+           8U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA);
     assert(ui_settings_model_row_at(&model, 2U).id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_SCROLL_FIELD);
     assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_BUFFER_FIELD);
@@ -176,6 +177,12 @@ static void test_each_group_has_expected_fields(void)
     assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_YANDEX_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_YANDEX_FIELD);
+#endif
+#if BOARD_HAS_DLNA
+    assert(ui_settings_model_row_at(&model, 6U + BOARD_HAS_YANDEX_MUSIC).id ==
+           UI_SETTINGS_ROW_DLNA_FIELD);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DLNA_FIELD);
 #endif
     /* And the cursor still cannot walk out of the expanded group. */
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_NO_CHANGE);
@@ -387,7 +394,7 @@ static void test_the_longest_list_needs_the_window(void)
         if (count > longest) longest = count;
     }
     /* Three headings, the deepest group's fields, and About. */
-    assert(longest == 8U + BOARD_HAS_YANDEX_MUSIC);
+    assert(longest == 8U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA);
     /* Whatever the longest is, every row of it is reachable with the window. */
     ui_settings_model_init(&model, true);
     model.expanded_group = (int)UI_SETTINGS_GROUP_GENERAL;

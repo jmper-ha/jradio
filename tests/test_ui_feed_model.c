@@ -3,6 +3,10 @@
 
 #include "board_features.h"
 #include "ui_feed_model.h"
+
+/* Visibility is a mask, not a bool - a bare `true` would mean "internet radio
+   only". */
+#define ALL UI_MENU_VISIBLE_ALL
 #include "ui_menu.h"
 
 static void test_navigation_wraps_and_stays_one_step(void)
@@ -14,7 +18,7 @@ static void test_navigation_wraps_and_stays_one_step(void)
     ui_feed_model_move(&model, 1);
     /* The next icon along, whichever item that is on this board. */
     assert(ui_feed_model_selected(&model) ==
-           (ui_feed_item_t)ui_menu_visible_item_at(1U, true));
+           (ui_feed_item_t)ui_menu_visible_item_at(1U, ALL));
     ui_feed_model_move(&model, -1);
     assert(ui_feed_model_selected(&model) == UI_FEED_INTERNET_RADIO);
     ui_feed_model_move(&model, -1);
@@ -30,11 +34,11 @@ static void test_the_carousel_carries_only_the_built_items(void)
     ui_feed_model_init(&model, 0U);
     for (uint8_t step = 0U; step < UI_FEED_ITEM_COUNT * 2U; ++step) {
         ui_feed_model_move(&model, 1);
-        assert(ui_menu_item_is_visible((ui_menu_item_t)ui_feed_model_selected(&model), true));
+        assert(ui_menu_item_is_visible((ui_menu_item_t)ui_feed_model_selected(&model), ALL));
     }
     for (uint8_t step = 0U; step < UI_FEED_ITEM_COUNT * 2U; ++step) {
         ui_feed_model_move(&model, -1);
-        assert(ui_menu_item_is_visible((ui_menu_item_t)ui_feed_model_selected(&model), true));
+        assert(ui_menu_item_is_visible((ui_menu_item_t)ui_feed_model_selected(&model), ALL));
     }
 }
 
@@ -104,7 +108,7 @@ static void test_the_cursor_follows_the_source_that_started(void)
     for (uint8_t index = 0U; index < UI_FEED_ITEM_COUNT; ++index) {
         audio_source_t source = AUDIO_SOURCE_NONE;
         if (!ui_feed_model_activate((ui_feed_item_t)index, &source)) continue;
-        if (!ui_menu_item_is_visible((ui_menu_item_t)index, true)) continue;
+        if (!ui_menu_item_is_visible((ui_menu_item_t)index, ALL)) continue;
         ui_feed_model_init(&model, UI_FEED_SETTINGS);
         assert(ui_feed_model_select_source(&model, source));
         assert(ui_feed_model_selected(&model) == (ui_feed_item_t)index);
@@ -117,18 +121,20 @@ static void test_the_carousel_skips_a_hidden_item(void)
 #if BOARD_HAS_YANDEX_MUSIC
     /* Whichever icon sits before Yandex Music on this board: naming one would
      * tie the test to a part the board may not carry. */
-    const uint8_t before = (uint8_t)ui_menu_item_step(UI_MENU_ITEM_YANDEX_MUSIC, -1, true);
+    const uint8_t before = (uint8_t)ui_menu_item_step(UI_MENU_ITEM_YANDEX_MUSIC, -1, ALL);
 
     ui_feed_model_init(&model, before);
-    assert(ui_feed_model_yandex_visible(&model));
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC,
+                                   ui_feed_model_visible_mask(&model)));
     ui_feed_model_move(&model, 1);
     assert(ui_feed_model_selected(&model) == UI_FEED_YANDEX);
 
     /* Same step, with the item switched off: straight past it to Settings,
      * which is what the list home screen does with the same rule. */
     ui_feed_model_init(&model, before);
-    ui_feed_model_set_yandex_visible(&model, false);
-    assert(!ui_feed_model_yandex_visible(&model));
+    ui_feed_model_set_source_visible(&model, UI_MENU_ITEM_YANDEX_MUSIC, false);
+    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC,
+                                    ui_feed_model_visible_mask(&model)));
     ui_feed_model_move(&model, 1);
     assert(ui_feed_model_selected(&model) == UI_FEED_SETTINGS);
     ui_feed_model_move(&model, -1);
@@ -136,13 +142,14 @@ static void test_the_carousel_skips_a_hidden_item(void)
 
     /* Turning it off while the cursor is on it moves the cursor. */
     ui_feed_model_init(&model, UI_FEED_YANDEX);
-    ui_feed_model_set_yandex_visible(&model, false);
+    ui_feed_model_set_source_visible(&model, UI_MENU_ITEM_YANDEX_MUSIC, false);
     assert(ui_feed_model_selected(&model) == UI_FEED_INTERNET_RADIO);
 #else
     ui_feed_model_init(&model, UI_FEED_INTERNET_RADIO);
-    ui_feed_model_set_yandex_visible(&model, true);
-    assert(!ui_feed_model_yandex_visible(&model));
-    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, true));
+    ui_feed_model_set_source_visible(&model, UI_MENU_ITEM_YANDEX_MUSIC, true);
+    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC,
+                                    ui_feed_model_visible_mask(&model)));
+    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, ALL));
 #endif
 }
 

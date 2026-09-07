@@ -55,6 +55,7 @@ const ids = [
   'device-status', 'device-language', 'device-home-screen', 'device-home-screen-row',
   'device-scroll', 'device-buffer-view',
   'device-autoplay', 'device-yandex', 'device-yandex-row',
+  'device-dlna', 'device-dlna-row',
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal',
 ];
@@ -101,9 +102,9 @@ let yandexFetchFails = false;
 let settingsReply = {
   language: 'ru', home_screen: 'text', scroll: 'bounce', buffer_view: 'graph',
   autoplay: false,
-  yandex_music: true, flip_vertical: false, flip_horizontal: true,
+  yandex_music: true, dlna: false, flip_vertical: false, flip_horizontal: true,
   brightness: 45, volume: 62,
-  available: {home_screen: true, yandex_music: false},
+  available: {home_screen: true, yandex_music: false, dlna: true},
   brightness_min: 10, brightness_max: 90,
 };
 let settingsPostFails = false;
@@ -475,8 +476,12 @@ function lastYandexTimer() {
   assert.equal(elements['#device-brightness'].min, '10');
   assert.equal(elements['#device-brightness'].max, '90');
   /* A build without Yandex Music has no such row on its own screen either, so
-     the switch goes away rather than sitting there changing nothing. */
+     the switch goes away rather than sitting there changing nothing. The media
+     server is built into this fixture, so its row stays and shows the state
+     the device reported. */
   assert.equal(elements['#device-yandex-row'].hidden, true);
+  assert.equal(elements['#device-dlna-row'].hidden, false);
+  assert.equal(elements['#device-dlna'].checked, false);
   assert.equal(elements['#device-home-screen-row'].hidden, false);
 
   settingsReply = {...settingsReply, autoplay: true};

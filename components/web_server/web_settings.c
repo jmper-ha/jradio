@@ -27,6 +27,7 @@ static const field_descriptor_t k_fields[] = {
     {"buffer_view", WEB_SETTINGS_FIELD_BUFFER_VIEW, "text", "graph", false},
     {"autoplay", WEB_SETTINGS_FIELD_AUTOPLAY, NULL, NULL, false},
     {"yandex_music", WEB_SETTINGS_FIELD_YANDEX_MUSIC, NULL, NULL, false},
+    {"dlna", WEB_SETTINGS_FIELD_DLNA, NULL, NULL, false},
     {"flip_vertical", WEB_SETTINGS_FIELD_FLIP_VERTICAL, NULL, NULL, false},
     {"flip_horizontal", WEB_SETTINGS_FIELD_FLIP_HORIZONTAL, NULL, NULL, false},
     {"brightness", WEB_SETTINGS_FIELD_BRIGHTNESS, NULL, NULL, true},
@@ -135,6 +136,8 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_autoplay(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_YANDEX_MUSIC:
         return device_settings_set_yandex_music(settings, change->value != 0);
+    case WEB_SETTINGS_FIELD_DLNA:
+        return device_settings_set_dlna(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_FLIP_VERTICAL:
         return device_settings_set_flip_vertical(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_FLIP_HORIZONTAL:
@@ -150,7 +153,8 @@ bool web_settings_apply(device_settings_t *settings,
 
 void web_settings_make_view(web_settings_view_t *view,
                             const device_settings_t *settings,
-                            bool home_screen_available, bool yandex_available)
+                            bool home_screen_available, bool yandex_available,
+                            bool dlna_available)
 {
     if (view == NULL) return;
     if (settings == NULL) {
@@ -166,10 +170,12 @@ void web_settings_make_view(web_settings_view_t *view,
         .brightness = settings->brightness,
         .autoplay = settings->autoplay,
         .yandex_music = settings->yandex_music,
+        .dlna = settings->dlna,
         .flip_vertical = settings->flip_vertical,
         .flip_horizontal = settings->flip_horizontal,
         .home_screen_available = home_screen_available,
         .yandex_available = yandex_available,
+        .dlna_available = dlna_available,
     };
 }
 
@@ -188,10 +194,12 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->brightness == right->brightness &&
            left->autoplay == right->autoplay &&
            left->yandex_music == right->yandex_music &&
+           left->dlna == right->dlna &&
            left->flip_vertical == right->flip_vertical &&
            left->flip_horizontal == right->flip_horizontal &&
            left->home_screen_available == right->home_screen_available &&
-           left->yandex_available == right->yandex_available;
+           left->yandex_available == right->yandex_available &&
+           left->dlna_available == right->dlna_available;
 }
 
 void web_settings_write(web_json_writer_t *writer,
@@ -216,6 +224,8 @@ void web_settings_write(web_json_writer_t *writer,
     web_json_literal(writer, view->autoplay ? "true" : "false");
     web_json_literal(writer, ",\"yandex_music\":");
     web_json_literal(writer, view->yandex_music ? "true" : "false");
+    web_json_literal(writer, ",\"dlna\":");
+    web_json_literal(writer, view->dlna ? "true" : "false");
     web_json_literal(writer, ",\"flip_vertical\":");
     web_json_literal(writer, view->flip_vertical ? "true" : "false");
     web_json_literal(writer, ",\"flip_horizontal\":");
@@ -230,6 +240,8 @@ void web_settings_write(web_json_writer_t *writer,
     web_json_literal(writer, view->home_screen_available ? "true" : "false");
     web_json_literal(writer, ",\"yandex_music\":");
     web_json_literal(writer, view->yandex_available ? "true" : "false");
+    web_json_literal(writer, ",\"dlna\":");
+    web_json_literal(writer, view->dlna_available ? "true" : "false");
     web_json_literal(writer, "},\"brightness_min\":");
     web_json_format(writer, "%d", WEB_SETTINGS_BRIGHTNESS_MIN);
     web_json_literal(writer, ",\"brightness_max\":");

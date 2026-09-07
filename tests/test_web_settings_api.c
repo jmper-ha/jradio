@@ -159,7 +159,7 @@ static void test_document_names_what_the_build_has(void)
     assert(device_settings_set_volume(&settings, 42));
 
     web_settings_view_t view;
-    web_settings_make_view(&view, &settings, true, false);
+    web_settings_make_view(&view, &settings, true, false, false);
     char document[512];
     size_t length = web_settings_serialize(document, sizeof(document), &view);
     assert(length > 0U && length == strlen(document));
@@ -170,9 +170,10 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"autoplay\":true") != NULL);
     assert(strstr(document, "\"volume\":42") != NULL);
     assert(strstr(document, "\"brightness\":50") != NULL);
-    // A build without Yandex Music says so, so the page drops the row rather
-    // than offering a switch behind which there is nothing.
-    assert(strstr(document, "\"yandex_music\":false}") != NULL);
+    // A build without Yandex Music or a media server says so, so the page
+    // drops those rows rather than offering switches behind which there is
+    // nothing.
+    assert(strstr(document, "\"yandex_music\":false,\"dlna\":false}") != NULL);
     assert(strstr(document, "\"home_screen\":true") != NULL);
     assert(strstr(document, "\"brightness_min\":10") != NULL);
     assert(strstr(document, "\"brightness_max\":90") != NULL);
@@ -193,7 +194,7 @@ static void test_view_comparison_notices_every_field(void)
     assert(device_settings_init_at(&settings, test_path));
 
     web_settings_view_t base;
-    web_settings_make_view(&base, &settings, true, true);
+    web_settings_make_view(&base, &settings, true, true, true);
     web_settings_view_t other = base;
     assert(web_settings_view_equal(&base, &other));
 

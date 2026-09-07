@@ -257,7 +257,7 @@ static lv_obj_t *s_settings_more_above;
 static lv_obj_t *s_settings_more_below;
 /* One per boolean setting, not per row on screen: only one group is open at
  * a time, so at most three are ever visible, but each keeps its own object. */
-#define UI_SETTINGS_SWITCH_COUNT 4U
+#define UI_SETTINGS_SWITCH_COUNT 5U
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
@@ -1109,24 +1109,29 @@ static const char *ui_feed_item_title(ui_feed_item_t item)
     return ui_menu_item_label((ui_menu_item_t)item);
 }
 
-/* Both home screens carry the same items, so the switch in Settings has to
- * reach both. Called wherever settings.csv is read or written, rather than
- * asked for at draw time: the models also move the cursor off a row that has
- * just gone away, which is a change, not a query. */
-static void ui_apply_yandex_visibility(void)
+/* Both home screens carry the same items, so a switch in Settings has to reach
+ * both. Called wherever settings.csv is read or written, rather than asked for
+ * at draw time: the models also move the cursor off a row that has just gone
+ * away, which is a change, not a query. */
+static void ui_apply_source_visibility(void)
 {
-    ui_menu_set_yandex_visible(&s_menu, s_device_settings.yandex_music);
-    ui_feed_model_set_yandex_visible(&s_feed_model, s_device_settings.yandex_music);
+    ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_YANDEX_MUSIC,
+                               s_device_settings.yandex_music);
+    ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_YANDEX_MUSIC,
+                                     s_device_settings.yandex_music);
+    ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_DLNA, s_device_settings.dlna);
+    ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_DLNA,
+                                     s_device_settings.dlna);
 }
 
 /* Whether this device has a home screen at all. Asked each time rather than
- * settled once at boot: the Yandex switch in Settings can take away the last
- * source beyond the radio, which turns a device that had a home screen into
- * one that does not, without a reboot in between. */
+ * settled once at boot: the switches in Settings can take away the last source
+ * beyond the radio, which turns a device that had a home screen into one that
+ * does not, without a reboot in between. */
 static bool ui_home_screen_exists(void)
 {
     return ui_menu_home_screen_needed(
-        ui_menu_visible_count(ui_menu_yandex_visible(&s_menu)));
+        ui_menu_visible_count(ui_menu_visible_mask(&s_menu)));
 }
 
 static void ui_update_feed_screen(void)
@@ -1171,17 +1176,17 @@ static void ui_update_feed_screen(void)
         UI_COLOR_FEED_NEAR, UI_COLOR_FEED_FAR,
     };
 #endif
-    const bool yandex = ui_feed_model_yandex_visible(&s_feed_model);
+    const ui_menu_visible_mask_t shown = ui_feed_model_visible_mask(&s_feed_model);
     /* The carousel wraps over what is on screen, not over the enum: with an
      * item switched off, stepping past the last one has to land on the first
      * visible one, and the dot row has to lose a dot. */
-    const int visible = (int)ui_menu_visible_count(yandex);
-    const int position = (int)ui_menu_visible_position((ui_menu_item_t)selected, yandex);
+    const int visible = (int)ui_menu_visible_count(shown);
+    const int position = (int)ui_menu_visible_position((ui_menu_item_t)selected, shown);
     for (size_t slot = 0; slot < (size_t)UI_FEED_SLOTS; ++slot) {
         int index = position + offsets[slot];
         while (index < 0) index += visible;
         index %= visible;
-        const ui_feed_item_t item = (ui_feed_item_t)ui_menu_visible_item_at((uint8_t)index, yandex);
+        const ui_feed_item_t item = (ui_feed_item_t)ui_menu_visible_item_at((uint8_t)index, shown);
         const bool center = slot == (size_t)UI_FEED_SLOTS / 2U;
         lv_image_set_src(s_feed_icons[slot], ui_feed_icon_image(item, sizes[slot]));
         /* The tile is bigger than the icon inside it, so the object is placed
@@ -1193,7 +1198,7 @@ static void ui_update_feed_screen(void)
         /* An A8 bitmap has no colour of its own: LVGL blends it with the
          * recolour, which is what lets one image serve every slot. */
         const bool enabled =
-            ui_menu_item_is_enabled((ui_menu_item_t)item, yandex, s_last_wifi_connected);
+            ui_menu_item_is_enabled((ui_menu_item_t)item, shown, s_last_wifi_connected);
         lv_obj_set_style_image_recolor(
             s_feed_icons[slot],
             lv_color_hex(enabled ? colors[slot] : UI_COLOR_DISABLED), 0);
@@ -1293,8 +1298,8 @@ static void ui_flush(lv_display_t *display, const lv_area_t *area, uint8_t *pixe
 static void ui_update_menu_highlight(void)
 {
     const uint8_t selected = ui_menu_selected_index(&s_menu);
-    const bool yandex = ui_menu_yandex_visible(&s_menu);
-    const uint8_t visible = ui_menu_visible_count(yandex);
+    const ui_menu_visible_mask_t shown = ui_menu_visible_mask(&s_menu);
+    const uint8_t visible = ui_menu_visible_count(shown);
     for (uint8_t row = 0; row < UI_MENU_ITEM_COUNT; ++row) {
         if (row >= visible) {
             // Hidden rather than blanked: the row tile is opaque and would
@@ -1305,9 +1310,9 @@ static void ui_update_menu_highlight(void)
         }
         lv_obj_clear_flag(s_menu_rows[row], LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(s_menu_icons[row], LV_OBJ_FLAG_HIDDEN);
-        const ui_menu_item_t item = ui_menu_visible_item_at(row, yandex);
+        const ui_menu_item_t item = ui_menu_visible_item_at(row, shown);
         const bool is_selected = (uint8_t)item == selected;
-        const bool enabled = ui_menu_item_is_enabled(item, yandex, s_last_wifi_connected);
+        const bool enabled = ui_menu_item_is_enabled(item, shown, s_last_wifi_connected);
         // Raised tile plus accent text, the way the player screen marks what
         // it is playing. The arrow the old highlight needed is gone: a filled
         // row says the same thing without spending a character on it.
@@ -1919,6 +1924,11 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         snprintf(text, text_size, "  %s: %s", english ? "Yandex Music" : "Яндекс Музыка",
                  s_device_settings.yandex_music ? "ON" : "OFF");
         break;
+    case UI_SETTINGS_ROW_DLNA_FIELD:
+        /* Not translated: DLNA is the name of the protocol either way, and the
+         * row on the home screen says the same word. */
+        snprintf(text, text_size, "  DLNA: %s", s_device_settings.dlna ? "ON" : "OFF");
+        break;
     case UI_SETTINGS_ROW_BRIGHTNESS_FIELD:
         /* Angle brackets while the knob owns the value: the cursor already
          * says which row, and this is the only thing that says the next click
@@ -1968,6 +1978,10 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     case UI_SETTINGS_ROW_YANDEX_FIELD:
         *index = 3U;
         *value = s_device_settings.yandex_music;
+        return true;
+    case UI_SETTINGS_ROW_DLNA_FIELD:
+        *index = 4U;
+        *value = s_device_settings.dlna;
         return true;
     default:
         return false;
@@ -2201,7 +2215,7 @@ static void ui_show_settings(void)
         ui_apply_display_rotation();
         (void)board_backlight_set(s_device_settings.brightness);
     }
-    ui_apply_yandex_visibility();
+    ui_apply_source_visibility();
     device_settings_publish(&s_device_settings);
     ui_update_settings();
     lv_screen_load(s_settings_screen);
@@ -2249,7 +2263,7 @@ static void ui_reload_settings(void)
     ui_apply_display_rotation();
     (void)board_backlight_set(s_device_settings.brightness);
     if (!volume_pending) board_audio_set_volume(s_device_settings.volume);
-    ui_apply_yandex_visibility();
+    ui_apply_source_visibility();
     /* The model is left alone while the settings screen is open: re-initialising
      * it moves the cursor back to the top, and someone standing at the device
      * has not asked for that. Its idea of whether a home screen exists can then
@@ -2677,7 +2691,11 @@ static void ui_settings_change_selected(void)
     case UI_SETTINGS_ROW_YANDEX_FIELD:
         changed = device_settings_set_yandex_music(&s_device_settings,
                                                    !s_device_settings.yandex_music);
-        if (changed) ui_apply_yandex_visibility();
+        if (changed) ui_apply_source_visibility();
+        break;
+    case UI_SETTINGS_ROW_DLNA_FIELD:
+        changed = device_settings_set_dlna(&s_device_settings, !s_device_settings.dlna);
+        if (changed) ui_apply_source_visibility();
         break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         changed = device_settings_set_flip_vertical(&s_device_settings,
@@ -3234,7 +3252,7 @@ static void ui_load_source_screen(audio_source_t selected_source)
  * missing drive. */
 static bool ui_network_source_blocked(ui_menu_item_t item, lv_obj_t *notice)
 {
-    if (ui_menu_item_is_enabled(item, ui_menu_yandex_visible(&s_menu),
+    if (ui_menu_item_is_enabled(item, ui_menu_visible_mask(&s_menu),
                                 s_last_wifi_connected)) {
         return false;
     }
@@ -4732,7 +4750,7 @@ esp_err_t ui_init(void)
     /* After the settings are read and the visibility they decide is applied:
      * the model asks how many rows the home screen would have, and before this
      * point the answer counts a Yandex row the switch may have turned off. */
-    ui_apply_yandex_visibility();
+    ui_apply_source_visibility();
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
     // Before anything can play: the board defaults to full volume, and coming
     // back from a power cut at full blast when the user had it at 20 is the

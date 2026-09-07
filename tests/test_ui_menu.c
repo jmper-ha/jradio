@@ -5,6 +5,11 @@
 #include "board_features.h"
 #include "ui_menu.h"
 
+/* Visibility is a mask now, so a bare `true` here would mean "only internet
+   radio" rather than "everything". These two say what the tests mean. */
+#define ALL UI_MENU_VISIBLE_ALL
+#define WITHOUT(item) (UI_MENU_VISIBLE_ALL & ~UI_MENU_VISIBLE(item))
+
 static void test_encoder_navigation_wraps(void)
 {
     ui_menu_state_t state;
@@ -13,7 +18,7 @@ static void test_encoder_navigation_wraps(void)
     assert(ui_menu_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT));
     /* The second row on screen, not item 1: which item that is depends on what
      * this board carries. */
-    assert(ui_menu_selected_index(&state) == (uint8_t)ui_menu_visible_item_at(1U, true));
+    assert(ui_menu_selected_index(&state) == (uint8_t)ui_menu_visible_item_at(1U, ALL));
     assert(ui_menu_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_LEFT));
     assert(ui_menu_selected_index(&state) == 0);
     assert(ui_menu_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_LEFT));
@@ -30,7 +35,7 @@ static void test_activate_maps_current_source(void)
     assert(ui_menu_activate(&state) == AUDIO_SOURCE_INTERNET_RADIO);
     /* Rows on screen rather than items in the enum: a built-out item is not
      * one of the steps. */
-    for (int index = 0; index < (int)ui_menu_visible_count(true) - 1; ++index) {
+    for (int index = 0; index < (int)ui_menu_visible_count(ALL) - 1; ++index) {
         assert(ui_menu_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT));
     }
     assert(ui_menu_activate(&state) == AUDIO_SOURCE_NONE);
@@ -70,7 +75,7 @@ static void test_settings_is_the_last_row_and_is_not_a_source(void)
     ui_menu_init(&state);
     assert(!ui_menu_selection_is_settings(&state));
 
-    for (int index = 0; index < (int)ui_menu_visible_count(true) - 1; ++index) {
+    for (int index = 0; index < (int)ui_menu_visible_count(ALL) - 1; ++index) {
         (void)ui_menu_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT);
     }
     assert(ui_menu_selected_index(&state) == UI_MENU_ITEM_SETTINGS);
@@ -90,28 +95,28 @@ static void test_only_the_parts_this_build_has_get_a_row(void)
     /* The device must not offer what it cannot do. A source whose part is not
      * wired in board_options.h, or whose feature is FEATURE_OFF, has no row -
      * not a greyed one, none - because the press would land on nothing. */
-    assert(ui_menu_item_is_visible(UI_MENU_ITEM_INTERNET_RADIO, true));
-    assert(ui_menu_item_is_visible(UI_MENU_ITEM_SETTINGS, true));
-    assert(ui_menu_item_is_visible(UI_MENU_ITEM_USB_FILES, true) == (bool)BOARD_HAS_USB);
-    assert(ui_menu_item_is_visible(UI_MENU_ITEM_SD_CARD, true) == (bool)BOARD_HAS_SD_CARD);
-    assert(ui_menu_item_is_visible(UI_MENU_ITEM_BLUETOOTH, true) == (bool)BOARD_HAS_BLUETOOTH);
-    assert(ui_menu_item_is_visible(UI_MENU_ITEM_FM_RADIO, true) == (bool)BOARD_HAS_FM_RADIO);
-    assert(ui_menu_item_is_visible(UI_MENU_ITEM_DLNA, true) == (bool)BOARD_HAS_DLNA);
-    assert(ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, true) ==
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_INTERNET_RADIO, ALL));
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_SETTINGS, ALL));
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_USB_FILES, ALL) == (bool)BOARD_HAS_USB);
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_SD_CARD, ALL) == (bool)BOARD_HAS_SD_CARD);
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_BLUETOOTH, ALL) == (bool)BOARD_HAS_BLUETOOTH);
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_FM_RADIO, ALL) == (bool)BOARD_HAS_FM_RADIO);
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_DLNA, ALL) == (bool)BOARD_HAS_DLNA);
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, ALL) ==
            (bool)BOARD_HAS_YANDEX_MUSIC);
-    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_COUNT, true));
+    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_COUNT, ALL));
 
     /* Two always, plus whatever this build has. */
     const uint8_t expected = (uint8_t)(2 + BOARD_HAS_USB + BOARD_HAS_SD_CARD +
                                        BOARD_HAS_BLUETOOTH + BOARD_HAS_FM_RADIO +
                                        BOARD_HAS_DLNA + BOARD_HAS_YANDEX_MUSIC);
-    assert(ui_menu_visible_count(true) == expected);
+    assert(ui_menu_visible_count(ALL) == expected);
 
     /* Walking the rows only ever lands on items this build has, which is what
      * makes the row count above more than arithmetic. */
     for (uint8_t row = 0U; row < expected; ++row) {
-        assert(ui_menu_item_is_visible(ui_menu_visible_item_at(row, true), true));
-        assert(ui_menu_visible_position(ui_menu_visible_item_at(row, true), true) == row);
+        assert(ui_menu_item_is_visible(ui_menu_visible_item_at(row, ALL), ALL));
+        assert(ui_menu_visible_position(ui_menu_visible_item_at(row, ALL), ALL) == row);
     }
 }
 
@@ -139,24 +144,26 @@ static void test_hiding_yandex_takes_its_row_out_of_the_run(void)
 #if BOARD_HAS_YANDEX_MUSIC
     ui_menu_state_t state;
     ui_menu_init(&state);
-    assert(ui_menu_yandex_visible(&state));
-    const uint8_t shown = ui_menu_visible_count(true);
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC,
+                                   ui_menu_visible_mask(&state)));
+    const uint8_t shown = ui_menu_visible_count(ALL);
     /* The row Yandex Music occupies in this build, rather than its place in
      * the enum: the items before it are only there if the board carries
      * them. */
-    const uint8_t row = ui_menu_visible_position(UI_MENU_ITEM_YANDEX_MUSIC, true);
-    const ui_menu_item_t above = ui_menu_item_step(UI_MENU_ITEM_YANDEX_MUSIC, -1, true);
+    const uint8_t row = ui_menu_visible_position(UI_MENU_ITEM_YANDEX_MUSIC, ALL);
+    const ui_menu_item_t above = ui_menu_item_step(UI_MENU_ITEM_YANDEX_MUSIC, -1, ALL);
 
-    ui_menu_set_yandex_visible(&state, false);
-    assert(!ui_menu_yandex_visible(&state));
-    assert(ui_menu_visible_count(false) == shown - 1U);
-    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, false));
+    ui_menu_set_source_visible(&state, UI_MENU_ITEM_YANDEX_MUSIC, false);
+    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC,
+                                    ui_menu_visible_mask(&state)));
+    assert(ui_menu_visible_count(WITHOUT(UI_MENU_ITEM_YANDEX_MUSIC)) == shown - 1U);
+    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, WITHOUT(UI_MENU_ITEM_YANDEX_MUSIC)));
 
     /* Settings moves up into the row, and nothing above it moves. The rows are
      * what the screen draws, so this is the whole of "the item disappeared". */
-    assert(ui_menu_visible_item_at(row, false) == UI_MENU_ITEM_SETTINGS);
-    assert(ui_menu_visible_position(UI_MENU_ITEM_SETTINGS, false) == row);
-    assert(ui_menu_visible_position(above, false) == row - 1U);
+    assert(ui_menu_visible_item_at(row, WITHOUT(UI_MENU_ITEM_YANDEX_MUSIC)) == UI_MENU_ITEM_SETTINGS);
+    assert(ui_menu_visible_position(UI_MENU_ITEM_SETTINGS, WITHOUT(UI_MENU_ITEM_YANDEX_MUSIC)) == row);
+    assert(ui_menu_visible_position(above, WITHOUT(UI_MENU_ITEM_YANDEX_MUSIC)) == row - 1U);
 
     /* The encoder steps over the gap rather than into it, in both directions. */
     (void)ui_menu_select_source(&state, AUDIO_SOURCE_INTERNET_RADIO);
@@ -174,15 +181,52 @@ static void test_hiding_yandex_takes_its_row_out_of_the_run(void)
     /* The cursor cannot be left standing on a row that has just gone. */
     ui_menu_init(&state);
     assert(ui_menu_select_source(&state, AUDIO_SOURCE_YANDEX));
-    ui_menu_set_yandex_visible(&state, false);
+    ui_menu_set_source_visible(&state, UI_MENU_ITEM_YANDEX_MUSIC, false);
     assert(ui_menu_selected_index(&state) == UI_MENU_ITEM_INTERNET_RADIO);
 #else
     /* Built out: the switch cannot bring it back. */
     ui_menu_state_t state;
     ui_menu_init(&state);
-    ui_menu_set_yandex_visible(&state, true);
-    assert(!ui_menu_yandex_visible(&state));
-    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, true));
+    ui_menu_set_source_visible(&state, UI_MENU_ITEM_YANDEX_MUSIC, true);
+    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC,
+                                    ui_menu_visible_mask(&state)));
+    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, ALL));
+#endif
+}
+
+/* The second switch, and the reason visibility became a mask: the two must be
+   independent. Turning the media server off has to leave Yandex Music exactly
+   where it was, and the row below it has to move up by one - not two. */
+static void test_the_two_switches_do_not_disturb_each_other(void)
+{
+#if BOARD_HAS_DLNA && BOARD_HAS_YANDEX_MUSIC
+    ui_menu_state_t state;
+    ui_menu_init(&state);
+    const uint8_t shown = ui_menu_visible_count(ALL);
+
+    ui_menu_set_source_visible(&state, UI_MENU_ITEM_DLNA, false);
+    const ui_menu_visible_mask_t without_dlna = ui_menu_visible_mask(&state);
+    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_DLNA, without_dlna));
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, without_dlna));
+    assert(ui_menu_visible_count(without_dlna) == shown - 1U);
+
+    ui_menu_set_source_visible(&state, UI_MENU_ITEM_YANDEX_MUSIC, false);
+    const ui_menu_visible_mask_t neither = ui_menu_visible_mask(&state);
+    assert(ui_menu_visible_count(neither) == shown - 2U);
+
+    /* And back, one at a time. */
+    ui_menu_set_source_visible(&state, UI_MENU_ITEM_DLNA, true);
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_DLNA, ui_menu_visible_mask(&state)));
+    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC,
+                                    ui_menu_visible_mask(&state)));
+
+    /* The cursor cannot be left on the row that has just gone. */
+    ui_menu_init(&state);
+    assert(ui_menu_select_source(&state, AUDIO_SOURCE_DLNA));
+    ui_menu_set_source_visible(&state, UI_MENU_ITEM_DLNA, false);
+    assert(ui_menu_selected_index(&state) == UI_MENU_ITEM_INTERNET_RADIO);
+    /* And a source with no row cannot draw it back. */
+    assert(!ui_menu_select_source(&state, AUDIO_SOURCE_DLNA));
 #endif
 }
 
@@ -191,32 +235,32 @@ static void test_hiding_yandex_takes_its_row_out_of_the_run(void)
    be a worse answer than a dim one - but it cannot be started. */
 static void test_network_sources_need_a_network(void)
 {
-    assert(!ui_menu_item_is_enabled(UI_MENU_ITEM_INTERNET_RADIO, true, false));
-    assert(ui_menu_item_is_visible(UI_MENU_ITEM_INTERNET_RADIO, true));
-    assert(ui_menu_item_is_enabled(UI_MENU_ITEM_INTERNET_RADIO, true, true));
+    assert(!ui_menu_item_is_enabled(UI_MENU_ITEM_INTERNET_RADIO, ALL, false));
+    assert(ui_menu_item_is_visible(UI_MENU_ITEM_INTERNET_RADIO, ALL));
+    assert(ui_menu_item_is_enabled(UI_MENU_ITEM_INTERNET_RADIO, ALL, true));
 
     /* Settings is how the network gets set up again, so it is never the row
        that goes dim. */
-    assert(ui_menu_item_is_enabled(UI_MENU_ITEM_SETTINGS, true, false));
+    assert(ui_menu_item_is_enabled(UI_MENU_ITEM_SETTINGS, ALL, false));
 
-    if (ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, true)) {
-        assert(!ui_menu_item_is_enabled(UI_MENU_ITEM_YANDEX_MUSIC, true, false));
-        assert(ui_menu_item_is_enabled(UI_MENU_ITEM_YANDEX_MUSIC, true, true));
+    if (ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, ALL)) {
+        assert(!ui_menu_item_is_enabled(UI_MENU_ITEM_YANDEX_MUSIC, ALL, false));
+        assert(ui_menu_item_is_enabled(UI_MENU_ITEM_YANDEX_MUSIC, ALL, true));
         /* Switched off in Settings beats every other answer: there is no row. */
-        assert(!ui_menu_item_is_enabled(UI_MENU_ITEM_YANDEX_MUSIC, false, true));
+        assert(!ui_menu_item_is_enabled(UI_MENU_ITEM_YANDEX_MUSIC, WITHOUT(UI_MENU_ITEM_YANDEX_MUSIC), true));
     }
     /* The media server sits on the LAN rather than on the internet, and it
        still needs the join: with none there is nothing to search for and
        nothing to stream. */
-    if (ui_menu_item_is_visible(UI_MENU_ITEM_DLNA, true)) {
-        assert(!ui_menu_item_is_enabled(UI_MENU_ITEM_DLNA, true, false));
-        assert(ui_menu_item_is_enabled(UI_MENU_ITEM_DLNA, true, true));
+    if (ui_menu_item_is_visible(UI_MENU_ITEM_DLNA, ALL)) {
+        assert(!ui_menu_item_is_enabled(UI_MENU_ITEM_DLNA, ALL, false));
+        assert(ui_menu_item_is_enabled(UI_MENU_ITEM_DLNA, ALL, true));
     }
-    if (ui_menu_item_is_visible(UI_MENU_ITEM_USB_FILES, true)) {
-        assert(ui_menu_item_is_enabled(UI_MENU_ITEM_USB_FILES, true, false));
+    if (ui_menu_item_is_visible(UI_MENU_ITEM_USB_FILES, ALL)) {
+        assert(ui_menu_item_is_enabled(UI_MENU_ITEM_USB_FILES, ALL, false));
     }
-    if (ui_menu_item_is_visible(UI_MENU_ITEM_SD_CARD, true)) {
-        assert(ui_menu_item_is_enabled(UI_MENU_ITEM_SD_CARD, true, false));
+    if (ui_menu_item_is_visible(UI_MENU_ITEM_SD_CARD, ALL)) {
+        assert(ui_menu_item_is_enabled(UI_MENU_ITEM_SD_CARD, ALL, false));
     }
 }
 
@@ -229,6 +273,7 @@ int main(void)
     test_only_the_parts_this_build_has_get_a_row();
     test_a_two_row_home_screen_is_not_worth_showing();
     test_hiding_yandex_takes_its_row_out_of_the_run();
+    test_the_two_switches_do_not_disturb_each_other();
     test_network_sources_need_a_network();
     puts("ui_menu tests passed");
     return 0;

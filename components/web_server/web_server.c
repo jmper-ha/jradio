@@ -1221,12 +1221,23 @@ static esp_err_t web_server_playlist_post(httpd_req_t *request)
  * this build has. */
 bool web_server_yandex_available(void)
 {
-    return ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, true);
+    return ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, UI_MENU_VISIBLE_ALL);
 }
 
-bool web_server_home_screen_available(bool yandex_enabled)
+bool web_server_dlna_available(void)
 {
-    return ui_menu_home_screen_needed(ui_menu_visible_count(yandex_enabled));
+    return ui_menu_item_is_visible(UI_MENU_ITEM_DLNA, UI_MENU_VISIBLE_ALL);
+}
+
+/* Whether the page should offer the home-screen choice, which depends on how
+ * many rows would be left once the switches have had their say - so it is
+ * asked with the settings as they are, not with everything on. */
+bool web_server_home_screen_available(bool yandex_enabled, bool dlna_enabled)
+{
+    ui_menu_visible_mask_t visible = UI_MENU_VISIBLE_ALL;
+    if (!yandex_enabled) visible &= ~UI_MENU_VISIBLE(UI_MENU_ITEM_YANDEX_MUSIC);
+    if (!dlna_enabled) visible &= ~UI_MENU_VISIBLE(UI_MENU_ITEM_DLNA);
+    return ui_menu_home_screen_needed(ui_menu_visible_count(visible));
 }
 
 static esp_err_t web_server_settings_api_get(httpd_req_t *request)
@@ -1244,8 +1255,9 @@ static esp_err_t web_server_settings_api_get(httpd_req_t *request)
     }
     web_settings_view_t view;
     web_settings_make_view(&view, &settings,
-                           web_server_home_screen_available(settings.yandex_music),
-                           web_server_yandex_available());
+                           web_server_home_screen_available(settings.yandex_music,
+                                                            settings.dlna),
+                           web_server_yandex_available(), web_server_dlna_available());
     const size_t length = web_settings_serialize(s_file_chunk_buffer,
                                                  sizeof(s_file_chunk_buffer),
                                                  &view);

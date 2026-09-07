@@ -20,21 +20,26 @@ void ui_feed_model_init(ui_feed_model_t *model, uint8_t initial_index)
 {
     if (model == NULL) return;
     model->selected = initial_index < UI_FEED_ITEM_COUNT ? initial_index : 0U;
-    model->yandex_visible = BOARD_HAS_YANDEX_MUSIC;
+    model->visible = UI_MENU_VISIBLE_ALL;
 }
 
-void ui_feed_model_set_yandex_visible(ui_feed_model_t *model, bool visible)
+void ui_feed_model_set_source_visible(ui_feed_model_t *model, ui_menu_item_t item,
+                                      bool visible)
 {
-    if (model == NULL) return;
-    model->yandex_visible = visible && BOARD_HAS_YANDEX_MUSIC;
-    if (!ui_menu_item_is_visible((ui_menu_item_t)model->selected, model->yandex_visible)) {
+    if (model == NULL || item >= UI_MENU_ITEM_COUNT) return;
+    if (visible) {
+        model->visible |= UI_MENU_VISIBLE(item);
+    } else {
+        model->visible &= ~UI_MENU_VISIBLE(item);
+    }
+    if (!ui_menu_item_is_visible((ui_menu_item_t)model->selected, model->visible)) {
         model->selected = UI_FEED_INTERNET_RADIO;
     }
 }
 
-bool ui_feed_model_yandex_visible(const ui_feed_model_t *model)
+ui_menu_visible_mask_t ui_feed_model_visible_mask(const ui_feed_model_t *model)
 {
-    return model != NULL && model->yandex_visible;
+    return model == NULL ? UI_MENU_VISIBLE_ALL : model->visible;
 }
 
 void ui_feed_model_move(ui_feed_model_t *model, int direction)
@@ -42,7 +47,7 @@ void ui_feed_model_move(ui_feed_model_t *model, int direction)
     if (model == NULL || direction == 0) return;
     if (model->selected >= UI_FEED_ITEM_COUNT) model->selected = 0U;
     model->selected = (uint8_t)ui_menu_item_step((ui_menu_item_t)model->selected, direction,
-                                                 model->yandex_visible);
+                                                 model->visible);
 }
 
 ui_feed_item_t ui_feed_model_selected(const ui_feed_model_t *model)
@@ -81,7 +86,7 @@ bool ui_feed_model_select_source(ui_feed_model_t *model, audio_source_t source)
     // Asks the mapping above rather than carrying a second copy of it, so the
     // two directions cannot drift apart as items are added.
     for (uint8_t index = 0U; index < UI_FEED_ITEM_COUNT; ++index) {
-        if (!ui_menu_item_is_visible((ui_menu_item_t)index, model->yandex_visible)) continue;
+        if (!ui_menu_item_is_visible((ui_menu_item_t)index, model->visible)) continue;
         audio_source_t item_source = AUDIO_SOURCE_NONE;
         if (ui_feed_model_activate((ui_feed_item_t)index, &item_source) &&
             item_source == source) {

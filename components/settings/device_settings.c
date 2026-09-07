@@ -76,6 +76,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         .volume = DEVICE_VOLUME_DEFAULT,
         .brightness = DEVICE_BRIGHTNESS_DEFAULT,
         .yandex_music = true,
+        .dlna = true,
     };
     memcpy(settings->storage_path, path, strlen(path) + 1U);
 
@@ -107,6 +108,9 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     }
     if (read_value(path, "yandex_music", value, sizeof(value))) {
         (void)parse_bool(value, &settings->yandex_music);
+    }
+    if (read_value(path, "dlna", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->dlna);
     }
     if (read_value(path, "volume", value, sizeof(value))) {
         char *end = NULL;
@@ -240,6 +244,13 @@ bool device_settings_set_yandex_music(device_settings_t *settings, bool enabled)
 {
     if (!save_value(settings, "yandex_music", enabled ? "1" : "0")) return false;
     settings->yandex_music = enabled;
+    return true;
+}
+
+bool device_settings_set_dlna(device_settings_t *settings, bool enabled)
+{
+    if (!save_value(settings, "dlna", enabled ? "1" : "0")) return false;
+    settings->dlna = enabled;
     return true;
 }
 

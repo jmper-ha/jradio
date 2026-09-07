@@ -573,8 +573,9 @@ static void capture_settings_state(web_socket_settings_state_t *output)
         return;
     }
     web_settings_make_view(&output->view, &settings,
-                           web_server_home_screen_available(settings.yandex_music),
-                           web_server_yandex_available());
+                           web_server_home_screen_available(settings.yandex_music,
+                                                            settings.dlna),
+                           web_server_yandex_available(), web_server_dlna_available());
     output->known = true;
     /* The published copy carries the path of the file the drive was playing,
      * which the browser is never shown and this stack frame has no reason to

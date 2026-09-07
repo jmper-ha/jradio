@@ -24,6 +24,7 @@ typedef enum {
      * do not shift with a build option; the model simply never hands it out.
      * A build without Yandex Music has no switch for it in General. */
     UI_SETTINGS_ROW_YANDEX_FIELD,
+    UI_SETTINGS_ROW_DLNA_FIELD,
     UI_SETTINGS_ROW_DISPLAY_GROUP,
     UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
     UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD,

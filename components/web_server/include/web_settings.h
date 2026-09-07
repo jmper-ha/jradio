@@ -33,6 +33,7 @@ typedef enum {
     WEB_SETTINGS_FIELD_BUFFER_VIEW,
     WEB_SETTINGS_FIELD_AUTOPLAY,
     WEB_SETTINGS_FIELD_YANDEX_MUSIC,
+    WEB_SETTINGS_FIELD_DLNA,
     WEB_SETTINGS_FIELD_FLIP_VERTICAL,
     WEB_SETTINGS_FIELD_FLIP_HORIZONTAL,
     WEB_SETTINGS_FIELD_BRIGHTNESS,
@@ -65,9 +66,9 @@ bool web_settings_apply(device_settings_t *settings,
  * frame and compares it against the last one sent on every pass, and a whole
  * device_settings_t carries a 256-byte resume path that the web never sees.
  *
- * `home_screen_available` and `yandex_available` say whether this build has
- * the rows at all, so the page can hide what the device screen hides instead
- * of offering a switch that changes nothing. */
+ * The `*_available` flags say whether this build has the rows at all, so the
+ * page can hide what the device screen hides instead of offering a switch that
+ * changes nothing. */
 typedef struct {
     uint8_t language;
     uint8_t home_screen;
@@ -77,15 +78,18 @@ typedef struct {
     uint8_t brightness;
     bool autoplay;
     bool yandex_music;
+    bool dlna;
     bool flip_vertical;
     bool flip_horizontal;
     bool home_screen_available;
     bool yandex_available;
+    bool dlna_available;
 } web_settings_view_t;
 
 void web_settings_make_view(web_settings_view_t *view,
                             const device_settings_t *settings,
-                            bool home_screen_available, bool yandex_available);
+                            bool home_screen_available, bool yandex_available,
+                            bool dlna_available);
 bool web_settings_view_equal(const web_settings_view_t *left,
                              const web_settings_view_t *right);
 

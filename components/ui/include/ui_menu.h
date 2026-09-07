@@ -20,9 +20,20 @@ typedef enum {
     UI_MENU_ITEM_COUNT,
 } ui_menu_item_t;
 
+/* Which switchable sources are showing, one bit per item.
+ *
+ * A mask rather than a flag per source: it was a single `bool yandex_visible`
+ * threaded through every function below, and the second switch would have made
+ * that two booleans in a row at eighty call sites - an argument order nobody
+ * can check by reading. The build still decides first; these bits only say
+ * what Settings has been told. */
+typedef uint32_t ui_menu_visible_mask_t;
+#define UI_MENU_VISIBLE(item) ((ui_menu_visible_mask_t)1U << (unsigned)(item))
+#define UI_MENU_VISIBLE_ALL ((ui_menu_visible_mask_t)~(ui_menu_visible_mask_t)0U)
+
 typedef struct {
     uint8_t selected_index;
-    bool yandex_visible;
+    ui_menu_visible_mask_t visible;
 } ui_menu_state_t;
 
 void ui_menu_init(ui_menu_state_t *state);
@@ -32,14 +43,13 @@ void ui_menu_init(ui_menu_state_t *state);
  * wired, or whose feature is FEATURE_OFF, has no row at all - the device must
  * not offer what it cannot do.
  *
- * Yandex Music is the one item that can also come and go while the firmware
- * runs, through the switch in Settings, which is why it - and only it - is
- * carried as a flag. A firmware built without the feature ignores the flag,
- * which is why the setter takes the state instead of the caller storing the
- * answer itself. Setting it moves the cursor off a row that just
- * disappeared. */
-void ui_menu_set_yandex_visible(ui_menu_state_t *state, bool visible);
-bool ui_menu_yandex_visible(const ui_menu_state_t *state);
+ * Yandex Music and the media server can also come and go while the firmware
+ * runs, through their switches in Settings, which is why they are carried in
+ * the mask. A firmware built without one ignores its bit, which is why the
+ * setter takes the state instead of the caller storing the answer itself.
+ * Setting it moves the cursor off a row that just disappeared. */
+void ui_menu_set_source_visible(ui_menu_state_t *state, ui_menu_item_t item, bool visible);
+ui_menu_visible_mask_t ui_menu_visible_mask(const ui_menu_state_t *state);
 
 /* Whether the row can be started right now, as opposed to whether it is on the
  * screen at all. Two sources need a network and are useless without one; the
@@ -47,18 +57,20 @@ bool ui_menu_yandex_visible(const ui_menu_state_t *state);
  * would move everything under it and leave the visitor wondering what they had
  * lost. The build's own answer is checked first: a row that is not there
  * cannot be enabled. */
-bool ui_menu_item_is_enabled(ui_menu_item_t item, bool yandex_visible, bool wifi_connected);
+bool ui_menu_item_is_enabled(ui_menu_item_t item, ui_menu_visible_mask_t visible,
+                             bool wifi_connected);
 
 /* The two home screens draw a run of rows; the model stores items. These
  * convert between them with the hidden items taken out, so neither screen has
  * to know which item that is. A hidden item has no position and reports 0. */
-bool ui_menu_item_is_visible(ui_menu_item_t item, bool yandex_visible);
-uint8_t ui_menu_visible_count(bool yandex_visible);
-uint8_t ui_menu_visible_position(ui_menu_item_t item, bool yandex_visible);
-ui_menu_item_t ui_menu_visible_item_at(uint8_t position, bool yandex_visible);
+bool ui_menu_item_is_visible(ui_menu_item_t item, ui_menu_visible_mask_t visible);
+uint8_t ui_menu_visible_count(ui_menu_visible_mask_t visible);
+uint8_t ui_menu_visible_position(ui_menu_item_t item, ui_menu_visible_mask_t visible);
+ui_menu_item_t ui_menu_visible_item_at(uint8_t position, ui_menu_visible_mask_t visible);
 /* The next visible item in `direction`, wrapping. Shared with the feed screen,
  * which moves over the same items in a carousel. */
-ui_menu_item_t ui_menu_item_step(ui_menu_item_t item, int direction, bool yandex_visible);
+ui_menu_item_t ui_menu_item_step(ui_menu_item_t item, int direction,
+                                 ui_menu_visible_mask_t visible);
 
 /* Whether a home screen is worth showing at all, given how many rows it would
  * have. Internet radio and Settings are always among them, so two rows means

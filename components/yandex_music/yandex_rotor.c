@@ -264,7 +264,10 @@ static esp_err_t yandex_rotor_refill(void)
     int status = 0;
     const esp_err_t err =
         yandex_api_get(path, s_rotor.response, YANDEX_ROTOR_RESPONSE_SIZE, &status);
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "rotor tracks request failed: %s", esp_err_to_name(err));
+        return err;
+    }
     if (status != 200) {
         ESP_LOGW(TAG, "rotor tracks returned HTTP %d", status);
         return ESP_FAIL;
@@ -286,7 +289,11 @@ static esp_err_t yandex_rotor_resolve(const char *track_id, char *url, size_t ur
 
     int status = 0;
     esp_err_t err = yandex_api_get(path, s_rotor.response, YANDEX_ROTOR_RESPONSE_SIZE, &status);
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "download-info request for %s failed: %s", track_id,
+                 esp_err_to_name(err));
+        return err;
+    }
     if (status != 200) {
         ESP_LOGW(TAG, "download-info for %s returned HTTP %d", track_id, status);
         return ESP_FAIL;
@@ -294,19 +301,35 @@ static esp_err_t yandex_rotor_resolve(const char *track_id, char *url, size_t ur
 
     yandex_link_result_t picked = yandex_link_pick_variant(s_rotor.response, s_rotor.info_url,
                                                            YANDEX_LINK_URL_MAX + 1U, NULL);
-    if (picked == YANDEX_LINK_ERR_PREVIEW_ONLY) return ESP_ERR_NOT_SUPPORTED;
-    if (picked != YANDEX_LINK_OK) return ESP_ERR_INVALID_RESPONSE;
+    if (picked == YANDEX_LINK_ERR_PREVIEW_ONLY) {
+        /* The account is offering 30-second previews only, which is what an
+         * expired subscription looks like from here. Said out loud because
+         * everything else about it - a station that starts and produces no
+         * track - is indistinguishable from a network fault. */
+        ESP_LOGW(TAG, "download-info for %s offers previews only: no subscription",
+                 track_id);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (picked != YANDEX_LINK_OK) {
+        ESP_LOGW(TAG, "download-info for %s: no usable variant (pick=%d)", track_id,
+                 (int)picked);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
 
     /* The second hop answers with a short XML document rather than JSON, and
      * carries no token - the URL was signed by the answer above. */
     err = yandex_api_get_url(s_rotor.info_url, s_rotor.response, YANDEX_ROTOR_RESPONSE_SIZE,
                              &status);
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "download-info XML request failed: %s", esp_err_to_name(err));
+        return err;
+    }
     if (status != 200) {
         ESP_LOGW(TAG, "download-info XML returned HTTP %d", status);
         return ESP_FAIL;
     }
     if (yandex_link_from_xml(s_rotor.response, url, url_size) != YANDEX_LINK_OK) {
+        ESP_LOGW(TAG, "download-info XML for %s did not yield a link", track_id);
         return ESP_ERR_INVALID_RESPONSE;
     }
     return ESP_OK;
@@ -315,7 +338,10 @@ static esp_err_t yandex_rotor_resolve(const char *track_id, char *url, size_t ur
 esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track)
 {
     if (url == NULL || url_size == 0U || track == NULL) return ESP_ERR_INVALID_ARG;
-    if (s_rotor.scratch == NULL) return ESP_ERR_INVALID_STATE;
+    if (s_rotor.scratch == NULL) {
+        ESP_LOGW(TAG, "rotor asked for a track before it was ready");
+        return ESP_ERR_INVALID_STATE;
+    }
     url[0] = '\0';
 
     /* First, and before the batch can be replaced: the track being left belongs
@@ -325,7 +351,10 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track)
     if (s_rotor.next_index >= s_rotor.batch.count) {
         const esp_err_t err = yandex_rotor_refill();
         s_rotor.last_error = err;
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "rotor has no tracks to hand out: %s", esp_err_to_name(err));
+            return err;
+        }
     }
 
     const yandex_track_t candidate = s_rotor.batch.tracks[s_rotor.next_index++];
@@ -335,7 +364,10 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track)
 
     const esp_err_t err = yandex_rotor_resolve(candidate.id, url, url_size);
     s_rotor.last_error = err;
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "track %s did not resolve: %s", candidate.id, esp_err_to_name(err));
+        return err;
+    }
 
     *track = candidate;
 

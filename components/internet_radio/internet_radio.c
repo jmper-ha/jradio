@@ -2359,20 +2359,18 @@ bool internet_radio_skip_track(void)
     return true;
 }
 
-void internet_radio_set_track_source(internet_radio_track_source_fn source)
+bool internet_radio_start_track_chain(const char *display_name,
+                                      internet_radio_track_source_fn source,
+                                      internet_radio_track_reopen_fn reopen)
 {
-    s_radio.track_source = source;
-}
-
-void internet_radio_set_track_reopen(internet_radio_track_reopen_fn reopen)
-{
-    s_radio.track_reopen = reopen;
-}
-
-bool internet_radio_start_track_chain(const char *display_name)
-{
-    if (!s_radio.initialized || s_radio.track_source == NULL) return false;
+    if (!s_radio.initialized || source == NULL) return false;
     if (!radio_stop_previous()) return false;
+
+    /* Claimed here, by the caller that is starting, every time. Whoever plays
+     * last owns the seam; nothing is left installed from boot or from the
+     * source before. */
+    s_radio.track_source = source;
+    s_radio.track_reopen = reopen;
 
     /* The first link is fetched before anything is opened, so a station that
      * cannot produce a track fails here rather than after the screen has

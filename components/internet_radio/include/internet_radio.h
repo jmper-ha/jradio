@@ -35,7 +35,6 @@ typedef struct {
  * file knows is "an HTTP stream that ends and is followed by another one",
  * which is all it needs to know. */
 typedef const char *(*internet_radio_track_source_fn)(char *title, size_t title_size);
-void internet_radio_set_track_source(internet_radio_track_source_fn source);
 
 /* The link for the track already on the air, for reopening it where a pause
  * left it. Returns NULL when it cannot be had, and the chain then moves on to
@@ -45,11 +44,22 @@ void internet_radio_set_track_source(internet_radio_track_source_fn source);
  * next one" against "this one again" - and because this must teach the station
  * nothing: a track resumed is not a track played twice. */
 typedef const char *(*internet_radio_track_reopen_fn)(void);
-void internet_radio_set_track_reopen(internet_radio_track_reopen_fn reopen);
 
-/* Starts such a chain under `display_name`. The first track is fetched here,
- * so this blocks for as long as the API calls take. */
-bool internet_radio_start_track_chain(const char *display_name);
+/* Starts such a chain under `display_name`, fed by `source` and resumed by
+ * `reopen`. The first track is fetched here, so this blocks for as long as the
+ * API calls take.
+ *
+ * The two functions are arguments rather than something registered beforehand,
+ * and that is the whole point. There are two kinds of chain now - the rotor
+ * and a media server - and only one can be current, so a chain started while
+ * the other one's feeder was installed asked *that* one for a link. It
+ * answered NULL, because its source had been closed, and the station failed
+ * with "produced no first track": Yandex Music was dead until a reboot from
+ * the moment a single track had played off a media server. Passing them here
+ * makes starting a chain fed by somebody else impossible to write. */
+bool internet_radio_start_track_chain(const char *display_name,
+                                      internet_radio_track_source_fn source,
+                                      internet_radio_track_reopen_fn reopen);
 
 /* Ends the current track early and moves the chain on. False when what is
  * playing is not a chain: a station has no next track, only a next station. */

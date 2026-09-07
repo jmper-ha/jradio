@@ -22,7 +22,6 @@
 #include "yandex_auth.h"
 #include "yandex_catalog.h"
 #include "yandex_feedback.h"
-#include "yandex_rotor.h"
 
 static const char *TAG = "jradio";
 
@@ -116,17 +115,11 @@ void app_main(void)
         start_optional("file player", file_player_init());
     }
     ESP_ERROR_CHECK(internet_radio_init());
-    /* After both exist, and before anything can play: a Yandex station is an
-     * HTTP stream that arrives one track at a time, and this is the seam
-     * between the two - the audio path asks for the next link, and the rotor
-     * is what answers, without either component naming the other. */
-    if (BOARD_HAS_YANDEX_MUSIC) {
-        internet_radio_set_track_source(yandex_rotor_next_url);
-        // The other half of that seam: a pause closes the connection, and this
-        // is what signs the same track again so it can be reopened where it
-        // stopped rather than abandoned for the next one.
-        internet_radio_set_track_reopen(yandex_rotor_current_url);
-    }
+    /* Nothing is installed here any more. A station that arrives one track at
+     * a time names what feeds it when it starts - see
+     * internet_radio_start_track_chain() - because there are two such sources
+     * and one seam, and a feeder left over from boot is one the other source
+     * inherits. */
     ESP_ERROR_CHECK(player_control_init());
     ESP_ERROR_CHECK(ui_init());
     start_optional("web server", web_server_start());

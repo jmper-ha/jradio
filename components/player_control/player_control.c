@@ -423,7 +423,8 @@ static bool player_yandex_start_station(const yandex_station_t *station, size_t 
         ESP_LOGE(TAG, "yandex rotor did not start for %s", station->id);
         return false;
     }
-    if (!internet_radio_start_track_chain(station->name)) {
+    if (!internet_radio_start_track_chain(station->name, yandex_rotor_next_url,
+                                          yandex_rotor_current_url)) {
         return false;
     }
     atomic_store_explicit(&s_yandex_item_index, index, memory_order_release);

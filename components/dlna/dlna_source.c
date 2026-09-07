@@ -515,15 +515,10 @@ bool dlna_source_play(size_t index)
     snprintf(heading, sizeof(heading), "%s", dlna_browse_stack_title(&s_stack));
     unlock();
 
-    /* The seam is set here rather than once at boot, because there are two
-     * kinds of chain now and only one can be registered at a time. Whichever
-     * source is starting claims it. */
-    internet_radio_set_track_source(dlna_next_url);
-    internet_radio_set_track_reopen(dlna_current_url);
-
     /* The heading is what the player block shows as the "station": for a media
-     * server that is the album or folder the tracks came from. */
-    if (!internet_radio_start_track_chain(heading)) {
+     * server that is the album or folder the tracks came from, and the two
+     * functions beside it are what feeds and resumes the chain. */
+    if (!internet_radio_start_track_chain(heading, dlna_next_url, dlna_current_url)) {
         lock();
         s_playing = DLNA_SOURCE_ENTRY_MAX;
         unlock();

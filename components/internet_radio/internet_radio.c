@@ -2193,8 +2193,21 @@ esp_err_t internet_radio_start(void)
 bool internet_radio_start_saved_station(void)
 {
     size_t index;
+    /* The top of the catalogue when nothing was saved, rather than nothing at
+     * all. That is what ui_autoplay.c already promises - "with none, the radio
+     * starts at the top of the catalogue" - and what this refused to do, in
+     * silence, to a caller that discards the answer.
+     *
+     * There is no saved station on a device whose settings.csv has just been
+     * replaced by a data flash, nor on one whose saved station has since been
+     * removed from the list. On both, autoplay opened the player screen and
+     * left it saying "stopped", and every press of the encoder after that
+     * decided START_SAVED and died here: the press reached the command, the
+     * command reached the executor, and the executor had nothing to start. A
+     * control that means "play" has to play something. */
     if (!internet_radio_saved_station_index(&index)) {
-        return false;
+        if (!s_radio.initialized || s_radio.catalog->count == 0U) return false;
+        index = 0U;
     }
     return internet_radio_start_station_index(index);
 }

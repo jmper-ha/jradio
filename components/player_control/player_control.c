@@ -250,9 +250,12 @@ static void player_file_reveal_playing(void)
  * Reads s_files_playing_path without the lock, the way the reveal does: the
  * lock exists for the UI task reading it, and this runs on the task that
  * writes it. */
-static void player_file_start_saved(void)
+/* Whether there was a resume point at all, which is what the caller reports.
+ * A start that was attempted and failed is not that, and says so itself just
+ * below with the path and the reason in it. */
+static bool player_file_start_saved(void)
 {
-    if (s_files_playing_path[0] == '\0') return;
+    if (s_files_playing_path[0] == '\0') return false;
     const char *name = file_browser_display_name(s_files_playing_name);
     const esp_err_t result = file_player_play(s_files_playing_path, name,
                                               file_browser_format_from_name(name));
@@ -260,6 +263,7 @@ static void player_file_start_saved(void)
         ESP_LOGW(TAG, "cannot restart %s: %s", s_files_playing_path,
                  esp_err_to_name(result));
     }
+    return true;
 }
 
 static void player_file_advance(void)
@@ -760,20 +764,33 @@ static void player_control_task(void *arg)
                 (void)internet_radio_start_station_index(command.item_index);
             }
             break;
-        case PLAYER_OPERATION_START_SAVED:
+        case PLAYER_OPERATION_START_SAVED: {
+            /* The answer is kept and reported. This is the one operation that
+             * can be perfectly valid and still start nothing - there may be no
+             * resume point to start from - and it used to say so to nobody:
+             * the press was accepted by the UI, decided into START_SAVED, and
+             * dropped here without a line in the log. What the panel showed
+             * was a screen saying "stopped" and an encoder that did nothing at
+             * all, which is a much harder thing to find than a warning. */
+            bool started = false;
             if (snapshot.active_source == AUDIO_SOURCE_YANDEX) {
                 /* The radio's saved station belongs to a different source, so
                  * play again means the station last chosen here - by identity,
                  * because the row it sat on outlives neither a reordered
                  * dashboard nor a reboot. At boot the identity is the resume
                  * point, put here by autoplay before it asked for this. */
-                (void)player_yandex_start_remembered();
+                started = player_yandex_start_remembered();
             } else if (audio_source_is_files(snapshot.active_source)) {
-                player_file_start_saved();
+                started = player_file_start_saved();
             } else if (player_adopt_internet_radio(snapshot.active_source)) {
-                (void)internet_radio_start_saved_station();
+                started = internet_radio_start_saved_station();
+            }
+            if (!started) {
+                ESP_LOGW(TAG, "start saved: no resume point on source %d",
+                         (int)snapshot.active_source);
             }
             break;
+        }
         case PLAYER_OPERATION_PAUSE:
             if (audio_source_is_files(snapshot.active_source)) {
                 (void)file_player_pause();

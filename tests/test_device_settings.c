@@ -170,6 +170,42 @@ static void test_dlna_persists(void)
     assert(reloaded.yandex_music);
 }
 
+/* What player_control reads on every snapshot. Narrow rather than a whole
+   record, so the thing being checked is that it says the same as the record it
+   came from - and that before anything is published it says nothing at all,
+   leaving the caller's own answer standing. */
+static void test_the_published_switches_are_readable_on_their_own(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+
+    /* Before anything is published it answers "I have nothing" and leaves the
+       caller's own values alone - which is what lets player_control default to
+       "the source is there" for the first second after boot. */
+    bool yandex = true;
+    bool dlna = true;
+    if (!device_settings_published_switches(&yandex, &dlna)) {
+        assert(yandex);
+        assert(dlna);
+    }
+
+    assert(device_settings_set_dlna(&settings, false));
+    device_settings_publish(&settings);
+    yandex = false;
+    dlna = true;
+    assert(device_settings_published_switches(&yandex, &dlna));
+    assert(yandex);
+    assert(!dlna);
+
+    assert(device_settings_set_yandex_music(&settings, false));
+    assert(device_settings_set_dlna(&settings, true));
+    device_settings_publish(&settings);
+    assert(device_settings_published_switches(&yandex, &dlna));
+    assert(!yandex);
+    assert(dlna);
+}
+
 static void test_brightness_persists_and_refuses_a_dark_panel(void)
 {
     reset_file();
@@ -286,6 +322,7 @@ int main(void)
     test_a_corrupt_volume_leaves_the_default();
     test_yandex_music_persists();
     test_dlna_persists();
+    test_the_published_switches_are_readable_on_their_own();
     test_scroll_mode_persists();
     test_the_yandex_resume_point_persists();
     test_brightness_persists_and_refuses_a_dark_panel();

@@ -403,3 +403,15 @@ bool device_settings_read_published(device_settings_t *copy)
     PUBLISH_UNLOCK();
     return published;
 }
+
+bool device_settings_published_switches(bool *yandex_music, bool *dlna)
+{
+    PUBLISH_LOCK();
+    const bool published = s_have_published;
+    if (published) {
+        if (yandex_music != NULL) *yandex_music = s_published.yandex_music;
+        if (dlna != NULL) *dlna = s_published.dlna;
+    }
+    PUBLISH_UNLOCK();
+    return published;
+}

@@ -1128,12 +1128,27 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     if (BOARD_HAS_SD_CARD) {
         snapshot->capabilities |= PLAYER_CAP_SD;
     }
-    if (BOARD_HAS_YANDEX_MUSIC && yandex_auth_is_authorized()) {
+    /* The two sources Settings can switch off, and the switch is honoured
+     * here rather than only on the panel's home screen. This is what makes it
+     * mean the same thing everywhere: the browser builds its source tabs out
+     * of these capabilities, and player_control_decide() refuses SELECT_SOURCE
+     * for one that is absent. Hidden on the device but still offered - and
+     * startable - from the web was the state before.
+     *
+     * Not the file on the card: this runs on every snapshot. The switches come
+     * from the copy the UI publishes, and until it has published anything both
+     * sources count as present - a source that vanishes for the first second
+     * after boot is worse than one that appears. */
+    bool yandex_enabled = true;
+    bool dlna_enabled = true;
+    (void)device_settings_published_switches(&yandex_enabled, &dlna_enabled);
+    if (BOARD_HAS_YANDEX_MUSIC && yandex_enabled && yandex_auth_is_authorized()) {
         snapshot->capabilities |= PLAYER_CAP_YANDEX;
     }
-    // Always, when the build has it: see PLAYER_CAP_DLNA. Whether a server
-    // answered is discovered by selecting the source, not before.
-    if (BOARD_HAS_DLNA) {
+    // Always, when the build has it and the switch is on: see PLAYER_CAP_DLNA.
+    // Whether a server answered is discovered by selecting the source, not
+    // before.
+    if (BOARD_HAS_DLNA && dlna_enabled) {
         snapshot->capabilities |= PLAYER_CAP_DLNA;
     }
     snapshot->active_source =

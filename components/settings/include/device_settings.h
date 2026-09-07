@@ -168,3 +168,15 @@ bool device_settings_take_changed(void);
  * publish, which is what tells a reader that the UI has not started yet. */
 void device_settings_publish(const device_settings_t *settings);
 bool device_settings_read_published(device_settings_t *copy);
+
+/* Just the two source switches out of that copy.
+ *
+ * Narrow on purpose: player_control asks on every snapshot, and a snapshot is
+ * built on the UI task, on the web server's single worker and on the player's
+ * own - none of which has most of a kilobyte of device_settings_t to spare on
+ * the stack for two bits.
+ *
+ * False before the first publish, and the outputs are left alone: a caller
+ * that has not been told yet should assume a source is there rather than take
+ * it away for the first second after boot. */
+bool device_settings_published_switches(bool *yandex_music, bool *dlna);

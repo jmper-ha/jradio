@@ -138,11 +138,13 @@ Language, the look of the home screen, how long lines scroll, how the buffer
 reading is shown, autoplay, Yandex Music, DLNA, screen brightness, flipping the
 picture vertically and horizontally, volume. They apply at once and are saved.
 
-The "Яндекс Музыка" and "DLNA" switches take the source off the device's own
-home screen - both the list and the carousel. The web interface keeps it: what
-it shows is what the device *can* do, not what its screen has been set to. Nor
-do they stop what is already playing - the switch hides the row, it does not
-turn the sound off.
+The "Яндекс Музыка" and "DLNA" switches take the source away everywhere: the
+list on the screen, the carousel, and the web interface. A source switched off
+cannot be started either - the device stops declaring that it has it.
+
+What is already playing keeps playing: the switch takes the source out of the
+choice, it does not mute anything. Stop playback first if that is what you
+want.
 
 "Buffer" picks what the footer's left corner holds on the player screen: a
 number ("Буфер 88%") or a strip. The strip is the same percentage, taken every

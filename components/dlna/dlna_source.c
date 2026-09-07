@@ -47,6 +47,13 @@ static dlna_entry_t *s_entries;
 static dlna_entry_t *s_staging;
 static size_t s_entry_count;
 static bool s_open;
+/* The browser is on the list of servers rather than inside one of them.
+ *
+ * A level above every server's own root, and it exists only when more than one
+ * answered the search. With one - which is what a home network usually has -
+ * there is nothing to choose between, and an extra screen to walk through
+ * every time would be a step charged to everybody to serve the rare case. */
+static bool s_at_server_list;
 /* Set for the whole of dlna_source_open(), which blocks for a second or two.
  * Everything that reads the listing meanwhile needs to know the difference
  * between "not yet" and "not at all". */
@@ -304,6 +311,27 @@ static dlna_entry_t *alloc_listing(void)
     return listing;
 }
 
+/* Builds the listing out of the servers that answered.
+ *
+ * They are rows like any other container: the browser, the panel and the page
+ * all draw them without knowing they are not folders, and dlna_source_activate
+ * is the one place that has to tell the difference. Called with the lock
+ * held. */
+static void fill_server_list(void)
+{
+    s_entry_count = 0U;
+    for (size_t index = 0U; index < s_server_count && index < DLNA_SOURCE_ENTRY_MAX;
+         ++index) {
+        dlna_entry_t *const row = &s_entries[s_entry_count];
+        memset(row, 0, sizeof(*row));
+        row->kind = DLNA_ENTRY_CONTAINER;
+        snprintf(row->title, sizeof(row->title), "%s",
+                 s_servers[index].device.friendly_name);
+        ++s_entry_count;
+    }
+    s_playing = DLNA_SOURCE_ENTRY_MAX;
+}
+
 esp_err_t dlna_source_open(void)
 {
     if (s_lock == NULL) {
@@ -354,6 +382,19 @@ esp_err_t dlna_source_open(void)
         unlock();
         return ESP_ERR_NOT_FOUND;
     }
+    if (count > 1U) {
+        /* More than one answered, and which of them "the first" is comes down
+         * to which replied fastest - not a choice anybody made, and not the
+         * same one twice. So nothing is opened: the browser starts on the list
+         * of servers and the user says which. */
+        s_at_server_list = true;
+        fill_server_list();
+        s_searching = false;
+        unlock();
+        ESP_LOGI(TAG, "%u servers answered; showing the list", (unsigned)count);
+        return ESP_OK;
+    }
+    s_at_server_list = false;
     dlna_browse_stack_reset(&s_stack, s_servers[0].device.friendly_name);
     unlock();
 
@@ -375,6 +416,7 @@ void dlna_source_close(void)
     s_entry_count = 0U;
     s_server_count = 0U;
     s_playing = DLNA_SOURCE_ENTRY_MAX;
+    s_at_server_list = false;
     free(s_entries);
     s_entries = NULL;
     free(s_staging);
@@ -434,6 +476,7 @@ esp_err_t dlna_source_select_server(size_t index)
         return ESP_ERR_INVALID_ARG;
     }
     s_selected = index;
+    s_at_server_list = false;
     /* At the root, because a position in one server's tree names nothing in
      * another's - the ids are the server's own. */
     dlna_browse_stack_reset(&s_stack, s_servers[index].device.friendly_name);
@@ -467,14 +510,19 @@ bool dlna_source_entry_at(size_t index, dlna_entry_t *out)
 const char *dlna_source_heading(void)
 {
     /* Not copied: the stack's text only changes under the lock, and every
-     * caller reads it to draw it immediately. */
-    return dlna_browse_stack_title(&s_stack);
+     * caller reads it to draw it immediately. The server list has no place in
+     * the stack - it is above it - so it names itself. */
+    return s_at_server_list ? "Медиасерверы" : dlna_browse_stack_title(&s_stack);
 }
 
 bool dlna_source_at_root(void)
 {
     lock();
-    const bool at_root = dlna_browse_stack_at_root(&s_stack);
+    /* Whether there is anywhere above, which is what draws the ".." row. The
+     * top of a server's tree is not the top any more when there are other
+     * servers to go back out to. */
+    const bool at_root = s_at_server_list ||
+                         (s_server_count <= 1U && dlna_browse_stack_at_root(&s_stack));
     unlock();
     return at_root;
 }
@@ -508,9 +556,23 @@ esp_err_t dlna_source_enter(size_t index)
 esp_err_t dlna_source_leave(void)
 {
     lock();
-    if (!dlna_browse_stack_leave(&s_stack)) {
+    if (s_at_server_list) {
+        /* Nothing above the servers. The caller reads this as "leave the
+         * source", which is the same thing the root of a single server does. */
         unlock();
         return ESP_ERR_NOT_FOUND;
+    }
+    if (!dlna_browse_stack_leave(&s_stack)) {
+        /* At this server's root. With others to choose from, up is the list of
+         * them rather than out of the source altogether. */
+        if (s_server_count <= 1U) {
+            unlock();
+            return ESP_ERR_NOT_FOUND;
+        }
+        s_at_server_list = true;
+        fill_server_list();
+        unlock();
+        return ESP_OK;
     }
     unlock();
     return read_current_container();
@@ -527,6 +589,18 @@ dlna_activate_t dlna_source_activate(size_t index)
     if (!dlna_source_entry_at(index, &entry)) return DLNA_ACTIVATE_REFUSED;
 
     if (entry.kind == DLNA_ENTRY_CONTAINER) {
+        /* One level up from every tree, the rows are servers rather than
+         * containers, and opening one means choosing it. This is the only
+         * place that has to know the difference - everything that draws the
+         * browser sees rows either way. */
+        lock();
+        const bool choosing_server = s_at_server_list;
+        unlock();
+        if (choosing_server) {
+            return dlna_source_select_server(index) == ESP_OK
+                       ? DLNA_ACTIVATE_BROWSED
+                       : DLNA_ACTIVATE_BROWSE_FAILED;
+        }
         return dlna_source_enter(index) == ESP_OK ? DLNA_ACTIVATE_BROWSED
                                                   : DLNA_ACTIVATE_BROWSE_FAILED;
     }

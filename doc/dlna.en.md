@@ -37,6 +37,20 @@ The search runs every time the source is entered rather than once at start-up.
 That is deliberate: a server may be switched off, may move to another address,
 or may appear after the device has already booted.
 
+**When there is more than one server.** If two or more answer the search, the
+device opens none of them and shows the list instead: one row per server, named
+as the server names itself. The one chosen opens at its top level, and the `..`
+row at that top level goes back to the list, so switching is always one step
+away.
+
+Opening whichever answered first was not good enough precisely because "first"
+means "quickest to reply to a multicast" - a different server from one power-up
+to the next. With a single server nothing changes: there is no extra screen, it
+opens straight away.
+
+At most four servers are taken, and one that replies more than 600 ms after the
+previous one will not be in the list - the search has stopped listening by then.
+
 **Walking the server.** Exactly like a flash drive. The knob scrolls, a press
 opens a folder or starts a track, and the `..` row at the top goes back up. A
 long press, or F2, leaves the source.
@@ -52,9 +66,11 @@ So only what is recognised for certain is hidden, an unfamiliar section stays
 where it is - and if everything were hidden the listing would come back whole
 rather than empty.
 
-**What plays.** Whatever this firmware can decode: MP3, AAC, FLAC, WAV, Ogg.
-The server hands out an ordinary HTTP link, and from there the same decoder
-runs as for internet radio.
+**What plays.** MP3, AAC, FLAC, Ogg. The server hands out an ordinary HTTP
+link and from there the same decoder runs as for internet radio - which, unlike
+the file player, has no WAV decoder at all. So a WAV row from a server is
+marked unplayable even though the same file plays from a drive: there the
+format comes from the file name, here from the type the server declared.
 
 Rows that cannot be played - a video, or a format with no decoder - stay on the
 list, marked and unclickable. They are not hidden on purpose: a list without
@@ -83,9 +99,6 @@ stream from start to end, the way it plays radio.
 
 **The place in the tree is not remembered.** Leaving the source starts the next
 visit at the top level again, and autoplay cannot resume from a media server.
-
-**No choice between servers.** If several answer, the device opens the first.
-There is no "switch server" entry yet.
 
 **Plain HTTP only.** A media server on a home network does not encrypt, and the
 device does not expect it to.

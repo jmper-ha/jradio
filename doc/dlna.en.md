@@ -17,6 +17,10 @@ wait ends when the network goes quiet rather than when the whole window
 expires. The server that replies opens at its top level, with its name as the
 heading of the list.
 
+While the search runs the list is empty and says nothing about it - the bar at
+the foot sweeps instead. "Медиасервер не найден в сети" appears only once the
+search has finished and found nothing.
+
 **What the rest costs.** Opening a folder is one request to the server, or
 several for a large one. Measured on this network: a small folder about 0.1 s,
 a 52-row folder 0.6 s. While a request is out, the bar under the list - the slot

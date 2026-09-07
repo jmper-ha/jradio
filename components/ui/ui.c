@@ -1490,7 +1490,11 @@ static void ui_update_list_progress(void)
 {
     if (s_station_list_progress == NULL) return;
 
-    if (s_browse_waiting) {
+    /* Searching for a server is a wait like any other, and the one the user
+     * meets first. It is not a browse, so nothing posts it through
+     * ui_note_browse_started() - the source is opening, not a row - and the
+     * bar has to ask the source directly. */
+    if (s_browse_waiting || (ui_list_shows_dlna() && dlna_source_is_searching())) {
         /* Shown even with no rows: opening the source itself is a wait, and
          * that is exactly the moment the list is empty. */
         lv_obj_clear_flag(s_station_list_progress, LV_OBJ_FLAG_HIDDEN);
@@ -3428,14 +3432,26 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
          * screen: it means the search found no server, which the user can act
          * on - the NAS is off, or on another network. Deeper in the tree an
          * empty container is just an empty container, and the ".." row is
-         * already the way out of it. */
+         * already the way out of it.
+         *
+         * But only once the search has finished. The listing is empty for the
+         * whole second it runs, and the source is selected - and the revision
+         * bumped - before it even starts, so this said "not found" the instant
+         * the screen opened and then filled with rows a moment later. A verdict
+         * announced before the question has been asked is worse than silence:
+         * the sweeping bar below already says the device is looking. */
         if (count == 0U) {
             ui_set_label_text_if_changed(s_station_list_title, "DLNA");
+            const bool searching = dlna_source_is_searching();
             ui_set_label_text_if_changed(s_station_list_notice,
-                                         "Медиасервер не найден в сети");
+                                         searching ? "" : "Медиасервер не найден в сети");
             const lv_image_dsc_t *icon = ui_source_icon(AUDIO_SOURCE_DLNA);
             if (icon != NULL) lv_image_set_src(s_station_list_notice_icon, icon);
-            lv_obj_clear_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
+            if (searching) {
+                lv_obj_add_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_clear_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
+            }
             lv_obj_add_flag(s_station_list_rule, LV_OBJ_FLAG_HIDDEN);
         }
     } else if (ui_list_shows_files()) {

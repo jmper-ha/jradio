@@ -437,9 +437,11 @@ esp_err_t dlna_source_select_server(size_t index)
     /* At the root, because a position in one server's tree names nothing in
      * another's - the ids are the server's own. */
     dlna_browse_stack_reset(&s_stack, s_servers[index].device.friendly_name);
-    const esp_err_t err = read_current_container();
     unlock();
-    return err;
+
+    // Outside the lock, like every other read: it is several HTTP round trips,
+    // and the panel and the web server both poll the listing.
+    return read_current_container();
 }
 
 size_t dlna_source_entry_count(void)

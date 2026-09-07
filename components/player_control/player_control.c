@@ -116,6 +116,18 @@ bool player_control_playing_file_path(char *out, size_t out_size)
     xSemaphoreGive(s_playing_path_lock);
     return fits && length > 0U;
 }
+/* When the last "play" found nothing at all to start, in milliseconds of the
+ * device clock; zero until it happens.
+ *
+ * A timestamp rather than a flag because the line it produces has to go away
+ * on its own: it belongs to the press that caused it, not to the state of the
+ * player, and there is no event that would clear it - the source stays exactly
+ * as stopped as it was. */
+static atomic_uint s_no_resume_at_ms = ATOMIC_VAR_INIT(0U);
+/* Long enough to read at arm's length, short enough that it cannot be mistaken
+ * for a description of the source. */
+#define PLAYER_NO_RESUME_NOTICE_MS 6000U
+
 static atomic_bool s_rssi_seen = ATOMIC_VAR_INIT(false);
 static atomic_uint s_rssi_updated_ms = ATOMIC_VAR_INIT(0U);
 static atomic_bool s_rssi_valid = ATOMIC_VAR_INIT(false);
@@ -263,6 +275,16 @@ static bool player_file_start_saved(void)
         ESP_LOGW(TAG, "cannot restart %s: %s", s_files_playing_path,
                  esp_err_to_name(result));
     }
+    return true;
+}
+
+/* The first playable file of the directory on screen, for a volume that has
+ * been opened but never played from. */
+static bool player_file_start_first(void)
+{
+    const size_t first = file_storage_next_file(0U);
+    if (first >= file_storage_entry_count()) return false;
+    player_file_select_item(first, PLAYER_PLAYBACK_STOPPED);
     return true;
 }
 
@@ -765,28 +787,72 @@ static void player_control_task(void *arg)
             }
             break;
         case PLAYER_OPERATION_START_SAVED: {
-            /* The answer is kept and reported. This is the one operation that
-             * can be perfectly valid and still start nothing - there may be no
-             * resume point to start from - and it used to say so to nobody:
-             * the press was accepted by the UI, decided into START_SAVED, and
-             * dropped here without a line in the log. What the panel showed
-             * was a screen saying "stopped" and an encoder that did nothing at
-             * all, which is a much harder thing to find than a warning. */
+            /* "Play" on a stopped source means: start what this source would
+             * come back to, and where there is no such point, start the
+             * beginning of what it is showing.
+             *
+             * The second half is written here once, for every source, because
+             * leaving it to each of them was the same bug three times. Each
+             * resume returned false to a caller that discarded it, so the
+             * press was accepted at the top, decided into this operation, and
+             * died in silence - the screen went on saying "stopped" with every
+             * control dead. It happened on the radio with no saved station
+             * (a data flash rewrites settings.csv), on a media server that had
+             * browsed but not played, and on the rotor with no remembered
+             * station. Three sources, one rule, and now one place to change
+             * it.
+             *
+             * Whether anything started is kept and answered for below: this is
+             * the one operation that can be entirely valid and still start
+             * nothing, and it has to say so rather than leave a dead panel. */
+            /* A switch over every source with no default, so that the next
+             * source added to audio_source_t cannot quietly inherit somebody
+             * else's answer: -Wswitch, which this build treats as an error,
+             * refuses to compile until it is named here.
+             *
+             * That is not hypothetical tidiness. The chain of ifs this
+             * replaces ended in player_adopt_internet_radio(), which returns
+             * true for *any* source already active - so a press on a stopped
+             * media server started a radio station under the server's own
+             * heading, and nobody had written a line of code intending it. */
             bool started = false;
-            if (snapshot.active_source == AUDIO_SOURCE_YANDEX) {
+            switch (snapshot.active_source) {
+            case AUDIO_SOURCE_YANDEX:
                 /* The radio's saved station belongs to a different source, so
                  * play again means the station last chosen here - by identity,
                  * because the row it sat on outlives neither a reordered
                  * dashboard nor a reboot. At boot the identity is the resume
-                 * point, put here by autoplay before it asked for this. */
-                started = player_yandex_start_remembered();
-            } else if (audio_source_is_files(snapshot.active_source)) {
-                started = player_file_start_saved();
-            } else if (player_adopt_internet_radio(snapshot.active_source)) {
-                started = internet_radio_start_saved_station();
+                 * point, put here by autoplay before it asked for this; with
+                 * none, the top of the account's own list. */
+                started = player_yandex_start_remembered() || player_yandex_start(0U);
+                break;
+            case AUDIO_SOURCE_USB:
+            case AUDIO_SOURCE_SD:
+                started = player_file_start_saved() || player_file_start_first();
+                break;
+            case AUDIO_SOURCE_DLNA:
+                started = dlna_source_start_saved();
+                break;
+            case AUDIO_SOURCE_NONE:
+            case AUDIO_SOURCE_INTERNET_RADIO:
+                /* No source chosen yet counts as the radio: the snapshot
+                 * already describes its catalogue, and the executor adopts it
+                 * here - which is what makes the very first press after a boot
+                 * play something. */
+                started = player_adopt_internet_radio(snapshot.active_source) &&
+                          internet_radio_start_saved_station();
+                break;
+            case AUDIO_SOURCE_FM:
+            case AUDIO_SOURCE_BLUETOOTH:
+                /* Named in the enum, not built. Nothing to resume, and saying
+                 * so here is what keeps the switch exhaustive. */
+                break;
             }
+            atomic_store_explicit(&s_no_resume_at_ms,
+                                  started ? 0U : (uint32_t)(esp_timer_get_time() / 1000),
+                                  memory_order_release);
             if (!started) {
-                ESP_LOGW(TAG, "start saved: no resume point on source %d",
+                ESP_LOGW(TAG, "start saved: nothing to start on source %d",
                          (int)snapshot.active_source);
             }
             break;
@@ -987,6 +1053,24 @@ bool player_control_post(const player_command_t *command)
            xQueueSend(s_command_queue, command, 0) == pdTRUE;
 }
 
+/* Says that the last "play" had nothing to start.
+ *
+ * Written before the per-source branches, so a source's own failure - a file
+ * that would not open, an account without a subscription - still wins: those
+ * describe what went wrong, this only says nothing was attempted.
+ *
+ * It exists because the alternative is a screen that says "stopped" and a
+ * control that does nothing, which is the hardest kind of fault to report and
+ * the easiest to mistake for a broken encoder. */
+static void player_note_nothing_started(player_snapshot_t *snapshot)
+{
+    const uint32_t at = atomic_load_explicit(&s_no_resume_at_ms, memory_order_acquire);
+    if (at == 0U) return;
+    const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    if ((uint32_t)(now_ms - at) >= PLAYER_NO_RESUME_NOTICE_MS) return;
+    snprintf(snapshot->error, sizeof(snapshot->error), "Нечего продолжить - выберите");
+}
+
 void player_control_get_snapshot(player_snapshot_t *snapshot)
 {
     if (snapshot == NULL) {
@@ -1046,6 +1130,8 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     const wifi_provisioning_mode_t wifi_mode = wifi_provisioning_status().mode;
     snapshot->wifi_connected = wifi_mode == WIFI_PROVISIONING_STA_CONNECTED;
     snapshot->wifi_setup_ap = wifi_mode == WIFI_PROVISIONING_AP_SETUP;
+
+    player_note_nothing_started(snapshot);
 
     if (audio_source_is_files(snapshot->active_source)) {
         file_player_status_t usb_status;

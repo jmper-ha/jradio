@@ -915,6 +915,25 @@ static void ui_update_playback_marks(const player_snapshot_t *snapshot)
  * performer being empty whenever a state was worth showing - which is false on
  * pause, where the title is still there and the two drew on top of each
  * other. */
+/* The line under the title, chosen from the snapshot.
+ *
+ * A message from the player wins over the name of the state: "Stopped" is true
+ * and useless, and why it is stopped is the thing worth the row. Nothing on
+ * this panel showed snapshot->error at all until now - it reached the browser
+ * and stopped there - so a press that started nothing, or an account without a
+ * subscription, was a screen with no explanation on it. */
+static void ui_set_state_line(const char *state, const char *artist, bool error);
+
+static void ui_set_state_line_from(const player_snapshot_t *snapshot,
+                                   const char *state, const char *artist)
+{
+    if (snapshot->error[0] != '\0') {
+        ui_set_state_line(snapshot->error, artist, true);
+        return;
+    }
+    ui_set_state_line(state, artist, snapshot->playback_state == PLAYER_PLAYBACK_ERROR);
+}
+
 static void ui_set_state_line(const char *state, const char *artist, bool error)
 {
     const bool show_state = state != NULL && state[0] != '\0';
@@ -964,8 +983,11 @@ static void ui_update_files_status(const player_snapshot_t *snapshot)
     // naming. Pause is not one - the badge says it.
     /* A file that will not open is a failure too, and it reaches this line the
      * same way the radio's does. */
-    ui_set_state_line(snapshot->playback_state == PLAYER_PLAYBACK_STOPPED ? "Выберите файл" : "",
-                      now.artist, snapshot->playback_state == PLAYER_PLAYBACK_ERROR);
+    ui_set_state_line_from(snapshot,
+                           snapshot->playback_state == PLAYER_PLAYBACK_STOPPED
+                               ? "Выберите файл"
+                               : "",
+                           now.artist);
     ui_set_stream_readings(snapshot);
 }
 
@@ -992,7 +1014,7 @@ static void ui_update_dlna_status(const player_snapshot_t *snapshot)
                snapshot->playback_state != PLAYER_PLAYBACK_PAUSED) {
         state = ui_radio_state_text(snapshot->playback_state);
     }
-    ui_set_state_line(state, now.artist, snapshot->playback_state == PLAYER_PLAYBACK_ERROR);
+    ui_set_state_line_from(snapshot, state, now.artist);
     ui_set_stream_readings(snapshot);
 }
 
@@ -1063,8 +1085,9 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
     // failure are the states worth a line.
     const bool settled = snapshot->playback_state == PLAYER_PLAYBACK_PLAYING ||
                          snapshot->playback_state == PLAYER_PLAYBACK_PAUSED;
-    ui_set_state_line(settled ? "" : ui_radio_state_text(snapshot->playback_state),
-                      now.artist, snapshot->playback_state == PLAYER_PLAYBACK_ERROR);
+    ui_set_state_line_from(snapshot,
+                           settled ? "" : ui_radio_state_text(snapshot->playback_state),
+                           now.artist);
 
     ui_set_stream_readings(snapshot);
 }

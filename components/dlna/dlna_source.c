@@ -540,6 +540,19 @@ size_t dlna_source_playing_index(void)
     return playing;
 }
 
+bool dlna_source_start_saved(void)
+{
+    lock();
+    size_t index = s_playing;
+    if (index >= s_entry_count || !s_entries[index].playable) {
+        index = 0U;
+        while (index < s_entry_count && !s_entries[index].playable) ++index;
+    }
+    const bool have = index < s_entry_count;
+    unlock();
+    return have && dlna_source_play(index);
+}
+
 bool dlna_source_skip(bool forward)
 {
     if (forward) {

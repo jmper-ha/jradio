@@ -115,6 +115,12 @@ dlna_activate_t dlna_source_activate(size_t index);
 /* Plays the track on `index`, and goes on into the tracks after it in the same
  * listing. False when that row is not something this device can play. */
 bool dlna_source_play(size_t index);
+
+/* What "play" means on a stopped media server: the row it was last on, or -
+ * when there is none, which is every browser that has not played anything yet -
+ * the first playable row of the open container. False only when the container
+ * holds nothing this device can play. */
+bool dlna_source_start_saved(void);
 /* Which row is playing, or DLNA_SOURCE_ENTRY_MAX when none is. */
 size_t dlna_source_playing_index(void);
 /* Moves to the next or previous playable row without waiting for the current

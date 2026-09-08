@@ -3718,11 +3718,11 @@ static void ui_handle_input(board_input_action_t action)
 {
     // Settings sits outside the player's view state: it shows no source and
     // starts nothing, so making it a fourth view would put an entry in every
-    // transition table for no gain. Any of the three ways out returns to the
-    // main screen.
+    // transition table for no gain. The way out is the long press, and it
+    // returns to the main screen.
     if (s_yandex_open) {
         station_list_note_activity(&s_yandex_list, ui_tick_get_ms());
-        if (action == BOARD_INPUT_ACTION_F2 || action == BOARD_INPUT_ACTION_ENCODER_LONG) {
+        if (action == BOARD_INPUT_ACTION_ENCODER_LONG) {
             ui_close_yandex();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
                    action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
@@ -3749,26 +3749,25 @@ static void ui_handle_input(board_input_action_t action)
     }
     if (s_settings_open) {
         if (s_about_open) {
-            /* One thing on screen and one way off it, like the QR overlay: any
-             * button returns, and the knob has nothing to move. */
+            /* One thing on screen and one way off it, like the QR overlay:
+             * the press or the hold returns, and the knob has nothing to
+             * move. */
             if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON ||
-                action == BOARD_INPUT_ACTION_ENCODER_LONG ||
-                action == BOARD_INPUT_ACTION_F2) {
+                action == BOARD_INPUT_ACTION_ENCODER_LONG) {
                 ui_hide_about();
             }
             return;
         }
         if (s_qr_open) {
-            /* One thing on screen and one way off it: any button returns, and
-             * the knob has nothing to move. */
+            /* One thing on screen and one way off it: the press or the hold
+             * returns, and the knob has nothing to move. */
             if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON ||
-                action == BOARD_INPUT_ACTION_ENCODER_LONG ||
-                action == BOARD_INPUT_ACTION_F2) {
+                action == BOARD_INPUT_ACTION_ENCODER_LONG) {
                 ui_hide_qr();
             }
             return;
         }
-        if (action == BOARD_INPUT_ACTION_F2 || action == BOARD_INPUT_ACTION_ENCODER_LONG) {
+        if (action == BOARD_INPUT_ACTION_ENCODER_LONG) {
             ui_close_settings();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
                    action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
@@ -3802,8 +3801,7 @@ static void ui_handle_input(board_input_action_t action)
     }
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
         station_list_note_activity(&s_station_list, ui_tick_get_ms());
-        if (action == BOARD_INPUT_ACTION_F2 ||
-            action == BOARD_INPUT_ACTION_ENCODER_LONG) {
+        if (action == BOARD_INPUT_ACTION_ENCODER_LONG) {
             // Same gesture as on the player screen: hold to leave and stop.
             // Without it the list was a dead end for anyone using the encoder
             // alone, since a short press there selects rather than exits.
@@ -3951,13 +3949,11 @@ static void ui_handle_input(board_input_action_t action)
              * two that leave the screen go on to do that as well, since
              * closing the mode changes nothing about what is playing. */
             ui_end_seek();
-            if (action != BOARD_INPUT_ACTION_F2 &&
-                action != BOARD_INPUT_ACTION_ENCODER_LONG) {
+            if (action != BOARD_INPUT_ACTION_ENCODER_LONG) {
                 return;
             }
         }
-        if (action == BOARD_INPUT_ACTION_F2 ||
-            action == BOARD_INPUT_ACTION_ENCODER_LONG) {
+        if (action == BOARD_INPUT_ACTION_ENCODER_LONG) {
             // Leaving the screen entirely, so a click waiting out its window
             // must not land on the home screen.
             ui_click_gesture_cancel(&s_player_click);
@@ -4081,8 +4077,6 @@ static void ui_handle_input(board_input_action_t action)
                 (void)ui_menu_select_source(&s_menu, source);
                 ui_show_source();
             }
-        } else if (action == BOARD_INPUT_ACTION_F2) {
-            ui_show_menu();
         }
         return;
     }

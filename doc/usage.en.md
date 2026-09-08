@@ -62,9 +62,12 @@ nothing.
 | Double press | Open the station or file list; the music keeps playing |
 | Triple press | Scrub: the knob picks a position, a press applies it |
 | Long press | Home screen; playback stops |
-| F2 | Back |
 | F3 | Previous track or station |
 | F4 | Next track or station |
+
+F1 and F2 do nothing at the moment: they are kept for whatever comes next. F2
+used to mean "back" and lost the job to the encoder's long press, which did the
+same thing everywhere F2 did.
 
 A single press lands after a short delay - before that it cannot be told from
 the beginning of a double press.

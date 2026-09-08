@@ -53,7 +53,7 @@ previous one will not be in the list - the search has stopped listening by then.
 
 **Walking the server.** Exactly like a flash drive. The knob scrolls, a press
 opens a folder or starts a track, and the `..` row at the top goes back up. A
-long press, or F2, leaves the source.
+long press leaves the source.
 
 Every server lays its tree out differently. On Plex it is `Music → your library
 → By Album / By Folder / All Artists → …`.

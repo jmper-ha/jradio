@@ -10,6 +10,10 @@ typedef enum {
     BOARD_INPUT_ACTION_ENCODER_LEFT,
     BOARD_INPUT_ACTION_ENCODER_RIGHT,
     BOARD_INPUT_ACTION_ENCODER_BUTTON,
+    /* Wired, debounced and delivered, but nothing on the UI side acts on
+     * them: they are the two buttons kept free for whatever comes next. F2
+     * used to mean "back" and lost the job to the encoder's long press, which
+     * already did the same thing everywhere F2 did. */
     BOARD_INPUT_ACTION_F1,
     BOARD_INPUT_ACTION_F2,
     BOARD_INPUT_ACTION_BTN_PREV,

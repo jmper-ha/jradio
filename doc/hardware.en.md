@@ -192,7 +192,7 @@ Settings, which hides the source in a firmware that was built with it.
 
 One case is its own: a build with nothing left but the radio and Settings. A
 home screen of two rows offers no choice, so there is none at all - the device
-starts straight into the station list, and a long press (or F2) switches
+starts straight into the station list, and a long press switches
 between the list and Settings. Going into Settings stops the radio, exactly as
 a long press on the player screen does. The "Home screen" row in Settings is
 hidden in such a build too: there is nothing to choose between.

@@ -3,35 +3,39 @@
 #include <string.h>
 
 #include "cJSON.h"
+#include "device_timezone.h"
 #include "web_json.h"
 
-/* Long enough for the largest request this accepts - two short members - with
- * room to notice one that is too long rather than silently truncating it into
- * something that parses. */
-#define WEB_SETTINGS_BODY_MAX 128U
+/* Long enough for the largest request this accepts - two members, the wider of
+ * which is a host name - with room to notice one that is too long rather than
+ * silently truncating it into something that parses. */
+#define WEB_SETTINGS_BODY_MAX 192U
 
 typedef struct {
     const char *name;
     web_settings_field_t field;
-    /* The two named values of a choice field, in enum order; NULL for a switch
-     * and for a number. */
+    /* The two named values of a choice field, in enum order; NULL for a switch,
+     * for a number and for text. */
     const char *first;
     const char *second;
     bool number;
+    bool text;
 } field_descriptor_t;
 
 static const field_descriptor_t k_fields[] = {
-    {"language", WEB_SETTINGS_FIELD_LANGUAGE, "ru", "en", false},
-    {"home_screen", WEB_SETTINGS_FIELD_HOME_SCREEN, "text", "feed", false},
-    {"scroll", WEB_SETTINGS_FIELD_SCROLL, "bounce", "left", false},
-    {"buffer_view", WEB_SETTINGS_FIELD_BUFFER_VIEW, "text", "graph", false},
-    {"autoplay", WEB_SETTINGS_FIELD_AUTOPLAY, NULL, NULL, false},
-    {"yandex_music", WEB_SETTINGS_FIELD_YANDEX_MUSIC, NULL, NULL, false},
-    {"dlna", WEB_SETTINGS_FIELD_DLNA, NULL, NULL, false},
-    {"flip_vertical", WEB_SETTINGS_FIELD_FLIP_VERTICAL, NULL, NULL, false},
-    {"flip_horizontal", WEB_SETTINGS_FIELD_FLIP_HORIZONTAL, NULL, NULL, false},
-    {"brightness", WEB_SETTINGS_FIELD_BRIGHTNESS, NULL, NULL, true},
-    {"volume", WEB_SETTINGS_FIELD_VOLUME, NULL, NULL, true},
+    {"language", WEB_SETTINGS_FIELD_LANGUAGE, "ru", "en", false, false},
+    {"home_screen", WEB_SETTINGS_FIELD_HOME_SCREEN, "text", "feed", false, false},
+    {"scroll", WEB_SETTINGS_FIELD_SCROLL, "bounce", "left", false, false},
+    {"buffer_view", WEB_SETTINGS_FIELD_BUFFER_VIEW, "text", "graph", false, false},
+    {"autoplay", WEB_SETTINGS_FIELD_AUTOPLAY, NULL, NULL, false, false},
+    {"yandex_music", WEB_SETTINGS_FIELD_YANDEX_MUSIC, NULL, NULL, false, false},
+    {"dlna", WEB_SETTINGS_FIELD_DLNA, NULL, NULL, false, false},
+    {"flip_vertical", WEB_SETTINGS_FIELD_FLIP_VERTICAL, NULL, NULL, false, false},
+    {"flip_horizontal", WEB_SETTINGS_FIELD_FLIP_HORIZONTAL, NULL, NULL, false, false},
+    {"brightness", WEB_SETTINGS_FIELD_BRIGHTNESS, NULL, NULL, true, false},
+    {"volume", WEB_SETTINGS_FIELD_VOLUME, NULL, NULL, true, false},
+    {"timezone", WEB_SETTINGS_FIELD_TIMEZONE, NULL, NULL, false, true},
+    {"ntp_server", WEB_SETTINGS_FIELD_NTP_SERVER, NULL, NULL, false, true},
 };
 
 static const field_descriptor_t *descriptor_by_name(const char *name)
@@ -43,8 +47,18 @@ static const field_descriptor_t *descriptor_by_name(const char *name)
 }
 
 static bool parse_value(const field_descriptor_t *descriptor, const cJSON *value,
-                        int *result)
+                        web_settings_change_t *change)
 {
+    int *const result = &change->value;
+    if (descriptor->text) {
+        if (!cJSON_IsString(value) || value->valuestring == NULL) return false;
+        if (strlen(value->valuestring) >= sizeof(change->text)) return false;
+        /* Whether the text means anything is the setter's question: a zone id
+         * is checked against the firmware's table and a host name against what
+         * a host name may contain, and neither belongs here. */
+        strcpy(change->text, value->valuestring);
+        return true;
+    }
     if (descriptor->first != NULL) {
         if (!cJSON_IsString(value) || value->valuestring == NULL) return false;
         if (strcmp(value->valuestring, descriptor->first) == 0) {
@@ -105,11 +119,9 @@ bool web_settings_parse(const char *body, size_t length,
         if (cJSON_GetArraySize(root) == 2 && cJSON_IsString(field) &&
             field->valuestring != NULL && value != NULL) {
             const field_descriptor_t *descriptor = descriptor_by_name(field->valuestring);
-            int parsed = 0;
-            if (descriptor != NULL && parse_value(descriptor, value, &parsed)) {
-                change->field = descriptor->field;
-                change->value = parsed;
-                ok = true;
+            if (descriptor != NULL) {
+                *change = (web_settings_change_t){.field = descriptor->field};
+                ok = parse_value(descriptor, value, change);
             }
         }
     }
@@ -146,6 +158,10 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_brightness(settings, (unsigned char)change->value);
     case WEB_SETTINGS_FIELD_VOLUME:
         return device_settings_set_volume(settings, (unsigned char)change->value);
+    case WEB_SETTINGS_FIELD_TIMEZONE:
+        return device_settings_set_timezone(settings, change->text);
+    case WEB_SETTINGS_FIELD_NTP_SERVER:
+        return device_settings_set_ntp_server(settings, change->text);
     default:
         return false;
     }
@@ -173,6 +189,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .dlna = settings->dlna,
         .flip_vertical = settings->flip_vertical,
         .flip_horizontal = settings->flip_horizontal,
+        .timezone = (uint8_t)device_timezone_index_of(settings->timezone),
         .home_screen_available = home_screen_available,
         .yandex_available = yandex_available,
         .dlna_available = dlna_available,
@@ -197,20 +214,24 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->dlna == right->dlna &&
            left->flip_vertical == right->flip_vertical &&
            left->flip_horizontal == right->flip_horizontal &&
+           left->timezone == right->timezone &&
            left->home_screen_available == right->home_screen_available &&
            left->yandex_available == right->yandex_available &&
            left->dlna_available == right->dlna_available;
 }
 
-void web_settings_write(web_json_writer_t *writer,
-                        const web_settings_view_t *view)
+/* The id of the zone a view carries, or the default's when the card names one
+ * this build does not have - the browser has to show a row that exists in the
+ * list beside it, and "nothing selected" is not a time zone. */
+static const char *view_timezone_id(const web_settings_view_t *view)
 {
-    if (writer == NULL) return;
-    if (view == NULL) {
-        web_json_invalidate(writer);
-        return;
-    }
-    web_json_literal(writer, "{\"language\":");
+    const device_timezone_t *zone = device_timezone_at(view->timezone);
+    return zone != NULL ? zone->id : DEVICE_TIMEZONE_DEFAULT_ID;
+}
+
+static void write_body(web_json_writer_t *writer, const web_settings_view_t *view)
+{
+    web_json_literal(writer, "\"language\":");
     web_json_string(writer, view->language == DEVICE_LANGUAGE_EN ? "en" : "ru");
     web_json_literal(writer, ",\"home_screen\":");
     web_json_string(writer,
@@ -234,6 +255,8 @@ void web_settings_write(web_json_writer_t *writer,
     web_json_format(writer, "%u", (unsigned)view->brightness);
     web_json_literal(writer, ",\"volume\":");
     web_json_format(writer, "%u", (unsigned)view->volume);
+    web_json_literal(writer, ",\"timezone\":");
+    web_json_string(writer, view_timezone_id(view));
     /* What this build has, not what it is set to: a switch for a source the
      * firmware was compiled without would change a value nothing reads. */
     web_json_literal(writer, ",\"available\":{\"home_screen\":");
@@ -246,15 +269,45 @@ void web_settings_write(web_json_writer_t *writer,
     web_json_format(writer, "%d", WEB_SETTINGS_BRIGHTNESS_MIN);
     web_json_literal(writer, ",\"brightness_max\":");
     web_json_format(writer, "%d", WEB_SETTINGS_BRIGHTNESS_MAX);
+}
+
+void web_settings_write(web_json_writer_t *writer,
+                        const web_settings_view_t *view)
+{
+    if (writer == NULL) return;
+    if (view == NULL) {
+        web_json_invalidate(writer);
+        return;
+    }
+    web_json_literal(writer, "{");
+    write_body(writer, view);
     web_json_literal(writer, "}");
 }
 
 size_t web_settings_serialize(char *output, size_t output_size,
-                              const web_settings_view_t *view)
+                              const web_settings_view_t *view, const char *ntp_server)
 {
     web_json_writer_t writer;
     web_json_init(&writer, output, output_size, output_size);
-    web_settings_write(&writer, view);
+    if (view == NULL) return 0U;
+    web_json_literal(&writer, "{");
+    write_body(&writer, view);
+    /* Only in the document, not in the live diff: a time server is typed once
+     * in a device's life, and the zone list never changes at all. Both would
+     * otherwise be compared on every pass and kept per queued frame. */
+    web_json_literal(&writer, ",\"ntp_server\":");
+    web_json_string(&writer, ntp_server == NULL ? "" : ntp_server);
+    web_json_literal(&writer, ",\"timezones\":[");
+    for (size_t index = 0U; index < device_timezone_count(); ++index) {
+        const device_timezone_t *const zone = device_timezone_at(index);
+        if (index > 0U) web_json_literal(&writer, ",");
+        web_json_literal(&writer, "{\"id\":");
+        web_json_string(&writer, zone->id);
+        web_json_literal(&writer, ",\"label\":");
+        web_json_string(&writer, zone->label);
+        web_json_literal(&writer, "}");
+    }
+    web_json_literal(&writer, "]}");
     if (!web_json_valid(&writer)) {
         web_json_truncate(&writer);
         return 0U;

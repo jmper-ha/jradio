@@ -2289,6 +2289,11 @@ static void ui_reload_settings(void)
     ui_apply_display_rotation();
     (void)board_backlight_set(s_device_settings.brightness);
     if (!volume_pending) board_audio_set_volume(s_device_settings.volume);
+    /* The zone applies to the next reading of the clock and the server only
+     * costs SNTP a restart if it actually changed - so this is cheap enough to
+     * call on every settings change rather than working out which one it
+     * was. */
+    device_clock_apply(s_device_settings.ntp_server, s_device_settings.timezone);
     ui_apply_source_visibility();
     /* The model is left alone while the settings screen is open: re-initialising
      * it moves the cursor back to the top, and someone standing at the device

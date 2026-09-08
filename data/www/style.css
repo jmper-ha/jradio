@@ -1074,6 +1074,16 @@ select { min-width: 8.5rem; }
 input[type="text"],
 input[type="password"] { width: 100%; }
 
+/* Except in a settings row, where a text field is a control beside its label
+   rather than a form field on a line of its own: the full width above belongs
+   to the Wi-Fi form, and in this flex row it pushed the label out of the
+   card. */
+.device-row input[type="text"] {
+  width: auto;
+  flex: 0 1 10rem;
+  min-width: 0;
+}
+
 /* The field and the button that reveals it, on one line: underneath it would
    read as a second control rather than as part of the field. The input keeps
    its width: 100% from above, so it needs a basis of its own here and

@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "device_timezone.h"
+
 typedef enum {
     DEVICE_LANGUAGE_RU = 0,
     DEVICE_LANGUAGE_EN,
@@ -87,6 +89,14 @@ typedef enum {
  * comes from. */
 #define DEVICE_LAST_DLNA_TITLE_MAX 128
 
+/* A host name, not a URL: SNTP takes one and resolves it itself. Long enough
+ * for the longest pool name anybody uses, and refused rather than truncated
+ * past that - half a host name resolves to nothing at all. */
+#define DEVICE_NTP_SERVER_MAX 64
+/* What the device used before the setting existed: it resolves to whatever is
+ * close, needs no account, and is what every appliance points at. */
+#define DEVICE_NTP_SERVER_DEFAULT "pool.ntp.org"
+
 /* Loud enough to be obviously working, quiet enough that a fresh flash does
  * not startle anyone. */
 #define DEVICE_VOLUME_DEFAULT 80
@@ -122,6 +132,11 @@ typedef struct {
      * UI's 10..90 window: this layer only refuses what the hardware cannot do,
      * so a value written by hand still reaches the panel. */
     unsigned char brightness;
+    /* The time zone as an id out of device_timezone.h, not a POSIX string:
+     * every summer-time rule carries commas, and settings.csv splits a line on
+     * the first one. */
+    char timezone[DEVICE_TIMEZONE_ID_MAX];
+    char ntp_server[DEVICE_NTP_SERVER_MAX];
     device_last_source_t last_source;
     char last_file[DEVICE_LAST_FILE_MAX];
     char last_yandex_id[DEVICE_LAST_YANDEX_ID_MAX];
@@ -153,6 +168,15 @@ bool device_settings_set_dlna(device_settings_t *settings, bool enabled);
  * bug, and silently accepting it would hide it. */
 bool device_settings_set_volume(device_settings_t *settings, unsigned char volume);
 bool device_settings_set_brightness(device_settings_t *settings, unsigned char brightness);
+/* An id this build knows, out of device_timezone.h; anything else is refused
+ * rather than stored, since a zone the firmware cannot translate is a clock
+ * that silently stays on the old one. */
+bool device_settings_set_timezone(device_settings_t *settings, const char *id);
+/* A host name for SNTP. Empty puts the default back - the field on the page
+ * can be cleared, and a device with no time server at all is worse than one on
+ * the pool. Spaces, commas and anything unprintable are refused: the first
+ * would not resolve, the second would cut the settings line in two. */
+bool device_settings_set_ntp_server(device_settings_t *settings, const char *host);
 /* Recorded as playback starts, so a power cut still leaves the last choice
  * behind. Writing "none" clears the resume point. */
 bool device_settings_set_last_source(device_settings_t *settings,

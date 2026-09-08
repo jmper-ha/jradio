@@ -84,7 +84,11 @@ void app_main(void)
     // After Wi-Fi is up so the first query has somewhere to go, but it does
     // not depend on being connected - SNTP retries on its own and the clock
     // reads unset until an answer arrives.
-    device_clock_init();
+    /* The zone and the server come off the card, and a card that would not
+     * read leaves both at their defaults - a clock on Moscow time is what this
+     * device had before either was a setting. */
+    device_clock_init(settings_read ? boot_settings.ntp_server : NULL,
+                      settings_read ? boot_settings.timezone : NULL);
     /* Each of these belongs to a part or a feature board_options.h can leave
      * out, so each is asked for only when this build has it. A plain `if` on
      * a constant rather than #if: the call still has to compile, which is what

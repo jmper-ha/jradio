@@ -170,6 +170,25 @@ through the list as before.
 The language switch still only changes the labels on the settings screen
 itself.
 
+### Time
+
+In the web interface only, as the "Время" group: a time zone from a list and
+the address of a time server. The device has no battery-backed clock, so after
+a power cut it knows nothing about the time until there is a network and a
+server answers - usually a couple of seconds after Wi-Fi comes up.
+
+The zone applies at once and the clock on the panel moves on the next second.
+The list is Russia's zones plus a few others; a list rather than a text field
+because what the C library wants is a rule like `MSK-3` or
+`CET-1CEST,M3.5.0,M10.5.0/3`, where the sign of the offset is the opposite of
+what people mean and the summer-time rule is a small language of its own. The
+list lives in the firmware and is sent to the page from there, so adding a zone
+is one line of firmware.
+
+The server defaults to `pool.ntp.org`. The field can be cleared, which puts
+that back. A server on the local network works too - it is a host name, not a
+URL with a scheme. Changing it restarts the polling straight away; no reboot.
+
 ### About
 
 The last item in the list. It opens a page naming the firmware version and the

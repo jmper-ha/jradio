@@ -65,6 +65,7 @@ const ids = [
   'device-dlna', 'device-dlna-row',
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal',
+  'device-timezone', 'device-ntp',
   'backup-status', 'backup-file', 'backup-restore',
 ];
 const elements = Object.fromEntries(ids.map((id) => [`#${id}`, new Element()]));
@@ -114,6 +115,11 @@ let settingsReply = {
   brightness: 45, volume: 62,
   available: {home_screen: true, yandex_music: false, dlna: true},
   brightness_min: 10, brightness_max: 90,
+  timezone: 'asia/yekaterinburg', ntp_server: 'ntp.example.lan',
+  timezones: [
+    {id: 'europe/moscow', label: 'Москва (UTC+3)'},
+    {id: 'asia/yekaterinburg', label: 'Екатеринбург (UTC+5)'},
+  ],
 };
 let settingsPostFails = false;
 // GET /api/about. The versions differ on purpose: a page that ignored the
@@ -789,6 +795,45 @@ function lastYandexTimer() {
   await reload();
   assert.equal(elements['#about-web'].textContent, 'неизвестно');
   assert.equal(elements['#about-notice'].hidden, true);
+
+  /* The clock. The zone menu is built from what the device sent, not from the
+     markup: the list lives in the firmware, and a page carrying its own copy
+     would offer a zone the device cannot translate the day one is added. */
+  assert.equal(elements['#device-timezone'].children.length, 2);
+  assert.equal(elements['#device-timezone'].children[0].value, 'europe/moscow');
+  assert.equal(elements['#device-timezone'].children[1].textContent, 'Екатеринбург (UTC+5)');
+  assert.equal(elements['#device-timezone'].value, 'asia/yekaterinburg');
+  assert.equal(elements['#device-ntp'].value, 'ntp.example.lan');
+
+  elements['#device-timezone'].value = 'europe/moscow';
+  elements['#device-timezone'].emit('change');
+  await settle();
+  assert.deepEqual(JSON.parse(fetchCalls.at(-1).options.body),
+                   {field: 'timezone', value: 'europe/moscow'});
+
+  /* Typing is not saving: a write per keystroke would put a dozen half-typed
+     host names on the card, each one a flash erase. */
+  const beforeTyping = fetchCalls.length;
+  elements['#device-ntp'].value = 'ntp.example.l';
+  elements['#device-ntp'].emit('input');
+  await settle();
+  assert.equal(fetchCalls.length, beforeTyping);
+
+  /* And the field being typed into is not overwritten by an answer arriving
+     underneath it. */
+  sendEvent(first, {
+    type: 'settings.update', revision: 20,
+    settings: Object.assign({}, settingsReply, {volume: 71}),
+  });
+  assert.equal(elements['#device-ntp'].value, 'ntp.example.l');
+
+  elements['#device-ntp'].value = '  time.cloudflare.com  ';
+  elements['#device-ntp'].emit('change');
+  await settle();
+  // Trimmed on the way out: a host name with a space at either end resolves
+  // to nothing, and the space is a typo rather than a choice.
+  assert.deepEqual(JSON.parse(fetchCalls.at(-1).options.body),
+                   {field: 'ntp_server', value: 'time.cloudflare.com'});
 
   /* Backup and restore. Nothing is chosen yet, so there is nothing to send -
      a Restore button that is live before a file is picked is a click that

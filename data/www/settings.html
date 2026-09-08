@@ -115,6 +115,20 @@
             </div>
 
             <div class="device-group">
+              <h3>Время</h3>
+              <div class="device-row">
+                <label for="device-timezone">Часовой пояс</label>
+                <select id="device-timezone" data-field="timezone"></select>
+              </div>
+              <div class="device-row">
+                <label for="device-ntp">Сервер времени</label>
+                <input id="device-ntp" type="text" inputmode="url" spellcheck="false"
+                       autocapitalize="off" autocomplete="off" maxlength="63"
+                       placeholder="pool.ntp.org" data-field="ntp_server">
+              </div>
+            </div>
+
+            <div class="device-group">
               <h3>Экран</h3>
               <div class="device-row">
                 <label for="device-brightness">Яркость</label>
@@ -136,6 +150,8 @@
 
           <p class="field-note">Записывается в settings.csv устройства и применяется сразу —
             экран и кнопки на корпусе показывают то же самое.</p>
+          <p class="field-note">Часов у устройства нет: время оно спрашивает у сервера, когда
+            появляется сеть. Поле сервера можно очистить — вернётся pool.ntp.org.</p>
         </section>
 
         <section class="card" aria-labelledby="backup-title">

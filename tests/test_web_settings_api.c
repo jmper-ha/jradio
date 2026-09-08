@@ -124,15 +124,15 @@ static void test_apply_writes_through_to_the_file(void)
     device_settings_t settings;
     assert(device_settings_init_at(&settings, test_path));
 
-    const web_settings_change_t brightness = {WEB_SETTINGS_FIELD_BRIGHTNESS, 35};
+    const web_settings_change_t brightness = {WEB_SETTINGS_FIELD_BRIGHTNESS, 35, ""};
     assert(web_settings_apply(&settings, &brightness));
     assert(settings.brightness == 35);
 
-    const web_settings_change_t scroll = {WEB_SETTINGS_FIELD_SCROLL, DEVICE_SCROLL_LEFT};
+    const web_settings_change_t scroll = {WEB_SETTINGS_FIELD_SCROLL, DEVICE_SCROLL_LEFT, ""};
     assert(web_settings_apply(&settings, &scroll));
 
     const web_settings_change_t buffer = {WEB_SETTINGS_FIELD_BUFFER_VIEW,
-                                          DEVICE_BUFFER_VIEW_GRAPH};
+                                          DEVICE_BUFFER_VIEW_GRAPH, ""};
     assert(web_settings_apply(&settings, &buffer));
 
     /* Read back through a second copy, the way the device's UI task does after
@@ -160,8 +160,11 @@ static void test_document_names_what_the_build_has(void)
 
     web_settings_view_t view;
     web_settings_make_view(&view, &settings, true, false, false);
-    char document[512];
-    size_t length = web_settings_serialize(document, sizeof(document), &view);
+    /* Room for the zone list as well: the document carries every zone the
+       firmware knows, which the page builds its menu from. */
+    char document[2048];
+    size_t length = web_settings_serialize(document, sizeof(document), &view,
+                                           settings.ntp_server);
     assert(length > 0U && length == strlen(document));
     assert(strstr(document, "\"language\":\"en\"") != NULL);
     assert(strstr(document, "\"home_screen\":\"text\"") != NULL);
@@ -178,9 +181,17 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"brightness_min\":10") != NULL);
     assert(strstr(document, "\"brightness_max\":90") != NULL);
 
+    /* The clock: the zone as an id and the server as it stands, plus the list
+       to choose from - which is sent rather than written into the page, so
+       that adding a zone is one line of firmware. */
+    assert(strstr(document, "\"timezone\":\"europe/moscow\"") != NULL);
+    assert(strstr(document, "\"ntp_server\":\"pool.ntp.org\"") != NULL);
+    assert(strstr(document, "\"timezones\":[{\"id\":") != NULL);
+    assert(strstr(document, "\"id\":\"europe/moscow\",\"label\":\"Москва (UTC+3)\"") != NULL);
+
     // Truncation is never handed back as a short document.
     char tight[32];
-    assert(web_settings_serialize(tight, sizeof(tight), &view) == 0U);
+    assert(web_settings_serialize(tight, sizeof(tight), &view, settings.ntp_server) == 0U);
     assert(tight[0] == '\0');
 }
 

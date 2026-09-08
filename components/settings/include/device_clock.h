@@ -12,7 +12,16 @@
  * Starting it is safe before Wi-Fi is up: SNTP retries on its own, and the
  * clock simply stays unset until the first reply arrives. */
 
-void device_clock_init(void);
+/* `server` is a host name for SNTP and `timezone_id` an id out of
+ * device_timezone.h; either may be NULL or unknown, which leaves the built-in
+ * defaults standing. */
+void device_clock_init(const char *server, const char *timezone_id);
+
+/* The same two, changed while the device runs - the web interface is the only
+ * place they can be set. The zone takes effect on the next reading of the
+ * clock; a new server costs SNTP a restart, so it is only restarted when the
+ * name actually changed. */
+void device_clock_apply(const char *server, const char *timezone_id);
 
 /* Local hour and minute. False until the first synchronisation, and it stays
  * true afterwards even if the network goes away - the oscillator keeps

@@ -254,6 +254,15 @@ web_server_yandex_action_t web_server_parse_yandex_action(const char *request)
 // count/syscalls ~8x versus the previous 512-byte on-stack buffers.
 #define WEB_SERVER_FILE_CHUNK_SIZE 4096
 static char s_file_chunk_buffer[WEB_SERVER_FILE_CHUNK_SIZE];
+/* The settings document, off the HTTP worker's stack.
+ *
+ * esp_http_server runs a single worker, so the handlers below cannot overlap
+ * and one buffer serves them all - the same reason s_file_chunk_buffer is
+ * shared. It is here because it stopped fitting: a POST reads the settings,
+ * writes one field and then answers with the document, which read them again,
+ * and two of these on a 6 KB stack is what a StoreProhibited in
+ * vTaskSwitchContext looks like from the outside. */
+static device_settings_t s_settings_scratch;
 
 static bool web_server_client_accepts_gzip(httpd_req_t *request)
 {
@@ -1248,20 +1257,19 @@ static esp_err_t web_server_settings_api_get(httpd_req_t *request)
      * the file. Brightness and volume settle a second or two after the knob
      * stops, so a page opened mid-turn can show the value from just before it
      * - which is the same lag the on-device screen has. */
-    device_settings_t settings;
-    if (!device_settings_init(&settings)) {
+    if (!device_settings_init(&s_settings_scratch)) {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
                             "Settings unavailable");
         return ESP_FAIL;
     }
     web_settings_view_t view;
-    web_settings_make_view(&view, &settings,
-                           web_server_home_screen_available(settings.yandex_music,
-                                                            settings.dlna),
+    web_settings_make_view(&view, &s_settings_scratch,
+                           web_server_home_screen_available(s_settings_scratch.yandex_music,
+                                                            s_settings_scratch.dlna),
                            web_server_yandex_available(), web_server_dlna_available());
     const size_t length = web_settings_serialize(s_file_chunk_buffer,
                                                  sizeof(s_file_chunk_buffer),
-                                                 &view);
+                                                 &view, s_settings_scratch.ntp_server);
     if (length == 0U) {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
                             "Settings too large");
@@ -1497,13 +1505,12 @@ static esp_err_t web_server_settings_api_post(httpd_req_t *request)
      * uses, so the two writers cannot disagree about the file's shape.
      * settings_csv serialises the read-modify-write, which is what makes a
      * third writer safe here. */
-    device_settings_t settings;
-    if (!device_settings_init(&settings)) {
+    if (!device_settings_init(&s_settings_scratch)) {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
                             "Settings unavailable");
         return ESP_FAIL;
     }
-    if (!web_settings_apply(&settings, &change)) {
+    if (!web_settings_apply(&s_settings_scratch, &change)) {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
                             "Failed to save settings");
         return ESP_FAIL;

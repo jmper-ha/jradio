@@ -173,7 +173,10 @@ run_test radio_stream_format tests/test_radio_stream_format.c \
 # to trust and nothing device-specific to mock.
 run_test config_archive tests/test_config_archive.c components/settings/config_archive.c
 run_test settings_csv tests/test_settings_csv.c components/settings/settings_csv.c
-run_test device_settings tests/test_device_settings.c components/settings/device_settings.c \
+# The zone table: what a POSIX TZ rule may hold, and what an id may not - the
+# id goes into settings.csv, whose separator is the comma every DST rule has.
+run_test device_timezone tests/test_device_timezone.c components/settings/device_timezone.c
+run_test device_settings tests/test_device_settings.c components/settings/device_settings.c components/settings/device_timezone.c \
     components/settings/settings_csv.c
 run_test station_catalog tests/test_station_catalog.c components/internet_radio/station_catalog.c
 run_test station_resume tests/test_station_resume.c components/internet_radio/station_resume.c \
@@ -181,7 +184,7 @@ run_test station_resume tests/test_station_resume.c components/internet_radio/st
 run_test system_health tests/test_system_health.c components/diagnostics/system_health.c
 run_test ui_autoplay tests/test_ui_autoplay.c components/ui/ui_autoplay.c \
     components/file_storage/file_browser.c components/file_storage/playlist_file.c \
-    components/settings/device_settings.c components/settings/settings_csv.c
+    components/settings/device_settings.c components/settings/device_timezone.c components/settings/settings_csv.c
 run_test ui_click_gesture tests/test_ui_click_gesture.c components/ui/ui_click_gesture.c
 run_test ui_deferred_start tests/test_ui_deferred_start.c components/ui/ui_deferred_start.c
 run_test ui_draw_buffer tests/test_ui_draw_buffer.c components/ui/ui_draw_buffer.c
@@ -218,7 +221,7 @@ run_test web_server -I"${cjson_include}" tests/test_web_server.c \
     components/web_server/web_server.c components/web_server/web_socket.c \
     components/web_server/web_view_model.c components/web_server/web_json.c \
     components/ui/ui_now_playing.c \
-    components/web_server/web_settings.c components/settings/device_settings.c \
+    components/web_server/web_settings.c components/settings/device_settings.c components/settings/device_timezone.c \
     components/settings/settings_csv.c components/settings/wifi_settings.c \
     components/file_storage/file_browser.c components/file_storage/playlist_file.c \
     "${cjson_source}"
@@ -229,7 +232,7 @@ run_test web_view_model tests/test_web_view_model.c \
     components/web_server/web_view_model.c
 run_test web_settings_api -I"${cjson_include}" tests/test_web_settings_api.c \
     components/web_server/web_settings.c components/web_server/web_json.c \
-    components/settings/device_settings.c components/settings/settings_csv.c \
+    components/settings/device_settings.c components/settings/device_timezone.c components/settings/settings_csv.c \
     "${cjson_source}"
 run_test web_cover tests/test_web_cover.c components/web_server/web_cover.c
 run_test yandex_catalog tests/test_yandex_catalog.c \

@@ -364,6 +364,56 @@ static void test_the_media_server_resume_point_persists(void)
     assert(strcmp(reloaded.last_dlna_title, "Cowboy Bebop  OST") == 0);
 }
 
+static void test_the_clock_settings_persist_and_are_checked(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    /* What the device had before either was a setting, so a card that has
+     * never seen this page still keeps Moscow time off pool.ntp.org. */
+    assert(strcmp(settings.timezone, "europe/moscow") == 0);
+    assert(strcmp(settings.ntp_server, "pool.ntp.org") == 0);
+
+    assert(device_settings_set_timezone(&settings, "asia/yekaterinburg"));
+    assert(device_settings_set_ntp_server(&settings, "ntp.example.lan"));
+
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(strcmp(reloaded.timezone, "asia/yekaterinburg") == 0);
+    assert(strcmp(reloaded.ntp_server, "ntp.example.lan") == 0);
+
+    /* A zone this build does not have is refused rather than stored: a zone
+     * the firmware cannot translate is a clock that silently stays on the old
+     * one, hours out with nothing on screen to say why. */
+    assert(!device_settings_set_timezone(&settings, "mars/olympus"));
+    assert(!device_settings_set_timezone(&settings, ""));
+    assert(!device_settings_set_timezone(&settings, NULL));
+    assert(strcmp(settings.timezone, "asia/yekaterinburg") == 0);
+
+    /* An empty field on the page means "whatever the device came with": a
+     * device with no time server at all is worse than one on the pool. */
+    assert(device_settings_set_ntp_server(&settings, ""));
+    assert(strcmp(settings.ntp_server, "pool.ntp.org") == 0);
+
+    /* A comma would cut the settings.csv line in two, and a space is not part
+     * of any host name. */
+    assert(!device_settings_set_ntp_server(&settings, "ntp.example.lan,evil"));
+    assert(!device_settings_set_ntp_server(&settings, "ntp example lan"));
+    assert(strcmp(settings.ntp_server, "pool.ntp.org") == 0);
+
+    char oversized[DEVICE_NTP_SERVER_MAX + 4];
+    memset(oversized, 'a', sizeof(oversized) - 1U);
+    oversized[sizeof(oversized) - 1U] = '\0';
+    assert(!device_settings_set_ntp_server(&settings, oversized));
+
+    /* A file naming a zone this build has never heard of - an older card, or a
+     * newer page - leaves the default standing rather than an empty string,
+     * which would read as UTC. */
+    assert(settings_csv_set(test_path, "timezone", "mars/olympus"));
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(strcmp(reloaded.timezone, "europe/moscow") == 0);
+}
+
 int main(void)
 {
     test_defaults_and_load();
@@ -378,6 +428,7 @@ int main(void)
     test_scroll_mode_persists();
     test_the_yandex_resume_point_persists();
     test_the_media_server_resume_point_persists();
+    test_the_clock_settings_persist_and_are_checked();
     test_brightness_persists_and_refuses_a_dark_panel();
     test_a_corrupt_brightness_leaves_the_default();
     puts("device_settings tests passed");

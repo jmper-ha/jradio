@@ -1,6 +1,7 @@
 #include "device_settings.h"
 
 #include "settings_csv.h"
+#include "device_timezone.h"
 
 #ifdef ESP_PLATFORM
 #include "freertos/FreeRTOS.h"
@@ -79,6 +80,10 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         .dlna = true,
     };
     memcpy(settings->storage_path, path, strlen(path) + 1U);
+    memcpy(settings->timezone, DEVICE_TIMEZONE_DEFAULT_ID,
+           sizeof(DEVICE_TIMEZONE_DEFAULT_ID));
+    memcpy(settings->ntp_server, DEVICE_NTP_SERVER_DEFAULT,
+           sizeof(DEVICE_NTP_SERVER_DEFAULT));
 
     char value[32];
     if (read_value(path, "language", value, sizeof(value))) {
@@ -96,6 +101,18 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     if (read_value(path, "buffer_view", value, sizeof(value))) {
         if (strcmp(value, "graph") == 0) settings->buffer_view = DEVICE_BUFFER_VIEW_GRAPH;
         else if (strcmp(value, "text") != 0) settings->buffer_view = DEVICE_BUFFER_VIEW_TEXT;
+    }
+    /* A zone this build does not have leaves the default standing rather than
+     * an empty string: an unset TZ is UTC, and a clock three hours out with no
+     * explanation is worse than one that ignored a line in a file. */
+    char zone[DEVICE_TIMEZONE_ID_MAX];
+    if (settings_csv_get(path, "timezone", zone, sizeof(zone)) &&
+        device_timezone_find(zone) != NULL) {
+        memcpy(settings->timezone, zone, strlen(zone) + 1U);
+    }
+    char server[DEVICE_NTP_SERVER_MAX];
+    if (settings_csv_get(path, "ntp_server", server, sizeof(server)) && server[0] != '\0') {
+        memcpy(settings->ntp_server, server, strlen(server) + 1U);
     }
     if (read_value(path, "display_flip_vertical", value, sizeof(value))) {
         (void)parse_bool(value, &settings->flip_vertical);
@@ -289,6 +306,36 @@ bool device_settings_set_brightness(device_settings_t *settings, unsigned char b
     snprintf(text, sizeof(text), "%u", (unsigned int)brightness);
     if (!save_value(settings, "brightness", text)) return false;
     settings->brightness = brightness;
+    return true;
+}
+
+bool device_settings_set_timezone(device_settings_t *settings, const char *id)
+{
+    if (settings == NULL || device_timezone_find(id) == NULL) return false;
+    if (strcmp(settings->timezone, id) == 0) return true;
+    if (!save_value(settings, "timezone", id)) return false;
+    memcpy(settings->timezone, id, strlen(id) + 1U);
+    return true;
+}
+
+bool device_settings_set_ntp_server(device_settings_t *settings, const char *host)
+{
+    if (settings == NULL) return false;
+    /* An empty field on the page means "whatever the device came with", not
+     * "no time server": the clock is the one setting with no way to say it is
+     * wrong from the device itself. */
+    const char *value = host == NULL || host[0] == '\0' ? DEVICE_NTP_SERVER_DEFAULT : host;
+    if (strlen(value) >= sizeof(settings->ntp_server)) return false;
+    for (const char *cursor = value; *cursor != '\0'; ++cursor) {
+        const unsigned char character = (unsigned char)*cursor;
+        /* Printable ASCII without a space or a comma. A space is not part of
+         * any host name and would only be a typo; a comma would cut the
+         * settings.csv line in two. */
+        if (character <= ' ' || character >= 0x7FU || character == ',') return false;
+    }
+    if (strcmp(settings->ntp_server, value) == 0) return true;
+    if (!save_value(settings, "ntp_server", value)) return false;
+    memcpy(settings->ntp_server, value, strlen(value) + 1U);
     return true;
 }
 

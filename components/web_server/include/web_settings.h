@@ -38,7 +38,13 @@ typedef enum {
     WEB_SETTINGS_FIELD_FLIP_HORIZONTAL,
     WEB_SETTINGS_FIELD_BRIGHTNESS,
     WEB_SETTINGS_FIELD_VOLUME,
+    WEB_SETTINGS_FIELD_TIMEZONE,
+    WEB_SETTINGS_FIELD_NTP_SERVER,
 } web_settings_field_t;
+
+/* Room for the longest text a request may carry - a host name - with a byte to
+ * notice one that is longer rather than storing half of it. */
+#define WEB_SETTINGS_TEXT_MAX DEVICE_NTP_SERVER_MAX
 
 typedef struct {
     web_settings_field_t field;
@@ -46,6 +52,11 @@ typedef struct {
      * the two numbers. Validated at parse time, so an applier never has to
      * range-check again. */
     int value;
+    /* The two text fields - the zone id and the time server - and empty for
+     * every other. Text rather than another ordinal because neither is a
+     * closed set the page and the device could agree on by position: the zone
+     * list grows in the firmware, and a host name is whatever the user has. */
+    char text[WEB_SETTINGS_TEXT_MAX];
 } web_settings_change_t;
 
 /* One field per request, the way one press changes one row on the device.
@@ -81,6 +92,11 @@ typedef struct {
     bool dlna;
     bool flip_vertical;
     bool flip_horizontal;
+    /* The zone as its row in device_timezone.h rather than its id: this view
+     * is kept per queued WebSocket frame and compared on every pass, and a
+     * string here would cost every frame the whole id. Past the end means the
+     * card names a zone this build does not have. */
+    uint8_t timezone;
     bool home_screen_available;
     bool yandex_available;
     bool dlna_available;
@@ -99,8 +115,13 @@ bool web_settings_view_equal(const web_settings_view_t *left,
 void web_settings_write(web_json_writer_t *writer,
                         const web_settings_view_t *view);
 
-/* The same object as a standalone document. Returns the length written, or 0
- * when the buffer was too small - in which case nothing usable is left in
- * it. */
+/* The same object as a standalone document, plus the two things that are not
+ * worth a place in the live diff: the time server, which changes once in a
+ * device's life, and the list of zones to choose from, which does not change
+ * at all. The list is sent rather than written into the page so that adding a
+ * zone is one line of firmware and the two cannot describe different sets.
+ *
+ * Returns the length written, or 0 when the buffer was too small - in which
+ * case nothing usable is left in it. */
 size_t web_settings_serialize(char *output, size_t output_size,
-                              const web_settings_view_t *view);
+                              const web_settings_view_t *view, const char *ntp_server);

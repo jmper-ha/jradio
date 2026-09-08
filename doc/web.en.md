@@ -11,7 +11,7 @@
 | `GET /api/dlna` | Contents of the container open on the media server; `searching` means it is still being looked for |
 | `GET /api/about` | The firmware and web versions, ESP-IDF, the author's address |
 | `GET /api/settings` | The device settings, the same ones its own screen has |
-| `POST /api/settings` | Changes one setting: `{"field":…,"value":…}` |
+| `POST /api/settings` | Changes one setting: `{"field":…,"value":…}`, `timezone` and `ntp_server` included |
 | `GET /api/backup` | The device configuration as one zip: `wifi.json`, `settings.csv`, `yandex.json` |
 | `POST /api/restore` | Restores it: the whole archive or a single file, named by `?name=` |
 | `GET /api/progress` | Track position, buffer fill, cover signature |
@@ -34,6 +34,14 @@ WebSocket commands: `player.play`, `player.pause`, `player.toggle`,
 state arrives as diffs - `player`, `list`, `wifi`, `settings`; anything large -
 the playlist, media directories - goes over REST, because it does not fit in a
 frame and must not spend internal SRAM.
+
+`GET /api/settings` carries two things the live socket updates do not: the name
+of the time server (`ntp_server`) and the list of time zones to choose from
+(`timezones`, each an `id` and a label). The list lives in the firmware and
+reaches the page from there, so there are not two copies to drift apart; the
+server name is typed once in a device's life and is not worth comparing on
+every broadcast pass. The zone itself (`timezone`) is in the diff - it is one
+byte.
 
 The player's three lines - what is being listened to, the performer, the track -
 come to the page and to the screen from one function

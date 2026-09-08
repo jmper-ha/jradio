@@ -40,6 +40,7 @@
   const yandexStations = document.querySelector('#yandex-stations');
   const yandexStationsEmpty = document.querySelector('#yandex-stations-empty');
   const deviceStatus = document.querySelector('#device-status');
+  const deviceTimezone = document.querySelector('#device-timezone');
   const backupStatus = document.querySelector('#backup-status');
   const backupFile = document.querySelector('#backup-file');
   const backupRestore = document.querySelector('#backup-restore');
@@ -61,6 +62,8 @@
      row: document.querySelector('#device-yandex-row'), gate: 'yandex_music'},
     {field: 'dlna', kind: 'switch', node: document.querySelector('#device-dlna'),
      row: document.querySelector('#device-dlna-row'), gate: 'dlna'},
+    {field: 'timezone', kind: 'choice', node: deviceTimezone},
+    {field: 'ntp_server', kind: 'text', node: document.querySelector('#device-ntp')},
     {field: 'brightness', kind: 'number', node: deviceBrightness,
      output: document.querySelector('#device-brightness-value')},
     {field: 'flip_vertical', kind: 'switch', node: document.querySelector('#device-flip-vertical')},
@@ -621,9 +624,28 @@
     for (const entry of deviceFields) entry.node.disabled = disabled;
   }
 
+  /* The zones come from the device rather than sitting in the markup: the list
+     lives in the firmware, and a page carrying its own copy would offer a zone
+     the device cannot translate the day one is added. Only the REST document
+     carries it - a live update leaves the options alone. */
+  function fillTimezones(zones) {
+    if (!Array.isArray(zones) || zones.length === 0) return;
+    const ids = zones.map((zone) => zone && zone.id).join('\n');
+    if (deviceTimezone.dataset.zones === ids) return;
+    deviceTimezone.dataset.zones = ids;
+    deviceTimezone.replaceChildren(...zones.map((zone) => {
+      const option = document.createElement('option');
+      option.value = String(zone.id);
+      option.textContent = String(zone.label === undefined ? zone.id : zone.label);
+      return option;
+    }));
+  }
+
   function applyDeviceSettings(payload) {
     if (!isObject(payload)) return false;
     const available = isObject(payload.available) ? payload.available : {};
+    // Before the values below, or the zone would be set on an empty list.
+    fillTimezones(payload.timezones);
     if (Number.isSafeInteger(payload.brightness_min) &&
         Number.isSafeInteger(payload.brightness_max)) {
       // The panel is unreadable below about ten and zero looks like a dead
@@ -636,6 +658,14 @@
       const value = payload[entry.field];
       if (entry.kind === 'choice') {
         if (typeof value === 'string') entry.node.value = value;
+      } else if (entry.kind === 'text') {
+        /* Left alone while it is being typed in, and left alone when the
+           answer does not carry it at all - a live update over the socket
+           never does, because a time server changes once in a device's
+           life. */
+        if (typeof value === 'string' && deviceHeld !== entry.field) {
+          entry.node.value = value;
+        }
       } else if (entry.kind === 'switch') {
         if (typeof value === 'boolean') entry.node.checked = value;
       } else if (Number.isSafeInteger(value)) {
@@ -715,6 +745,18 @@
         entry.node.addEventListener('change', () => {
           deviceHeld = '';
           sendDeviceChange(entry.field, Number(entry.node.value));
+        });
+        continue;
+      }
+      if (entry.kind === 'text') {
+        /* Typing is not saving: the write goes out when the field is left or
+           Enter is pressed, which is what `change` means for a text input. A
+           per-keystroke write would put a dozen half-typed host names on the
+           card, each one a flash erase. */
+        entry.node.addEventListener('input', () => { deviceHeld = entry.field; });
+        entry.node.addEventListener('change', () => {
+          deviceHeld = '';
+          sendDeviceChange(entry.field, String(entry.node.value).trim());
         });
         continue;
       }

@@ -11,4 +11,7 @@ idf_component_register(SRCS "dlna_xml.c" "dlna_url.c" "dlna_ssdp.c" "dlna_device
                        # with a MIME type, and which decoder that means is a
                        # question internet_radio already answers.
                        REQUIRES internet_radio audio_tags
-                       PRIV_REQUIRES esp_http_client esp_timer lwip)
+                       # settings: a resume point is written to settings.csv,
+                       # which sizes its own fields - the two are checked
+                       # against each other in dlna_source.c.
+                       PRIV_REQUIRES esp_http_client esp_timer lwip settings)

@@ -271,6 +271,36 @@ static void test_a_server_with_nothing_to_browse_is_refused(void)
     assert(!dlna_device_parse_description(k_description, strlen(k_description), NULL, &ignored));
 }
 
+static void test_the_uuid_is_taken_out_of_a_usn(void)
+{
+    /* A USN is one server announcing one device type. The type is the same on
+     * every media server, so a resume point keeps only the half that says
+     * *which* server. */
+    char udn[DLNA_SSDP_UDN_MAX];
+    assert(dlna_ssdp_udn("uuid:4d696e69-444c-164e-9d41-3c7c3f1b2d55::"
+                         "urn:schemas-upnp-org:device:MediaServer:1",
+                         udn, sizeof(udn)));
+    assert(strcmp(udn, "uuid:4d696e69-444c-164e-9d41-3c7c3f1b2d55") == 0);
+
+    // A bare uuid, which is how a server announces the device itself.
+    assert(dlna_ssdp_udn("uuid:a91a1edd-868d-8743-34d7-7ead6bfee64c", udn, sizeof(udn)));
+    assert(strcmp(udn, "uuid:a91a1edd-868d-8743-34d7-7ead6bfee64c") == 0);
+
+    /* A USN that names a device type and no uuid names a *kind* of server.
+     * Written down as a resume point it would come back pointing at whichever
+     * server of that kind answered first. */
+    assert(!dlna_ssdp_udn("urn:schemas-upnp-org:device:MediaServer:1", udn, sizeof(udn)));
+    assert(udn[0] == '\0');
+    assert(!dlna_ssdp_udn("uuid:", udn, sizeof(udn)));
+    assert(!dlna_ssdp_udn("", udn, sizeof(udn)));
+    assert(!dlna_ssdp_udn(NULL, udn, sizeof(udn)));
+
+    // Refused rather than cut: half a uuid is another server's, or nobody's.
+    char small[8];
+    assert(!dlna_ssdp_udn("uuid:4d696e69-444c-164e-9d41-3c7c3f1b2d55", small, sizeof(small)));
+    assert(small[0] == '\0');
+}
+
 int main(void)
 {
     test_the_search_is_the_one_that_got_answers();
@@ -282,6 +312,7 @@ int main(void)
     test_a_later_content_directory_version_is_still_usable();
     test_a_url_base_overrides_where_it_was_fetched_from();
     test_a_server_with_nothing_to_browse_is_refused();
+    test_the_uuid_is_taken_out_of_a_usn();
     puts("dlna_discovery tests passed");
     return 0;
 }

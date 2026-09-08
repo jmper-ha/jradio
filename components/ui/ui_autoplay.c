@@ -8,6 +8,7 @@ audio_source_t ui_autoplay_source(const device_settings_t *settings)
     switch (settings->last_source) {
     case DEVICE_LAST_SOURCE_INTERNET_RADIO: return AUDIO_SOURCE_INTERNET_RADIO;
     case DEVICE_LAST_SOURCE_YANDEX: return AUDIO_SOURCE_YANDEX;
+    case DEVICE_LAST_SOURCE_DLNA: return AUDIO_SOURCE_DLNA;
     case DEVICE_LAST_SOURCE_USB:
     case DEVICE_LAST_SOURCE_SD:
         /* The path wins over the remembered source, because the two are
@@ -32,7 +33,8 @@ audio_source_t ui_autoplay_source(const device_settings_t *settings)
 ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
                                         file_browser_media_t usb_media,
                                         file_browser_media_t sd_media,
-                                        bool file_present, bool yandex_built)
+                                        bool file_present, bool yandex_built,
+                                        bool dlna_built)
 {
     if (settings == NULL || !settings->autoplay) return UI_AUTOPLAY_HOME;
 
@@ -51,6 +53,17 @@ ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
             return UI_AUTOPLAY_HOME;
         }
         return UI_AUTOPLAY_YANDEX;
+    case DEVICE_LAST_SOURCE_DLNA:
+        /* The server is searched for again at every open - nothing announces
+         * itself as having gone - so what is remembered is where on it the
+         * music was, and the container is the smallest part of that which can
+         * be resumed. With none there is nothing to come back to: a media
+         * server opens on a list of libraries, and no amount of waiting turns
+         * that into sound. */
+        if (!dlna_built || !settings->dlna || settings->last_dlna_container[0] == '\0') {
+            return UI_AUTOPLAY_HOME;
+        }
+        return UI_AUTOPLAY_DLNA;
     case DEVICE_LAST_SOURCE_USB:
     case DEVICE_LAST_SOURCE_SD: {
         // Asked of the volume that will actually be opened - see

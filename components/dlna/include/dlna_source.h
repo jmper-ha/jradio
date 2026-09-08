@@ -121,6 +121,28 @@ dlna_activate_t dlna_source_activate(size_t index);
  * listing. False when that row is not something this device can play. */
 bool dlna_source_play(size_t index);
 
+/* Where playback is right now, as three opaque strings and a heading: which
+ * server, which container, and which track inside it. False when nothing is
+ * playing - which is also what keeps a resume point from being erased by the
+ * user merely walking through the tree.
+ *
+ * Any of the outputs may be NULL. */
+bool dlna_source_playing_point(char *server, size_t server_size, char *container,
+                               size_t container_size, char *title, size_t title_size,
+                               char *track, size_t track_size);
+
+/* Where the next dlna_source_open() should land instead of the root: the point
+ * a previous run wrote down. Used once and forgotten, because it answers "what
+ * was playing when the power went out" and not "where does this source open" -
+ * every later selection of the source starts at the top of the tree, which is
+ * where somebody choosing it by hand wants to be.
+ *
+ * A server that does not answer this time, a container that no longer opens,
+ * a track that is gone: each falls back one step - to the server's root, and
+ * to the first playable row - rather than failing the open. */
+void dlna_source_set_resume(const char *server, const char *container, const char *title,
+                            const char *track);
+
 /* What "play" means on a stopped media server: the row it was last on, or -
  * when there is none, which is every browser that has not played anything yet -
  * the first playable row of the open container. False only when the container

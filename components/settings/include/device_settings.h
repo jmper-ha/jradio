@@ -35,6 +35,7 @@ typedef enum {
     DEVICE_LAST_SOURCE_USB,
     DEVICE_LAST_SOURCE_SD,
     DEVICE_LAST_SOURCE_YANDEX,
+    DEVICE_LAST_SOURCE_DLNA,
 } device_last_source_t;
 
 #define DEVICE_SETTINGS_PATH "/littlefs/config/settings.csv"
@@ -61,6 +62,31 @@ typedef enum {
  * 256-byte cap on a value, which is what makes one key possible at all. */
 #define DEVICE_LAST_YANDEX_PACKED_MAX \
     (DEVICE_LAST_YANDEX_ID_MAX + DEVICE_LAST_YANDEX_NAME_MAX + DEVICE_LAST_YANDEX_FROM_MAX + 2)
+/* Where on a media server to come back to: which server, which container, and
+ * which track inside it.
+ *
+ * The server is its UUID, not the row it sat on - servers answer a search in
+ * whatever order they happen to reply, so a row means nothing tomorrow. The
+ * container and the track are the server's own object ids, which are opaque
+ * and only ever handed back to it; they can go stale when a library is
+ * re-scanned, and the resume falls back a step at a time when they do.
+ *
+ * Sized here rather than from the dlna headers, the way the Yandex fields are:
+ * this layer stores strings and knows nothing about UPnP. The sizes are
+ * checked against those headers where the two meet - see dlna_source.c. */
+#define DEVICE_LAST_DLNA_SERVER_MAX 64
+#define DEVICE_LAST_DLNA_ID_MAX 64
+/* The three in one settings.csv value, tab-separated, under the file's own
+ * 256-byte cap on a value. */
+#define DEVICE_LAST_DLNA_PACKED_MAX \
+    (DEVICE_LAST_DLNA_SERVER_MAX + 2 * DEVICE_LAST_DLNA_ID_MAX + 2)
+/* What to write above the listing when it is opened again. Its own key rather
+ * than a fourth field, because the three above already fill most of a value
+ * and a title is 128 bytes on its own. Nothing breaks if a power cut leaves it
+ * behind the others: a heading is what the screen says, not where the music
+ * comes from. */
+#define DEVICE_LAST_DLNA_TITLE_MAX 128
+
 /* Loud enough to be obviously working, quiet enough that a fresh flash does
  * not startle anyone. */
 #define DEVICE_VOLUME_DEFAULT 80
@@ -101,6 +127,10 @@ typedef struct {
     char last_yandex_id[DEVICE_LAST_YANDEX_ID_MAX];
     char last_yandex_name[DEVICE_LAST_YANDEX_NAME_MAX];
     char last_yandex_from[DEVICE_LAST_YANDEX_FROM_MAX];
+    char last_dlna_server[DEVICE_LAST_DLNA_SERVER_MAX];
+    char last_dlna_container[DEVICE_LAST_DLNA_ID_MAX];
+    char last_dlna_track[DEVICE_LAST_DLNA_ID_MAX];
+    char last_dlna_title[DEVICE_LAST_DLNA_TITLE_MAX];
     char storage_path[DEVICE_SETTINGS_PATH_MAX];
 } device_settings_t;
 
@@ -139,6 +169,16 @@ bool device_settings_set_last_file(device_settings_t *settings, const char *path
  * fields inside the value. */
 bool device_settings_set_last_yandex(device_settings_t *settings, const char *id,
                                      const char *name, const char *from);
+/* Where on a media server playback was. The first three travel as one value
+ * for the reason the Yandex three do - they are one place, and half of one is
+ * not a place - while the title is written beside them, since it only decides
+ * what the heading says. An empty server clears the point.
+ *
+ * A comma or a tab in any of them becomes a space on the way in: the first
+ * would cut the settings.csv line in two, the second separates the fields. */
+bool device_settings_set_last_dlna(device_settings_t *settings, const char *server,
+                                   const char *container, const char *track,
+                                   const char *title);
 bool device_settings_get(const device_settings_t *settings, device_settings_t *copy);
 
 /* Says that settings.csv was written by someone other than the UI task - today

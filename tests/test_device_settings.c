@@ -312,6 +312,58 @@ static void test_the_yandex_resume_point_persists(void)
     assert(strcmp(settings.last_yandex_id, "genre:pop") == 0);
 }
 
+static void test_the_media_server_resume_point_persists(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    assert(settings.last_dlna_server[0] == '\0');
+    assert(settings.last_dlna_container[0] == '\0');
+
+    assert(device_settings_set_last_source(&settings, DEVICE_LAST_SOURCE_DLNA));
+    assert(device_settings_set_last_dlna(&settings, "uuid:4d696e69-444c-164e-9d41-b827eb2f9c1f",
+                                         "94502", "94510", "Blue Train"));
+
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.last_source == DEVICE_LAST_SOURCE_DLNA);
+    assert(strcmp(reloaded.last_dlna_server, "uuid:4d696e69-444c-164e-9d41-b827eb2f9c1f") == 0);
+    assert(strcmp(reloaded.last_dlna_container, "94502") == 0);
+    assert(strcmp(reloaded.last_dlna_track, "94510") == 0);
+    assert(strcmp(reloaded.last_dlna_title, "Blue Train") == 0);
+
+    /* Written as each track starts, over and over: the same place again must
+     * not cost the flash a write. */
+    assert(device_settings_set_last_dlna(&settings, "uuid:4d696e69-444c-164e-9d41-b827eb2f9c1f",
+                                         "94502", "94510", "Blue Train"));
+
+    /* A container title is the library's own text, and settings.csv splits a
+     * line on its first comma: the title survives with the comma turned into a
+     * space rather than taking the resume point down with it. */
+    assert(device_settings_set_last_dlna(&settings, "uuid:4d696e69-444c-164e-9d41-b827eb2f9c1f",
+                                         "94502", "94511", "Cowboy Bebop, OST"));
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(strcmp(reloaded.last_dlna_track, "94511") == 0);
+    assert(strcmp(reloaded.last_dlna_title, "Cowboy Bebop  OST") == 0);
+
+    /* Object ids are opaque and a server may choose long ones - refused rather
+     * than truncated, because half of one names nothing the server has. */
+    char oversized[DEVICE_LAST_DLNA_ID_MAX + 8];
+    memset(oversized, 'x', sizeof(oversized) - 1U);
+    oversized[sizeof(oversized) - 1U] = '\0';
+    assert(!device_settings_set_last_dlna(&settings, "uuid:1", oversized, "1", ""));
+    assert(strcmp(settings.last_dlna_container, "94502") == 0);
+
+    /* An empty heading leaves the previous one alone rather than failing the
+     * write: settings.csv cannot hold an empty value, and a heading is what
+     * the screen says, not where the music comes from. */
+    assert(device_settings_set_last_dlna(&settings, "uuid:4d696e69-444c-164e-9d41-b827eb2f9c1f",
+                                         "94503", "94520", ""));
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(strcmp(reloaded.last_dlna_container, "94503") == 0);
+    assert(strcmp(reloaded.last_dlna_title, "Cowboy Bebop  OST") == 0);
+}
+
 int main(void)
 {
     test_defaults_and_load();
@@ -325,6 +377,7 @@ int main(void)
     test_the_published_switches_are_readable_on_their_own();
     test_scroll_mode_persists();
     test_the_yandex_resume_point_persists();
+    test_the_media_server_resume_point_persists();
     test_brightness_persists_and_refuses_a_dark_panel();
     test_a_corrupt_brightness_leaves_the_default();
     puts("device_settings tests passed");

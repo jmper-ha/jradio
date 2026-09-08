@@ -97,8 +97,40 @@ the web interface filters what is already on screen.
 **No seeking inside a track.** The server allows it, but the device plays the
 stream from start to end, the way it plays radio.
 
-**The place in the tree is not remembered.** Leaving the source starts the next
-visit at the top level again, and autoplay cannot resume from a media server.
+**The place in the tree is not remembered - except by autoplay.** Choosing the
+source by hand starts the next visit at the top level again. Autoplay does come
+back to where playback stopped; see below.
 
 **Plain HTTP only.** A media server on a home network does not encrypt, and the
 device does not expect it to.
+
+## Autoplay
+
+With autoplay on, the device remembers what was playing from the media server
+and comes back to it at the next power-on: it searches for the server, opens
+the same container and starts the same track. First sound is about four and a
+half seconds after power, of which one second is Wi-Fi and another is the
+search.
+
+Three things are remembered: the server's UUID, the container's object id and
+the track's - all in `settings.csv` under `last_dlna`, with the container's
+title beside it under `last_dlna_title`. Not the row in the listing: a listing
+is fetched fresh on every open and a server is free to renumber its rows, so
+yesterday's seventh row is a different album today. And not the server's
+address, which comes from DHCP, where the UUID is what the server announces
+about itself.
+
+Object ids are opaque and a re-scanned library can drop them, so every failure
+falls back one step instead of failing the whole start:
+
+- the server did not answer the search: the source opens as usual, at the top;
+- the container no longer opens (UPnP 701): the server's root does;
+- the track is gone: the first playable row of that container plays.
+
+If there is nothing to play after all that, the screen goes to the browser a
+second and a half later - which says either "медиасервер не найден в сети" or
+shows a tree to choose from. A silent player screen would say neither.
+
+Going up from a resumed container lands at the server's root: the levels in
+between are not restored, because each would cost a request and the way down is
+known only to the server.

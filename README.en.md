@@ -37,7 +37,7 @@ the home screen. Details in [Hardware](doc/hardware.en.md).
 | **Web interface** | works | Player, device settings, station list editor, file browser, Wi-Fi - [more](doc/web.en.md) |
 | **Clock** | works | Time from the internet, on every screen |
 | **Volume** | works | The knob, the web player and Settings; remembered |
-| **Autoplay** | works | Starts whatever was playing when the device was switched off |
+| **Autoplay** | works | Starts whatever was playing when the device was switched off: a station, a track off a drive, a Yandex station or a container on a media server |
 | **Cover art** | works | From the file's tag, from `cover.jpg` beside the music, from Yandex |
 | **Interface language** | partly | The switch exists but relabels the settings screen only |
 | **Yandex categories** | not done | Only the account's own stations; there is no catalogue of genres and moods |

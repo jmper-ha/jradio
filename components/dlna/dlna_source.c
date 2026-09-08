@@ -14,6 +14,8 @@
 #include "dlna_client.h"
 #include "dlna_root_filter.h"
 #include "dlna_soap.h"
+#include "dlna_ssdp.h"
+#include "device_settings.h"
 #include "internet_radio.h"
 
 static const char *TAG = "dlna_source";
@@ -67,6 +69,23 @@ static bool s_searching;
 static size_t s_playing = DLNA_SOURCE_ENTRY_MAX;
 static char s_playing_url[DLNA_URL_MAX];
 static char s_playing_title[DLNA_TITLE_MAX];
+
+/* Where a previous run left off, handed over before the source is opened and
+ * spent by that open. See dlna_source_set_resume(). */
+static bool s_resume_wanted;
+static char s_resume_server[DLNA_SSDP_UDN_MAX];
+static char s_resume_container[DLNA_OBJECT_ID_MAX];
+static char s_resume_title[DLNA_TITLE_MAX];
+static char s_resume_track[DLNA_OBJECT_ID_MAX];
+
+/* settings.csv is where a resume point is kept between runs, and it sizes its
+ * fields without including these headers. This is where the two meet. */
+_Static_assert(DEVICE_LAST_DLNA_SERVER_MAX >= DLNA_SSDP_UDN_MAX,
+               "a server's uuid must fit the settings field");
+_Static_assert(DEVICE_LAST_DLNA_ID_MAX >= DLNA_OBJECT_ID_MAX,
+               "an object id must fit the settings field");
+_Static_assert(DEVICE_LAST_DLNA_TITLE_MAX >= DLNA_TITLE_MAX,
+               "a container title must fit the settings field");
 
 static void lock(void)
 {
@@ -332,6 +351,8 @@ static void fill_server_list(void)
     s_playing = DLNA_SOURCE_ENTRY_MAX;
 }
 
+static bool apply_resume(void);
+
 esp_err_t dlna_source_open(void)
 {
     if (s_lock == NULL) {
@@ -377,11 +398,24 @@ esp_err_t dlna_source_open(void)
     s_entry_count = 0U;
     s_playing = DLNA_SOURCE_ENTRY_MAX;
     s_open = count > 0U;
+    /* Spent here whatever comes of it: it says where *this* open should land,
+     * and the next one - a user choosing the source by hand - belongs at the
+     * top of the tree. */
+    const bool resume = s_resume_wanted;
+    s_resume_wanted = false;
     if (!s_open) {
         s_searching = false;
         unlock();
         return ESP_ERR_NOT_FOUND;
     }
+    unlock();
+
+    if (resume && apply_resume()) {
+        set_searching(false);
+        return ESP_OK;
+    }
+
+    lock();
     if (count > 1U) {
         /* More than one answered, and which of them "the first" is comes down
          * to which replied fastest - not a choice anybody made, and not the
@@ -648,6 +682,129 @@ size_t dlna_source_playing_index(void)
     const size_t playing = s_playing < s_entry_count ? s_playing : DLNA_SOURCE_ENTRY_MAX;
     unlock();
     return playing;
+}
+
+bool dlna_source_playing_point(char *server, size_t server_size, char *container,
+                               size_t container_size, char *title, size_t title_size,
+                               char *track, size_t track_size)
+{
+    lock();
+    const bool playing = s_open && !s_at_server_list && s_playing < s_entry_count;
+    bool ok = playing;
+    if (playing) {
+        /* The server's uuid rather than its row: the row is whichever order
+         * the servers answered the search in this time. */
+        if (server != NULL) {
+            ok = dlna_ssdp_udn(s_servers[s_selected].usn, server, server_size);
+        }
+        if (container != NULL) {
+            snprintf(container, container_size, "%s", dlna_browse_stack_id(&s_stack));
+        }
+        if (title != NULL) {
+            snprintf(title, title_size, "%s", dlna_browse_stack_title(&s_stack));
+        }
+        if (track != NULL) {
+            snprintf(track, track_size, "%s", s_entries[s_playing].id);
+        }
+    }
+    unlock();
+    return ok;
+}
+
+void dlna_source_set_resume(const char *server, const char *container, const char *title,
+                            const char *track)
+{
+    lock();
+    s_resume_wanted = server != NULL && server[0] != '\0' && container != NULL &&
+                      container[0] != '\0';
+    snprintf(s_resume_server, sizeof(s_resume_server), "%s", s_resume_wanted ? server : "");
+    snprintf(s_resume_container, sizeof(s_resume_container), "%s",
+             s_resume_wanted ? container : "");
+    snprintf(s_resume_title, sizeof(s_resume_title), "%s",
+             s_resume_wanted && title != NULL ? title : "");
+    snprintf(s_resume_track, sizeof(s_resume_track), "%s",
+             s_resume_wanted && track != NULL ? track : "");
+    unlock();
+}
+
+/* Which of the servers that answered is the one the resume point names, or
+ * DLNA_DISCOVERY_SERVER_MAX when none of them is. Called with the lock held. */
+static size_t resume_server_row(void)
+{
+    for (size_t index = 0U; index < s_server_count; ++index) {
+        char udn[DLNA_SSDP_UDN_MAX];
+        if (dlna_ssdp_udn(s_servers[index].usn, udn, sizeof(udn)) &&
+            strcmp(udn, s_resume_server) == 0) {
+            return index;
+        }
+    }
+    return DLNA_DISCOVERY_SERVER_MAX;
+}
+
+/* Puts the browser where the resume point says, so that the play that follows
+ * lands on the track that was interrupted rather than at the top of the tree.
+ *
+ * Called after the search, without the lock. Every step can fail on a server
+ * whose library has been re-scanned since - the ids are opaque and the server
+ * is free to renumber them - so each failure falls back one step instead of
+ * failing the open: no such container leaves the browser at the server's root,
+ * no such track leaves it in the container with nothing selected, and
+ * dlna_source_start_saved() then plays the first playable row it finds. */
+static bool apply_resume(void)
+{
+    lock();
+    const size_t row = resume_server_row();
+    const bool found = row < s_server_count;
+    if (found) {
+        s_selected = row;
+        s_at_server_list = false;
+        dlna_browse_stack_reset(&s_stack, s_servers[row].device.friendly_name);
+    }
+    const bool at_root = strcmp(s_resume_container, "0") == 0;
+    dlna_entry_t level;
+    memset(&level, 0, sizeof(level));
+    level.kind = DLNA_ENTRY_CONTAINER;
+    snprintf(level.id, sizeof(level.id), "%s", s_resume_container);
+    snprintf(level.title, sizeof(level.title), "%s",
+             s_resume_title[0] != '\0' ? s_resume_title : s_resume_container);
+    /* Pushed onto the server's root rather than made the root itself, so that
+     * going up from a resumed container lands where it would have if the user
+     * had walked in. The levels in between are not known and not worth a
+     * request each - the trail above this one is the root. */
+    const bool descended = found && !at_root && dlna_browse_stack_enter(&s_stack, &level);
+    char track[DLNA_OBJECT_ID_MAX];
+    snprintf(track, sizeof(track), "%s", s_resume_track);
+    unlock();
+
+    if (!found) {
+        /* Not an error: the server may be off, or this may be another network
+         * altogether. The open carries on as if nothing had been remembered. */
+        ESP_LOGW(TAG, "the remembered media server did not answer this search");
+        return false;
+    }
+    if (read_current_container() != ESP_OK) {
+        if (!descended) return true;
+        ESP_LOGW(TAG, "the remembered container no longer opens; starting at the root");
+        lock();
+        (void)dlna_browse_stack_leave(&s_stack);
+        unlock();
+        (void)read_current_container();
+        return true;
+    }
+    if (track[0] == '\0') return true;
+
+    lock();
+    for (size_t index = 0U; index < s_entry_count; ++index) {
+        if (s_entries[index].playable && strcmp(s_entries[index].id, track) == 0) {
+            /* Not started here - only pointed at. The play arrives as its own
+             * command, which is what keeps merely selecting the source from
+             * making a noise. */
+            s_playing = index;
+            break;
+        }
+    }
+    unlock();
+    return true;
 }
 
 bool dlna_source_start_saved(void)

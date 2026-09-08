@@ -53,6 +53,20 @@ size_t dlna_ssdp_build_search(char *out, size_t out_size, unsigned mx_seconds);
  * user can select and nothing behind it. */
 bool dlna_ssdp_parse_response(const char *data, size_t length, dlna_ssdp_response_t *out);
 
+/* The UUID out of a USN: "uuid:4d696e69-…::urn:schemas-upnp-org:device:…" is
+ * one server announcing one device type, and everything after the "::" says
+ * which type rather than which server.
+ *
+ * Written down between runs as the name of a server to come back to - a resume
+ * point cannot be the row a server sat on, because the order servers answer a
+ * search in is the order they happened to reply. The type suffix is dropped
+ * because it is the same on every media server and would spend a third of the
+ * settings line saying so.
+ *
+ * False when there is no uuid to take, or when it does not fit `out_size`. */
+#define DLNA_SSDP_UDN_MAX 64U
+bool dlna_ssdp_udn(const char *usn, char *out, size_t out_size);
+
 #ifdef __cplusplus
 }
 #endif

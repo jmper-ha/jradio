@@ -136,3 +136,23 @@ bool dlna_ssdp_parse_response(const char *data, size_t length, dlna_ssdp_respons
     }
     return true;
 }
+
+bool dlna_ssdp_udn(const char *usn, char *out, size_t out_size)
+{
+    if (usn == NULL || out == NULL || out_size == 0U) return false;
+    out[0] = '\0';
+    /* Only a "uuid:" USN is taken. A server may announce itself by device type
+     * alone, and that names a kind of device rather than this one - written
+     * down as a resume point it would come back pointing at whichever server
+     * of that kind answered first. */
+    static const char prefix[] = "uuid:";
+    if (strncmp(usn, prefix, sizeof(prefix) - 1U) != 0) return false;
+    size_t length = 0U;
+    while (usn[length] != '\0' && !(usn[length] == ':' && usn[length + 1U] == ':')) {
+        ++length;
+    }
+    if (length <= sizeof(prefix) - 1U || length >= out_size) return false;
+    memcpy(out, usn, length);
+    out[length] = '\0';
+    return true;
+}

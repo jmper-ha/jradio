@@ -139,6 +139,8 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
             settings->last_source = DEVICE_LAST_SOURCE_SD;
         } else if (strcmp(value, "yandex") == 0) {
             settings->last_source = DEVICE_LAST_SOURCE_YANDEX;
+        } else if (strcmp(value, "dlna") == 0) {
+            settings->last_source = DEVICE_LAST_SOURCE_DLNA;
         }
     }
     /* Read into its own buffer: a path is far longer than the little `value`
@@ -162,6 +164,20 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         (void)unpack_field(cursor, settings->last_yandex_from,
                            sizeof(settings->last_yandex_from));
     }
+    /* The same shape, and for the same reason: one place on one server, so one
+     * value. The heading beside it is its own key - see the header. */
+    char dlna[DEVICE_LAST_DLNA_PACKED_MAX];
+    if (settings_csv_get(path, "last_dlna", dlna, sizeof(dlna))) {
+        const char *cursor = dlna;
+        cursor = unpack_field(cursor, settings->last_dlna_server,
+                              sizeof(settings->last_dlna_server));
+        cursor = unpack_field(cursor, settings->last_dlna_container,
+                              sizeof(settings->last_dlna_container));
+        (void)unpack_field(cursor, settings->last_dlna_track,
+                           sizeof(settings->last_dlna_track));
+    }
+    (void)settings_csv_get(path, "last_dlna_title", settings->last_dlna_title,
+                           sizeof(settings->last_dlna_title));
     return true;
 }
 
@@ -283,8 +299,9 @@ bool device_settings_set_last_source(device_settings_t *settings,
                      : source == DEVICE_LAST_SOURCE_USB           ? "usb"
                      : source == DEVICE_LAST_SOURCE_SD            ? "sd"
                      : source == DEVICE_LAST_SOURCE_YANDEX        ? "yandex"
+                     : source == DEVICE_LAST_SOURCE_DLNA          ? "dlna"
                                                                    : "none";
-    if (settings == NULL || source > DEVICE_LAST_SOURCE_YANDEX) return false;
+    if (settings == NULL || source > DEVICE_LAST_SOURCE_DLNA) return false;
     /* Skip the write when nothing changed: this is called as playback starts,
      * and settings.csv lives on flash with a finite erase budget. */
     if (settings->last_source == source) return true;
@@ -341,6 +358,64 @@ bool device_settings_set_last_yandex(device_settings_t *settings, const char *id
     memcpy(settings->last_yandex_id, packed_id, strlen(packed_id) + 1U);
     memcpy(settings->last_yandex_name, packed_name, strlen(packed_name) + 1U);
     memcpy(settings->last_yandex_from, packed_from, strlen(packed_from) + 1U);
+    return true;
+}
+
+bool device_settings_set_last_dlna(device_settings_t *settings, const char *server,
+                                   const char *container, const char *track,
+                                   const char *title)
+{
+    if (settings == NULL) return false;
+    const char *udn = server == NULL ? "" : server;
+    const char *parent = container == NULL ? "" : container;
+    const char *item = track == NULL ? "" : track;
+    const char *heading = title == NULL ? "" : title;
+    // Refused rather than truncated: half an object id names nothing, and the
+    // server would answer "no such object" to it.
+    if (strlen(udn) >= sizeof(settings->last_dlna_server) ||
+        strlen(parent) >= sizeof(settings->last_dlna_container) ||
+        strlen(item) >= sizeof(settings->last_dlna_track) ||
+        strlen(heading) >= sizeof(settings->last_dlna_title)) {
+        return false;
+    }
+    char packed_server[DEVICE_LAST_DLNA_SERVER_MAX];
+    char packed_container[DEVICE_LAST_DLNA_ID_MAX];
+    char packed_track[DEVICE_LAST_DLNA_ID_MAX];
+    char packed_title[DEVICE_LAST_DLNA_TITLE_MAX];
+    pack_field(packed_server, sizeof(packed_server), udn);
+    pack_field(packed_container, sizeof(packed_container), parent);
+    pack_field(packed_track, sizeof(packed_track), item);
+    pack_field(packed_title, sizeof(packed_title), heading);
+
+    // Same reason last_source skips a write: this is called as each track
+    // starts, onto flash with a finite erase budget.
+    const bool place_unchanged = strcmp(settings->last_dlna_server, packed_server) == 0 &&
+                                 strcmp(settings->last_dlna_container, packed_container) == 0 &&
+                                 strcmp(settings->last_dlna_track, packed_track) == 0;
+    if (!place_unchanged) {
+        /* One write for the three, so no power cut can leave a track id beside
+         * the previous container's. An empty server clears the point, and the
+         * value is still not empty - the two tabs remain, which is what
+         * settings.csv needs. */
+        char packed[DEVICE_LAST_DLNA_PACKED_MAX];
+        const int written = snprintf(packed, sizeof(packed), "%s\t%s\t%s", packed_server,
+                                     packed_container, packed_track);
+        if (written < 0 || (size_t)written >= sizeof(packed)) return false;
+        if (!save_value(settings, "last_dlna", packed)) return false;
+        memcpy(settings->last_dlna_server, packed_server, strlen(packed_server) + 1U);
+        memcpy(settings->last_dlna_container, packed_container, strlen(packed_container) + 1U);
+        memcpy(settings->last_dlna_track, packed_track, strlen(packed_track) + 1U);
+    }
+    /* An empty heading is not written: settings.csv has no way to store an
+     * empty value, and this is the one field where that costs nothing. A
+     * container always has a title - the server's own name stands in at the
+     * root - so the empty case is a server that announced no name at all, and
+     * what stays behind then is the previous heading over the right
+     * container. */
+    if (packed_title[0] != '\0' && strcmp(settings->last_dlna_title, packed_title) != 0) {
+        if (!save_value(settings, "last_dlna_title", packed_title)) return false;
+        memcpy(settings->last_dlna_title, packed_title, strlen(packed_title) + 1U);
+    }
     return true;
 }
 

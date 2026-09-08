@@ -121,6 +121,16 @@
 /* How long a list waits with nothing on it before giving up and going back,
  * and how long an idle station list stays open. */
 #define UI_RADIO_EMPTY_LIST_DELAY_MS 250U
+/* Counted from the moment the source is up and the search is over, not from
+ * the command: a search takes a second or two on its own, and a screen flipped
+ * away during it would be flipping away from a resume that was about to
+ * work. */
+#define UI_DLNA_RESUME_LIST_DELAY_MS 1500U
+/* And the whole wait gives up after this, so a select that was refused - no
+ * network yet, the source switched off - does not leave the browser waiting to
+ * open for the rest of the session. Longer than a search and a browse
+ * together, which is what it is waiting out. */
+#define UI_DLNA_RESUME_GIVE_UP_MS 20000U
 #define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
 
 static const char *TAG = "ui";
@@ -375,6 +385,17 @@ static ui_click_gesture_t s_like_click;
  * back into it. */
 static ui_seek_t s_player_seek;
 static bool s_waiting_for_radio_station;
+/* Autoplay asked the media server to resume, and whether anything came of it
+ * is only knowable by waiting: the search and the browse happen on the player
+ * task, and the answer arrives as a snapshot. Nothing playing means the server
+ * is off or the remembered container is gone, and the browser is what that
+ * leaves off - it says "медиасервер не найден в сети", or shows the root to
+ * pick from, either of which is something to act on where a silent player
+ * screen is not. */
+static bool s_dlna_resume_waiting;
+static uint32_t s_dlna_resume_started_ms;
+static bool s_dlna_resume_settled;
+static uint32_t s_dlna_resume_settled_ms;
 static uint32_t s_radio_station_wait_started_ms;
 /* Both browsers reuse this list screen - the volumes' and the media server's.
  * Anywhere but at the top of the tree it shows a ".." row above the entries, so
@@ -3721,6 +3742,11 @@ static void ui_yandex_step_start(const player_snapshot_t *snapshot)
 
 static void ui_handle_input(board_input_action_t action)
 {
+    /* Anybody touching a control has taken over from the resume, and a browser
+     * opening under their hands a second later is not something they asked
+     * for. */
+    s_dlna_resume_waiting = false;
+
     // Settings sits outside the player's view state: it shows no source and
     // starts nothing, so making it a fourth view would put an entry in every
     // transition table for no gain. The way out is the long press, and it
@@ -4159,6 +4185,24 @@ static void ui_remember_playing(const player_snapshot_t *snapshot)
         (void)device_settings_set_last_yandex(&s_device_settings, id, name, from);
         return;
     }
+    case AUDIO_SOURCE_DLNA: {
+        /* Where on the server, not which row: a listing is fetched fresh every
+         * time and a server is free to renumber its rows, so the row that
+         * played today is a different album tomorrow. The server's own uuid and
+         * its object ids are what survive a power cut. */
+        char server[DEVICE_LAST_DLNA_SERVER_MAX];
+        char container[DEVICE_LAST_DLNA_ID_MAX];
+        char title[DEVICE_LAST_DLNA_TITLE_MAX];
+        char track[DEVICE_LAST_DLNA_ID_MAX];
+        if (!dlna_source_playing_point(server, sizeof(server), container, sizeof(container),
+                                       title, sizeof(title), track, sizeof(track))) {
+            // Browsing without playing must not erase the previous point.
+            return;
+        }
+        (void)device_settings_set_last_source(&s_device_settings, DEVICE_LAST_SOURCE_DLNA);
+        (void)device_settings_set_last_dlna(&s_device_settings, server, container, track, title);
+        return;
+    }
     case AUDIO_SOURCE_SD:
     case AUDIO_SOURCE_USB: {
         (void)device_settings_set_last_source(&s_device_settings,
@@ -4275,6 +4319,32 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
         ui_show_station_list();
     }
 
+    if (s_dlna_resume_waiting) {
+        if (snapshot->active_source != AUDIO_SOURCE_DLNA) {
+            /* The select is still in the queue: a snapshot read on the pass
+             * after the command was posted is older than the command. Giving
+             * up here is what made this never fire at all - waiting out the
+             * select and the search that follows it is the whole job. */
+            if ((uint32_t)(ui_tick_get_ms() - s_dlna_resume_started_ms) >=
+                UI_DLNA_RESUME_GIVE_UP_MS) {
+                s_dlna_resume_waiting = false;
+            }
+        } else if (ui_playback_running(snapshot)) {
+            // It worked; the player screen is where this already is.
+            s_dlna_resume_waiting = false;
+        } else if (!dlna_source_is_searching()) {
+            if (!s_dlna_resume_settled) {
+                s_dlna_resume_settled = true;
+                s_dlna_resume_settled_ms = ui_tick_get_ms();
+            } else if ((uint32_t)(ui_tick_get_ms() - s_dlna_resume_settled_ms) >=
+                       UI_DLNA_RESUME_LIST_DELAY_MS) {
+                s_dlna_resume_waiting = false;
+                ESP_LOGI(TAG, "the media server resumed nothing; opening the browser");
+                ui_show_station_list();
+            }
+        }
+    }
+
     if (s_waiting_for_radio_station &&
         snapshot->active_source == AUDIO_SOURCE_INTERNET_RADIO &&
         snapshot->active_item_index == PLAYER_ITEM_NONE &&
@@ -4353,7 +4423,7 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
     if (!s_autoplay_pending) return;
     const ui_autoplay_action_t action =
         ui_autoplay_decide(&s_device_settings, snapshot->usb_media, snapshot->sd_media, false,
-                           BOARD_HAS_YANDEX_MUSIC);
+                           BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA);
     const bool waited =
         (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_WAIT_MS;
     // Hold off only while the answer could still change: a drive that has not
@@ -4373,7 +4443,8 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
      * is written, and takes the failed DNS lookup and its retry with it. */
     const bool waited_for_network =
         (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_NETWORK_WAIT_MS;
-    if ((action == UI_AUTOPLAY_RADIO || action == UI_AUTOPLAY_YANDEX) &&
+    if ((action == UI_AUTOPLAY_RADIO || action == UI_AUTOPLAY_YANDEX ||
+         action == UI_AUTOPLAY_DLNA) &&
         !snapshot->wifi_connected && !waited_for_network) {
         return;
     }
@@ -4406,6 +4477,35 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         // list after a moment. Autoplay has a station, so the only thing that
         // fallback could do here is flip away from the screen just loaded.
         s_waiting_for_radio_station = false;
+        return;
+    }
+    case UI_AUTOPLAY_DLNA: {
+        /* The same two commands, in the same order, and the place handed over
+         * before either of them: the search that SELECT_SOURCE runs is where
+         * the resume point has to be in hand, because that is the moment the
+         * server is picked out of the ones that answered and its container
+         * read. */
+        dlna_source_set_resume(s_device_settings.last_dlna_server,
+                               s_device_settings.last_dlna_container,
+                               s_device_settings.last_dlna_title,
+                               s_device_settings.last_dlna_track);
+        (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_DLNA);
+        const player_command_t select = {
+            .kind = PLAYER_COMMAND_SELECT_SOURCE,
+            .source = AUDIO_SOURCE_DLNA,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        if (!ui_submit_player_command(&select)) return;
+        const player_command_t play = {
+            .kind = PLAYER_COMMAND_PLAY,
+            .source = AUDIO_SOURCE_DLNA,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        (void)ui_submit_player_command(&play);
+        ui_load_source_screen(AUDIO_SOURCE_DLNA);
+        s_dlna_resume_waiting = true;
+        s_dlna_resume_settled = false;
+        s_dlna_resume_started_ms = ui_tick_get_ms();
         return;
     }
     case UI_AUTOPLAY_YANDEX: {
@@ -4798,7 +4898,8 @@ esp_err_t ui_init(void)
     // ui_autoplay_step(), once the drive has had time to enumerate.
     s_autoplay_pending = ui_autoplay_decide(&s_device_settings, FILE_BROWSER_MEDIA_READY,
                                             FILE_BROWSER_MEDIA_READY, true,
-                                            BOARD_HAS_YANDEX_MUSIC) != UI_AUTOPLAY_HOME;
+                                            BOARD_HAS_YANDEX_MUSIC,
+                                            BOARD_HAS_DLNA) != UI_AUTOPLAY_HOME;
     s_autoplay_started_ms = ui_tick_get_ms();
     /* Through the same call the rest of the firmware uses, so a device with no
      * home screen boots straight into the radio instead of onto a screen it

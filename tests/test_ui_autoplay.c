@@ -14,12 +14,13 @@ static device_settings_t settings(bool autoplay, device_last_source_t source,
     return value;
 }
 
-/* Every case below but the Yandex ones is about a build that has the feature;
- * whether it does is a build option and not what those cases are testing. */
+/* Every case below but the Yandex and media-server ones is about a build that
+ * has the feature; whether it does is a build option and not what those cases
+ * are testing. */
 static ui_autoplay_action_t decide(const device_settings_t *settings, file_browser_media_t usb,
                                    file_browser_media_t sd, bool file_present)
 {
-    return ui_autoplay_decide(settings, usb, sd, file_present, true);
+    return ui_autoplay_decide(settings, usb, sd, file_present, true, true);
 }
 
 /* A Yandex resume point: the station identity, plus the row being on the home
@@ -193,10 +194,67 @@ static void test_yandex_taken_off_the_home_screen_does_not_come_back(void)
 
     const device_settings_t shown = yandex_settings(true, "user:onyourwave", true);
     assert(ui_autoplay_decide(&shown, FILE_BROWSER_MEDIA_READY, FILE_BROWSER_MEDIA_ABSENT, true,
-                              false) == UI_AUTOPLAY_HOME);
+                              false, true) == UI_AUTOPLAY_HOME);
 
     // And the master switch still comes first.
     const device_settings_t off = yandex_settings(false, "user:onyourwave", true);
+    assert(decide(&off, FILE_BROWSER_MEDIA_READY, FILE_BROWSER_MEDIA_ABSENT, true) ==
+           UI_AUTOPLAY_HOME);
+}
+
+/* A media-server resume point: the place on the server, plus the row being on
+ * the home screen at all. */
+static device_settings_t dlna_settings(bool autoplay, const char *container, bool row_shown)
+{
+    device_settings_t value = settings(autoplay, DEVICE_LAST_SOURCE_DLNA, NULL);
+    value.dlna = row_shown;
+    snprintf(value.last_dlna_server, sizeof(value.last_dlna_server),
+             "uuid:4d696e69-444c-164e-9d41-b827eb2f9c1f");
+    if (container != NULL) {
+        snprintf(value.last_dlna_container, sizeof(value.last_dlna_container), "%s", container);
+    }
+    snprintf(value.last_dlna_track, sizeof(value.last_dlna_track), "94510");
+    snprintf(value.last_dlna_title, sizeof(value.last_dlna_title), "Blue Train");
+    return value;
+}
+
+static void test_the_media_server_resumes_where_it_left_off(void)
+{
+    const device_settings_t value = dlna_settings(true, "94502", true);
+    assert(decide(&value, FILE_BROWSER_MEDIA_ABSENT, FILE_BROWSER_MEDIA_ABSENT, false) ==
+           UI_AUTOPLAY_DLNA);
+    // The drives have nothing to do with it, exactly as for the radio.
+    assert(decide(&value, FILE_BROWSER_MEDIA_READY, FILE_BROWSER_MEDIA_READY, true) ==
+           UI_AUTOPLAY_DLNA);
+    assert(ui_autoplay_source(&value) == AUDIO_SOURCE_DLNA);
+}
+
+static void test_a_media_server_with_no_container_opens_the_home_screen(void)
+{
+    /* The source was last used but nothing was ever played from it - a browser
+     * that was walked through and left. There is nothing to resume: a server's
+     * root is a list of libraries, and none of it makes a sound.
+     *
+     * Unlike the radio, which starts at the top of its catalogue, and like
+     * Yandex, whose stations are not known until the account answers. */
+    const device_settings_t value = dlna_settings(true, NULL, true);
+    assert(decide(&value, FILE_BROWSER_MEDIA_READY, FILE_BROWSER_MEDIA_ABSENT, true) ==
+           UI_AUTOPLAY_HOME);
+}
+
+static void test_a_media_server_taken_off_the_home_screen_does_not_come_back(void)
+{
+    const device_settings_t hidden = dlna_settings(true, "94502", false);
+    assert(decide(&hidden, FILE_BROWSER_MEDIA_READY, FILE_BROWSER_MEDIA_ABSENT, true) ==
+           UI_AUTOPLAY_HOME);
+
+    // Nor in a build that has no media server in it at all.
+    const device_settings_t shown = dlna_settings(true, "94502", true);
+    assert(ui_autoplay_decide(&shown, FILE_BROWSER_MEDIA_READY, FILE_BROWSER_MEDIA_ABSENT, true,
+                              true, false) == UI_AUTOPLAY_HOME);
+
+    // And the master switch still comes first.
+    const device_settings_t off = dlna_settings(false, "94502", true);
     assert(decide(&off, FILE_BROWSER_MEDIA_READY, FILE_BROWSER_MEDIA_ABSENT, true) ==
            UI_AUTOPLAY_HOME);
 }
@@ -218,6 +276,9 @@ int main(void)
     test_yandex_resumes_the_station_it_remembers();
     test_yandex_without_a_station_opens_the_home_screen();
     test_yandex_taken_off_the_home_screen_does_not_come_back();
+    test_the_media_server_resumes_where_it_left_off();
+    test_a_media_server_with_no_container_opens_the_home_screen();
+    test_a_media_server_taken_off_the_home_screen_does_not_come_back();
     puts("ui_autoplay tests passed");
     return 0;
 }

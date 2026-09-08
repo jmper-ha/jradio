@@ -54,4 +54,13 @@ size_t ui_player_state_active_item(const ui_player_state_t *state);
  * ahead of it while a command is pending; this is what has been confirmed. */
 player_playback_state_t ui_player_state_playback(const ui_player_state_t *state);
 bool ui_player_state_is_pending(const ui_player_state_t *state);
+/* Whether the player has just come alive on somebody else's say-so - the web
+ * pressed play, or picked a source - since the last snapshot this state saw.
+ *
+ * Ask it *before* ui_player_state_apply_snapshot(), which is what moves the
+ * "last seen" mark. Reconnecting is deliberately not a start: a station that
+ * drops and comes back would otherwise pull the screen out from under whoever
+ * is reading it. Neither is a command this panel posted itself. */
+bool ui_player_state_started_elsewhere(const ui_player_state_t *state,
+                                       const player_snapshot_t *snapshot);
 bool ui_player_state_pending_item(const ui_player_state_t *state, size_t *item_index);

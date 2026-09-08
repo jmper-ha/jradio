@@ -702,6 +702,74 @@ static void test_a_server_started_elsewhere_raises_the_player(void)
     assert(ui_player_state_source(&state) == AUDIO_SOURCE_DLNA);
 }
 
+/* The panel showing something that is not the player - Settings, the Yandex
+ * screen - while the web starts the music. */
+static void test_a_start_from_the_web_is_told_from_one_of_our_own(void)
+{
+    ui_player_state_t state;
+    ui_player_state_init(&state);
+
+    player_snapshot_t idle = snapshot(AUDIO_SOURCE_NONE, PLAYER_ITEM_NONE, 0);
+    idle.playback_state = PLAYER_PLAYBACK_STOPPED;
+    /* Nothing to compare against yet: at boot autoplay may bring the player up
+     * already playing, and that must not read as somebody else's start. */
+    assert(!ui_player_state_started_elsewhere(&state, &idle));
+    ui_player_state_apply_snapshot(&state, &idle, 0);
+
+    player_snapshot_t playing = snapshot(AUDIO_SOURCE_INTERNET_RADIO, 1, 3);
+    playing.playback_state = PLAYER_PLAYBACK_CONNECTING;
+    assert(ui_player_state_started_elsewhere(&state, &playing));
+    ui_player_state_apply_snapshot(&state, &playing, 10);
+
+    /* Already sounding, same source: connecting to playing is the same start
+     * carrying on, not a second one. */
+    playing.playback_state = PLAYER_PLAYBACK_PLAYING;
+    assert(!ui_player_state_started_elsewhere(&state, &playing));
+    ui_player_state_apply_snapshot(&state, &playing, 20);
+
+    /* A station that drops and comes back must not pull the screen out from
+     * under whoever is reading it. */
+    player_snapshot_t dropped = playing;
+    dropped.playback_state = PLAYER_PLAYBACK_RECONNECTING;
+    assert(!ui_player_state_started_elsewhere(&state, &dropped));
+    ui_player_state_apply_snapshot(&state, &dropped, 30);
+    assert(!ui_player_state_started_elsewhere(&state, &playing));
+    ui_player_state_apply_snapshot(&state, &playing, 40);
+
+    /* Paused from the browser and resumed from the browser: the resume is a
+     * start, and this is where the paused state sits on the other side of the
+     * line from the station list's idea of "active". */
+    player_snapshot_t paused = playing;
+    paused.playback_state = PLAYER_PLAYBACK_PAUSED;
+    assert(!ui_player_state_started_elsewhere(&state, &paused));
+    ui_player_state_apply_snapshot(&state, &paused, 50);
+    assert(ui_player_state_started_elsewhere(&state, &playing));
+    ui_player_state_apply_snapshot(&state, &playing, 60);
+
+    /* Another source picked in the browser while this one plays is a start
+     * too, even though the player never went quiet in between. */
+    player_snapshot_t other = snapshot(AUDIO_SOURCE_SD, 0, 4);
+    other.playback_state = PLAYER_PLAYBACK_PLAYING;
+    assert(ui_player_state_started_elsewhere(&state, &other));
+    ui_player_state_apply_snapshot(&state, &other, 70);
+
+    /* And a stop is not a start. */
+    assert(!ui_player_state_started_elsewhere(&state, &idle));
+    ui_player_state_apply_snapshot(&state, &idle, 80);
+
+    /* A command this panel posted is this panel starting something, whatever
+     * screen is drawn while it is confirmed. */
+    player_command_t select =
+        command(PLAYER_COMMAND_SELECT_SOURCE, AUDIO_SOURCE_INTERNET_RADIO,
+                PLAYER_ITEM_NONE);
+    assert(ui_player_state_apply_post_result(&state, &select, true, 90));
+    assert(ui_player_state_is_pending(&state));
+    assert(!ui_player_state_started_elsewhere(&state, &playing));
+
+    assert(!ui_player_state_started_elsewhere(&state, NULL));
+    assert(!ui_player_state_started_elsewhere(NULL, &playing));
+}
+
 int main(void)
 {
     test_the_card_gets_the_same_views_as_the_drive();
@@ -727,6 +795,7 @@ int main(void)
     test_external_item_change_closes_station_list();
     test_close_station_list_returns_to_source();
     test_close_station_list_redirects_pending_timeout_to_source();
+    test_a_start_from_the_web_is_told_from_one_of_our_own();
     puts("ui_player_state tests passed");
     return 0;
 }

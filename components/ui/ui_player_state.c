@@ -19,6 +19,37 @@ static bool ui_player_state_playback_is_active(player_playback_state_t state)
            state == PLAYER_PLAYBACK_RECONNECTING;
 }
 
+/* Sounding, or on its way there. Not the same set as
+ * ui_player_state_playback_is_active(): paused is on the other side of this
+ * line, because "the web pressed play on a paused player" is a start and has
+ * to bring the player screen up, while for the station list a paused player is
+ * still a player that is up. */
+static bool ui_player_state_playback_is_sounding(player_playback_state_t state)
+{
+    return state == PLAYER_PLAYBACK_CONNECTING || state == PLAYER_PLAYBACK_PLAYING ||
+           state == PLAYER_PLAYBACK_RECONNECTING;
+}
+
+bool ui_player_state_started_elsewhere(const ui_player_state_t *state,
+                                       const player_snapshot_t *snapshot)
+{
+    if (state == NULL || snapshot == NULL) return false;
+    /* Nothing to compare against on the first one: at boot the player may come
+     * up already playing, and that is autoplay doing its job, not somebody
+     * starting something behind the user's back. */
+    if (!state->have_snapshot) return false;
+    /* A command this panel posted is this panel starting something, whatever
+     * screen happens to be drawn while it is confirmed. */
+    if (state->pending) return false;
+    if (snapshot->active_source == AUDIO_SOURCE_NONE) return false;
+    if (!ui_player_state_playback_is_sounding(snapshot->playback_state)) return false;
+    /* A different source is a start even if the last one was playing too:
+     * switching from the radio to a folder from the browser is exactly the
+     * case this exists for. */
+    if (snapshot->active_source != state->confirmed_source) return true;
+    return !ui_player_state_playback_is_sounding(state->confirmed_playback_state);
+}
+
 static bool ui_player_state_snapshot_confirms(
     const ui_player_state_t *state, const player_snapshot_t *snapshot)
 {

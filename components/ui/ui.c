@@ -2232,7 +2232,12 @@ static void ui_close_settings(void)
     /* Disarmed on the way out: coming back to a screen whose knob still edits
      * the row it was left on is the sort of thing nobody expects. */
     s_settings_model.editing = false;
-    ui_load_menu_screen();
+    /* Whatever the view says, not the menu unconditionally. This screen is
+     * only ever opened over the home screen, so the view says "menu" and this
+     * loads it - except when the player was started from the web while the
+     * screen was up, and then it says "player" and that is where this has to
+     * land. */
+    ui_render_player_state();
 }
 
 /* Picks up a settings change made somewhere other than this task - today the
@@ -4584,30 +4589,65 @@ static void ui_task(void *arg)
                 (uint32_t)(ui_tick_get_ms() - s_about_opened_ms) >= UI_QR_IDLE_TIMEOUT_MS) {
                 ui_hide_about();
             }
-            ui_update_settings();
+            /* Asked before the snapshot is applied, which is what moves the
+             * mark it compares against. */
+            const bool started_elsewhere =
+                ui_player_state_started_elsewhere(&s_player_ui, &snapshot);
+            /* The player's view follows the snapshot here too rather than
+             * freezing until this screen closes. It has to: with no home
+             * screen this screen is opened right after a stop is posted, and a
+             * command whose confirmation is never read stays pending for ever
+             * - which would also make every start below look like one of ours.
+             * Nothing is drawn from the view while this screen is up; the way
+             * out reads it. */
+            ui_player_state_apply_snapshot(&s_player_ui, &snapshot, ui_tick_get_ms());
+            if (started_elsewhere) {
+                /* A start that came from somewhere else - the web pressed
+                 * play, or picked a source - brings the player up here too.
+                 * Without it the panel went on showing the settings list while
+                 * the music played, with nothing on screen saying so. */
+                ESP_LOGI(TAG, "playback started elsewhere; leaving settings for the player");
+                ui_close_settings();
+            } else {
+                ui_update_settings();
+            }
         } else if (s_yandex_open) {
+            /* Asked before the snapshot is applied, which is what moves the
+             * mark it compares against - and only when this screen is not in
+             * the middle of starting a station itself, because between its two
+             * steps nothing is pending and its own start would read as
+             * somebody else's. */
+            const bool started_elsewhere =
+                s_yandex_start_row == PLAYER_ITEM_NONE &&
+                ui_player_state_started_elsewhere(&s_player_ui, &snapshot);
             /* The player's own state still has to follow the snapshot: this
              * screen posts commands, and a command whose confirmation is never
              * read stays pending for ever - which is exactly what refused
              * every attempt to start a station from here. */
             ui_player_state_apply_snapshot(&s_player_ui, &snapshot, ui_tick_get_ms());
-            ui_yandex_step_start(&snapshot);
-            // Polled rather than driven by input: the countdown ticks and the
-            // confirmation arrives from the network, neither of which is a
-            // button press.
-            ui_update_yandex();
-            /* The same return timer the station list has, on the same 10 s.
-             * Only over the list: a pairing code takes a minute to type on a
-             * phone, and closing that screen out from under someone doing it
-             * would be a fault, not a convenience. Nor while a station this
-             * screen asked for is still starting - the wait is the screen
-             * doing what it was told, not the user having wandered off. */
-            if (s_yandex_open && s_yandex_mode == UI_YANDEX_MODE_LIST &&
-                s_yandex_start_row == PLAYER_ITEM_NONE &&
-                ui_playback_running(&snapshot) &&
-                station_list_idle_timeout_elapsed(&s_yandex_list, ui_tick_get_ms(),
-                                                  UI_STATION_LIST_IDLE_TIMEOUT_MS)) {
+            if (started_elsewhere) {
+                ESP_LOGI(TAG, "playback started elsewhere; leaving the Yandex screen");
                 ui_close_yandex();
+            } else {
+                ui_yandex_step_start(&snapshot);
+                // Polled rather than driven by input: the countdown ticks and
+                // the confirmation arrives from the network, neither of which
+                // is a button press.
+                ui_update_yandex();
+                /* The same return timer the station list has, on the same 10 s.
+                 * Only over the list: a pairing code takes a minute to type on
+                 * a phone, and closing that screen out from under someone doing
+                 * it would be a fault, not a convenience. Nor while a station
+                 * this screen asked for is still starting - the wait is the
+                 * screen doing what it was told, not the user having wandered
+                 * off. */
+                if (s_yandex_open && s_yandex_mode == UI_YANDEX_MODE_LIST &&
+                    s_yandex_start_row == PLAYER_ITEM_NONE &&
+                    ui_playback_running(&snapshot) &&
+                    station_list_idle_timeout_elapsed(&s_yandex_list, ui_tick_get_ms(),
+                                                      UI_STATION_LIST_IDLE_TIMEOUT_MS)) {
+                    ui_close_yandex();
+                }
             }
         } else {
             ui_sync_player_snapshot(&snapshot);

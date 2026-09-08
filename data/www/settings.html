@@ -137,6 +137,32 @@
           <p class="field-note">Записывается в settings.csv устройства и применяется сразу —
             экран и кнопки на корпусе показывают то же самое.</p>
         </section>
+
+        <section class="card" aria-labelledby="backup-title">
+          <div class="card-head">
+            <h2 id="backup-title">Резервная копия</h2>
+            <span id="backup-status" class="settings-status" role="status" aria-live="polite">Готово</span>
+          </div>
+
+          <p class="field-note">В архив попадает всё, что устройство знает о себе:
+            сети Wi-Fi, настройки и токен ЯМузыки. Плейлист сохраняется отдельно,
+            на странице плейлиста.</p>
+
+          <div class="settings-actions">
+            <a id="backup-download" class="secondary-button" href="/api/backup" download>Скачать архив</a>
+            <label class="secondary-button file-button" for="backup-file">
+              Выбрать файл
+              <input id="backup-file" type="file" accept=".zip,.json,.csv,application/zip" hidden>
+            </label>
+            <button id="backup-restore" class="primary-button" type="button" disabled>Восстановить</button>
+          </div>
+
+          <p class="field-note">Восстановить можно весь архив целиком или один файл из него —
+            wifi.json, settings.csv или yandex.json. После восстановления устройство
+            перезагрузится.</p>
+          <p class="field-note">Пароли Wi-Fi и токен ЯМузыки лежат в архиве открытым текстом:
+            храните его так же, как хранили бы пароль.</p>
+        </section>
       </div>
 
       <div class="settings-column">

@@ -125,10 +125,13 @@ idf.py -p PORT monitor
 
 `littlefs-flash` **destroys user data** - playlist edits, saved networks,
 device settings and the Yandex Music account link: all of it lives on that one
-partition. Compare the live state first: `curl http://<ip>/api/playlist`,
-`curl http://<ip>/api/settings` and `curl http://<ip>/api/yandex`. The settings
-return to their defaults after the flash, and the account has to be linked
-again.
+partition. Take a copy first - `curl -O -J http://<ip>/api/backup` - and put it
+back afterwards:
+`curl -X POST --data-binary @jradio-*.zip "http://<ip>/api/restore?name=backup.zip"`,
+which is what the two buttons on the settings page do. The playlist is not in
+that copy, so compare it separately: `curl http://<ip>/api/playlist`. Without a
+copy the settings return to their defaults after the flash, and the account has
+to be linked again.
 
 ## Tests
 
@@ -136,7 +139,7 @@ again.
 bash tests/run_host_tests.sh
 ```
 
-72 suites, no ESP-IDF activation needed. They compile the real component
+85 suites, no ESP-IDF activation needed. They compile the real component
 sources rather than mocks, with `-Werror` and the address and undefined
 behaviour sanitizers. That is why format parsing, state machines and view
 derivation live in files with no ESP-IDF dependencies - new logic belongs

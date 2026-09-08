@@ -28,6 +28,13 @@ class Element {
     this.type = '';
     this.attributes = {};
   }
+  /* A real file input drops its selection when its value is cleared, and the
+     page leans on exactly that to stop the same upload being restored twice. */
+  set value(next) {
+    this.currentValue = String(next);
+    if (this.currentValue === '' && Array.isArray(this.files)) this.files = [];
+  }
+  get value() { return this.currentValue; }
   setAttribute(name, value) { this.attributes[name] = String(value); }
   getAttribute(name) { return Object.hasOwn(this.attributes, name) ? this.attributes[name] : null; }
   addEventListener(type, callback) { (this.listeners[type] ||= []).push(callback); }
@@ -58,6 +65,7 @@ const ids = [
   'device-dlna', 'device-dlna-row',
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal',
+  'backup-status', 'backup-file', 'backup-restore',
 ];
 const elements = Object.fromEntries(ids.map((id) => [`#${id}`, new Element()]));
 elements['#wifi-form'].elements = {
@@ -123,6 +131,10 @@ const confirmCalls = [];
 // GET after it answers.
 let scanStartOk = true;
 let scanReply = {state: 'done', networks: []};
+// What POST /api/restore answers, and the status it answers with.
+let restoreReply = {restored: ['wifi.json', 'settings.csv'], warnings: [], reboot: true};
+let restoreOk = true;
+let restoreFetchFails = false;
 
 const timerHandles = new Map();
 const context = {
@@ -160,6 +172,10 @@ const context = {
           ok: true,
           json: () => Promise.resolve(settingsReply),
         });
+      }
+      if (String(url).startsWith('/api/restore')) {
+        if (restoreFetchFails) return Promise.reject(new Error('offline'));
+        return Promise.resolve({ok: restoreOk, json: () => Promise.resolve(restoreReply)});
       }
       if (String(url).startsWith('/api/about')) {
         return Promise.resolve({ok: true, json: () => Promise.resolve(aboutReply)});
@@ -773,6 +789,79 @@ function lastYandexTimer() {
   await reload();
   assert.equal(elements['#about-web'].textContent, 'неизвестно');
   assert.equal(elements['#about-notice'].hidden, true);
+
+  /* Backup and restore. Nothing is chosen yet, so there is nothing to send -
+     a Restore button that is live before a file is picked is a click that
+     reaches the device with an empty body. */
+  assert.equal(elements['#backup-restore'].disabled, true);
+
+  const archive = {name: 'jradio-20260908.zip'};
+  elements['#backup-file'].files = [archive];
+  elements['#backup-file'].emit('change');
+  assert.equal(elements['#backup-restore'].disabled, false);
+  assert.equal(elements['#backup-status'].textContent, 'Выбран файл: jradio-20260908.zip');
+
+  // Answering no to the question leaves the device alone.
+  confirmAnswer = false;
+  const beforeRefusal = fetchCalls.length;
+  elements['#backup-restore'].emit('click');
+  await settle();
+  assert.equal(fetchCalls.length, beforeRefusal);
+  assert.equal(confirmCalls.at(-1).includes('jradio-20260908.zip'), true);
+
+  confirmAnswer = true;
+  elements['#backup-restore'].emit('click');
+  await settle();
+  const restoreCall = fetchCalls.at(-1);
+  // The name travels in the query: a single file is recognised by it, and an
+  // archive would otherwise arrive with nothing to call it.
+  assert.equal(restoreCall.url, '/api/restore?name=jradio-20260908.zip');
+  assert.equal(restoreCall.options.method, 'POST');
+  assert.equal(restoreCall.options.body, archive);
+  assert.equal(elements['#backup-status'].textContent,
+               'Восстановлено: wifi.json, settings.csv. Устройство перезагружается…');
+  assert.equal(elements['#backup-status'].classList.values.has('is-success'), true);
+  /* Cleared afterwards: the same file sent again after the reboot would put
+     back settings that were deliberately changed in between. */
+  assert.equal(elements['#backup-file'].value, '');
+  assert.equal(elements['#backup-restore'].disabled, true);
+
+  // A file the device wrote but cannot read back is not a success.
+  elements['#backup-file'].files = [{name: 'wifi.json'}];
+  elements['#backup-file'].emit('change');
+  restoreReply = {restored: ['wifi.json'], warnings: ['wifi.json'], reboot: true};
+  elements['#backup-restore'].emit('click');
+  await settle();
+  assert.equal(fetchCalls.at(-1).url, '/api/restore?name=wifi.json');
+  assert.equal(elements['#backup-status'].textContent.includes('не смогло прочитать'), true);
+  assert.equal(elements['#backup-status'].classList.values.has('is-error'), true);
+
+  /* A refusal is said in Russian, by code: matching on the device's English
+     sentence would leave the page blank the day one of them is reworded. */
+  elements['#backup-file'].files = [{name: 'explorer.zip'}];
+  elements['#backup-file'].emit('change');
+  restoreOk = false;
+  restoreReply = {error: 'compressed'};
+  elements['#backup-restore'].emit('click');
+  await settle();
+  assert.equal(elements['#backup-status'].textContent.startsWith('Архив упакован способом'), true);
+  assert.equal(elements['#backup-status'].classList.values.has('is-error'), true);
+  // The choice survives a refusal, so the same file can be sent again.
+  assert.equal(elements['#backup-restore'].disabled, false);
+
+  // A code this page has never heard of still says something.
+  restoreReply = {error: 'something-new'};
+  elements['#backup-restore'].emit('click');
+  await settle();
+  assert.equal(elements['#backup-status'].textContent, 'Устройство не приняло файл');
+
+  // And a device that vanished mid-upload is not silence either.
+  restoreFetchFails = true;
+  elements['#backup-restore'].emit('click');
+  await settle();
+  assert.equal(elements['#backup-status'].textContent, 'Не удалось отправить файл');
+  restoreFetchFails = false;
+  restoreOk = true;
 
   console.log('web settings tests passed');
 })().catch((error) => {

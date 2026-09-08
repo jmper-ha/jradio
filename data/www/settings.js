@@ -40,6 +40,9 @@
   const yandexStations = document.querySelector('#yandex-stations');
   const yandexStationsEmpty = document.querySelector('#yandex-stations-empty');
   const deviceStatus = document.querySelector('#device-status');
+  const backupStatus = document.querySelector('#backup-status');
+  const backupFile = document.querySelector('#backup-file');
+  const backupRestore = document.querySelector('#backup-restore');
   const deviceBrightness = document.querySelector('#device-brightness');
   /* The device's own settings screen, field for field, in the order and with
      the wording it uses - so that "Скроллинг: Влево-вправо" means the same
@@ -723,6 +726,101 @@
     }
   }
 
+  /* Backup and restore. The archive is built and unpacked on the device, not
+     here: the browser would need the same rules about which files count and
+     what a restored file has to look like, and two copies of that is how the
+     page and the device end up disagreeing about what a valid backup is. */
+  const restoreErrorText = Object.freeze({
+    size: 'Файл слишком большой',
+    incomplete: 'Файл дошёл не целиком — попробуйте ещё раз',
+    memory: 'Устройству не хватило памяти',
+    compressed: 'Архив упакован способом, который устройство не понимает. ' +
+      'Загрузите архив, скачанный с устройства, или один файл из него',
+    damaged: 'Архив повреждён',
+    malformed: 'Это не архив с настройками',
+    empty: 'В архиве нет файлов устройства',
+    'unknown-file': 'Ожидается архив или один из файлов: wifi.json, settings.csv, yandex.json',
+    contents: 'Содержимое файла не похоже на то, чем он назван',
+    write: 'Не удалось записать файл на устройство',
+  });
+  let restoreInFlight = false;
+
+  function setBackupStatus(text, kind) {
+    backupStatus.textContent = text;
+    backupStatus.classList.toggle('is-error', kind === 'error');
+    backupStatus.classList.toggle('is-success', kind === 'success');
+  }
+
+  function chosenFile() {
+    const files = backupFile.files;
+    return files && files.length > 0 ? files[0] : null;
+  }
+
+  function restoreChosenFile() {
+    const file = chosenFile();
+    if (file === null || restoreInFlight) return Promise.resolve();
+    if (window.confirm(`Восстановить настройки из «${file.name}»? ` +
+                       'Текущие настройки будут заменены, устройство перезагрузится.') !== true) {
+      return Promise.resolve();
+    }
+    restoreInFlight = true;
+    backupRestore.disabled = true;
+    setBackupStatus('Отправка…');
+    /* The name travels in the query, because a single file is recognised by it
+       - an archive says what is in it, but wifi.json on its own does not. */
+    return window.fetch(`/api/restore?name=${encodeURIComponent(file.name)}`,
+                        {method: 'POST', body: file})
+      .then((response) => {
+        if (!response) throw new Error('no answer');
+        return response.json().then(
+          (payload) => ({ok: response.ok === true, payload}),
+          () => ({ok: response.ok === true, payload: {}}));
+      })
+      .then((result) => {
+        if (!result.ok) {
+          const code = typeof result.payload.error === 'string' ? result.payload.error : '';
+          setBackupStatus(restoreErrorText[code] || 'Устройство не приняло файл', 'error');
+          return;
+        }
+        const restored = Array.isArray(result.payload.restored) ? result.payload.restored : [];
+        const warnings = Array.isArray(result.payload.warnings) ? result.payload.warnings : [];
+        if (warnings.length > 0) {
+          /* Written, but the device could not read it back - the case that
+             would otherwise be discovered as a device on the setup access
+             point with nothing said about why. */
+          setBackupStatus(`Восстановлено: ${restored.join(', ')}. ` +
+                          `Устройство не смогло прочитать: ${warnings.join(', ')}. ` +
+                          'Перезагрузка…', 'error');
+        } else {
+          setBackupStatus(`Восстановлено: ${restored.join(', ')}. Устройство перезагружается…`,
+                          'success');
+        }
+        /* The file is cleared either way: the same upload sent twice after a
+           reboot would restore over settings the user may have changed since. */
+        backupFile.value = '';
+      })
+      .catch(() => {
+        setBackupStatus('Не удалось отправить файл', 'error');
+      })
+      .then(() => {
+        restoreInFlight = false;
+        backupRestore.disabled = chosenFile() === null;
+      });
+  }
+
+  function bindBackup() {
+    /* Set from the file input rather than trusted to the markup, the way the
+       password button's label is: the two are written in different files and
+       a Restore button that starts live sends an empty body. */
+    backupRestore.disabled = chosenFile() === null;
+    backupFile.addEventListener('change', () => {
+      const file = chosenFile();
+      backupRestore.disabled = file === null;
+      setBackupStatus(file === null ? 'Готово' : `Выбран файл: ${file.name}`);
+    });
+    backupRestore.addEventListener('click', () => restoreChosenFile());
+  }
+
   // Yandex Music runs over REST rather than the WebSocket: it changes a few
   // times per authorisation and never during playback, so it does not belong
   // in the live diff stream that carries the player state.
@@ -915,6 +1013,7 @@
   setPasswordVisible(false);
   wifiScan.addEventListener('click', () => startScan());
   bindDeviceFields();
+  bindBackup();
   yandexLink.addEventListener('click', () => sendYandexAction('begin'));
   yandexCancel.addEventListener('click', () => sendYandexAction('cancel'));
   yandexForget.addEventListener('click', () => sendYandexAction('forget'));

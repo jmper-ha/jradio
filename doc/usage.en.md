@@ -195,6 +195,29 @@ brightness turned on the device reaches an open page within a quarter of a
 second. A slider being held with the pointer does not jump - the update is
 dropped until it is let go.
 
+### Backup and restore
+
+Only in the web interface, as a card under the device settings. "Скачать архив"
+hands over a zip of three files: the Wi-Fi networks, the settings and the Yandex
+token - everything the device knows about itself that is not in the repository.
+The playlist is not in there; it has its own export button on the playlist page.
+
+Restoring takes either the whole archive or one file out of it - `wifi.json`,
+`settings.csv` or `yandex.json`. The page sends whatever was picked and the
+device works out the rest. It reboots afterwards: that is the only way the
+settings, the networks and the token are certain to be re-read from the new
+files. It takes a few seconds, and the page does not need closing - the
+connection comes back on its own.
+
+The point of all this is `littlefs-flash`: it rewrites the whole data partition
+and takes the saved networks and settings with it. So: download the archive,
+flash, restore the archive. The device comes back exactly where it was, playing
+the station it was playing.
+
+**The Wi-Fi password is in the archive in clear text**, or there would be
+nothing worth restoring. The downloaded file is a key to the network: keep it
+the way you would keep a password.
+
 ## Formats in detail
 
 FLAC plays at 24 bits too. The I2S slots are 16-bit and are not reconfigured on

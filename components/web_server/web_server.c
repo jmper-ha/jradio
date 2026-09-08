@@ -42,6 +42,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include <sys/stat.h>
 #include <unistd.h>
 #include "ui_menu.h"
+#include "web_backup.h"
 #include "web_cover.h"
 #include "web_json.h"
 #include "web_settings.h"
@@ -1681,10 +1682,10 @@ esp_err_t web_server_start(void)
         // The HTTP worker is network-bound; keep it on core 0 with Wi-Fi and
         // lwIP so it cannot preempt the audio decoder pinned to core 1.
         config.core_id = 0;
-        // Twenty-three are registered below plus /ws; the spare ones exist
+        // Twenty-nine are registered below plus /ws; the spare ones exist
         // because running out is not a build error - httpd_register_uri_handler
         // fails at startup and takes the whole web server down with it.
-        config.max_uri_handlers = 30;
+        config.max_uri_handlers = 34;
         config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
         config.send_wait_timeout = 1;
         config.lru_purge_enable = false;
@@ -1717,6 +1718,8 @@ esp_err_t web_server_start(void)
             {.uri = "/api/station-icon", .method = HTTP_GET, .handler = web_server_station_icon_get},
             {.uri = "/api/progress", .method = HTTP_GET, .handler = web_server_progress_get},
             {.uri = "/api/cover", .method = HTTP_GET, .handler = web_server_cover_get},
+            {.uri = "/api/backup", .method = HTTP_GET, .handler = web_backup_get},
+            {.uri = "/api/restore", .method = HTTP_POST, .handler = web_backup_restore_post},
         };
         for (size_t index = 0; index < sizeof(handlers) / sizeof(handlers[0]); ++index) {
             const esp_err_t err = httpd_register_uri_handler(s_server, &handlers[index]);

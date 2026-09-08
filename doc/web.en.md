@@ -12,6 +12,8 @@
 | `GET /api/about` | The firmware and web versions, ESP-IDF, the author's address |
 | `GET /api/settings` | The device settings, the same ones its own screen has |
 | `POST /api/settings` | Changes one setting: `{"field":…,"value":…}` |
+| `GET /api/backup` | The device configuration as one zip: `wifi.json`, `settings.csv`, `yandex.json` |
+| `POST /api/restore` | Restores it: the whole archive or a single file, named by `?name=` |
 | `GET /api/progress` | Track position, buffer fill, cover signature |
 | `GET /api/cover` | The current cover, 96x96, as a BMP |
 | `GET /api/stations` | The station names of the active source |
@@ -88,6 +90,60 @@ It doubles as the only check that a picture arrived at all. The files live in
 `/littlefs/radio_img/`, and saving the playlist deletes the ones nothing refers
 to any more - that is the one moment when the full list of names in use is
 known.
+
+## Backup and restore
+
+Three files make a device this device: `wifi.json` for the networks it knows,
+`settings.csv` for how it is set up, `yandex.json` for the Yandex token.
+`GET /api/backup` hands them over as one zip and `POST /api/restore` takes them
+back - the whole archive, or one file out of it. The playlist is not in there:
+it has its own export on the playlist page, and that one carries more, the
+station pictures included.
+
+**The archive holds the Wi-Fi password and the Yandex token in clear text.**
+Anything else would not restore the thing that matters most, the network. The
+device hands the archive to anyone on the local network - the same place the
+rest of the interface lives, and there is no password on any of it. The answer
+is marked `no-store` so no copy settles on the way.
+
+What the device writes is stored, never deflated: the files are a few kilobytes
+each, so there is nothing to compress, and every unpacker opens a stored entry.
+It reads deflate as well - which is what comes back if the archive is unpacked,
+edited and repacked by Windows Explorer or Finder. Inflating is `tinfl` out of
+the chip's ROM, so it costs no flash; the output is bounded by the size the
+archive declared and checked against its CRC. Just not through
+`tinfl_decompress_mem_to_mem()`: that helper keeps eleven kilobytes of tables on
+the stack and the HTTP task's stack is six, so the first compressed archive
+ended in `StoreProhibited`.
+
+Anything that is not ours is walked over: a folder inside the archive
+(`config/wifi.json` arrives at the same place), foreign files beside ours, a
+name longer than ours ever are. Before anything is written every file is checked
+for shape - JSON starts with `{`, ends with `}` and carries `"version"`; the CSV
+is text with a comma and no control characters - and **all** of them are checked
+before **any** of them is written: a restore that stops halfway would leave
+somebody else's networks with this device's own token, a state neither backup
+describes. Each file is written beside its target and renamed over it, the way
+every other writer of these files does.
+
+After writing, the device reads the file back through the same code that reads
+it at boot, and says so in the answer (`warnings`) if that code refused it.
+Otherwise the only sign would be a device on the setup access point after the
+reboot, with nothing said about why.
+
+The reboot is part of the deal: the settings are cached by three tasks, the
+network list is read once at startup, and the token is held by the Yandex
+client. A restart is the one path where all of that is guaranteed to come from
+the files that were just written.
+
+A refusal answers with a code rather than a sentence: `size`, `incomplete`,
+`memory`, `compressed`, `damaged`, `malformed`, `empty`, `unknown-file`,
+`contents`, `write`. The page says it in Russian; matching on an English
+sentence would mean a blank screen the day one of them is reworded in a log.
+
+What it will not take: a zip whose sizes live in a descriptor after the data
+rather than in the header, which is how a streaming packer writes them. That is
+refused as `malformed`.
 
 ## The playlist format
 

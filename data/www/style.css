@@ -1290,6 +1290,12 @@ button.network-name:hover { color: var(--accent); }
 
 .secondary-button:hover:not(:disabled) { background: var(--surface-2); }
 
+/* The backup download is an anchor, so the browser saves the file itself
+   instead of the page holding it in memory; without this it would be the one
+   button on the page wearing a link's underline. */
+a.primary-button,
+a.secondary-button { text-decoration: none; color: inherit; }
+
 .file-button { cursor: pointer; }
 
 /* Name on the left, value on the right, aligned down the card. A table would

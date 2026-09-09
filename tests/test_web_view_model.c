@@ -14,12 +14,24 @@ static void test_enum_tokens_and_labels_are_stable(void)
     assert(strcmp(web_view_playback_name(PLAYER_PLAYBACK_ERROR), "error") == 0);
     assert(strcmp(web_view_playback_name((player_playback_state_t)99), "unknown") == 0);
 
-    assert(strcmp(web_view_playback_label(PLAYER_PLAYBACK_PLAYING), "Воспроизведение") == 0);
-    assert(strcmp(web_view_playback_label(PLAYER_PLAYBACK_PAUSED), "Пауза") == 0);
+    /* The name is what the browser's own code matches on, so it stays put in
+       either language; the label is what a person reads, so it moves. */
+    assert(strcmp(web_view_playback_label(PLAYER_PLAYBACK_PLAYING, DEVICE_LANGUAGE_RU),
+                  "Воспроизведение") == 0);
+    assert(strcmp(web_view_playback_label(PLAYER_PLAYBACK_PLAYING, DEVICE_LANGUAGE_EN),
+                  "Playing") == 0);
+    assert(strcmp(web_view_playback_label(PLAYER_PLAYBACK_PAUSED, DEVICE_LANGUAGE_RU),
+                  "Пауза") == 0);
     assert(strcmp(web_view_source_name(AUDIO_SOURCE_INTERNET_RADIO), "internet_radio") == 0);
-    assert(strcmp(web_view_source_label(AUDIO_SOURCE_INTERNET_RADIO), "Интернет-радио") == 0);
+    assert(strcmp(web_view_source_label(AUDIO_SOURCE_INTERNET_RADIO, DEVICE_LANGUAGE_RU),
+                  "Интернет-радио") == 0);
+    assert(strcmp(web_view_source_label(AUDIO_SOURCE_INTERNET_RADIO, DEVICE_LANGUAGE_EN),
+                  "Internet radio") == 0);
     assert(strcmp(web_view_source_name((audio_source_t)99), "unknown") == 0);
-    assert(strcmp(web_view_source_label((audio_source_t)99), "Неизвестный режим") == 0);
+    assert(strcmp(web_view_source_label((audio_source_t)99, DEVICE_LANGUAGE_RU),
+                  "Неизвестный режим") == 0);
+    assert(strcmp(web_view_source_label((audio_source_t)99, DEVICE_LANGUAGE_EN),
+                  "Unknown mode") == 0);
 }
 
 static player_snapshot_t sample_snapshot(void)

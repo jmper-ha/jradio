@@ -5,19 +5,27 @@
 #include "board_features.h"
 
 typedef struct {
-    const char *label;
+    device_text_id_t label;
     audio_source_t source;
 } ui_menu_item_config_t;
 
+/* The label is an id rather than a string: this list is the home screen, and
+ * the home screen was the half of the interface that stayed in English while
+ * the settings beside it were translated. */
 static const ui_menu_item_config_t s_items[UI_MENU_ITEM_COUNT] = {
-    [UI_MENU_ITEM_INTERNET_RADIO] = {.label = "Internet radio", .source = AUDIO_SOURCE_INTERNET_RADIO},
-    [UI_MENU_ITEM_USB_FILES] = {.label = "USB files", .source = AUDIO_SOURCE_USB},
-    [UI_MENU_ITEM_SD_CARD] = {.label = "SD card", .source = AUDIO_SOURCE_SD},
-    [UI_MENU_ITEM_BLUETOOTH] = {.label = "Bluetooth", .source = AUDIO_SOURCE_BLUETOOTH},
-    [UI_MENU_ITEM_FM_RADIO] = {.label = "FM radio", .source = AUDIO_SOURCE_FM},
-    [UI_MENU_ITEM_DLNA] = {.label = "DLNA", .source = AUDIO_SOURCE_DLNA},
-    [UI_MENU_ITEM_YANDEX_MUSIC] = {.label = "Yandex Music", .source = AUDIO_SOURCE_YANDEX},
-    [UI_MENU_ITEM_SETTINGS] = {.label = "Настройки", .source = AUDIO_SOURCE_NONE},
+    [UI_MENU_ITEM_INTERNET_RADIO] = {.label = DEVICE_TEXT_SOURCE_INTERNET_RADIO,
+                                     .source = AUDIO_SOURCE_INTERNET_RADIO},
+    [UI_MENU_ITEM_USB_FILES] = {.label = DEVICE_TEXT_SOURCE_USB, .source = AUDIO_SOURCE_USB},
+    [UI_MENU_ITEM_SD_CARD] = {.label = DEVICE_TEXT_SOURCE_SD, .source = AUDIO_SOURCE_SD},
+    [UI_MENU_ITEM_BLUETOOTH] = {.label = DEVICE_TEXT_SOURCE_BLUETOOTH,
+                                .source = AUDIO_SOURCE_BLUETOOTH},
+    [UI_MENU_ITEM_FM_RADIO] = {.label = DEVICE_TEXT_SOURCE_FM, .source = AUDIO_SOURCE_FM},
+    [UI_MENU_ITEM_DLNA] = {.label = DEVICE_TEXT_SOURCE_DLNA, .source = AUDIO_SOURCE_DLNA},
+    /* The long name here, where the row has the width for it: the player block
+     * shows the short one. */
+    [UI_MENU_ITEM_YANDEX_MUSIC] = {.label = DEVICE_TEXT_YANDEX_LONG,
+                                   .source = AUDIO_SOURCE_YANDEX},
+    [UI_MENU_ITEM_SETTINGS] = {.label = DEVICE_TEXT_SETTINGS, .source = AUDIO_SOURCE_NONE},
 };
 
 /* What this firmware was built with. Internet radio and Settings answer yes
@@ -192,9 +200,9 @@ uint8_t ui_menu_selected_index(const ui_menu_state_t *state)
     return state == NULL ? 0 : state->selected_index;
 }
 
-const char *ui_menu_item_label(ui_menu_item_t item)
+const char *ui_menu_item_label(ui_menu_item_t item, device_language_t language)
 {
-    return item < UI_MENU_ITEM_COUNT ? s_items[item].label : "";
+    return item < UI_MENU_ITEM_COUNT ? device_text(s_items[item].label, language) : "";
 }
 
 bool ui_menu_selection_is_settings(const ui_menu_state_t *state)

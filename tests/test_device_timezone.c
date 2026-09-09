@@ -10,10 +10,17 @@ static void test_every_zone_is_usable_as_written(void)
     for (size_t index = 0U; index < device_timezone_count(); ++index) {
         const device_timezone_t *const zone = device_timezone_at(index);
         assert(zone != NULL);
-        assert(zone->id != NULL && zone->label != NULL && zone->posix != NULL);
-        assert(zone->id[0] != '\0' && zone->label[0] != '\0' && zone->posix[0] != '\0');
+        assert(zone->id != NULL && zone->posix != NULL);
+        assert(zone->label_ru != NULL && zone->label_en != NULL);
+        assert(zone->id[0] != '\0' && zone->posix[0] != '\0');
+        /* Both halves, because a zone added with only one filled in shows the
+           page a blank row rather than failing anywhere. */
+        assert(zone->label_ru[0] != '\0' && zone->label_en[0] != '\0');
         assert(strlen(zone->id) < DEVICE_TIMEZONE_ID_MAX);
-        assert(strlen(zone->label) < DEVICE_TIMEZONE_LABEL_MAX);
+        assert(strlen(zone->label_ru) < DEVICE_TIMEZONE_LABEL_MAX);
+        assert(strlen(zone->label_en) < DEVICE_TIMEZONE_LABEL_MAX);
+        assert(strcmp(device_timezone_label(zone, DEVICE_LANGUAGE_RU), zone->label_ru) == 0);
+        assert(strcmp(device_timezone_label(zone, DEVICE_LANGUAGE_EN), zone->label_en) == 0);
         /* An id is what settings.csv stores and what travels in a URL-shaped
          * JSON field, so it may hold neither the file's separator nor a tab
          * nor a space. The POSIX rule beside it is free to hold commas -

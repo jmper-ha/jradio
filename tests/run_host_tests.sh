@@ -136,7 +136,7 @@ run_test board_options tests/test_board_options.c
 run_test ui_layout tests/test_ui_layout.c
 # What the About screen says about the two versions - which is a set of
 # decisions, and the reason the screen exists is the one where they disagree.
-run_test ui_about tests/test_ui_about.c components/ui/ui_about.c
+run_test ui_about tests/test_ui_about.c components/ui/ui_about.c components/settings/device_text.c
 run_test board_input tests/test_board_input.c components/board/board_input.c
 run_test board_button_gesture tests/test_board_button_gesture.c components/board/board_input.c
 # Reading a media server on the LAN. Every fixture in these is bytes taken off
@@ -175,6 +175,9 @@ run_test config_archive tests/test_config_archive.c components/settings/config_a
 run_test settings_csv tests/test_settings_csv.c components/settings/settings_csv.c
 # The zone table: what a POSIX TZ rule may hold, and what an id may not - the
 # id goes into settings.csv, whose separator is the comma every DST rule has.
+# Every word the device shows, in both languages. The count is a compile-time
+# check; this walks the table for an entry that was added empty.
+run_test device_text tests/test_device_text.c components/settings/device_text.c
 run_test device_timezone tests/test_device_timezone.c components/settings/device_timezone.c
 run_test device_settings tests/test_device_settings.c components/settings/device_settings.c components/settings/device_timezone.c \
     components/settings/settings_csv.c
@@ -188,24 +191,24 @@ run_test ui_autoplay tests/test_ui_autoplay.c components/ui/ui_autoplay.c \
 run_test ui_click_gesture tests/test_ui_click_gesture.c components/ui/ui_click_gesture.c
 run_test ui_deferred_start tests/test_ui_deferred_start.c components/ui/ui_deferred_start.c
 run_test ui_draw_buffer tests/test_ui_draw_buffer.c components/ui/ui_draw_buffer.c
-run_test ui_menu tests/test_ui_menu.c components/ui/ui_menu.c
+run_test ui_menu tests/test_ui_menu.c components/ui/ui_menu.c components/settings/device_text.c
 run_test ui_busy_bar tests/test_ui_busy_bar.c components/ui/ui_busy_bar.c
 run_test ui_feed_model tests/test_ui_feed_model.c components/ui/ui_feed_model.c \
-    components/ui/ui_menu.c
+    components/ui/ui_menu.c components/settings/device_text.c
 run_test ui_player_state tests/test_ui_player_state.c components/ui/ui_player_state.c
 run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c \
     components/internet_radio/radio_stream_format.c
 run_test ui_now_playing tests/test_ui_now_playing.c components/ui/ui_now_playing.c
 run_test ui_seek tests/test_ui_seek.c components/ui/ui_seek.c
-run_test ui_web_address tests/test_ui_web_address.c components/ui/ui_web_address.c
+run_test ui_web_address tests/test_ui_web_address.c components/ui/ui_web_address.c components/settings/device_text.c
 run_test ui_settings_model tests/test_ui_settings_model.c components/ui/ui_settings_model.c
 run_test ui_buffer_graph tests/test_ui_buffer_graph.c components/ui/ui_buffer_graph.c
 run_test ui_status_bar tests/test_ui_status_bar.c components/ui/ui_status_bar.c
 run_test ui_text_scroll tests/test_ui_text_scroll.c components/ui/ui_text_scroll.c
 run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c
 run_test ui_vu_meter tests/test_ui_vu_meter.c components/ui/ui_vu_meter.c
-run_test ui_files_notice tests/test_ui_files_notice.c components/ui/ui_files_notice.c
-run_test ui_yandex_screen tests/test_ui_yandex_screen.c components/ui/ui_yandex_screen.c
+run_test ui_files_notice tests/test_ui_files_notice.c components/ui/ui_files_notice.c components/settings/device_text.c
+run_test ui_yandex_screen tests/test_ui_yandex_screen.c components/ui/ui_yandex_screen.c components/settings/device_text.c
 run_test file_browser tests/test_file_browser.c components/file_storage/file_browser.c \
     components/file_storage/playlist_file.c
 run_test playlist_file tests/test_playlist_file.c components/file_storage/playlist_file.c \
@@ -219,7 +222,7 @@ run_test wifi_provisioning tests/test_wifi_provisioning.c \
 run_test wifi_settings tests/test_wifi_settings.c components/settings/wifi_settings.c
 run_test web_server -I"${cjson_include}" tests/test_web_server.c \
     components/web_server/web_server.c components/web_server/web_socket.c \
-    components/web_server/web_view_model.c components/web_server/web_json.c \
+    components/web_server/web_view_model.c components/settings/device_text.c components/web_server/web_json.c \
     components/ui/ui_now_playing.c \
     components/web_server/web_settings.c components/settings/device_settings.c components/settings/device_timezone.c \
     components/settings/settings_csv.c components/settings/wifi_settings.c \
@@ -229,7 +232,7 @@ run_test web_json tests/test_web_json.c components/web_server/web_json.c
 run_test web_protocol -I"${cjson_include}" tests/test_web_protocol.c \
     components/web_server/web_protocol.c "${cjson_source}"
 run_test web_view_model tests/test_web_view_model.c \
-    components/web_server/web_view_model.c
+    components/web_server/web_view_model.c components/settings/device_text.c
 run_test web_settings_api -I"${cjson_include}" tests/test_web_settings_api.c \
     components/web_server/web_settings.c components/web_server/web_json.c \
     components/settings/device_settings.c components/settings/device_timezone.c components/settings/settings_csv.c \

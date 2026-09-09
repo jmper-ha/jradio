@@ -1,5 +1,7 @@
 #pragma once
 
+#include "device_text.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -34,4 +36,5 @@ typedef struct {
 /* Fills every line. Never fails: a reading the device could not take comes
  * back as the word for "unknown" rather than as an empty row, because a blank
  * where a version should be reads as a bug in the screen. */
-void ui_about_build(const version_info_t *info, bool english, ui_about_lines_t *lines);
+void ui_about_build(const version_info_t *info, device_language_t language,
+                    ui_about_lines_t *lines);

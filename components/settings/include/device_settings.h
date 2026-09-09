@@ -3,12 +3,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "device_language.h"
 #include "device_timezone.h"
-
-typedef enum {
-    DEVICE_LANGUAGE_RU = 0,
-    DEVICE_LANGUAGE_EN,
-} device_language_t;
 
 typedef enum {
     DEVICE_HOME_SCREEN_TEXT = 0,
@@ -244,3 +240,9 @@ bool device_settings_read_published(device_settings_t *copy);
  * that has not been told yet should assume a source is there rather than take
  * it away for the first second after boot. */
 bool device_settings_published_switches(bool *yandex_music, bool *dlna);
+
+/* The language out of that same copy, for the components that put words on a
+ * screen or into a browser without owning the settings - the controller's
+ * error lines, the WebSocket's source names. Russian before the first publish,
+ * which is what the device has always come up in. */
+device_language_t device_settings_published_language(void);

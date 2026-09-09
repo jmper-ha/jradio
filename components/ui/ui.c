@@ -296,6 +296,14 @@ static char s_qr_shown[128];
 static lv_obj_t *s_settings_notice;
 static ui_settings_model_t s_settings_model;
 static device_settings_t s_device_settings;
+
+/* The current language, every time rather than cached: it changes from the row
+ * above on this very screen, and from the browser while the screen is open. */
+static const char *ui_text(device_text_id_t id)
+{
+    return device_text(id, s_device_settings.language);
+}
+
 static bool s_settings_open;
 /* Set when the radio could not be opened at once on a device with no home
  * screen - see ui_open_radio_home(). Retried from the poll loop, which is
@@ -854,11 +862,12 @@ static void ui_update_footer(void)
         buffer_slot = true;
         buffer_known = player_control_input_fill(&buffer_fill);
         if (buffer_known) {
-            snprintf(left_text, sizeof(left_text), "Буфер %u%%", (unsigned int)buffer_fill);
+            snprintf(left_text, sizeof(left_text), ui_text(DEVICE_TEXT_BUFFER_FORMAT),
+                     (unsigned int)buffer_fill);
         } else {
             // Nothing playing, or a source with no backlog at all. A dash says
             // that; a zero would claim the buffer had run dry.
-            snprintf(left_text, sizeof(left_text), "Буфер --");
+            snprintf(left_text, sizeof(left_text), "%s", ui_text(DEVICE_TEXT_BUFFER_UNKNOWN));
         }
     }
     /* One reading, two faces, and exactly one of them on screen: the strip
@@ -1013,7 +1022,7 @@ static void ui_update_files_status(const player_snapshot_t *snapshot)
      * same way the radio's does. */
     ui_set_state_line_from(snapshot,
                            snapshot->playback_state == PLAYER_PLAYBACK_STOPPED
-                               ? "Выберите файл"
+                               ? ui_text(DEVICE_TEXT_CHOOSE_FILE)
                                : "",
                            now.artist);
     ui_set_stream_readings(snapshot);
@@ -1037,7 +1046,7 @@ static void ui_update_dlna_status(const player_snapshot_t *snapshot)
      * same line the volumes show, worded for a server. */
     const char *state = "";
     if (snapshot->playback_state == PLAYER_PLAYBACK_STOPPED) {
-        state = "Выберите трек";
+        state = ui_text(DEVICE_TEXT_CHOOSE_TRACK);
     } else if (snapshot->playback_state != PLAYER_PLAYBACK_PLAYING &&
                snapshot->playback_state != PLAYER_PLAYBACK_PAUSED) {
         state = ui_radio_state_text(snapshot->playback_state);
@@ -1127,7 +1136,7 @@ static uint32_t ui_tick_get_ms(void)
 
 static const char *ui_feed_item_title(ui_feed_item_t item)
 {
-    return ui_menu_item_label((ui_menu_item_t)item);
+    return ui_menu_item_label((ui_menu_item_t)item, s_device_settings.language);
 }
 
 /* Both home screens carry the same items, so a switch in Settings has to reach
@@ -1347,7 +1356,7 @@ static void ui_update_menu_highlight(void)
                                     lv_color_hex(!enabled       ? UI_COLOR_DISABLED
                                                  : is_selected  ? UI_COLOR_ACCENT
                                                                 : UI_COLOR_MUTED), 0);
-        lv_label_set_text(s_menu_rows[row], ui_menu_item_label(item));
+        lv_label_set_text(s_menu_rows[row], ui_menu_item_label(item, s_device_settings.language));
         lv_image_set_src(s_menu_icons[row],
                          ui_feed_icon_image((ui_feed_item_t)item, UI_FEED_ICON_SMALL));
         // The icon follows the text rather than staying lit: a row that is not
@@ -1376,7 +1385,8 @@ static void ui_create_menu_screen(void)
 
     for (uint8_t index = 0; index < UI_MENU_ITEM_COUNT; ++index) {
         s_menu_rows[index] = lv_label_create(s_menu_screen);
-        lv_label_set_text(s_menu_rows[index], ui_menu_item_label((ui_menu_item_t)index));
+        lv_label_set_text(s_menu_rows[index],
+                          ui_menu_item_label((ui_menu_item_t)index, s_device_settings.language));
         lv_obj_set_pos(s_menu_rows[index], UI_MENU_ROW_X,
                        UI_MENU_ROW_Y + index * UI_MENU_ROW_PITCH);
         lv_obj_set_size(s_menu_rows[index], UI_MENU_ROW_W, UI_MENU_ROW_H);
@@ -1692,7 +1702,7 @@ static void ui_create_settings_screen(void)
     lv_obj_set_style_text_font(s_settings_screen, UI_FONT_BODY, 0);
 
     lv_obj_t *title = lv_label_create(s_settings_screen);
-    lv_label_set_text(title, "Настройки");
+    lv_label_set_text(title, ui_text(DEVICE_TEXT_SETTINGS));
     lv_obj_set_pos(title, 12, 8);
     // Matches the group headings under it: a heading smaller than the rows it
     // introduces reads as a mistake.
@@ -1897,58 +1907,76 @@ static void ui_create_about_overlay(void)
     s_about_hint = hint;
 }
 
-static const char *ui_settings_group_text(ui_settings_group_t group, bool english)
+static const char *ui_settings_group_text(ui_settings_group_t group)
 {
     switch (group) {
-    case UI_SETTINGS_GROUP_LANGUAGE: return english ? "Language" : "Язык";
-    case UI_SETTINGS_GROUP_GENERAL: return english ? "General" : "Общие";
-    case UI_SETTINGS_GROUP_DISPLAY: return english ? "Display" : "Экран";
+    case UI_SETTINGS_GROUP_LANGUAGE: return ui_text(DEVICE_TEXT_GROUP_LANGUAGE);
+    case UI_SETTINGS_GROUP_GENERAL: return ui_text(DEVICE_TEXT_GROUP_GENERAL);
+    case UI_SETTINGS_GROUP_DISPLAY: return ui_text(DEVICE_TEXT_GROUP_DISPLAY);
     default: return "";
     }
 }
 
+/* One row: "  Label: value". The two halves are looked up separately because
+ * a value is a word in its own right - "Feed", "Graph" - and several rows
+ * share one. */
+static void ui_settings_field(char *text, size_t text_size, device_text_id_t label,
+                              device_text_id_t value)
+{
+    snprintf(text, text_size, "  %s: %s", ui_text(label), ui_text(value));
+}
+
+static void ui_settings_switch_field(char *text, size_t text_size, device_text_id_t label,
+                                     bool on)
+{
+    ui_settings_field(text, text_size, label, on ? DEVICE_TEXT_ON : DEVICE_TEXT_OFF);
+}
+
 static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_t text_size)
 {
-    const bool english = s_device_settings.language == DEVICE_LANGUAGE_EN;
-    const char *group = ui_settings_group_text(row->group, english);
     if (row->kind == UI_SETTINGS_ROW_GROUP) {
-        snprintf(text, text_size, "%s", group);
+        snprintf(text, text_size, "%s", ui_settings_group_text(row->group));
         return;
     }
     switch (row->id) {
     case UI_SETTINGS_ROW_LANGUAGE_FIELD:
-        snprintf(text, text_size, "  %s: %s", english ? "Language" : "Язык",
-                 english ? "English" : "Русский");
+        /* The value names itself in its own language whichever is in force, so
+         * that somebody who cannot read the current setting can still find the
+         * way back out of it. */
+        ui_settings_field(text, text_size, DEVICE_TEXT_ROW_LANGUAGE,
+                          s_device_settings.language == DEVICE_LANGUAGE_EN
+                              ? DEVICE_TEXT_LANGUAGE_ENGLISH
+                              : DEVICE_TEXT_LANGUAGE_RUSSIAN);
         break;
     case UI_SETTINGS_ROW_HOME_SCREEN_FIELD:
-        snprintf(text, text_size, "  %s: %s", english ? "Home screen" : "Главный экран",
-                 s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED ?
-                     (english ? "Feed" : "Лента") : (english ? "List" : "Список"));
+        ui_settings_field(text, text_size, DEVICE_TEXT_ROW_HOME_SCREEN,
+                          s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED
+                              ? DEVICE_TEXT_HOME_SCREEN_FEED
+                              : DEVICE_TEXT_HOME_SCREEN_LIST);
         break;
     case UI_SETTINGS_ROW_SCROLL_FIELD:
-        snprintf(text, text_size, "  %s: %s", english ? "Scrolling" : "Скроллинг",
-                 s_device_settings.scroll == DEVICE_SCROLL_LEFT
-                     ? (english ? "Left" : "Влево")
-                     : (english ? "Left-right" : "Влево-вправо"));
+        ui_settings_field(text, text_size, DEVICE_TEXT_ROW_SCROLL,
+                          s_device_settings.scroll == DEVICE_SCROLL_LEFT
+                              ? DEVICE_TEXT_SCROLL_LEFT
+                              : DEVICE_TEXT_SCROLL_BOUNCE);
         break;
     case UI_SETTINGS_ROW_BUFFER_FIELD:
-        snprintf(text, text_size, "  %s: %s", english ? "Buffer" : "Буфер",
-                 s_device_settings.buffer_view == DEVICE_BUFFER_VIEW_GRAPH
-                     ? (english ? "Graph" : "График")
-                     : (english ? "Text" : "Текст"));
+        ui_settings_field(text, text_size, DEVICE_TEXT_ROW_BUFFER_VIEW,
+                          s_device_settings.buffer_view == DEVICE_BUFFER_VIEW_GRAPH
+                              ? DEVICE_TEXT_BUFFER_VIEW_GRAPH
+                              : DEVICE_TEXT_BUFFER_VIEW_TEXT);
         break;
     case UI_SETTINGS_ROW_AUTOPLAY_FIELD:
-        snprintf(text, text_size, "  %s: %s", english ? "Autoplay" : "Автовоспроизведение",
-                 s_device_settings.autoplay ? "ON" : "OFF");
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_AUTOPLAY,
+                                 s_device_settings.autoplay);
         break;
     case UI_SETTINGS_ROW_YANDEX_FIELD:
-        snprintf(text, text_size, "  %s: %s", english ? "Yandex Music" : "Яндекс Музыка",
-                 s_device_settings.yandex_music ? "ON" : "OFF");
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_YANDEX,
+                                 s_device_settings.yandex_music);
         break;
     case UI_SETTINGS_ROW_DLNA_FIELD:
-        /* Not translated: DLNA is the name of the protocol either way, and the
-         * row on the home screen says the same word. */
-        snprintf(text, text_size, "  DLNA: %s", s_device_settings.dlna ? "ON" : "OFF");
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_DLNA,
+                                 s_device_settings.dlna);
         break;
     case UI_SETTINGS_ROW_BRIGHTNESS_FIELD:
         /* Angle brackets while the knob owns the value: the cursor already
@@ -1956,20 +1984,20 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
          * of the encoder changes a number instead of moving on. */
         snprintf(text, text_size,
                  ui_settings_model_is_editing(&s_settings_model) ? "  %s: <%d>" : "  %s: %d",
-                 english ? "Brightness" : "Яркость", (int)s_device_settings.brightness);
+                 ui_text(DEVICE_TEXT_ROW_BRIGHTNESS), (int)s_device_settings.brightness);
         break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
-        snprintf(text, text_size, "  %s: %s", english ? "Flip vertical" : "Поворот по вертикали",
-                 s_device_settings.flip_vertical ? "ON" : "OFF");
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_FLIP_VERTICAL,
+                                 s_device_settings.flip_vertical);
         break;
     case UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD:
-        snprintf(text, text_size, "  %s: %s", english ? "Flip horizontal" : "Поворот по горизонтали",
-                 s_device_settings.flip_horizontal ? "ON" : "OFF");
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_FLIP_HORIZONTAL,
+                                 s_device_settings.flip_horizontal);
         break;
     case UI_SETTINGS_ROW_ABOUT:
         /* No indent and no value: it is not a field inside a group, and there
          * is nothing beside it to show - a press opens something instead. */
-        snprintf(text, text_size, "%s", english ? "About" : "Об устройстве");
+        snprintf(text, text_size, "%s", ui_text(DEVICE_TEXT_ROW_ABOUT));
         break;
     default:
         text[0] = '\0';
@@ -2021,11 +2049,10 @@ static void ui_show_about(void)
     s_about_open = true;
     s_about_opened_ms = ui_tick_get_ms();
 
-    const bool english = s_device_settings.language == DEVICE_LANGUAGE_EN;
     version_info_t info;
     version_info_read(&info);
     ui_about_lines_t lines;
-    ui_about_build(&info, english, &lines);
+    ui_about_build(&info, s_device_settings.language, &lines);
 
     const char *const text[UI_ABOUT_ROWS] = {
         lines.firmware, lines.built, lines.web, lines.idf, lines.notice,
@@ -2033,7 +2060,7 @@ static void ui_show_about(void)
     for (size_t row = 0U; row < UI_ABOUT_ROWS; ++row) {
         lv_label_set_text(s_about_rows[row], text[row]);
     }
-    lv_label_set_text(s_about_hint, english ? "press to go back" : "нажмите для возврата");
+    lv_label_set_text(s_about_hint, ui_text(DEVICE_TEXT_PRESS_TO_RETURN));
     lv_obj_clear_flag(s_about_overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -2055,8 +2082,7 @@ static void ui_hide_qr(void)
  * The address can change while the code is up - saving a network from the web
  * moves the box off its own access point - and a QR still offering the old one
  * is worse than none: the phone reports a failure that looks like its own. */
-static void ui_apply_qr(const char *payload, bool available, const char *caption,
-                        bool english)
+static void ui_apply_qr(const char *payload, bool available, const char *caption)
 {
     if (!s_qr_open) return;
     if (!available) {
@@ -2065,7 +2091,7 @@ static void ui_apply_qr(const char *payload, bool available, const char *caption
     }
     ui_set_label_text_if_changed(s_qr_caption, caption);
     ui_set_label_text_if_changed(s_qr_back,
-                                 english ? "press to return" : "Нажмите, чтобы вернуться");
+                                 ui_text(DEVICE_TEXT_PRESS_TO_RETURN));
     if (strcmp(payload, s_qr_shown) == 0) return;
     if (lv_qrcode_update(s_qr_code, payload, (uint32_t)strlen(payload)) != LV_RESULT_OK) {
         /* Nothing to show and nothing to say about it: a blank white card
@@ -2079,10 +2105,10 @@ static void ui_apply_qr(const char *payload, bool available, const char *caption
 static void ui_update_settings_web_band(void)
 {
     const wifi_provisioning_status_t status = wifi_provisioning_status();
-    const bool english = s_device_settings.language == DEVICE_LANGUAGE_EN;
     char text[64];
-    ui_web_address_text(status.mode, status.ipv4, status.active_ssid, english,
-                        UI_SET_BAND_SHOW_SCHEME, text, sizeof(text));
+    ui_web_address_text(status.mode, status.ipv4, status.active_ssid,
+                        s_device_settings.language, UI_SET_BAND_SHOW_SCHEME, text,
+                        sizeof(text));
     ui_set_label_text_if_changed(s_settings_web_address, text);
 
     char payload[sizeof(s_qr_shown)];
@@ -2096,7 +2122,7 @@ static void ui_update_settings_web_band(void)
      * string on it that ignored the switch, and on a Russian device it read as
      * the only English on the panel. */
     ui_set_label_text_if_changed(s_settings_web_hint,
-                                 available ? (english ? "press for QR" : "QR по нажатию") : "");
+                                 available ? ui_text(DEVICE_TEXT_ROW_WEB_ADDRESS) : "");
 
     /* The band is the last cursor stop, so it highlights like a row: the same
      * tile colour and the same accent, or the screen has a selection nobody
@@ -2109,7 +2135,7 @@ static void ui_update_settings_web_band(void)
                                 lv_color_hex(selected ? UI_COLOR_ACCENT : UI_COLOR_TEXT), 0);
     lv_obj_set_style_text_color(s_settings_web_hint,
                                 lv_color_hex(selected ? UI_COLOR_ACCENT : UI_COLOR_DIM), 0);
-    ui_apply_qr(payload, available, text, english);
+    ui_apply_qr(payload, available, text);
 }
 
 static void ui_show_qr(void)
@@ -2230,7 +2256,7 @@ static void ui_show_settings(void)
     ui_hide_qr();
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
     if (!device_settings_init(&s_device_settings)) {
-        lv_label_set_text(s_settings_notice, "Ошибка чтения settings.csv");
+        lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
     } else {
         lv_label_set_text(s_settings_notice, "");
         ui_apply_display_rotation();
@@ -2280,7 +2306,7 @@ static void ui_reload_settings(void)
     const unsigned char turning_brightness = s_device_settings.brightness;
 
     if (!device_settings_init(&s_device_settings)) {
-        lv_label_set_text(s_settings_notice, "Ошибка чтения settings.csv");
+        lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
         return;
     }
     if (volume_pending) s_device_settings.volume = turning_volume;
@@ -2322,7 +2348,7 @@ static void ui_create_yandex_screen(void)
     /* The same strip the other lists carry, rather than a bare heading: the
      * clock and the signal belong on every screen the user can sit on, and
      * this one is sat on for as long as a pairing code lasts. */
-    ui_status_strip_create(s_yandex_screen, &s_yandex_strip, "ЯМузыка");
+    ui_status_strip_create(s_yandex_screen, &s_yandex_strip, ui_text(DEVICE_TEXT_SOURCE_YANDEX));
 
     s_yandex_status = lv_label_create(s_yandex_screen);
     lv_obj_set_pos(s_yandex_status, 12, 44);
@@ -2532,7 +2558,7 @@ static void ui_update_yandex(void)
     const yandex_catalog_state_t catalog_state = yandex_catalog_get_state();
     const size_t count = yandex_catalog_count();
     ui_yandex_view_t view;
-    ui_yandex_view_build(&status, catalog_state, count, &view);
+    ui_yandex_view_build(&status, catalog_state, count, s_device_settings.language, &view);
 
     s_yandex_mode = view.mode;
 
@@ -2741,7 +2767,8 @@ static void ui_settings_change_selected(void)
     default:
         return;
     }
-    lv_label_set_text(s_settings_notice, changed ? "" : "Ошибка записи settings.csv");
+    lv_label_set_text(s_settings_notice,
+                      changed ? "" : ui_text(DEVICE_TEXT_SETTINGS_WRITE_FAILED));
     // Whatever the card said, this task's copy is what the web has to show.
     if (changed) device_settings_publish(&s_device_settings);
 }
@@ -3238,7 +3265,8 @@ static void ui_load_source_screen(audio_source_t selected_source)
      * and this is the one place every route to the player passes through. */
     (void)ui_feed_model_select_source(&s_feed_model, selected_source);
     const uint8_t index = ui_menu_selected_index(&s_menu);
-    lv_label_set_text(s_source_title, ui_menu_item_label((ui_menu_item_t)index));
+    lv_label_set_text(s_source_title,
+                      ui_menu_item_label((ui_menu_item_t)index, s_device_settings.language));
     lv_screen_load(s_source_screen);
     if (selected_source == AUDIO_SOURCE_INTERNET_RADIO) {
         ui_set_state_line("Connecting...", "", false);
@@ -3257,7 +3285,7 @@ static void ui_load_source_screen(audio_source_t selected_source)
         s_waiting_for_radio_station = false;
         // Nothing plays until a file is chosen, so this screen opens idle
         // rather than pretending to connect.
-        ui_set_state_line("Выберите файл", "", false);
+        ui_set_state_line(ui_text(DEVICE_TEXT_CHOOSE_FILE), "", false);
         ui_scroller_set_text(&s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
     } else if (selected_source == AUDIO_SOURCE_DLNA) {
@@ -3266,7 +3294,7 @@ static void ui_load_source_screen(audio_source_t selected_source)
          * volume the listing is not there yet: the search listens for a couple
          * of seconds before the browser can open. Saying so beats an idle
          * screen that looks like nothing happened. */
-        ui_set_state_line("Поиск медиасервера", "", false);
+        ui_set_state_line(ui_text(DEVICE_TEXT_SEARCHING_SERVER), "", false);
         ui_scroller_set_text(&s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
     } else {
@@ -3287,7 +3315,7 @@ static bool ui_network_source_blocked(ui_menu_item_t item, lv_obj_t *notice)
                                 s_last_wifi_connected)) {
         return false;
     }
-    ui_set_label_text_if_changed(notice, "Нет сети — см. Настройки");
+    ui_set_label_text_if_changed(notice, ui_text(DEVICE_TEXT_NO_NETWORK));
     return true;
 }
 
@@ -3452,7 +3480,7 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
             s_station_list_notice,
             ui_files_notice(s_files_unavailable_source,
                             ui_media_for_source(s_files_unavailable_source),
-                            s_last_files_entry_count));
+                            s_last_files_entry_count, s_device_settings.language));
         const lv_image_dsc_t *icon = ui_source_icon(s_files_unavailable_source);
         if (icon != NULL) lv_image_set_src(s_station_list_notice_icon, icon);
         lv_obj_clear_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
@@ -3493,7 +3521,7 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
             ui_set_label_text_if_changed(s_station_list_title, "DLNA");
             const bool searching = dlna_source_is_searching();
             ui_set_label_text_if_changed(s_station_list_notice,
-                                         searching ? "" : "Медиасервер не найден в сети");
+                                         searching ? "" : ui_text(DEVICE_TEXT_NO_SERVER_FOUND));
             const lv_image_dsc_t *icon = ui_source_icon(AUDIO_SOURCE_DLNA);
             if (icon != NULL) lv_image_set_src(s_station_list_notice_icon, icon);
             if (searching) {
@@ -3513,7 +3541,7 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
         ui_set_label_text_if_changed(s_station_list_title, ui_path_leaf(snapshot->context));
     } else {
         s_browser_has_parent_row = false;
-        ui_set_label_text_if_changed(s_station_list_title, "Станции");
+        ui_set_label_text_if_changed(s_station_list_title, ui_text(DEVICE_TEXT_STATIONS));
     }
     const size_t initial_index =
         station_list_initial_index(count, active_index, ui_browser_row_offset());
@@ -3701,7 +3729,7 @@ static void ui_yandex_step_start(const player_snapshot_t *snapshot)
     if (s_yandex_start_row == PLAYER_ITEM_NONE) return;
     if ((int32_t)(ui_tick_get_ms() - s_yandex_start_deadline_ms) >= 0) {
         s_yandex_start_row = PLAYER_ITEM_NONE;
-        ui_yandex_show_notice("Не удалось запустить станцию");
+        ui_yandex_show_notice(ui_text(DEVICE_TEXT_STATION_START_FAILED));
         return;
     }
     // A command is still on its way; the next pass will find out how it went.
@@ -3769,7 +3797,7 @@ static void ui_handle_input(board_input_action_t action)
             const yandex_auth_status_t status = yandex_auth_get_status();
             ui_yandex_view_t view;
             ui_yandex_view_build(&status, yandex_catalog_get_state(),
-                                 yandex_catalog_count(), &view);
+                                 yandex_catalog_count(), s_device_settings.language, &view);
             if (view.mode == UI_YANDEX_MODE_PAIRING) {
                 /* Only a retry: pressing OK during an attempt would do
                  * nothing, and there is no account to re-link here. */
@@ -3885,10 +3913,11 @@ static void ui_handle_input(board_input_action_t action)
              * "select this row" while the player screen is up. */
             ui_leave_station_list();
             ui_load_source_screen(AUDIO_SOURCE_DLNA);
-            lv_label_set_text(s_source_title, ui_menu_item_label(UI_MENU_ITEM_DLNA));
+            lv_label_set_text(s_source_title,
+                              ui_menu_item_label(UI_MENU_ITEM_DLNA, s_device_settings.language));
             /* Not "opening a file": the track is fetched over the network, and
              * the wait before sound is the server's rather than a disc's. */
-            ui_set_state_line("Подключение", "", false);
+            ui_set_state_line(ui_text(DEVICE_TEXT_STATE_CONNECTING), "", false);
             ui_scroller_set_text(&s_source_detail, entry.title);
             ui_set_label_text_if_changed(s_source_stream,
                                          radio_stream_format_codec_name(entry.format));
@@ -3931,8 +3960,9 @@ static void ui_handle_input(board_input_action_t action)
             lv_label_set_text(s_source_title,
                               ui_menu_item_label(source == AUDIO_SOURCE_SD
                                                      ? UI_MENU_ITEM_SD_CARD
-                                                     : UI_MENU_ITEM_USB_FILES));
-            ui_set_state_line("Открытие файла", "", false);
+                                                     : UI_MENU_ITEM_USB_FILES,
+                                                 s_device_settings.language));
+            ui_set_state_line(ui_text(DEVICE_TEXT_OPENING_FILE), "", false);
             ui_scroller_set_text(&s_source_detail, file_browser_display_name(entry.name));
             ui_set_label_text_if_changed(s_source_stream,
                                          file_browser_entry_type_label(&entry));
@@ -4106,7 +4136,8 @@ static void ui_handle_input(board_input_action_t action)
             } else {
                 audio_source_t source = AUDIO_SOURCE_NONE;
                 if (!ui_feed_model_activate(item, &source)) {
-                    ui_set_label_text_if_changed(s_feed_notice, "Функция пока недоступна");
+                    ui_set_label_text_if_changed(s_feed_notice,
+                                                 ui_text(DEVICE_TEXT_NOT_AVAILABLE_YET));
                     return;
                 }
                 ui_set_label_text_if_changed(s_feed_notice, "");
@@ -4881,7 +4912,7 @@ esp_err_t ui_init(void)
     ui_create_source_screen();
     ui_create_station_list_screen();
     if (!device_settings_init(&s_device_settings)) {
-        lv_label_set_text(s_settings_notice, "Ошибка чтения settings.csv");
+        lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
     } else {
         ui_apply_display_rotation();
         (void)board_backlight_set(s_device_settings.brightness);

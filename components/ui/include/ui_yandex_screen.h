@@ -1,5 +1,7 @@
 #pragma once
 
+#include "device_text.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -39,7 +41,7 @@ typedef struct {
  * before that there is nothing to list and the screen is about the code. */
 void ui_yandex_view_build(const yandex_auth_status_t *status,
                           yandex_catalog_state_t catalog_state, size_t station_count,
-                          ui_yandex_view_t *view);
+                          device_language_t language, ui_yandex_view_t *view);
 
 /* True while an attempt is in progress, which is what makes the screen poll
  * the countdown every tick instead of only on input. */

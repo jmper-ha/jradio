@@ -187,7 +187,10 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"timezone\":\"europe/moscow\"") != NULL);
     assert(strstr(document, "\"ntp_server\":\"pool.ntp.org\"") != NULL);
     assert(strstr(document, "\"timezones\":[{\"id\":") != NULL);
-    assert(strstr(document, "\"id\":\"europe/moscow\",\"label\":\"Москва (UTC+3)\"") != NULL);
+    /* The document was built for an English device above, so the zone names
+       are English too: a page that said "Москва" beside "Brightness" would be
+       the half-translated state this pass exists to end. */
+    assert(strstr(document, "\"id\":\"europe/moscow\",\"label\":\"Moscow (UTC+3)\"") != NULL);
 
     // Truncation is never handed back as a short document.
     char tight[32];

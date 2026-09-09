@@ -3,22 +3,19 @@
 #include <stdio.h>
 #include <string.h>
 
-/* A reading the device could not take. Not an empty string: a blank where a
- * version belongs reads as the screen having failed rather than as the device
- * honestly not knowing, and those are different things to a person looking
- * for why the web page is stale. */
-static const char *unknown_text(bool english)
+/* A reading the device could not take is spelled out rather than left blank: a
+ * gap where a version belongs reads as the screen having failed rather than as
+ * the device honestly not knowing, and those are different things to somebody
+ * looking for why the web page is stale. */
+static void line(char *out, device_text_id_t label, const char *value,
+                 device_language_t language)
 {
-    return english ? "unknown" : "неизвестно";
+    snprintf(out, UI_ABOUT_LINE_MAX + 1U, "%s: %s", device_text(label, language),
+             value[0] != '\0' ? value : device_text(DEVICE_TEXT_ABOUT_UNKNOWN, language));
 }
 
-static void line(char *out, const char *label, const char *value, bool english)
-{
-    snprintf(out, UI_ABOUT_LINE_MAX + 1U, "%s: %s",
-             label, value[0] != '\0' ? value : unknown_text(english));
-}
-
-void ui_about_build(const version_info_t *info, bool english, ui_about_lines_t *lines)
+void ui_about_build(const version_info_t *info, device_language_t language,
+                    ui_about_lines_t *lines)
 {
     if (lines == NULL) return;
     memset(lines, 0, sizeof(*lines));
@@ -28,13 +25,13 @@ void ui_about_build(const version_info_t *info, bool english, ui_about_lines_t *
         info = &empty;
     }
 
-    line(lines->firmware, english ? "Firmware" : "Прошивка", info->firmware.version, english);
-    line(lines->built, english ? "Built" : "Собрана", info->firmware.built, english);
+    line(lines->firmware, DEVICE_TEXT_ABOUT_FIRMWARE, info->firmware.version, language);
+    line(lines->built, DEVICE_TEXT_ABOUT_BUILT, info->firmware.built, language);
     /* The web assets are a version of their own because they are flashed by
      * their own command. Saying so on the same screen is the whole point of
      * the screen. */
-    line(lines->web, english ? "Web UI" : "Веб-интерфейс", info->web.version, english);
-    line(lines->idf, "ESP-IDF", info->idf, english);
+    line(lines->web, DEVICE_TEXT_ABOUT_WEB, info->web.version, language);
+    line(lines->idf, DEVICE_TEXT_ABOUT_IDF, info->idf, language);
 
     /* The notice speaks only when the two halves disagree, and stays quiet
      * when the web stamp is simply missing: an image flashed before the stamp
@@ -50,7 +47,6 @@ void ui_about_build(const version_info_t *info, bool english, ui_about_lines_t *
          * what fits. What to do about it belongs in the documentation, not on
          * a 240 px screen. */
         snprintf(lines->notice, sizeof(lines->notice), "%s",
-                 english ? "Web UI is from another build"
-                         : "Веб-интерфейс от другой сборки");
+                 device_text(DEVICE_TEXT_ABOUT_MISMATCH, language));
     }
 }

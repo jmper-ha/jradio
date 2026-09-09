@@ -15,17 +15,20 @@ const char *web_view_playback_name(player_playback_state_t state)
     }
 }
 
-const char *web_view_playback_label(player_playback_state_t state)
+const char *web_view_playback_label(player_playback_state_t state,
+                                    device_language_t language)
 {
+    device_text_id_t id;
     switch (state) {
-    case PLAYER_PLAYBACK_STOPPED: return "Остановлено";
-    case PLAYER_PLAYBACK_CONNECTING: return "Подключение";
-    case PLAYER_PLAYBACK_PLAYING: return "Воспроизведение";
-    case PLAYER_PLAYBACK_PAUSED: return "Пауза";
-    case PLAYER_PLAYBACK_RECONNECTING: return "Переподключение";
-    case PLAYER_PLAYBACK_ERROR: return "Ошибка";
-    default: return "Неизвестное состояние";
+    case PLAYER_PLAYBACK_STOPPED: id = DEVICE_TEXT_STATE_STOPPED; break;
+    case PLAYER_PLAYBACK_CONNECTING: id = DEVICE_TEXT_STATE_CONNECTING; break;
+    case PLAYER_PLAYBACK_PLAYING: id = DEVICE_TEXT_STATE_PLAYING; break;
+    case PLAYER_PLAYBACK_PAUSED: id = DEVICE_TEXT_STATE_PAUSED; break;
+    case PLAYER_PLAYBACK_RECONNECTING: id = DEVICE_TEXT_STATE_RECONNECTING; break;
+    case PLAYER_PLAYBACK_ERROR: id = DEVICE_TEXT_STATE_ERROR; break;
+    default: id = DEVICE_TEXT_STATE_UNKNOWN; break;
     }
+    return device_text(id, language);
 }
 
 const char *web_view_source_name(audio_source_t source)
@@ -43,19 +46,21 @@ const char *web_view_source_name(audio_source_t source)
     }
 }
 
-const char *web_view_source_label(audio_source_t source)
+const char *web_view_source_label(audio_source_t source, device_language_t language)
 {
+    device_text_id_t id;
     switch (source) {
-    case AUDIO_SOURCE_NONE: return "Нет источника";
-    case AUDIO_SOURCE_USB: return "USB-плеер";
-    case AUDIO_SOURCE_SD: return "SD-карта";
-    case AUDIO_SOURCE_INTERNET_RADIO: return "Интернет-радио";
-    case AUDIO_SOURCE_YANDEX: return "ЯМузыка";
-    case AUDIO_SOURCE_DLNA: return "DLNA";
-    case AUDIO_SOURCE_FM: return "FM-радио";
-    case AUDIO_SOURCE_BLUETOOTH: return "Bluetooth";
-    default: return "Неизвестный режим";
+    case AUDIO_SOURCE_NONE: id = DEVICE_TEXT_SOURCE_NONE; break;
+    case AUDIO_SOURCE_USB: id = DEVICE_TEXT_SOURCE_USB; break;
+    case AUDIO_SOURCE_SD: id = DEVICE_TEXT_SOURCE_SD; break;
+    case AUDIO_SOURCE_INTERNET_RADIO: id = DEVICE_TEXT_SOURCE_INTERNET_RADIO; break;
+    case AUDIO_SOURCE_YANDEX: id = DEVICE_TEXT_SOURCE_YANDEX; break;
+    case AUDIO_SOURCE_DLNA: id = DEVICE_TEXT_SOURCE_DLNA; break;
+    case AUDIO_SOURCE_FM: id = DEVICE_TEXT_SOURCE_FM; break;
+    case AUDIO_SOURCE_BLUETOOTH: id = DEVICE_TEXT_SOURCE_BLUETOOTH; break;
+    default: id = DEVICE_TEXT_SOURCE_UNKNOWN; break;
     }
+    return device_text(id, language);
 }
 
 uint32_t web_view_snapshot_changes(const player_snapshot_t *previous,

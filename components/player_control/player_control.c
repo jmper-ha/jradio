@@ -18,6 +18,7 @@
 #include "audio_source.h"
 #include "board_features.h"
 #include "device_settings.h"
+#include "device_text.h"
 #include "dlna_source.h"
 #include "internet_radio.h"
 #include "station_catalog.h"
@@ -1078,19 +1079,30 @@ bool player_control_post(const player_command_t *command)
  * It exists because the alternative is a screen that says "stopped" and a
  * control that does nothing, which is the hardest kind of fault to report and
  * the easiest to mistake for a broken encoder. */
+/* These lines travel in the snapshot and are drawn by the panel and the browser
+ * alike, so the language comes from the copy the UI publishes rather than from
+ * either face. Read per call: a snapshot is built a few times a second and the
+ * setting can change between two of them. */
+static const char *player_text(device_text_id_t id)
+{
+    return device_text(id, device_settings_published_language());
+}
+
 static void player_note_nothing_started(player_snapshot_t *snapshot)
 {
     const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
     const uint32_t failed =
         atomic_load_explicit(&s_browse_failed_at_ms, memory_order_acquire);
     if (failed != 0U && (uint32_t)(now_ms - failed) < PLAYER_NO_RESUME_NOTICE_MS) {
-        snprintf(snapshot->error, sizeof(snapshot->error), "Папка не открылась");
+        snprintf(snapshot->error, sizeof(snapshot->error), "%s",
+                 player_text(DEVICE_TEXT_ERROR_FOLDER_FAILED));
         return;
     }
     const uint32_t at = atomic_load_explicit(&s_no_resume_at_ms, memory_order_acquire);
     if (at == 0U) return;
     if ((uint32_t)(now_ms - at) >= PLAYER_NO_RESUME_NOTICE_MS) return;
-    snprintf(snapshot->error, sizeof(snapshot->error), "Нечего продолжить - выберите");
+    snprintf(snapshot->error, sizeof(snapshot->error), "%s",
+             player_text(DEVICE_TEXT_ERROR_NOTHING_TO_RESUME));
 }
 
 void player_control_get_snapshot(player_snapshot_t *snapshot)
@@ -1187,7 +1199,8 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
         snapshot->sample_rate_hz = usb_status.sample_rate_hz;
         snapshot->track_tag_revision = usb_status.tags_revision;
         if (usb_status.state == FILE_PLAYER_STATE_ERROR) {
-            snprintf(snapshot->error, sizeof(snapshot->error), "Не удалось воспроизвести файл");
+            snprintf(snapshot->error, sizeof(snapshot->error), "%s",
+                     player_text(DEVICE_TEXT_ERROR_FILE_FAILED));
         }
         return;
     }
@@ -1267,10 +1280,11 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
          * like a station that would not open. */
         if (snapshot->active_source == AUDIO_SOURCE_YANDEX &&
             yandex_rotor_last_error() == ESP_ERR_NOT_SUPPORTED) {
-            snprintf(snapshot->error, sizeof(snapshot->error), "Нужна подписка Яндекс Музыки");
+            snprintf(snapshot->error, sizeof(snapshot->error), "%s",
+                     player_text(DEVICE_TEXT_ERROR_YANDEX_SUBSCRIPTION));
         } else {
             snprintf(snapshot->error, sizeof(snapshot->error),
-                     "Не удалось подключиться к станции");
+                     "%s", player_text(DEVICE_TEXT_ERROR_STATION_FAILED));
         }
     }
 }

@@ -18,6 +18,8 @@
  * nothing else: the browser is handed the list rather than carrying its own
  * copy, so the two cannot drift. */
 
+#include "device_language.h"
+
 #define DEVICE_TIMEZONE_ID_MAX 24
 #define DEVICE_TIMEZONE_LABEL_MAX 48
 /* What the device came up with before the setting existed, and what it stays
@@ -28,8 +30,13 @@ typedef struct {
     /* Stored in settings.csv and sent to the browser. Lower case, ASCII, no
      * comma - the file's separator - and no tab. */
     const char *id;
-    /* What the page shows. Russian, like the rest of the web copy. */
-    const char *label;
+    /* What the page shows, in each language. A city name is not a translation
+     * exercise - "Москва" and "Moscow" are the same place spelled for two
+     * readers - but a page that says one while everything around it says the
+     * other reads as half-finished, which is what this whole pass was
+     * about. */
+    const char *label_ru;
+    const char *label_en;
     /* What setenv("TZ", …) is given. */
     const char *posix;
 } device_timezone_t;
@@ -44,3 +51,8 @@ const device_timezone_t *device_timezone_find(const char *id);
 /* Where an id sits in the list, or the count when it is not in it. Wanted by
  * the web view, which carries the choice as one byte rather than a string. */
 size_t device_timezone_index_of(const char *id);
+
+/* The label in the language in force. Never NULL, so a caller has nothing to
+ * check before writing it into a document. */
+const char *device_timezone_label(const device_timezone_t *zone,
+                                  device_language_t language);

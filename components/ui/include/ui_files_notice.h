@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #include "audio_source.h"
+#include "device_text.h"
 #include "file_browser.h"
 
 /* Why a file source needs its own notice text at all: the drive and the card
@@ -23,7 +24,7 @@
 // source can be opened. `entry_count` distinguishes a readable but empty
 // directory, which is not an error and gets its own wording.
 const char *ui_files_notice(audio_source_t source, file_browser_media_t media,
-                            size_t entry_count);
+                            size_t entry_count, device_language_t language);
 
 // True when the source may be opened, i.e. exactly when ui_files_notice returns
 // NULL. Kept as its own predicate so callers read as intent rather than as a

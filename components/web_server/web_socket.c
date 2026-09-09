@@ -101,16 +101,33 @@ static const char *wifi_mode_name(wifi_provisioning_mode_t mode)
     }
 }
 
+/* One row per source the device is offering right now. The label travels with
+ * it rather than being written into the page, so the browser shows the same
+ * words as the panel and switches language with it. */
+static void write_capability(web_json_writer_t *writer, bool *written, const char *id,
+                             audio_source_t source, const char *list_kind,
+                             device_language_t language)
+{
+    if (*written) web_json_literal(writer, ",");
+    web_json_literal(writer, "{\"id\":");
+    web_json_string(writer, id);
+    web_json_literal(writer, ",\"label\":");
+    web_json_string(writer, web_view_source_label(source, language));
+    web_json_literal(writer, ",\"list_kind\":");
+    web_json_string(writer, list_kind);
+    web_json_literal(writer, "}");
+    *written = true;
+}
+
 static void write_capabilities(web_json_writer_t *writer,
-                               const player_snapshot_t *player)
+                               const player_snapshot_t *player,
+                               device_language_t language)
 {
     web_json_literal(writer, "\"capabilities\":[");
     bool written = false;
     if ((player->capabilities & PLAYER_CAP_INTERNET_RADIO) != 0U) {
-        web_json_literal(writer,
-                       "{\"id\":\"internet_radio\",\"label\":"
-                       "\"Интернет-радио\",\"list_kind\":\"stations\"}");
-        written = true;
+        write_capability(writer, &written, "internet_radio", AUDIO_SOURCE_INTERNET_RADIO,
+                         "stations", language);
     }
     /* A volume only appears while there is something to browse on it, so this
      * list is what tells the browser whether to offer the source at all. The
@@ -118,33 +135,16 @@ static void write_capabilities(web_json_writer_t *writer,
      * held mounted, and mounting it to answer a status frame would take the
      * SRAM the radio is using. */
     if ((player->capabilities & PLAYER_CAP_USB) != 0U) {
-        if (written) {
-            web_json_literal(writer, ",");
-        }
-        web_json_literal(writer,
-                       "{\"id\":\"usb\",\"label\":"
-                       "\"USB-накопитель\",\"list_kind\":\"files\"}");
-        written = true;
+        write_capability(writer, &written, "usb", AUDIO_SOURCE_USB, "files", language);
     }
     if ((player->capabilities & PLAYER_CAP_SD) != 0U) {
-        if (written) {
-            web_json_literal(writer, ",");
-        }
-        web_json_literal(writer,
-                       "{\"id\":\"sd\",\"label\":"
-                       "\"SD-карта\",\"list_kind\":\"files\"}");
-        written = true;
+        write_capability(writer, &written, "sd", AUDIO_SOURCE_SD, "files", language);
     }
     /* Only while an account is linked, for the same reason the capability is:
      * without one the source can do nothing but fail. */
     if ((player->capabilities & PLAYER_CAP_YANDEX) != 0U) {
-        if (written) {
-            web_json_literal(writer, ",");
-        }
-        web_json_literal(writer,
-                       "{\"id\":\"yandex\",\"label\":"
-                       "\"ЯМузыка\",\"list_kind\":\"stations\"}");
-        written = true;
+        write_capability(writer, &written, "yandex", AUDIO_SOURCE_YANDEX, "stations",
+                         language);
     }
     /* Offered whenever the build has it, unlike the volumes: whether a server
      * is on the network is only discovered by searching, and that happens when
@@ -152,12 +152,7 @@ static void write_capabilities(web_json_writer_t *writer,
      * does, so the page treats it as one - what differs is only where the row
      * names are fetched from. */
     if ((player->capabilities & PLAYER_CAP_DLNA) != 0U) {
-        if (written) {
-            web_json_literal(writer, ",");
-        }
-        web_json_literal(writer,
-                       "{\"id\":\"dlna\",\"label\":"
-                       "\"DLNA\",\"list_kind\":\"files\"}");
+        write_capability(writer, &written, "dlna", AUDIO_SOURCE_DLNA, "files", language);
     }
     web_json_literal(writer, "]");
 }
@@ -168,12 +163,13 @@ static void write_capabilities(web_json_writer_t *writer,
  * track, and the only way to be sure of that is for there to be one answer. */
 static void write_player(web_json_writer_t *writer,
                          const player_snapshot_t *player,
-                         const ui_now_playing_t *now)
+                         const ui_now_playing_t *now,
+                         device_language_t language)
 {
     web_json_literal(writer, "\"player\":{\"state\":");
     web_json_string(writer, web_view_playback_name(player->playback_state));
     web_json_literal(writer, ",\"mode\":");
-    web_json_string(writer, web_view_source_label(player->active_source));
+    web_json_string(writer, web_view_source_label(player->active_source, language));
     web_json_literal(writer, ",\"artist\":");
     web_json_string(writer, now->artist);
     web_json_literal(writer, ",\"title\":");
@@ -340,6 +336,14 @@ int web_socket_serialize_event(char *output, size_t output_size,
         return writer_finish(&writer);
     }
 
+    /* Out of the settings the UI published rather than off the card: this
+     * runs on the web server's task, and it is the same copy the page is being
+     * shown, so the labels in a frame cannot disagree with the language field
+     * beside them. Russian until the UI has published, which is the language
+     * the device comes up in. */
+    const device_language_t language =
+        settings->known ? (device_language_t)settings->view.language : DEVICE_LANGUAGE_RU;
+
     web_json_literal(&writer, "{\"type\":");
     web_json_string(&writer, type);
     web_json_literal(&writer, ",\"revision\":");
@@ -348,11 +352,11 @@ int web_socket_serialize_event(char *output, size_t output_size,
     switch (kind) {
     case WEB_SOCKET_EVENT_SNAPSHOT:
         web_json_literal(&writer, ",");
-        write_capabilities(&writer, player);
+        write_capabilities(&writer, player, language);
         web_json_literal(&writer, ",\"active_source\":");
         web_json_string(&writer, web_view_source_name(player->active_source));
         web_json_literal(&writer, ",");
-        write_player(&writer, player, now);
+        write_player(&writer, player, now, language);
         web_json_literal(&writer, ",");
         write_list(&writer, player);
         web_json_literal(&writer, ",");
@@ -366,13 +370,13 @@ int web_socket_serialize_event(char *output, size_t output_size,
         break;
     case WEB_SOCKET_EVENT_CAPABILITIES_UPDATE:
         web_json_literal(&writer, ",");
-        write_capabilities(&writer, player);
+        write_capabilities(&writer, player, language);
         break;
     case WEB_SOCKET_EVENT_PLAYER_UPDATE:
         web_json_literal(&writer, ",\"active_source\":");
         web_json_string(&writer, web_view_source_name(player->active_source));
         web_json_literal(&writer, ",");
-        write_player(&writer, player, now);
+        write_player(&writer, player, now, language);
         break;
     case WEB_SOCKET_EVENT_LIST_UPDATE:
         web_json_literal(&writer, ",");
@@ -1228,7 +1232,8 @@ static esp_err_t handle_text_frame(httpd_req_t *request, uint8_t *payload,
         (const char *)payload, length, &command);
     bool accepted = false;
     const char *request_id = "invalid";
-    const char *error = "Некорректная команда";
+    const device_language_t language = device_settings_published_language();
+    const char *error = device_text(DEVICE_TEXT_ERROR_BAD_COMMAND, language);
     if (parsed == WEB_PROTOCOL_OK) {
         request_id = command.request_id;
         if (command.kind == WEB_COMMAND_PLAYER) {
@@ -1236,7 +1241,7 @@ static esp_err_t handle_text_frame(httpd_req_t *request, uint8_t *payload,
         } else {
             accepted = web_socket_queue_wifi(command.kind, &command.wifi);
         }
-        error = accepted ? "" : "Устройство занято";
+        error = accepted ? "" : device_text(DEVICE_TEXT_ERROR_DEVICE_BUSY, language);
     }
 
     const esp_err_t result = send_command_result(request, request_id, accepted,

@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <string.h>
 #include <stdbool.h>
 #include <stdio.h>
 
@@ -81,7 +82,13 @@ static void test_settings_is_the_last_row_and_is_not_a_source(void)
     assert(ui_menu_selected_index(&state) == UI_MENU_ITEM_SETTINGS);
     assert(ui_menu_selection_is_settings(&state));
     assert(ui_menu_activate(&state) == AUDIO_SOURCE_NONE);
-    assert(ui_menu_item_label(UI_MENU_ITEM_SETTINGS)[0] != '\0');
+    /* Both languages, because the home screen is where the translation used to
+       stop: every row but Settings was English on a Russian device. */
+    assert(ui_menu_item_label(UI_MENU_ITEM_SETTINGS, DEVICE_LANGUAGE_RU)[0] != '\0');
+    assert(strcmp(ui_menu_item_label(UI_MENU_ITEM_SETTINGS, DEVICE_LANGUAGE_RU),
+                  ui_menu_item_label(UI_MENU_ITEM_SETTINGS, DEVICE_LANGUAGE_EN)) != 0);
+    assert(strcmp(ui_menu_item_label(UI_MENU_ITEM_INTERNET_RADIO, DEVICE_LANGUAGE_RU),
+                  ui_menu_item_label(UI_MENU_ITEM_INTERNET_RADIO, DEVICE_LANGUAGE_EN)) != 0);
 
     /* One step back leaves a source row, so the sources stay contiguous. */
     (void)ui_menu_handle_input(&state, BOARD_INPUT_ACTION_ENCODER_LEFT);

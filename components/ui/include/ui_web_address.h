@@ -1,5 +1,7 @@
 #pragma once
 
+#include "device_text.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -28,7 +30,8 @@
  * The QR payload is not affected - a code without a scheme opens nothing.
  */
 void ui_web_address_text(wifi_provisioning_mode_t mode, const char *ipv4, const char *ssid,
-                         bool english, bool with_scheme, char *out, size_t out_size);
+                         device_language_t language, bool with_scheme, char *out,
+                         size_t out_size);
 
 /* What the QR code behind that band encodes. False when there is nothing worth
  * encoding, which is also what decides whether the band offers the QR at all.

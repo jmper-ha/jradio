@@ -526,6 +526,15 @@ bool device_settings_read_published(device_settings_t *copy)
     return published;
 }
 
+device_language_t device_settings_published_language(void)
+{
+    PUBLISH_LOCK();
+    const device_language_t language = s_have_published ? s_published.language
+                                                        : DEVICE_LANGUAGE_RU;
+    PUBLISH_UNLOCK();
+    return language;
+}
+
 bool device_settings_published_switches(bool *yandex_music, bool *dlna)
 {
     PUBLISH_LOCK();

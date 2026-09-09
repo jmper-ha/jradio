@@ -16,6 +16,7 @@
 #include "dlna_soap.h"
 #include "dlna_ssdp.h"
 #include "device_settings.h"
+#include "device_text.h"
 #include "internet_radio.h"
 
 static const char *TAG = "dlna_source";
@@ -546,7 +547,9 @@ const char *dlna_source_heading(void)
     /* Not copied: the stack's text only changes under the lock, and every
      * caller reads it to draw it immediately. The server list has no place in
      * the stack - it is above it - so it names itself. */
-    return s_at_server_list ? "Медиасерверы" : dlna_browse_stack_title(&s_stack);
+    return s_at_server_list
+               ? device_text(DEVICE_TEXT_DLNA_SERVER_LIST, device_settings_published_language())
+               : dlna_browse_stack_title(&s_stack);
 }
 
 bool dlna_source_at_root(void)

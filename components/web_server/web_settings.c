@@ -290,6 +290,9 @@ size_t web_settings_serialize(char *output, size_t output_size,
     web_json_writer_t writer;
     web_json_init(&writer, output, output_size, output_size);
     if (view == NULL) return 0U;
+    /* Out of the document being written rather than off the card: the zone
+     * names have to be in the same language as the labels beside them. */
+    const device_language_t language = (device_language_t)view->language;
     web_json_literal(&writer, "{");
     write_body(&writer, view);
     /* Only in the document, not in the live diff: a time server is typed once
@@ -304,7 +307,7 @@ size_t web_settings_serialize(char *output, size_t output_size,
         web_json_literal(&writer, "{\"id\":");
         web_json_string(&writer, zone->id);
         web_json_literal(&writer, ",\"label\":");
-        web_json_string(&writer, zone->label);
+        web_json_string(&writer, device_timezone_label(zone, language));
         web_json_literal(&writer, "}");
     }
     web_json_literal(&writer, "]}");

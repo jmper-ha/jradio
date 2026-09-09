@@ -3,7 +3,8 @@
 #include <stdio.h>
 
 void ui_web_address_text(wifi_provisioning_mode_t mode, const char *ipv4, const char *ssid,
-                         bool english, bool with_scheme, char *out, size_t out_size)
+                         device_language_t language, bool with_scheme, char *out,
+                         size_t out_size)
 {
     if (out == NULL || out_size == 0U) return;
     out[0] = '\0';
@@ -16,7 +17,7 @@ void ui_web_address_text(wifi_provisioning_mode_t mode, const char *ipv4, const 
      * it cannot be typed anywhere until the phone has joined, and by then the
      * QR behind this band has already opened it. */
     if (mode == WIFI_PROVISIONING_AP_SETUP && ssid != NULL && ssid[0] != '\0') {
-        snprintf(out, out_size, english ? "join %s" : "Подключитесь к сети %s", ssid);
+        snprintf(out, out_size, device_text(DEVICE_TEXT_JOIN_NETWORK, language), ssid);
         return;
     }
 
@@ -27,7 +28,7 @@ void ui_web_address_text(wifi_provisioning_mode_t mode, const char *ipv4, const 
      * network": the wait ends either with an address or with the setup AP
      * above, and both are worth waiting for. */
     if (ipv4 == NULL || ipv4[0] == '\0' || mode == WIFI_PROVISIONING_STA_CONNECTING) {
-        snprintf(out, out_size, english ? "connecting to Wi-Fi..." : "Подключение к сети...");
+        snprintf(out, out_size, "%s", device_text(DEVICE_TEXT_WIFI_CONNECTING, language));
         return;
     }
     /* The setup-AP line above already prints the address bare, beside the

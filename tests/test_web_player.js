@@ -130,6 +130,12 @@ function matches(item, selector) {
 
 documentRef = {
   activeElement: null,
+  /* The i18n pass walks the markup for `data-i18n` attributes, which this fake
+     DOM has none of - the page's elements are built here rather than parsed
+     from index.html. It finds nothing and leaves the rest alone, which is the
+     right answer: what the tests below check is the text this page writes
+     itself. */
+  documentElement: {lang: 'ru'},
   querySelector: (selector) => elements[selector],
   querySelectorAll: (selector) => [body, ...walk(body)]
     .filter((item) => matches(item, selector)),
@@ -288,6 +294,8 @@ const baseSnapshot = {
 };
 
 vm.createContext(context);
+// The dictionary first, the way every page loads it.
+vm.runInContext(fs.readFileSync('data/www/i18n.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('data/www/app.js', 'utf8'), context);
 
 const first = FakeWebSocket.instances[0];

@@ -99,6 +99,30 @@ It doubles as the only check that a picture arrived at all. The files live in
 to any more - that is the one moment when the full list of names in use is
 known.
 
+## Language
+
+The pages are translated by `i18n.js` - one dictionary for all three, with the
+keys in the markup (`data-i18n`, `data-i18n-aria`, `data-i18n-placeholder`,
+`data-i18n-title`). The Russian text stays in the markup itself, so a page that
+somehow renders before the script has loaded reads correctly rather than showing
+bare keys.
+
+The device owns the setting, and it travels in the same settings section as the
+volume and the brightness. So the picker on the settings page and the row on the
+device's own screen are one switch: an open tab relabels itself within a poll,
+whichever end it was moved from. The playlist page opens no socket and asks
+once, at load, from `/api/settings`.
+
+The chosen language is remembered in `localStorage` - not as the source of truth
+but so a reload does not show the wrong language for a second and then swap it
+under the reader. A browser that refuses to answer (a private window) is not an
+error: the page simply starts in Russian.
+
+Strings the device sends are not in the dictionary: source names, playback
+states, its error lines and the time-zone labels arrive already translated, out
+of the same table the panel reads. Otherwise the two faces would word the same
+thing differently.
+
 ## Backup and restore
 
 Three files make a device this device: `wifi.json` for the networks it knows,

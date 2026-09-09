@@ -121,6 +121,7 @@ function flush() {
 }
 
 vm.createContext(context);
+vm.runInContext(fs.readFileSync('data/www/i18n.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('data/www/playlist.js', 'utf8'), context);
 const {parseCatalogText, serializeCatalog, rowError, buildZip, readZip} =
   context.module.exports;
@@ -255,10 +256,17 @@ function zipWithDeflatedEntry(name, bytes) {
   assert.equal(rowError({name: 'я'.repeat(47), url: 'http://x', flag: 0}), '');
   assert.equal(rowError({name: 'я'.repeat(48), url: 'http://x', flag: 0}), 'Название слишком длинное');
 
-  // Script loads and immediately fetches the current playlist.
+  /* Script loads and immediately fetches two things: the playlist it edits,
+     and the language - this page has no socket to be told over, so it asks
+     once rather than showing the wrong words until a reload. */
   await flush();
   await flush();
-  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls.length, 2);
+  assert.deepEqual(fetchCalls.map((call) => call.url).sort(),
+                   ['/api/playlist', '/api/settings']);
+  /* Taken out of the record here: everything below counts requests to say what
+     the editor did, and the language is not one of its actions. */
+  fetchCalls.splice(fetchCalls.findIndex((call) => call.url === '/api/settings'), 1);
   assert.equal(elements['#playlist-status'].textContent, 'Загружено с устройства');
   assert.equal(elements['#playlist-rows'].children.length, 0);
   assert.equal(elements['#playlist-empty'].hidden, false);

@@ -9,11 +9,12 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3CradialGradient id='g' cx='50%25' cy='45%25' r='55%25'%3E%3Cstop offset='0%25' stop-color='%237bffb0'/%3E%3Cstop offset='55%25' stop-color='%2322e06a'/%3E%3Cstop offset='100%25' stop-color='%230a8f3c'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='7' fill='%23121417'/%3E%3Ccircle cx='16' cy='16' r='11' fill='url(%23g)'/%3E%3Cpath d='M16 16 12.9 5.6a11 11 0 0 1 6.2 0Z' fill='%23103a22'/%3E%3Ccircle cx='16' cy='16' r='3.7' fill='%230d1a12'/%3E%3Ccircle cx='16' cy='16' r='12.3' fill='none' stroke='%238c96a3' stroke-width='1.4'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/style.css">
   <script src="/theme.js"></script>
+  <script src="/i18n.js"></script>
 </head>
-<body>
+<body data-i18n-title="title.settings">
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="/" aria-label="Вернуться к плееру">
+      <a class="brand" href="/" data-i18n-aria="nav.back_to_player" aria-label="Вернуться к плееру">
         <span class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 32 32" focusable="false">
             <defs>
@@ -33,16 +34,16 @@
         <span class="brand-word">jRadio</span>
       </a>
 
-      <nav class="source-tabs" aria-label="Разделы">
-        <a class="source-tab" href="/">Плеер</a>
-        <a class="source-tab" href="/playlist">Плейлист</a>
-        <a class="source-tab is-active" href="/settings" aria-current="page">Настройки</a>
+      <nav class="source-tabs" data-i18n-aria="nav.sections" aria-label="Разделы">
+        <a class="source-tab" href="/" data-i18n="nav.player">Плеер</a>
+        <a class="source-tab" href="/playlist" data-i18n="nav.playlist">Плейлист</a>
+        <a class="source-tab is-active" href="/settings" aria-current="page" data-i18n="nav.settings">Настройки</a>
       </nav>
 
       <div class="header-actions">
-        <span id="socket-state" class="socket-state is-connecting" role="status" aria-live="polite">Подключение…</span>
+        <span id="socket-state" class="socket-state is-connecting" role="status" aria-live="polite" data-i18n="socket.connecting">Подключение…</span>
         <button id="theme-toggle" class="icon-button theme-toggle" type="button"
-                aria-label="Сменить тему">
+                data-i18n-aria="theme.toggle" aria-label="Сменить тему">
           <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M20 14.5A8 8 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/>
           </svg>
@@ -57,55 +58,55 @@
 
   <main class="page-shell">
     <div class="page-heading">
-      <h1>Настройки</h1>
-      <p>То же, что на экране устройства, плюс сеть и аккаунт.</p>
+      <h1 data-i18n="nav.settings">Настройки</h1>
+      <p data-i18n="settings.lead">То же, что на экране устройства, плюс сеть и аккаунт.</p>
     </div>
 
     <div class="settings-columns">
       <div class="settings-column">
         <section class="card" aria-labelledby="device-title">
           <div class="card-head">
-            <h2 id="device-title">Устройство</h2>
-            <span id="device-status" class="settings-status" role="status" aria-live="polite">Загрузка…</span>
+            <h2 id="device-title" data-i18n="settings.device">Устройство</h2>
+            <span id="device-status" class="settings-status" role="status" aria-live="polite" data-i18n="common.loading">Загрузка…</span>
           </div>
 
           <div id="device-fields">
             <div class="device-group">
-              <h3>Общие</h3>
+              <h3 data-i18n="settings.group_general">Общие</h3>
               <div class="device-row">
-                <label for="device-language">Язык</label>
+                <label for="device-language" data-i18n="settings.language">Язык</label>
                 <select id="device-language" data-field="language">
                   <option value="ru">Русский</option>
                   <option value="en">English</option>
                 </select>
               </div>
               <div class="device-row" id="device-home-screen-row">
-                <label for="device-home-screen">Главный экран</label>
+                <label for="device-home-screen" data-i18n="settings.home_screen">Главный экран</label>
                 <select id="device-home-screen" data-field="home_screen">
-                  <option value="text">Список</option>
-                  <option value="feed">Лента</option>
+                  <option value="text" data-i18n="settings.home_list">Список</option>
+                  <option value="feed" data-i18n="settings.home_feed">Лента</option>
                 </select>
               </div>
               <div class="device-row">
-                <label for="device-scroll">Скроллинг</label>
+                <label for="device-scroll" data-i18n="settings.scroll">Скроллинг</label>
                 <select id="device-scroll" data-field="scroll">
-                  <option value="bounce">Влево-вправо</option>
-                  <option value="left">Влево</option>
+                  <option value="bounce" data-i18n="settings.scroll_bounce">Влево-вправо</option>
+                  <option value="left" data-i18n="settings.scroll_left">Влево</option>
                 </select>
               </div>
               <div class="device-row">
-                <label for="device-buffer-view">Буфер</label>
+                <label for="device-buffer-view" data-i18n="settings.buffer">Буфер</label>
                 <select id="device-buffer-view" data-field="buffer_view">
-                  <option value="text">Текст</option>
-                  <option value="graph">График</option>
+                  <option value="text" data-i18n="settings.buffer_text">Текст</option>
+                  <option value="graph" data-i18n="settings.buffer_graph">График</option>
                 </select>
               </div>
               <div class="device-row">
-                <label for="device-autoplay">Автовоспроизведение</label>
+                <label for="device-autoplay" data-i18n="settings.autoplay">Автовоспроизведение</label>
                 <input id="device-autoplay" type="checkbox" data-field="autoplay">
               </div>
               <div class="device-row" id="device-yandex-row">
-                <label for="device-yandex">Яндекс Музыка</label>
+                <label for="device-yandex" data-i18n="settings.yandex">Яндекс Музыка</label>
                 <input id="device-yandex" type="checkbox" data-field="yandex_music">
               </div>
               <div class="device-row" id="device-dlna-row">
@@ -115,13 +116,13 @@
             </div>
 
             <div class="device-group">
-              <h3>Время</h3>
+              <h3 data-i18n="settings.group_time">Время</h3>
               <div class="device-row">
-                <label for="device-timezone">Часовой пояс</label>
+                <label for="device-timezone" data-i18n="settings.timezone">Часовой пояс</label>
                 <select id="device-timezone" data-field="timezone"></select>
               </div>
               <div class="device-row">
-                <label for="device-ntp">Сервер времени</label>
+                <label for="device-ntp" data-i18n="settings.ntp">Сервер времени</label>
                 <input id="device-ntp" type="text" inputmode="url" spellcheck="false"
                        autocapitalize="off" autocomplete="off" maxlength="63"
                        placeholder="pool.ntp.org" data-field="ntp_server">
@@ -129,161 +130,151 @@
             </div>
 
             <div class="device-group">
-              <h3>Экран</h3>
+              <h3 data-i18n="settings.group_display">Экран</h3>
               <div class="device-row">
-                <label for="device-brightness">Яркость</label>
+                <label for="device-brightness" data-i18n="settings.brightness">Яркость</label>
                 <span class="device-slider">
                   <input id="device-brightness" type="range" min="10" max="90" step="5" data-field="brightness">
                   <output id="device-brightness-value">50</output>
                 </span>
               </div>
               <div class="device-row">
-                <label for="device-flip-vertical">Поворот по вертикали</label>
+                <label for="device-flip-vertical" data-i18n="settings.flip_vertical">Поворот по вертикали</label>
                 <input id="device-flip-vertical" type="checkbox" data-field="flip_vertical">
               </div>
               <div class="device-row">
-                <label for="device-flip-horizontal">Поворот по горизонтали</label>
+                <label for="device-flip-horizontal" data-i18n="settings.flip_horizontal">Поворот по горизонтали</label>
                 <input id="device-flip-horizontal" type="checkbox" data-field="flip_horizontal">
               </div>
             </div>
           </div>
 
-          <p class="field-note">Записывается в settings.csv устройства и применяется сразу —
-            экран и кнопки на корпусе показывают то же самое.</p>
-          <p class="field-note">Часов у устройства нет: время оно спрашивает у сервера, когда
-            появляется сеть. Поле сервера можно очистить — вернётся pool.ntp.org.</p>
+          <p class="field-note" data-i18n="note.device">Записывается в settings.csv устройства и применяется сразу — экран и кнопки на корпусе показывают то же самое.</p>
+          <p class="field-note" data-i18n="note.time">Часов у устройства нет: время оно спрашивает у сервера, когда появляется сеть. Поле сервера можно очистить — вернётся pool.ntp.org.</p>
         </section>
 
         <section class="card" aria-labelledby="backup-title">
           <div class="card-head">
-            <h2 id="backup-title">Резервная копия</h2>
-            <span id="backup-status" class="settings-status" role="status" aria-live="polite">Готово</span>
+            <h2 id="backup-title" data-i18n="backup.title">Резервная копия</h2>
+            <span id="backup-status" class="settings-status" role="status" aria-live="polite" data-i18n="common.ready">Готово</span>
           </div>
 
-          <p class="field-note">В архив попадает всё, что устройство знает о себе:
-            сети Wi-Fi, настройки и токен ЯМузыки. Плейлист сохраняется отдельно,
-            на странице плейлиста.</p>
+          <p class="field-note" data-i18n="note.backup">В архив попадает всё, что устройство знает о себе: сети Wi-Fi, настройки и токен ЯМузыки. Плейлист сохраняется отдельно, на странице плейлиста.</p>
 
           <div class="settings-actions">
-            <a id="backup-download" class="secondary-button" href="/api/backup" download>Скачать архив</a>
+            <a id="backup-download" class="secondary-button" href="/api/backup" download data-i18n="backup.download">Скачать архив</a>
             <label class="secondary-button file-button" for="backup-file">
-              Выбрать файл
+              <span data-i18n="backup.choose">Выбрать файл</span>
               <input id="backup-file" type="file" accept=".zip,.json,.csv,application/zip" hidden>
             </label>
-            <button id="backup-restore" class="primary-button" type="button" disabled>Восстановить</button>
+            <button id="backup-restore" class="primary-button" type="button" disabled data-i18n="backup.restore">Восстановить</button>
           </div>
 
-          <p class="field-note">Восстановить можно весь архив целиком или один файл из него —
-            wifi.json, settings.csv или yandex.json. После восстановления устройство
-            перезагрузится.</p>
-          <p class="field-note">Пароли Wi-Fi и токен ЯМузыки лежат в архиве открытым текстом:
-            храните его так же, как хранили бы пароль.</p>
+          <p class="field-note" data-i18n="note.restore">Восстановить можно весь архив целиком или один файл из него — wifi.json, settings.csv или yandex.json. После восстановления устройство перезагрузится.</p>
+          <p class="field-note" data-i18n="note.backup_secret">Пароли Wi-Fi и токен ЯМузыки лежат в архиве открытым текстом: храните его так же, как хранили бы пароль.</p>
         </section>
       </div>
 
       <div class="settings-column">
         <section class="card" aria-labelledby="wifi-title">
           <div class="card-head">
-            <h2 id="wifi-title">Wi-Fi</h2>
-            <span id="wifi-status" class="settings-status" role="status" aria-live="polite">Ожидание данных</span>
+            <h2 id="wifi-title" data-i18n="wifi.title">Wi-Fi</h2>
+            <span id="wifi-status" class="settings-status" role="status" aria-live="polite" data-i18n="wifi.waiting">Ожидание данных</span>
           </div>
 
           <dl class="network-summary">
-            <div><dt>Текущая сеть</dt><dd id="wifi-active">—</dd></div>
-            <div><dt>IP-адрес</dt><dd id="wifi-ip">—</dd></div>
+            <div><dt data-i18n="wifi.current">Текущая сеть</dt><dd id="wifi-active">—</dd></div>
+            <div><dt data-i18n="wifi.ip">IP-адрес</dt><dd id="wifi-ip">—</dd></div>
           </dl>
 
           <div class="device-group">
-            <h3>Сохранённые сети</h3>
+            <h3 data-i18n="wifi.saved">Сохранённые сети</h3>
             <ul id="saved-networks" class="saved-networks"></ul>
-            <p id="saved-networks-empty" class="empty-state">Сохранённых сетей пока нет</p>
+            <p id="saved-networks-empty" class="empty-state" data-i18n="wifi.saved_empty">Сохранённых сетей пока нет</p>
           </div>
 
           <div id="wifi-scan-block" class="device-group" hidden>
-            <h3>Сети вокруг</h3>
+            <h3 data-i18n="wifi.nearby">Сети вокруг</h3>
             <ul id="scan-networks" class="saved-networks"></ul>
-            <p id="scan-empty" class="empty-state">Список пуст</p>
+            <p id="scan-empty" class="empty-state" data-i18n="common.list_empty">Список пуст</p>
           </div>
 
           <div class="settings-actions">
-            <button id="wifi-add" class="secondary-button" type="button">Добавить сеть</button>
-            <button id="wifi-scan" class="secondary-button" type="button" hidden>Обновить список</button>
+            <button id="wifi-add" class="secondary-button" type="button" data-i18n="wifi.add">Добавить сеть</button>
+            <button id="wifi-scan" class="secondary-button" type="button" hidden data-i18n="wifi.rescan">Обновить список</button>
           </div>
 
           <form id="wifi-form" class="settings-form" hidden>
             <p id="wifi-chosen" class="field-note" hidden>Сеть: <strong id="wifi-chosen-name">—</strong></p>
             <div id="wifi-ssid-row" class="settings-form" hidden>
-              <label for="wifi-ssid">Название сети</label>
+              <label for="wifi-ssid" data-i18n="wifi.ssid">Название сети</label>
               <input id="wifi-ssid" name="ssid" type="text" maxlength="32" autocomplete="off">
             </div>
-            <label for="wifi-password">Пароль</label>
+            <label for="wifi-password" data-i18n="wifi.password">Пароль</label>
             <div class="password-field">
               <input id="wifi-password" name="password" type="password" maxlength="64" autocomplete="new-password">
               <button id="wifi-password-reveal" class="secondary-button" type="button"
-                      aria-controls="wifi-password" aria-pressed="false">Показать</button>
+                      aria-controls="wifi-password" aria-pressed="false" data-i18n="wifi.reveal">Показать</button>
             </div>
             <div class="settings-actions">
-              <button id="wifi-submit" class="primary-button" type="submit" disabled>Проверить и сохранить</button>
-              <button id="wifi-cancel" class="secondary-button" type="button">Отмена</button>
+              <button id="wifi-submit" class="primary-button" type="submit" disabled data-i18n="wifi.submit">Проверить и сохранить</button>
+              <button id="wifi-cancel" class="secondary-button" type="button" data-i18n="common.cancel">Отмена</button>
             </div>
           </form>
-          <p class="field-note">Пароль отправляется устройству один раз и сразу удаляется из поля.
-            Сети вокруг устройство ищет только пока не подключено ни к одной из них.</p>
+          <p class="field-note" data-i18n="note.wifi">Пароль отправляется устройству один раз и сразу удаляется из поля. Сети вокруг устройство ищет только пока не подключено ни к одной из них.</p>
         </section>
 
         <section class="card" aria-labelledby="yandex-title">
           <div class="card-head">
-            <h2 id="yandex-title">ЯМузыка</h2>
-            <span id="yandex-status" class="settings-status" role="status" aria-live="polite">Проверка…</span>
+            <h2 id="yandex-title" data-i18n="yandex.title">ЯМузыка</h2>
+            <span id="yandex-status" class="settings-status" role="status" aria-live="polite" data-i18n="yandex.checking">Проверка…</span>
           </div>
 
           <div id="yandex-code-block" class="yandex-code" hidden>
-            <p class="yandex-code-lead">Откройте страницу и введите код:</p>
+            <p class="yandex-code-lead" data-i18n="yandex.code_lead">Откройте страницу и введите код:</p>
             <p><a id="yandex-url" href="#" rel="noreferrer noopener" target="_blank">—</a></p>
             <p id="yandex-code" class="yandex-code-value">—</p>
             <p id="yandex-countdown" class="settings-status"></p>
           </div>
 
           <div id="yandex-stations-block" class="device-group" hidden>
-            <h3>Станции</h3>
+            <h3 data-i18n="list.stations">Станции</h3>
             <ul id="yandex-stations" class="saved-networks"></ul>
-            <p id="yandex-stations-empty" class="empty-state">Список пуст</p>
+            <p id="yandex-stations-empty" class="empty-state" data-i18n="common.list_empty">Список пуст</p>
           </div>
 
           <div class="settings-actions">
-            <button id="yandex-link" class="primary-button" type="button">Привязать аккаунт</button>
-            <button id="yandex-cancel" class="secondary-button" type="button" hidden>Отменить</button>
-            <button id="yandex-refresh" class="secondary-button" type="button" hidden>Обновить станции</button>
-            <button id="yandex-forget" class="secondary-button" type="button" hidden>Отвязать</button>
+            <button id="yandex-link" class="primary-button" type="button" data-i18n="yandex.link">Привязать аккаунт</button>
+            <button id="yandex-cancel" class="secondary-button" type="button" hidden data-i18n="yandex.cancel">Отменить</button>
+            <button id="yandex-refresh" class="secondary-button" type="button" hidden data-i18n="yandex.refresh">Обновить станции</button>
+            <button id="yandex-forget" class="secondary-button" type="button" hidden data-i18n="yandex.forget">Отвязать</button>
           </div>
 
-          <p class="field-note">Пароль от Яндекса устройству не нужен: код подтверждается на сайте
-            Яндекса, сюда возвращается только токен доступа.</p>
+          <p class="field-note" data-i18n="note.yandex">Пароль от Яндекса устройству не нужен: код подтверждается на сайте Яндекса, сюда возвращается только токен доступа.</p>
         </section>
 
         <section class="card" aria-labelledby="about-title">
           <div class="card-head">
-            <h2 id="about-title">Об устройстве</h2>
+            <h2 id="about-title" data-i18n="about.title">Об устройстве</h2>
           </div>
 
           <dl class="about-list">
-            <dt>Прошивка</dt><dd id="about-firmware">—</dd>
-            <dt>Собрана</dt><dd id="about-built">—</dd>
-            <dt>Веб-интерфейс</dt><dd id="about-web">—</dd>
+            <dt data-i18n="about.firmware">Прошивка</dt><dd id="about-firmware">—</dd>
+            <dt data-i18n="about.built">Собрана</dt><dd id="about-built">—</dd>
+            <dt data-i18n="about.web">Веб-интерфейс</dt><dd id="about-web">—</dd>
             <dt>ESP-IDF</dt><dd id="about-idf">—</dd>
           </dl>
 
           <p id="about-notice" class="settings-status is-error" hidden></p>
 
-          <p class="field-note">Прошивка и веб-интерфейс пишутся разными командами, поэтому
-            у них свои версии. Если они разошлись, перепрошейте раздел данных.</p>
+          <p class="field-note" data-i18n="note.versions">Прошивка и веб-интерфейс пишутся разными командами, поэтому у них свои версии. Если они разошлись, перепрошейте раздел данных.</p>
           <p class="field-note"><a id="about-author" href="#">—</a></p>
         </section>
       </div>
     </div>
   </main>
 
-  <noscript><p class="noscript-message">Для настроек требуется JavaScript.</p></noscript>
+  <noscript><p class="noscript-message">Для настроек требуется JavaScript. / JavaScript is required for the settings page.</p></noscript>
   <script src="/settings.js"></script>
 </body>
 </html>

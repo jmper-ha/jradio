@@ -75,6 +75,11 @@ elements['#wifi-form'].elements = {
 };
 
 const documentRef = {
+  /* The i18n pass walks the markup for `data-i18n`; these elements are built
+     here rather than parsed from settings.html, so it finds none and leaves
+     them alone. What the tests below check is the text the page writes. */
+  documentElement: {lang: 'ru'},
+  querySelectorAll() { return []; },
   querySelector(selector) { return elements[selector]; },
   createElement() { return new Element(); },
 };
@@ -207,6 +212,7 @@ function snapshot(revision, wifi) {
 }
 
 vm.createContext(context);
+vm.runInContext(fs.readFileSync('data/www/i18n.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('data/www/settings.js', 'utf8'), context);
 
 const first = FakeWebSocket.instances[0];
@@ -346,7 +352,8 @@ async function settle() {
    listeners to them, so this is only safe at the very end of the file - which
    is where the About assertions are. */
 async function reload() {
-  vm.runInContext(fs.readFileSync('data/www/settings.js', 'utf8'), context);
+  vm.runInContext(fs.readFileSync('data/www/i18n.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('data/www/settings.js', 'utf8'), context);
   await settle();
 }
 
@@ -562,7 +569,20 @@ function lastYandexTimer() {
                                            call.options.method === 'POST')
       .at(-1).options.body),
     {field: 'language', value: 'en'});
+  /* The page itself is now in English - which is the whole point of the
+     switch, and what it did not do before: it used to relabel the device's
+     screen and leave the browser in Russian. */
+  assert.equal(elements['#device-status'].textContent, 'Saved');
+  assert.equal(documentRef.documentElement.lang, 'en');
+
+  // Back to Russian, which is the language the rest of this file is written in.
+  settingsReply = {...settingsReply, language: 'ru'};
+  elements['#device-language'].value = 'ru';
+  elements['#device-language'].emit('change');
+  await settle();
+  assert.equal(documentRef.documentElement.lang, 'ru');
   assert.equal(elements['#device-status'].textContent, 'Сохранено');
+
 
   /* The other direction, which is what makes this a settings page and not a
      form: the knob and the buttons on the device move these values, and the
@@ -907,6 +927,33 @@ function lastYandexTimer() {
   assert.equal(elements['#backup-status'].textContent, 'Не удалось отправить файл');
   restoreFetchFails = false;
   restoreOk = true;
+
+  /* The other direction, which is what makes this one switch rather than two:
+     the language turned on the device's own screen arrives over the socket and
+     relabels this page. Revisions well past anything above, since a stale one
+     is ignored by design. */
+  assert.equal(documentRef.documentElement.lang, 'ru');
+  sendEvent(second, {
+    type: 'settings.update', revision: 90,
+    settings: {...settingsReply, language: 'en'},
+  });
+  assert.equal(documentRef.documentElement.lang, 'en');
+  assert.equal(elements['#device-language'].value, 'en');
+  /* The account card too, and this is the trap it guards: its status words
+     used to be frozen into a lookup table when the page loaded, so the first
+     language the page ever saw was the one it kept for ever. */
+  await settle();
+  /* Whatever the card is saying at this point, it is saying it in English -
+     which it could not before: its words were frozen into a lookup table when
+     the page loaded, so the first language the page ever saw was the one it
+     kept for ever. (The device is unreachable here, from a test above, so what
+     it says is the failure line.) */
+  assert.equal(elements['#yandex-status'].textContent, 'No connection to the device');
+  sendEvent(second, {
+    type: 'settings.update', revision: 91,
+    settings: {...settingsReply, language: 'ru'},
+  });
+  assert.equal(documentRef.documentElement.lang, 'ru');
 
   console.log('web settings tests passed');
 })().catch((error) => {

@@ -39,7 +39,7 @@ the home screen. Details in [Hardware](doc/hardware.en.md).
 | **Volume** | works | The knob, the web player and Settings; remembered |
 | **Autoplay** | works | Starts whatever was playing when the device was switched off: a station, a track off a drive, a Yandex station or a container on a media server |
 | **Cover art** | works | From the file's tag, from `cover.jpg` beside the music, from Yandex |
-| **Interface language** | partly | The switch exists but relabels the settings screen only |
+| **Interface language** | works | Russian and English; the switch moves both the device screen and the web interface |
 | **Yandex categories** | not done | Only the account's own stations; there is no catalogue of genres and moods |
 | **Bluetooth, FM** | not done | No menu entries: the device shows only what it can actually do |
 
@@ -65,10 +65,6 @@ checked on live hardware, not only in tests.
 
 Limits worth knowing about in advance:
 
-- **The translation is unfinished.** The language switch relabels the settings
-  screen only; the rest are in Russian. Deliberately left for last: while the
-  screens are still being reworked, the strings would have to be translated
-  again.
 - **The web interface assumes a trusted LAN.** There is no authentication and
   `Origin` is not checked. Do not expose it to the internet.
 - **At most 99 stations** in the playlist and **256 entries** in one directory

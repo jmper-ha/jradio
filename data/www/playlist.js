@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  const t = (key, values) => window.jradioI18n.t(key, values);
+
   // Mirror sizeof(name)/sizeof(url) in station_catalog_entry_t. The device's
   // station_catalog_copy_field() rejects a field whose length is >= the buffer
   // size because it still needs room for the terminating NUL, and it drops the
@@ -246,12 +248,12 @@
   }
 
   function rowError(row) {
-    if (row.name.length === 0) return 'Укажите название станции';
-    if (row.name.includes('\t')) return 'Название не может содержать символ табуляции';
-    if (byteLength(row.name) >= STATION_NAME_BUFFER_BYTES) return 'Название слишком длинное';
-    if (row.url.length === 0) return 'Укажите адрес потока';
-    if (row.url.includes('\t')) return 'Адрес не может содержать символ табуляции';
-    if (byteLength(row.url) >= STATION_URL_BUFFER_BYTES) return 'Адрес слишком длинный';
+    if (row.name.length === 0) return t('playlist.need_name');
+    if (row.name.includes('\t')) return t('playlist.name_has_tab');
+    if (byteLength(row.name) >= STATION_NAME_BUFFER_BYTES) return t('playlist.name_too_long');
+    if (row.url.length === 0) return t('playlist.need_url');
+    if (row.url.includes('\t')) return t('playlist.url_has_tab');
+    if (byteLength(row.url) >= STATION_URL_BUFFER_BYTES) return t('playlist.url_too_long');
     return '';
   }
 
@@ -308,12 +310,12 @@
   function refreshTestButtons() {
     rowsEl.querySelectorAll('.playlist-row-test-browser').forEach((button) => {
       const playing = button.dataset.rowId === String(test.browser);
-      button.textContent = playing ? 'Остановить' : 'Тест в браузере';
+      button.textContent = playing ? t('playlist.stop') : t('playlist.test_browser');
       button.classList.toggle('is-testing', playing);
     });
     rowsEl.querySelectorAll('.playlist-row-test-device').forEach((button) => {
       const playing = button.dataset.rowId === String(test.device);
-      button.textContent = playing ? 'Остановить' : 'Тест на устройстве';
+      button.textContent = playing ? t('playlist.stop') : t('playlist.test_device');
       button.classList.toggle('is-testing', playing);
     });
   }
@@ -337,14 +339,14 @@
     if (test.audio === null) test.audio = new Audio();
     test.audio.src = row.url;
     test.browser = row.id;
-    setRowNotice(item, 'Пробуем в браузере…', false);
+    setRowNotice(item, t('playlist.trying_browser'), false);
     refreshTestButtons();
     test.audio.play().then(() => {
-      setRowNotice(item, 'Играет в браузере', false);
+      setRowNotice(item, t('playlist.playing_browser'), false);
     }).catch(() => {
       test.browser = null;
       refreshTestButtons();
-      setRowNotice(item, 'Браузер не смог открыть поток. Формат вроде HLS он не играет.', true);
+      setRowNotice(item, t('playlist.browser_cannot'), true);
     });
   }
 
@@ -353,7 +355,7 @@
   function playOnDevice(item, row) {
     const stopping = test.device === row.id;
     const body = stopping ? {url: ''} : {url: row.url, name: row.name};
-    setRowNotice(item, stopping ? 'Останавливаем…' : 'Отправляем на устройство…', false);
+    setRowNotice(item, stopping ? t('playlist.stopping') : t('playlist.sending_device'), false);
     window.fetch('/api/station-test', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -363,10 +365,10 @@
         if (!response || response.ok !== true) throw new Error('request failed');
         test.device = stopping ? null : row.id;
         refreshTestButtons();
-        setRowNotice(item, stopping ? '' : 'Играет на устройстве', false);
+        setRowNotice(item, stopping ? '' : t('playlist.playing_device'), false);
       })
       .catch(() => {
-        setRowNotice(item, 'Устройство не приняло запрос', true);
+        setRowNotice(item, t('playlist.device_refused'), true);
       });
   }
 
@@ -510,8 +512,8 @@
     const handle = document.createElement('button');
     handle.type = 'button';
     handle.className = 'icon-button playlist-row-handle';
-    handle.setAttribute('aria-label', 'Переставить станцию');
-    handle.title = 'Перетащите, чтобы переставить; стрелки вверх и вниз — то же с клавиатуры';
+    handle.setAttribute('aria-label', t('playlist.reorder'));
+    handle.title = t('playlist.reorder_hint');
     handle.innerHTML =
       '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
       '<path d="M9 7h.01M15 7h.01M9 12h.01M15 12h.01M9 17h.01M15 17h.01"/></svg>';
@@ -523,7 +525,7 @@
     const editButton = document.createElement('button');
     editButton.type = 'button';
     editButton.className = 'icon-button playlist-row-edit';
-    editButton.setAttribute('aria-label', 'Редактировать станцию');
+    editButton.setAttribute('aria-label', t('playlist.edit'));
     editButton.setAttribute('aria-expanded', 'false');
     /* Two glyphs in one button: the pencil says the row can be changed, and
        once the panel is open the arrow says how to close it again. */
@@ -536,7 +538,7 @@
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.className = 'icon-button playlist-row-delete';
-    deleteButton.setAttribute('aria-label', 'Удалить станцию');
+    deleteButton.setAttribute('aria-label', t('playlist.delete'));
     deleteButton.innerHTML =
       '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
       '<path d="M5 7h14M9 7V5h6v2m-9 0 1 12h10l1-12"/></svg>';
@@ -559,16 +561,16 @@
     nameInput.className = 'playlist-row-name-input';
     nameInput.value = row.name;
     nameInput.maxLength = STATION_NAME_BUFFER_BYTES - 1;
-    nameInput.setAttribute('aria-label', 'Название станции');
+    nameInput.setAttribute('aria-label', t('playlist.station_name'));
 
     const urlInput = document.createElement('input');
     urlInput.type = 'text';
     urlInput.className = 'playlist-row-url-input';
     urlInput.value = row.url;
     urlInput.maxLength = STATION_URL_BUFFER_BYTES - 1;
-    urlInput.setAttribute('aria-label', 'Адрес потока');
+    urlInput.setAttribute('aria-label', t('playlist.stream_url'));
 
-    const flagCaption = 'Показывать название из списка, а не из потока';
+    const flagCaption = t('playlist.name_from_list');
     const flagLabel = document.createElement('label');
     flagLabel.className = 'playlist-row-flag';
     const flagInput = document.createElement('input');
@@ -598,7 +600,7 @@
     const iconClear = document.createElement('button');
     iconClear.type = 'button';
     iconClear.className = 'secondary-button playlist-row-icon-clear';
-    iconClear.textContent = 'Убрать';
+    iconClear.textContent = t('playlist.icon_remove');
     iconClear.hidden = true;
     iconRow.append(iconPreview, iconPick, iconClear);
 
@@ -608,19 +610,19 @@
     testBrowser.type = 'button';
     testBrowser.className = 'secondary-button playlist-row-test-browser';
     testBrowser.dataset.rowId = String(row.id);
-    testBrowser.textContent = 'Тест в браузере';
+    testBrowser.textContent = t('playlist.test_browser');
     const testDevice = document.createElement('button');
     testDevice.type = 'button';
     testDevice.className = 'secondary-button playlist-row-test-device';
     testDevice.dataset.rowId = String(row.id);
-    testDevice.textContent = 'Тест на устройстве';
+    testDevice.textContent = t('playlist.test_device');
     tests.append(testBrowser, testDevice);
 
     const errorEl = document.createElement('p');
     errorEl.className = 'playlist-row-error';
     errorEl.hidden = true;
 
-    editor.append(field('Название', nameInput), field('Адрес потока', urlInput),
+    editor.append(field(t('playlist.name'), nameInput), field(t('playlist.stream_url'), urlInput),
                   flagLabel, iconRow, tests, errorEl);
     item.append(head, editor);
 
@@ -638,11 +640,11 @@
         thumb.removeAttribute('src');
         iconPreview.removeAttribute('src');
       }
-      iconCaption.textContent = source === '' ? 'Иконка станции' : 'Заменить иконку';
+      iconCaption.textContent = source === '' ? t('playlist.icon') : t('playlist.icon_replace');
     }
 
     function paintHead() {
-      nameText.textContent = row.name === '' ? 'Без названия' : row.name;
+      nameText.textContent = row.name === '' ? t('common.untitled') : row.name;
       urlText.textContent = row.url;
     }
     paintHead();
@@ -708,7 +710,7 @@
     iconInput.addEventListener('change', () => {
       const file = iconInput.files && iconInput.files[0];
       if (!file) return;
-      setRowNotice(item, 'Готовим иконку…', false);
+      setRowNotice(item, t('playlist.icon_preparing'), false);
       scaleImage(file).then((blob) => {
         if (blob.size > ICON_MAX_BYTES) throw new Error('too large');
         dropPicture(row);
@@ -717,9 +719,9 @@
         paintIcon();
         updateSaveAvailability();
         setRowNotice(item,
-          'Иконка готова. Нажмите «Сохранить на устройстве», чтобы отправить её.', false);
+          t('playlist.icon_ready'), false);
       }).catch(() => {
-        setRowNotice(item, 'Не удалось подготовить иконку', true);
+        setRowNotice(item, t('playlist.icon_failed'), true);
       }).then(() => {
         // Cleared so that choosing the same file again is a change.
         iconInput.value = '';
@@ -730,18 +732,18 @@
       row.icon = '';
       paintIcon();
       updateSaveAvailability();
-      setRowNotice(item, 'Иконка снимется при сохранении', false);
+      setRowNotice(item, t('playlist.icon_will_go'), false);
     });
     testBrowser.addEventListener('click', () => {
       if (row.url === '') {
-        setRowNotice(item, 'Сначала укажите адрес потока', true);
+        setRowNotice(item, t('playlist.need_url_first'), true);
         return;
       }
       playInBrowser(item, row);
     });
     testDevice.addEventListener('click', () => {
       if (row.url === '') {
-        setRowNotice(item, 'Сначала укажите адрес потока', true);
+        setRowNotice(item, t('playlist.need_url_first'), true);
         return;
       }
       playOnDevice(item, row);
@@ -771,7 +773,7 @@
     state.rows.splice(index, 0, row);
     renderRows();
     updateSaveAvailability();
-    setStatus('Порядок изменён — сохраните список на устройстве');
+    setStatus(t('playlist.order_changed'));
     return true;
   }
 
@@ -874,7 +876,7 @@
   }
 
   function loadPlaylist() {
-    setStatus('Загрузка…');
+    setStatus(t('common.loading'));
     fetch('/api/playlist')
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -888,19 +890,19 @@
         renderRows();
         updateSaveAvailability();
         setStatus(skipped > 0
-          ? `Загружено, ${skipped} строк пропущено (неверный формат)`
-          : 'Загружено с устройства');
+          ? t('playlist.loaded_skipped', {n: skipped})
+          : t('playlist.loaded'));
       })
       .catch((error) => {
         state.loaded = false;
-        setStatus(`Не удалось загрузить плейлист: ${error.message}`, true);
+        setStatus(t('playlist.load_failed', {error: error.message}), true);
         updateSaveAvailability();
       });
   }
 
   function addRow() {
     if (state.rows.length >= STATION_MAX_ENTRIES) {
-      setStatus(`Достигнут предел в ${STATION_MAX_ENTRIES} станций`, true);
+      setStatus(t('playlist.limit_reached', {n: STATION_MAX_ENTRIES}), true);
       return;
     }
     state.rows.push(makeRow('', '', 0));
@@ -951,10 +953,10 @@
       state.rows.map((row) => ({...row, icon: iconNameOf(row)})));
     if (named.length === 0) {
       download(new Blob([text], {type: 'text/plain;charset=utf-8'}), 'playlist.csv');
-      setStatus(`Экспортировано ${state.rows.length} станций`);
+      setStatus(t('playlist.exported', {n: state.rows.length}));
       return;
     }
-    setStatus('Собираем архив…');
+    setStatus(t('playlist.packing'));
     try {
       const files = [{name: 'playlist.csv', bytes: encoder.encode(text)}];
       const taken = new Set();
@@ -966,9 +968,9 @@
         files.push({name: `radio_img/${name}`, bytes: await pictureBytes(row)});
       }
       download(new Blob([buildZip(files)], {type: 'application/zip'}), 'playlist.zip');
-      setStatus(`Экспортировано ${state.rows.length} станций и ${files.length - 1} картинок`);
+      setStatus(t('playlist.exported_icons', {n: state.rows.length, icons: files.length - 1}));
     } catch (error) {
-      setStatus('Не удалось собрать архив: картинка не отдалась', true);
+      setStatus(t('playlist.export_failed'), true);
     }
   }
 
@@ -1012,10 +1014,10 @@
 
   function importPlaylist(file) {
     if (state.loaded && isDirty() &&
-        !window.confirm('Несохранённые изменения будут потеряны. Импортировать файл?')) {
+        !window.confirm(t('playlist.unsaved_import'))) {
       return;
     }
-    setStatus('Читаем файл…');
+    setStatus(t('playlist.reading'));
     readFileBytes(file)
       .then((bytes) => {
         const archive = bytes.length > ZIP_SIGNATURE.length &&
@@ -1050,15 +1052,15 @@
         renderRows();
         updateSaveAvailability();
         const notes = [];
-        if (skipped > 0) notes.push(`${skipped} строк пропущено`);
-        if (truncated) notes.push(`оставлены первые ${STATION_MAX_ENTRIES} станций`);
-        if (missing > 0) notes.push(`${missing} картинок не нашлось`);
+        if (skipped > 0) notes.push(t('playlist.rows_skipped', {n: skipped}));
+        if (truncated) notes.push(t('playlist.kept_first', {n: STATION_MAX_ENTRIES}));
+        if (missing > 0) notes.push(t('playlist.icons_missing', {n: missing}));
         setStatus(notes.length > 0
-          ? `Импортировано ${rows.length} станций (${notes.join(', ')})`
-          : `Импортировано ${rows.length} станций`);
+          ? t('playlist.imported_notes', {n: rows.length, notes: notes.join(', ')})
+          : t('playlist.imported', {n: rows.length}));
       })
       .catch(() => {
-        setStatus('Не удалось прочитать файл', true);
+        setStatus(t('playlist.read_failed'), true);
       });
   }
 
@@ -1071,11 +1073,11 @@
          the device does not have yet is a line it will refuse. */
       const pending = state.rows.filter((row) => row.picture !== null).length;
       if (pending > 0) {
-        setSaveStatus(`Отправляем картинки: ${pending}…`);
+        setSaveStatus(t('playlist.sending_icons', {n: pending}));
         await uploadPendingPictures();
         renderRows();
       }
-      setSaveStatus('Сохранение…');
+      setSaveStatus(t('common.saving'));
       const text = serializeCatalog(state.rows);
       const response = await fetch('/api/playlist', {
         method: 'POST',
@@ -1095,14 +1097,14 @@
         // treating this as a successful sync would hide the loss until the
         // next page load.
         setSaveStatus(
-          `Устройство приняло ${count} станций из ${expected}: часть строк отклонена. ` +
-          'Проверьте список и сохраните снова.', true);
+          t('playlist.partial_save', {n: count, expected}) +
+          t('playlist.check_and_save'), true);
       } else {
         state.lastSyncedText = text;
-        setSaveStatus(`Сохранено: ${count} станций`);
+        setSaveStatus(t('playlist.saved', {n: count}));
       }
     } catch (error) {
-      setSaveStatus(`Не удалось сохранить: ${error.message}`, true);
+      setSaveStatus(t('playlist.save_failed', {error: error.message}), true);
     } finally {
       state.saving = false;
       updateSaveAvailability();
@@ -1118,9 +1120,26 @@
     if (file) importPlaylist(file);
   });
 
+  /* This page has no socket - it is a form over one REST endpoint - so the
+     language has to be asked for. Once, at load: it is a device setting, and
+     the only way it changes while this page is open is from another tab or
+     from the device's own screen, neither of which is worth polling for. The
+     browser's memory of it has already been applied by i18n.js, so this is a
+     correction rather than a first paint. */
+  function loadLanguage() {
+    return fetch('/api/settings', {cache: 'no-store'})
+      .then((response) => (response && response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!payload || typeof payload.language !== 'string') return;
+        if (window.jradioI18n.setLanguage(payload.language)) renderRows();
+      })
+      .catch(() => {});
+  }
+
   renderRows();
   updateSaveAvailability();
   loadPlaylist();
+  loadLanguage();
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {parseCatalogText, serializeCatalog, rowError, buildZip, readZip};

@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  const t = (key, values) => window.jradioI18n.t(key, values);
+
   const socketState = document.querySelector('#socket-state');
   const form = document.querySelector('#wifi-form');
   const ssidInput = document.querySelector('#wifi-ssid');
@@ -140,7 +142,7 @@
 
   function setConnected(value) {
     connected = value;
-    socketState.textContent = value ? 'Подключено' : 'Нет связи';
+    socketState.textContent = value ? t('wifi.connected') : t('wifi.no_link');
     socketState.classList.toggle('is-online', value);
     socketState.classList.toggle('is-offline', !value);
     socketState.classList.remove('is-connecting');
@@ -173,13 +175,13 @@
       name.classList.add('network-name');
       row.append(name);
       // Only worth saying when there is a choice to be first among.
-      if (index === 0 && wifi.saved.length > 1) row.append(tag('первая'));
-      if (network.blocked) row.append(tag('выключена до перезагрузки'));
-      if (index > 0) row.append(networkButton('Сделать первой', 'wifi.prioritize', network.ssid));
+      if (index === 0 && wifi.saved.length > 1) row.append(tag(t('wifi.first')));
+      if (network.blocked) row.append(tag(t('wifi.disabled_until_reboot')));
+      if (index > 0) row.append(networkButton(t('wifi.make_first'), 'wifi.prioritize', network.ssid));
       if (wifi.mode === 'sta_connected' && network.ssid === wifi.active_ssid) {
-        row.append(networkButton('Отключиться', 'wifi.disconnect', network.ssid));
+        row.append(networkButton(t('wifi.disconnect'), 'wifi.disconnect', network.ssid));
       }
-      row.append(networkButton('Забыть', 'wifi.forget', network.ssid));
+      row.append(networkButton(t('wifi.forget'), 'wifi.forget', network.ssid));
       return row;
     });
     savedNetworks.replaceChildren(...rows);
@@ -188,15 +190,15 @@
   }
 
   function failureText(error) {
-    if (passwordErrors.has(error)) return 'Неверный пароль или ошибка авторизации';
+    if (passwordErrors.has(error)) return t('wifi.bad_password');
     // ESP_ERR_NO_MEM as the device reports it: the list holds five networks and
     // this one would have been the sixth. Worth its own words - the visitor can
     // do something about it, unlike a write that failed.
-    if (error === 257) return 'Сохранено максимум 5 сетей — сначала забудьте лишнюю';
-    if (error === 258) return 'Некорректное название сети или пароль';
-    if (error < 0 || error >= 256) return 'Не удалось записать настройки в память';
-    if (error === 201) return 'Точка доступа не найдена';
-    return `Не удалось подключиться (код ${error})`;
+    if (error === 257) return t('wifi.full');
+    if (error === 258) return t('wifi.bad_name');
+    if (error < 0 || error >= 256) return t('wifi.write_failed');
+    if (error === 201) return t('wifi.ap_not_found');
+    return t('wifi.connect_failed', {code: error});
   }
 
   function setWifiStatus(message, error = false) {
@@ -211,11 +213,10 @@
   function editConfirmText(action, ssid, isActive) {
     if (action === 'wifi.forget') {
       return isActive
-        ? `Забыть сеть «${ssid}»? Устройство отключится от неё, и эта страница перестанет отвечать.`
-        : `Забыть сеть «${ssid}»? Пароль придётся вводить заново.`;
+        ? t('wifi.forget_active_confirm', {ssid}) + t('wifi.page_stops')
+        : t('wifi.forget_confirm', {ssid});
     }
-    return `Отключиться от сети «${ssid}»? Устройство не вернётся к ней до перезагрузки, ` +
-      'и эта страница перестанет отвечать.';
+    return t('wifi.disconnect_confirm', {ssid}) + t('wifi.page_stops');
   }
 
   function editSatisfied(wifi) {
@@ -242,7 +243,7 @@
   function editNetwork(action, ssid) {
     if (!connected || editPending || !socket || socket.readyState !== WebSocket.OPEN) return;
     if (lastWifi && lastWifi.save_pending) {
-      setWifiStatus('Идёт подключение — подождите', true);
+      setWifiStatus(t('wifi.busy'), true);
       return;
     }
     const isActive = wifiActive.textContent === ssid;
@@ -252,7 +253,7 @@
     }
     requestSequence += 1;
     editRequestId = `settings-${requestSequence}`;
-    setWifiStatus(action === 'wifi.prioritize' ? 'Меняем порядок…' : 'Выполняем…');
+    setWifiStatus(action === 'wifi.prioritize' ? t('settings.reorder') : t('common.working'));
     const frame = action === 'wifi.disconnect'
       ? {type: 'command', id: editRequestId, action}
       : {type: 'command', id: editRequestId, action, ssid};
@@ -262,7 +263,7 @@
        only spoken about while the socket is still up. */
     editTimer = window.setTimeout(() => {
       editTimer = null;
-      if (editPending && connected) finishEdit('Устройство не выполнило команду', true);
+      if (editPending && connected) finishEdit(t('common.device_refused'), true);
     }, 5000);
     socket.send(JSON.stringify(frame));
   }
@@ -270,7 +271,7 @@
   function finishSave(message, error = false) {
     wifiStatus.textContent = message;
     wifiStatus.classList.toggle('is-error', error);
-    wifiStatus.classList.toggle('is-success', !error && message === 'Сохранено');
+    wifiStatus.classList.toggle('is-success', !error && message === t('common.saved'));
     saveInFlight = false;
     saveAccepted = false;
     pendingRequestId = '';
@@ -295,7 +296,7 @@
   function setPasswordVisible(visible) {
     passwordVisible = visible;
     passwordInput.type = visible ? 'text' : 'password';
-    passwordReveal.textContent = visible ? 'Скрыть' : 'Показать';
+    passwordReveal.textContent = visible ? t('common.hide') : t('common.show');
     passwordReveal.setAttribute('aria-pressed', visible ? 'true' : 'false');
   }
 
@@ -342,7 +343,7 @@
         row.append(pick);
         const rssi = Number.isSafeInteger(network.rssi) ? network.rssi : -100;
         row.append(tag(`${signalLabel(rssi)} ${rssi} dBm`));
-        if (network.secure === false) row.append(tag('без пароля'));
+        if (network.secure === false) row.append(tag(t('wifi.open_network')));
         return row;
       });
     // A hidden network never announces itself, so there has to be a way in that
@@ -350,7 +351,7 @@
     const other = document.createElement('li');
     const otherPick = document.createElement('button');
     otherPick.type = 'button';
-    otherPick.textContent = 'Другая сеть…';
+    otherPick.textContent = t('wifi.other_network');
     otherPick.classList.add('network-name');
     otherPick.addEventListener('click', () => showForm(''));
     other.append(otherPick);
@@ -373,14 +374,14 @@
           }
           scanning = false;
           if (state !== 'done') {
-            scanEmpty.textContent = 'Не удалось найти сети';
+            scanEmpty.textContent = t('wifi.scan_failed');
             return;
           }
           renderScan(Array.isArray(body.networks) ? body.networks : []);
         })
         .catch(() => {
           scanning = false;
-          scanEmpty.textContent = 'Не удалось найти сети';
+          scanEmpty.textContent = t('wifi.scan_failed');
         });
     }, 700);
   }
@@ -394,7 +395,7 @@
     scanning = true;
     scanNetworks.replaceChildren();
     scanNetworks.hidden = true;
-    scanEmpty.textContent = 'Ищем сети…';
+    scanEmpty.textContent = t('wifi.scanning');
     scanEmpty.hidden = false;
     window.fetch('/api/wifi-scan', {method: 'POST'})
       .then((response) => {
@@ -403,7 +404,7 @@
       })
       .catch(() => {
         scanning = false;
-        scanEmpty.textContent = 'Не удалось запустить поиск';
+        scanEmpty.textContent = t('wifi.scan_start_failed');
       });
   }
 
@@ -435,20 +436,20 @@
     renderSavedNetworks(wifi);
     applyWifiMode(wifi);
     if (editDone) {
-      finishEdit('Готово', false);
+      finishEdit(t('common.ready'), false);
       return;
     }
 
     if (!saveInFlight) {
       if (wifi.save_pending) {
         saveInFlight = true;
-        wifiStatus.textContent = 'Подключение…';
+        wifiStatus.textContent = t('wifi.connecting');
         wifiStatus.classList.remove('is-error', 'is-success');
       } else if (wifi.last_error !== 0) {
         wifiStatus.textContent = failureText(wifi.last_error);
         wifiStatus.classList.add('is-error');
       } else {
-        wifiStatus.textContent = wifi.mode === 'sta_connected' ? 'Подключено' : 'Готово к настройке';
+        wifiStatus.textContent = wifi.mode === 'sta_connected' ? t('wifi.connected') : t('wifi.setup_ready');
         wifiStatus.classList.remove('is-error', 'is-success');
       }
       submitButton.disabled = !connected || saveInFlight;
@@ -456,7 +457,7 @@
     }
 
     if (wifi.save_pending) {
-      wifiStatus.textContent = 'Подключение…';
+      wifiStatus.textContent = t('wifi.connecting');
       wifiStatus.classList.remove('is-error', 'is-success');
       submitButton.disabled = true;
       return;
@@ -466,13 +467,13 @@
       return;
     }
     if (!expectedSsid) {
-      finishSave(wifi.mode === 'sta_connected' ? 'Сохранено' : 'Готово к настройке');
+      finishSave(wifi.mode === 'sta_connected' ? t('common.saved') : t('wifi.setup_ready'));
       return;
     }
     if (saveAccepted && wifi.mode === 'sta_connected' &&
         wifi.active_ssid === expectedSsid &&
         wifi.saved.some((network) => network.ssid === expectedSsid)) {
-      finishSave('Сохранено');
+      finishSave(t('common.saved'));
     }
   }
 
@@ -486,11 +487,11 @@
       // A refusal is final; an acceptance only means it was queued, so that
       // one keeps waiting for the list to change.
       if (message.ok !== true) {
-        finishEdit(safeString(message.error, 'Команда не выполнена'), true);
+        finishEdit(safeString(message.error, t('common.command_failed')), true);
       } else if (lastWifi && editSatisfied(lastWifi)) {
         // Already the way it was asked to be - a reorder of a network that is
         // first anyway. Nothing will change, so nothing will arrive to prove it.
-        finishEdit('Готово', false);
+        finishEdit(t('common.ready'), false);
       }
       return;
     }
@@ -499,7 +500,7 @@
       saveAccepted = true;
       return;
     }
-    finishSave(safeString(message.error, 'Команда не выполнена'), true);
+    finishSave(safeString(message.error, t('common.command_failed')), true);
   }
 
   function handleMessage(event) {
@@ -541,7 +542,7 @@
     clearPassword();
     if (!connected || saveInFlight || !socket || socket.readyState !== WebSocket.OPEN) return;
     if (!ssid) {
-      wifiStatus.textContent = 'Введите название сети';
+      wifiStatus.textContent = t('wifi.need_ssid');
       wifiStatus.classList.add('is-error');
       return;
     }
@@ -550,7 +551,7 @@
     expectedSsid = ssid;
     saveInFlight = true;
     saveAccepted = false;
-    wifiStatus.textContent = 'Проверка…';
+    wifiStatus.textContent = t('common.checking');
     wifiStatus.classList.remove('is-error', 'is-success');
     submitButton.disabled = true;
     const frame = JSON.stringify({
@@ -572,7 +573,7 @@
   function connect() {
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    socketState.textContent = reconnectAttempt === 0 ? 'Подключение…' : 'Нет связи';
+    socketState.textContent = reconnectAttempt === 0 ? t('wifi.connecting') : t('wifi.no_link');
     socketState.classList.add('is-connecting');
     const currentSocket = new WebSocket(`${protocol}//${window.location.host}/ws`);
     socket = currentSocket;
@@ -643,6 +644,7 @@
 
   function applyDeviceSettings(payload) {
     if (!isObject(payload)) return false;
+    applyLanguage(payload);
     const available = isObject(payload.available) ? payload.available : {};
     // Before the values below, or the zone would be set on an empty list.
     fillTimezones(payload.timezones);
@@ -679,6 +681,23 @@
     return true;
   }
 
+  /* The language is a device setting like any other, so it arrives with the
+     rest of them - which is what lets the row on the device's own screen
+     relabel this page, and the picker on this page relabel the screen. The
+     markup is relabelled by i18n itself; these are the parts the page draws,
+     which have to be drawn again. */
+  function applyLanguage(payload) {
+    if (!isObject(payload) || typeof payload.language !== 'string') return;
+    if (!window.jradioI18n.setLanguage(payload.language)) return;
+    /* The Wi-Fi rows, the account card and the version card carry words this
+       page builds rather than words the markup holds, so they are asked for
+       again. Waiting for their own polls would leave half the page in the
+       language it was in a moment ago. */
+    if (lastWifi !== null) renderSavedNetworks(lastWifi);
+    refreshAbout();
+    refreshYandex();
+  }
+
   function refreshDeviceSettings() {
     return window.fetch('/api/settings', {cache: 'no-store'})
       .then((response) => {
@@ -687,11 +706,11 @@
       })
       .then((payload) => {
         if (!applyDeviceSettings(payload)) throw new Error('unexpected payload');
-        deviceStatus.textContent = 'Готово';
+        deviceStatus.textContent = t('common.ready');
         deviceStatus.classList.remove('is-error', 'is-success');
       })
       .catch(() => {
-        deviceStatus.textContent = 'Нет связи с устройством';
+        deviceStatus.textContent = t('common.no_device');
         deviceStatus.classList.add('is-error');
       });
   }
@@ -700,7 +719,7 @@
     if (deviceBusy) return Promise.resolve();
     deviceBusy = true;
     setDeviceDisabled(true);
-    deviceStatus.textContent = 'Сохранение…';
+    deviceStatus.textContent = t('settings.saving');
     deviceStatus.classList.remove('is-error', 'is-success');
     return window.fetch('/api/settings', {
       method: 'POST',
@@ -715,14 +734,14 @@
         // The answer is the whole document as the device now has it, so a value
         // it refused or adjusted is what ends up on screen.
         if (!applyDeviceSettings(payload)) throw new Error('unexpected payload');
-        deviceStatus.textContent = 'Сохранено';
+        deviceStatus.textContent = t('common.saved');
         deviceStatus.classList.add('is-success');
       })
       .catch(() => {
         // Put the controls back to what the device actually holds: a switch
         // left showing a change that never landed is worse than no answer.
         return refreshDeviceSettings().then(() => {
-          deviceStatus.textContent = 'Не удалось сохранить';
+          deviceStatus.textContent = t('common.save_failed');
           deviceStatus.classList.add('is-error');
           deviceStatus.classList.remove('is-success');
         });
@@ -772,18 +791,20 @@
      here: the browser would need the same rules about which files count and
      what a restored file has to look like, and two copies of that is how the
      page and the device end up disagreeing about what a valid backup is. */
+  /* Keys, not words: this is built once when the page loads, and the language
+     changes afterwards. Frozen with the text in it, the first language the page
+     ever saw was the one these lines kept for ever. */
   const restoreErrorText = Object.freeze({
-    size: 'Файл слишком большой',
-    incomplete: 'Файл дошёл не целиком — попробуйте ещё раз',
-    memory: 'Устройству не хватило памяти',
-    compressed: 'Архив упакован способом, который устройство не понимает. ' +
-      'Загрузите архив, скачанный с устройства, или один файл из него',
-    damaged: 'Архив повреждён',
-    malformed: 'Это не архив с настройками',
-    empty: 'В архиве нет файлов устройства',
-    'unknown-file': 'Ожидается архив или один из файлов: wifi.json, settings.csv, yandex.json',
-    contents: 'Содержимое файла не похоже на то, чем он назван',
-    write: 'Не удалось записать файл на устройство',
+    size: 'backup.err_size',
+    incomplete: 'backup.err_incomplete',
+    memory: 'backup.err_memory',
+    compressed: 'backup.err_compressed',
+    damaged: 'backup.err_damaged',
+    malformed: 'backup.err_malformed',
+    empty: 'backup.err_empty',
+    'unknown-file': 'backup.err_unknown_file',
+    contents: 'backup.err_contents',
+    write: 'backup.err_write',
   });
   let restoreInFlight = false;
 
@@ -801,13 +822,13 @@
   function restoreChosenFile() {
     const file = chosenFile();
     if (file === null || restoreInFlight) return Promise.resolve();
-    if (window.confirm(`Восстановить настройки из «${file.name}»? ` +
-                       'Текущие настройки будут заменены, устройство перезагрузится.') !== true) {
+    if (window.confirm(t('backup.confirm', {name: file.name}) +
+                       t('backup.confirm_tail')) !== true) {
       return Promise.resolve();
     }
     restoreInFlight = true;
     backupRestore.disabled = true;
-    setBackupStatus('Отправка…');
+    setBackupStatus(t('common.sending'));
     /* The name travels in the query, because a single file is recognised by it
        - an archive says what is in it, but wifi.json on its own does not. */
     return window.fetch(`/api/restore?name=${encodeURIComponent(file.name)}`,
@@ -821,7 +842,14 @@
       .then((result) => {
         if (!result.ok) {
           const code = typeof result.payload.error === 'string' ? result.payload.error : '';
-          setBackupStatus(restoreErrorText[code] || 'Устройство не приняло файл', 'error');
+          /* Two of these carry a tail the dictionary keeps separately - a
+             list of file names, and a sentence about what to upload instead -
+             because neither belongs inside a translated phrase. */
+          const key = restoreErrorText[code];
+          let text = key ? t(key) : t('backup.refused');
+          if (code === 'compressed') text += t('backup.err_compressed_tail');
+          if (code === 'unknown-file') text += 'wifi.json, settings.csv, yandex.json';
+          setBackupStatus(text, 'error');
           return;
         }
         const restored = Array.isArray(result.payload.restored) ? result.payload.restored : [];
@@ -830,11 +858,11 @@
           /* Written, but the device could not read it back - the case that
              would otherwise be discovered as a device on the setup access
              point with nothing said about why. */
-          setBackupStatus(`Восстановлено: ${restored.join(', ')}. ` +
-                          `Устройство не смогло прочитать: ${warnings.join(', ')}. ` +
-                          'Перезагрузка…', 'error');
+          setBackupStatus(t('backup.restored_warn', {files: restored.join(', ')}) +
+                          t('backup.unreadable', {files: warnings.join(', ')}) +
+                          t('backup.rebooting'), 'error');
         } else {
-          setBackupStatus(`Восстановлено: ${restored.join(', ')}. Устройство перезагружается…`,
+          setBackupStatus(t('backup.restored', {files: restored.join(', ')}),
                           'success');
         }
         /* The file is cleared either way: the same upload sent twice after a
@@ -842,7 +870,7 @@
         backupFile.value = '';
       })
       .catch(() => {
-        setBackupStatus('Не удалось отправить файл', 'error');
+        setBackupStatus(t('backup.send_failed'), 'error');
       })
       .then(() => {
         restoreInFlight = false;
@@ -858,7 +886,7 @@
     backupFile.addEventListener('change', () => {
       const file = chosenFile();
       backupRestore.disabled = file === null;
-      setBackupStatus(file === null ? 'Готово' : `Выбран файл: ${file.name}`);
+      setBackupStatus(file === null ? t('common.ready') : t('backup.chosen', {name: file.name}));
     });
     backupRestore.addEventListener('click', () => restoreChosenFile());
   }
@@ -866,18 +894,19 @@
   // Yandex Music runs over REST rather than the WebSocket: it changes a few
   // times per authorisation and never during playback, so it does not belong
   // in the live diff stream that carries the player state.
+  // Keys for the same reason as restoreErrorText above.
   const yandexStateText = Object.freeze({
-    idle: 'Аккаунт не привязан',
-    requesting: 'Запрашиваем код…',
-    waiting: 'Ожидание подтверждения',
-    authorized: 'Аккаунт привязан',
+    idle: 'yandex.not_linked',
+    requesting: 'yandex.requesting',
+    waiting: 'yandex.waiting',
+    authorized: 'yandex.linked',
   });
   const yandexErrorText = Object.freeze({
-    network: 'Не удалось связаться с Яндексом',
-    timeout: 'Код истёк, попробуйте ещё раз',
-    denied: 'Вход не подтверждён',
-    server: 'Неожиданный ответ сервера',
-    storage: 'Не удалось сохранить токен на устройстве',
+    network: 'yandex.no_connection',
+    timeout: 'yandex.expired',
+    denied: 'yandex.denied',
+    server: 'yandex.server_error',
+    storage: 'yandex.storage_failed',
   });
 
   function normalizeYandex(value) {
@@ -912,8 +941,8 @@
     const status = normalizeYandex(value);
     const failed = status.state === 'failed';
     yandexStatus.textContent = failed
-      ? (yandexErrorText[status.error] || 'Не удалось привязать аккаунт')
-      : (yandexStateText[status.state] || 'Аккаунт не привязан');
+      ? t(yandexErrorText[status.error] || 'yandex.link_failed')
+      : t(yandexStateText[status.state] || 'yandex.not_linked');
     yandexStatus.classList.toggle('is-error', failed);
     yandexStatus.classList.toggle('is-success', status.state === 'authorized');
 
@@ -928,7 +957,7 @@
       yandexUrl.href = /^https?:\/\//.test(status.verificationUrl)
         ? status.verificationUrl : '#';
       yandexCountdown.textContent = status.secondsLeft > 0
-        ? `Код действителен ещё ${status.secondsLeft} с` : '';
+        ? t('yandex.seconds_left', {n: status.secondsLeft}) : '';
     }
 
     const linked = status.state === 'authorized';
@@ -948,9 +977,9 @@
     if (linked) {
       renderYandexStations(status.stations);
       if (status.catalog === 'loading') {
-        yandexStatus.textContent = 'Загрузка станций…';
+        yandexStatus.textContent = t('yandex.loading');
       } else if (status.catalog === 'failed') {
-        yandexStatus.textContent = 'Не удалось получить станции';
+        yandexStatus.textContent = t('yandex.list_failed');
         yandexStatus.classList.add('is-error');
         yandexStatus.classList.remove('is-success');
       }
@@ -975,7 +1004,7 @@
     if (!isObject(payload)) return;
     const firmware = isObject(payload.firmware) ? payload.firmware : {};
     const web = isObject(payload.web) ? payload.web : {};
-    const named = (value) => (typeof value === 'string' && value ? value : 'неизвестно');
+    const named = (value) => (typeof value === 'string' && value ? value : t('common.unknown'));
     aboutFirmware.textContent = named(firmware.version);
     aboutBuilt.textContent = named(firmware.built);
     aboutWeb.textContent = named(web.version);
@@ -987,7 +1016,7 @@
                        payload.matched === false;
     aboutNotice.hidden = !mismatched;
     aboutNotice.textContent = mismatched
-      ? 'Версии прошивки и веб-интерфейса не совпадают'
+      ? t('about.mismatch')
       : '';
     if (typeof payload.author === 'string' && payload.author) {
       aboutAuthor.textContent = payload.author;
@@ -1016,7 +1045,7 @@
       })
       .then((payload) => scheduleYandexRefresh(applyYandex(payload)))
       .catch(() => {
-        yandexStatus.textContent = 'Нет связи с устройством';
+        yandexStatus.textContent = t('common.no_device');
         yandexStatus.classList.add('is-error');
         scheduleYandexRefresh(false);
       });

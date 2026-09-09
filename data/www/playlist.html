@@ -9,11 +9,12 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3CradialGradient id='g' cx='50%25' cy='45%25' r='55%25'%3E%3Cstop offset='0%25' stop-color='%237bffb0'/%3E%3Cstop offset='55%25' stop-color='%2322e06a'/%3E%3Cstop offset='100%25' stop-color='%230a8f3c'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='7' fill='%23121417'/%3E%3Ccircle cx='16' cy='16' r='11' fill='url(%23g)'/%3E%3Cpath d='M16 16 12.9 5.6a11 11 0 0 1 6.2 0Z' fill='%23103a22'/%3E%3Ccircle cx='16' cy='16' r='3.7' fill='%230d1a12'/%3E%3Ccircle cx='16' cy='16' r='12.3' fill='none' stroke='%238c96a3' stroke-width='1.4'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/style.css">
   <script src="/theme.js"></script>
+  <script src="/i18n.js"></script>
 </head>
-<body>
+<body data-i18n-title="title.playlist">
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="/" aria-label="Вернуться к плееру">
+      <a class="brand" href="/" data-i18n-aria="nav.back_to_player" aria-label="Вернуться к плееру">
         <span class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 32 32" focusable="false">
             <defs>
@@ -33,15 +34,15 @@
         <span class="brand-word">jRadio</span>
       </a>
 
-      <nav class="source-tabs" aria-label="Разделы">
-        <a class="source-tab" href="/">Плеер</a>
-        <a class="source-tab is-active" href="/playlist" aria-current="page">Плейлист</a>
-        <a class="source-tab" href="/settings">Настройки</a>
+      <nav class="source-tabs" data-i18n-aria="nav.sections" aria-label="Разделы">
+        <a class="source-tab" href="/" data-i18n="nav.player">Плеер</a>
+        <a class="source-tab is-active" href="/playlist" aria-current="page" data-i18n="nav.playlist">Плейлист</a>
+        <a class="source-tab" href="/settings" data-i18n="nav.settings">Настройки</a>
       </nav>
 
       <div class="header-actions">
         <button id="theme-toggle" class="icon-button theme-toggle" type="button"
-                aria-label="Сменить тему">
+                data-i18n-aria="theme.toggle" aria-label="Сменить тему">
           <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M20 14.5A8 8 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/>
           </svg>
@@ -56,29 +57,29 @@
 
   <main class="page-shell">
     <div class="page-heading">
-      <h1>Плейлист</h1>
-      <p>Импорт из файла заменяет список целиком, экспорт сохраняет то, что сейчас на экране.</p>
+      <h1 data-i18n="nav.playlist">Плейлист</h1>
+      <p data-i18n="playlist.lead">Импорт из файла заменяет список целиком, экспорт сохраняет то, что сейчас на экране.</p>
     </div>
 
     <section class="card" aria-labelledby="playlist-title">
       <div class="card-head">
-        <h2 id="playlist-title">Станции</h2>
-        <span id="playlist-status" class="settings-status" role="status" aria-live="polite">Загрузка…</span>
+        <h2 id="playlist-title" data-i18n="list.stations">Станции</h2>
+        <span id="playlist-status" class="settings-status" role="status" aria-live="polite" data-i18n="common.loading">Загрузка…</span>
         <div class="playlist-toolbar">
-          <button id="playlist-add" class="secondary-button" type="button">Добавить</button>
+          <button id="playlist-add" class="secondary-button" type="button" data-i18n="playlist.add">Добавить</button>
           <label class="secondary-button file-button" for="playlist-import-input">
-            Импорт
+            <span data-i18n="playlist.import">Импорт</span>
             <input id="playlist-import-input" type="file" accept=".csv,.zip,text/plain,application/zip" hidden>
           </label>
-          <button id="playlist-export" class="secondary-button" type="button">Экспорт</button>
+          <button id="playlist-export" class="secondary-button" type="button" data-i18n="playlist.export">Экспорт</button>
         </div>
       </div>
 
-      <ul id="playlist-rows" class="playlist-rows" aria-label="Станции плейлиста"></ul>
-      <p id="playlist-empty" class="empty-state">Список пока пуст — добавьте станцию или импортируйте файл</p>
+      <ul id="playlist-rows" class="playlist-rows" data-i18n-aria="playlist.rows" aria-label="Станции плейлиста"></ul>
+      <p id="playlist-empty" class="empty-state" data-i18n="playlist.empty">Список пока пуст — добавьте станцию или импортируйте файл</p>
 
       <div class="playlist-save-bar">
-        <button id="playlist-save" class="primary-button" type="button" disabled>Сохранить на устройстве</button>
+        <button id="playlist-save" class="primary-button" type="button" disabled data-i18n="playlist.save">Сохранить на устройстве</button>
         <p id="playlist-save-status" class="command-status" role="status" aria-live="polite"></p>
       </div>
 
@@ -90,7 +91,7 @@
     </section>
   </main>
 
-  <noscript><p class="noscript-message">Для редактора плейлиста требуется JavaScript.</p></noscript>
+  <noscript><p class="noscript-message">Для редактора плейлиста требуется JavaScript. / JavaScript is required for the playlist editor.</p></noscript>
   <script src="/playlist.js"></script>
 </body>
 </html>

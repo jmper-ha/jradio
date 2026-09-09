@@ -167,8 +167,15 @@ number is taken into angle brackets, and turning the knob then changes it. The
 panel follows on every detent. Clicking again releases the knob, and it moves
 through the list as before.
 
-The language switch still only changes the labels on the settings screen
-itself.
+The language is Russian or English, and one switch moves all of it: the
+device's screens and the web interface alike, at once and without a reload. A
+browser tab left open relabels itself whichever way it was switched - from the
+knob on the device or with the mouse on the page.
+
+What is not translated is what is not ours: station names, track and folder
+names, the stations of a Yandex account. The two language names in the picker
+also stay each in its own language - otherwise somebody who cannot read the
+current one has no way back.
 
 ### Time
 

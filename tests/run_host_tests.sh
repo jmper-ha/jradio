@@ -270,6 +270,9 @@ if ! command -v node >/dev/null 2>&1; then
     exit 127
 fi
 node tests/test_web_player.js
+# The dictionary against the markup: a key used and never defined shows
+# itself on the page, and nothing else notices.
+node tests/test_web_i18n.js
 node tests/test_web_settings.js
 node tests/test_web_playlist.js
 node tests/test_web_files.js

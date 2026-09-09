@@ -1,6 +1,11 @@
 (() => {
   'use strict';
 
+  /* The dictionary lives in i18n.js, which every page loads before this one.
+     Looked up per call rather than cached: the language changes while the page
+     is open, from this browser or from the device's own screen. */
+  const t = (key, values) => window.jradioI18n.t(key, values);
+
   const socketState = document.querySelector('#socket-state');
   const playlistLink = document.querySelector('#playlist-link');
   const sourceTabs = document.querySelector('#source-tabs');
@@ -40,19 +45,18 @@
   const playerBar = document.querySelector('#player-bar');
   const playerExpand = document.querySelector('#player-expand');
 
-  const playbackLabels = Object.freeze({
-    stopped: 'Остановлено',
-    connecting: 'Подключение',
-    playing: 'Воспроизведение',
-    paused: 'Пауза',
-    reconnecting: 'Переподключение',
-    error: 'Ошибка',
-    unknown: 'Неизвестное состояние',
+  /* The device sends the state already worded - out of the same table its own
+     screen reads - so this is only the fallback for a frame that arrived
+     without one. */
+  const playbackKeys = Object.freeze({
+    stopped: 'state.stopped', connecting: 'state.connecting', playing: 'state.playing',
+    paused: 'state.paused', reconnecting: 'state.reconnecting', error: 'state.error',
+    unknown: 'state.unknown',
   });
-  const listLabels = Object.freeze({
-    stations: {title: 'Станции', aria: 'Список станций'},
-    folders: {title: 'Папки', aria: 'Список папок'},
-    files: {title: 'Файлы', aria: 'Список файлов'},
+  const listKeys = Object.freeze({
+    stations: {title: 'list.stations', aria: 'list.stations_list'},
+    folders: {title: 'list.folders', aria: 'list.folders_list'},
+    files: {title: 'list.files', aria: 'list.files_list'},
   });
   const reconnectDelays = Object.freeze([500, 1000, 2000, 4000, 8000]);
   /* Once a second while a track is running, and rarely otherwise. The device
@@ -68,7 +72,7 @@
     activeSource: 'none',
     player: {
       state: 'stopped',
-      mode: 'Нет источника',
+      mode: t('state.no_source'),
       artist: '',
       title: '',
       context: '',
@@ -146,7 +150,7 @@
     const player = isObject(value) ? value : {};
     const normalized = {
       state: safeString(player.state, 'unknown'),
-      mode: safeString(player.mode, 'Нет источника'),
+      mode: safeString(player.mode, t('state.no_source')),
       artist: safeString(player.artist),
       title: safeString(player.title),
       context: safeString(player.context),
@@ -176,7 +180,7 @@
 
   function setConnected(connected) {
     state.connected = connected;
-    socketState.textContent = connected ? 'Подключено' : 'Нет связи';
+    socketState.textContent = connected ? t('socket.online') : t('socket.offline');
     socketState.classList.toggle('is-online', connected);
     socketState.classList.toggle('is-offline', !connected);
     socketState.classList.remove('is-connecting');
@@ -207,7 +211,7 @@
         : offlineNow(state.activeSource, state.list.kind);
       button.disabled = !state.connected || noNetwork;
       button.classList.toggle('is-unavailable', noNetwork);
-      button.title = noNetwork ? 'Нет сети' : '';
+      button.title = noNetwork ? t('state.no_network') : '';
     });
   }
 
@@ -328,7 +332,7 @@
   }
 
   function stateLabel(value) {
-    return playbackLabels[value] || playbackLabels.unknown;
+    return t(playbackKeys[value] || playbackKeys.unknown);
   }
 
   function formatTime(seconds) {
@@ -381,7 +385,7 @@
         state.volume = target;
       })
       .catch(() => {
-        commandStatus.textContent = 'Не удалось изменить громкость';
+        commandStatus.textContent = t('player.volume_failed');
         commandStatus.classList.add('is-error');
       })
       .then(() => {
@@ -415,6 +419,20 @@
 
   function applySettings(value) {
     if (!isObject(value)) return;
+    /* The language is a device setting like any other, so it arrives here -
+       which is what makes the switch on the settings page, and the row on the
+       device's own screen, relabel this tab without a reload. */
+    if (typeof value.language === 'string' &&
+        window.jradioI18n.setLanguage(value.language)) {
+      /* The markup is relabelled by i18n itself; these are the parts this page
+         drew, which it has to draw again. */
+      renderPlayer();
+      renderList();
+      renderSources();
+      /* The connection chip too: it is written when the socket opens, which is
+         before the device has said which language it wants. */
+      setConnected(state.connected);
+    }
     const level = value.volume;
     if (!Number.isSafeInteger(level) || level < 0 || level > 100) return;
     state.volume = level;
@@ -583,10 +601,10 @@
        ones that have a second reason to be disabled. */
     updateControlAvailability();
 
-    modeLabel.textContent = safeString(player.mode, 'Нет источника');
+    modeLabel.textContent = safeString(player.mode, t('state.no_source'));
     playbackState.textContent = stateLabel(player.state);
     playbackState.dataset.state = safeString(player.state, 'unknown');
-    trackTitle.textContent = safeString(player.title) || safeString(player.context) || 'Нет воспроизведения';
+    trackTitle.textContent = safeString(player.title) || safeString(player.context) || t('player.nothing_playing');
     /* Emptied rather than hidden: the panel's height is the list's top edge,
        and a station that names no performer used to pull the list up by two
        lines - the row under the pointer was then not the row it clicked. CSS
@@ -647,20 +665,20 @@
     nextItem.disabled = !stepReady;
 
     playToggle.classList.toggle('is-playing', playing);
-    playToggle.setAttribute('aria-label', playing ? 'Пауза' : 'Воспроизвести');
+    playToggle.setAttribute('aria-label', t(playing ? 'player.pause' : 'player.play'));
     playToggle.setAttribute('aria-pressed', String(playing));
 
     const metadata = [];
     const codec = safeString(player.codec).trim();
     const bitrate = safeInteger(player.bitrate_kbps);
     if (codec) metadata.push(codec.toUpperCase());
-    if (bitrate > 0) metadata.push(`${bitrate} кбит/с`);
+    if (bitrate > 0) metadata.push(`${bitrate} ${t('unit.kbps')}`);
     const sampleRate = safeInteger(player.sample_rate_hz);
-    if (sampleRate > 0) metadata.push(`${sampleRate} Гц`);
-    if (Number.isInteger(player.wifi_rssi_dbm)) metadata.push(`Wi-Fi ${player.wifi_rssi_dbm} дБм`);
+    if (sampleRate > 0) metadata.push(`${sampleRate} ${t('unit.hz')}`);
+    if (Number.isInteger(player.wifi_rssi_dbm)) metadata.push(`Wi-Fi ${player.wifi_rssi_dbm} ${t('unit.dbm')}`);
     streamMeta.textContent = metadata.length > 0
       ? metadata.join(' · ')
-      : 'Параметры потока появятся после подключения';
+      : t('player.no_stream_info');
 
     playerError.textContent = safeString(player.error);
     playerError.hidden = playerError.textContent.length === 0;
@@ -747,13 +765,13 @@
       url: (source) => (source === 'dlna' ? '/api/dlna' : '/api/files'),
       parse: normalizeFileEntries,
       error: (source) => (source === 'dlna'
-        ? 'Не удалось прочитать медиасервер'
-        : 'Не удалось прочитать флешку'),
+        ? t('list.read_failed_dlna')
+        : t('list.read_failed_files')),
     },
     stations: {
       url: () => '/api/stations',
       parse: normalizeStationEntries,
-      error: () => 'Не удалось прочитать список станций',
+      error: () => t('list.read_failed_stations'),
     },
   };
 
@@ -945,7 +963,7 @@
     button.classList.add('is-directory');
     button.dataset.command = 'browse.up';
     label.className = 'list-item-label';
-    label.textContent = '.. (наверх)';
+    label.textContent = t('list.parent');
     button.append(label);
     button.addEventListener('click', () => {
       sendCommand('browse.up');
@@ -985,12 +1003,12 @@
       button.dataset.command = 'list.select';
       button.dataset.index = String(item.index);
       label.className = 'list-item-label';
-      label.textContent = item.label || 'Без названия';
+      label.textContent = item.label || t('player.untitled');
       marker.className = 'active-marker';
       // A directory is opened, never played, so the playing marker would be
       // meaningless on one.
-      marker.textContent = item.isDirectory ? 'Открыть'
-        : unplayable ? 'Не поддерживается' : 'Играет';
+      marker.textContent = item.isDirectory ? t('list.open')
+        : unplayable ? t('list.unsupported') : t('list.playing');
       marker.setAttribute('aria-hidden', 'true');
       /* CSS draws two of the bars as pseudo-elements; the third has to be a
          node, because one element has only two of them. */
@@ -1023,7 +1041,7 @@
   function renderList(previousList = {items: []}) {
     const activeCapability = state.capabilities.find((source) => source.id === state.activeSource);
     const kind = state.list.kind || (activeCapability && activeCapability.list_kind) || '';
-    const label = listLabels[kind] || null;
+    const label = listKeys[kind] || null;
     const applicable = Boolean(label);
 
     mediaList.hidden = !applicable;
@@ -1033,8 +1051,8 @@
     // alone leaves the user with no idea where they are.
     listTitle.textContent = kind === 'files' && state.list.path
       ? state.list.path
-      : label.title;
-    listItems.setAttribute('aria-label', label.aria);
+      : t(label.title);
+    listItems.setAttribute('aria-label', t(label.aria));
     mediaList.dataset.kind = kind;
     rebuildListIfNeeded(previousList);
     listCount.textContent = String(state.list.items.length);
@@ -1065,18 +1083,18 @@
        is a list being fetched for the first time, the other is a container the
        device is opening while its rows are still on screen. */
     if (listLoadingText) {
-      listLoadingText.textContent = searching ? 'Ищем медиасервер…'
-        : browsing ? 'Открываем папку…'
-        : 'Загружаем станции…';
+      listLoadingText.textContent = searching ? t('list.searching_server')
+        : browsing ? t('list.opening_folder')
+        : t('list.loading');
     }
     /* An empty root on a media server is not an empty list, it is a network
        with no server answering on it - which is something the user can act on,
        and the same words the panel puts on its own screen. An empty *folder*
        is an ordinary empty folder, and saying the server was not found there
        is a lie about a server that plainly answered. */
-    listEmpty.textContent = state.activeSource !== 'dlna' ? 'Список пока пуст'
-      : state.list.has_parent ? 'В этой папке ничего нет'
-      : 'Медиасервер не найден в сети';
+    listEmpty.textContent = state.activeSource !== 'dlna' ? t('list.empty')
+      : state.list.has_parent ? t('list.folder_empty')
+      : t('list.no_server');
     listLoading.hidden = offline || !waiting;
     listEmpty.hidden = offline || rowCount !== 0 || waiting;
     listItems.hidden = offline || rowCount === 0;
@@ -1161,7 +1179,7 @@
       scheduleProgress(0);
     }
     if (message.ok === false) {
-      commandStatus.textContent = safeString(message.error, 'Команда не выполнена');
+      commandStatus.textContent = safeString(message.error, t('player.command_failed'));
       commandStatus.classList.add('is-error');
     } else if (message.ok === true) {
       commandStatus.textContent = '';
@@ -1245,7 +1263,7 @@
     const command = {type: 'command', id, action, ...fields};
     const frame = JSON.stringify(command);
     if (frame.length > 512) {
-      commandStatus.textContent = 'Команда слишком длинная';
+      commandStatus.textContent = t('player.command_too_long');
       commandStatus.classList.add('is-error');
       return null;
     }
@@ -1269,7 +1287,7 @@
   function connect() {
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    socketState.textContent = reconnectAttempt === 0 ? 'Подключение…' : 'Нет связи';
+    socketState.textContent = reconnectAttempt === 0 ? t('socket.connecting') : t('socket.offline');
     socketState.classList.add('is-connecting');
     socketState.classList.remove('is-online');
 
@@ -1316,7 +1334,7 @@
     const expanded = playerBar.classList.toggle('is-expanded');
     playerExpand.setAttribute('aria-expanded', String(expanded));
     playerExpand.setAttribute('aria-label',
-      expanded ? 'Свернуть карточку трека' : 'Развернуть карточку трека');
+      expanded ? t('player.collapse') : t('player.expand'));
   });
   likeTrack.addEventListener('click', () => sendCommand('player.like'));
   dislikeTrack.addEventListener('click', () => sendCommand('player.dislike'));

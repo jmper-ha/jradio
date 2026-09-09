@@ -378,6 +378,15 @@ static esp_err_t web_server_theme_js_get(httpd_req_t *request)
                                 "application/javascript; charset=utf-8");
 }
 
+/* The dictionary every page loads before its own script. One file rather than
+ * a copy per page: the three pages share most of their words, and the device's
+ * flash is the thing being spent. */
+static esp_err_t web_server_i18n_js_get(httpd_req_t *request)
+{
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/i18n.js",
+                                "application/javascript; charset=utf-8");
+}
+
 static esp_err_t web_server_style_get(httpd_req_t *request)
 {
     return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/style.css",
@@ -1689,7 +1698,7 @@ esp_err_t web_server_start(void)
         // The HTTP worker is network-bound; keep it on core 0 with Wi-Fi and
         // lwIP so it cannot preempt the audio decoder pinned to core 1.
         config.core_id = 0;
-        // Twenty-nine are registered below plus /ws; the spare ones exist
+        // Thirty are registered below plus /ws; the spare ones exist
         // because running out is not a build error - httpd_register_uri_handler
         // fails at startup and takes the whole web server down with it.
         config.max_uri_handlers = 34;
@@ -1701,6 +1710,7 @@ esp_err_t web_server_start(void)
             {.uri = "/", .method = HTTP_GET, .handler = web_server_root_get},
             {.uri = "/app.js", .method = HTTP_GET, .handler = web_server_app_js_get},
             {.uri = "/theme.js", .method = HTTP_GET, .handler = web_server_theme_js_get},
+            {.uri = "/i18n.js", .method = HTTP_GET, .handler = web_server_i18n_js_get},
             {.uri = "/style.css", .method = HTTP_GET, .handler = web_server_style_get},
             {.uri = "/settings", .method = HTTP_GET, .handler = web_server_settings_get},
             {.uri = "/settings.js", .method = HTTP_GET, .handler = web_server_settings_js_get},

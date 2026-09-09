@@ -261,6 +261,7 @@ function labels() {
 }
 
 vm.createContext(context);
+vm.runInContext(fs.readFileSync('data/www/i18n.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('data/www/app.js', 'utf8'), context);
 
 const socket = FakeWebSocket.instances[0];

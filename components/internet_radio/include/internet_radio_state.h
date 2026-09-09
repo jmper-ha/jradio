@@ -46,6 +46,28 @@ bool internet_radio_input_buffer_stalled(bool need_input, size_t available, size
  * from every other angle and sounds like silence. */
 bool internet_radio_decode_stalled(uint32_t elapsed_ms, size_t available, uint32_t limit_ms);
 
+/* Whether a decoder that asked for more data is actually starved, or merely
+ * walking through the backlog it already has.
+ *
+ * "Need more data" covers two different situations and they want opposite
+ * answers. A decoder that could make no use at all of what it was given
+ * (`consumed` 0) is starved and has to wait for the network. A decoder that
+ * consumed bytes and produced no samples is resyncing: an MP3 stream joined
+ * mid-frame has no frame header at its first byte, and the decoder walks
+ * forward a byte at a time until it finds one.
+ *
+ * Treating the second as starvation is what made a station that opens
+ * mid-frame take twenty seconds to start. Measured on Swing Street Radio,
+ * whose Icecast mount bursts from wherever its buffer happens to be: the first
+ * frame header sits 61-377 bytes in, varying per connection, and each byte of
+ * resync cost a whole network round trip. About eighty bytes fit in the two
+ * seconds before the stall check gave up, so most connections were dropped and
+ * retried until one happened to open close enough to a frame boundary.
+ *
+ * `remaining` is the backlog left after the call. With nothing left there is
+ * nothing to walk through, so that is starvation too. */
+bool internet_radio_decoder_starved(size_t consumed, size_t remaining);
+
 /* Which limit the check above runs with. A decoder that was producing and then
  * stopped is broken within milliseconds; one that has not produced yet is still
  * hunting for its first frame, which is slower and entirely normal - measured at

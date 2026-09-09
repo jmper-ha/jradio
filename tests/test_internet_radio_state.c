@@ -126,6 +126,26 @@ static void test_the_stall_limit_leaves_room_for_a_decoder_still_finding_a_frame
         60000U, 0U, internet_radio_decode_stall_limit(true, 400U, 2000U)));
 }
 
+/* Which "need more data" means the network and which means "call me again".
+ *
+ * The distinction is the whole reason a station that opens mid-frame used to
+ * take twenty seconds to start: the decoder was walking to the first frame
+ * header a byte at a time, and every one of those bytes cost a network round
+ * trip. */
+static void test_a_resyncing_decoder_is_not_a_starved_one(void)
+{
+    // Consumed nothing out of a full backlog: it genuinely cannot proceed.
+    assert(internet_radio_decoder_starved(0U, 163725U));
+    // Walked one byte forward looking for a frame header, with plenty left.
+    assert(!internet_radio_decoder_starved(1U, 163724U));
+    // A whole bad frame skipped, which is the other shape resync takes.
+    assert(!internet_radio_decoder_starved(418U, 1000U));
+    /* Consumed everything there was. Progress, but there is nothing left to
+     * walk through, so the network is the only place to go. */
+    assert(internet_radio_decoder_starved(2048U, 0U));
+    assert(internet_radio_decoder_starved(0U, 0U));
+}
+
 int main(void)
 {
     test_start_pause_resume_stop();
@@ -137,6 +157,7 @@ int main(void)
     test_full_input_buffer_is_fatal_only_when_decoder_needs_more_data();
     test_a_decoder_that_eats_input_without_producing_is_a_stall();
     test_the_stall_limit_leaves_room_for_a_decoder_still_finding_a_frame();
+    test_a_resyncing_decoder_is_not_a_starved_one();
     puts("internet_radio_state tests passed");
     return 0;
 }

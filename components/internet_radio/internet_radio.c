@@ -901,7 +901,13 @@ static void radio_direct_task(void *arg)
                 pcm_delivered = 0U;
                 need_input = false;
             } else if (result == RADIO_DECODER_NEED_MORE_DATA) {
-                need_input = true;
+                /* Only when it could make no use of the backlog at all. A
+                 * decoder that consumed bytes and produced nothing is
+                 * resyncing through data it already has, and sending it back
+                 * to the network for every byte of that is what made a station
+                 * opening mid-frame take twenty seconds - see
+                 * internet_radio_decoder_starved(). */
+                need_input = internet_radio_decoder_starved(consumed, available);
             } else {
                 if (radio->stream_format == RADIO_STREAM_FORMAT_MP3 && consumed == 0U &&
                     pcm_bytes == 0U && decode_error_retries < 100U) {

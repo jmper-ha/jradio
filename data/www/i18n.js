@@ -434,16 +434,9 @@
     } catch (error) {
       // See remembered(): nothing here is worth a message.
     }
-    /* The document's own language too: it is what a screen reader picks a
-       voice from, and what a browser offers to translate. */
-    if (document.documentElement) document.documentElement.lang = current;
-    apply(document);
-    /* The tab's own name, which is not an element `apply` can walk to. The key
-       is put on <body> by each page's markup. */
-    if (document.body && typeof document.body.getAttribute === 'function') {
-      const key = document.body.getAttribute('data-i18n-title');
-      if (key) document.title = t(key);
-    }
+    /* The document's own language goes with it: it is what a screen reader
+       picks a voice from, and what a browser offers to translate. */
+    paint();
     for (const listener of listeners) listener(current);
     return true;
   }
@@ -461,12 +454,29 @@
     define: (entries) => { Object.assign(DICT, entries); },
   };
 
-  if (document.documentElement) document.documentElement.lang = current;
-  apply(document);
-  /* And the tab's name once at load, so the page a user bookmarks is named in
-     the language they set rather than the one the markup was written in. */
-  if (document.body && typeof document.body.getAttribute === 'function') {
-    const key = document.body.getAttribute('data-i18n-title');
-    if (key) document.title = t(key);
+  /* The first pass has to wait for the markup to exist.
+   *
+   * This script is loaded from <head>, so it runs while the document is still
+   * being parsed and <body> is not there yet: walking it here finds nothing at
+   * all. It went unnoticed because the language always *changed* a moment
+   * later - the page started in Russian and the device said otherwise - and
+   * that change did the walk. The moment the choice was remembered between
+   * loads there was no change to ride on, and every page came up in the
+   * language its markup was written in. */
+  function paint() {
+    if (document.documentElement) document.documentElement.lang = current;
+    apply(document);
+    /* And the tab's name, which is not an element `apply` can walk to. */
+    if (document.body && typeof document.body.getAttribute === 'function') {
+      const key = document.body.getAttribute('data-i18n-title');
+      if (key) document.title = t(key);
+    }
+  }
+
+  if (document.readyState === 'loading' &&
+      typeof document.addEventListener === 'function') {
+    document.addEventListener('DOMContentLoaded', paint);
+  } else {
+    paint();
   }
 })();

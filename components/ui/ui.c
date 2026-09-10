@@ -304,6 +304,7 @@ static const char *ui_text(device_text_id_t id)
     return device_text(id, s_device_settings.language);
 }
 
+static lv_obj_t *s_settings_title;
 static bool s_settings_open;
 /* Set when the radio could not be opened at once on a device with no home
  * screen - see ui_open_radio_home(). Retried from the poll loop, which is
@@ -1702,6 +1703,10 @@ static void ui_create_settings_screen(void)
     lv_obj_set_style_text_font(s_settings_screen, UI_FONT_BODY, 0);
 
     lv_obj_t *title = lv_label_create(s_settings_screen);
+    /* Kept, because this screen is built once at startup and the language is
+     * changed from a row on it: written only here, the heading stayed in
+     * whatever language the device booted in. */
+    s_settings_title = title;
     lv_label_set_text(title, ui_text(DEVICE_TEXT_SETTINGS));
     lv_obj_set_pos(title, 12, 8);
     // Matches the group headings under it: a heading smaller than the rows it
@@ -2155,6 +2160,10 @@ static void ui_show_qr(void)
 static void ui_update_settings(void)
 {
     if (!s_settings_open) return;
+    /* Rewritten every pass, not only when the screen is built: the language
+     * row is on this very screen, so the heading above it has to follow the
+     * change the user just made under it. */
+    ui_set_label_text_if_changed(s_settings_title, ui_text(DEVICE_TEXT_SETTINGS));
     ui_update_settings_web_band();
     const size_t row_count = ui_settings_model_row_count(&s_settings_model);
     const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
@@ -2554,6 +2563,9 @@ static void ui_yandex_show_notice(const char *text)
 static void ui_update_yandex(void)
 {
     if (!s_yandex_open) return;
+    // Same reason the settings heading is: written once when the screen was
+    // built, it kept the language the device started in.
+    ui_set_label_text_if_changed(s_yandex_strip.context, ui_text(DEVICE_TEXT_SOURCE_YANDEX));
     const yandex_auth_status_t status = yandex_auth_get_status();
     const yandex_catalog_state_t catalog_state = yandex_catalog_get_state();
     const size_t count = yandex_catalog_count();

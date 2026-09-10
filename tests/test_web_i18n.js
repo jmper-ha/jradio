@@ -115,4 +115,59 @@ assert.strictEqual(remembering.document.documentElement.lang, 'en');
 remembering.window.jradioI18n.setLanguage('ru');
 assert.strictEqual(store.get('jradio.language'), 'ru');
 
+/* The markup is walked once the document is parsed, not when the script runs.
+   i18n.js is loaded from <head>, so at that moment <body> does not exist and a
+   walk finds nothing. This went unseen while the language always changed a
+   moment later - the change did the walk - and surfaced the day the choice was
+   remembered between loads: every page then came up in the language its markup
+   was written in. */
+function fakeElement(attributes) {
+  return {
+    attributes,
+    textContent: 'исходный текст',
+    getAttribute: (name) => (Object.hasOwn(attributes, name) ? attributes[name] : null),
+    setAttribute(name, value) { this.attributes[name] = value; },
+  };
+}
+
+const label = fakeElement({'data-i18n': 'nav.settings'});
+const field = fakeElement({'data-i18n-placeholder': 'list.search'});
+const listeners = {};
+const loading = {
+  console,
+  document: {
+    readyState: 'loading',
+    documentElement: {lang: ''},
+    body: {getAttribute: () => 'title.settings'},
+    title: '',
+    addEventListener: (type, callback) => { listeners[type] = callback; },
+    querySelectorAll: (selector) => {
+      if (selector === '[data-i18n]') return [label];
+      if (selector === '[data-i18n-placeholder]') return [field];
+      return [];
+    },
+  },
+  window: {},
+};
+vm.createContext(loading);
+vm.runInContext(fs.readFileSync('data/www/i18n.js', 'utf8'), loading);
+
+// Nothing has been touched yet: the body did not exist when the script ran.
+assert.strictEqual(label.textContent, 'исходный текст');
+assert.ok(typeof listeners.DOMContentLoaded === 'function',
+          'словарь должен дождаться разбора разметки');
+
+listeners.DOMContentLoaded();
+assert.strictEqual(label.textContent, 'Настройки');
+assert.strictEqual(field.attributes.placeholder, 'Поиск по списку');
+assert.strictEqual(loading.document.title, 'jRadio — настройки');
+assert.strictEqual(loading.document.documentElement.lang, 'ru');
+
+/* And the same walk happens on a switch, so a page relabels without a
+   reload. */
+loading.window.jradioI18n.setLanguage('en');
+assert.strictEqual(label.textContent, 'Settings');
+assert.strictEqual(field.attributes.placeholder, 'Search the list');
+assert.strictEqual(loading.document.title, 'jRadio — settings');
+
 console.log('web i18n tests passed');

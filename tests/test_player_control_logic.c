@@ -732,6 +732,24 @@ static void test_the_track_keys_step_through_a_server_listing(void)
     assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NONE);
 }
 
+/* Pulling a drive out must not take somebody else's picture with it.
+ *
+ * The fault was one unconditional call: the removal handler cleared the cover
+ * whatever was playing, so a stick pulled while the radio, Yandex Music or a
+ * media server was on the air wiped the icon those had put on the screen. */
+static void test_only_a_volume_loses_its_cover_when_a_drive_goes(void)
+{
+    assert(player_media_removal_clears_cover(AUDIO_SOURCE_USB));
+    assert(player_media_removal_clears_cover(AUDIO_SOURCE_SD));
+
+    assert(!player_media_removal_clears_cover(AUDIO_SOURCE_INTERNET_RADIO));
+    assert(!player_media_removal_clears_cover(AUDIO_SOURCE_YANDEX));
+    assert(!player_media_removal_clears_cover(AUDIO_SOURCE_DLNA));
+    assert(!player_media_removal_clears_cover(AUDIO_SOURCE_NONE));
+    assert(!player_media_removal_clears_cover(AUDIO_SOURCE_FM));
+    assert(!player_media_removal_clears_cover(AUDIO_SOURCE_BLUETOOTH));
+}
+
 int main(void)
 {
     test_the_track_keys_stop_at_the_ends_of_the_catalog();
@@ -772,6 +790,7 @@ int main(void)
     test_snapshot_equality_detects_bitrate_change();
     test_rssi_refresh_is_limited_to_once_per_second();
     test_streaming_sources_are_refused_without_a_network();
+    test_only_a_volume_loses_its_cover_when_a_drive_goes();
     puts("player_control_logic tests passed");
     return 0;
 }

@@ -482,9 +482,14 @@ static void player_file_media_removing(void)
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "usb player did not release the drive: %s", esp_err_to_name(result));
     }
-    // The drive that the cover came from is on its way out; leaving the
-    // picture up would outlast the file it belongs to.
-    album_art_clear();
+    /* Only when the picture is the drive's. Cleared unconditionally, this
+     * wiped the radio station's icon, the Yandex cover and a media server's
+     * album art the moment a stick was pulled - none of which came off the
+     * drive or goes away with it. */
+    if (player_media_removal_clears_cover(
+            atomic_load_explicit(&s_active_source, memory_order_acquire))) {
+        album_art_clear();
+    }
     // The active source is deliberately left alone: it belongs to this task,
     // and the snapshot is rebuilt on demand from the player's own state and
     // usb_storage_media(), which both already say the drive is gone.

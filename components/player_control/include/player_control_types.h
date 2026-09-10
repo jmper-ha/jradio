@@ -216,6 +216,18 @@ typedef enum {
     PLAYER_OPERATION_TEST_STREAM,
 } player_operation_t;
 
+/* Whether a drive being pulled out should take the picture on screen with it.
+ *
+ * Only when that picture came off the drive, which is to say only while the
+ * drive is the active source. It used to be cleared whatever was playing, so
+ * unplugging a stick wiped the station's own icon from under the radio, the
+ * Yandex cover, and the album art of a track coming off a media server - three
+ * pictures that have nothing to do with the drive and outlive it.
+ *
+ * A pure decision so it can be tested: the removal itself arrives on the USB
+ * host task and cannot be staged on a host. */
+bool player_media_removal_clears_cover(audio_source_t active_source);
+
 player_operation_t player_control_decide(const player_snapshot_t *state,
                                          const player_command_t *command);
 

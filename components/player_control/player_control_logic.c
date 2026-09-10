@@ -311,3 +311,12 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
         return PLAYER_OPERATION_INVALID;
     }
 }
+
+bool player_media_removal_clears_cover(audio_source_t active_source)
+{
+    /* The card is not hot-removable on this board - there is no detect line,
+     * and it is unmounted when its source is stopped - so this is only ever
+     * asked about the drive. It still answers for the volume sources together:
+     * the question is whether the picture came off a volume at all. */
+    return audio_source_is_files(active_source);
+}

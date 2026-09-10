@@ -18,7 +18,12 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_SOURCE_USB] = {"USB-плеер", "USB player"},
     [DEVICE_TEXT_SOURCE_SD] = {"SD-карта", "SD card"},
     [DEVICE_TEXT_SOURCE_YANDEX] = {"ЯМузыка", "Ya.Music"},
-    [DEVICE_TEXT_SOURCE_DLNA] = {"Медиасервер", "Media server"},
+    /* Not translated, and not "Медиасервер": DLNA is what the protocol is
+     * called in both languages, it is the word on the switch in Settings, and
+     * it is what the user asked for. The sentences about a media server -
+     * "Медиасервер не найден в сети" and the heading over a list of them - are
+     * prose rather than the source's name, and stay as they are. */
+    [DEVICE_TEXT_SOURCE_DLNA] = {"DLNA", "DLNA"},
     [DEVICE_TEXT_SOURCE_FM] = {"FM-радио", "FM radio"},
     [DEVICE_TEXT_SOURCE_BLUETOOTH] = {"Bluetooth", "Bluetooth"},
     [DEVICE_TEXT_SOURCE_UNKNOWN] = {"Неизвестный режим", "Unknown mode"},
@@ -52,7 +57,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_BUFFER_VIEW_GRAPH] = {"График", "Graph"},
     [DEVICE_TEXT_ROW_AUTOPLAY] = {"Автовоспроизведение", "Autoplay"},
     [DEVICE_TEXT_ROW_YANDEX] = {"Яндекс Музыка", "Yandex Music"},
-    [DEVICE_TEXT_ROW_DLNA] = {"Медиасервер", "Media server"},
+    [DEVICE_TEXT_ROW_DLNA] = {"DLNA", "DLNA"},
     [DEVICE_TEXT_ROW_BRIGHTNESS] = {"Яркость", "Brightness"},
     [DEVICE_TEXT_ROW_FLIP_VERTICAL] = {"Поворот по вертикали", "Flip vertically"},
     [DEVICE_TEXT_ROW_FLIP_HORIZONTAL] = {"Поворот по горизонтали", "Flip horizontally"},

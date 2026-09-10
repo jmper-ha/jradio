@@ -991,6 +991,48 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   color: var(--muted);
 }
 
+/* Each card on the settings page folds away, and only one stands open. The
+   page is a phone's remote first: unfolded it is five screens of scrolling
+   past three sections nobody came for. The heading is the button - the status
+   beside it stays readable folded, which is the point of leaving it out of
+   the button. */
+.card-toggle {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  text-align: left;
+}
+
+.card-chevron {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--muted);
+  /* Down when the section is open, right when it is folded - the same turn a
+     file tree makes, so nobody has to be told what the arrow means. */
+  transform: rotate(90deg);
+  transition: transform .15s ease;
+}
+
+.card.is-collapsed .card-chevron { transform: rotate(0deg); }
+
+.card-toggle:hover h2 { color: var(--text-2); }
+
+/* Two columns fit from here up, and with them the whole page: the heading goes
+   back to being a heading. settings.js stops folding at the same width. */
+@media (min-width: 780px) {
+  .card-chevron { display: none; }
+  .card-toggle { cursor: default; pointer-events: none; }
+}
+
 .settings-status {
   margin-left: auto;
   font-size: .75rem;

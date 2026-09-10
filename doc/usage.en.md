@@ -224,6 +224,10 @@ brightness turned on the device reaches an open page within a quarter of a
 second. A slider being held with the pointer does not jump - the update is
 dropped until it is let go.
 
+On a phone the cards there fold: tapping a heading opens that section and folds
+the previous one, so one stands open at a time. On a wide screen the page shows
+everything at once, as it always has.
+
 ### Backup and restore
 
 Only in the web interface, as a card under the device settings. "Скачать архив"

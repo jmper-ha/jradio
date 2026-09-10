@@ -1075,6 +1075,99 @@
       });
   }
 
+  /* The page folds: one section stands open and the rest are a heading each.
+     Unfolded it is five screens of scrolling on a phone, four of them past
+     sections nobody came for.
+
+     The status stays outside the button on purpose - saved, no connection, the
+     Yandex countdown: all worth reading with the section folded, and a live
+     region inside a button is read out as part of the button's own name.
+
+     Which one was open is the page's own shape rather than a device setting,
+     so it is remembered here and never written to settings.csv. Storage that
+     refuses to answer - a private window, site data switched off - costs the
+     memory and nothing else. */
+  const SECTION_KEY = 'jradio.settings.section';
+
+  const sections = Array.from(document.querySelectorAll('.card[data-section]'))
+    .map((card) => ({
+      name: card.dataset.section,
+      card,
+      toggle: card.querySelector('.card-toggle'),
+      body: card.querySelector('.card-body'),
+    }))
+    .filter((section) => section.toggle !== null && section.body !== null);
+
+  function rememberedSection() {
+    try {
+      const stored = window.localStorage.getItem(SECTION_KEY);
+      // The empty string is a real answer: everything folded, chosen by hand.
+      if (stored === '' || sections.some((section) => section.name === stored)) {
+        return stored;
+      }
+    } catch (error) {
+      // See above: nothing here is worth a message.
+    }
+    return sections.length === 0 ? '' : sections[0].name;
+  }
+
+  let openSection = rememberedSection();
+
+  /* Folding is a phone's answer to a long page. A screen wide enough for the
+     two columns has room for the lot at once and has always shown it, so the
+     fold stops at the width the stylesheet changes shape at - the number lives
+     in both places because a media query cannot be read from here. */
+  const narrow = typeof window.matchMedia === 'function'
+    ? window.matchMedia('(max-width: 779px)')
+    : null;
+
+  function folding() {
+    return narrow === null ? true : narrow.matches === true;
+  }
+
+  function applySections() {
+    const fold = folding();
+    for (const section of sections) {
+      const open = !fold || section.name === openSection;
+      section.body.hidden = !open;
+      section.card.classList.toggle('is-collapsed', !open);
+      section.toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      /* Nothing to disclose on a wide screen, so the heading is not something
+         to land on with the keyboard either. The stylesheet takes the arrow
+         and the pointer away at the same width. */
+      section.toggle.setAttribute('tabindex', fold ? '0' : '-1');
+    }
+  }
+
+  /* Tapping the open section folds it away: the alternative is a page where
+     something is always taking up half the screen and there is no way to say
+     "none of these". */
+  function toggleSection(name) {
+    if (!folding()) return;
+    openSection = name === openSection ? '' : name;
+    try {
+      window.localStorage.setItem(SECTION_KEY, openSection);
+    } catch (error) {
+      // See rememberedSection().
+    }
+    applySections();
+  }
+
+  function bindSections() {
+    for (const section of sections) {
+      section.toggle.addEventListener('click', () => toggleSection(section.name));
+    }
+    /* A phone that is turned on its side crosses the width where the fold
+       stops mattering, and the page has to be put right both ways. */
+    if (narrow !== null && typeof narrow.addEventListener === 'function') {
+      narrow.addEventListener('change', applySections);
+    }
+    /* The markup comes folded so a phone never paints the whole page first,
+       which also means the state it carries has to be put right here - when
+       the reader left another section open, and on every wide screen. */
+    applySections();
+  }
+
   form.addEventListener('submit', submitWifi);
   wifiAdd.addEventListener('click', () => showForm(''));
   wifiCancel.addEventListener('click', () => hideForm());
@@ -1083,6 +1176,7 @@
      is, rather than trusting the two to have been written to agree. */
   setPasswordVisible(false);
   wifiScan.addEventListener('click', () => startScan());
+  bindSections();
   bindDeviceFields();
   bindBackup();
   yandexLink.addEventListener('click', () => sendYandexAction('begin'));

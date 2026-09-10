@@ -44,7 +44,30 @@ class Element {
   }
   replaceChildren(...items) { this.children = items; }
   append(...items) { this.children.push(...items); }
+  /* Enough of a selector engine for the folding sections: a class name, looked
+     for among this element's own children. */
+  querySelector(selector) {
+    const name = selector.replace('.', '');
+    return this.children.find((child) => child.classList.values.has(name)) || null;
+  }
 }
+
+/* The five folding sections of the settings page, as the markup builds them:
+   a card holding the heading's button and the body that folds away. */
+const SECTION_NAMES = ['device', 'backup', 'wifi', 'yandex', 'about'];
+const sectionCards = SECTION_NAMES.map((name) => {
+  const card = new Element();
+  card.dataset.section = name;
+  const toggle = new Element();
+  toggle.classList.add('card-toggle');
+  const body = new Element();
+  body.classList.add('card-body');
+  card.append(toggle, body);
+  card.toggle = toggle;
+  card.body = body;
+  return card;
+});
+const section = Object.fromEntries(sectionCards.map((card) => [card.dataset.section, card]));
 
 const ids = [
   'socket-state', 'wifi-form', 'wifi-ssid', 'wifi-password', 'wifi-password-reveal',
@@ -79,7 +102,9 @@ const documentRef = {
      here rather than parsed from settings.html, so it finds none and leaves
      them alone. What the tests below check is the text the page writes. */
   documentElement: {lang: 'ru'},
-  querySelectorAll() { return []; },
+  querySelectorAll(selector) {
+    return selector === '.card[data-section]' ? sectionCards : [];
+  },
   querySelector(selector) { return elements[selector]; },
   createElement() { return new Element(); },
 };
@@ -148,12 +173,31 @@ let restoreOk = true;
 let restoreFetchFails = false;
 
 const timerHandles = new Map();
+// What the browser remembers between loads: the language and the open section.
+const store = {};
+/* How wide the page is being looked at. The sections fold on a phone and stand
+   open on a screen with room for the two columns, so both have to be drivable.
+   Everything below is a phone unless a test says otherwise. */
+let narrowScreen = true;
+const mediaListeners = [];
+const resize = (narrow) => {
+  narrowScreen = narrow;
+  for (const listener of mediaListeners) listener({matches: narrow});
+};
 const context = {
   console,
   document: documentRef,
   WebSocket: FakeWebSocket,
   window: {
     location: {protocol: 'http:', host: 'radio.local'},
+    matchMedia: () => ({
+      get matches() { return narrowScreen; },
+      addEventListener: (type, callback) => { mediaListeners.push(callback); },
+    }),
+    localStorage: {
+      getItem: (key) => (Object.hasOwn(store, key) ? store[key] : null),
+      setItem: (key, value) => { store[key] = String(value); },
+    },
     setTimeout(callback, delay) {
       timers.push({callback, delay});
       timerHandles.set(timers.length, timers[timers.length - 1]);
@@ -954,6 +998,57 @@ function lastYandexTimer() {
     settings: {...settingsReply, language: 'ru'},
   });
   assert.equal(documentRef.documentElement.lang, 'ru');
+
+  /* The page folds away into five headings, which is what makes it a page a
+     phone can hold: the markup arrives with the device section open and the
+     rest as one line each. */
+  assert.equal(section.device.body.hidden, false);
+  assert.equal(section.wifi.body.hidden, true);
+  assert.equal(section.device.toggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(section.about.toggle.getAttribute('aria-expanded'), 'false');
+
+  // Opening one folds whatever was open: never two at a time.
+  section.wifi.toggle.emit('click');
+  assert.equal(section.wifi.body.hidden, false);
+  assert.equal(section.device.body.hidden, true);
+  assert.equal(section.device.classList.values.has('is-collapsed'), true);
+  assert.equal(section.wifi.classList.values.has('is-collapsed'), false);
+  assert.equal(SECTION_NAMES.filter((name) => !section[name].body.hidden).length, 1);
+  assert.equal(section.device.toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(section.wifi.toggle.getAttribute('aria-expanded'), 'true');
+
+  // Tapping the open one folds it: "none of these" has to be sayable, or
+  // something is always eating half the screen.
+  section.wifi.toggle.emit('click');
+  assert.equal(section.wifi.body.hidden, true);
+  assert.equal(SECTION_NAMES.some((name) => !section[name].body.hidden), false);
+
+  /* A screen with room for the two columns shows the lot, as it always has:
+     the fold is an answer to a phone, and clicking a heading there does
+     nothing. */
+  section.about.toggle.emit('click');
+  resize(false);
+  assert.equal(SECTION_NAMES.every((name) => !section[name].body.hidden), true);
+  assert.equal(section.device.toggle.getAttribute('tabindex'), '-1');
+  section.wifi.toggle.emit('click');
+  assert.equal(SECTION_NAMES.every((name) => !section[name].body.hidden), true);
+  // Turned back on its side, the phone folds again around what was open.
+  resize(true);
+  assert.equal(SECTION_NAMES.filter((name) => !section[name].body.hidden).join(), 'about');
+  assert.equal(section.about.toggle.getAttribute('tabindex'), '0');
+
+  /* And the choice outlives the load, so a device that reboots after a restore
+     comes back with the section that was being worked in. */
+  section.yandex.toggle.emit('click');
+  assert.equal(store['jradio.settings.section'], 'yandex');
+  for (const card of sectionCards) {
+    card.body.hidden = false;
+    card.classList.remove('is-collapsed');
+    card.toggle.listeners = {};
+  }
+  vm.runInContext(fs.readFileSync('data/www/settings.js', 'utf8'), context);
+  assert.equal(section.yandex.body.hidden, false);
+  assert.equal(section.device.body.hidden, true);
 
   console.log('web settings tests passed');
 })().catch((error) => {

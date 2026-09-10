@@ -99,6 +99,26 @@ It doubles as the only check that a picture arrived at all. The files live in
 to any more - that is the one moment when the full list of names in use is
 known.
 
+## Folding sections
+
+The settings page on a phone is five screens in a row, four of them scrolled
+past. So every card folds: the heading stays, the contents go away, and exactly
+one section stands open - open another and the previous one folds itself.
+Tapping the open one folds it too: "none of these" is an answer as well.
+
+Which section was open is remembered in `localStorage` rather than on the
+device: it is the shape of the page, not a setting of the box. The markup
+arrives folded - otherwise a phone paints the whole page first and folds it up
+in front of the reader.
+
+The status ("Ready", "Connected", the Yandex countdown) stays outside the
+heading's button: it is worth reading with the section folded, and a live region
+inside a button is read out to a screen reader as part of the button's own name.
+
+Folding stops at 780 px - the width where the page goes to two columns and fits
+whole, as it always did. The number is written twice, in `style.css` and in
+`settings.js`: a media query cannot be read from a script.
+
 ## Language
 
 The pages are translated by `i18n.js` - one dictionary for all three, with the

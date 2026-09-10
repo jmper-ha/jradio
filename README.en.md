@@ -13,7 +13,7 @@ buttons on the device itself, or from a browser on a phone or a computer.
 | | |
 |---|---|
 | SoC | ESP32-S3 in a QFN56 package, 16 MB flash, 8 MB PSRAM |
-| Display | over SPI: ILI9341 or ST7789 320x240, ILI9488 480x320 - each of them either way up |
+| Display | over SPI: ILI9341 or ST7789 320x240, ILI9488 or ST7796S 480x320 - each of them either way up |
 | Audio | PCM5102 DAC over I2S, line output; 16-bit stereo |
 | Media | USB host for a flash drive and a microSD slot, FAT16 or FAT32 |
 | Network | 2.4 GHz Wi-Fi, up to five saved networks, a web interface on the LAN |

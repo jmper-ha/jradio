@@ -3,7 +3,7 @@
 [← README](../README.en.md) · [Русский](hardware.md)
 
 ESP32-S3 in a QFN56 package, 16 MB flash, 8 MB PSRAM; a display over SPI -
-an ILI9341 or ST7789 320x240, or an ILI9488 480x320, each of them either way
+an ILI9341 or ST7789 320x240, or an ILI9488 or ST7796S 480x320, each of them either way
 up; a rotary encoder with a push button and four buttons; a
 PCM5102 DAC over I2S with a line output; a USB host port for a FAT-formatted
 drive; a microSD slot over SPI.
@@ -68,6 +68,27 @@ ever reads this bus. The band was narrowed to ten rows so the buffers cost the
 same internal memory as they do on the narrow panel. The portrait
 `DISPLAY_ILI9488_320_480` builds too: the 320x480 layout exists and has been
 seen on the panel.
+
+The fourth panel is an ST7796S 480x320, fitted in the ILI9488's place on
+2026-09-11. The same module footprint, the same glass, the same six wires - and
+it came up on firmware built for the ILI9488: both controllers answer the
+standard MIPI DCS commands a picture is actually made of, and the ILI-specific
+rest of that sequence the ST7796S either survives or ignores, its extended
+command set being locked until `0xF0` opens it and the ILI9488 driver never
+sending that. What it needs a profile for is the colour: this controller takes
+RGB565 over SPI, so two bytes per pixel instead of three, a frame of 307 200
+bytes instead of 460 800, and no 14 400-byte conversion buffer out of
+`MALLOC_CAP_DMA` - which on this chip means the internal SRAM. The driver here
+is Espressif's own, `esp_lcd_st7796`, and it is also what finally sends this
+panel Sitronix's gamma from behind the `0xF0` unlock. The bus is left at 40 MHz:
+that is what this board's wiring was proven good at, and this controller is the
+faster of the two. The mirrors were derived rather than measured: atanisoft's
+ILI9488 driver inverts the sense of `mirror_x` - it clears MX where every other
+driver sets it - so the half turn the panel visibly showed works out to the pair
+1/1 for a driver that means the flag literally. The picture came up right the
+first time. The portrait `DISPLAY_ST7796S_320_480` has not been built and
+[`st7796s.h`](../components/board/include/display/st7796s.h) marks it as
+derived.
 
 The screen layout lives in [`ui_layout.h`](../components/ui/include/ui_layout.h)
 and is checked by a host test. Everything that follows from the panel's size -

@@ -51,6 +51,21 @@
  * corner each colour landed in. */
 #define DISPLAY_ILI9488_480_320 5
 #define DISPLAY_ILI9488_320_480 6
+/* ST7796S controller, on the same 480x320 module footprint as the ILI9488 -
+ * one part, two orientations, read like the pairs above.
+ *
+ * Fitted in place of the ILI9488 on 2026-09-11 and it came up on the ILI9488's
+ * own firmware: same glass size, and both controllers answer the standard MIPI
+ * DCS commands a picture needs. That makes it a drop-in and not a driver.
+ * Driven by its own because this one takes 16-bit colour over SPI, where the
+ * ILI9488 takes only 18 - two bytes a pixel instead of three, and no conversion
+ * buffer in internal SRAM. See display/st7796s.h for the arithmetic.
+ *
+ * The 480x320 name is the one this board uses: the module is mounted lying
+ * down, in the same enclosure and the same way round as the panel it
+ * replaced. */
+#define DISPLAY_ST7796S_480_320 7
+#define DISPLAY_ST7796S_320_480 8
 
 #define DAC_NONE 0
 /* PCM5102 / PCM5102A I2S stereo DAC, no MCLK input, line level out. */

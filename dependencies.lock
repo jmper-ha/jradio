@@ -63,6 +63,26 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.2.0
+  espressif/esp_lcd_st7796:
+    component_hash: 528a864b7dd447aa78472680a1f3e294c8045b4e64d479d176c3c66aa6f7edee
+    dependencies:
+    - name: espressif/cmake_utilities
+      registry_url: https://components.espressif.com
+      require: private
+      version: 0.*
+    - name: idf
+      require: private
+      version: '>=4.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32
+    - esp32s2
+    - esp32s3
+    - esp32p4
+    - esp32c3
+    version: 1.4.0
   espressif/usb_host_msc:
     component_hash: a7330d2bc4f81c21fd335df073405085bbad5cdf084a1be79fb52383d0d0d6fd
     dependencies:
@@ -114,10 +134,11 @@ direct_dependencies:
 - esphome/micro-mp3
 - espressif/esp_audio_codec
 - espressif/esp_lcd_ili9341
+- espressif/esp_lcd_st7796
 - espressif/usb_host_msc
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: 293147fc1618ca9bde81e81cfddf4e939ca7d439e89916861a0929855adf9fb4
+manifest_hash: f92898d205c71a6073aa554c4bdd24f39151dc4424831e8099741f56d3c7460d
 target: esp32s3
 version: 2.0.0

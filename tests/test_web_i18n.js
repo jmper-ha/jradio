@@ -74,6 +74,43 @@ for (const script of ['app.js', 'playlist.js', 'settings.js']) {
   }
 }
 
+/* Nothing in the markup is left in Russian without a key on it.
+ *
+ * This is the check that was missing: the first sweep for untranslated text
+ * matched only text that sat on one line, so two paragraphs at the bottom of
+ * the playlist page - wrapped across three lines each - were never found, and
+ * shipped in Russian under an English page. The rule is simple enough to be
+ * mechanical: every run of Cyrillic between tags must belong to an element
+ * that carries a key.
+ *
+ * The exceptions are each deliberate: <title> is set from `data-i18n-title` on
+ * <body>, <noscript> is shown only when no script can translate it and so
+ * carries both languages, and the two language names in the picker stay in
+ * their own language so a reader who cannot read the current setting can still
+ * find the other. */
+const ALLOWED_UNTAGGED = [
+  /^jRadio — /,                    // <title>, set from the body's key
+  /JavaScript/,                    // <noscript>, deliberately bilingual
+  /^Русский$/,                     // the picker names itself
+];
+
+for (const page of PAGES) {
+  const html = fs.readFileSync(`data/www/${page}`, 'utf8');
+  const pattern = /<[^<>]*>([^<>]*?[А-Яа-яЁё][^<>]*?)</gs;
+  let match = pattern.exec(html);
+  while (match !== null) {
+    const text = match[1].replace(/\s+/g, ' ').trim();
+    const tag = match[0].slice(0, match[0].length - text.length);
+    if (!tag.includes('data-i18n') &&
+        !ALLOWED_UNTAGGED.some((allowed) => allowed.test(text))) {
+      assert.fail(`${page}: текст без ключа — «${text.slice(0, 60)}»`);
+    }
+    // Overlapping runs: step back so a tag is not skipped over.
+    pattern.lastIndex = match.index + 1;
+    match = pattern.exec(html);
+  }
+}
+
 /* The two names of the languages themselves stay put, so somebody who cannot
    read the current setting can still find the other one in the picker. */
 const settings = fs.readFileSync('data/www/settings.html', 'utf8');

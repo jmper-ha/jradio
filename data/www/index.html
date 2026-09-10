@@ -37,9 +37,8 @@
       <nav id="source-tabs" class="source-tabs" data-i18n-aria="player.sources" aria-label="Источники"></nav>
 
       <div class="header-actions">
-        <span id="socket-state" class="socket-state is-connecting" role="status" aria-live="polite">
-          Подключение…
-        </span>
+        <span id="socket-state" class="socket-state is-connecting" role="status" aria-live="polite"
+              data-i18n="socket.connecting">Подключение…</span>
         <button id="theme-toggle" class="icon-button theme-toggle" type="button"
                 data-i18n-aria="theme.toggle" aria-label="Сменить тему">
           <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -70,7 +69,7 @@
       <div class="player-main">
         <!-- The source is already named by the active tab; it stays here only
              as the region's label for a screen reader. -->
-        <p id="mode-label" class="sr-only">Нет источника</p>
+        <p id="mode-label" class="sr-only" data-i18n="state.no_source">Нет источника</p>
 
         <!-- The tile is always drawn, with the panel's own mark in it when
              there is no picture - a radio station without a logo, a file
@@ -97,7 +96,7 @@
             </div>
 
             <div class="stream-details">
-              <p id="playback-state" class="state-chip" data-state="stopped">Остановлено</p>
+              <p id="playback-state" class="state-chip" data-state="stopped" data-i18n="state.stopped">Остановлено</p>
               <p id="stream-meta" class="stream-chip" data-i18n="player.waiting">Ожидание связи</p>
             </div>
           </div>

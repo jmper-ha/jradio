@@ -2204,15 +2204,24 @@ static void ui_apply_qr(const char *payload, bool available, const char *caption
 static void ui_update_settings_web_band(void)
 {
     const wifi_provisioning_status_t status = wifi_provisioning_status();
+    /* A partition that never mounted is the one thing this band cannot wait
+     * out: Wi-Fi did not start, so the status below is empty for good, and
+     * "connecting..." would stand there until someone flashed the data. Say
+     * that instead, across the whole band - the hint on the right is empty
+     * here anyway - and in the notice's amber, because it is one. */
+    const bool mounted = wifi_settings_storage_mounted();
     char text[64];
     ui_web_address_text(status.mode, status.ipv4, status.active_ssid,
-                        s_device_settings.language, UI_SET_BAND_SHOW_SCHEME, text,
+                        s_device_settings.language, UI_SET_BAND_SHOW_SCHEME, mounted, text,
                         sizeof(text));
     ui_set_label_text_if_changed(s_settings_web_address, text);
+    lv_obj_set_width(s_settings_web_address,
+                     mounted ? UI_SET_BAND_ADDRESS_W : TFT_WIDTH - 2 * UI_SET_BAND_PAD);
 
     char payload[sizeof(s_qr_shown)];
-    const bool available = ui_web_address_qr(status.mode, status.ipv4, status.active_ssid,
-                                             payload, sizeof(payload));
+    const bool available = mounted && ui_web_address_qr(status.mode, status.ipv4,
+                                                        status.active_ssid, payload,
+                                                        sizeof(payload));
     /* The offer only appears when there is something behind it. While the box
      * is still joining a network there is no address to encode, and a line
      * that says "press for QR" and then does nothing is a fault report.
@@ -2231,7 +2240,10 @@ static void ui_update_settings_web_band(void)
     lv_obj_set_style_bg_color(s_settings_web_band,
                               lv_color_hex(selected ? UI_COLOR_CURSOR : UI_COLOR_STRIP), 0);
     lv_obj_set_style_text_color(s_settings_web_address,
-                                lv_color_hex(selected ? UI_COLOR_ACCENT : UI_COLOR_TEXT), 0);
+                                lv_color_hex(selected ? UI_COLOR_ACCENT
+                                             : mounted  ? UI_COLOR_TEXT
+                                                        : UI_COLOR_NOTICE),
+                                0);
     lv_obj_set_style_text_color(s_settings_web_hint,
                                 lv_color_hex(selected ? UI_COLOR_ACCENT : UI_COLOR_DIM), 0);
     ui_apply_qr(payload, available, text);

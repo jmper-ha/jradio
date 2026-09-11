@@ -9,8 +9,7 @@ static void test_a_joined_network_shows_where_to_reach_the_box(void)
     char text[64];
     /* The whole point of the band: this address is otherwise only in the
      * serial log, which the user cannot see. */
-    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home", false, true,
-                        text, sizeof(text));
+    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home", false, true, true, text, sizeof(text));
     assert(strcmp(text, "http://192.168.1.182") == 0);
 }
 
@@ -20,8 +19,7 @@ static void test_the_narrow_band_drops_the_scheme(void)
      * right. "http://" is seven characters that tell the reader nothing they
      * would not assume, and the address is the part they came for. */
     char text[64];
-    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home", false, false,
-                        text, sizeof(text));
+    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home", false, false, true, text, sizeof(text));
     assert(strcmp(text, "192.168.1.182") == 0);
     /* The QR is untouched by the same choice: a code with no scheme in it
      * opens nothing when a camera reads it. */
@@ -30,8 +28,7 @@ static void test_the_narrow_band_drops_the_scheme(void)
                              payload, sizeof(payload)));
     assert(strcmp(payload, "http://192.168.1.182") == 0);
     /* Setup mode names the network and stops there, whichever way round. */
-    ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "jradio-A1B2", false, false,
-                        text, sizeof(text));
+    ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "jradio-A1B2", false, false, true, text, sizeof(text));
     assert(strcmp(text, "Подключитесь к сети jradio-A1B2") == 0);
 }
 
@@ -44,18 +41,16 @@ static void test_setup_mode_names_the_network_to_join(void)
      * else on the device says. The name is the whole answer here: the address
      * means nothing until the phone has joined, and the QR does the joining. */
     char text[64];
-    ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "jradio-A1B2", false, true,
-                        text, sizeof(text));
+    ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "jradio-A1B2", false, true, true, text, sizeof(text));
     assert(strcmp(text, "Подключитесь к сети jradio-A1B2") == 0);
-    ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "jradio-A1B2", true, true,
-                        text, sizeof(text));
+    ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "jradio-A1B2", true, true, true, text, sizeof(text));
     assert(strcmp(text, "join jradio-A1B2") == 0);
 }
 
 static void test_setup_mode_without_an_address_still_says_what_to_join(void)
 {
     char text[64];
-    ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "", "jradio-A1B2", false, true, text,
+    ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "", "jradio-A1B2", false, true, true, text,
                         sizeof(text));
     assert(strcmp(text, "Подключитесь к сети jradio-A1B2") == 0);
 }
@@ -63,11 +58,9 @@ static void test_setup_mode_without_an_address_still_says_what_to_join(void)
 static void test_connecting_never_shows_a_stale_address(void)
 {
     char text[64];
-    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTING, "192.168.1.182", "home", false, true,
-                        text, sizeof(text));
+    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTING, "192.168.1.182", "home", false, true, true, text, sizeof(text));
     assert(strcmp(text, "Подключение к сети...") == 0);
-    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTING, "192.168.1.182", "home", true, true,
-                        text, sizeof(text));
+    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTING, "192.168.1.182", "home", true, true, true, text, sizeof(text));
     assert(strcmp(text, "connecting to Wi-Fi...") == 0);
 }
 
@@ -76,12 +69,28 @@ static void test_a_missing_address_says_what_is_happening(void)
     /* Not "no network": the wait ends either with an address or with the setup
      * AP, and neither is worth telling the user to give up on. */
     char text[64];
-    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, "", "home", false, true, text,
+    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, "", "home", false, true, true, text,
                         sizeof(text));
     assert(strcmp(text, "Подключение к сети...") == 0);
-    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, NULL, NULL, true, true, text,
+    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, NULL, NULL, true, true, true, text,
                         sizeof(text));
     assert(strcmp(text, "connecting to Wi-Fi...") == 0);
+}
+
+static void test_an_unflashed_partition_says_what_to_flash(void)
+{
+    /* The board straight off the programmer with only the app written: the
+     * mount fails, Wi-Fi never starts, and the status stays the zero it was
+     * born with - mode 0 is the setup AP, with no name and no address. Read
+     * as Wi-Fi, that is "connecting..." for ever. The one thing worth saying
+     * is what is missing, and it beats every other reading of the status. */
+    char text[64];
+    ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "", "", false, true, false, text,
+                        sizeof(text));
+    assert(strcmp(text, "Прошейте раздел LittleFS") == 0);
+    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home", true, true,
+                        false, text, sizeof(text));
+    assert(strcmp(text, "flash the LittleFS partition") == 0);
 }
 
 static void test_setup_mode_without_a_name_falls_back_to_the_address(void)
@@ -89,7 +98,7 @@ static void test_setup_mode_without_a_name_falls_back_to_the_address(void)
     // The name is read from the same status the mode is; an empty one means
     // the AP has not published itself yet, and the address still works.
     char text[64];
-    ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "", false, true, text,
+    ui_web_address_text(WIFI_PROVISIONING_AP_SETUP, "192.168.4.1", "", false, true, true, text,
                         sizeof(text));
     assert(strcmp(text, "http://192.168.4.1") == 0);
 }
@@ -97,13 +106,10 @@ static void test_setup_mode_without_a_name_falls_back_to_the_address(void)
 static void test_bad_arguments_are_survivable(void)
 {
     char text[8];
-    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home", false, true,
-                        NULL, 0U);
-    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home", false, true,
-                        text, 0U);
+    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home", false, true, true, NULL, 0U);
+    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home", false, true, true, text, 0U);
     /* A band too narrow for the address truncates rather than overruns. */
-    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home", false, true,
-                        text, sizeof(text));
+    ui_web_address_text(WIFI_PROVISIONING_STA_CONNECTED, "192.168.1.182", "home", false, true, true, text, sizeof(text));
     assert(strlen(text) == sizeof(text) - 1U);
 }
 
@@ -186,6 +192,7 @@ int main(void)
     test_setup_mode_without_an_address_still_says_what_to_join();
     test_connecting_never_shows_a_stale_address();
     test_a_missing_address_says_what_is_happening();
+    test_an_unflashed_partition_says_what_to_flash();
     test_setup_mode_without_a_name_falls_back_to_the_address();
     test_bad_arguments_are_survivable();
     test_a_joined_network_encodes_the_url();

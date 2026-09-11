@@ -99,6 +99,9 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     /* Carries the network name, so it stays a format string. */
     [DEVICE_TEXT_JOIN_NETWORK] = {"Подключитесь к сети %s", "join %s"},
     [DEVICE_TEXT_WIFI_CONNECTING] = {"Подключение к сети...", "connecting to Wi-Fi..."},
+    /* The band's one line for a box whose data partition was never written:
+     * there is no Wi-Fi to report on, and "connecting" would be a lie. */
+    [DEVICE_TEXT_DATA_NOT_FLASHED] = {"Прошейте раздел LittleFS", "flash the LittleFS partition"},
     [DEVICE_TEXT_NOT_AVAILABLE_YET] = {"Функция пока недоступна", "Not available yet"},
     [DEVICE_TEXT_SETTINGS_READ_FAILED] = {"Ошибка чтения settings.csv",
      "Cannot read settings.csv"},

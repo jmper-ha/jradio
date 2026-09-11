@@ -181,6 +181,11 @@ esp_err_t wifi_settings_storage_init(void)
     return err;
 }
 
+bool wifi_settings_storage_mounted(void)
+{
+    return s_storage_mounted;
+}
+
 static bool wifi_settings_json_read_string(const cJSON *item, const char *name, char *value,
                                            size_t max_length, bool allow_empty)
 {

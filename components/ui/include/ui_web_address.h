@@ -28,10 +28,16 @@
  * the hint on the right as well: `http://` is seven characters that tell a
  * reader nothing they will not assume, and the address is what they came for.
  * The QR payload is not affected - a code without a scheme opens nothing.
+ *
+ * `storage_mounted` false is the board whose data partition was never
+ * written: Wi-Fi does not start at all without it, so the status says
+ * "connecting" for ever and the band would have kept saying so. The one
+ * useful thing to say there is what to flash, and it wins over everything
+ * else. The QR is not offered - there is no address behind it.
  */
 void ui_web_address_text(wifi_provisioning_mode_t mode, const char *ipv4, const char *ssid,
-                         device_language_t language, bool with_scheme, char *out,
-                         size_t out_size);
+                         device_language_t language, bool with_scheme, bool storage_mounted,
+                         char *out, size_t out_size);
 
 /* What the QR code behind that band encodes. False when there is nothing worth
  * encoding, which is also what decides whether the band offers the QR at all.

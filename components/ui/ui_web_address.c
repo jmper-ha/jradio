@@ -3,11 +3,19 @@
 #include <stdio.h>
 
 void ui_web_address_text(wifi_provisioning_mode_t mode, const char *ipv4, const char *ssid,
-                         device_language_t language, bool with_scheme, char *out,
-                         size_t out_size)
+                         device_language_t language, bool with_scheme, bool storage_mounted,
+                         char *out, size_t out_size)
 {
     if (out == NULL || out_size == 0U) return;
     out[0] = '\0';
+
+    /* First, before the mode is even looked at: without the partition the
+     * provisioning never started, and its status is the zero it was born
+     * with - which reads as a setup AP that has not published its name. */
+    if (!storage_mounted) {
+        snprintf(out, out_size, "%s", device_text(DEVICE_TEXT_DATA_NOT_FLASHED, language));
+        return;
+    }
 
     /* The setup AP's address is useless on its own: reaching it means joining
      * the box's own network first, and nothing else on the device says what

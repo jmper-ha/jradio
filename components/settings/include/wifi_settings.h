@@ -47,6 +47,10 @@ uint8_t wifi_settings_index_of(const wifi_settings_t *settings, const char *ssid
 #include "esp_err.h"
 
 esp_err_t wifi_settings_storage_init(void);
+/* Whether the mount above ever succeeded. False for a board whose data
+ * partition was never flashed: with format_if_mount_failed off nothing will
+ * ever mount it, so the answer does not change while the box runs. */
+bool wifi_settings_storage_mounted(void);
 esp_err_t wifi_settings_load(wifi_settings_t *settings);
 esp_err_t wifi_settings_save_atomic(const wifi_settings_t *settings);
 esp_err_t wifi_settings_clear(void);

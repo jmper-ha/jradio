@@ -1,4 +1,4 @@
-# jradio
+# jRadio
 
 A desktop audio player: internet radio, music from a USB drive, an SD card and
 a media server on the home network, Yandex Music. Driven by a knob and four

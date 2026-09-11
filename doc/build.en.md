@@ -53,9 +53,15 @@ That value sticks in the CMake cache - to go back to git, delete the
 you version `1`, which is not what you wanted).
 
 The shortest way in is VS Code: open the project folder and it offers the
-recommended extensions - ESP-IDF and C/C++. The ESP-IDF extension opens its own
-setup wizard on first run, which downloads the framework and the toolchain;
-pick 5.5.x. After that `Ctrl+Shift+B` builds, and the rest is under
+recommended extensions - ESP-IDF and C/C++. Since 2.0 the extension installs
+nothing itself and no longer has a "Configure ESP-IDF Extension" command:
+`Ctrl+Shift+P` -> **ESP-IDF: Open ESP-IDF Installation Manager** downloads and
+opens the EIM installer; pick 5.5.5 there and it installs the framework, the
+toolchain and the Python environment. Then `Ctrl+Shift+P` -> **ESP-IDF: Select
+Current ESP-IDF Version** and choose the one just installed; **ESP-IDF: Doctor
+Command** checks the result. An ESP-IDF installed by hand earlier does not
+appear in that list - reinstalling it through EIM is the easy way. After that
+`Ctrl+Shift+B` builds, and the rest is under
 Terminal - Run Task: flashing, the device log, the host tests. For a blank
 board there is "ESP-IDF: First flash (app + data)", which writes the firmware
 and the data partition both.

@@ -86,6 +86,10 @@
  * and the layout moves with it. The text sizes have to exist in
  * ui_font_metrics.h; the icon sizes have to be enabled in sdkconfig. */
 #define UI_FONT_BODY_PX 14
+/* The weather picture beside the clock, a size tools/gen_feed_icons.py has
+ * drawn: two over the body face, which is what the volume icon is to the
+ * footer's on the smaller panels. */
+#define UI_STRIP_WEATHER_ICON_PX 16
 #define UI_FONT_TITLE_PX 20
 #define UI_FONT_ICON_PX 24
 #define UI_FONT_DISPLAY_PX 48

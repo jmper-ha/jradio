@@ -21,7 +21,7 @@
 #include "yandex_token_store.h"
 
 #define WEB_BACKUP_CONFIG_DIR "/littlefs/config"
-/* One file at a time is held in RAM. wifi.json is the largest of the three at
+/* One file at a time is held in RAM. wifi.json is the largest of the four at
  * about 3.3 KB with five networks, so this is headroom rather than a limit
  * anything real approaches - it is here to stop an upload, not a backup. */
 #define WEB_BACKUP_MEMBER_MAX_LEN 8192U
@@ -29,7 +29,7 @@
     CONFIG_ARCHIVE_CAPACITY(CONFIG_ARCHIVE_MEMBER_MAX * WEB_BACKUP_MEMBER_MAX_LEN)
 /* Long enough for the directory and the longest member name. */
 #define WEB_BACKUP_PATH_MAX 64
-/* Enough for the answer with all three names in both lists. */
+/* Enough for the answer with all four names in both lists. */
 #define WEB_BACKUP_REPLY_MAX 256
 /* The browser has to receive the answer before the device goes away, and the
  * socket is closed by the restart, not by a handshake. */
@@ -119,8 +119,8 @@ esp_err_t web_backup_get(httpd_req_t *request)
     web_backup_stamp(&date, &time_of_day);
     config_archive_writer_t writer;
     config_archive_writer_init(&writer, archive, WEB_BACKUP_UPLOAD_MAX_LEN, date, time_of_day);
-    for (config_archive_member_t kind = CONFIG_ARCHIVE_MEMBER_WIFI;
-         kind <= CONFIG_ARCHIVE_MEMBER_YANDEX; ++kind) {
+    for (config_archive_member_t kind = CONFIG_ARCHIVE_MEMBER_FIRST;
+         kind <= CONFIG_ARCHIVE_MEMBER_LAST; ++kind) {
         const size_t size = web_backup_read_member(kind, member, WEB_BACKUP_MEMBER_MAX_LEN);
         if (size == 0U) continue;
         if (!config_archive_writer_add(&writer, config_archive_member_file(kind), member, size)) {
@@ -281,7 +281,9 @@ static bool web_backup_member_loads(config_archive_member_t member)
         return loaded;
     }
     /* settings.csv has no loader that can fail: every key it does not
-     * understand is skipped and every key it wants has a default. */
+     * understand is skipped and every key it wants has a default. weather.json
+     * degrades the same way - a key it cannot read is a key it has not got,
+     * and the page says so. */
     return true;
 }
 
@@ -397,7 +399,7 @@ esp_err_t web_backup_restore_post(httpd_req_t *request)
         }
         if (refusal == NULL && count == 0U) {
             refusal = "empty";
-            refusal_reason = "no wifi.json, settings.csv or yandex.json inside";
+            refusal_reason = "no wifi.json, settings.csv, yandex.json or weather.json inside";
         }
     } else {
         const config_archive_member_t member = config_archive_member_from_file(name);

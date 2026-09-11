@@ -414,6 +414,79 @@ static void test_the_clock_settings_persist_and_are_checked(void)
     assert(strcmp(reloaded.timezone, "europe/moscow") == 0);
 }
 
+static void test_the_weather_settings_persist_and_are_checked(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    /* Off until somebody says otherwise, and pointed at the same city the
+     * default time zone is on, so the two defaults do not contradict. */
+    assert(settings.weather_provider == DEVICE_WEATHER_OFF);
+    assert(strcmp(settings.weather_latitude, "55.75") == 0);
+    assert(strcmp(settings.weather_longitude, "37.62") == 0);
+
+    assert(device_settings_set_weather_provider(&settings, DEVICE_WEATHER_WTTR));
+    assert(device_settings_set_weather_latitude(&settings, "-33.8688"));
+    assert(device_settings_set_weather_longitude(&settings, "151.2093"));
+
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.weather_provider == DEVICE_WEATHER_WTTR);
+    assert(strcmp(reloaded.weather_latitude, "-33.8688") == 0);
+    assert(strcmp(reloaded.weather_longitude, "151.2093") == 0);
+
+    /* Names in the file, so a line in it reads as a word and the enum's order
+     * is free to change. */
+    char value[32];
+    assert(settings_csv_get(test_path, "weather", value, sizeof(value)));
+    assert(strcmp(value, "wttr") == 0);
+    assert(device_settings_set_weather_provider(&settings, DEVICE_WEATHER_OPENWEATHERMAP));
+    assert(settings_csv_get(test_path, "weather", value, sizeof(value)));
+    assert(strcmp(value, "openweathermap") == 0);
+    assert(device_settings_set_weather_provider(&settings, DEVICE_WEATHER_OPEN_METEO));
+    assert(settings_csv_get(test_path, "weather", value, sizeof(value)));
+    assert(strcmp(value, "open_meteo") == 0);
+    assert(!device_settings_set_weather_provider(&settings, (device_weather_provider_t)7));
+
+    /* The shape a coordinate may take, and the globe it has to be on. */
+    assert(device_settings_coordinate_valid("0", 90));
+    assert(device_settings_coordinate_valid("90", 90));
+    assert(device_settings_coordinate_valid("-90.000000", 90));
+    assert(device_settings_coordinate_valid("+55.75", 90));
+    assert(device_settings_coordinate_valid("179.999999", 180));
+    assert(!device_settings_coordinate_valid("90.000001", 90));
+    assert(!device_settings_coordinate_valid("-181", 180));
+    assert(!device_settings_coordinate_valid("55.", 90));
+    assert(!device_settings_coordinate_valid(".5", 90));
+    assert(!device_settings_coordinate_valid("55,75", 90));
+    assert(!device_settings_coordinate_valid("55.7500001", 90));
+    assert(!device_settings_coordinate_valid("1e2", 90));
+    assert(!device_settings_coordinate_valid("55.75 ", 90));
+    assert(!device_settings_coordinate_valid("", 90));
+    assert(!device_settings_coordinate_valid(NULL, 90));
+
+    /* Refused, not clamped: a coordinate off the globe is a typo, and the
+     * stored value stays what it was. */
+    assert(!device_settings_set_weather_latitude(&settings, "91"));
+    assert(!device_settings_set_weather_longitude(&settings, "37,62"));
+    assert(strcmp(settings.weather_latitude, "-33.8688") == 0);
+    assert(strcmp(settings.weather_longitude, "151.2093") == 0);
+
+    /* An empty field puts the default back, like the time server's. */
+    assert(device_settings_set_weather_latitude(&settings, ""));
+    assert(device_settings_set_weather_longitude(&settings, NULL));
+    assert(strcmp(settings.weather_latitude, "55.75") == 0);
+    assert(strcmp(settings.weather_longitude, "37.62") == 0);
+
+    /* A file with a coordinate that would not pass the setter - somebody's
+     * edit - leaves the default standing rather than half a number. */
+    assert(settings_csv_set(test_path, "weather_latitude", "north"));
+    assert(settings_csv_set(test_path, "weather", "accuweather"));
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(strcmp(reloaded.weather_latitude, "55.75") == 0);
+    assert(reloaded.weather_provider == DEVICE_WEATHER_OFF);
+}
+
 int main(void)
 {
     test_defaults_and_load();
@@ -429,6 +502,7 @@ int main(void)
     test_the_yandex_resume_point_persists();
     test_the_media_server_resume_point_persists();
     test_the_clock_settings_persist_and_are_checked();
+    test_the_weather_settings_persist_and_are_checked();
     test_brightness_persists_and_refuses_a_dark_panel();
     test_a_corrupt_brightness_leaves_the_default();
     puts("device_settings tests passed");

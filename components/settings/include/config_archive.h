@@ -4,11 +4,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The three files that make a device this device: the networks it knows, how
- * it is set up, and the Yandex token. A backup carries them as one zip, so a
- * restore does not depend on the browser having kept three separate downloads
- * together - and so one file out of the archive can still be restored on its
- * own.
+/* The four files that make a device this device: the networks it knows, how
+ * it is set up, the Yandex token and the weather key. A backup carries them as
+ * one zip, so a restore does not depend on the browser having kept four
+ * separate downloads together - and so one file out of the archive can still
+ * be restored on its own.
  *
  * Entries are stored, never deflated. The files are a few kilobytes each, so
  * compression would buy nothing, and an inflater on the device would be a
@@ -19,7 +19,7 @@
  * Everything here is pure: no filesystem, no ESP-IDF. The buffer belongs to
  * the caller. */
 
-#define CONFIG_ARCHIVE_MEMBER_MAX 3U
+#define CONFIG_ARCHIVE_MEMBER_MAX 4U
 /* Long enough for the names below with a directory prefix; anything longer
  * belongs to some other archive and is skipped rather than truncated into a
  * name that might collide with ours. */
@@ -30,9 +30,15 @@ typedef enum {
     CONFIG_ARCHIVE_MEMBER_WIFI,
     CONFIG_ARCHIVE_MEMBER_SETTINGS,
     CONFIG_ARCHIVE_MEMBER_YANDEX,
+    CONFIG_ARCHIVE_MEMBER_WEATHER,
 } config_archive_member_t;
+/* The members run from the first to this one; the loops that walk them say
+ * so here rather than naming whichever member happens to be last. */
+#define CONFIG_ARCHIVE_MEMBER_FIRST CONFIG_ARCHIVE_MEMBER_WIFI
+#define CONFIG_ARCHIVE_MEMBER_LAST CONFIG_ARCHIVE_MEMBER_WEATHER
 
-/* "wifi.json", "settings.csv", "yandex.json"; NULL for UNKNOWN. */
+/* "wifi.json", "settings.csv", "yandex.json", "weather.json"; NULL for
+ * UNKNOWN. */
 const char *config_archive_member_file(config_archive_member_t member);
 
 /* Maps a file name onto a member. A leading directory is ignored, so both

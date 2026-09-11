@@ -7,6 +7,7 @@
 #include "board_features.h"
 #include "board_input.h"
 #include "device_clock.h"
+#include "weather.h"
 #include "device_settings.h"
 #include "internet_radio.h"
 #include "player_control.h"
@@ -89,6 +90,9 @@ void app_main(void)
      * device had before either was a setting. */
     device_clock_init(settings_read ? boot_settings.ntp_server : NULL,
                       settings_read ? boot_settings.timezone : NULL);
+    /* Same place and the same reason: it waits for the network on its own,
+     * and it reads its service and its coordinates off the same card. */
+    start_optional("weather", weather_init(settings_read ? &boot_settings : NULL));
     /* Each of these belongs to a part or a feature board_options.h can leave
      * out, so each is asked for only when this build has it. A plain `if` on
      * a constant rather than #if: the call still has to compile, which is what

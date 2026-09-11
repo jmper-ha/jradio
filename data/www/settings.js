@@ -47,6 +47,8 @@
   const backupFile = document.querySelector('#backup-file');
   const backupRestore = document.querySelector('#backup-restore');
   const deviceBrightness = document.querySelector('#device-brightness');
+  const weatherNowRow = document.querySelector('#device-weather-now-row');
+  const weatherNow = document.querySelector('#device-weather-now');
   /* The device's own settings screen, field for field, in the order and with
      the wording it uses - so that "Скроллинг: Влево-вправо" means the same
      thing in both places. `row` and `gate` belong to the fields the device
@@ -66,6 +68,16 @@
      row: document.querySelector('#device-dlna-row'), gate: 'dlna'},
     {field: 'timezone', kind: 'choice', node: deviceTimezone},
     {field: 'ntp_server', kind: 'text', node: document.querySelector('#device-ntp')},
+    {field: 'weather', kind: 'choice', node: document.querySelector('#device-weather')},
+    {field: 'weather_latitude', kind: 'text',
+     node: document.querySelector('#device-weather-latitude')},
+    {field: 'weather_longitude', kind: 'text',
+     node: document.querySelector('#device-weather-longitude')},
+    /* A secret: sent like a text field, never sent back. The row exists only
+       while the service that wants it is the chosen one. */
+    {field: 'openweathermap_key', kind: 'secret',
+     node: document.querySelector('#device-weather-key'),
+     row: document.querySelector('#device-weather-key-row')},
     {field: 'brightness', kind: 'number', node: deviceBrightness,
      output: document.querySelector('#device-brightness-value')},
     {field: 'flip_vertical', kind: 'switch', node: document.querySelector('#device-flip-vertical')},
@@ -670,6 +682,20 @@
         }
       } else if (entry.kind === 'switch') {
         if (typeof value === 'boolean') entry.node.checked = value;
+      } else if (entry.kind === 'secret') {
+        /* The device says whether it has one and never what it is. The
+           field is emptied once an answer arrives - what was typed is on the
+           card now or was refused - and the placeholder says which state the
+           device is in. Only the REST document carries the flag. */
+        if (typeof payload.openweathermap_key_set === 'boolean' && deviceHeld !== entry.field) {
+          entry.node.value = '';
+          entry.node.placeholder =
+            t(payload.openweathermap_key_set ? 'settings.key_set' : 'settings.key_unset');
+        }
+        if (typeof payload.weather === 'string') {
+          entry.row.hidden = payload.weather !== 'openweathermap';
+        }
+        continue;
       } else if (Number.isSafeInteger(value)) {
         entry.node.value = String(value);
         entry.output.textContent = String(value);
@@ -678,7 +704,68 @@
       // disabled: there is nothing behind it to explain.
       if (entry.row) entry.row.hidden = available[entry.gate] !== true;
     }
+    applyWeatherState(payload);
     return true;
+  }
+
+  /* What the device's weather task last said, under the picker: the reading
+     when there is one, and otherwise why there is not. Only the REST document
+     carries it; a live update leaves the line alone. */
+  const weatherIconText = Object.freeze({
+    clear_day: 'weather.clear',
+    clear_night: 'weather.clear',
+    partly_cloudy_day: 'weather.partly_cloudy',
+    partly_cloudy_night: 'weather.partly_cloudy',
+    cloudy: 'weather.cloudy',
+    fog: 'weather.fog',
+    rain: 'weather.rain',
+    snow: 'weather.snow',
+    sleet: 'weather.sleet',
+    thunderstorm: 'weather.thunderstorm',
+  });
+  let weatherRefreshTimer = null;
+
+  function weatherStateText(payload) {
+    const report = payload.weather_report;
+    if (isObject(report) && Number.isSafeInteger(report.temperature)) {
+      const degrees = report.temperature > 0 ? `+${report.temperature}°` : `${report.temperature}°`;
+      const key = weatherIconText[report.icon];
+      return key ? `${degrees}, ${t(key)}` : degrees;
+    }
+    const status = Number.isSafeInteger(payload.weather_http_status) ? payload.weather_http_status : 0;
+    switch (payload.weather_state) {
+    case 'no_key': return t('weather.no_key');
+    case 'waiting': return t('weather.waiting');
+    case 'failed':
+      if (status === 401 || status === 403) return t('weather.key_refused');
+      return status > 0 ? t('weather.failed_status', {status}) : t('weather.failed');
+    default: return '';
+    }
+  }
+
+  function applyWeatherState(payload) {
+    if (typeof payload.weather_state !== 'string') return;
+    /* A service that is on with a task that still says off has not been
+       told yet: that is a wait, not a blank. */
+    if (payload.weather !== 'off' && payload.weather_state === 'off') {
+      payload = {...payload, weather_state: 'waiting'};
+    }
+    const text = payload.weather === 'off' ? '' : weatherStateText(payload);
+    weatherNowRow.hidden = text === '';
+    weatherNow.textContent = text;
+    weatherNow.classList.toggle('is-ok', payload.weather_state === 'ok');
+    /* A service just switched on answers within a few seconds; the page asks
+       again once so the line does not say "waiting" until it is reloaded. */
+    if (weatherRefreshTimer !== null) {
+      window.clearTimeout(weatherRefreshTimer);
+      weatherRefreshTimer = null;
+    }
+    if (payload.weather_state === 'waiting') {
+      weatherRefreshTimer = window.setTimeout(() => {
+        weatherRefreshTimer = null;
+        if (!deviceBusy && deviceHeld === '') refreshDeviceSettings();
+      }, 5000);
+    }
   }
 
   /* The language is a device setting like any other, so it arrives with the
@@ -767,7 +854,7 @@
         });
         continue;
       }
-      if (entry.kind === 'text') {
+      if (entry.kind === 'text' || entry.kind === 'secret') {
         /* Typing is not saving: the write goes out when the field is left or
            Enter is pressed, which is what `change` means for a text input. A
            per-keystroke write would put a dozen half-typed host names on the

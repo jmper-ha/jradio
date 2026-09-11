@@ -27,6 +27,19 @@ typedef enum {
     DEVICE_BUFFER_VIEW_GRAPH,
 } device_buffer_view_t;
 
+/* Where the panel's weather comes from, if anywhere. Three services rather
+ * than one because they fail differently: Open-Meteo needs no key and answers
+ * over plain HTTP, wttr.in is a proxy that answers 503 under load, and
+ * OpenWeatherMap wants an account key - which one is reachable from a given
+ * network is not something the firmware can know. The key itself is not a
+ * setting: it is a secret and lives in its own file, like the Yandex token. */
+typedef enum {
+    DEVICE_WEATHER_OFF = 0,
+    DEVICE_WEATHER_OPEN_METEO,
+    DEVICE_WEATHER_WTTR,
+    DEVICE_WEATHER_OPENWEATHERMAP,
+} device_weather_provider_t;
+
 typedef enum {
     DEVICE_LAST_SOURCE_NONE = 0,
     DEVICE_LAST_SOURCE_INTERNET_RADIO,
@@ -93,6 +106,17 @@ typedef enum {
  * close, needs no account, and is what every appliance points at. */
 #define DEVICE_NTP_SERVER_DEFAULT "pool.ntp.org"
 
+/* A coordinate as the user typed it - "55.75", "-0.1278" - validated on the
+ * way in and stored as text, since the only thing ever done with it is to put
+ * it in a URL. Room for a sign, three digits, a point and six decimals. */
+#define DEVICE_COORDINATE_MAX 16
+/* Where the weather is asked for before anyone has said: the same city the
+ * default time zone is on, so the two defaults agree with each other. The
+ * device cannot find itself - this network's exit resolves to Amsterdam - and
+ * a wrong city with the right time is easier to notice than the reverse. */
+#define DEVICE_WEATHER_LATITUDE_DEFAULT "55.75"
+#define DEVICE_WEATHER_LONGITUDE_DEFAULT "37.62"
+
 /* Loud enough to be obviously working, quiet enough that a fresh flash does
  * not startle anyone. */
 #define DEVICE_VOLUME_DEFAULT 80
@@ -133,6 +157,9 @@ typedef struct {
      * the first one. */
     char timezone[DEVICE_TIMEZONE_ID_MAX];
     char ntp_server[DEVICE_NTP_SERVER_MAX];
+    device_weather_provider_t weather_provider;
+    char weather_latitude[DEVICE_COORDINATE_MAX];
+    char weather_longitude[DEVICE_COORDINATE_MAX];
     device_last_source_t last_source;
     char last_file[DEVICE_LAST_FILE_MAX];
     char last_yandex_id[DEVICE_LAST_YANDEX_ID_MAX];
@@ -173,6 +200,18 @@ bool device_settings_set_timezone(device_settings_t *settings, const char *id);
  * the pool. Spaces, commas and anything unprintable are refused: the first
  * would not resolve, the second would cut the settings line in two. */
 bool device_settings_set_ntp_server(device_settings_t *settings, const char *host);
+bool device_settings_set_weather_provider(device_settings_t *settings,
+                                          device_weather_provider_t provider);
+/* A latitude within 90 degrees of the equator, a longitude within 180 of
+ * Greenwich, each as decimal text with up to six places. Refused rather than
+ * clamped: a coordinate off the globe is a typo, and clamping one would ask
+ * for the weather somewhere the user never named. */
+bool device_settings_set_weather_latitude(device_settings_t *settings, const char *text);
+bool device_settings_set_weather_longitude(device_settings_t *settings, const char *text);
+/* The check the two setters apply, on its own so the page and the tests can
+ * ask the same question: an optional sign, one to three digits, and at most
+ * six decimals, within `limit` degrees either side of zero. */
+bool device_settings_coordinate_valid(const char *text, int limit);
 /* Recorded as playback starts, so a power cut still leaves the last choice
  * behind. Writing "none" clears the resume point. */
 bool device_settings_set_last_source(device_settings_t *settings,

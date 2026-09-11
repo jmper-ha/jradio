@@ -36,6 +36,7 @@ include_flags=(
     -I"${project_dir}/components/sd_storage/include"
     -I"${project_dir}/components/usb_storage/include"
     -I"${project_dir}/components/version_info/include"
+    -I"${project_dir}/components/weather/include"
     -I"${project_dir}/components/web_server"
     -I"${project_dir}/components/web_server/include"
     -I"${project_dir}/components/yandex_music"
@@ -238,6 +239,11 @@ run_test web_settings_api -I"${cjson_include}" tests/test_web_settings_api.c \
     components/settings/device_settings.c components/settings/device_timezone.c components/settings/settings_csv.c \
     "${cjson_source}"
 run_test web_cover tests/test_web_cover.c components/web_server/web_cover.c
+# The weather: three services' answers into one report, and the request each
+# one takes. Captured answers are the fixtures; the day/night split is the
+# part worth reading, since one service has to have it worked out for it.
+run_test weather_report -I"${cjson_include}" tests/test_weather_report.c \
+    components/weather/weather_report.c "${cjson_source}"
 run_test yandex_catalog tests/test_yandex_catalog.c \
     components/yandex_music/yandex_catalog_parse.c \
     components/yandex_music/yandex_json_reader.c

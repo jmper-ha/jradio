@@ -11,8 +11,8 @@
 | `GET /api/dlna` | Contents of the container open on the media server; `searching` means it is still being looked for |
 | `GET /api/about` | The firmware and web versions, ESP-IDF, the author's address |
 | `GET /api/settings` | The device settings, the same ones its own screen has |
-| `POST /api/settings` | Changes one setting: `{"field":…,"value":…}`, `timezone` and `ntp_server` included |
-| `GET /api/backup` | The device configuration as one zip: `wifi.json`, `settings.csv`, `yandex.json` |
+| `POST /api/settings` | Changes one setting: `{"field":…,"value":…}`, `timezone`, `ntp_server`, `weather`, `weather_latitude`, `weather_longitude` and `openweathermap_key` included |
+| `GET /api/backup` | The device configuration as one zip: `wifi.json`, `settings.csv`, `yandex.json`, `weather.json` |
 | `POST /api/restore` | Restores it: the whole archive or a single file, named by `?name=` |
 | `GET /api/progress` | Track position, buffer fill, cover signature |
 | `GET /api/cover` | The current cover, 96x96, as a BMP |
@@ -145,14 +145,15 @@ thing differently.
 
 ## Backup and restore
 
-Three files make a device this device: `wifi.json` for the networks it knows,
-`settings.csv` for how it is set up, `yandex.json` for the Yandex token.
+Four files make a device this device: `wifi.json` for the networks it knows,
+`settings.csv` for how it is set up, `yandex.json` for the Yandex token,
+`weather.json` for the OpenWeatherMap key.
 `GET /api/backup` hands them over as one zip and `POST /api/restore` takes them
 back - the whole archive, or one file out of it. The playlist is not in there:
 it has its own export on the playlist page, and that one carries more, the
 station pictures included.
 
-**The archive holds the Wi-Fi password and the Yandex token in clear text.**
+**The archive holds the Wi-Fi password, the Yandex token and the weather key in clear text.**
 Anything else would not restore the thing that matters most, the network. The
 device hands the archive to anyone on the local network - the same place the
 rest of the interface lives, and there is no password on any of it. The answer

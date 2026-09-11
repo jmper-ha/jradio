@@ -28,6 +28,7 @@ static const char *TAG = "health";
 static const char *const s_watched_tasks[] = {
     "player_control", "ui",       "radio_decode", "usb_play", "usb_msc",
     "usb_lib",        "input_log", "board_input", "httpd",    "wifi_reconnect",
+    "weather",
 };
 
 static system_health_t s_health;

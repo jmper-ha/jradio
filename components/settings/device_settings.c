@@ -67,6 +67,61 @@ static bool parse_bool(const char *value, bool *result)
     return false;
 }
 
+/* The provider's name in settings.csv, and back. Names rather than numbers in
+ * the file, so a line in it can be read by a person and so the order of the
+ * enum is free to change. An unknown name is "off": the safe reading of a
+ * word the firmware does not have is to fetch nothing. */
+static const char *weather_provider_text(device_weather_provider_t provider)
+{
+    switch (provider) {
+    case DEVICE_WEATHER_OPEN_METEO: return "open_meteo";
+    case DEVICE_WEATHER_WTTR: return "wttr";
+    case DEVICE_WEATHER_OPENWEATHERMAP: return "openweathermap";
+    case DEVICE_WEATHER_OFF: break;
+    }
+    return "off";
+}
+
+static device_weather_provider_t weather_provider_from_text(const char *text)
+{
+    for (device_weather_provider_t provider = DEVICE_WEATHER_OPEN_METEO;
+         provider <= DEVICE_WEATHER_OPENWEATHERMAP; ++provider) {
+        if (strcmp(text, weather_provider_text(provider)) == 0) return provider;
+    }
+    return DEVICE_WEATHER_OFF;
+}
+
+bool device_settings_coordinate_valid(const char *text, int limit)
+{
+    if (text == NULL || limit <= 0) return false;
+    const char *cursor = text;
+    if (*cursor == '-' || *cursor == '+') ++cursor;
+    size_t digits = 0U;
+    while (*cursor >= '0' && *cursor <= '9') {
+        ++cursor;
+        ++digits;
+    }
+    if (digits == 0U || digits > 3U) return false;
+    if (*cursor == '.') {
+        ++cursor;
+        size_t decimals = 0U;
+        while (*cursor >= '0' && *cursor <= '9') {
+            ++cursor;
+            ++decimals;
+        }
+        /* Six places is a tenth of a metre; more is not a location anybody
+         * typed, and the buffer is sized for six. No bare point either. */
+        if (decimals == 0U || decimals > 6U) return false;
+    }
+    if (*cursor != '\0') return false;
+    if (strlen(text) >= DEVICE_COORDINATE_MAX) return false;
+    /* Range, on the parsed value: "90.5" has the right shape and is still
+     * off the globe. strtod is exact enough here - the question is whether
+     * the number is inside a bound, not what its sixth decimal is. */
+    const double value = strtod(text, NULL);
+    return value >= -(double)limit && value <= (double)limit;
+}
+
 bool device_settings_init_at(device_settings_t *settings, const char *path)
 {
     if (settings == NULL || path == NULL || path[0] == '\0' ||
@@ -84,6 +139,10 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
            sizeof(DEVICE_TIMEZONE_DEFAULT_ID));
     memcpy(settings->ntp_server, DEVICE_NTP_SERVER_DEFAULT,
            sizeof(DEVICE_NTP_SERVER_DEFAULT));
+    memcpy(settings->weather_latitude, DEVICE_WEATHER_LATITUDE_DEFAULT,
+           sizeof(DEVICE_WEATHER_LATITUDE_DEFAULT));
+    memcpy(settings->weather_longitude, DEVICE_WEATHER_LONGITUDE_DEFAULT,
+           sizeof(DEVICE_WEATHER_LONGITUDE_DEFAULT));
 
     char value[32];
     if (read_value(path, "language", value, sizeof(value))) {
@@ -113,6 +172,22 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     char server[DEVICE_NTP_SERVER_MAX];
     if (settings_csv_get(path, "ntp_server", server, sizeof(server)) && server[0] != '\0') {
         memcpy(settings->ntp_server, server, strlen(server) + 1U);
+    }
+    if (read_value(path, "weather", value, sizeof(value))) {
+        settings->weather_provider = weather_provider_from_text(value);
+    }
+    /* A coordinate that would not pass the setter leaves the default in
+     * place, for the same reason a bad zone does: the alternative is a URL
+     * with half a number in it, which the service answers with an error the
+     * panel has no way to show. */
+    char coordinate[DEVICE_COORDINATE_MAX];
+    if (settings_csv_get(path, "weather_latitude", coordinate, sizeof(coordinate)) &&
+        device_settings_coordinate_valid(coordinate, 90)) {
+        memcpy(settings->weather_latitude, coordinate, strlen(coordinate) + 1U);
+    }
+    if (settings_csv_get(path, "weather_longitude", coordinate, sizeof(coordinate)) &&
+        device_settings_coordinate_valid(coordinate, 180)) {
+        memcpy(settings->weather_longitude, coordinate, strlen(coordinate) + 1U);
     }
     if (read_value(path, "display_flip_vertical", value, sizeof(value))) {
         (void)parse_bool(value, &settings->flip_vertical);
@@ -337,6 +412,44 @@ bool device_settings_set_ntp_server(device_settings_t *settings, const char *hos
     if (!save_value(settings, "ntp_server", value)) return false;
     memcpy(settings->ntp_server, value, strlen(value) + 1U);
     return true;
+}
+
+bool device_settings_set_weather_provider(device_settings_t *settings,
+                                          device_weather_provider_t provider)
+{
+    if (settings == NULL || provider > DEVICE_WEATHER_OPENWEATHERMAP) return false;
+    if (settings->weather_provider == provider) return true;
+    if (!save_value(settings, "weather", weather_provider_text(provider))) return false;
+    settings->weather_provider = provider;
+    return true;
+}
+
+static bool set_coordinate(device_settings_t *settings, const char *key, char *field,
+                           const char *text, const char *fallback, int limit)
+{
+    if (settings == NULL) return false;
+    /* An empty field on the page puts the default back, the way the time
+     * server's does: there is no such thing as a device with no latitude. */
+    const char *value = text == NULL || text[0] == '\0' ? fallback : text;
+    if (!device_settings_coordinate_valid(value, limit)) return false;
+    if (strcmp(field, value) == 0) return true;
+    if (!save_value(settings, key, value)) return false;
+    memcpy(field, value, strlen(value) + 1U);
+    return true;
+}
+
+bool device_settings_set_weather_latitude(device_settings_t *settings, const char *text)
+{
+    return settings != NULL &&
+           set_coordinate(settings, "weather_latitude", settings->weather_latitude, text,
+                          DEVICE_WEATHER_LATITUDE_DEFAULT, 90);
+}
+
+bool device_settings_set_weather_longitude(device_settings_t *settings, const char *text)
+{
+    return settings != NULL &&
+           set_coordinate(settings, "weather_longitude", settings->weather_longitude, text,
+                          DEVICE_WEATHER_LONGITUDE_DEFAULT, 180);
 }
 
 bool device_settings_set_last_source(device_settings_t *settings,

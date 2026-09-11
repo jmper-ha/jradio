@@ -196,6 +196,40 @@ The server defaults to `pool.ntp.org`. The field can be cleared, which puts
 that back. A server on the local network works too - it is a host name, not a
 URL with a scheme. Changing it restarts the polling straight away; no reboot.
 
+### Weather
+
+Web-only as well, under "Weather". The temperature and a picture of the sky
+stand in the status strip to the left of the clock, on every screen that has a
+clock; while the weather is off or nothing has answered yet the strip looks as
+it always did.
+
+The source is a choice: **Open-Meteo** (no key), **wttr.in** (no key) or
+**OpenWeatherMap** (an account key). Three rather than one because they fail
+differently, and which of them is reachable from a given network is not
+something the firmware can know. All three are asked over plain HTTP, and that
+is a condition rather than a convenience: TLS on this board wants AES in the
+internal memory everything else is short of. The OpenWeatherMap key is kept on
+the device in a file of its own, `weather.json`, like the Yandex token: it is
+never sent back to the page, which only knows whether one is set. An empty
+field removes it.
+
+The device does not know where it stands - the coordinates are typed in: a
+latitude and a longitude in degrees, as a map writes them, to six decimals.
+Moscow by default, like the time zone. City names are refused on purpose: the
+free geocoder answers several hits per name and airports instead of cities,
+and there is nowhere on the device to pick from a list.
+
+The picture knows day from night: a sun and a moon for a clear sky, a sun and
+a moon behind a cloud for partly cloudy. Open-Meteo and OpenWeatherMap say so
+themselves; wttr.in does not, so it is asked for sunrise, sunset and the local
+time and the night is worked out from those.
+
+Polled every fifteen minutes; after a failure, in a minute and then every four.
+The last answer stays on the screen for two hours without the service, then the
+strip goes empty. Under the source picker the page shows what the panel shows,
+or the reason there is nothing: no key, the key refused, the service answered
+such-and-such a code.
+
 ### About
 
 The last item in the list. It opens a page naming the firmware version and the
@@ -231,12 +265,13 @@ everything at once, as it always has.
 ### Backup and restore
 
 Only in the web interface, as a card under the device settings. "Скачать архив"
-hands over a zip of three files: the Wi-Fi networks, the settings and the Yandex
-token - everything the device knows about itself that is not in the repository.
+hands over a zip of four files: the Wi-Fi networks, the settings, the Yandex
+token and the weather key - everything the device knows about itself that is
+not in the repository.
 The playlist is not in there; it has its own export button on the playlist page.
 
 Restoring takes either the whole archive or one file out of it - `wifi.json`,
-`settings.csv` or `yandex.json`. The page sends whatever was picked and the
+`settings.csv`, `yandex.json` or `weather.json`. The page sends whatever was picked and the
 device works out the rest. It reboots afterwards: that is the only way the
 settings, the networks and the token are certain to be re-read from the new
 files. It takes a few seconds, and the page does not need closing - the

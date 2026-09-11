@@ -74,9 +74,14 @@ CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0=y
 # Must cover the httpd session pool (WEB_SOCKET_SERVER_SOCKET_CAPACITY, see
 # web_socket.h) plus the internet radio's streaming HTTP client socket and a
 # few spares for DNS/mDNS lookups. The pool is 12 with six WebSocket clients,
-# so 16 leaves exactly the three spares that rule asks for and nothing more:
-# raising the client count again means raising this too.
-CONFIG_LWIP_MAX_SOCKETS=16
+# and 16 left exactly the three spares that rule asks for. The weather task
+# added a client socket of its own on a timer (2026-09-11), which is the
+# stream, a Yandex or DLNA fetch and the weather all wanting one at once with
+# nothing left over; twenty is that with margin, at a few dozen bytes a slot.
+# Not the cause of the ERR_CONNECTION_RESET a browser gets on one of its
+# parallel asset requests - that reproduced with the weather off, and lives
+# in the httpd's own twelve-socket pool with lru_purge off.
+CONFIG_LWIP_MAX_SOCKETS=20
 # Nothing here speaks IPv6: no source file references it, autoconfig was off,
 # and the router hands out IPv4. Measured cost of leaving it on: 33 KB of
 # flash and 1.8 KB of internal SRAM, the latter being the scarce one - TLS

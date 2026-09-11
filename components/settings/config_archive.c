@@ -24,6 +24,8 @@ const char *config_archive_member_file(config_archive_member_t member)
         return "settings.csv";
     case CONFIG_ARCHIVE_MEMBER_YANDEX:
         return "yandex.json";
+    case CONFIG_ARCHIVE_MEMBER_WEATHER:
+        return "weather.json";
     case CONFIG_ARCHIVE_MEMBER_UNKNOWN:
         break;
     }
@@ -53,8 +55,8 @@ config_archive_member_t config_archive_member_from_file(const char *name)
     for (const char *cursor = name; *cursor != '\0'; ++cursor) {
         if (*cursor == '/' || *cursor == '\\') name = cursor + 1;
     }
-    for (config_archive_member_t member = CONFIG_ARCHIVE_MEMBER_WIFI;
-         member <= CONFIG_ARCHIVE_MEMBER_YANDEX; ++member) {
+    for (config_archive_member_t member = CONFIG_ARCHIVE_MEMBER_FIRST;
+         member <= CONFIG_ARCHIVE_MEMBER_LAST; ++member) {
         if (archive_name_equals(name, config_archive_member_file(member))) return member;
     }
     return CONFIG_ARCHIVE_MEMBER_UNKNOWN;
@@ -112,6 +114,7 @@ bool config_archive_member_is_plausible(config_archive_member_t member, const vo
     switch (member) {
     case CONFIG_ARCHIVE_MEMBER_WIFI:
     case CONFIG_ARCHIVE_MEMBER_YANDEX:
+    case CONFIG_ARCHIVE_MEMBER_WEATHER:
         return archive_json_is_plausible(bytes, size);
     case CONFIG_ARCHIVE_MEMBER_SETTINGS:
         return archive_csv_is_plausible(bytes, size);

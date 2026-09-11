@@ -55,6 +55,24 @@
  * fixed 116 would do once the panel is only 240 wide. */
 #define UI_STRIP_CONTEXT_W (UI_STRIP_CLOCK_X - UI_STRIP_CONTEXT_X - 4)
 
+/* The weather, when it is on: a picture and a reading at the left edge of the
+ * strip, where the screen's name stands otherwise, and the name moves along
+ * to make room. The first draft put the pair just left of the clock, reading
+ * "+12° 20:41" as one group - and on the panel the two ran together, the
+ * reading ending seven pixels before the digits. At the margin the reading is
+ * its own thing, and the clock keeps its air on both sides.
+ *
+ * The reading is left-aligned after the picture, three pixels off it. Five
+ * halves of the body size is what "-25°" needs with a little over. ui.c moves
+ * the name and sets its width when the weather appears or goes, so a device
+ * with the weather off is exactly what it was. */
+#define UI_STRIP_WEATHER_ICON_X UI_STRIP_CONTEXT_X
+#define UI_STRIP_WEATHER_ICON_Y ((UI_STRIP_H - UI_STRIP_WEATHER_ICON_PX) / 2)
+#define UI_STRIP_WEATHER_TEXT_W (UI_FONT_BODY_PX * 5 / 2)
+#define UI_STRIP_WEATHER_TEXT_X (UI_STRIP_WEATHER_ICON_X + UI_STRIP_WEATHER_ICON_PX + 3)
+#define UI_STRIP_CONTEXT_X_WITH_WEATHER (UI_STRIP_WEATHER_TEXT_X + UI_STRIP_WEATHER_TEXT_W + 6)
+#define UI_STRIP_CONTEXT_W_WITH_WEATHER (UI_STRIP_CLOCK_X - UI_STRIP_CONTEXT_X_WITH_WEATHER - 4)
+
 /* Home screen carousel. Every icon is a 24x24 design scaled to one of three
  * sizes, so a single axis is enough - the old row needed a per-glyph vertical
  * inset because each FontAwesome symbol had its own height, and the inset only
@@ -319,6 +337,12 @@ _Static_assert(UI_SET_ROW_RIGHT - UI_SET_SWITCH_TEXT_X >= 120,
  * is printed against the name it labels. */
 _Static_assert(UI_LIST_NUMBER_W > UI_FONT_TITLE_PX * 1274 / 1000,
                "the station index leaves no gap before the name");
+/* Enough of the screen's name survives beside the weather to read "jRadio"
+ * in the body face - six glyphs at just over half an em each. */
+_Static_assert(UI_STRIP_CONTEXT_W_WITH_WEATHER >= UI_FONT_BODY_PX * 4,
+               "the status strip cannot hold the weather and the screen's name together");
+_Static_assert(UI_STRIP_WEATHER_ICON_PX <= UI_STRIP_H - 2,
+               "the weather icon is taller than the status strip");
 _Static_assert(UI_STATION_LIST_MAX_ROWS >= 3U,
                "fewer than three list rows fit this panel");
 _Static_assert(UI_SETTINGS_MAX_ROWS >= 3U,

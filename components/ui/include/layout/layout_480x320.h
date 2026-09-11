@@ -121,6 +121,10 @@
  * seven, six settings rows where it fitted nine. Both are what the panel this
  * board shipped with holds, at text half again the size. */
 #define UI_FONT_BODY_PX 18
+/* The weather picture beside the clock, a size tools/gen_feed_icons.py has
+ * drawn: two over the body face, which is what the volume icon is to the
+ * footer's on the smaller panels. */
+#define UI_STRIP_WEATHER_ICON_PX 20
 #define UI_FONT_TITLE_PX 26
 /* 32, a step up like the text faces. */
 #define UI_FONT_ICON_PX 32

@@ -9,13 +9,23 @@ static const char WIFI_JSON[] =
     "{\"version\":1,\"networks\":[{\"ssid\":\"home\",\"password\":\"secret\"}]}";
 static const char SETTINGS_CSV[] = "language,ru\nbrightness,45\nlast_station_url,http://a\n";
 static const char YANDEX_JSON[] = "{\"version\":1,\"token\":\"abc\",\"device_id\":\"d1\"}";
+static const char WEATHER_JSON[] = "{\"version\":1,\"openweathermap_key\":\"0123456789abcdef\"}";
 
 static void test_member_names_map_both_ways(void)
 {
     assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_WIFI), "wifi.json") == 0);
     assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_SETTINGS), "settings.csv") == 0);
     assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_YANDEX), "yandex.json") == 0);
+    assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_WEATHER), "weather.json") == 0);
     assert(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_UNKNOWN) == NULL);
+    /* Every member has a name and a place in the archive, and the range the
+     * loops walk covers all of them. */
+    for (config_archive_member_t member = CONFIG_ARCHIVE_MEMBER_FIRST;
+         member <= CONFIG_ARCHIVE_MEMBER_LAST; ++member) {
+        assert(config_archive_member_file(member) != NULL);
+        assert(config_archive_member_from_file(config_archive_member_file(member)) == member);
+    }
+    assert(CONFIG_ARCHIVE_MEMBER_LAST - CONFIG_ARCHIVE_MEMBER_FIRST + 1 == CONFIG_ARCHIVE_MEMBER_MAX);
 
     assert(config_archive_member_from_file("wifi.json") == CONFIG_ARCHIVE_MEMBER_WIFI);
     /* A zip made by a file manager out of the config directory keeps the
@@ -24,6 +34,7 @@ static void test_member_names_map_both_ways(void)
            CONFIG_ARCHIVE_MEMBER_SETTINGS);
     assert(config_archive_member_from_file("littlefs\\config\\Yandex.JSON") ==
            CONFIG_ARCHIVE_MEMBER_YANDEX);
+    assert(config_archive_member_from_file("weather.json") == CONFIG_ARCHIVE_MEMBER_WEATHER);
     assert(config_archive_member_from_file("stations.csv") == CONFIG_ARCHIVE_MEMBER_UNKNOWN);
     assert(config_archive_member_from_file("wifi.json.bak") == CONFIG_ARCHIVE_MEMBER_UNKNOWN);
     assert(config_archive_member_from_file("config/") == CONFIG_ARCHIVE_MEMBER_UNKNOWN);
@@ -38,6 +49,10 @@ static void test_plausibility_gates_the_obvious_wrong_file(void)
                                               sizeof(YANDEX_JSON) - 1U));
     assert(config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_SETTINGS, SETTINGS_CSV,
                                               sizeof(SETTINGS_CSV) - 1U));
+    assert(config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_WEATHER, WEATHER_JSON,
+                                              sizeof(WEATHER_JSON) - 1U));
+    assert(!config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_WEATHER, SETTINGS_CSV,
+                                               sizeof(SETTINGS_CSV) - 1U));
     /* Leading and trailing whitespace is what a hand-edited file has. */
     static const char padded[] = "\n  {\"version\":1,\"networks\":[]}\n";
     assert(config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_WIFI, padded,

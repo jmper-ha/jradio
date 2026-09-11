@@ -101,6 +101,10 @@
  * spend: nine in a list and ten in Settings, where the landscape shape gets
  * five and six. */
 #define UI_FONT_BODY_PX 18
+/* The weather picture beside the clock, a size tools/gen_feed_icons.py has
+ * drawn: two over the body face, which is what the volume icon is to the
+ * footer's on the smaller panels. */
+#define UI_STRIP_WEATHER_ICON_PX 20
 #define UI_FONT_TITLE_PX 26
 #define UI_FONT_ICON_PX 32
 /* 48 is the largest Montserrat LVGL ships. It bounds nothing on this shape any

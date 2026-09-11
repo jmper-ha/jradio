@@ -89,6 +89,9 @@ const ids = [
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal',
   'device-timezone', 'device-ntp',
+  'device-weather', 'device-weather-latitude', 'device-weather-longitude',
+  'device-weather-key', 'device-weather-key-row', 'device-weather-now-row',
+  'device-weather-now',
   'backup-status', 'backup-file', 'backup-restore',
 ];
 const elements = Object.fromEntries(ids.map((id) => [`#${id}`, new Element()]));
@@ -146,6 +149,9 @@ let settingsReply = {
   available: {home_screen: true, yandex_music: false, dlna: true},
   brightness_min: 10, brightness_max: 90,
   timezone: 'asia/yekaterinburg', ntp_server: 'ntp.example.lan',
+  weather: 'off', weather_latitude: '55.75', weather_longitude: '37.62',
+  openweathermap_key_set: false, weather_state: 'off', weather_http_status: 0,
+  weather_report: null,
   timezones: [
     {id: 'europe/moscow', label: 'Москва (UTC+3)'},
     {id: 'asia/yekaterinburg', label: 'Екатеринбург (UTC+5)'},
@@ -382,6 +388,15 @@ assert.equal(elements['#wifi-active'].textContent, 'other');
 // Yandex Music: REST, so everything below settles on microtasks rather than
 // on socket frames. The synchronous assertions above all ran before the very
 // first fetch resolved, which is why this part is at the end and async.
+/* Asks the page for the device document again the way a change does: a
+   coordinate written back unchanged is the cheapest request that answers with
+   the whole document. */
+async function refreshSettings() {
+  elements['#device-weather-latitude'].value = settingsReply.weather_latitude;
+  elements['#device-weather-latitude'].emit('change');
+  await settle();
+}
+
 async function settle() {
   // Deep enough for the longest chain on the page: a refused settings write
   // falls into its catch, re-reads the document and only then reports.
@@ -898,6 +913,87 @@ function lastYandexTimer() {
   // to nothing, and the space is a typo rather than a choice.
   assert.deepEqual(JSON.parse(fetchCalls.at(-1).options.body),
                    {field: 'ntp_server', value: 'time.cloudflare.com'});
+
+  /* The weather. Off on this device, so the key row and the reading are both
+     out of the way, and the coordinates show what the card holds. */
+  assert.equal(elements['#device-weather'].value, 'off');
+  assert.equal(elements['#device-weather-latitude'].value, '55.75');
+  assert.equal(elements['#device-weather-longitude'].value, '37.62');
+  assert.equal(elements['#device-weather-key-row'].hidden, true);
+  assert.equal(elements['#device-weather-now-row'].hidden, true);
+
+  /* Choosing the service that wants a key brings the key row out, and the
+     device says there is no key yet. The field carries nothing: the device
+     never sends a key back, only whether it has one. */
+  settingsReply = {...settingsReply, weather: 'openweathermap', weather_state: 'no_key'};
+  elements['#device-weather'].value = 'openweathermap';
+  elements['#device-weather'].emit('change');
+  await settle();
+  assert.deepEqual(JSON.parse(fetchCalls.at(-1).options.body),
+                   {field: 'weather', value: 'openweathermap'});
+  assert.equal(elements['#device-weather-key-row'].hidden, false);
+  assert.equal(elements['#device-weather-key'].value, '');
+  assert.equal(elements['#device-weather-key'].placeholder, 'не задан');
+  assert.equal(elements['#device-weather-now-row'].hidden, false);
+  assert.equal(elements['#device-weather-now'].textContent, 'нет ключа');
+
+  /* The key goes out as its own field and comes back as a state, never as
+     itself; the field is emptied once the device has it. */
+  settingsReply = {...settingsReply, openweathermap_key_set: true, weather_state: 'waiting'};
+  elements['#device-weather-key'].value = ' 0123456789abcdef0123456789abcdef ';
+  elements['#device-weather-key'].emit('change');
+  await settle();
+  assert.deepEqual(JSON.parse(fetchCalls.at(-1).options.body),
+                   {field: 'openweathermap_key', value: '0123456789abcdef0123456789abcdef'});
+  assert.equal(elements['#device-weather-key'].value, '');
+  assert.equal(elements['#device-weather-key'].placeholder, 'задан');
+  assert.equal(elements['#device-weather-now'].textContent, 'ожидание ответа…');
+  /* "Waiting" asks again on its own a few seconds later, so the line does not
+     say so until somebody reloads. */
+  const waitingRefresh = timers.at(-1);
+  assert.equal(waitingRefresh.delay, 5000);
+  const beforeRefresh = fetchCalls.length;
+  settingsReply = {...settingsReply, weather_state: 'ok', weather_http_status: 200,
+                   weather_report: {temperature: 13, icon: 'partly_cloudy_night'}};
+  waitingRefresh.callback();
+  await settle();
+  assert.equal(fetchCalls.length, beforeRefresh + 1);
+  assert.equal(elements['#device-weather-now'].textContent, '+13°, переменная облачность');
+  assert.equal(elements['#device-weather-now'].classList.values.has('is-ok'), true);
+
+  /* A refused key is said as such, not as a number. And a service that is
+     simply down says which number it answered. */
+  settingsReply = {...settingsReply, weather_state: 'failed', weather_http_status: 401,
+                   weather_report: null};
+  await refreshSettings();
+  assert.equal(elements['#device-weather-now'].textContent, 'ключ не принят');
+  assert.equal(elements['#device-weather-now'].classList.values.has('is-ok'), false);
+  settingsReply = {...settingsReply, weather: 'wttr', weather_http_status: 503};
+  await refreshSettings();
+  assert.equal(elements['#device-weather-now'].textContent, 'сервис ответил 503');
+  assert.equal(elements['#device-weather-key-row'].hidden, true);
+  /* Below zero the sign is the reading's own; zero has none. */
+  settingsReply = {...settingsReply, weather_state: 'ok', weather_http_status: 200,
+                   weather_report: {temperature: -7, icon: 'snow'}};
+  await refreshSettings();
+  assert.equal(elements['#device-weather-now'].textContent, '-7°, снег');
+  settingsReply = {...settingsReply, weather_report: {temperature: 0, icon: 'none'}};
+  await refreshSettings();
+  assert.equal(elements['#device-weather-now'].textContent, '0°');
+
+  /* A live update over the socket carries the service but not the state, and
+     leaves the line alone rather than blanking it. */
+  sendEvent(second, {
+    type: 'settings.update', revision: 40,
+    settings: {...settingsReply, weather: 'open_meteo'},
+  });
+  assert.equal(elements['#device-weather'].value, 'open_meteo');
+  assert.equal(elements['#device-weather-now'].textContent, '0°');
+
+  /* Off takes the line away with it. */
+  settingsReply = {...settingsReply, weather: 'off', weather_state: 'off', weather_report: null};
+  await refreshSettings();
+  assert.equal(elements['#device-weather-now-row'].hidden, true);
 
   /* Backup and restore. Nothing is chosen yet, so there is nothing to send -
      a Restore button that is live before a file is picked is a click that

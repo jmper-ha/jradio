@@ -11,32 +11,52 @@
  * silently truncating it into something that parses. */
 #define WEB_SETTINGS_BODY_MAX 192U
 
+/* The named values of a choice field, in enum order. Four is the widest
+ * choice on the page - the weather service - and the rest leave the tail
+ * NULL. */
+#define WEB_SETTINGS_CHOICE_MAX 4
+
 typedef struct {
     const char *name;
     web_settings_field_t field;
-    /* The two named values of a choice field, in enum order; NULL for a switch,
-     * for a number and for text. */
-    const char *first;
-    const char *second;
+    /* Empty for a switch, for a number and for text. */
+    const char *choices[WEB_SETTINGS_CHOICE_MAX];
     bool number;
     bool text;
 } field_descriptor_t;
 
+/* The service names are the ones settings.csv stores, so a page and a card
+ * written a year apart still mean the same thing by "wttr". In enum order. */
+#define WEB_SETTINGS_WEATHER_NAMES "off", "open_meteo", "wttr", "openweathermap"
+static const char *const k_weather_names[] = {WEB_SETTINGS_WEATHER_NAMES};
+
 static const field_descriptor_t k_fields[] = {
-    {"language", WEB_SETTINGS_FIELD_LANGUAGE, "ru", "en", false, false},
-    {"home_screen", WEB_SETTINGS_FIELD_HOME_SCREEN, "text", "feed", false, false},
-    {"scroll", WEB_SETTINGS_FIELD_SCROLL, "bounce", "left", false, false},
-    {"buffer_view", WEB_SETTINGS_FIELD_BUFFER_VIEW, "text", "graph", false, false},
-    {"autoplay", WEB_SETTINGS_FIELD_AUTOPLAY, NULL, NULL, false, false},
-    {"yandex_music", WEB_SETTINGS_FIELD_YANDEX_MUSIC, NULL, NULL, false, false},
-    {"dlna", WEB_SETTINGS_FIELD_DLNA, NULL, NULL, false, false},
-    {"flip_vertical", WEB_SETTINGS_FIELD_FLIP_VERTICAL, NULL, NULL, false, false},
-    {"flip_horizontal", WEB_SETTINGS_FIELD_FLIP_HORIZONTAL, NULL, NULL, false, false},
-    {"brightness", WEB_SETTINGS_FIELD_BRIGHTNESS, NULL, NULL, true, false},
-    {"volume", WEB_SETTINGS_FIELD_VOLUME, NULL, NULL, true, false},
-    {"timezone", WEB_SETTINGS_FIELD_TIMEZONE, NULL, NULL, false, true},
-    {"ntp_server", WEB_SETTINGS_FIELD_NTP_SERVER, NULL, NULL, false, true},
+    {"language", WEB_SETTINGS_FIELD_LANGUAGE, {"ru", "en"}, false, false},
+    {"home_screen", WEB_SETTINGS_FIELD_HOME_SCREEN, {"text", "feed"}, false, false},
+    {"scroll", WEB_SETTINGS_FIELD_SCROLL, {"bounce", "left"}, false, false},
+    {"buffer_view", WEB_SETTINGS_FIELD_BUFFER_VIEW, {"text", "graph"}, false, false},
+    {"autoplay", WEB_SETTINGS_FIELD_AUTOPLAY, {NULL}, false, false},
+    {"yandex_music", WEB_SETTINGS_FIELD_YANDEX_MUSIC, {NULL}, false, false},
+    {"dlna", WEB_SETTINGS_FIELD_DLNA, {NULL}, false, false},
+    {"flip_vertical", WEB_SETTINGS_FIELD_FLIP_VERTICAL, {NULL}, false, false},
+    {"flip_horizontal", WEB_SETTINGS_FIELD_FLIP_HORIZONTAL, {NULL}, false, false},
+    {"brightness", WEB_SETTINGS_FIELD_BRIGHTNESS, {NULL}, true, false},
+    {"volume", WEB_SETTINGS_FIELD_VOLUME, {NULL}, true, false},
+    {"timezone", WEB_SETTINGS_FIELD_TIMEZONE, {NULL}, false, true},
+    {"ntp_server", WEB_SETTINGS_FIELD_NTP_SERVER, {NULL}, false, true},
+    {"weather", WEB_SETTINGS_FIELD_WEATHER, {WEB_SETTINGS_WEATHER_NAMES}, false, false},
+    {"weather_latitude", WEB_SETTINGS_FIELD_WEATHER_LATITUDE, {NULL}, false, true},
+    {"weather_longitude", WEB_SETTINGS_FIELD_WEATHER_LONGITUDE, {NULL}, false, true},
+    {"openweathermap_key", WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY, {NULL}, false, true},
 };
+
+/* A provider the page has no name for - a newer card - reads as off, which is
+ * what the device does with it too. */
+static const char *weather_name(uint8_t provider)
+{
+    const size_t count = sizeof(k_weather_names) / sizeof(k_weather_names[0]);
+    return provider < count ? k_weather_names[provider] : k_weather_names[0];
+}
 
 static const field_descriptor_t *descriptor_by_name(const char *name)
 {
@@ -59,15 +79,14 @@ static bool parse_value(const field_descriptor_t *descriptor, const cJSON *value
         strcpy(change->text, value->valuestring);
         return true;
     }
-    if (descriptor->first != NULL) {
+    if (descriptor->choices[0] != NULL) {
         if (!cJSON_IsString(value) || value->valuestring == NULL) return false;
-        if (strcmp(value->valuestring, descriptor->first) == 0) {
-            *result = 0;
-            return true;
-        }
-        if (strcmp(value->valuestring, descriptor->second) == 0) {
-            *result = 1;
-            return true;
+        for (int index = 0; index < WEB_SETTINGS_CHOICE_MAX; ++index) {
+            if (descriptor->choices[index] == NULL) break;
+            if (strcmp(value->valuestring, descriptor->choices[index]) == 0) {
+                *result = index;
+                return true;
+            }
         }
         return false;
     }
@@ -162,6 +181,16 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_timezone(settings, change->text);
     case WEB_SETTINGS_FIELD_NTP_SERVER:
         return device_settings_set_ntp_server(settings, change->text);
+    case WEB_SETTINGS_FIELD_WEATHER:
+        return device_settings_set_weather_provider(settings,
+                                                    (device_weather_provider_t)change->value);
+    case WEB_SETTINGS_FIELD_WEATHER_LATITUDE:
+        return device_settings_set_weather_latitude(settings, change->text);
+    case WEB_SETTINGS_FIELD_WEATHER_LONGITUDE:
+        return device_settings_set_weather_longitude(settings, change->text);
+    case WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY:
+        /* Not the card's: the handler routes it to the key file. */
+        return false;
     default:
         return false;
     }
@@ -190,6 +219,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .flip_vertical = settings->flip_vertical,
         .flip_horizontal = settings->flip_horizontal,
         .timezone = (uint8_t)device_timezone_index_of(settings->timezone),
+        .weather = (uint8_t)settings->weather_provider,
         .home_screen_available = home_screen_available,
         .yandex_available = yandex_available,
         .dlna_available = dlna_available,
@@ -214,7 +244,7 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->dlna == right->dlna &&
            left->flip_vertical == right->flip_vertical &&
            left->flip_horizontal == right->flip_horizontal &&
-           left->timezone == right->timezone &&
+           left->timezone == right->timezone && left->weather == right->weather &&
            left->home_screen_available == right->home_screen_available &&
            left->yandex_available == right->yandex_available &&
            left->dlna_available == right->dlna_available;
@@ -257,6 +287,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_format(writer, "%u", (unsigned)view->volume);
     web_json_literal(writer, ",\"timezone\":");
     web_json_string(writer, view_timezone_id(view));
+    web_json_literal(writer, ",\"weather\":");
+    web_json_string(writer, weather_name(view->weather));
     /* What this build has, not what it is set to: a switch for a source the
      * firmware was compiled without would change a value nothing reads. */
     web_json_literal(writer, ",\"available\":{\"home_screen\":");
@@ -285,21 +317,46 @@ void web_settings_write(web_json_writer_t *writer,
 }
 
 size_t web_settings_serialize(char *output, size_t output_size,
-                              const web_settings_view_t *view, const char *ntp_server)
+                              const web_settings_view_t *view,
+                              const web_settings_document_t *document)
 {
     web_json_writer_t writer;
     web_json_init(&writer, output, output_size, output_size);
-    if (view == NULL) return 0U;
+    if (view == NULL || document == NULL) return 0U;
     /* Out of the document being written rather than off the card: the zone
      * names have to be in the same language as the labels beside them. */
     const device_language_t language = (device_language_t)view->language;
     web_json_literal(&writer, "{");
     write_body(&writer, view);
-    /* Only in the document, not in the live diff: a time server is typed once
-     * in a device's life, and the zone list never changes at all. Both would
-     * otherwise be compared on every pass and kept per queued frame. */
+    /* Only in the document, not in the live diff: a time server and a pair of
+     * coordinates are typed once in a device's life, and the zone list never
+     * changes at all. All would otherwise be compared on every pass and kept
+     * per queued frame. */
     web_json_literal(&writer, ",\"ntp_server\":");
-    web_json_string(&writer, ntp_server == NULL ? "" : ntp_server);
+    web_json_string(&writer, document->ntp_server == NULL ? "" : document->ntp_server);
+    web_json_literal(&writer, ",\"weather_latitude\":");
+    web_json_string(&writer,
+                    document->weather_latitude == NULL ? "" : document->weather_latitude);
+    web_json_literal(&writer, ",\"weather_longitude\":");
+    web_json_string(&writer,
+                    document->weather_longitude == NULL ? "" : document->weather_longitude);
+    /* Whether, never what: the key is a secret and the page has no need of
+     * it beyond knowing there is one. */
+    web_json_literal(&writer, ",\"openweathermap_key_set\":");
+    web_json_literal(&writer, document->openweathermap_key_set ? "true" : "false");
+    web_json_literal(&writer, ",\"weather_state\":");
+    web_json_string(&writer, document->weather_state == NULL ? "off" : document->weather_state);
+    web_json_literal(&writer, ",\"weather_http_status\":");
+    web_json_format(&writer, "%d", document->weather_http_status);
+    if (document->weather_valid) {
+        web_json_literal(&writer, ",\"weather_report\":{\"temperature\":");
+        web_json_format(&writer, "%d", document->weather_temperature);
+        web_json_literal(&writer, ",\"icon\":");
+        web_json_string(&writer, document->weather_icon == NULL ? "none" : document->weather_icon);
+        web_json_literal(&writer, "}");
+    } else {
+        web_json_literal(&writer, ",\"weather_report\":null");
+    }
     web_json_literal(&writer, ",\"timezones\":[");
     for (size_t index = 0U; index < device_timezone_count(); ++index) {
         const device_timezone_t *const zone = device_timezone_at(index);

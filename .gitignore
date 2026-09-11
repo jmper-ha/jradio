@@ -11,6 +11,8 @@ sdkconfig.*.old
 data/config/wifi.json
 data/config/wifi.tmp
 data/config/yandex.json
+# The OpenWeatherMap key: a secret, like the token above.
+data/config/weather.json
 data/config/*.tmp
 
 # Python, editor and OS files

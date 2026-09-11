@@ -28,6 +28,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "internet_radio.h"
 #include "player_control.h"
 #include "station_catalog.h"
+#include "weather.h"
 #include "ui_now_playing.h"
 #include "version_info.h"
 #include "file_storage.h"
@@ -1276,9 +1277,28 @@ static esp_err_t web_server_settings_api_get(httpd_req_t *request)
                            web_server_home_screen_available(s_settings_scratch.yandex_music,
                                                             s_settings_scratch.dlna),
                            web_server_yandex_available(), web_server_dlna_available());
+    /* What the weather task last said, so the page can say beside the picker
+     * whether the chosen service is answering - the panel shows a reading or
+     * nothing, and nothing is not an explanation. */
+    weather_status_t weather;
+    weather_status(&weather);
+    static const char *const k_weather_states[] = {"off", "no_key", "waiting", "ok", "failed"};
+    const web_settings_document_t document = {
+        .ntp_server = s_settings_scratch.ntp_server,
+        .weather_latitude = s_settings_scratch.weather_latitude,
+        .weather_longitude = s_settings_scratch.weather_longitude,
+        .openweathermap_key_set = weather_key_is_set(),
+        .weather_state = (size_t)weather.state < sizeof(k_weather_states) / sizeof(k_weather_states[0])
+                             ? k_weather_states[weather.state]
+                             : "off",
+        .weather_http_status = weather.http_status,
+        .weather_valid = weather.report.valid,
+        .weather_temperature = weather.report.temperature_c,
+        .weather_icon = weather_icon_name(weather.report.icon),
+    };
     const size_t length = web_settings_serialize(s_file_chunk_buffer,
                                                  sizeof(s_file_chunk_buffer),
-                                                 &view, s_settings_scratch.ntp_server);
+                                                 &view, &document);
     if (length == 0U) {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
                             "Settings too large");
@@ -1510,6 +1530,24 @@ static esp_err_t web_server_settings_api_post(httpd_req_t *request)
         httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Unknown setting");
         return ESP_FAIL;
     }
+    /* The one field on the page that is not a setting: a secret, on its way
+     * to its own file. The weather task is told by the store itself, so there
+     * is no flag to raise for the UI. */
+    if (change.field == WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY) {
+        const esp_err_t saved = weather_key_save(change.text);
+        web_server_secure_zero(change.text, sizeof(change.text));
+        web_server_secure_zero(body, sizeof(body));
+        if (saved == ESP_ERR_INVALID_ARG) {
+            httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Not a usable key");
+            return ESP_FAIL;
+        }
+        if (saved != ESP_OK) {
+            httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                "Failed to save the key");
+            return ESP_FAIL;
+        }
+        return web_server_settings_api_get(request);
+    }
     /* Read, change, write - through the same setters the on-device screen
      * uses, so the two writers cannot disagree about the file's shape.
      * settings_csv serialises the read-modify-write, which is what makes a
@@ -1526,7 +1564,11 @@ static esp_err_t web_server_settings_api_post(httpd_req_t *request)
     }
     /* The value is on the card; making it true of the running device is the
      * UI task's job - it owns the backlight, the panel rotation, the volume
-     * and the menus. */
+     * and the menus. The weather is the exception, told here as well: the
+     * answer below carries its state, and "off" for a service that was just
+     * switched on is what the page would show until somebody reloaded. The
+     * UI task's own call a moment later finds nothing changed. */
+    weather_apply(&s_settings_scratch);
     device_settings_mark_changed();
     return web_server_settings_api_get(request);
 }

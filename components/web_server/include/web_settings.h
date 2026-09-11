@@ -40,11 +40,19 @@ typedef enum {
     WEB_SETTINGS_FIELD_VOLUME,
     WEB_SETTINGS_FIELD_TIMEZONE,
     WEB_SETTINGS_FIELD_NTP_SERVER,
+    WEB_SETTINGS_FIELD_WEATHER,
+    WEB_SETTINGS_FIELD_WEATHER_LATITUDE,
+    WEB_SETTINGS_FIELD_WEATHER_LONGITUDE,
+    /* Not a device setting at all - a secret that goes to its own file - but
+     * it arrives on the same page in the same shape, so it is parsed here and
+     * routed by the handler: web_settings_apply() refuses it. */
+    WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY,
 } web_settings_field_t;
 
-/* Room for the longest text a request may carry - a host name - with a byte to
- * notice one that is longer rather than storing half of it. */
-#define WEB_SETTINGS_TEXT_MAX DEVICE_NTP_SERVER_MAX
+/* Room for the longest text a request may carry - a host name or a key, both
+ * sixty-four - with a byte to notice one that is longer rather than storing
+ * half of it. */
+#define WEB_SETTINGS_TEXT_MAX 65
 
 typedef struct {
     web_settings_field_t field;
@@ -52,10 +60,11 @@ typedef struct {
      * the two numbers. Validated at parse time, so an applier never has to
      * range-check again. */
     int value;
-    /* The two text fields - the zone id and the time server - and empty for
-     * every other. Text rather than another ordinal because neither is a
-     * closed set the page and the device could agree on by position: the zone
-     * list grows in the firmware, and a host name is whatever the user has. */
+    /* The text fields - the zone id, the time server, the two coordinates and
+     * the key - and empty for every other. Text rather than another ordinal
+     * because none is a closed set the page and the device could agree on by
+     * position: the zone list grows in the firmware, and a host name is
+     * whatever the user has. */
     char text[WEB_SETTINGS_TEXT_MAX];
 } web_settings_change_t;
 
@@ -97,6 +106,9 @@ typedef struct {
      * string here would cost every frame the whole id. Past the end means the
      * card names a zone this build does not have. */
     uint8_t timezone;
+    /* The weather service, as device_weather_provider_t. The coordinates and
+     * the key stay out of the live diff with the time server: typed once. */
+    uint8_t weather;
     bool home_screen_available;
     bool yandex_available;
     bool dlna_available;
@@ -115,13 +127,32 @@ bool web_settings_view_equal(const web_settings_view_t *left,
 void web_settings_write(web_json_writer_t *writer,
                         const web_settings_view_t *view);
 
-/* The same object as a standalone document, plus the two things that are not
- * worth a place in the live diff: the time server, which changes once in a
- * device's life, and the list of zones to choose from, which does not change
- * at all. The list is sent rather than written into the page so that adding a
- * zone is one line of firmware and the two cannot describe different sets.
+/* The part of the document that is typed once and never diffed: the time
+ * server, the weather's coordinates, and whether a key is on file - never the
+ * key itself. */
+typedef struct {
+    const char *ntp_server;
+    const char *weather_latitude;
+    const char *weather_longitude;
+    bool openweathermap_key_set;
+    /* What the weather task last said, as the page shows it beside the
+     * picker: "off", "no_key", "waiting", "ok", "failed", plus the HTTP status
+     * of a failure and the reading, when there is one. */
+    const char *weather_state;
+    int weather_http_status;
+    bool weather_valid;
+    int weather_temperature;
+    const char *weather_icon;
+} web_settings_document_t;
+
+/* The same object as a standalone document, plus what is not worth a place in
+ * the live diff: the fields above, which change once in a device's life, and
+ * the list of zones to choose from, which does not change at all. The list is
+ * sent rather than written into the page so that adding a zone is one line of
+ * firmware and the two cannot describe different sets.
  *
  * Returns the length written, or 0 when the buffer was too small - in which
  * case nothing usable is left in it. */
 size_t web_settings_serialize(char *output, size_t output_size,
-                              const web_settings_view_t *view, const char *ntp_server);
+                              const web_settings_view_t *view,
+                              const web_settings_document_t *document);

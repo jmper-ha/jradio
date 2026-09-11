@@ -134,6 +134,41 @@
               </div>
 
               <div class="device-group">
+                <h3 data-i18n="settings.group_weather">Погода</h3>
+                <div class="device-row">
+                  <label for="device-weather" data-i18n="settings.weather">Источник</label>
+                  <select id="device-weather" data-field="weather">
+                    <option value="off" data-i18n="settings.weather_off">Выключено</option>
+                    <option value="open_meteo">Open-Meteo</option>
+                    <option value="wttr">wttr.in</option>
+                    <option value="openweathermap">OpenWeatherMap</option>
+                  </select>
+                </div>
+                <div class="device-row">
+                  <label for="device-weather-latitude" data-i18n="settings.latitude">Широта</label>
+                  <input id="device-weather-latitude" type="text" inputmode="decimal" spellcheck="false"
+                         autocapitalize="off" autocomplete="off" maxlength="15"
+                         placeholder="55.75" data-field="weather_latitude">
+                </div>
+                <div class="device-row">
+                  <label for="device-weather-longitude" data-i18n="settings.longitude">Долгота</label>
+                  <input id="device-weather-longitude" type="text" inputmode="decimal" spellcheck="false"
+                         autocapitalize="off" autocomplete="off" maxlength="15"
+                         placeholder="37.62" data-field="weather_longitude">
+                </div>
+                <div class="device-row" id="device-weather-key-row" hidden>
+                  <label for="device-weather-key" data-i18n="settings.owm_key">Ключ OpenWeatherMap</label>
+                  <input id="device-weather-key" type="password" spellcheck="false"
+                         autocapitalize="off" autocomplete="off" maxlength="64"
+                         data-field="openweathermap_key">
+                </div>
+                <div class="device-row" id="device-weather-now-row" hidden>
+                  <span class="row-label" data-i18n="settings.weather_now">Сейчас</span>
+                  <span id="device-weather-now" class="row-value"></span>
+                </div>
+              </div>
+
+              <div class="device-group">
                 <h3 data-i18n="settings.group_display">Экран</h3>
                 <div class="device-row">
                   <label for="device-brightness" data-i18n="settings.brightness">Яркость</label>
@@ -155,6 +190,7 @@
 
             <p class="field-note" data-i18n="note.device">Записывается в settings.csv устройства и применяется сразу — экран и кнопки на корпусе показывают то же самое.</p>
             <p class="field-note" data-i18n="note.time">Часов у устройства нет: время оно спрашивает у сервера, когда появляется сеть. Поле сервера можно очистить — вернётся pool.ntp.org.</p>
+            <p class="field-note" data-i18n="note.weather">Погода показывается рядом с часами. Координаты — широта и долгота в градусах, как их пишет карта: 55.75 и 37.62 для Москвы. Open-Meteo и wttr.in ключа не требуют; OpenWeatherMap требует — ключ хранится на устройстве отдельным файлом и входит в резервную копию; чтобы заменить ключ, введите новый, чтобы удалить — очистите поле.</p>
           </div>
         </section>
 
@@ -168,7 +204,7 @@
           </div>
 
           <div class="card-body" id="backup-body" hidden>
-            <p class="field-note" data-i18n="note.backup">В архив попадает всё, что устройство знает о себе: сети Wi-Fi, настройки и токен ЯМузыки. Плейлист сохраняется отдельно, на странице плейлиста.</p>
+            <p class="field-note" data-i18n="note.backup">В архив попадает всё, что устройство знает о себе: сети Wi-Fi, настройки, токен ЯМузыки и ключ погоды. Плейлист сохраняется отдельно, на странице плейлиста.</p>
 
             <div class="settings-actions">
               <a id="backup-download" class="secondary-button" href="/api/backup" download data-i18n="backup.download">Скачать архив</a>
@@ -179,8 +215,8 @@
               <button id="backup-restore" class="primary-button" type="button" disabled data-i18n="backup.restore">Восстановить</button>
             </div>
 
-            <p class="field-note" data-i18n="note.restore">Восстановить можно весь архив целиком или один файл из него — wifi.json, settings.csv или yandex.json. После восстановления устройство перезагрузится.</p>
-            <p class="field-note" data-i18n="note.backup_secret">Пароли Wi-Fi и токен ЯМузыки лежат в архиве открытым текстом: храните его так же, как хранили бы пароль.</p>
+            <p class="field-note" data-i18n="note.restore">Восстановить можно весь архив целиком или один файл из него — wifi.json, settings.csv, yandex.json или weather.json. После восстановления устройство перезагрузится.</p>
+            <p class="field-note" data-i18n="note.backup_secret">Пароли Wi-Fi, токен ЯМузыки и ключ погоды лежат в архиве открытым текстом: храните его так же, как хранили бы пароль.</p>
           </div>
         </section>
       </div>

@@ -39,6 +39,7 @@
 #include "ui_station_list.h"
 #include "ui_text_scroll.h"
 #include "ui_status_bar.h"
+#include "weather.h"
 #include "ui_web_address.h"
 #include "ui_yandex_screen.h"
 #include "yandex_catalog.h"
@@ -197,6 +198,13 @@ typedef struct {
     lv_obj_t *context;
     lv_obj_t *clock;
     lv_obj_t *rssi;
+    /* The weather, at the left edge: a picture and a reading. Both hidden
+     * while there is nothing to show, and the screen's name moves back to the
+     * margin - see UI_STRIP_CONTEXT_X_WITH_WEATHER. */
+    lv_obj_t *weather_icon;
+    lv_obj_t *weather_text;
+    bool weather_shown;
+    weather_icon_t weather_icon_kind;
     lv_obj_t *bars[UI_WIFI_BARS];
     /* Per strip, not shared: only the active screen's is refreshed, so a
      * shared cache would go stale the moment the screen changed and leave the
@@ -674,6 +682,24 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     lv_obj_set_style_text_color(strip->clock, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_label_set_text(strip->clock, "");
 
+    /* Built hidden: the weather is off on a fresh card, and the first report
+     * is a quarter of a minute away at best. The picture is an A8 bitmap
+     * recoloured to the clock's shade, the same way the carousel's are. */
+    strip->weather_icon = lv_image_create(screen);
+    lv_obj_set_pos(strip->weather_icon, UI_STRIP_WEATHER_ICON_X, UI_STRIP_WEATHER_ICON_Y);
+    lv_obj_set_style_image_recolor(strip->weather_icon, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_image_recolor_opa(strip->weather_icon, LV_OPA_COVER, 0);
+    lv_obj_add_flag(strip->weather_icon, LV_OBJ_FLAG_HIDDEN);
+    strip->weather_text = lv_label_create(screen);
+    lv_obj_set_pos(strip->weather_text, UI_STRIP_WEATHER_TEXT_X, 5);
+    lv_obj_set_width(strip->weather_text, UI_STRIP_WEATHER_TEXT_W);
+    lv_obj_set_style_text_align(strip->weather_text, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_style_text_color(strip->weather_text, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_label_set_text(strip->weather_text, "");
+    lv_obj_add_flag(strip->weather_text, LV_OBJ_FLAG_HIDDEN);
+    strip->weather_shown = false;
+    strip->weather_icon_kind = WEATHER_ICON_NONE;
+
     for (int bar = 0; bar < UI_WIFI_BARS; ++bar) {
         lv_obj_t *block = lv_obj_create(screen);
         const int height = 3 + bar * 3;
@@ -694,6 +720,73 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     lv_label_set_text(strip->rssi, "");
 }
 
+/* The bitmap for a report's picture at this panel's strip size, NULL when
+ * there is none to draw. One table per size the generator emitted, chosen by
+ * the shape file's UI_STRIP_WEATHER_ICON_PX the way the fonts are. */
+#define UI_WEATHER_BITMAP_(name, px) ui_feed_icon_##name##_##px
+#define UI_WEATHER_BITMAP(name, px) UI_WEATHER_BITMAP_(name, px)
+static const lv_image_dsc_t *ui_weather_bitmap(weather_icon_t icon)
+{
+    switch (icon) {
+    case WEATHER_ICON_CLEAR_DAY:
+        return &UI_WEATHER_BITMAP(clear_day, UI_STRIP_WEATHER_ICON_PX);
+    case WEATHER_ICON_CLEAR_NIGHT:
+        return &UI_WEATHER_BITMAP(clear_night, UI_STRIP_WEATHER_ICON_PX);
+    case WEATHER_ICON_PARTLY_CLOUDY_DAY:
+        return &UI_WEATHER_BITMAP(partly_cloudy_day, UI_STRIP_WEATHER_ICON_PX);
+    case WEATHER_ICON_PARTLY_CLOUDY_NIGHT:
+        return &UI_WEATHER_BITMAP(partly_cloudy_night, UI_STRIP_WEATHER_ICON_PX);
+    case WEATHER_ICON_CLOUDY: return &UI_WEATHER_BITMAP(cloudy, UI_STRIP_WEATHER_ICON_PX);
+    case WEATHER_ICON_FOG: return &UI_WEATHER_BITMAP(fog, UI_STRIP_WEATHER_ICON_PX);
+    case WEATHER_ICON_RAIN: return &UI_WEATHER_BITMAP(rain, UI_STRIP_WEATHER_ICON_PX);
+    case WEATHER_ICON_SNOW: return &UI_WEATHER_BITMAP(snow, UI_STRIP_WEATHER_ICON_PX);
+    case WEATHER_ICON_SLEET: return &UI_WEATHER_BITMAP(sleet, UI_STRIP_WEATHER_ICON_PX);
+    case WEATHER_ICON_THUNDERSTORM:
+        return &UI_WEATHER_BITMAP(thunderstorm, UI_STRIP_WEATHER_ICON_PX);
+    case WEATHER_ICON_NONE:
+    case WEATHER_ICON_COUNT: break;
+    }
+    return NULL;
+}
+
+static void ui_status_strip_update_weather(ui_status_strip_t *strip)
+{
+    weather_report_t report;
+    const bool shown = weather_current(&report);
+    if (shown != strip->weather_shown) {
+        strip->weather_shown = shown;
+        /* The screen's name moves along while the weather is up and back
+         * to the margin after, so a device with the weather off is exactly
+         * what it was. */
+        lv_obj_set_x(strip->context, shown ? UI_STRIP_CONTEXT_X_WITH_WEATHER : UI_STRIP_CONTEXT_X);
+        lv_obj_set_width(strip->context,
+                         shown ? UI_STRIP_CONTEXT_W_WITH_WEATHER : UI_STRIP_CONTEXT_W);
+        if (shown) {
+            lv_obj_clear_flag(strip->weather_text, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(strip->weather_text, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(strip->weather_icon, LV_OBJ_FLAG_HIDDEN);
+            strip->weather_icon_kind = WEATHER_ICON_NONE;
+        }
+    }
+    if (!shown) return;
+    char text[16];
+    weather_temperature_text(text, sizeof(text), &report);
+    ui_set_label_text_if_changed(strip->weather_text, text);
+    if (report.icon != strip->weather_icon_kind) {
+        strip->weather_icon_kind = report.icon;
+        const lv_image_dsc_t *bitmap = ui_weather_bitmap(report.icon);
+        if (bitmap != NULL) {
+            lv_image_set_src(strip->weather_icon, bitmap);
+            lv_obj_clear_flag(strip->weather_icon, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            /* A reading with no picture - a code none of the tables know -
+             * is still a reading. */
+            lv_obj_add_flag(strip->weather_icon, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
 static void ui_status_strip_update(ui_status_strip_t *strip,
                                    const player_snapshot_t *snapshot)
 {
@@ -705,6 +798,7 @@ static void ui_status_strip_update(ui_status_strip_t *strip,
     char clock_text[8];
     ui_status_clock_text(clock_text, sizeof(clock_text), have_time, hour, minute);
     ui_set_label_text_if_changed(strip->clock, clock_text);
+    ui_status_strip_update_weather(strip);
 
     const uint8_t bars = ui_status_wifi_bars(snapshot->wifi_rssi_valid,
                                              snapshot->wifi_rssi_dbm);
@@ -2329,6 +2423,9 @@ static void ui_reload_settings(void)
      * call on every settings change rather than working out which one it
      * was. */
     device_clock_apply(s_device_settings.ntp_server, s_device_settings.timezone);
+    /* Same shape: the task compares and does nothing unless the service or
+     * the place moved. */
+    weather_apply(&s_device_settings);
     ui_apply_source_visibility();
     /* The model is left alone while the settings screen is open: re-initialising
      * it moves the cursor back to the top, and someone standing at the device

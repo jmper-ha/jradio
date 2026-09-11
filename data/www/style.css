@@ -1120,7 +1120,8 @@ input[type="password"] { width: 100%; }
    rather than a form field on a line of its own: the full width above belongs
    to the Wi-Fi form, and in this flex row it pushed the label out of the
    card. */
-.device-row input[type="text"] {
+.device-row input[type="text"],
+.device-row input[type="password"] {
   width: auto;
   flex: 0 1 10rem;
   min-width: 0;

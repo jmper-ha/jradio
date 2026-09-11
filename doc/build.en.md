@@ -139,7 +139,7 @@ to be linked again.
 bash tests/run_host_tests.sh
 ```
 
-88 suites, no ESP-IDF activation needed. They compile the real component
+89 suites, no ESP-IDF activation needed. They compile the real component
 sources rather than mocks, with `-Werror` and the address and undefined
 behaviour sanitizers. That is why format parsing, state machines and view
 derivation live in files with no ESP-IDF dependencies - new logic belongs

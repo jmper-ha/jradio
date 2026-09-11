@@ -36,6 +36,7 @@ the home screen. Details in [Hardware](doc/hardware.en.md).
 | **Media server (DLNA)** | works | Finds a server on the network by itself, walks its tree, tags and cover - [more](doc/dlna.en.md) |
 | **Web interface** | works | Player, device settings, station list editor, file browser, Wi-Fi - [more](doc/web.en.md) |
 | **Clock** | works | Time from the internet, on every screen |
+| **Weather** | works | Temperature and an icon beside the clock; Open-Meteo, wttr.in or OpenWeatherMap to choose from, coordinates in the web settings — [more](doc/usage.en.md#weather) |
 | **Volume** | works | The knob, the web player and Settings; remembered |
 | **Autoplay** | works | Starts whatever was playing when the device was switched off: a station, a track off a drive, a Yandex station or a container on a media server |
 | **Cover art** | works | From the file's tag, from `cover.jpg` beside the music, from Yandex |

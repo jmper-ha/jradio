@@ -50,6 +50,33 @@ static void test_choices_are_named_not_numbered(void)
     assert(parse_one("{\"field\":\"buffer_view\",\"value\":\"text\"}", &change));
     assert(change.value == DEVICE_BUFFER_VIEW_TEXT);
 
+    /* Four choices, not two: the weather service. Named as settings.csv
+     * names them. */
+    assert(parse_one("{\"field\":\"weather\",\"value\":\"off\"}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_WEATHER);
+    assert(change.value == DEVICE_WEATHER_OFF);
+    assert(parse_one("{\"field\":\"weather\",\"value\":\"open_meteo\"}", &change));
+    assert(change.value == DEVICE_WEATHER_OPEN_METEO);
+    assert(parse_one("{\"field\":\"weather\",\"value\":\"wttr\"}", &change));
+    assert(change.value == DEVICE_WEATHER_WTTR);
+    assert(parse_one("{\"field\":\"weather\",\"value\":\"openweathermap\"}", &change));
+    assert(change.value == DEVICE_WEATHER_OPENWEATHERMAP);
+    assert(!parse_one("{\"field\":\"weather\",\"value\":\"accuweather\"}", &change));
+    assert(!parse_one("{\"field\":\"weather\",\"value\":3}", &change));
+
+    /* The coordinates and the key travel as text; whether they mean anything
+     * is the setter's question, and the key's is the store's. */
+    assert(parse_one("{\"field\":\"weather_latitude\",\"value\":\"-33.8688\"}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_WEATHER_LATITUDE);
+    assert(strcmp(change.text, "-33.8688") == 0);
+    assert(parse_one("{\"field\":\"weather_longitude\",\"value\":\"151.2093\"}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_WEATHER_LONGITUDE);
+    assert(parse_one("{\"field\":\"openweathermap_key\",\"value\":"
+                     "\"0123456789abcdef0123456789abcdef\"}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY);
+    assert(strcmp(change.text, "0123456789abcdef0123456789abcdef") == 0);
+    assert(!parse_one("{\"field\":\"weather_latitude\",\"value\":55.75}", &change));
+
     /* A name this build does not know is refused rather than falling back to
      * the first choice: the page would then show a value nobody asked for. */
     assert(!parse_one("{\"field\":\"language\",\"value\":\"de\"}", &change));
@@ -138,11 +165,30 @@ static void test_apply_writes_through_to_the_file(void)
     /* Read back through a second copy, the way the device's UI task does after
      * it is told the file changed: that round trip is the whole mechanism by
      * which a browser change reaches the panel. */
+    const web_settings_change_t weather = {WEB_SETTINGS_FIELD_WEATHER, DEVICE_WEATHER_WTTR, ""};
+    assert(web_settings_apply(&settings, &weather));
+    const web_settings_change_t latitude = {WEB_SETTINGS_FIELD_WEATHER_LATITUDE, 0, "59.93"};
+    assert(web_settings_apply(&settings, &latitude));
+    /* A coordinate off the globe is refused by the setter, which is what the
+     * handler answers 500 to - and the card keeps what it had. */
+    const web_settings_change_t off_globe = {WEB_SETTINGS_FIELD_WEATHER_LONGITUDE, 0, "181"};
+    assert(!web_settings_apply(&settings, &off_globe));
+    /* The key is not the card's at all: apply refuses it so the handler has
+     * to route it, and a handler that forgot would fail loudly rather than
+     * write a secret into settings.csv. */
+    const web_settings_change_t key = {WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY, 0, "abcdefgh"};
+    assert(!web_settings_apply(&settings, &key));
+
     device_settings_t reloaded;
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.brightness == 35);
     assert(reloaded.scroll == DEVICE_SCROLL_LEFT);
     assert(reloaded.buffer_view == DEVICE_BUFFER_VIEW_GRAPH);
+    assert(reloaded.weather_provider == DEVICE_WEATHER_WTTR);
+    assert(strcmp(reloaded.weather_latitude, "59.93") == 0);
+    assert(strcmp(reloaded.weather_longitude, "37.62") == 0);
+    char nothing[8];
+    assert(!settings_csv_get(test_path, "openweathermap_key", nothing, sizeof(nothing)));
 
     char value[64];
     assert(settings_csv_get(test_path, "station_url", value, sizeof(value)));
@@ -163,8 +209,18 @@ static void test_document_names_what_the_build_has(void)
     /* Room for the zone list as well: the document carries every zone the
        firmware knows, which the page builds its menu from. */
     char document[2048];
-    size_t length = web_settings_serialize(document, sizeof(document), &view,
-                                           settings.ntp_server);
+    const web_settings_document_t extras = {
+        .ntp_server = settings.ntp_server,
+        .weather_latitude = settings.weather_latitude,
+        .weather_longitude = settings.weather_longitude,
+        .openweathermap_key_set = true,
+        .weather_state = "ok",
+        .weather_http_status = 200,
+        .weather_valid = true,
+        .weather_temperature = -3,
+        .weather_icon = "snow",
+    };
+    size_t length = web_settings_serialize(document, sizeof(document), &view, &extras);
     assert(length > 0U && length == strlen(document));
     assert(strstr(document, "\"language\":\"en\"") != NULL);
     assert(strstr(document, "\"home_screen\":\"text\"") != NULL);
@@ -192,10 +248,38 @@ static void test_document_names_what_the_build_has(void)
        the half-translated state this pass exists to end. */
     assert(strstr(document, "\"id\":\"europe/moscow\",\"label\":\"Moscow (UTC+3)\"") != NULL);
 
+    /* The weather: the service in the live part, the rest only here. The
+       key is reported as set or not and never as itself. */
+    assert(strstr(document, "\"weather\":\"off\"") != NULL);
+    assert(strstr(document, "\"weather_latitude\":\"55.75\"") != NULL);
+    assert(strstr(document, "\"weather_longitude\":\"37.62\"") != NULL);
+    assert(strstr(document, "\"openweathermap_key_set\":true") != NULL);
+    assert(strstr(document, "\"openweathermap_key\":") == NULL);
+    assert(strstr(document, "\"weather_state\":\"ok\"") != NULL);
+    assert(strstr(document, "\"weather_http_status\":200") != NULL);
+    assert(strstr(document, "\"weather_report\":{\"temperature\":-3,\"icon\":\"snow\"}") != NULL);
+
+    /* Without a reading the report is null, not a zero. */
+    assert(device_settings_set_weather_provider(&settings, DEVICE_WEATHER_OPENWEATHERMAP));
+    web_settings_make_view(&view, &settings, true, false, false);
+    const web_settings_document_t waiting = {
+        .ntp_server = settings.ntp_server,
+        .weather_latitude = settings.weather_latitude,
+        .weather_longitude = settings.weather_longitude,
+        .weather_state = "no_key",
+    };
+    length = web_settings_serialize(document, sizeof(document), &view, &waiting);
+    assert(length > 0U);
+    assert(strstr(document, "\"weather\":\"openweathermap\"") != NULL);
+    assert(strstr(document, "\"openweathermap_key_set\":false") != NULL);
+    assert(strstr(document, "\"weather_state\":\"no_key\"") != NULL);
+    assert(strstr(document, "\"weather_report\":null") != NULL);
+
     // Truncation is never handed back as a short document.
     char tight[32];
-    assert(web_settings_serialize(tight, sizeof(tight), &view, settings.ntp_server) == 0U);
+    assert(web_settings_serialize(tight, sizeof(tight), &view, &extras) == 0U);
     assert(tight[0] == '\0');
+    assert(web_settings_serialize(document, sizeof(document), &view, NULL) == 0U);
 }
 
 /* The comparison the WebSocket broadcaster runs on every pass to decide whether
@@ -240,6 +324,9 @@ static void test_view_comparison_notices_every_field(void)
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.flip_horizontal = !base.flip_horizontal;
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.weather = DEVICE_WEATHER_OPEN_METEO;
     assert(!web_settings_view_equal(&base, &other));
     /* The availability flags too: turning the Yandex switch off can take the
      * last choice off the home screen, and the page has to be told the row is

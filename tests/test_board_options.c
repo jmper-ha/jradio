@@ -5,6 +5,8 @@
 #include "board_display_profile.h"
 #include "board_features.h"
 #include "board_options.h"
+/* For the buttons' not-wired defaults, which a board without them relies on. */
+#include "board_input.h"
 
 /* These headers are plain data, so these are not tests of behaviour: they pin
  * the wiring against accidental edits and check the relations the drivers
@@ -162,8 +164,20 @@ static void test_control_pins_are_distinct(void)
 {
     const int pins[] = {
         ENCODER_RIGHT_GPIO, ENCODER_LEFT_GPIO, ENCODER_BUTTON_GPIO,
-        BUTTON_F1_GPIO, BUTTON_F2_GPIO, BUTTON_PREV_GPIO,
+        /* Each button only when wired: a board without one has the line at
+         * BOARD_GPIO_NOT_WIRED, and two of those would read as a clash. */
+#if BUTTON_F1_GPIO >= 0
+        BUTTON_F1_GPIO,
+#endif
+#if BUTTON_F2_GPIO >= 0
+        BUTTON_F2_GPIO,
+#endif
+#if BUTTON_PREV_GPIO >= 0
+        BUTTON_PREV_GPIO,
+#endif
+#if BUTTON_NEXT_GPIO >= 0
         BUTTON_NEXT_GPIO,
+#endif
     };
     const size_t count = sizeof(pins) / sizeof(pins[0]);
     for (size_t i = 0; i < count; ++i) {
@@ -284,8 +298,20 @@ static void test_no_pin_is_claimed_by_two_devices(void)
         TFT_RESET_GPIO,
 #endif
         ENCODER_RIGHT_GPIO, ENCODER_LEFT_GPIO, ENCODER_BUTTON_GPIO,
-        BUTTON_F1_GPIO, BUTTON_F2_GPIO, BUTTON_PREV_GPIO,
+        /* Each button only when wired: a board without one has the line at
+         * BOARD_GPIO_NOT_WIRED, and two of those would read as a clash. */
+#if BUTTON_F1_GPIO >= 0
+        BUTTON_F1_GPIO,
+#endif
+#if BUTTON_F2_GPIO >= 0
+        BUTTON_F2_GPIO,
+#endif
+#if BUTTON_PREV_GPIO >= 0
+        BUTTON_PREV_GPIO,
+#endif
+#if BUTTON_NEXT_GPIO >= 0
         BUTTON_NEXT_GPIO,
+#endif
         I2S_DOUT_GPIO, I2S_BCLK_GPIO, I2S_LRCK_GPIO,
 #if BOARD_HAS_USB
         USB_DM_GPIO, USB_DP_GPIO,

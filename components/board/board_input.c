@@ -89,6 +89,7 @@ static void board_input_task(void *arg)
         }
         for (size_t index = 0; index < sizeof(s_channels) / sizeof(s_channels[0]); ++index) {
             board_input_channel_t *channel = &s_channels[index];
+            if (channel->gpio_num == BOARD_GPIO_NOT_WIRED) continue;
             const int raw_level = gpio_get_level(channel->gpio_num);
             const bool pressed = raw_level == 0;
             // The debouncer reports a confirmed *press* and nothing else, so
@@ -118,24 +119,26 @@ board_input_action_t board_input_action_from_gpio(int gpio_num, int level)
         return BOARD_INPUT_ACTION_NONE;
     }
 
-    switch (gpio_num) {
-    case ENCODER_LEFT_GPIO:
-        return BOARD_INPUT_ACTION_ENCODER_LEFT;
-    case ENCODER_RIGHT_GPIO:
-        return BOARD_INPUT_ACTION_ENCODER_RIGHT;
-    case ENCODER_BUTTON_GPIO:
-        return BOARD_INPUT_ACTION_ENCODER_BUTTON;
-    case BUTTON_F1_GPIO:
-        return BOARD_INPUT_ACTION_F1;
-    case BUTTON_F2_GPIO:
-        return BOARD_INPUT_ACTION_F2;
-    case BUTTON_PREV_GPIO:
-        return BOARD_INPUT_ACTION_BTN_PREV;
-    case BUTTON_NEXT_GPIO:
-        return BOARD_INPUT_ACTION_BTN_NEXT;
-    default:
-        return BOARD_INPUT_ACTION_NONE;
+    /* A walk rather than a switch: two buttons left unwired would both be
+     * case -1, which does not compile, and a switch cannot say that a line
+     * matching "not wired" is no match at all. */
+    static const struct {
+        int gpio_num;
+        board_input_action_t action;
+    } lines[] = {
+        {ENCODER_LEFT_GPIO, BOARD_INPUT_ACTION_ENCODER_LEFT},
+        {ENCODER_RIGHT_GPIO, BOARD_INPUT_ACTION_ENCODER_RIGHT},
+        {ENCODER_BUTTON_GPIO, BOARD_INPUT_ACTION_ENCODER_BUTTON},
+        {BUTTON_F1_GPIO, BOARD_INPUT_ACTION_F1},
+        {BUTTON_F2_GPIO, BOARD_INPUT_ACTION_F2},
+        {BUTTON_PREV_GPIO, BOARD_INPUT_ACTION_BTN_PREV},
+        {BUTTON_NEXT_GPIO, BOARD_INPUT_ACTION_BTN_NEXT},
+    };
+    if (gpio_num == BOARD_GPIO_NOT_WIRED) return BOARD_INPUT_ACTION_NONE;
+    for (size_t index = 0; index < sizeof(lines) / sizeof(lines[0]); ++index) {
+        if (lines[index].gpio_num == gpio_num) return lines[index].action;
     }
+    return BOARD_INPUT_ACTION_NONE;
 }
 
 void board_input_debouncer_init(board_input_debouncer_t *debouncer, uint8_t required_samples)
@@ -236,6 +239,12 @@ board_input_action_t board_encoder_decoder_update(board_encoder_decoder_t *decod
 }
 
 #ifdef ESP_PLATFORM
+/* A bit for gpio_config's mask, or none for a line that is not wired. */
+static uint64_t board_input_pin_bit(int gpio_num)
+{
+    return gpio_num == BOARD_GPIO_NOT_WIRED ? 0ULL : 1ULL << gpio_num;
+}
+
 esp_err_t board_input_init(void)
 {
     /* Two calls rather than one: the encoder and the buttons want different
@@ -251,8 +260,9 @@ esp_err_t board_input_init(void)
         .intr_type = GPIO_INTR_DISABLE,
     };
     const gpio_config_t button_config = {
-        .pin_bit_mask = (1ULL << BUTTON_F1_GPIO) | (1ULL << BUTTON_F2_GPIO) |
-                        (1ULL << BUTTON_PREV_GPIO) | (1ULL << BUTTON_NEXT_GPIO),
+        .pin_bit_mask = board_input_pin_bit(BUTTON_F1_GPIO) | board_input_pin_bit(BUTTON_F2_GPIO) |
+                        board_input_pin_bit(BUTTON_PREV_GPIO) |
+                        board_input_pin_bit(BUTTON_NEXT_GPIO),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = BUTTONS_USE_INTERNAL_PULLUPS ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -263,9 +273,13 @@ esp_err_t board_input_init(void)
     if (result != ESP_OK) {
         return result;
     }
-    result = gpio_config(&button_config);
-    if (result != ESP_OK) {
-        return result;
+    /* An empty mask is an argument error to gpio_config, not a no-op, so a
+     * board with no function buttons at all skips the call. */
+    if (button_config.pin_bit_mask != 0ULL) {
+        result = gpio_config(&button_config);
+        if (result != ESP_OK) {
+            return result;
+        }
     }
     if (s_event_queue != NULL) {
         return ESP_OK;
@@ -276,6 +290,7 @@ esp_err_t board_input_init(void)
         return ESP_ERR_NO_MEM;
     }
     for (size_t index = 0; index < sizeof(s_channels) / sizeof(s_channels[0]); ++index) {
+        if (s_channels[index].gpio_num == BOARD_GPIO_NOT_WIRED) continue;
         const int level = gpio_get_level(s_channels[index].gpio_num);
         board_input_debouncer_init_from_level(&s_channels[index].debouncer, level,
                                               INPUT_DEBOUNCE_SAMPLES);

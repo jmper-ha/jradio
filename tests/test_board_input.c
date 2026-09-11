@@ -10,12 +10,18 @@ int main(void)
     board_input_debouncer_t released_debouncer;
     board_encoder_decoder_t encoder;
 
+#if BUTTON_F1_GPIO >= 0
     assert(board_input_action_from_gpio(BUTTON_F1_GPIO, 0) == BOARD_INPUT_ACTION_F1);
     assert(board_input_action_from_gpio(BUTTON_F1_GPIO, 1) == BOARD_INPUT_ACTION_NONE);
+#endif
     assert(board_input_action_from_gpio(ENCODER_LEFT_GPIO, 0) == BOARD_INPUT_ACTION_ENCODER_LEFT);
     assert(board_input_action_from_gpio(ENCODER_RIGHT_GPIO, 0) == BOARD_INPUT_ACTION_ENCODER_RIGHT);
     assert(board_input_action_from_gpio(ENCODER_BUTTON_GPIO, 0) == BOARD_INPUT_ACTION_ENCODER_BUTTON);
     assert(board_input_action_from_gpio(99, 0) == BOARD_INPUT_ACTION_NONE);
+    /* A button left out of board_options.h sits in the table as "not wired".
+     * That value must never match anything, or an unwired F1 would answer to
+     * whatever else was left unwired. */
+    assert(board_input_action_from_gpio(BOARD_GPIO_NOT_WIRED, 0) == BOARD_INPUT_ACTION_NONE);
 
     board_input_debouncer_init(&debouncer, 5);
     assert(!board_input_debouncer_update(&debouncer, true));

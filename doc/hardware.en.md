@@ -167,6 +167,12 @@ that bring RST out separately the pin is declared by a `TFT_RESET_GPIO` line;
 `board_options.h` carries one, commented out. The ST7789 tried here did not
 need one, though these boards are known to.
 
+The four buttons F1-F4 are optional: a board with only the encoder leaves
+their `BUTTON_*_GPIO` lines (and `BUTTONS_USE_INTERNAL_PULLUPS`) out, the
+firmware still builds, and a button that is not declared is never configured,
+never polled and never fires. The encoder is required - without it the device
+cannot be driven.
+
 Worth knowing if you build the board:
 
 - **the panel gets a regulator of its own, not the module's 3V3 pin.** An

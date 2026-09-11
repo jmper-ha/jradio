@@ -5,6 +5,35 @@
 
 #include "board_options.h"
 
+/* The four function buttons are optional: a board with only the encoder
+ * leaves their lines out of board_options.h, and each missing one becomes
+ * "not wired" here rather than a build error in board_input.c. The channel
+ * is then never configured, never polled and never matched, so the action
+ * simply never arrives - the same as a button nobody presses. The encoder is
+ * not optional: without it the UI cannot be driven at all.
+ *
+ * -1 is what esp_lcd uses for a pin that is not there (TFT_RESET_GPIO), and
+ * it is not a GPIO number, so it cannot collide with a real pin. */
+#define BOARD_GPIO_NOT_WIRED -1
+#ifndef BUTTON_F1_GPIO
+#define BUTTON_F1_GPIO BOARD_GPIO_NOT_WIRED
+#endif
+#ifndef BUTTON_F2_GPIO
+#define BUTTON_F2_GPIO BOARD_GPIO_NOT_WIRED
+#endif
+#ifndef BUTTON_PREV_GPIO
+#define BUTTON_PREV_GPIO BOARD_GPIO_NOT_WIRED
+#endif
+#ifndef BUTTON_NEXT_GPIO
+#define BUTTON_NEXT_GPIO BOARD_GPIO_NOT_WIRED
+#endif
+/* Goes with the buttons and is usually dropped with them; on its own the
+ * internal pull-up is the safe default - the buttons on revision 1 were
+ * unstable without it, and a floating input costs nothing with it. */
+#ifndef BUTTONS_USE_INTERNAL_PULLUPS
+#define BUTTONS_USE_INTERNAL_PULLUPS 1
+#endif
+
 typedef enum {
     BOARD_INPUT_ACTION_NONE = 0,
     BOARD_INPUT_ACTION_ENCODER_LEFT,

@@ -83,7 +83,12 @@
 
 /* Two of the four are named for what they do rather than for the silkscreen:
  * the third and fourth buttons are the track keys everywhere they do anything
- * at all, so a name that says F3 only makes the wiring harder to read back. */
+ * at all, so a name that says F3 only makes the wiring harder to read back.
+ *
+ * Any of the four may be left out: a line that is missing means the button
+ * is not wired, and board_input.h defaults it to "not wired" rather than
+ * failing the build - that button then never fires. The encoder cannot be
+ * left out. */
 #define BUTTON_F1_GPIO 45
 #define BUTTON_F2_GPIO 21
 #define BUTTON_PREV_GPIO 46

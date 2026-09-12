@@ -32,6 +32,17 @@ Any reconfigure fixes it, `touch CMakeLists.txt` being the shortest; in ordinary
 use it does not arise, because a tag is put on a commit that has just been
 made.
 
+**A release** is the tag plus the files to download. On a clean tree at the
+tag: `touch CMakeLists.txt`, `idf.py build`, then
+[`bash tools/release.sh`](../tools/release.sh) - it collects the app, the
+bootloader, the partition table, the data image and all of them merged into
+one file for offset 0 into `release/<version>/`, with checksums and a note on
+flashing. The data image it makes afresh, without `wifi.json`, `yandex.json`
+and `weather.json`: what the build stages from a developer's machine must not
+end up in a file for somebody else's board - such a board opens its own setup
+access point on the first boot. The script refuses a dirty tree, and a
+`build/jradio.bin` whose version is not the tag's.
+
 The `-dirty` suffix can go stale. It is computed at configure time, and editing
 a file does not move the branch ref, so a build from a dirty tree may report a
 version without it. For a build made from a commit this does not arise.

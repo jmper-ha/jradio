@@ -72,13 +72,32 @@ fi
 # catches an install on another drive that no glob below would - a user's
 # build failed with "no ESP-IDF installation found" while Doctor showed 5.5.5,
 # because the framework was on the disk the project was on, not in the
-# profile. Read with grep rather than a JSON parser: this runs before the
-# framework's Python is on PATH, and the file is EIM's own output, one
-# "path" a line.
+# profile. Each entry also names the activation script EIM wrote for that
+# version, which is kept, by path, for the activation below. Parsed with the
+# system's python3 where there is one (this runs before the framework's own
+# is on PATH), and with sed for the paths alone where there is not.
+# Two fields a line, tab-separated, in a plain array: macOS still ships
+# bash 3.2, which has no associative ones.
+jradio_manifest_entries=()
 for jradio_manifest in \
     "${IDF_TOOLS_PATH:-${HOME}/.espressif/tools}/eim_idf.json" \
     "${HOME}/.espressif/tools/eim_idf.json"; do
-    if [ -f "${jradio_manifest}" ]; then
+    [ -f "${jradio_manifest}" ] || continue
+    if command -v python3 >/dev/null 2>&1; then
+        while IFS=$'\t' read -r jradio_path jradio_script; do
+            [ -n "${jradio_path}" ] && jradio_is_idf "${jradio_path}" || continue
+            jradio_add "${jradio_path}"
+            jradio_manifest_entries+=("${jradio_path}"$'\t'"${jradio_script}")
+        done < <(python3 - "${jradio_manifest}" <<'PY' 2>/dev/null
+import json, sys
+try:
+    for e in json.load(open(sys.argv[1])).get("idfInstalled", []):
+        print(e.get("path", ""), e.get("activationScript", ""), sep="\t")
+except Exception:
+    pass
+PY
+)
+    else
         while IFS= read -r jradio_line; do
             jradio_add "${jradio_line}"
         done < <(sed -n 's/^[[:space:]]*"path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${jradio_manifest}")
@@ -151,27 +170,55 @@ MSG
     exit 1
 fi
 
+echo "tools/idf.sh: ESP-IDF ${jradio_idf}" >&2
+
+# An install made by EIM is activated by the script EIM wrote for it, not by
+# export.sh. The two do not agree about the layout: EIM keeps the tools in the
+# directory it calls IDF_TOOLS_PATH and its constraints file beside them,
+# while idf_tools.py appends /tools to that variable and looks for the
+# constraints file above it - so export.sh on an EIM install came up with
+# every tool "not installed" one way and a failed Python dependency check the
+# other. Run with -e, the script prints its environment as KEY=VALUE lines
+# and changes nothing, which is how the VS Code extension reads it too.
+jradio_activated=0
+for jradio_entry in "${jradio_manifest_entries[@]}"; do
+    IFS=$'\t' read -r jradio_path jradio_script <<<"${jradio_entry}"
+    [ "${jradio_path}" = "${jradio_idf}" ] && [ -f "${jradio_script}" ] || continue
+    while IFS= read -r jradio_line; do
+        jradio_key="${jradio_line%%=*}"
+        jradio_value="${jradio_line#*=}"
+        case "${jradio_key}" in
+            PATH) export PATH="${jradio_value}:${PATH}" ;;
+            [A-Z_]*) [ -n "${jradio_value}" ] && export "${jradio_key}=${jradio_value}" ;;
+        esac
+    done < <(sh "${jradio_script}" -e 2>/dev/null)
+    if [ -n "${IDF_PYTHON_ENV_PATH:-}" ] && [ -x "${IDF_PYTHON_ENV_PATH}/bin/python" ]; then
+        echo "tools/idf.sh: activated by ${jradio_script}" >&2
+        jradio_activated=1
+    fi
+    break
+done
+
 # export.sh prints a dozen lines about tool versions and shell completion every
 # time. Held back rather than discarded: it is also where a framework that was
 # cloned but never had install.sh run for it says so, and that message is the
 # whole diagnosis.
 jradio_log="$(mktemp)"
-echo "tools/idf.sh: ESP-IDF ${jradio_idf}" >&2
 # shellcheck disable=SC1091
-if ! . "${jradio_idf}/export.sh" >"${jradio_log}" 2>&1; then
+if [ "${jradio_activated}" -eq 0 ] && ! . "${jradio_idf}/export.sh" >"${jradio_log}" 2>&1; then
     cat "${jradio_log}" >&2
     rm -f "${jradio_log}"
     echo "tools/idf.sh: export.sh failed - run install.sh in that directory first" >&2
     exit 1
 fi
 
-# export.sh can report success and still leave nothing on PATH - a framework
-# whose tools were never installed does exactly that - so say what happened
-# instead of letting the shell answer "idf.py: not found".
-if ! command -v idf.py >/dev/null 2>&1; then
+# export.sh can report success and still set up nothing - a framework whose
+# tools were never installed does exactly that - so say what happened instead
+# of letting the shell answer "no such file" for the interpreter below.
+if [ ! -x "${IDF_PYTHON_ENV_PATH:-/nonexistent}/bin/python" ]; then
     cat "${jradio_log}" >&2
     rm -f "${jradio_log}"
-    echo "tools/idf.sh: idf.py is still not on PATH - run install.sh in ${jradio_idf}" >&2
+    echo "tools/idf.sh: no Python environment after activation - run install.sh in ${jradio_idf}" >&2
     exit 1
 fi
 rm -f "${jradio_log}"
@@ -194,5 +241,7 @@ if [ -z "${ESPPORT:-}" ]; then
     fi
 fi
 
+# idf.py is run through the framework's own interpreter rather than as a
+# command: EIM's activation puts the venv on PATH but not an idf.py.
 cd "${jradio_root}"
-exec idf.py "$@"
+exec "${IDF_PYTHON_ENV_PATH}/bin/python" "${jradio_idf}/tools/idf.py" "$@"

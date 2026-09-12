@@ -39,8 +39,13 @@ function Add-Candidate([string] $path) {
     if (Test-IdfPath $path) {
         $full = (Resolve-Path -LiteralPath $path).Path
         if (-not $found.Contains($full)) { $found.Add($full) }
+        return $full
     }
+    return $null
 }
+# What EIM's manifest says about each install it made, by resolved path -
+# the activation script it wrote for that version, used below.
+$manifestEntry = @{}
 
 # A candidate like any other, and deliberately not an override: inside VS Code
 # this variable is not a person's choice at all - the ESP-IDF extension exports
@@ -80,7 +85,11 @@ foreach ($manifest in $manifests) {
         Write-Host "tools/idf.ps1: could not read $manifest; looking elsewhere"
         continue
     }
-    foreach ($entry in @($listed)) { if ($entry.path) { Add-Candidate $entry.path } }
+    foreach ($entry in @($listed)) {
+        if (-not $entry.path) { continue }
+        $full = Add-Candidate $entry.path
+        if ($full -and -not $manifestEntry.ContainsKey($full)) { $manifestEntry[$full] = $entry }
+    }
 }
 
 # The usual install locations: the ESP-IDF Installation Manager (C:\esp\v*
@@ -151,38 +160,75 @@ https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32s3/get-started/
 
 Write-Host "tools/idf.ps1: ESP-IDF $idf"
 
-# export.ps1 prints a dozen lines about tool versions every time. Held back
-# rather than discarded: it is also where a framework that was cloned but never
-# had install.bat run for it says so, and that message is the whole diagnosis.
-$log = [System.IO.Path]::GetTempFileName()
-$strict = $ErrorActionPreference
-# Relaxed across the dot-source only: export.ps1 writes non-terminating errors
-# of its own on installations that work perfectly well, and under Stop each of
-# them would abort activation. Whether it worked is decided below, by looking
-# for the interpreter it is supposed to have put on PATH.
-$ErrorActionPreference = 'Continue'
-try {
-    . (Join-Path $idf 'export.ps1') *> $log
-} catch {
-    Get-Content $log | Write-Host
-    Remove-Item $log -ErrorAction SilentlyContinue
-    Write-Host "tools/idf.ps1: export.ps1 failed - run install.bat in $idf first"
-    exit 1
-} finally {
-    $ErrorActionPreference = $strict
+# An install made by EIM is activated by the script EIM wrote for it
+# (Microsoft.PowerShell_profile.ps1 beside the framework), not by export.ps1.
+# The two do not agree about the layout: EIM keeps the tools in the directory
+# it calls IDF_TOOLS_PATH (C:\Espressif\tools) with the venv under python\
+# and its constraints file beside them, while idf_tools.py appends \tools to
+# that variable and looks for a python_env under .espressif in the profile -
+# a user's build stopped in export.ps1 with "Python virtual environment ...
+# not found" while Doctor listed the venv in C:\Espressif. Run with -e, the
+# script prints its environment as KEY=VALUE lines and changes nothing, which
+# is how the VS Code extension reads it too. It prints some of them with
+# Write-Host, hence the merge of every stream.
+$activated = $false
+if ($manifestEntry.ContainsKey($idf)) {
+    $script = $manifestEntry[$idf].activationScript
+    if ($script -and (Test-Path -LiteralPath $script)) {
+        $lines = @()
+        try { $lines = @(& $script -e *>&1 | ForEach-Object { "$_" }) } catch { $lines = @() }
+        foreach ($line in $lines) {
+            $at = $line.IndexOf('=')
+            if ($at -lt 1) { continue }
+            $key = $line.Substring(0, $at)
+            $value = $line.Substring($at + 1)
+            if ($key -eq 'PATH') { $env:PATH = "$value;$env:PATH" }
+            elseif ($key -match '^[A-Z_]+$' -and $value) { Set-Item -Path "env:$key" -Value $value }
+        }
+        if ($env:IDF_PYTHON_ENV_PATH -and (Test-Path -LiteralPath (Join-Path $env:IDF_PYTHON_ENV_PATH 'Scripts/python.exe'))) {
+            Write-Host "tools/idf.ps1: activated by $script"
+            $activated = $true
+        }
+    }
 }
 
-# idf.py is run through Python rather than as a command of its own: whether a
-# bare `idf.py` is executable depends on PATHEXT and on the .py association,
-# and export.ps1 puts the framework's own interpreter first on PATH either way.
-$python = Get-Command python -ErrorAction SilentlyContinue
-if (-not $python) {
-    Get-Content $log | Write-Host
+if (-not $activated) {
+    # export.ps1 prints a dozen lines about tool versions every time. Held back
+    # rather than discarded: it is also where a framework that was cloned but
+    # never had install.bat run for it says so, and that message is the whole
+    # diagnosis.
+    $log = [System.IO.Path]::GetTempFileName()
+    $strict = $ErrorActionPreference
+    # Relaxed across the dot-source only: export.ps1 writes non-terminating
+    # errors of its own on installations that work perfectly well, and under
+    # Stop each of them would abort activation. Whether it worked is decided
+    # below, by looking for the interpreter it is supposed to have set up.
+    $ErrorActionPreference = 'Continue'
+    try {
+        . (Join-Path $idf 'export.ps1') *> $log
+    } catch {
+        Get-Content $log | Write-Host
+        Remove-Item $log -ErrorAction SilentlyContinue
+        Write-Host "tools/idf.ps1: export.ps1 failed - run install.bat in $idf first"
+        exit 1
+    } finally {
+        $ErrorActionPreference = $strict
+    }
+    if (-not $env:IDF_PYTHON_ENV_PATH -or
+        -not (Test-Path -LiteralPath (Join-Path $env:IDF_PYTHON_ENV_PATH 'Scripts/python.exe'))) {
+        Get-Content $log | Write-Host
+        Remove-Item $log -ErrorAction SilentlyContinue
+        Write-Host "tools/idf.ps1: no Python environment after export.ps1 - run install.bat in $idf"
+        exit 1
+    }
     Remove-Item $log -ErrorAction SilentlyContinue
-    Write-Host "tools/idf.ps1: no python on PATH after export.ps1 - run install.bat in $idf"
-    exit 1
 }
-Remove-Item $log -ErrorAction SilentlyContinue
+
+# idf.py is run through the framework's own interpreter rather than as a
+# command of its own: whether a bare `idf.py` is executable depends on PATHEXT
+# and on the .py association, and EIM's activation defines it as an alias,
+# which a script does not see.
+$python = Join-Path $env:IDF_PYTHON_ENV_PATH 'Scripts/python.exe'
 
 # Without a port, esptool probes every COM port in turn. One obvious candidate
 # is taken as the answer; with several, idf.py is left to do its own thing,
@@ -204,5 +250,5 @@ if (-not $env:ESPPORT) {
 }
 
 Set-Location $root
-& $python.Source (Join-Path $idf 'tools/idf.py') @args
+& $python (Join-Path $idf 'tools/idf.py') @args
 exit $LASTEXITCODE

@@ -276,7 +276,7 @@ static lv_obj_t *s_settings_more_above;
 static lv_obj_t *s_settings_more_below;
 /* One per boolean setting, not per row on screen: only one group is open at
  * a time, so at most three are ever visible, but each keeps its own object. */
-#define UI_SETTINGS_SWITCH_COUNT 5U
+#define UI_SETTINGS_SWITCH_COUNT 6U
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
@@ -783,10 +783,16 @@ static void ui_status_strip_update_weather(ui_status_strip_t *strip)
         strip->weather_shown = shown;
         /* The screen's name moves along while the weather is up and back
          * to the margin after, so a device with the weather off is exactly
-         * what it was. */
+         * what it was. On a panel too narrow for both it steps aside
+         * instead - see UI_STRIP_NAME_FITS_WEATHER. */
         lv_obj_set_x(strip->context, shown ? UI_STRIP_CONTEXT_X_WITH_WEATHER : UI_STRIP_CONTEXT_X);
         lv_obj_set_width(strip->context,
                          shown ? UI_STRIP_CONTEXT_W_WITH_WEATHER : UI_STRIP_CONTEXT_W);
+        if (shown && !UI_STRIP_NAME_FITS_WEATHER) {
+            lv_obj_add_flag(strip->context, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(strip->context, LV_OBJ_FLAG_HIDDEN);
+        }
         if (shown) {
             lv_obj_clear_flag(strip->weather_text, LV_OBJ_FLAG_HIDDEN);
         } else {
@@ -2523,6 +2529,10 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_AUTOPLAY,
                                  s_device_settings.autoplay);
         break;
+    case UI_SETTINGS_ROW_WEATHER_FIELD:
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_WEATHER,
+                                 s_device_settings.weather_provider != DEVICE_WEATHER_OFF);
+        break;
     case UI_SETTINGS_ROW_YANDEX_FIELD:
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_YANDEX,
                                  s_device_settings.yandex_music);
@@ -2548,18 +2558,6 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
                           : s_device_settings.screensaver == DEVICE_SCREENSAVER_CLOCK
                               ? DEVICE_TEXT_SCREENSAVER_CLOCK
                               : DEVICE_TEXT_SCREENSAVER_OFF);
-        break;
-    case UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD:
-        snprintf(text, text_size,
-                 ui_settings_model_is_editing(&s_settings_model) ? "  %s: <%d>" : "  %s: %d",
-                 ui_text(DEVICE_TEXT_ROW_SCREENSAVER_AFTER),
-                 (int)s_device_settings.screensaver_seconds);
-        break;
-    case UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD:
-        snprintf(text, text_size,
-                 ui_settings_model_is_editing(&s_settings_model) ? "  %s: <%d>" : "  %s: %d",
-                 ui_text(DEVICE_TEXT_ROW_IDLE_BRIGHTNESS),
-                 (int)s_device_settings.screensaver_brightness);
         break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_FLIP_VERTICAL,
@@ -2606,6 +2604,10 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     case UI_SETTINGS_ROW_DLNA_FIELD:
         *index = 4U;
         *value = s_device_settings.dlna;
+        return true;
+    case UI_SETTINGS_ROW_WEATHER_FIELD:
+        *index = 5U;
+        *value = s_device_settings.weather_provider != DEVICE_WEATHER_OFF;
         return true;
     default:
         return false;
@@ -2846,8 +2848,6 @@ static void ui_show_settings(void)
     s_settings_open = true;
     ui_hide_qr();
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
-    ui_settings_model_set_screensaver(&s_settings_model,
-                                      s_device_settings.screensaver != DEVICE_SCREENSAVER_OFF);
     if (!device_settings_init(&s_device_settings)) {
         lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
     } else {
@@ -2923,16 +2923,10 @@ static void ui_reload_settings(void)
      * be one Yandex switch out of date until the screen is left and reopened,
      * which is the narrower of the two problems. */
     device_settings_publish(&s_device_settings);
-    /* Safe with the screen open, unlike a re-init: it only takes two rows
-     * away or gives them back, and keeps the cursor on a row that exists. */
-    ui_settings_model_set_screensaver(&s_settings_model,
-                                      s_device_settings.screensaver != DEVICE_SCREENSAVER_OFF);
     if (s_settings_open) {
         ui_update_settings();
     } else {
         ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
-        ui_settings_model_set_screensaver(
-            &s_settings_model, s_device_settings.screensaver != DEVICE_SCREENSAVER_OFF);
     }
 }
 
@@ -3359,17 +3353,21 @@ static void ui_settings_change_selected(void)
         changed = device_settings_set_dlna(&s_device_settings, !s_device_settings.dlna);
         if (changed) ui_apply_source_visibility();
         break;
+    case UI_SETTINGS_ROW_WEATHER_FIELD:
+        /* Off, or back to the service the page chose. The task is told the
+         * way the page's changes tell it, so the strip follows within
+         * seconds rather than at the next quarter hour. */
+        changed = device_settings_set_weather_enabled(
+            &s_device_settings, s_device_settings.weather_provider == DEVICE_WEATHER_OFF);
+        if (changed) weather_apply(&s_device_settings);
+        break;
     case UI_SETTINGS_ROW_SCREENSAVER_FIELD:
-        /* Four in a ring, the way a click cycles every other choice. The two
-         * rows under it come and go with the answer. */
+        /* Four in a ring, the way a click cycles every other choice. Its
+         * wait and its idle level are on the page. */
         changed = device_settings_set_screensaver(
             &s_device_settings,
             (device_screensaver_t)((s_device_settings.screensaver + 1) %
                                    (DEVICE_SCREENSAVER_CLOCK + 1)));
-        if (changed) {
-            ui_settings_model_set_screensaver(
-                &s_settings_model, s_device_settings.screensaver != DEVICE_SCREENSAVER_OFF);
-        }
         break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         changed = device_settings_set_flip_vertical(&s_device_settings,
@@ -3396,31 +3394,6 @@ static void ui_settings_change_selected(void)
 static void ui_settings_change_number(int direction)
 {
     const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
-    /* The screensaver's two numbers are written on the detent: nothing on the
-     * panel follows them while the knob turns, so there is no lag to hide,
-     * and the list is six entries long. */
-    if (selected == UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD) {
-        const int next = ui_settings_screensaver_seconds_step(
-            (int)s_device_settings.screensaver_seconds, direction);
-        if (next == (int)s_device_settings.screensaver_seconds) return;
-        const bool changed =
-            device_settings_set_screensaver_seconds(&s_device_settings, (unsigned int)next);
-        lv_label_set_text(s_settings_notice,
-                          changed ? "" : ui_text(DEVICE_TEXT_SETTINGS_WRITE_FAILED));
-        if (changed) device_settings_publish(&s_device_settings);
-        return;
-    }
-    if (selected == UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD) {
-        const int next = ui_settings_idle_brightness_step(
-            (int)s_device_settings.screensaver_brightness, direction);
-        if (next == (int)s_device_settings.screensaver_brightness) return;
-        const bool changed = device_settings_set_screensaver_brightness(&s_device_settings,
-                                                                        (unsigned char)next);
-        lv_label_set_text(s_settings_notice,
-                          changed ? "" : ui_text(DEVICE_TEXT_SETTINGS_WRITE_FAILED));
-        if (changed) device_settings_publish(&s_device_settings);
-        return;
-    }
     if (selected != UI_SETTINGS_ROW_BRIGHTNESS_FIELD) {
         return;
     }
@@ -5579,8 +5552,6 @@ esp_err_t ui_init(void)
      * point the answer counts a Yandex row the switch may have turned off. */
     ui_apply_source_visibility();
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
-    ui_settings_model_set_screensaver(&s_settings_model,
-                                      s_device_settings.screensaver != DEVICE_SCREENSAVER_OFF);
     // Before anything can play: the board defaults to full volume, and coming
     // back from a power cut at full blast when the user had it at 20 is the
     // kind of surprise a saved setting exists to prevent.

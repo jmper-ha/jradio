@@ -453,11 +453,14 @@ _Static_assert(UI_SET_ROW_RIGHT - UI_SET_SWITCH_TEXT_X >= 120,
  * is printed against the name it labels. */
 _Static_assert(UI_LIST_NUMBER_W > UI_FONT_TITLE_PX * 1274 / 1000,
                "the station index leaves no gap before the name");
-/* Enough of the screen's name survives beside the weather to read "jRadio"
- * in the body face - six glyphs, 3.1 em in all, at 14 px 44 of the 53 a 320
- * px panel leaves. */
-_Static_assert(UI_STRIP_CONTEXT_W_WITH_WEATHER >= UI_FONT_BODY_PX * 7 / 2,
-               "the status strip cannot hold the weather and the screen's name together");
+/* Whether enough of the screen's name survives beside the weather to read
+ * "jRadio" in the body face - six glyphs, 3.1 em in all, at 14 px 44 of the
+ * 53 a 320 px panel leaves. Where it does not - the portrait panels, 240 and
+ * 320 px wide at the 18 px face - the name goes while the weather is up: of
+ * the three things at that end of the strip it is the one the user already
+ * knows, being on the screen it names. This stood as an assertion until
+ * 2026-09-12, and no portrait build had compiled since the weather arrived. */
+#define UI_STRIP_NAME_FITS_WEATHER (UI_STRIP_CONTEXT_W_WITH_WEATHER >= UI_FONT_BODY_PX * 7 / 2)
 _Static_assert(UI_STRIP_WEATHER_ICON_PX <= UI_STRIP_H - 2,
                "the weather icon is taller than the status strip");
 _Static_assert(UI_STATION_LIST_MAX_ROWS >= 3U,

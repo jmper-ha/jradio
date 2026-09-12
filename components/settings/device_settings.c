@@ -174,6 +174,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
            sizeof(DEVICE_TIMEZONE_DEFAULT_ID));
     memcpy(settings->ntp_server, DEVICE_NTP_SERVER_DEFAULT,
            sizeof(DEVICE_NTP_SERVER_DEFAULT));
+    settings->weather_service = DEVICE_WEATHER_OPEN_METEO;
     memcpy(settings->weather_latitude, DEVICE_WEATHER_LATITUDE_DEFAULT,
            sizeof(DEVICE_WEATHER_LATITUDE_DEFAULT));
     memcpy(settings->weather_longitude, DEVICE_WEATHER_LONGITUDE_DEFAULT,
@@ -210,6 +211,15 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     }
     if (read_value(path, "weather", value, sizeof(value))) {
         settings->weather_provider = weather_provider_from_text(value);
+    }
+    /* Written beside the provider whenever a service is chosen, so it is
+     * only ever a service; a file from before it existed has none, and the
+     * provider itself is the best guess when that one is on. */
+    if (read_value(path, "weather_service", value, sizeof(value)) &&
+        weather_provider_from_text(value) != DEVICE_WEATHER_OFF) {
+        settings->weather_service = weather_provider_from_text(value);
+    } else if (settings->weather_provider != DEVICE_WEATHER_OFF) {
+        settings->weather_service = settings->weather_provider;
     }
     /* A coordinate that would not pass the setter leaves the default in
      * place, for the same reason a bad zone does: the alternative is a URL
@@ -477,7 +487,22 @@ bool device_settings_set_weather_provider(device_settings_t *settings,
     if (settings->weather_provider == provider) return true;
     if (!save_value(settings, "weather", weather_provider_text(provider))) return false;
     settings->weather_provider = provider;
+    /* Remembered on the way in, not on the way out: the switch on the panel
+     * that turns the weather off has to know what to turn it back on to. */
+    if (provider != DEVICE_WEATHER_OFF && settings->weather_service != provider) {
+        if (!save_value(settings, "weather_service", weather_provider_text(provider))) {
+            return false;
+        }
+        settings->weather_service = provider;
+    }
     return true;
+}
+
+bool device_settings_set_weather_enabled(device_settings_t *settings, bool enabled)
+{
+    if (settings == NULL) return false;
+    return device_settings_set_weather_provider(
+        settings, enabled ? settings->weather_service : DEVICE_WEATHER_OFF);
 }
 
 bool device_settings_set_screensaver(device_settings_t *settings, device_screensaver_t mode)

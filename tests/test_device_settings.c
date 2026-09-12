@@ -448,6 +448,17 @@ static void test_the_weather_settings_persist_and_are_checked(void)
     assert(strcmp(value, "open_meteo") == 0);
     assert(!device_settings_set_weather_provider(&settings, (device_weather_provider_t)7));
 
+    /* The panel's switch: off is off, and on is the service the page last
+     * chose - which survives the file being read again, so a device turned
+     * off at the knob and rebooted still comes back to it. */
+    assert(device_settings_set_weather_enabled(&settings, false));
+    assert(settings.weather_provider == DEVICE_WEATHER_OFF);
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.weather_provider == DEVICE_WEATHER_OFF);
+    assert(reloaded.weather_service == DEVICE_WEATHER_OPEN_METEO);
+    assert(device_settings_set_weather_enabled(&reloaded, true));
+    assert(reloaded.weather_provider == DEVICE_WEATHER_OPEN_METEO);
+
     /* The shape a coordinate may take, and the globe it has to be on. */
     assert(device_settings_coordinate_valid("0", 90));
     assert(device_settings_coordinate_valid("90", 90));
@@ -485,6 +496,15 @@ static void test_the_weather_settings_persist_and_are_checked(void)
     assert(device_settings_init_at(&reloaded, test_path));
     assert(strcmp(reloaded.weather_latitude, "55.75") == 0);
     assert(reloaded.weather_provider == DEVICE_WEATHER_OFF);
+
+    /* A file from before the service was remembered: the provider that is
+     * on is the service, and a fresh file's is the keyless one. */
+    reset_file();
+    assert(device_settings_init_at(&settings, test_path));
+    assert(settings.weather_service == DEVICE_WEATHER_OPEN_METEO);
+    assert(device_settings_set_weather_provider(&settings, DEVICE_WEATHER_WTTR));
+    assert(settings_csv_get(test_path, "weather_service", value, sizeof(value)));
+    assert(strcmp(value, "wttr") == 0);
 }
 
 static void test_the_screensaver_settings_persist_and_are_checked(void)

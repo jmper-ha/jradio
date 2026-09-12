@@ -3,7 +3,6 @@
 #include <limits.h>
 #include <stdint.h>
 
-#include "device_settings.h"
 
 static const ui_settings_row_t s_group_rows[UI_SETTINGS_GROUP_COUNT] = {
     [UI_SETTINGS_GROUP_LANGUAGE] = {
@@ -49,6 +48,11 @@ static const ui_settings_row_t s_field_rows[] = {
         .group = UI_SETTINGS_GROUP_GENERAL,
         .kind = UI_SETTINGS_ROW_FIELD,
     },
+    {
+        .id = UI_SETTINGS_ROW_WEATHER_FIELD,
+        .group = UI_SETTINGS_GROUP_GENERAL,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
 #if BOARD_HAS_YANDEX_MUSIC
     {
         .id = UI_SETTINGS_ROW_YANDEX_FIELD,
@@ -70,16 +74,6 @@ static const ui_settings_row_t s_field_rows[] = {
     },
     {
         .id = UI_SETTINGS_ROW_SCREENSAVER_FIELD,
-        .group = UI_SETTINGS_GROUP_DISPLAY,
-        .kind = UI_SETTINGS_ROW_FIELD,
-    },
-    {
-        .id = UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD,
-        .group = UI_SETTINGS_GROUP_DISPLAY,
-        .kind = UI_SETTINGS_ROW_FIELD,
-    },
-    {
-        .id = UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD,
         .group = UI_SETTINGS_GROUP_DISPLAY,
         .kind = UI_SETTINGS_ROW_FIELD,
     },
@@ -122,10 +116,6 @@ static const ui_settings_row_t s_band_row = {
 static bool field_is_present(const ui_settings_model_t *model, ui_settings_row_id_t id)
 {
     if (id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD) return model->home_screen;
-    if (id == UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD ||
-        id == UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD) {
-        return model->screensaver;
-    }
     return true;
 }
 
@@ -203,7 +193,6 @@ void ui_settings_model_init(ui_settings_model_t *model, bool home_screen)
     model->cursor = 0U;
     model->window_top = 0U;
     model->editing = false;
-    model->screensaver = true;
     /* Fixed for as long as the screen is open, not re-read per frame: the
      * Yandex switch on this very screen can take the last optional source
      * away, and a row set that changed under the cursor mid-edit would move
@@ -244,28 +233,9 @@ bool ui_settings_model_has_rows_below(const ui_settings_model_t *model, size_t v
     return model->window_top + visible_count < total_row_count(model);
 }
 
-void ui_settings_model_set_screensaver(ui_settings_model_t *model, bool on)
-{
-    if (!valid_model(model) || model->screensaver == on) return;
-    model->screensaver = on;
-    size_t first = 0U;
-    size_t last = 0U;
-    movement_bounds(model, &first, &last);
-    if (model->cursor > last) model->cursor = last;
-    if (model->window_top > model->cursor) model->window_top = model->cursor;
-    /* A number being edited cannot be on a row that has just gone: whatever
-     * the cursor now points at is a different row, and the knob is let go. */
-    if (model->editing &&
-        !ui_settings_row_is_number(ui_settings_model_row_at(model, model->cursor).id)) {
-        model->editing = false;
-    }
-}
-
 bool ui_settings_row_is_number(ui_settings_row_id_t id)
 {
-    return id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD ||
-           id == UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD ||
-           id == UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD;
+    return id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD;
 }
 
 bool ui_settings_model_is_editing(const ui_settings_model_t *model)
@@ -296,41 +266,6 @@ int ui_settings_brightness_step(int value, int direction)
                         (direction > 0 ? UI_SETTINGS_BRIGHTNESS_STEP
                                        : -UI_SETTINGS_BRIGHTNESS_STEP);
     return ui_settings_brightness_clamp(stepped);
-}
-
-int ui_settings_idle_brightness_clamp(int value)
-{
-    if (value < UI_SETTINGS_IDLE_BRIGHTNESS_MIN) return UI_SETTINGS_IDLE_BRIGHTNESS_MIN;
-    if (value > UI_SETTINGS_IDLE_BRIGHTNESS_MAX) return UI_SETTINGS_IDLE_BRIGHTNESS_MAX;
-    return value;
-}
-
-int ui_settings_idle_brightness_step(int value, int direction)
-{
-    if (direction == 0) return ui_settings_idle_brightness_clamp(value);
-    const int stepped = ui_settings_idle_brightness_clamp(value) +
-                        (direction > 0 ? UI_SETTINGS_IDLE_BRIGHTNESS_STEP
-                                       : -UI_SETTINGS_IDLE_BRIGHTNESS_STEP);
-    return ui_settings_idle_brightness_clamp(stepped);
-}
-
-int ui_settings_screensaver_seconds_step(int value, int direction)
-{
-    const unsigned short *choices = device_screensaver_seconds_choices;
-    const int last = DEVICE_SCREENSAVER_SECONDS_CHOICES - 1;
-    if (direction > 0) {
-        for (int index = 0; index <= last; ++index) {
-            if ((int)choices[index] > value) return choices[index];
-        }
-        return choices[last];
-    }
-    if (direction < 0) {
-        for (int index = last; index >= 0; --index) {
-            if ((int)choices[index] < value) return choices[index];
-        }
-        return choices[0];
-    }
-    return device_settings_screensaver_seconds_valid((unsigned int)value) ? value : choices[0];
 }
 
 size_t ui_settings_model_row_count(const ui_settings_model_t *model)

@@ -172,14 +172,19 @@ buttons for a set number of seconds. Four choices: **none**; **dim** - the
 backlight goes down to the "idle brightness"; **blank** - the backlight goes
 off; **clock** - the panel goes dark and the time floats across it in large
 seven-segment digits, with the date and the weather (when it is on) under it
-and what is playing under that. One wait for every mode, from the list 15, 30,
-60, 120, 300 and 600 seconds; the idle brightness runs from 5 to 50; both
-numbers are edited with the knob the way the brightness is. Off by default.
-Any action on the device wakes the panel; in the two dark modes the first
-press only wakes it - nobody can see what they are pressing on a dark panel -
-while the dimmed panel is still readable and a press does what it always does.
-The music takes no notice of the screensaver. The same three rows are on the
-web page, under "Display".
+and what is playing under that. The device chooses only the mode; the wait -
+one for every mode, from the list 15, 30, 60, 120, 300 and 600 seconds - and
+the idle brightness, 5 to 50, are set on the web page under "Display". Off by
+default. Any action on the device wakes the panel; in the two dark modes the
+first press only wakes it - nobody can see what they are pressing on a dark
+panel - while the dimmed panel is still readable and a press does what it
+always does. The music takes no notice of the screensaver.
+
+"Weather" under "General" is one switch. Off takes the weather out of the
+status strip and off the screensaver; on brings it back on the service the
+web page chose last (Open-Meteo, which needs no key, until one has been
+chosen). The service, the coordinates and the key are on the web page under
+"Weather".
 
 The language is Russian or English, and one switch moves all of it: the
 device's screens and the web interface alike, at once and without a reload. A
@@ -212,7 +217,8 @@ URL with a scheme. Changing it restarts the polling straight away; no reboot.
 
 ### Weather
 
-Web-only as well, under "Weather". The temperature and a picture of the sky
+Set up on the web page under "Weather"; the device has only the switch under
+"General". The temperature and a picture of the sky
 stand in the status strip to the left of the clock, on every screen that has a
 clock; while the weather is off or nothing has answered yet the strip looks as
 it always did.

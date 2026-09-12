@@ -183,6 +183,12 @@ typedef struct {
     char timezone[DEVICE_TIMEZONE_ID_MAX];
     char ntp_server[DEVICE_NTP_SERVER_MAX];
     device_weather_provider_t weather_provider;
+    /* The service the weather last came from, never off: what the panel's
+     * own switch turns the weather back on to, so a device switched off at
+     * the knob comes back to the service the page chose and not to whichever
+     * one is first in the list. Open-Meteo - the one that needs no key -
+     * until a service has been chosen. */
+    device_weather_provider_t weather_service;
     char weather_latitude[DEVICE_COORDINATE_MAX];
     char weather_longitude[DEVICE_COORDINATE_MAX];
     device_screensaver_t screensaver;
@@ -233,6 +239,9 @@ bool device_settings_set_timezone(device_settings_t *settings, const char *id);
 bool device_settings_set_ntp_server(device_settings_t *settings, const char *host);
 bool device_settings_set_weather_provider(device_settings_t *settings,
                                           device_weather_provider_t provider);
+/* The panel's one switch: off is off, on is the service the page last
+ * chose. */
+bool device_settings_set_weather_enabled(device_settings_t *settings, bool enabled);
 /* A latitude within 90 degrees of the equator, a longitude within 180 of
  * Greenwich, each as decimal text with up to six places. Refused rather than
  * clamped: a coordinate off the globe is a typo, and clamping one would ask

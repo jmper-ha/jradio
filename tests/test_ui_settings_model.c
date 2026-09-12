@@ -155,11 +155,12 @@ static void test_each_group_has_expected_fields(void)
     ui_settings_model_init(&model, true);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    /* General holds home screen, scrolling, the buffer reading and autoplay,
-     * plus the Yandex Music and DLNA switches in a build that has those
-     * features - the rows here that a board option can take away. */
+    /* General holds home screen, scrolling, the buffer reading, autoplay and
+     * the weather switch, plus the Yandex Music and DLNA switches in a build
+     * that has those features - the rows here that a board option can take
+     * away. */
     assert(ui_settings_model_row_count(&model) ==
-           8U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA);
+           9U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA);
     assert(ui_settings_model_row_at(&model, 2U).id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_SCROLL_FIELD);
     assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_BUFFER_FIELD);
@@ -173,13 +174,19 @@ static void test_each_group_has_expected_fields(void)
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_BUFFER_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_AUTOPLAY_FIELD);
+    /* The weather is one switch here; the service and the pin are the page's.
+     * A choice, not a number - the knob never captures it. */
+    assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_WEATHER_FIELD);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_WEATHER_FIELD);
+    assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_WEATHER_FIELD));
 #if BOARD_HAS_YANDEX_MUSIC
-    assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_YANDEX_FIELD);
+    assert(ui_settings_model_row_at(&model, 7U).id == UI_SETTINGS_ROW_YANDEX_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_YANDEX_FIELD);
 #endif
 #if BOARD_HAS_DLNA
-    assert(ui_settings_model_row_at(&model, 6U + BOARD_HAS_YANDEX_MUSIC).id ==
+    assert(ui_settings_model_row_at(&model, 7U + BOARD_HAS_YANDEX_MUSIC).id ==
            UI_SETTINGS_ROW_DLNA_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DLNA_FIELD);
@@ -194,25 +201,22 @@ static void test_the_display_group_holds_a_number_the_knob_edits(void)
     ui_settings_model_init(&model, true);
     assert(!ui_settings_model_is_editing(&model));
     /* Down to Display and open it: brightness first, then the screensaver's
-     * three rows, then the two flips. */
+     * mode - its wait and its idle level are the page's, since 2026-09-12 -
+     * then the two flips. */
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DISPLAY_GROUP);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_row_count(&model) == 10U);
+    assert(ui_settings_model_row_count(&model) == 8U);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD);
     assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_SCREENSAVER_FIELD);
-    assert(ui_settings_model_row_at(&model, 5U).id == UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD);
-    assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD);
-    assert(ui_settings_model_row_at(&model, 7U).id == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD);
+    assert(ui_settings_model_row_at(&model, 5U).id == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD);
+    assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD);
 
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_BRIGHTNESS_FIELD);
     assert(ui_settings_row_is_number(UI_SETTINGS_ROW_BRIGHTNESS_FIELD));
-    /* The wait and the idle level are numbers the knob edits too; the mode
-     * beside them is a choice a click cycles, like every other field. */
-    assert(ui_settings_row_is_number(UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD));
-    assert(ui_settings_row_is_number(UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD));
+    /* The mode is a choice a click cycles, like every other field. */
     assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_SCREENSAVER_FIELD));
     assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD));
 
@@ -230,81 +234,12 @@ static void test_the_display_group_holds_a_number_the_knob_edits(void)
     assert(!ui_settings_model_is_editing(&model));
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_SCREENSAVER_FIELD);
-    for (int step = 0; step < 3; ++step) {
-        assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
-    }
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD);
     /* A row with no number never captures the knob, which is what keeps the
      * click a toggle on every other field. */
     assert(ui_settings_model_toggle_edit(&model) == UI_SETTINGS_MODEL_NO_CHANGE);
     assert(!ui_settings_model_is_editing(&model));
-}
-
-static void test_the_screensaver_numbers_step_along_their_own_scales(void)
-{
-    /* The idle level has its own window, below the panel's floor: 5 is what
-     * dimming is for, and above 50 nothing would read as dimmed. */
-    assert(ui_settings_idle_brightness_step(20, 1) == 20 + UI_SETTINGS_IDLE_BRIGHTNESS_STEP);
-    assert(ui_settings_idle_brightness_step(20, -1) == 20 - UI_SETTINGS_IDLE_BRIGHTNESS_STEP);
-    assert(ui_settings_idle_brightness_step(UI_SETTINGS_IDLE_BRIGHTNESS_MAX, 1) ==
-           UI_SETTINGS_IDLE_BRIGHTNESS_MAX);
-    assert(ui_settings_idle_brightness_step(UI_SETTINGS_IDLE_BRIGHTNESS_MIN, -1) ==
-           UI_SETTINGS_IDLE_BRIGHTNESS_MIN);
-    assert(ui_settings_idle_brightness_clamp(0) == UI_SETTINGS_IDLE_BRIGHTNESS_MIN);
-    assert(ui_settings_idle_brightness_clamp(90) == UI_SETTINGS_IDLE_BRIGHTNESS_MAX);
-
-    /* The wait walks the closed list, one entry per detent, and stops at the
-     * ends. A value that is not on the list moves to the nearest entry in the
-     * direction turned rather than to a value the row could not show. */
-    assert(ui_settings_screensaver_seconds_step(60, 1) == 120);
-    assert(ui_settings_screensaver_seconds_step(60, -1) == 30);
-    assert(ui_settings_screensaver_seconds_step(15, -1) == 15);
-    assert(ui_settings_screensaver_seconds_step(600, 1) == 600);
-    assert(ui_settings_screensaver_seconds_step(45, 1) == 60);
-    assert(ui_settings_screensaver_seconds_step(45, -1) == 30);
-    assert(ui_settings_screensaver_seconds_step(60, 0) == 60);
-    assert(ui_settings_screensaver_seconds_step(45, 0) == 15);
-}
-
-static void test_the_screensaver_rows_exist_only_while_it_is_on(void)
-{
-    ui_settings_model_t model;
-    ui_settings_model_init(&model, true);
-    /* Down to Display, open it, and onto the idle-level row - the last of
-     * the screensaver's three. */
-    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_row_count(&model) == 10U);
-    for (int step = 0; step < 4; ++step) {
-        assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
-    }
-    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD);
-    assert(ui_settings_model_toggle_edit(&model) == UI_SETTINGS_MODEL_CHANGED);
-
-    /* Switched off from the page while that row is being edited: the two
-     * rows go, the cursor lands on the last row left - a flip - and the
-     * knob is let go of, since the number it was turning is not there. */
-    ui_settings_model_set_screensaver(&model, false);
-    assert(ui_settings_model_row_count(&model) == 8U);
-    assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_SCREENSAVER_FIELD);
-    assert(ui_settings_model_row_at(&model, 5U).id == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD);
-    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD);
-    assert(!ui_settings_model_is_editing(&model));
-    /* Idempotent, and the cursor is not touched when it did not have to be. */
-    ui_settings_model_set_screensaver(&model, false);
-    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD);
-
-    /* Back on, from the mode's own row - the usual way, a click there - the
-     * rows come back under the cursor and it stays on the mode. */
-    assert(ui_settings_model_move(&model, -1) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_move(&model, -1) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_SCREENSAVER_FIELD);
-    ui_settings_model_set_screensaver(&model, true);
-    assert(ui_settings_model_row_count(&model) == 10U);
-    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_SCREENSAVER_FIELD);
-    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD);
 }
 
 static void test_brightness_steps_and_stops_at_the_ends(void)
@@ -354,12 +289,13 @@ static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
     assert(!ui_settings_model_has_rows_above(&model));
     assert(!ui_settings_model_has_rows_below(&model, visible));
 
-    /* Open Display, the group that overflows: 3 headings + 6 fields. */
+    /* Open Display, a group that overflows five rows: 3 headings + 4 fields
+     * + About. */
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
     const size_t count = ui_settings_model_row_count(&model);
-    assert(count == 10U);
+    assert(count == 8U);
     /* The furthest the cursor goes: the last field of the open group. About
      * is the row after it and belongs to no group, so an open group cannot
      * reach it - hence "count - 2" rather than "count - 1". */
@@ -479,7 +415,7 @@ static void test_the_longest_list_needs_the_window(void)
         if (count > longest) longest = count;
     }
     /* Three headings, the deepest group's fields, and About. */
-    assert(longest == 8U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA);
+    assert(longest == 9U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA);
     /* Whatever the longest is, every row of it is reachable with the window. */
     ui_settings_model_init(&model, true);
     model.expanded_group = (int)UI_SETTINGS_GROUP_GENERAL;
@@ -500,8 +436,6 @@ int main(void)
     test_each_group_has_expected_fields();
     test_the_display_group_holds_a_number_the_knob_edits();
     test_brightness_steps_and_stops_at_the_ends();
-    test_the_screensaver_numbers_step_along_their_own_scales();
-    test_the_screensaver_rows_exist_only_while_it_is_on();
     test_the_window_follows_the_cursor_and_otherwise_holds_still();
     test_a_device_with_no_home_screen_drops_that_row();
     test_the_longest_list_needs_the_window();

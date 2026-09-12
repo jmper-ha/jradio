@@ -20,6 +20,9 @@ typedef enum {
     UI_SETTINGS_ROW_SCROLL_FIELD,
     UI_SETTINGS_ROW_BUFFER_FIELD,
     UI_SETTINGS_ROW_AUTOPLAY_FIELD,
+    /* One switch, not the service and the pin: those are the page's. Off is
+     * off, and on is whichever service the page last chose. */
+    UI_SETTINGS_ROW_WEATHER_FIELD,
     /* Present in the enum whether or not the feature is built, so the row ids
      * do not shift with a build option; the model simply never hands it out.
      * A build without Yandex Music has no switch for it in General. */
@@ -27,9 +30,11 @@ typedef enum {
     UI_SETTINGS_ROW_DLNA_FIELD,
     UI_SETTINGS_ROW_DISPLAY_GROUP,
     UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
+    /* The mode only. Its wait and its idle level are numbers nobody sets
+     * twice, and they stayed on the page when the panel's two rows for them
+     * went on 2026-09-12: a screen three rows tall has no room for a knob
+     * that turns a value nothing on the panel follows. */
     UI_SETTINGS_ROW_SCREENSAVER_FIELD,
-    UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD,
-    UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD,
     UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD,
     UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD,
     /* The last row of the list, and in no group: what it opens is not a
@@ -80,11 +85,6 @@ typedef struct {
      * one row: the choice between the list and the carousel means nothing on
      * a device that shows neither. */
     bool home_screen;
-    /* Whether the screensaver is on at all. Decides two rows: its wait and
-     * its idle level mean nothing while it is off, so they are not shown
-     * until it is. On by default - the model starts with every row and is
-     * told otherwise. */
-    bool screensaver;
 } ui_settings_model_t;
 
 /* Brightness runs 10..90 rather than 0..100: the panel is unreadable below
@@ -94,21 +94,10 @@ typedef struct {
 #define UI_SETTINGS_BRIGHTNESS_MIN 10
 #define UI_SETTINGS_BRIGHTNESS_MAX 90
 #define UI_SETTINGS_BRIGHTNESS_STEP 5
-/* The idle level runs lower than the panel's own floor - 5 is a glow in a
- * dark room, which is the point of dimming - and stops at 50, where it would
- * no longer read as dimmed against the default. */
-#define UI_SETTINGS_IDLE_BRIGHTNESS_MIN 5
-#define UI_SETTINGS_IDLE_BRIGHTNESS_MAX 50
-#define UI_SETTINGS_IDLE_BRIGHTNESS_STEP 5
 
 /* `home_screen` is what ui_menu_home_screen_needed() says for the device as it
  * is running right now - see the field it sets. */
 void ui_settings_model_init(ui_settings_model_t *model, bool home_screen);
-/* Tells the model whether the screensaver's two number rows exist. Safe with
- * the screen open: the rows sit below the mode's own row, so a cursor on the
- * mode stays where it is when they go, and one left further down is pulled
- * back onto a row that still exists. */
-void ui_settings_model_set_screensaver(ui_settings_model_t *model, bool on);
 ui_settings_model_result_t ui_settings_model_move(ui_settings_model_t *model, int direction);
 ui_settings_model_result_t ui_settings_model_activate(ui_settings_model_t *model);
 ui_settings_row_id_t ui_settings_model_selected(const ui_settings_model_t *model);
@@ -146,9 +135,3 @@ bool ui_settings_model_has_rows_below(const ui_settings_model_t *model, size_t v
  * settings own what it is. */
 int ui_settings_brightness_step(int value, int direction);
 int ui_settings_brightness_clamp(int value);
-int ui_settings_idle_brightness_step(int value, int direction);
-int ui_settings_idle_brightness_clamp(int value);
-/* One detent along the list in device_settings.h. A value that is not on the
- * list - a card written by hand - moves to the nearest entry in the direction
- * turned, so the knob never has to pass through a value it cannot show. */
-int ui_settings_screensaver_seconds_step(int value, int direction);

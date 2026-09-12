@@ -186,7 +186,7 @@
                     <option value="clock" data-i18n="settings.screensaver_clock">Часы</option>
                   </select>
                 </div>
-                <div class="device-row">
+                <div class="device-row" id="device-screensaver-after-row" hidden>
                   <label for="device-screensaver-after" data-i18n="settings.screensaver_after">Через, с</label>
                   <select id="device-screensaver-after" data-field="screensaver_seconds">
                     <option value="15">15</option>
@@ -197,7 +197,7 @@
                     <option value="600">600</option>
                   </select>
                 </div>
-                <div class="device-row">
+                <div class="device-row" id="device-idle-brightness-row" hidden>
                   <label for="device-idle-brightness" data-i18n="settings.idle_brightness">Яркость в покое</label>
                   <span class="device-slider">
                     <input id="device-idle-brightness" type="range" min="5" max="50" step="5" data-field="screensaver_brightness">

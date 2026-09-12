@@ -121,7 +121,12 @@ static const ui_settings_row_t s_band_row = {
  * to choose between, so the row would set a value nobody could ever see. */
 static bool field_is_present(const ui_settings_model_t *model, ui_settings_row_id_t id)
 {
-    return id != UI_SETTINGS_ROW_HOME_SCREEN_FIELD || model->home_screen;
+    if (id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD) return model->home_screen;
+    if (id == UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD ||
+        id == UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD) {
+        return model->screensaver;
+    }
+    return true;
 }
 
 /* Counted from the table rather than written down as a number: a row added or
@@ -198,6 +203,7 @@ void ui_settings_model_init(ui_settings_model_t *model, bool home_screen)
     model->cursor = 0U;
     model->window_top = 0U;
     model->editing = false;
+    model->screensaver = true;
     /* Fixed for as long as the screen is open, not re-read per frame: the
      * Yandex switch on this very screen can take the last optional source
      * away, and a row set that changed under the cursor mid-edit would move
@@ -236,6 +242,23 @@ bool ui_settings_model_has_rows_below(const ui_settings_model_t *model, size_t v
 {
     if (!valid_model(model) || visible_count == 0U) return false;
     return model->window_top + visible_count < total_row_count(model);
+}
+
+void ui_settings_model_set_screensaver(ui_settings_model_t *model, bool on)
+{
+    if (!valid_model(model) || model->screensaver == on) return;
+    model->screensaver = on;
+    size_t first = 0U;
+    size_t last = 0U;
+    movement_bounds(model, &first, &last);
+    if (model->cursor > last) model->cursor = last;
+    if (model->window_top > model->cursor) model->window_top = model->cursor;
+    /* A number being edited cannot be on a row that has just gone: whatever
+     * the cursor now points at is a different row, and the knob is let go. */
+    if (model->editing &&
+        !ui_settings_row_is_number(ui_settings_model_row_at(model, model->cursor).id)) {
+        model->editing = false;
+    }
 }
 
 bool ui_settings_row_is_number(ui_settings_row_id_t id)

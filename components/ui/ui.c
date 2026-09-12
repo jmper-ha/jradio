@@ -2839,6 +2839,8 @@ static void ui_show_settings(void)
     s_settings_open = true;
     ui_hide_qr();
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
+    ui_settings_model_set_screensaver(&s_settings_model,
+                                      s_device_settings.screensaver != DEVICE_SCREENSAVER_OFF);
     if (!device_settings_init(&s_device_settings)) {
         lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
     } else {
@@ -2914,10 +2916,16 @@ static void ui_reload_settings(void)
      * be one Yandex switch out of date until the screen is left and reopened,
      * which is the narrower of the two problems. */
     device_settings_publish(&s_device_settings);
+    /* Safe with the screen open, unlike a re-init: it only takes two rows
+     * away or gives them back, and keeps the cursor on a row that exists. */
+    ui_settings_model_set_screensaver(&s_settings_model,
+                                      s_device_settings.screensaver != DEVICE_SCREENSAVER_OFF);
     if (s_settings_open) {
         ui_update_settings();
     } else {
         ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
+        ui_settings_model_set_screensaver(
+            &s_settings_model, s_device_settings.screensaver != DEVICE_SCREENSAVER_OFF);
     }
 }
 
@@ -3345,11 +3353,16 @@ static void ui_settings_change_selected(void)
         if (changed) ui_apply_source_visibility();
         break;
     case UI_SETTINGS_ROW_SCREENSAVER_FIELD:
-        /* Four in a ring, the way a click cycles every other choice. */
+        /* Four in a ring, the way a click cycles every other choice. The two
+         * rows under it come and go with the answer. */
         changed = device_settings_set_screensaver(
             &s_device_settings,
             (device_screensaver_t)((s_device_settings.screensaver + 1) %
                                    (DEVICE_SCREENSAVER_CLOCK + 1)));
+        if (changed) {
+            ui_settings_model_set_screensaver(
+                &s_settings_model, s_device_settings.screensaver != DEVICE_SCREENSAVER_OFF);
+        }
         break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         changed = device_settings_set_flip_vertical(&s_device_settings,
@@ -5554,6 +5567,8 @@ esp_err_t ui_init(void)
      * point the answer counts a Yandex row the switch may have turned off. */
     ui_apply_source_visibility();
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
+    ui_settings_model_set_screensaver(&s_settings_model,
+                                      s_device_settings.screensaver != DEVICE_SCREENSAVER_OFF);
     // Before anything can play: the board defaults to full volume, and coming
     // back from a power cut at full blast when the user had it at 20 is the
     // kind of surprise a saved setting exists to prevent.

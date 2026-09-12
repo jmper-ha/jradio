@@ -266,6 +266,47 @@ static void test_the_screensaver_numbers_step_along_their_own_scales(void)
     assert(ui_settings_screensaver_seconds_step(45, 0) == 15);
 }
 
+static void test_the_screensaver_rows_exist_only_while_it_is_on(void)
+{
+    ui_settings_model_t model;
+    ui_settings_model_init(&model, true);
+    /* Down to Display, open it, and onto the idle-level row - the last of
+     * the screensaver's three. */
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_row_count(&model) == 10U);
+    for (int step = 0; step < 4; ++step) {
+        assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    }
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD);
+    assert(ui_settings_model_toggle_edit(&model) == UI_SETTINGS_MODEL_CHANGED);
+
+    /* Switched off from the page while that row is being edited: the two
+     * rows go, the cursor lands on the last row left - a flip - and the
+     * knob is let go of, since the number it was turning is not there. */
+    ui_settings_model_set_screensaver(&model, false);
+    assert(ui_settings_model_row_count(&model) == 8U);
+    assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_SCREENSAVER_FIELD);
+    assert(ui_settings_model_row_at(&model, 5U).id == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD);
+    assert(!ui_settings_model_is_editing(&model));
+    /* Idempotent, and the cursor is not touched when it did not have to be. */
+    ui_settings_model_set_screensaver(&model, false);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD);
+
+    /* Back on, from the mode's own row - the usual way, a click there - the
+     * rows come back under the cursor and it stays on the mode. */
+    assert(ui_settings_model_move(&model, -1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_move(&model, -1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_SCREENSAVER_FIELD);
+    ui_settings_model_set_screensaver(&model, true);
+    assert(ui_settings_model_row_count(&model) == 10U);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_SCREENSAVER_FIELD);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD);
+}
+
 static void test_brightness_steps_and_stops_at_the_ends(void)
 {
     assert(ui_settings_brightness_step(50, 1) == 50 + UI_SETTINGS_BRIGHTNESS_STEP);
@@ -460,6 +501,7 @@ int main(void)
     test_the_display_group_holds_a_number_the_knob_edits();
     test_brightness_steps_and_stops_at_the_ends();
     test_the_screensaver_numbers_step_along_their_own_scales();
+    test_the_screensaver_rows_exist_only_while_it_is_on();
     test_the_window_follows_the_cursor_and_otherwise_holds_still();
     test_a_device_with_no_home_screen_drops_that_row();
     test_the_longest_list_needs_the_window();

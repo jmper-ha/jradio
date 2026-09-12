@@ -89,7 +89,8 @@ const ids = [
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal',
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
-  'device-idle-brightness-value',
+  'device-idle-brightness-value', 'device-screensaver-after-row',
+  'device-idle-brightness-row',
   'device-timezone', 'device-ntp',
   'device-weather', 'device-weather-latitude', 'device-weather-longitude',
   'device-weather-key', 'device-weather-key-row', 'device-weather-now-row',
@@ -579,6 +580,11 @@ function lastYandexTimer() {
   assert.equal(elements['#device-idle-brightness-value'].textContent, '15');
   assert.equal(elements['#device-idle-brightness'].min, '5');
   assert.equal(elements['#device-idle-brightness'].max, '50');
+  /* The wait and the idle level exist only while the screensaver is on, the
+     way the device's own screen drops those rows: with the mode off there
+     is nothing for them to mean. The fixture has the clock on. */
+  assert.equal(elements['#device-screensaver-after-row'].hidden, false);
+  assert.equal(elements['#device-idle-brightness-row'].hidden, false);
   /* A build without Yandex Music has no such row on its own screen either, so
      the switch goes away rather than sitting there changing nothing. The media
      server is built into this fixture, so its row stays and shows the state
@@ -643,6 +649,18 @@ function lastYandexTimer() {
                                            call.options.method === 'POST')
       .at(-1).options.body),
     {field: 'screensaver', value: 'dim'});
+  settingsReply = {...settingsReply, screensaver: 'off'};
+  elements['#device-screensaver'].value = 'off';
+  elements['#device-screensaver'].emit('change');
+  await settle();
+  assert.equal(elements['#device-screensaver-after-row'].hidden, true);
+  assert.equal(elements['#device-idle-brightness-row'].hidden, true);
+  settingsReply = {...settingsReply, screensaver: 'blank'};
+  elements['#device-screensaver'].value = 'blank';
+  elements['#device-screensaver'].emit('change');
+  await settle();
+  assert.equal(elements['#device-screensaver-after-row'].hidden, false);
+  assert.equal(elements['#device-idle-brightness-row'].hidden, false);
 
   /* A write the device refuses puts the control back to what it actually
      holds: a switch left showing a change that never landed is worse than no

@@ -84,11 +84,18 @@
      output: document.querySelector('#device-brightness-value')},
     {field: 'screensaver', kind: 'choice', node: document.querySelector('#device-screensaver')},
     /* A number picked off a list rather than a slider: the wait is one of six
-       steps the device names, and a slider would offer every second between. */
+       steps the device names, and a slider would offer every second between.
+       Both rows exist only while the screensaver is on - `when` names the
+       field and the value that hides them, the way the device's own screen
+       drops the rows. */
     {field: 'screensaver_seconds', kind: 'number',
-     node: document.querySelector('#device-screensaver-after')},
+     node: document.querySelector('#device-screensaver-after'),
+     row: document.querySelector('#device-screensaver-after-row'),
+     when: {field: 'screensaver', not: 'off'}},
     {field: 'screensaver_brightness', kind: 'number', node: deviceIdleBrightness,
-     output: document.querySelector('#device-idle-brightness-value')},
+     output: document.querySelector('#device-idle-brightness-value'),
+     row: document.querySelector('#device-idle-brightness-row'),
+     when: {field: 'screensaver', not: 'off'}},
     {field: 'flip_vertical', kind: 'switch', node: document.querySelector('#device-flip-vertical')},
     {field: 'flip_horizontal', kind: 'switch',
      node: document.querySelector('#device-flip-horizontal')},
@@ -733,8 +740,12 @@
         if (entry.output) entry.output.textContent = String(value);
       }
       // A field the build does not have is taken off the page rather than
-      // disabled: there is nothing behind it to explain.
-      if (entry.row) entry.row.hidden = available[entry.gate] !== true;
+      // disabled: there is nothing behind it to explain. A field another
+      // field switches off goes the same way.
+      if (entry.row && entry.gate) entry.row.hidden = available[entry.gate] !== true;
+      if (entry.row && entry.when && typeof payload[entry.when.field] === 'string') {
+        entry.row.hidden = payload[entry.when.field] === entry.when.not;
+      }
     }
     applyWeatherState(payload);
     return true;

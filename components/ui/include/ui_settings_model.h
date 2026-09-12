@@ -80,6 +80,11 @@ typedef struct {
      * one row: the choice between the list and the carousel means nothing on
      * a device that shows neither. */
     bool home_screen;
+    /* Whether the screensaver is on at all. Decides two rows: its wait and
+     * its idle level mean nothing while it is off, so they are not shown
+     * until it is. On by default - the model starts with every row and is
+     * told otherwise. */
+    bool screensaver;
 } ui_settings_model_t;
 
 /* Brightness runs 10..90 rather than 0..100: the panel is unreadable below
@@ -99,6 +104,11 @@ typedef struct {
 /* `home_screen` is what ui_menu_home_screen_needed() says for the device as it
  * is running right now - see the field it sets. */
 void ui_settings_model_init(ui_settings_model_t *model, bool home_screen);
+/* Tells the model whether the screensaver's two number rows exist. Safe with
+ * the screen open: the rows sit below the mode's own row, so a cursor on the
+ * mode stays where it is when they go, and one left further down is pulled
+ * back onto a row that still exists. */
+void ui_settings_model_set_screensaver(ui_settings_model_t *model, bool on);
 ui_settings_model_result_t ui_settings_model_move(ui_settings_model_t *model, int direction);
 ui_settings_model_result_t ui_settings_model_activate(ui_settings_model_t *model);
 ui_settings_row_id_t ui_settings_model_selected(const ui_settings_model_t *model);

@@ -60,9 +60,12 @@ Add-Candidate $env:IDF_PATH
 $onPath = Get-Command idf.py -ErrorAction SilentlyContinue
 if ($onPath) { Add-Candidate (Split-Path -Parent (Split-Path -Parent $onPath.Source)) }
 
-# The usual install locations: the ESP-IDF Installation Manager, the VS Code
-# extension, the Windows offline installer, and a hand-cloned framework.
+# The usual install locations: the ESP-IDF Installation Manager (C:\esp\v*
+# by default, .espressif under the profile when told), the VS Code extension,
+# the Windows offline installer, and a hand-cloned framework.
 foreach ($pattern in @(
+    'C:/esp/v*/esp-idf',
+    'C:/Espressif/v*/esp-idf',
     (Join-Path $env:USERPROFILE 'esp/v*/esp-idf'),
     (Join-Path $env:USERPROFILE 'esp/esp-idf-v*'),
     (Join-Path $env:USERPROFILE 'esp/esp-idf'),
@@ -111,9 +114,10 @@ if (-not $idf) {
     Write-Host @'
 tools/idf.ps1: no ESP-IDF installation found.
 
-In VS Code: open the command palette (Ctrl+Shift+P) and run
-"ESP-IDF: Configure ESP-IDF extension" - it downloads the framework and its
-toolchain. Choose version 5.5.x.
+In VS Code: open the command palette (F1) and run
+"ESP-IDF: Open ESP-IDF Installation Manager" - it downloads the installer,
+which installs the framework and its toolchain. Choose version 5.5.5, then
+run "ESP-IDF: Select Current ESP-IDF Version" and pick it.
 
 Outside VS Code, install it by hand and either set IDF_PATH or run its
 export.ps1 before this script:

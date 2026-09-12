@@ -66,10 +66,12 @@ if command -v idf.py >/dev/null 2>&1; then
     jradio_add "$(cd "$(dirname "$(command -v idf.py)")/.." && pwd)"
 fi
 
-# The usual install locations: the ESP-IDF Installation Manager, the VS Code
-# extension, and a hand-cloned framework.
+# The usual install locations: the ESP-IDF Installation Manager (.espressif
+# by default, ~/esp when told), the VS Code extension, and a hand-cloned
+# framework.
 for jradio_glob in \
     "${HOME}/.espressif/v"*/esp-idf \
+    "${HOME}/esp/v"*/esp-idf \
     "${HOME}/.espressif/frameworks/esp-idf-v"* \
     "${HOME}/esp/esp-idf-v"* \
     "${HOME}/esp/esp-idf" \
@@ -118,9 +120,10 @@ if [ -z "${jradio_idf}" ]; then
     cat >&2 <<'MSG'
 tools/idf.sh: no ESP-IDF installation found.
 
-In VS Code: open the command palette (Ctrl+Shift+P) and run
-"ESP-IDF: Configure ESP-IDF extension" - it downloads the framework and its
-toolchain. Choose version 5.5.x.
+In VS Code: open the command palette (F1) and run
+"ESP-IDF: Open ESP-IDF Installation Manager" - it downloads the installer,
+which installs the framework and its toolchain. Choose version 5.5.5, then
+run "ESP-IDF: Select Current ESP-IDF Version" and pick it.
 
 Outside VS Code, install it by hand and either export IDF_PATH or source its
 export.sh before running this script:

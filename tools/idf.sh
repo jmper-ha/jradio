@@ -66,6 +66,25 @@ if command -v idf.py >/dev/null 2>&1; then
     jradio_add "$(cd "$(dirname "$(command -v idf.py)")/.." && pwd)"
 fi
 
+# What the ESP-IDF Installation Manager wrote down: eim_idf.json lists every
+# version it installed with its path, wherever the user pointed it. This is the
+# file the VS Code extension reads to know the same thing, and it is what
+# catches an install on another drive that no glob below would - a user's
+# build failed with "no ESP-IDF installation found" while Doctor showed 5.5.5,
+# because the framework was on the disk the project was on, not in the
+# profile. Read with grep rather than a JSON parser: this runs before the
+# framework's Python is on PATH, and the file is EIM's own output, one
+# "path" a line.
+for jradio_manifest in \
+    "${IDF_TOOLS_PATH:-${HOME}/.espressif/tools}/eim_idf.json" \
+    "${HOME}/.espressif/tools/eim_idf.json"; do
+    if [ -f "${jradio_manifest}" ]; then
+        while IFS= read -r jradio_line; do
+            jradio_add "${jradio_line}"
+        done < <(sed -n 's/^[[:space:]]*"path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${jradio_manifest}")
+    fi
+done
+
 # The usual install locations: the ESP-IDF Installation Manager (.espressif
 # by default, ~/esp when told), the VS Code extension, and a hand-cloned
 # framework.

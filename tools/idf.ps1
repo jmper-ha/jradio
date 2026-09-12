@@ -60,6 +60,29 @@ Add-Candidate $env:IDF_PATH
 $onPath = Get-Command idf.py -ErrorAction SilentlyContinue
 if ($onPath) { Add-Candidate (Split-Path -Parent (Split-Path -Parent $onPath.Source)) }
 
+# What the ESP-IDF Installation Manager wrote down: eim_idf.json lists every
+# version it installed with its path, wherever the user pointed it. This is the
+# file the VS Code extension reads to know the same thing, and it is what
+# catches an install on another drive that no pattern below would - a user's
+# build failed with "no ESP-IDF installation found" while Doctor showed 5.5.5,
+# because the framework was on the disk the project was on, not under C:. The
+# extension exports IDF_TOOLS_PATH into the task, so a manifest kept somewhere
+# other than the default is found through that.
+$manifests = New-Object System.Collections.Generic.List[string]
+if ($env:IDF_TOOLS_PATH) { $manifests.Add((Join-Path $env:IDF_TOOLS_PATH 'eim_idf.json')) }
+$manifests.Add('C:/Espressif/tools/eim_idf.json')
+$manifests.Add((Join-Path $env:USERPROFILE '.espressif/tools/eim_idf.json'))
+foreach ($manifest in $manifests) {
+    if (-not (Test-Path -LiteralPath $manifest)) { continue }
+    try {
+        $listed = (Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json).idfInstalled
+    } catch {
+        Write-Host "tools/idf.ps1: could not read $manifest; looking elsewhere"
+        continue
+    }
+    foreach ($entry in @($listed)) { if ($entry.path) { Add-Candidate $entry.path } }
+}
+
 # The usual install locations: the ESP-IDF Installation Manager (C:\esp\v*
 # by default, .espressif under the profile when told), the VS Code extension,
 # the Windows offline installer, and a hand-cloned framework.

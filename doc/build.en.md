@@ -82,8 +82,9 @@ after `Ctrl+Shift+B` it does not come back.
 
 The tasks go through [`tools/idf.sh`](../tools/idf.sh), or
 [`tools/idf.ps1`](../tools/idf.ps1) on Windows, which finds an installed ESP-IDF -
-the extension's copy included - and activates it, so `export.sh` never has to
-be sourced by hand. The port is detected when the machine has one board on it;
+through the EIM installer's manifest (`eim_idf.json`, which records where each
+version went, on whatever drive) and the usual folders - and activates it, so
+`export.sh` never has to be sourced by hand. The port is detected when the machine has one board on it;
 with several attached, name the right one in `ESPPORT`.
 
 What it looks for is **5.5.5 exactly**, not "something from 5.5". On a machine

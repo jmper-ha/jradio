@@ -29,6 +29,8 @@ typedef struct {
  * written a year apart still mean the same thing by "wttr". In enum order. */
 #define WEB_SETTINGS_WEATHER_NAMES "off", "open_meteo", "wttr", "openweathermap"
 static const char *const k_weather_names[] = {WEB_SETTINGS_WEATHER_NAMES};
+#define WEB_SETTINGS_SCREENSAVER_NAMES "off", "dim", "blank", "clock"
+static const char *const k_screensaver_names[] = {WEB_SETTINGS_SCREENSAVER_NAMES};
 
 static const field_descriptor_t k_fields[] = {
     {"language", WEB_SETTINGS_FIELD_LANGUAGE, {"ru", "en"}, false, false},
@@ -48,6 +50,9 @@ static const field_descriptor_t k_fields[] = {
     {"weather_latitude", WEB_SETTINGS_FIELD_WEATHER_LATITUDE, {NULL}, false, true},
     {"weather_longitude", WEB_SETTINGS_FIELD_WEATHER_LONGITUDE, {NULL}, false, true},
     {"openweathermap_key", WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY, {NULL}, false, true},
+    {"screensaver", WEB_SETTINGS_FIELD_SCREENSAVER, {WEB_SETTINGS_SCREENSAVER_NAMES}, false, false},
+    {"screensaver_seconds", WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS, {NULL}, true, false},
+    {"screensaver_brightness", WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS, {NULL}, true, false},
 };
 
 /* A provider the page has no name for - a newer card - reads as off, which is
@@ -56,6 +61,12 @@ static const char *weather_name(uint8_t provider)
 {
     const size_t count = sizeof(k_weather_names) / sizeof(k_weather_names[0]);
     return provider < count ? k_weather_names[provider] : k_weather_names[0];
+}
+
+static const char *screensaver_name(uint8_t mode)
+{
+    const size_t count = sizeof(k_screensaver_names) / sizeof(k_screensaver_names[0]);
+    return mode < count ? k_screensaver_names[mode] : k_screensaver_names[0];
 }
 
 static const field_descriptor_t *descriptor_by_name(const char *name)
@@ -105,6 +116,17 @@ static bool parse_value(const field_descriptor_t *descriptor, const cJSON *value
     if (descriptor->field == WEB_SETTINGS_FIELD_BRIGHTNESS) {
         if (number < WEB_SETTINGS_BRIGHTNESS_MIN ||
             number > WEB_SETTINGS_BRIGHTNESS_MAX) {
+            return false;
+        }
+    } else if (descriptor->field == WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS) {
+        if (number < WEB_SETTINGS_IDLE_BRIGHTNESS_MIN ||
+            number > WEB_SETTINGS_IDLE_BRIGHTNESS_MAX) {
+            return false;
+        }
+    } else if (descriptor->field == WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS) {
+        /* Off the device's own list or nothing: a page offering 45 would be
+         * offering a value the knob could never land on again. */
+        if (number <= 0 || !device_settings_screensaver_seconds_valid((unsigned int)number)) {
             return false;
         }
     } else if (number < 0 || number > 100) {
@@ -188,6 +210,13 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_weather_latitude(settings, change->text);
     case WEB_SETTINGS_FIELD_WEATHER_LONGITUDE:
         return device_settings_set_weather_longitude(settings, change->text);
+    case WEB_SETTINGS_FIELD_SCREENSAVER:
+        return device_settings_set_screensaver(settings, (device_screensaver_t)change->value);
+    case WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS:
+        return device_settings_set_screensaver_seconds(settings, (unsigned int)change->value);
+    case WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS:
+        return device_settings_set_screensaver_brightness(settings,
+                                                          (unsigned char)change->value);
     case WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY:
         /* Not the card's: the handler routes it to the key file. */
         return false;
@@ -220,6 +249,9 @@ void web_settings_make_view(web_settings_view_t *view,
         .flip_horizontal = settings->flip_horizontal,
         .timezone = (uint8_t)device_timezone_index_of(settings->timezone),
         .weather = (uint8_t)settings->weather_provider,
+        .screensaver = (uint8_t)settings->screensaver,
+        .screensaver_seconds = settings->screensaver_seconds,
+        .screensaver_brightness = settings->screensaver_brightness,
         .home_screen_available = home_screen_available,
         .yandex_available = yandex_available,
         .dlna_available = dlna_available,
@@ -245,6 +277,9 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->flip_vertical == right->flip_vertical &&
            left->flip_horizontal == right->flip_horizontal &&
            left->timezone == right->timezone && left->weather == right->weather &&
+           left->screensaver == right->screensaver &&
+           left->screensaver_seconds == right->screensaver_seconds &&
+           left->screensaver_brightness == right->screensaver_brightness &&
            left->home_screen_available == right->home_screen_available &&
            left->yandex_available == right->yandex_available &&
            left->dlna_available == right->dlna_available;
@@ -289,6 +324,12 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_string(writer, view_timezone_id(view));
     web_json_literal(writer, ",\"weather\":");
     web_json_string(writer, weather_name(view->weather));
+    web_json_literal(writer, ",\"screensaver\":");
+    web_json_string(writer, screensaver_name(view->screensaver));
+    web_json_literal(writer, ",\"screensaver_seconds\":");
+    web_json_format(writer, "%u", (unsigned)view->screensaver_seconds);
+    web_json_literal(writer, ",\"screensaver_brightness\":");
+    web_json_format(writer, "%u", (unsigned)view->screensaver_brightness);
     /* What this build has, not what it is set to: a switch for a source the
      * firmware was compiled without would change a value nothing reads. */
     web_json_literal(writer, ",\"available\":{\"home_screen\":");
@@ -301,6 +342,18 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_format(writer, "%d", WEB_SETTINGS_BRIGHTNESS_MIN);
     web_json_literal(writer, ",\"brightness_max\":");
     web_json_format(writer, "%d", WEB_SETTINGS_BRIGHTNESS_MAX);
+    web_json_literal(writer, ",\"idle_brightness_min\":");
+    web_json_format(writer, "%d", WEB_SETTINGS_IDLE_BRIGHTNESS_MIN);
+    web_json_literal(writer, ",\"idle_brightness_max\":");
+    web_json_format(writer, "%d", WEB_SETTINGS_IDLE_BRIGHTNESS_MAX);
+    /* The waits the device offers, so the page's list is the device's and a
+     * step added in the firmware is one line here and none on the page. */
+    web_json_literal(writer, ",\"screensaver_seconds_choices\":[");
+    for (size_t index = 0; index < DEVICE_SCREENSAVER_SECONDS_CHOICES; ++index) {
+        if (index > 0) web_json_literal(writer, ",");
+        web_json_format(writer, "%u", (unsigned)device_screensaver_seconds_choices[index]);
+    }
+    web_json_literal(writer, "]");
 }
 
 void web_settings_write(web_json_writer_t *writer,

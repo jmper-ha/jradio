@@ -67,6 +67,18 @@
 #define LCD_DRAW_LINES 20
 #endif
 
+/* Which way the controller's scroll register moves the picture. Every panel
+ * in the catalogue can shift its whole frame along its gate axis in hardware
+ * (VSCRDEF/VSCRSAD - "vertical" in the datasheet, which is the panel's own
+ * long axis: screen x on a landscape build, y on a portrait one), and the
+ * screensaver floats its clock on that, tear-free and at no bus cost. The
+ * sign depends on how the memory is mirrored, which the datasheet does not
+ * settle and the panel does; 1 here reverses it. The ST7796S landscape build
+ * was checked on the glass; the others are derived and marked so. */
+#ifndef TFT_SCROLL_REVERSED
+#define TFT_SCROLL_REVERSED 0
+#endif
+
 /* The panel's reset line, when the module brings one out. Revision 1's ILI9341
  * has its reset tied to the ESP32's own, so no GPIO is wired and -1 is what
  * esp_lcd is told. The line itself belongs in board_options.h with the other

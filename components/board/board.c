@@ -71,6 +71,13 @@ static const char *TAG = "board";
 static uint16_t s_draw_buffer[TFT_WIDTH * LCD_DRAW_LINES];
 static uint16_t s_fill_buffer[TFT_WIDTH * LCD_DRAW_LINES];
 static esp_lcd_panel_handle_t s_panel;
+static esp_lcd_panel_io_handle_t s_panel_io;
+/* Whether the user's flip along the scroll axis is currently on, which turns
+ * the scroll's sign over on top of the profile's baseline. */
+static bool s_scroll_flipped;
+/* The gate axis is the panel's long one: native rows, 480 on a 320x480 glass
+ * whichever way it is mounted. */
+#define BOARD_SCROLL_ROWS (TFT_WIDTH > TFT_HEIGHT ? TFT_WIDTH : TFT_HEIGHT)
 static SemaphoreHandle_t s_lcd_transfer_done;
 static i2s_chan_handle_t s_i2s_tx;
 static SemaphoreHandle_t s_audio_mutex;
@@ -700,6 +707,63 @@ cleanup:
     return result;
 }
 
+esp_err_t board_display_draw_wire(int x1, int y1, int x2, int y2, const uint16_t *pixels)
+{
+    if (s_panel == NULL || pixels == NULL || x1 < 0 || y1 < 0 || x2 <= x1 || y2 <= y1 ||
+        x2 > TFT_WIDTH || y2 > TFT_HEIGHT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    /* One call, however big: esp_lcd splits it into bus-sized transactions
+     * itself and keeps CS held between them, so the panel sees one write of
+     * the whole rectangle, and the done callback fires once, at the end. */
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_draw_bitmap(s_panel, x1, y1, x2, y2, pixels), TAG,
+                        "draw display rectangle failed");
+    if (LCD_WAIT_FOR_TRANSFER &&
+        xSemaphoreTake(s_lcd_transfer_done, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGE(TAG, "timed out waiting for LCD DMA transfer");
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
+}
+
+void board_display_to_wire(uint16_t *pixels, size_t count)
+{
+    if (!TFT_PIXEL_BYTE_SWAP || pixels == NULL) return;
+    for (size_t index = 0; index < count; ++index) {
+        pixels[index] = __builtin_bswap16(pixels[index]);
+    }
+}
+
+esp_err_t board_display_fill(int x1, int y1, int x2, int y2, uint16_t wire_colour)
+{
+    if (s_panel == NULL || x1 < 0 || y1 < 0 || x2 <= x1 || y2 <= y1 || x2 > TFT_WIDTH ||
+        y2 > TFT_HEIGHT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const int width = x2 - x1;
+    /* As many rows as the band buffer holds at this width, not a fixed
+     * count: a fill is usually a thin strip, and one band per call is the
+     * whole cost. */
+    const int rows_per_band = (TFT_WIDTH * LCD_DRAW_LINES) / width;
+    int filled = 0;
+    for (int y = y1; y < y2; y += rows_per_band) {
+        const int lines = (y2 - y) < rows_per_band ? (y2 - y) : rows_per_band;
+        const int count = width * lines;
+        if (count > filled) {
+            for (int index = filled; index < count; ++index) s_draw_buffer[index] = wire_colour;
+            filled = count;
+        }
+        ESP_RETURN_ON_ERROR(esp_lcd_panel_draw_bitmap(s_panel, x1, y, x2, y + lines, s_draw_buffer),
+                            TAG, "fill display rectangle failed");
+        if (LCD_WAIT_FOR_TRANSFER &&
+            xSemaphoreTake(s_lcd_transfer_done, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            ESP_LOGE(TAG, "timed out waiting for LCD DMA transfer");
+            return ESP_ERR_TIMEOUT;
+        }
+    }
+    return ESP_OK;
+}
+
 esp_err_t board_display_draw_rgb565(int x1, int y1, int x2, int y2, const uint16_t *pixels)
 {
     if (s_panel == NULL || pixels == NULL || x1 < 0 || y1 < 0 || x2 <= x1 || y2 <= y1 ||
@@ -710,14 +774,25 @@ esp_err_t board_display_draw_rgb565(int x1, int y1, int x2, int y2, const uint16
     const int width = x2 - x1;
     for (int y = y1; y < y2; y += LCD_DRAW_LINES) {
         const int lines = (y2 - y) < LCD_DRAW_LINES ? (y2 - y) : LCD_DRAW_LINES;
-        for (int index = 0; index < width * lines; ++index) {
-            const int source_row = (y - y1) + index / width;
-            const uint16_t pixel = pixels[source_row * width + (index % width)];
-            /* Constant per build, so one arm of this is compiled away. The
-             * 16-bit panels want the two bytes the other way round on the
-             * wire; a converting driver reads the buffer as native uint16_t
-             * and would take a swapped pixel as a different colour. */
-            s_draw_buffer[index] = TFT_PIXEL_BYTE_SWAP ? __builtin_bswap16(pixel) : pixel;
+        /* The band is one contiguous run of the source: LVGL hands over the
+         * area packed, row after row, so the band starts `(y - y1) * width`
+         * pixels in and runs for `width * lines`. This used to work out a
+         * source row and column for every pixel with a division and a
+         * modulo, and on this core, at this optimisation level, that pair is
+         * a library call - the copy cost more than the transfer, and a frame
+         * of the screensaver's block took 87 ms with the bus idle most of it. */
+        const uint16_t *source = pixels + (y - y1) * width;
+        const int count = width * lines;
+        if (TFT_PIXEL_BYTE_SWAP) {
+            /* The 16-bit panels want the two bytes the other way round on
+             * the wire; a converting driver reads the buffer as native
+             * uint16_t and would take a swapped pixel as a different
+             * colour. Constant per build, so the other arm is compiled away. */
+            for (int index = 0; index < count; ++index) {
+                s_draw_buffer[index] = __builtin_bswap16(source[index]);
+            }
+        } else {
+            memcpy(s_draw_buffer, source, (size_t)count * sizeof(uint16_t));
         }
         ESP_RETURN_ON_ERROR(esp_lcd_panel_draw_bitmap(s_panel, x1, y, x2, y + lines, s_draw_buffer), TAG,
                             "draw display rectangle failed");
@@ -800,6 +875,11 @@ static esp_err_t board_display_init(bool flip_vertical, bool flip_horizontal)
         .trans_queue_depth = 4,
         .on_color_trans_done = board_lcd_color_transfer_done,
         .user_ctx = s_lcd_transfer_done,
+        /* A colour buffer that lives in PSRAM goes to the DMA as it is, in
+         * bus-sized chunks, instead of being copied into internal RAM first -
+         * which for the screensaver's 128 KB bitmap there is no room to do.
+         * See board_display_draw_wire(). */
+        .flags.psram_dma_direct = 1,
     };
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST,
                                                   &io_config, &io_handle), TAG,
@@ -815,6 +895,16 @@ static esp_err_t board_display_init(bool flip_vertical, bool flip_horizontal)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_swap_xy(panel, TFT_SWAP_XY), TAG,
                         "set landscape rotation failed");
     s_panel = panel;
+    s_panel_io = io_handle;
+    /* The whole frame is the scroll area - no fixed band at either end - so
+     * board_display_scroll() can move everything on the glass. A plain DCS
+     * command every controller in the catalogue answers, sent past the
+     * vendor driver, which has no call for it. */
+    const uint8_t scroll_area[6] = {0, 0, (uint8_t)(BOARD_SCROLL_ROWS >> 8),
+                                    (uint8_t)(BOARD_SCROLL_ROWS & 0xFF), 0, 0};
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io_handle, 0x33, scroll_area, sizeof(scroll_area)),
+                        TAG, "define scroll area failed");
+    ESP_RETURN_ON_ERROR(board_display_scroll(0), TAG, "reset scroll failed");
     /* Before the splash, and through the same call the settings screen uses:
      * the baseline mirror and the user's two switches compose in exactly one
      * place, and the picture is written under the mapping it will be read
@@ -848,8 +938,24 @@ static esp_err_t board_display_init(bool flip_vertical, bool flip_horizontal)
 esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal)
 {
     if (s_panel == NULL) return ESP_ERR_INVALID_STATE;
+    s_scroll_flipped = TFT_WIDTH > TFT_HEIGHT ? flip_horizontal : flip_vertical;
     return esp_lcd_panel_mirror(s_panel, flip_horizontal != (bool)TFT_MIRROR_X,
                                 flip_vertical != (bool)TFT_MIRROR_Y);
+}
+
+esp_err_t board_display_scroll(int offset)
+{
+    if (s_panel_io == NULL) return ESP_ERR_INVALID_STATE;
+    const int rows = BOARD_SCROLL_ROWS;
+    /* The register names the memory row shown first, so moving the picture
+     * forward by `offset` means starting `offset` rows earlier - unless the
+     * memory is mirrored along this axis, when it is the other way round. */
+    const bool reversed = (bool)TFT_SCROLL_REVERSED != s_scroll_flipped;
+    int start = reversed ? offset : -offset;
+    start %= rows;
+    if (start < 0) start += rows;
+    const uint8_t param[2] = {(uint8_t)(start >> 8), (uint8_t)(start & 0xFF)};
+    return esp_lcd_panel_io_tx_param(s_panel_io, 0x37, param, sizeof(param));
 }
 
 esp_err_t board_init(bool flip_vertical, bool flip_horizontal)

@@ -167,6 +167,20 @@ number is taken into angle brackets, and turning the knob then changes it. The
 panel follows on every detent. Clicking again releases the knob, and it moves
 through the list as before.
 
+The screensaver is what the panel does once nobody has touched the knob or the
+buttons for a set number of seconds. Four choices: **none**; **dim** - the
+backlight goes down to the "idle brightness"; **blank** - the backlight goes
+off; **clock** - the panel goes dark and the time floats across it in large
+seven-segment digits, with the date and the weather (when it is on) under it
+and what is playing under that. One wait for every mode, from the list 15, 30,
+60, 120, 300 and 600 seconds; the idle brightness runs from 5 to 50; both
+numbers are edited with the knob the way the brightness is. Off by default.
+Any action on the device wakes the panel; in the two dark modes the first
+press only wakes it - nobody can see what they are pressing on a dark panel -
+while the dimmed panel is still readable and a press does what it always does.
+The music takes no notice of the screensaver. The same three rows are on the
+web page, under "Display".
+
 The language is Russian or English, and one switch moves all of it: the
 device's screens and the web interface alike, at once and without a reload. A
 browser tab left open relabels itself whichever way it was switched - from the

@@ -27,6 +27,9 @@ typedef enum {
     UI_SETTINGS_ROW_DLNA_FIELD,
     UI_SETTINGS_ROW_DISPLAY_GROUP,
     UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
+    UI_SETTINGS_ROW_SCREENSAVER_FIELD,
+    UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD,
+    UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD,
     UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD,
     UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD,
     /* The last row of the list, and in no group: what it opens is not a
@@ -86,6 +89,12 @@ typedef struct {
 #define UI_SETTINGS_BRIGHTNESS_MIN 10
 #define UI_SETTINGS_BRIGHTNESS_MAX 90
 #define UI_SETTINGS_BRIGHTNESS_STEP 5
+/* The idle level runs lower than the panel's own floor - 5 is a glow in a
+ * dark room, which is the point of dimming - and stops at 50, where it would
+ * no longer read as dimmed against the default. */
+#define UI_SETTINGS_IDLE_BRIGHTNESS_MIN 5
+#define UI_SETTINGS_IDLE_BRIGHTNESS_MAX 50
+#define UI_SETTINGS_IDLE_BRIGHTNESS_STEP 5
 
 /* `home_screen` is what ui_menu_home_screen_needed() says for the device as it
  * is running right now - see the field it sets. */
@@ -127,3 +136,9 @@ bool ui_settings_model_has_rows_below(const ui_settings_model_t *model, size_t v
  * settings own what it is. */
 int ui_settings_brightness_step(int value, int direction);
 int ui_settings_brightness_clamp(int value);
+int ui_settings_idle_brightness_step(int value, int direction);
+int ui_settings_idle_brightness_clamp(int value);
+/* One detent along the list in device_settings.h. A value that is not on the
+ * list - a card written by hand - moves to the nearest entry in the direction
+ * turned, so the knob never has to pass through a value it cannot show. */
+int ui_settings_screensaver_seconds_step(int value, int direction);

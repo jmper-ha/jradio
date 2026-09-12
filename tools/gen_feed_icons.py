@@ -42,9 +42,10 @@ EXTRA_SIZES = {"volume": (16,), "heart": (16,), "heart_filled": (16,),
                "heart_slash": (16,), "music_note": (64, 107)}
 
 # The weather icons in the status strip, one size per body face: 16 beside
-# the 14 px clock, 20 beside the 18 px one. See UI_STRIP_WEATHER_ICON_PX in
-# the shape files.
-WEATHER_SIZES = (16, 20)
+# the 14 px clock, 20 beside the 18 px one - see UI_STRIP_WEATHER_ICON_PX in
+# the shape files. 24 and 32 are the screensaver's, beside its title-face
+# date (UI_SAVER_WEATHER_ICON_PX).
+WEATHER_SIZES = (16, 20, 24, 32)
 WEATHER_ICONS = ("clear_day", "clear_night", "partly_cloudy_day", "partly_cloudy_night",
                  "cloudy", "fog", "rain", "snow", "sleet", "thunderstorm")
 for _name in WEATHER_ICONS:

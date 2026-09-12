@@ -47,6 +47,8 @@
   const backupFile = document.querySelector('#backup-file');
   const backupRestore = document.querySelector('#backup-restore');
   const deviceBrightness = document.querySelector('#device-brightness');
+  const deviceIdleBrightness = document.querySelector('#device-idle-brightness');
+  const deviceScreensaverAfter = document.querySelector('#device-screensaver-after');
   const weatherNowRow = document.querySelector('#device-weather-now-row');
   const weatherNow = document.querySelector('#device-weather-now');
   /* The device's own settings screen, field for field, in the order and with
@@ -80,6 +82,13 @@
      row: document.querySelector('#device-weather-key-row')},
     {field: 'brightness', kind: 'number', node: deviceBrightness,
      output: document.querySelector('#device-brightness-value')},
+    {field: 'screensaver', kind: 'choice', node: document.querySelector('#device-screensaver')},
+    /* A number picked off a list rather than a slider: the wait is one of six
+       steps the device names, and a slider would offer every second between. */
+    {field: 'screensaver_seconds', kind: 'number',
+     node: document.querySelector('#device-screensaver-after')},
+    {field: 'screensaver_brightness', kind: 'number', node: deviceIdleBrightness,
+     output: document.querySelector('#device-idle-brightness-value')},
     {field: 'flip_vertical', kind: 'switch', node: document.querySelector('#device-flip-vertical')},
     {field: 'flip_horizontal', kind: 'switch',
      node: document.querySelector('#device-flip-horizontal')},
@@ -654,12 +663,35 @@
     }));
   }
 
+  /* The waits the device offers, as it names them. The page carries a
+     default list so it is usable before the answer arrives; the device's
+     replaces it, so a step added in the firmware needs no page change. */
+  function fillSecondsChoices(choices) {
+    if (!Array.isArray(choices) || choices.length === 0) return;
+    if (!choices.every((value) => Number.isSafeInteger(value) && value > 0)) return;
+    const key = choices.join(',');
+    if (deviceScreensaverAfter.dataset.choices === key) return;
+    deviceScreensaverAfter.dataset.choices = key;
+    deviceScreensaverAfter.replaceChildren(...choices.map((value) => {
+      const option = document.createElement('option');
+      option.value = String(value);
+      option.textContent = String(value);
+      return option;
+    }));
+  }
+
   function applyDeviceSettings(payload) {
     if (!isObject(payload)) return false;
     applyLanguage(payload);
     const available = isObject(payload.available) ? payload.available : {};
     // Before the values below, or the zone would be set on an empty list.
     fillTimezones(payload.timezones);
+    fillSecondsChoices(payload.screensaver_seconds_choices);
+    if (Number.isSafeInteger(payload.idle_brightness_min) &&
+        Number.isSafeInteger(payload.idle_brightness_max)) {
+      deviceIdleBrightness.min = String(payload.idle_brightness_min);
+      deviceIdleBrightness.max = String(payload.idle_brightness_max);
+    }
     if (Number.isSafeInteger(payload.brightness_min) &&
         Number.isSafeInteger(payload.brightness_max)) {
       // The panel is unreadable below about ten and zero looks like a dead
@@ -698,7 +730,7 @@
         continue;
       } else if (Number.isSafeInteger(value)) {
         entry.node.value = String(value);
-        entry.output.textContent = String(value);
+        if (entry.output) entry.output.textContent = String(value);
       }
       // A field the build does not have is taken off the page rather than
       // disabled: there is nothing behind it to explain.
@@ -843,11 +875,14 @@
     for (const entry of deviceFields) {
       if (entry.kind === 'number') {
         // The readout follows the handle; the write waits for it to be let go,
-        // or a drag across the range would post every step of the way.
-        entry.node.addEventListener('input', () => {
-          deviceHeld = entry.field;
-          entry.output.textContent = String(entry.node.value);
-        });
+        // or a drag across the range would post every step of the way. A list
+        // has no handle and no readout - only the change.
+        if (entry.output) {
+          entry.node.addEventListener('input', () => {
+            deviceHeld = entry.field;
+            entry.output.textContent = String(entry.node.value);
+          });
+        }
         entry.node.addEventListener('change', () => {
           deviceHeld = '';
           sendDeviceChange(entry.field, Number(entry.node.value));

@@ -25,6 +25,24 @@ esp_err_t board_audio_self_test(uint32_t duration_ms);
  * glitches to starvation rather than to decoding or the network. */
 unsigned int board_audio_underrun_count(void);
 esp_err_t board_display_draw_rgb565(int x1, int y1, int x2, int y2, const uint16_t *pixels);
+/* The same rectangle from pixels already in the panel's wire order - swapped
+ * with board_display_wire_pixel() - and straight from where they are, PSRAM
+ * included: no band copy, one write. For a bitmap in PSRAM the buffer and its
+ * size must be BOARD_DISPLAY_WIRE_ALIGN-aligned, or the SPI driver will try
+ * to copy it into internal RAM. */
+esp_err_t board_display_draw_wire(int x1, int y1, int x2, int y2, const uint16_t *pixels);
+#define BOARD_DISPLAY_WIRE_ALIGN 64
+/* A rectangle of one colour, given in wire order. */
+esp_err_t board_display_fill(int x1, int y1, int x2, int y2, uint16_t wire_colour);
+/* Shifts the whole picture along the panel's gate axis - screen x on a
+ * landscape build, y on a portrait one - by `offset` pixels, in the
+ * controller: it takes effect at the panel's next refresh, tear-free, and
+ * costs the bus two bytes. What runs off one edge comes back in at the
+ * other. 0 puts the picture back where it was written. */
+esp_err_t board_display_scroll(int offset);
+/* Native RGB565 pixels rewritten in place as the panel wants them on the
+ * wire - a byte swap on the 16-bit panels, nothing on the converting ones. */
+void board_display_to_wire(uint16_t *pixels, size_t count);
 esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal);
 
 /* Loudest sample per channel since the previous call, then resets. Taking

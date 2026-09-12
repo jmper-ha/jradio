@@ -11,7 +11,7 @@
 | `GET /api/dlna` | Содержимое открытого контейнера медиасервера; `searching` — сервер ещё ищется |
 | `GET /api/about` | Версии прошивки и веб-интерфейса, ESP-IDF, адрес автора |
 | `GET /api/settings` | Настройки устройства — те же, что на его экране |
-| `POST /api/settings` | Изменение одной настройки: `{"field":…,"value":…}`, включая `timezone`, `ntp_server`, `weather`, `weather_latitude`, `weather_longitude` и `openweathermap_key` |
+| `POST /api/settings` | Изменение одной настройки: `{"field":…,"value":…}`, включая `timezone`, `ntp_server`, `weather`, `weather_latitude`, `weather_longitude`, `openweathermap_key`, `screensaver`, `screensaver_seconds` и `screensaver_brightness` |
 | `GET /api/backup` | Настройки устройства одним zip: `wifi.json`, `settings.csv`, `yandex.json`, `weather.json` |
 | `POST /api/restore` | Восстановление: архив целиком или один файл, `?name=` — его имя |
 | `GET /api/progress` | Позиция в треке, заполнение буфера, подпись обложки |

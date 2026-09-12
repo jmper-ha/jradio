@@ -487,6 +487,66 @@ static void test_the_weather_settings_persist_and_are_checked(void)
     assert(reloaded.weather_provider == DEVICE_WEATHER_OFF);
 }
 
+static void test_the_screensaver_settings_persist_and_are_checked(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    /* Off until somebody asks: a panel that goes dark on its own a minute
+     * after a fresh flash reads as a fault, not a feature. */
+    assert(settings.screensaver == DEVICE_SCREENSAVER_OFF);
+    assert(settings.screensaver_seconds == DEVICE_SCREENSAVER_SECONDS_DEFAULT);
+    assert(settings.screensaver_brightness == DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT);
+
+    assert(device_settings_set_screensaver(&settings, DEVICE_SCREENSAVER_CLOCK));
+    assert(device_settings_set_screensaver_seconds(&settings, 300));
+    assert(device_settings_set_screensaver_brightness(&settings, 15));
+
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.screensaver == DEVICE_SCREENSAVER_CLOCK);
+    assert(reloaded.screensaver_seconds == 300);
+    assert(reloaded.screensaver_brightness == 15);
+
+    /* Words in the file, like the weather's. */
+    char value[32];
+    assert(settings_csv_get(test_path, "screensaver", value, sizeof(value)));
+    assert(strcmp(value, "clock") == 0);
+    assert(device_settings_set_screensaver(&settings, DEVICE_SCREENSAVER_DIM));
+    assert(settings_csv_get(test_path, "screensaver", value, sizeof(value)));
+    assert(strcmp(value, "dim") == 0);
+    assert(device_settings_set_screensaver(&settings, DEVICE_SCREENSAVER_BLANK));
+    assert(settings_csv_get(test_path, "screensaver", value, sizeof(value)));
+    assert(strcmp(value, "blank") == 0);
+    assert(!device_settings_set_screensaver(&settings, (device_screensaver_t)9));
+
+    /* The wait is one of the offered steps, not any number: the knob and the
+     * page step through the same list, and 45 would be a value neither could
+     * land on again. */
+    assert(device_settings_screensaver_seconds_valid(15));
+    assert(device_settings_screensaver_seconds_valid(600));
+    assert(!device_settings_screensaver_seconds_valid(45));
+    assert(!device_settings_screensaver_seconds_valid(0));
+    assert(!device_settings_set_screensaver_seconds(&settings, 45));
+    assert(settings.screensaver_seconds == 300);
+    /* And the idle level is refused at zero, the way the brightness is: zero
+     * is the blank mode, and a hand-edited zero would be a panel that dims to
+     * nothing and cannot be seen to be turned back up. */
+    assert(!device_settings_set_screensaver_brightness(&settings, 0));
+    assert(!device_settings_set_screensaver_brightness(&settings, 101));
+    assert(settings.screensaver_brightness == 15);
+
+    (void)unlink(test_path);
+    FILE *file = fopen(test_path, "w");
+    assert(file != NULL);
+    fputs("screensaver,sparkles\nscreensaver_seconds,45\nscreensaver_brightness,0\n", file);
+    fclose(file);
+    assert(device_settings_init_at(&settings, test_path));
+    assert(settings.screensaver == DEVICE_SCREENSAVER_OFF);
+    assert(settings.screensaver_seconds == DEVICE_SCREENSAVER_SECONDS_DEFAULT);
+    assert(settings.screensaver_brightness == DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT);
+}
+
 int main(void)
 {
     test_defaults_and_load();
@@ -503,6 +563,7 @@ int main(void)
     test_the_media_server_resume_point_persists();
     test_the_clock_settings_persist_and_are_checked();
     test_the_weather_settings_persist_and_are_checked();
+    test_the_screensaver_settings_persist_and_are_checked();
     test_brightness_persists_and_refuses_a_dark_panel();
     test_a_corrupt_brightness_leaves_the_default();
     puts("device_settings tests passed");

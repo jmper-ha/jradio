@@ -89,6 +89,16 @@
  * drawn: two over the body face, which is what the volume icon is to the
  * footer's on the smaller panels. */
 #define UI_STRIP_WEATHER_ICON_PX 16
+/* The screensaver's clock, a seven-segment face tools/gen_ui_fonts.sh has
+ * not made but the DSEG7 conversion has: a size that leaves the date and the
+ * track under it, and a margin either side, on this panel. */
+#define UI_SAVER_CLOCK_PX 72
+/* The screensaver's text face - the date and the track under the digits -
+ * and the weather picture beside the date, a size tools/gen_feed_icons.py
+ * has drawn. A step under the title face: at the title's size the lines
+ * crowded the digits. */
+#define UI_SAVER_TEXT_PX 18
+#define UI_SAVER_WEATHER_ICON_PX 20
 #define UI_FONT_TITLE_PX 20
 #define UI_FONT_ICON_PX 24
 #define UI_FONT_DISPLAY_PX 48

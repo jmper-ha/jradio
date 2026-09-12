@@ -64,6 +64,29 @@ static void test_choices_are_named_not_numbered(void)
     assert(!parse_one("{\"field\":\"weather\",\"value\":\"accuweather\"}", &change));
     assert(!parse_one("{\"field\":\"weather\",\"value\":3}", &change));
 
+    /* The screensaver: a four-way choice, a wait that has to be one of the
+     * device's own steps - 45 is refused at the door rather than stored and
+     * shown as a value the knob could never land on again - and an idle level
+     * inside its own window, which starts below the panel's floor. */
+    assert(parse_one("{\"field\":\"screensaver\",\"value\":\"clock\"}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_SCREENSAVER);
+    assert(change.value == DEVICE_SCREENSAVER_CLOCK);
+    assert(parse_one("{\"field\":\"screensaver\",\"value\":\"dim\"}", &change));
+    assert(change.value == DEVICE_SCREENSAVER_DIM);
+    assert(parse_one("{\"field\":\"screensaver\",\"value\":\"blank\"}", &change));
+    assert(change.value == DEVICE_SCREENSAVER_BLANK);
+    assert(!parse_one("{\"field\":\"screensaver\",\"value\":\"stars\"}", &change));
+    assert(parse_one("{\"field\":\"screensaver_seconds\",\"value\":300}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS);
+    assert(change.value == 300);
+    assert(!parse_one("{\"field\":\"screensaver_seconds\",\"value\":45}", &change));
+    assert(!parse_one("{\"field\":\"screensaver_seconds\",\"value\":\"300\"}", &change));
+    assert(parse_one("{\"field\":\"screensaver_brightness\",\"value\":5}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS);
+    assert(change.value == 5);
+    assert(!parse_one("{\"field\":\"screensaver_brightness\",\"value\":0}", &change));
+    assert(!parse_one("{\"field\":\"screensaver_brightness\",\"value\":55}", &change));
+
     /* The coordinates and the key travel as text; whether they mean anything
      * is the setter's question, and the key's is the store's. */
     assert(parse_one("{\"field\":\"weather_latitude\",\"value\":\"-33.8688\"}", &change));
@@ -178,6 +201,13 @@ static void test_apply_writes_through_to_the_file(void)
      * write a secret into settings.csv. */
     const web_settings_change_t key = {WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY, 0, "abcdefgh"};
     assert(!web_settings_apply(&settings, &key));
+    const web_settings_change_t saver = {WEB_SETTINGS_FIELD_SCREENSAVER, DEVICE_SCREENSAVER_CLOCK,
+                                         ""};
+    assert(web_settings_apply(&settings, &saver));
+    const web_settings_change_t after = {WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS, 600, ""};
+    assert(web_settings_apply(&settings, &after));
+    const web_settings_change_t idle = {WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS, 10, ""};
+    assert(web_settings_apply(&settings, &idle));
 
     device_settings_t reloaded;
     assert(device_settings_init_at(&reloaded, test_path));
@@ -187,6 +217,9 @@ static void test_apply_writes_through_to_the_file(void)
     assert(reloaded.weather_provider == DEVICE_WEATHER_WTTR);
     assert(strcmp(reloaded.weather_latitude, "59.93") == 0);
     assert(strcmp(reloaded.weather_longitude, "37.62") == 0);
+    assert(reloaded.screensaver == DEVICE_SCREENSAVER_CLOCK);
+    assert(reloaded.screensaver_seconds == 600);
+    assert(reloaded.screensaver_brightness == 10);
     char nothing[8];
     assert(!settings_csv_get(test_path, "openweathermap_key", nothing, sizeof(nothing)));
 
@@ -236,6 +269,15 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"home_screen\":true") != NULL);
     assert(strstr(document, "\"brightness_min\":10") != NULL);
     assert(strstr(document, "\"brightness_max\":90") != NULL);
+    /* The screensaver, in the live part - the panel's own screen changes it
+       too - with its window and its list of waits, so the page offers exactly
+       the steps the knob does. */
+    assert(strstr(document, "\"screensaver\":\"off\"") != NULL);
+    assert(strstr(document, "\"screensaver_seconds\":60") != NULL);
+    assert(strstr(document, "\"screensaver_brightness\":20") != NULL);
+    assert(strstr(document, "\"idle_brightness_min\":5") != NULL);
+    assert(strstr(document, "\"idle_brightness_max\":50") != NULL);
+    assert(strstr(document, "\"screensaver_seconds_choices\":[15,30,60,120,300,600]") != NULL);
 
     /* The clock: the zone as an id and the server as it stands, plus the list
        to choose from - which is sent rather than written into the page, so

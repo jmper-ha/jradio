@@ -28,6 +28,9 @@ CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_32=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
+# The screensaver renders its clock block once into an off-screen bitmap and
+# moves the bitmap: drawing the 112 px digits afresh cost 170 ms a frame.
+CONFIG_LV_USE_SNAPSHOT=y
 # The settings screen turns its address band into a QR code on a click, which
 # is the only way a phone gets to the web UI without someone typing an IP by
 # hand - and in setup mode the only way it joins the box's access point at all.

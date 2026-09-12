@@ -26,6 +26,11 @@ extern const lv_font_t ui_font_cyrillic_14;
 extern const lv_font_t ui_font_cyrillic_18;
 extern const lv_font_t ui_font_cyrillic_20;
 extern const lv_font_t ui_font_cyrillic_26;
+/* DSEG7 Classic Bold (SIL OFL), digits, colon and dash only: the screensaver's
+ * clock. Three sizes, one per panel width, chosen by the shape file. */
+extern const lv_font_t ui_font_seven_segment_56;
+extern const lv_font_t ui_font_seven_segment_72;
+extern const lv_font_t ui_font_seven_segment_112;
 
 /* Two levels so the size macro is expanded before it is pasted. */
 #define UI_FONT_TEXT_(px) ui_font_cyrillic_##px
@@ -34,6 +39,13 @@ extern const lv_font_t ui_font_cyrillic_26;
 #define UI_FONT_ICON_FACE(px) UI_FONT_ICON_(px)
 #define UI_FONT_MONT_ENABLED_(px) LV_FONT_MONTSERRAT_##px
 #define UI_FONT_MONT_ENABLED(px) UI_FONT_MONT_ENABLED_(px)
+
+#define UI_FONT_SEGMENT_(px) ui_font_seven_segment_##px
+#define UI_FONT_SEGMENT(px) UI_FONT_SEGMENT_(px)
+/* The screensaver's clock, and nothing else: a face with eleven glyphs. */
+#define UI_FONT_SAVER_CLOCK (&UI_FONT_SEGMENT(UI_SAVER_CLOCK_PX))
+/* The two lines under it. */
+#define UI_FONT_SAVER_TEXT (&UI_FONT_TEXT(UI_SAVER_TEXT_PX))
 
 /* Body text: notices, secondary lines, the settings fields. */
 #define UI_FONT_BODY (&UI_FONT_TEXT(UI_FONT_BODY_PX))

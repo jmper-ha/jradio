@@ -25,6 +25,10 @@
  * depending on the on-device screen. */
 #define WEB_SETTINGS_BRIGHTNESS_MIN 10
 #define WEB_SETTINGS_BRIGHTNESS_MAX 90
+/* Likewise UI_SETTINGS_IDLE_BRIGHTNESS_MIN/MAX: the screensaver's level runs
+ * lower, since a glow in a dark room is what dimming is for. */
+#define WEB_SETTINGS_IDLE_BRIGHTNESS_MIN 5
+#define WEB_SETTINGS_IDLE_BRIGHTNESS_MAX 50
 
 typedef enum {
     WEB_SETTINGS_FIELD_LANGUAGE = 0,
@@ -43,6 +47,9 @@ typedef enum {
     WEB_SETTINGS_FIELD_WEATHER,
     WEB_SETTINGS_FIELD_WEATHER_LATITUDE,
     WEB_SETTINGS_FIELD_WEATHER_LONGITUDE,
+    WEB_SETTINGS_FIELD_SCREENSAVER,
+    WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS,
+    WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS,
     /* Not a device setting at all - a secret that goes to its own file - but
      * it arrives on the same page in the same shape, so it is parsed here and
      * routed by the handler: web_settings_apply() refuses it. */
@@ -109,6 +116,11 @@ typedef struct {
     /* The weather service, as device_weather_provider_t. The coordinates and
      * the key stay out of the live diff with the time server: typed once. */
     uint8_t weather;
+    /* The screensaver as device_screensaver_t, its wait in seconds - one of
+     * the six the device offers - and its idle backlight. */
+    uint8_t screensaver;
+    uint16_t screensaver_seconds;
+    uint8_t screensaver_brightness;
     bool home_screen_available;
     bool yandex_available;
     bool dlna_available;

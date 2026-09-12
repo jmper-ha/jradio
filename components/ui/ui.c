@@ -51,6 +51,7 @@
 #include "ui_files_notice.h"
 #include "album_art.h"
 #include "ui_vu_meter.h"
+#include "ui_screensaver.h"
 
 /* The note on an empty cover tile, named at the size the shape file asks for.
  * Two levels so the size macro is expanded before it is pasted, the same shape
@@ -521,6 +522,28 @@ static uint32_t s_volume_changed_ms;
 static bool s_brightness_save_pending;
 static uint32_t s_brightness_changed_ms;
 
+/* Every write to the backlight goes through here, so the screensaver knows
+ * what the panel is at and can put it back: it applies its own level on every
+ * pass, and a direct write from a settings reload would otherwise have lit the
+ * panel behind its back for good. 255 is "never set" - no percentage. */
+static uint8_t s_backlight_applied = 255U;
+static void ui_backlight_apply(uint8_t percent)
+{
+    if (percent == s_backlight_applied) return;
+    s_backlight_applied = percent;
+    (void)board_backlight_set(percent);
+}
+
+/* The last answer the now-playing derivation gave, whichever source gave it.
+ * Kept because the screensaver's clock names the track, and it is drawn over
+ * whatever screen was up - the player's labels may be on a screen LVGL is not
+ * showing, but the derivation runs on every pass regardless. */
+static ui_now_playing_t s_now_playing;
+static void ui_note_now_playing(const ui_now_playing_t *now)
+{
+    s_now_playing = *now;
+}
+
 static void ui_set_label_text_if_changed(lv_obj_t *label, const char *text)
 {
     if (label == NULL || text == NULL) {
@@ -785,6 +808,427 @@ static void ui_status_strip_update_weather(ui_status_strip_t *strip)
             lv_obj_add_flag(strip->weather_icon, LV_OBJ_FLAG_HIDDEN);
         }
     }
+}
+
+/* The screensaver: a black cover over every screen on LVGL's top layer, and
+ * a clock block that is drawn past LVGL altogether.
+ *
+ * The cover rather than a screen of its own because whatever was up stays up
+ * and comes back the instant the cover lifts, with nothing to rebuild. While
+ * it is up, LVGL's invalidation is switched off - see ui_screensaver_poll()
+ * for what that saves. (Hiding the screen objects instead was tried: clearing
+ * the flag on a screen walks to its parent, which a screen does not have.)
+ *
+ * The block itself never goes through LVGL's frame. It is rendered once into
+ * a bitmap - a snapshot, whenever its text changes - and the bitmap is written
+ * to the panel straight from PSRAM, by DMA, at whatever position the drift
+ * has reached, with the strip it uncovered filled black behind it. Through
+ * LVGL, a frame of the moving block cost 70 ms however it was arranged: the
+ * digits drawn afresh, then a bitmap blitted, then the band copy - the
+ * redraw of a sixth of the panel through the software renderer is simply that
+ * slow on this core. Written straight, a frame is the bus and nothing else. */
+static ui_screensaver_t s_saver;
+static ui_screensaver_view_t s_saver_view;
+static lv_obj_t *s_saver_cover;
+static lv_obj_t *s_saver_block;
+static lv_obj_t *s_saver_time;
+static lv_obj_t *s_saver_date;
+static lv_obj_t *s_saver_icon;
+static lv_obj_t *s_saver_temperature;
+static lv_obj_t *s_saver_track;
+/* The block's bitmap, in the panel's wire order once rendered. */
+static lv_draw_buf_t s_saver_bitmap;
+static bool s_saver_bitmap_ok;
+static int s_saver_block_w;
+static int s_saver_block_h;
+static int s_saver_line_h;
+static uint32_t s_saver_text_ms;
+static bool s_saver_icon_shown;
+static weather_icon_t s_saver_icon_kind;
+/* Where the block is written in the frame, and whether it has been. */
+static int s_saver_x;
+static int s_saver_y;
+static bool s_saver_drawn;
+static bool s_saver_dirty;
+static uint32_t s_saver_draw_after_ms;
+/* Between the three lines of the block, and between the date, the picture and
+ * the temperature on the middle one. */
+#define UI_SAVER_GAP 6
+#define UI_SAVER_INLINE_GAP 10
+/* How often the block's text is looked at while it is up: the time changes
+ * once a minute and the track once a song, so a second is plenty. */
+#define UI_SAVER_TEXT_MS 1000U
+/* How long after the cover goes up before the block is first written: LVGL
+ * paints the cover on its own next cycle, and a block written before that
+ * would be painted over. */
+#define UI_SAVER_FIRST_DRAW_MS 80U
+
+static void ui_create_screensaver(void)
+{
+    s_saver_cover = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(s_saver_cover);
+    lv_obj_set_pos(s_saver_cover, 0, 0);
+    lv_obj_set_size(s_saver_cover, TFT_WIDTH, TFT_HEIGHT);
+    /* True black, not the ground colour: on a dark panel the ground is a
+     * visible grey rectangle, and the point is that nothing is. */
+    lv_obj_set_style_bg_color(s_saver_cover, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_saver_cover, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_font(s_saver_cover, UI_FONT_SAVER_TEXT, 0);
+    lv_obj_clear_flag(s_saver_cover, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_saver_cover, LV_OBJ_FLAG_HIDDEN);
+
+    /* Measured rather than laid out: the seven-segment face's width is the
+     * font's business, and the block is as wide as the widest time it can
+     * show - or three fifths of the panel, so the lines under it have room
+     * on the narrow one. Rounded up to 32 pixels: the bitmap goes to the DMA
+     * from PSRAM, and every chunk of it has to start and end on a cache
+     * line, which a row of 64 bytes guarantees. */
+    lv_point_t time_size;
+    lv_text_get_size(&time_size, "88:88", UI_FONT_SAVER_CLOCK, 0, 0, LV_COORD_MAX,
+                     LV_TEXT_FLAG_NONE);
+    const int text_h = lv_font_get_line_height(UI_FONT_SAVER_TEXT);
+    s_saver_line_h = text_h > UI_SAVER_WEATHER_ICON_PX ? text_h : UI_SAVER_WEATHER_ICON_PX;
+    const int floor_w = TFT_WIDTH * 3 / 5;
+    int width = time_size.x > floor_w ? time_size.x : floor_w;
+    width = (width + 31) / 32 * 32;
+    s_saver_block_w = width > TFT_WIDTH ? TFT_WIDTH / 32 * 32 : width;
+    s_saver_block_h = time_size.y + UI_SAVER_GAP + s_saver_line_h + UI_SAVER_GAP + text_h;
+
+    /* Hidden for good: the snapshot draws a hidden object all the same, and
+     * a visible one would be drawn on the panel by LVGL as well. */
+    s_saver_block = lv_obj_create(s_saver_cover);
+    lv_obj_remove_style_all(s_saver_block);
+    lv_obj_set_size(s_saver_block, s_saver_block_w, s_saver_block_h);
+    lv_obj_clear_flag(s_saver_block, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_saver_block, LV_OBJ_FLAG_HIDDEN);
+
+    /* Grey, not the accent: this is a night screen, and the digits are the
+     * biggest thing on it. The lines under them a shade darker again. */
+    s_saver_time = lv_label_create(s_saver_block);
+    lv_obj_set_pos(s_saver_time, 0, 0);
+    lv_obj_set_width(s_saver_time, s_saver_block_w);
+    lv_obj_set_style_text_align(s_saver_time, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(s_saver_time, UI_FONT_SAVER_CLOCK, 0);
+    lv_obj_set_style_text_color(s_saver_time, lv_color_hex(UI_COLOR_MUTED), 0);
+    lv_label_set_text(s_saver_time, "--:--");
+
+    /* The middle line is three things laid side by side and centred as one:
+     * the date, the weather's picture and its temperature. Their x is set
+     * whenever their text is, from their measured widths. */
+    const int line_y = time_size.y + UI_SAVER_GAP;
+    s_saver_date = lv_label_create(s_saver_block);
+    lv_obj_set_pos(s_saver_date, 0, line_y + (s_saver_line_h - text_h) / 2);
+    lv_obj_set_style_text_color(s_saver_date, lv_color_hex(UI_COLOR_DIM), 0);
+    lv_label_set_text(s_saver_date, "");
+
+    s_saver_icon = lv_image_create(s_saver_block);
+    lv_obj_set_pos(s_saver_icon, 0, line_y + (s_saver_line_h - UI_SAVER_WEATHER_ICON_PX) / 2);
+    lv_obj_set_style_image_recolor(s_saver_icon, lv_color_hex(UI_COLOR_DIM), 0);
+    lv_obj_set_style_image_recolor_opa(s_saver_icon, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_saver_icon, LV_OBJ_FLAG_HIDDEN);
+
+    s_saver_temperature = lv_label_create(s_saver_block);
+    lv_obj_set_pos(s_saver_temperature, 0, line_y + (s_saver_line_h - text_h) / 2);
+    lv_obj_set_style_text_color(s_saver_temperature, lv_color_hex(UI_COLOR_DIM), 0);
+    lv_label_set_text(s_saver_temperature, "");
+
+    s_saver_track = lv_label_create(s_saver_block);
+    lv_obj_set_pos(s_saver_track, 0, line_y + s_saver_line_h + UI_SAVER_GAP);
+    lv_obj_set_width(s_saver_track, s_saver_block_w);
+    lv_obj_set_style_text_align(s_saver_track, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_saver_track, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_color(s_saver_track, lv_color_hex(UI_COLOR_DIM), 0);
+    lv_label_set_text(s_saver_track, "");
+
+    /* The bitmap, in PSRAM: 128 KB on the wide panel, which the LVGL pool
+     * does not have and the SPI RAM does not miss. Aligned, and sized to a
+     * whole number of cache lines, for the DMA. Without it the clock is not
+     * offered - the mode falls back to a dark panel. */
+    const uint32_t stride =
+        lv_draw_buf_width_to_stride((uint32_t)s_saver_block_w, LV_COLOR_FORMAT_RGB565);
+    const uint32_t size = (stride * (uint32_t)s_saver_block_h + BOARD_DISPLAY_WIRE_ALIGN - 1U) /
+                          BOARD_DISPLAY_WIRE_ALIGN * BOARD_DISPLAY_WIRE_ALIGN;
+    void *pixels = heap_caps_aligned_alloc(BOARD_DISPLAY_WIRE_ALIGN, size, MALLOC_CAP_SPIRAM);
+    if (pixels == NULL) {
+        ESP_LOGW(TAG, "screensaver bitmap: no %u bytes of PSRAM; clock unavailable",
+                 (unsigned)size);
+        return;
+    }
+    lv_draw_buf_init(&s_saver_bitmap, (uint32_t)s_saver_block_w, (uint32_t)s_saver_block_h,
+                     LV_COLOR_FORMAT_RGB565, stride, pixels, size);
+    s_saver_bitmap_ok = true;
+}
+
+/* Renders the block into its bitmap and turns the bitmap to wire order. */
+static void ui_screensaver_render_block(void)
+{
+    if (!s_saver_bitmap_ok) return;
+    if (lv_snapshot_take_to_draw_buf(s_saver_block, LV_COLOR_FORMAT_RGB565, &s_saver_bitmap) !=
+        LV_RESULT_OK) {
+        ESP_LOGW(TAG, "screensaver bitmap: snapshot failed");
+        return;
+    }
+    board_display_to_wire((uint16_t *)s_saver_bitmap.data,
+                          (size_t)s_saver_block_w * (size_t)s_saver_block_h);
+    s_saver_dirty = true;
+}
+
+/* True when the label's text was not already this, and sets it. */
+static bool ui_set_label_text_note_change(lv_obj_t *label, const char *text)
+{
+    const char *current = lv_label_get_text(label);
+    if (current != NULL && strcmp(current, text) == 0) return false;
+    lv_label_set_text(label, text);
+    return true;
+}
+
+/* Lays the middle line out from the widths its labels now have: the three
+ * parts centred together, the picture and its number close, the date a
+ * clear gap away. The labels size themselves to their text, which is why the
+ * layout pass has to come first. */
+static void ui_screensaver_place_middle_line(void)
+{
+    lv_obj_update_layout(s_saver_block);
+    const int date_w = lv_obj_get_width(s_saver_date);
+    const int temperature_w = s_saver_icon_shown ? lv_obj_get_width(s_saver_temperature) : 0;
+    const int weather_w =
+        s_saver_icon_shown ? UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2 + temperature_w : 0;
+    const int total = date_w + (weather_w > 0 && date_w > 0 ? UI_SAVER_INLINE_GAP : 0) + weather_w;
+    int x = (s_saver_block_w - total) / 2;
+    if (x < 0) x = 0;
+    lv_obj_set_x(s_saver_date, x);
+    x += date_w + (date_w > 0 ? UI_SAVER_INLINE_GAP : 0);
+    lv_obj_set_x(s_saver_icon, x);
+    lv_obj_set_x(s_saver_temperature, x + UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2);
+}
+
+/* The bitmap for a report's picture at the screensaver's size. */
+static const lv_image_dsc_t *ui_saver_weather_bitmap(weather_icon_t icon)
+{
+    switch (icon) {
+    case WEATHER_ICON_CLEAR_DAY:
+        return &UI_WEATHER_BITMAP(clear_day, UI_SAVER_WEATHER_ICON_PX);
+    case WEATHER_ICON_CLEAR_NIGHT:
+        return &UI_WEATHER_BITMAP(clear_night, UI_SAVER_WEATHER_ICON_PX);
+    case WEATHER_ICON_PARTLY_CLOUDY_DAY:
+        return &UI_WEATHER_BITMAP(partly_cloudy_day, UI_SAVER_WEATHER_ICON_PX);
+    case WEATHER_ICON_PARTLY_CLOUDY_NIGHT:
+        return &UI_WEATHER_BITMAP(partly_cloudy_night, UI_SAVER_WEATHER_ICON_PX);
+    case WEATHER_ICON_CLOUDY: return &UI_WEATHER_BITMAP(cloudy, UI_SAVER_WEATHER_ICON_PX);
+    case WEATHER_ICON_FOG: return &UI_WEATHER_BITMAP(fog, UI_SAVER_WEATHER_ICON_PX);
+    case WEATHER_ICON_RAIN: return &UI_WEATHER_BITMAP(rain, UI_SAVER_WEATHER_ICON_PX);
+    case WEATHER_ICON_SNOW: return &UI_WEATHER_BITMAP(snow, UI_SAVER_WEATHER_ICON_PX);
+    case WEATHER_ICON_SLEET: return &UI_WEATHER_BITMAP(sleet, UI_SAVER_WEATHER_ICON_PX);
+    case WEATHER_ICON_THUNDERSTORM:
+        return &UI_WEATHER_BITMAP(thunderstorm, UI_SAVER_WEATHER_ICON_PX);
+    case WEATHER_ICON_NONE:
+    case WEATHER_ICON_COUNT: break;
+    }
+    return NULL;
+}
+
+static void ui_screensaver_refresh_text(bool force)
+{
+    bool changed = force;
+    int hour = 0;
+    int minute = 0;
+    const bool have_time = device_clock_now(&hour, &minute);
+    char text[96];
+    ui_screensaver_time_text(text, sizeof(text), have_time, hour, minute);
+    changed |= ui_set_label_text_note_change(s_saver_time, text);
+
+    int day = 0;
+    int month = 0;
+    int weekday = 0;
+    const bool have_date = device_clock_today(&day, &month, &weekday);
+    ui_screensaver_date_text(text, sizeof(text), s_device_settings.language, have_date, day,
+                             month, weekday);
+    changed |= ui_set_label_text_note_change(s_saver_date, text);
+
+    /* The same reading the strip shows, so the two never disagree. */
+    weather_report_t report;
+    const bool weather = weather_current(&report);
+    const lv_image_dsc_t *bitmap = weather ? ui_saver_weather_bitmap(report.icon) : NULL;
+    const bool show_weather = bitmap != NULL;
+    if (show_weather) {
+        weather_temperature_text(text, sizeof(text), &report);
+        changed |= ui_set_label_text_note_change(s_saver_temperature, text);
+        if (report.icon != s_saver_icon_kind) {
+            s_saver_icon_kind = report.icon;
+            lv_image_set_src(s_saver_icon, bitmap);
+            changed = true;
+        }
+    }
+    if (show_weather != s_saver_icon_shown) {
+        changed = true;
+        s_saver_icon_shown = show_weather;
+        if (show_weather) {
+            lv_obj_clear_flag(s_saver_icon, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(s_saver_temperature, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_saver_icon, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_saver_temperature, LV_OBJ_FLAG_HIDDEN);
+            s_saver_icon_kind = WEATHER_ICON_NONE;
+        }
+    }
+
+    char track[2 * PLAYER_TITLE_MAX_LEN + 4];
+    ui_screensaver_track_text(track, sizeof(track), s_now_playing.heading, s_now_playing.artist,
+                              s_now_playing.title);
+    changed |= ui_set_label_text_note_change(s_saver_track, track);
+
+    /* Once a minute in practice: the time is what changes. */
+    if (changed) {
+        ui_screensaver_place_middle_line();
+        ui_screensaver_render_block();
+    }
+}
+
+/* The drift. The panel does the moving: every controller in the catalogue
+ * can shift its whole picture along its long axis in hardware, at its own
+ * refresh, and that is tear-free where any rewrite of the block is not - a
+ * frame of it takes the bus 33 ms and the panel's own scan crosses it every
+ * time, which on the thin strokes of the text read as a blink at each step.
+ * So the block is written once, at the near end of that axis, and LVGL's
+ * animation engine walks the scroll offset back and forth along the free
+ * length; the writing of the block happens only when its text changes.
+ *
+ * The axis the panel offers is its gate axis: screen x on a landscape build,
+ * y on a portrait one. Across the other axis the block does not travel - it
+ * is placed at a different height each time the clock comes up instead. */
+static bool ui_saver_scroll_axis_x(void)
+{
+    return TFT_WIDTH > TFT_HEIGHT;
+}
+
+/* How far the block can travel: the panel's long side less the block's
+ * extent along it. */
+static int ui_saver_travel(void)
+{
+    const int room = ui_saver_scroll_axis_x() ? TFT_WIDTH - s_saver_block_w
+                                              : TFT_HEIGHT - s_saver_block_h;
+    return room > 0 ? room : 0;
+}
+
+static void ui_saver_leg(int from, int to);
+
+static void ui_saver_set_offset(void *target, int32_t value)
+{
+    (void)target;
+    (void)board_display_scroll((int)value);
+}
+
+static void ui_saver_leg_done(lv_anim_t *anim)
+{
+    const int at = (int)anim->end_value;
+    ui_saver_leg(at, at == 0 ? ui_saver_travel() : 0);
+}
+
+static void ui_saver_leg(int from, int to)
+{
+    lv_anim_t anim;
+    lv_anim_init(&anim);
+    /* The variable is only what tells this animation from the others; the
+     * value goes to the panel, not to an object. */
+    lv_anim_set_var(&anim, &s_saver);
+    lv_anim_set_exec_cb(&anim, ui_saver_set_offset);
+    lv_anim_set_values(&anim, from, to);
+    lv_anim_set_duration(&anim, ui_screensaver_leg_ms(from, to));
+    lv_anim_set_completed_cb(&anim, ui_saver_leg_done);
+    lv_anim_start(&anim);
+}
+
+static void ui_saver_drift_start(void)
+{
+    ui_saver_leg(0, ui_saver_travel());
+}
+
+static void ui_saver_drift_stop(void)
+{
+    lv_anim_delete(&s_saver, NULL);
+    /* Before the cover comes down and LVGL repaints: a picture written under
+     * a scrolled frame would come up shifted. */
+    (void)board_display_scroll(0);
+}
+
+/* Writes the block where it lives in the frame: at the near end of the
+ * scroll axis, and at the height the drift chose for this showing. */
+static void ui_screensaver_draw(void)
+{
+    if (!s_saver_bitmap_ok) return;
+    if (s_saver_drawn && !s_saver_dirty) return;
+    (void)board_display_draw_wire(s_saver_x, s_saver_y, s_saver_x + s_saver_block_w,
+                                  s_saver_y + s_saver_block_h,
+                                  (const uint16_t *)s_saver_bitmap.data);
+    s_saver_drawn = true;
+    s_saver_dirty = false;
+}
+
+/* One pass: the pure part decides, this applies. The backlight is applied on
+ * every pass and not only on a change, because the reload path writes it too
+ * - see ui_backlight_apply(). */
+static void ui_screensaver_poll(uint32_t now_ms)
+{
+    const bool changed =
+        ui_screensaver_step(&s_saver, &s_device_settings, now_ms, TFT_WIDTH, TFT_HEIGHT,
+                            s_saver_block_w, s_saver_block_h, &s_saver_view);
+    ui_backlight_apply(s_saver_view.backlight);
+    /* Logged on the way in and out: the one question the log has to answer
+     * is whether the panel went dark on its own. */
+    static bool s_logged_active;
+    if (s_saver_view.active != s_logged_active) {
+        s_logged_active = s_saver_view.active;
+        ESP_LOGI(TAG, "screensaver %s (mode=%d backlight=%u)",
+                 s_saver_view.active ? "on" : "off", (int)s_device_settings.screensaver,
+                 (unsigned)s_saver_view.backlight);
+    }
+    static bool s_clock_up;
+    static bool s_cover_up;
+    static uint32_t s_cover_up_ms;
+    if (changed) {
+        if (s_saver_view.cover && !s_cover_up) {
+            s_cover_up = true;
+            s_cover_up_ms = now_ms;
+            lv_obj_clear_flag(s_saver_cover, LV_OBJ_FLAG_HIDDEN);
+        } else if (!s_saver_view.cover && s_cover_up) {
+            s_cover_up = false;
+            /* Invalidation back on first, or the cover coming down would
+             * mark nothing and the screen under it would stay black. */
+            lv_display_enable_invalidation(s_display, true);
+            lv_obj_add_flag(s_saver_cover, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (s_saver_view.clock && !s_clock_up) {
+            s_clock_up = true;
+            s_saver_text_ms = now_ms;
+            s_saver_draw_after_ms = now_ms + UI_SAVER_FIRST_DRAW_MS;
+            s_saver_drawn = false;
+            /* At the near end of the scroll axis, and across it wherever the
+             * pure part put the block this time. */
+            s_saver_x = ui_saver_scroll_axis_x() ? 0 : s_saver_view.x;
+            s_saver_y = ui_saver_scroll_axis_x() ? s_saver_view.y : 0;
+            ui_screensaver_refresh_text(true);
+            ui_saver_drift_start();
+        } else if (!s_saver_view.clock && s_clock_up) {
+            s_clock_up = false;
+            ui_saver_drift_stop();
+            s_saver_drawn = false;
+        }
+    }
+    /* Once the cover has had its cycle to be painted, LVGL stops marking
+     * anything dirty: the screen under the cover keeps living - the title
+     * scroller every frame, the meter every pass - and every area it marked
+     * was flushed to the panel as black, a full screen's worth every frame.
+     * The screen's state is untouched; only LVGL stops looking at it. */
+    if (s_cover_up && lv_display_is_invalidation_enabled(s_display) &&
+        (uint32_t)(now_ms - s_cover_up_ms) >= UI_SAVER_FIRST_DRAW_MS) {
+        lv_display_enable_invalidation(s_display, false);
+    }
+    if (!s_clock_up) return;
+    if ((uint32_t)(now_ms - s_saver_text_ms) >= UI_SAVER_TEXT_MS) {
+        s_saver_text_ms = now_ms;
+        ui_screensaver_refresh_text(false);
+    }
+    if ((int32_t)(now_ms - s_saver_draw_after_ms) >= 0) ui_screensaver_draw();
 }
 
 static void ui_status_strip_update(ui_status_strip_t *strip,
@@ -1108,6 +1552,7 @@ static void ui_update_files_status(const player_snapshot_t *snapshot)
     ui_now_playing_t now;
     ui_now_playing_for_file(snapshot->context, snapshot->stream_title,
                             tagged ? &tags : NULL, &now);
+    ui_note_now_playing(&now);
 
     ui_set_label_text_if_changed(s_source_title, now.heading);
     ui_scroller_set_text(&s_source_detail, now.title);
@@ -1133,6 +1578,7 @@ static void ui_update_dlna_status(const player_snapshot_t *snapshot)
 {
     ui_now_playing_t now;
     ui_now_playing_for_station(false, "", snapshot->context, snapshot->stream_title, &now);
+    ui_note_now_playing(&now);
 
     ui_set_label_text_if_changed(s_source_title, now.heading);
     ui_scroller_set_text(&s_source_detail, now.title);
@@ -1204,6 +1650,7 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
     ui_now_playing_t now;
     ui_now_playing_for_station(name_from_list, list_name != NULL ? list_name : "",
                                stream_name, snapshot->stream_title, &now);
+    ui_note_now_playing(&now);
     /* A station the list can no longer answer for keeps the name the previous
      * pass put there rather than having it blanked; what is playing is still
      * the stream's to tell, so the rows below it go on either way. */
@@ -2085,6 +2532,28 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
                  ui_settings_model_is_editing(&s_settings_model) ? "  %s: <%d>" : "  %s: %d",
                  ui_text(DEVICE_TEXT_ROW_BRIGHTNESS), (int)s_device_settings.brightness);
         break;
+    case UI_SETTINGS_ROW_SCREENSAVER_FIELD:
+        ui_settings_field(text, text_size, DEVICE_TEXT_ROW_SCREENSAVER,
+                          s_device_settings.screensaver == DEVICE_SCREENSAVER_DIM
+                              ? DEVICE_TEXT_SCREENSAVER_DIM
+                          : s_device_settings.screensaver == DEVICE_SCREENSAVER_BLANK
+                              ? DEVICE_TEXT_SCREENSAVER_BLANK
+                          : s_device_settings.screensaver == DEVICE_SCREENSAVER_CLOCK
+                              ? DEVICE_TEXT_SCREENSAVER_CLOCK
+                              : DEVICE_TEXT_SCREENSAVER_OFF);
+        break;
+    case UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD:
+        snprintf(text, text_size,
+                 ui_settings_model_is_editing(&s_settings_model) ? "  %s: <%d>" : "  %s: %d",
+                 ui_text(DEVICE_TEXT_ROW_SCREENSAVER_AFTER),
+                 (int)s_device_settings.screensaver_seconds);
+        break;
+    case UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD:
+        snprintf(text, text_size,
+                 ui_settings_model_is_editing(&s_settings_model) ? "  %s: <%d>" : "  %s: %d",
+                 ui_text(DEVICE_TEXT_ROW_IDLE_BRIGHTNESS),
+                 (int)s_device_settings.screensaver_brightness);
+        break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_FLIP_VERTICAL,
                                  s_device_settings.flip_vertical);
@@ -2375,7 +2844,7 @@ static void ui_show_settings(void)
     } else {
         lv_label_set_text(s_settings_notice, "");
         ui_apply_display_rotation();
-        (void)board_backlight_set(s_device_settings.brightness);
+        ui_backlight_apply(s_device_settings.brightness);
     }
     ui_apply_source_visibility();
     device_settings_publish(&s_device_settings);
@@ -2428,7 +2897,7 @@ static void ui_reload_settings(void)
     if (brightness_pending) s_device_settings.brightness = turning_brightness;
 
     ui_apply_display_rotation();
-    (void)board_backlight_set(s_device_settings.brightness);
+    ui_backlight_apply(s_device_settings.brightness);
     if (!volume_pending) board_audio_set_volume(s_device_settings.volume);
     /* The zone applies to the next reading of the clock and the server only
      * costs SNTP a restart if it actually changed - so this is cheap enough to
@@ -2875,6 +3344,13 @@ static void ui_settings_change_selected(void)
         changed = device_settings_set_dlna(&s_device_settings, !s_device_settings.dlna);
         if (changed) ui_apply_source_visibility();
         break;
+    case UI_SETTINGS_ROW_SCREENSAVER_FIELD:
+        /* Four in a ring, the way a click cycles every other choice. */
+        changed = device_settings_set_screensaver(
+            &s_device_settings,
+            (device_screensaver_t)((s_device_settings.screensaver + 1) %
+                                   (DEVICE_SCREENSAVER_CLOCK + 1)));
+        break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         changed = device_settings_set_flip_vertical(&s_device_settings,
                                                     !s_device_settings.flip_vertical);
@@ -2899,7 +3375,33 @@ static void ui_settings_change_selected(void)
  * the knob belongs to, and this is the turn that moves the value. */
 static void ui_settings_change_number(int direction)
 {
-    if (ui_settings_model_selected(&s_settings_model) != UI_SETTINGS_ROW_BRIGHTNESS_FIELD) {
+    const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
+    /* The screensaver's two numbers are written on the detent: nothing on the
+     * panel follows them while the knob turns, so there is no lag to hide,
+     * and the list is six entries long. */
+    if (selected == UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD) {
+        const int next = ui_settings_screensaver_seconds_step(
+            (int)s_device_settings.screensaver_seconds, direction);
+        if (next == (int)s_device_settings.screensaver_seconds) return;
+        const bool changed =
+            device_settings_set_screensaver_seconds(&s_device_settings, (unsigned int)next);
+        lv_label_set_text(s_settings_notice,
+                          changed ? "" : ui_text(DEVICE_TEXT_SETTINGS_WRITE_FAILED));
+        if (changed) device_settings_publish(&s_device_settings);
+        return;
+    }
+    if (selected == UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD) {
+        const int next = ui_settings_idle_brightness_step(
+            (int)s_device_settings.screensaver_brightness, direction);
+        if (next == (int)s_device_settings.screensaver_brightness) return;
+        const bool changed = device_settings_set_screensaver_brightness(&s_device_settings,
+                                                                        (unsigned char)next);
+        lv_label_set_text(s_settings_notice,
+                          changed ? "" : ui_text(DEVICE_TEXT_SETTINGS_WRITE_FAILED));
+        if (changed) device_settings_publish(&s_device_settings);
+        return;
+    }
+    if (selected != UI_SETTINGS_ROW_BRIGHTNESS_FIELD) {
         return;
     }
     const int next = ui_settings_brightness_step((int)s_device_settings.brightness, direction);
@@ -2908,7 +3410,7 @@ static void ui_settings_change_number(int direction)
      * the same read-modify-write that made the volume knob queue up clicks,
      * and here the lag would be visible as well as felt. */
     s_device_settings.brightness = (unsigned char)next;
-    (void)board_backlight_set(s_device_settings.brightness);
+    ui_backlight_apply(s_device_settings.brightness);
     s_brightness_save_pending = true;
     s_brightness_changed_ms = ui_tick_get_ms();
     device_settings_publish(&s_device_settings);
@@ -3896,6 +4398,12 @@ static void ui_yandex_step_start(const player_snapshot_t *snapshot)
 
 static void ui_handle_input(board_input_action_t action)
 {
+    /* A press that only wakes the screensaver goes no further: with the panel
+     * dark nobody could see what it would have done. */
+    if (ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms())) {
+        return;
+    }
+
     /* Anybody touching a control has taken over from the resume, and a browser
      * opening under their hands a second later is not something they asked
      * for. */
@@ -4815,6 +5323,7 @@ static void ui_task(void *arg)
         if (device_settings_take_changed()) {
             ui_reload_settings();
         }
+        ui_screensaver_poll(ui_tick_get_ms());
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
@@ -5032,11 +5541,13 @@ esp_err_t ui_init(void)
     ui_create_yandex_screen();
     ui_create_source_screen();
     ui_create_station_list_screen();
+    ui_create_screensaver();
+    ui_screensaver_init(&s_saver, ui_tick_get_ms());
     if (!device_settings_init(&s_device_settings)) {
         lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
     } else {
         ui_apply_display_rotation();
-        (void)board_backlight_set(s_device_settings.brightness);
+        ui_backlight_apply(s_device_settings.brightness);
     }
     /* After the settings are read and the visibility they decide is applied:
      * the model asks how many rows the home screen would have, and before this

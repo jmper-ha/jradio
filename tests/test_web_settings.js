@@ -88,6 +88,8 @@ const ids = [
   'device-dlna', 'device-dlna-row',
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal',
+  'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
+  'device-idle-brightness-value',
   'device-timezone', 'device-ntp',
   'device-weather', 'device-weather-latitude', 'device-weather-longitude',
   'device-weather-key', 'device-weather-key-row', 'device-weather-now-row',
@@ -148,6 +150,9 @@ let settingsReply = {
   brightness: 45, volume: 62,
   available: {home_screen: true, yandex_music: false, dlna: true},
   brightness_min: 10, brightness_max: 90,
+  screensaver: 'clock', screensaver_seconds: 120, screensaver_brightness: 15,
+  idle_brightness_min: 5, idle_brightness_max: 50,
+  screensaver_seconds_choices: [15, 30, 60, 120, 300, 600],
   timezone: 'asia/yekaterinburg', ntp_server: 'ntp.example.lan',
   weather: 'off', weather_latitude: '55.75', weather_longitude: '37.62',
   openweathermap_key_set: false, weather_state: 'off', weather_http_status: 0,
@@ -563,6 +568,17 @@ function lastYandexTimer() {
   // The slider stops where the encoder does, and the device says where.
   assert.equal(elements['#device-brightness'].min, '10');
   assert.equal(elements['#device-brightness'].max, '90');
+  /* The screensaver's three rows, the same way: the mode is a choice, the
+     wait is a number picked off the device's own list, and the idle level a
+     slider with the device's own window. */
+  assert.equal(elements['#device-screensaver'].value, 'clock');
+  assert.equal(elements['#device-screensaver-after'].value, '120');
+  assert.deepEqual(elements['#device-screensaver-after'].children.map((o) => o.value),
+                   ['15', '30', '60', '120', '300', '600']);
+  assert.equal(elements['#device-idle-brightness'].value, '15');
+  assert.equal(elements['#device-idle-brightness-value'].textContent, '15');
+  assert.equal(elements['#device-idle-brightness'].min, '5');
+  assert.equal(elements['#device-idle-brightness'].max, '50');
   /* A build without Yandex Music has no such row on its own screen either, so
      the switch goes away rather than sitting there changing nothing. The media
      server is built into this fixture, so its row stays and shows the state
@@ -603,6 +619,30 @@ function lastYandexTimer() {
                                            call.options.method === 'POST')
       .at(-1).options.body),
     {field: 'brightness', value: 30});
+
+  /* The wait goes out as a number, the way the slider's value does, even
+     though it is picked off a list: the device validates it against the same
+     list and stores seconds, not a row. */
+  settingsReply = {...settingsReply, screensaver_seconds: 300};
+  elements['#device-screensaver-after'].value = '300';
+  elements['#device-screensaver-after'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
+                                           call.options &&
+                                           call.options.method === 'POST')
+      .at(-1).options.body),
+    {field: 'screensaver_seconds', value: 300});
+  settingsReply = {...settingsReply, screensaver: 'dim'};
+  elements['#device-screensaver'].value = 'dim';
+  elements['#device-screensaver'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
+                                           call.options &&
+                                           call.options.method === 'POST')
+      .at(-1).options.body),
+    {field: 'screensaver', value: 'dim'});
 
   /* A write the device refuses puts the control back to what it actually
      holds: a switch left showing a change that never landed is worse than no

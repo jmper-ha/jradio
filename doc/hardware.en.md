@@ -90,6 +90,19 @@ first time. The portrait `DISPLAY_ST7796S_320_480` has not been built and
 [`st7796s.h`](../components/board/include/display/st7796s.h) marks it as
 derived.
 
+The "clock" screensaver moves its block not by redrawing it but with the
+controller's hardware scroll - `VSCRDEF`/`VSCRSAD`, which all four controllers
+in the catalogue understand. Rewriting the 128 KB block takes the bus 33 ms and
+the panel's own scan crosses it every time; on the thin strokes of the text
+that read as a blink at each step. A shift through the register the panel
+applies at its next frame, tear-free and without a byte over SPI. The panel
+offers one scroll axis - its long one, horizontal in landscape and vertical in
+portrait. The sign of the shift depends on how the memory is mirrored, and on
+the ST7796S it is the reverse (`TFT_SCROLL_REVERSED 1`, checked on the glass);
+the default on the other panels is unchecked - a clock that leaves by one edge
+and comes back in at the other is that. DMA straight from PSRAM at 80 MHz
+underruns (`DMA TX underflow`), which is the second reason the bus stays at 40.
+
 The screen layout lives in [`ui_layout.h`](../components/ui/include/ui_layout.h)
 and is checked by a host test. Everything that follows from the panel's size -
 how many rows the list and Settings hold, how wide the level meter's blocks are,

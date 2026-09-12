@@ -27,3 +27,7 @@ void device_clock_apply(const char *server, const char *timezone_id);
  * true afterwards even if the network goes away - the oscillator keeps
  * counting, and a clock that drifts a little beats a clock that blanks. */
 bool device_clock_now(int *hour, int *minute);
+/* The local date, under the same rule: false until the first synchronisation.
+ * `month` is 1..12 and `weekday` counts from Sunday as 0, the way struct tm
+ * does, because that is what every reader has to feed a name table with. */
+bool device_clock_today(int *day, int *month, int *weekday);

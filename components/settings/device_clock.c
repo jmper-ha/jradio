@@ -103,6 +103,19 @@ bool device_clock_now(int *hour, int *minute)
     return true;
 }
 
+bool device_clock_today(int *day, int *month, int *weekday)
+{
+    if (day == NULL || month == NULL || weekday == NULL) return false;
+    const time_t now = time(NULL);
+    if (now < 1600000000) return false;
+    struct tm local;
+    localtime_r(&now, &local);
+    *day = local.tm_mday;
+    *month = local.tm_mon + 1;
+    *weekday = local.tm_wday;
+    return true;
+}
+
 #else
 
 /* The host build has no SNTP and no need for one; the screen logic that reads
@@ -123,6 +136,14 @@ bool device_clock_now(int *hour, int *minute)
 {
     (void)hour;
     (void)minute;
+    return false;
+}
+
+bool device_clock_today(int *day, int *month, int *weekday)
+{
+    (void)day;
+    (void)month;
+    (void)weekday;
     return false;
 }
 

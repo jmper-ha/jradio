@@ -121,6 +121,12 @@
  * put back if another board shows either. */
 #define DISPLAY_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
 
+/* The hardware scroll runs the other way on this glass: with the default
+ * sign the screensaver's clock left by the far edge and came back in at the
+ * near one. Checked on the panel 2026-09-12, landscape build; the portrait
+ * build inherits it unchecked. */
+#define TFT_SCROLL_REVERSED 1
+
 /* Named for the log line and the error messages, so a boot log says which
  * panel the firmware was built for without anyone reading board_options.h. */
 #define BOARD_PANEL_NAME "ST7796S"

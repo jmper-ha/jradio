@@ -11,7 +11,7 @@
 | `GET /api/dlna` | Contents of the container open on the media server; `searching` means it is still being looked for |
 | `GET /api/about` | The firmware and web versions, ESP-IDF, the author's address |
 | `GET /api/settings` | The device settings, the same ones its own screen has |
-| `POST /api/settings` | Changes one setting: `{"field":…,"value":…}`, `timezone`, `ntp_server`, `weather`, `weather_latitude`, `weather_longitude` and `openweathermap_key` included |
+| `POST /api/settings` | Changes one setting: `{"field":…,"value":…}`, `timezone`, `ntp_server`, `weather`, `weather_latitude`, `weather_longitude`, `openweathermap_key`, `screensaver`, `screensaver_seconds` and `screensaver_brightness` included |
 | `GET /api/backup` | The device configuration as one zip: `wifi.json`, `settings.csv`, `yandex.json`, `weather.json` |
 | `POST /api/restore` | Restores it: the whole archive or a single file, named by `?name=` |
 | `GET /api/progress` | Track position, buffer fill, cover signature |

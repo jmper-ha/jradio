@@ -3,6 +3,8 @@
 #include <limits.h>
 #include <stdint.h>
 
+#include "device_settings.h"
+
 static const ui_settings_row_t s_group_rows[UI_SETTINGS_GROUP_COUNT] = {
     [UI_SETTINGS_GROUP_LANGUAGE] = {
         .id = UI_SETTINGS_ROW_LANGUAGE_GROUP,
@@ -63,6 +65,21 @@ static const ui_settings_row_t s_field_rows[] = {
 #endif
     {
         .id = UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
+        .group = UI_SETTINGS_GROUP_DISPLAY,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
+        .id = UI_SETTINGS_ROW_SCREENSAVER_FIELD,
+        .group = UI_SETTINGS_GROUP_DISPLAY,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
+        .id = UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD,
+        .group = UI_SETTINGS_GROUP_DISPLAY,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
+        .id = UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD,
         .group = UI_SETTINGS_GROUP_DISPLAY,
         .kind = UI_SETTINGS_ROW_FIELD,
     },
@@ -223,7 +240,9 @@ bool ui_settings_model_has_rows_below(const ui_settings_model_t *model, size_t v
 
 bool ui_settings_row_is_number(ui_settings_row_id_t id)
 {
-    return id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD;
+    return id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD ||
+           id == UI_SETTINGS_ROW_SCREENSAVER_AFTER_FIELD ||
+           id == UI_SETTINGS_ROW_IDLE_BRIGHTNESS_FIELD;
 }
 
 bool ui_settings_model_is_editing(const ui_settings_model_t *model)
@@ -254,6 +273,41 @@ int ui_settings_brightness_step(int value, int direction)
                         (direction > 0 ? UI_SETTINGS_BRIGHTNESS_STEP
                                        : -UI_SETTINGS_BRIGHTNESS_STEP);
     return ui_settings_brightness_clamp(stepped);
+}
+
+int ui_settings_idle_brightness_clamp(int value)
+{
+    if (value < UI_SETTINGS_IDLE_BRIGHTNESS_MIN) return UI_SETTINGS_IDLE_BRIGHTNESS_MIN;
+    if (value > UI_SETTINGS_IDLE_BRIGHTNESS_MAX) return UI_SETTINGS_IDLE_BRIGHTNESS_MAX;
+    return value;
+}
+
+int ui_settings_idle_brightness_step(int value, int direction)
+{
+    if (direction == 0) return ui_settings_idle_brightness_clamp(value);
+    const int stepped = ui_settings_idle_brightness_clamp(value) +
+                        (direction > 0 ? UI_SETTINGS_IDLE_BRIGHTNESS_STEP
+                                       : -UI_SETTINGS_IDLE_BRIGHTNESS_STEP);
+    return ui_settings_idle_brightness_clamp(stepped);
+}
+
+int ui_settings_screensaver_seconds_step(int value, int direction)
+{
+    const unsigned short *choices = device_screensaver_seconds_choices;
+    const int last = DEVICE_SCREENSAVER_SECONDS_CHOICES - 1;
+    if (direction > 0) {
+        for (int index = 0; index <= last; ++index) {
+            if ((int)choices[index] > value) return choices[index];
+        }
+        return choices[last];
+    }
+    if (direction < 0) {
+        for (int index = last; index >= 0; --index) {
+            if ((int)choices[index] < value) return choices[index];
+        }
+        return choices[0];
+    }
+    return device_settings_screensaver_seconds_valid((unsigned int)value) ? value : choices[0];
 }
 
 size_t ui_settings_model_row_count(const ui_settings_model_t *model)

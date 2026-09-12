@@ -178,6 +178,33 @@
                   </span>
                 </div>
                 <div class="device-row">
+                  <label for="device-screensaver" data-i18n="settings.screensaver">Заставка</label>
+                  <select id="device-screensaver" data-field="screensaver">
+                    <option value="off" data-i18n="settings.screensaver_off">Нет</option>
+                    <option value="dim" data-i18n="settings.screensaver_dim">Затемнение</option>
+                    <option value="blank" data-i18n="settings.screensaver_blank">Чёрный экран</option>
+                    <option value="clock" data-i18n="settings.screensaver_clock">Часы</option>
+                  </select>
+                </div>
+                <div class="device-row">
+                  <label for="device-screensaver-after" data-i18n="settings.screensaver_after">Через, с</label>
+                  <select id="device-screensaver-after" data-field="screensaver_seconds">
+                    <option value="15">15</option>
+                    <option value="30">30</option>
+                    <option value="60">60</option>
+                    <option value="120">120</option>
+                    <option value="300">300</option>
+                    <option value="600">600</option>
+                  </select>
+                </div>
+                <div class="device-row">
+                  <label for="device-idle-brightness" data-i18n="settings.idle_brightness">Яркость в покое</label>
+                  <span class="device-slider">
+                    <input id="device-idle-brightness" type="range" min="5" max="50" step="5" data-field="screensaver_brightness">
+                    <output id="device-idle-brightness-value">20</output>
+                  </span>
+                </div>
+                <div class="device-row">
                   <label for="device-flip-vertical" data-i18n="settings.flip_vertical">Поворот по вертикали</label>
                   <input id="device-flip-vertical" type="checkbox" data-field="flip_vertical">
                 </div>
@@ -190,6 +217,7 @@
 
             <p class="field-note" data-i18n="note.device">Записывается в settings.csv устройства и применяется сразу — экран и кнопки на корпусе показывают то же самое.</p>
             <p class="field-note" data-i18n="note.time">Часов у устройства нет: время оно спрашивает у сервера, когда появляется сеть. Поле сервера можно очистить — вернётся pool.ntp.org.</p>
+            <p class="field-note" data-i18n="note.screensaver">Заставка включается, когда к устройству никто не прикасается заданное число секунд: «Затемнение» опускает подсветку до яркости в покое, «Чёрный экран» гасит её, «Часы» гасят экран и плавно водят по нему время, дату, погоду и название того, что играет. Любое действие на корпусе будит экран; в двух тёмных режимах первое нажатие только будит.</p>
             <p class="field-note" data-i18n="note.weather">Погода показывается рядом с часами. Координаты — широта и долгота в градусах, как их пишет карта: 55.75 и 37.62 для Москвы. Open-Meteo и wttr.in ключа не требуют; OpenWeatherMap требует — ключ хранится на устройстве отдельным файлом и входит в резервную копию; чтобы заменить ключ, введите новый, чтобы удалить — очистите поле.</p>
           </div>
         </section>

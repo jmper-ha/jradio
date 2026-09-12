@@ -40,6 +40,31 @@ typedef enum {
     DEVICE_WEATHER_OPENWEATHERMAP,
 } device_weather_provider_t;
 
+/* What the panel does after a while with nobody at the knob. Off leaves it
+ * alone; dim takes the backlight down to the idle level; blank turns it off;
+ * clock turns it off and floats the time across a black screen instead. The
+ * two numbers beside it - after how long, and how bright - are shared by the
+ * modes that use them, so there is one wait and one level to set, not three.
+ *
+ * Any input wakes the panel. In the two modes that hide the screen the waking
+ * press is swallowed: nobody can see what they are about to press. */
+typedef enum {
+    DEVICE_SCREENSAVER_OFF = 0,
+    DEVICE_SCREENSAVER_DIM,
+    DEVICE_SCREENSAVER_BLANK,
+    DEVICE_SCREENSAVER_CLOCK,
+} device_screensaver_t;
+
+/* The waits offered, in seconds. A closed list rather than a free number: the
+ * knob steps through it, and a page has to offer the same steps or the two
+ * would show values the other cannot set. */
+#define DEVICE_SCREENSAVER_SECONDS_CHOICES 6
+extern const unsigned short device_screensaver_seconds_choices[DEVICE_SCREENSAVER_SECONDS_CHOICES];
+#define DEVICE_SCREENSAVER_SECONDS_DEFAULT 60
+/* The idle backlight before anyone sets it: readable in a dark room and
+ * plainly dimmer than the 50 the panel comes up at. */
+#define DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT 20
+
 typedef enum {
     DEVICE_LAST_SOURCE_NONE = 0,
     DEVICE_LAST_SOURCE_INTERNET_RADIO,
@@ -160,6 +185,12 @@ typedef struct {
     device_weather_provider_t weather_provider;
     char weather_latitude[DEVICE_COORDINATE_MAX];
     char weather_longitude[DEVICE_COORDINATE_MAX];
+    device_screensaver_t screensaver;
+    /* One of device_screensaver_seconds_choices. */
+    unsigned short screensaver_seconds;
+    /* The idle backlight, a percentage like `brightness` and refused at zero
+     * for the same reason: zero is the blank mode, not a level. */
+    unsigned char screensaver_brightness;
     device_last_source_t last_source;
     char last_file[DEVICE_LAST_FILE_MAX];
     char last_yandex_id[DEVICE_LAST_YANDEX_ID_MAX];
@@ -212,6 +243,12 @@ bool device_settings_set_weather_longitude(device_settings_t *settings, const ch
  * ask the same question: an optional sign, one to three digits, and at most
  * six decimals, within `limit` degrees either side of zero. */
 bool device_settings_coordinate_valid(const char *text, int limit);
+bool device_settings_set_screensaver(device_settings_t *settings, device_screensaver_t mode);
+/* Only a value off the list is taken; anything else is refused, not rounded. */
+bool device_settings_set_screensaver_seconds(device_settings_t *settings, unsigned int seconds);
+bool device_settings_screensaver_seconds_valid(unsigned int seconds);
+bool device_settings_set_screensaver_brightness(device_settings_t *settings,
+                                                unsigned char brightness);
 /* Recorded as playback starts, so a power cut still leaves the last choice
  * behind. Writing "none" clears the resume point. */
 bool device_settings_set_last_source(device_settings_t *settings,

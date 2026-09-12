@@ -91,6 +91,39 @@ static device_weather_provider_t weather_provider_from_text(const char *text)
     return DEVICE_WEATHER_OFF;
 }
 
+const unsigned short device_screensaver_seconds_choices[DEVICE_SCREENSAVER_SECONDS_CHOICES] = {
+    15, 30, 60, 120, 300, 600,
+};
+
+bool device_settings_screensaver_seconds_valid(unsigned int seconds)
+{
+    for (size_t index = 0; index < DEVICE_SCREENSAVER_SECONDS_CHOICES; ++index) {
+        if (device_screensaver_seconds_choices[index] == seconds) return true;
+    }
+    return false;
+}
+
+/* Same rules as the weather's name: words in the file, unknown reads as off. */
+static const char *screensaver_text(device_screensaver_t mode)
+{
+    switch (mode) {
+    case DEVICE_SCREENSAVER_DIM: return "dim";
+    case DEVICE_SCREENSAVER_BLANK: return "blank";
+    case DEVICE_SCREENSAVER_CLOCK: return "clock";
+    case DEVICE_SCREENSAVER_OFF: break;
+    }
+    return "off";
+}
+
+static device_screensaver_t screensaver_from_text(const char *text)
+{
+    for (device_screensaver_t mode = DEVICE_SCREENSAVER_DIM; mode <= DEVICE_SCREENSAVER_CLOCK;
+         ++mode) {
+        if (strcmp(text, screensaver_text(mode)) == 0) return mode;
+    }
+    return DEVICE_SCREENSAVER_OFF;
+}
+
 bool device_settings_coordinate_valid(const char *text, int limit)
 {
     if (text == NULL || limit <= 0) return false;
@@ -131,6 +164,8 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         .home_screen = DEVICE_HOME_SCREEN_TEXT,
         .volume = DEVICE_VOLUME_DEFAULT,
         .brightness = DEVICE_BRIGHTNESS_DEFAULT,
+        .screensaver_seconds = DEVICE_SCREENSAVER_SECONDS_DEFAULT,
+        .screensaver_brightness = DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT,
         .yandex_music = true,
         .dlna = true,
     };
@@ -220,6 +255,27 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
          * screen - which would also hide the settings screen that fixes it. */
         if (end != NULL && *end == '\0' && parsed > 0 && parsed <= 100) {
             settings->brightness = (unsigned char)parsed;
+        }
+    }
+    if (read_value(path, "screensaver", value, sizeof(value))) {
+        settings->screensaver = screensaver_from_text(value);
+    }
+    /* Either number off its list or range leaves the default, like the
+     * brightness above: a hand-edited "0" here would be a panel that never
+     * comes back on, and nothing on a dark panel can fix it. */
+    if (read_value(path, "screensaver_seconds", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        if (end != NULL && *end == '\0' && parsed > 0 &&
+            device_settings_screensaver_seconds_valid((unsigned int)parsed)) {
+            settings->screensaver_seconds = (unsigned short)parsed;
+        }
+    }
+    if (read_value(path, "screensaver_brightness", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        if (end != NULL && *end == '\0' && parsed > 0 && parsed <= 100) {
+            settings->screensaver_brightness = (unsigned char)parsed;
         }
     }
     if (read_value(path, "last_source", value, sizeof(value))) {
@@ -421,6 +477,38 @@ bool device_settings_set_weather_provider(device_settings_t *settings,
     if (settings->weather_provider == provider) return true;
     if (!save_value(settings, "weather", weather_provider_text(provider))) return false;
     settings->weather_provider = provider;
+    return true;
+}
+
+bool device_settings_set_screensaver(device_settings_t *settings, device_screensaver_t mode)
+{
+    if (settings == NULL || mode > DEVICE_SCREENSAVER_CLOCK) return false;
+    if (settings->screensaver == mode) return true;
+    if (!save_value(settings, "screensaver", screensaver_text(mode))) return false;
+    settings->screensaver = mode;
+    return true;
+}
+
+bool device_settings_set_screensaver_seconds(device_settings_t *settings, unsigned int seconds)
+{
+    if (settings == NULL || !device_settings_screensaver_seconds_valid(seconds)) return false;
+    if (settings->screensaver_seconds == seconds) return true;
+    char text[8];
+    snprintf(text, sizeof(text), "%u", seconds);
+    if (!save_value(settings, "screensaver_seconds", text)) return false;
+    settings->screensaver_seconds = (unsigned short)seconds;
+    return true;
+}
+
+bool device_settings_set_screensaver_brightness(device_settings_t *settings,
+                                                unsigned char brightness)
+{
+    if (settings == NULL || brightness == 0U || brightness > 100U) return false;
+    if (settings->screensaver_brightness == brightness) return true;
+    char text[8];
+    snprintf(text, sizeof(text), "%u", (unsigned int)brightness);
+    if (!save_value(settings, "screensaver_brightness", text)) return false;
+    settings->screensaver_brightness = brightness;
     return true;
 }
 

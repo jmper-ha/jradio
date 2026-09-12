@@ -75,7 +75,10 @@ appear in that list - reinstalling it through EIM is the easy way. After that
 `Ctrl+Shift+B` builds, and the rest is under
 Terminal - Run Task: flashing, the device log, the host tests. For a blank
 board there is "ESP-IDF: First flash (app + data)", which writes the firmware
-and the data partition both.
+and the data partition both. The message "File .../build/project_description.json
+cannot be found" on first opening the folder is not an error: CMake writes that
+file on the first build, and until then the extension has nothing to read;
+after `Ctrl+Shift+B` it does not come back.
 
 The tasks go through [`tools/idf.sh`](../tools/idf.sh), or
 [`tools/idf.ps1`](../tools/idf.ps1) on Windows, which finds an installed ESP-IDF -

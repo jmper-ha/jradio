@@ -5,6 +5,7 @@
 
 #include "board.h"
 #include "board_features.h"
+#include "bt_link.h"
 #include "board_input.h"
 #include "device_clock.h"
 #include "weather.h"
@@ -121,6 +122,12 @@ void app_main(void)
     if (BOARD_HAS_USB || BOARD_HAS_SD_CARD) {
         // One player for both volumes, so it is wanted if either is fitted.
         start_optional("file player", file_player_init());
+    }
+    if (BOARD_HAS_BLUETOOTH) {
+        /* Before the player, which asks the link whether the module is
+         * there every time it builds a snapshot; the module itself may be
+         * booting still, and shows up in the source list when it answers. */
+        start_optional("Bluetooth module link", bt_link_init());
     }
     ESP_ERROR_CHECK(internet_radio_init());
     /* Nothing is installed here any more. A station that arrives one track at

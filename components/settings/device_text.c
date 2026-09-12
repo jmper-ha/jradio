@@ -93,6 +93,8 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_BUFFER_FORMAT] = {"Буфер %u%%", "Buffer %u%%"},
     [DEVICE_TEXT_BUFFER_UNKNOWN] = {"Буфер --", "Buffer --"},
     [DEVICE_TEXT_CHOOSE_TRACK] = {"Выберите трек", "Choose a track"},
+    [DEVICE_TEXT_BLUETOOTH_PAIRING] = {"Найдите jRadio в Bluetooth телефона",
+     "Find jRadio in the phone's Bluetooth"},
     [DEVICE_TEXT_CHOOSE_FILE] = {"Выберите файл", "Choose a file"},
     [DEVICE_TEXT_OPENING_FILE] = {"Открытие файла", "Opening the file"},
     [DEVICE_TEXT_SEARCHING_SERVER] = {"Поиск медиасервера", "Looking for a media server"},
@@ -131,6 +133,8 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
      * "Нечего включить - выберите в списке" at 65 bytes. */
     [DEVICE_TEXT_ERROR_STATION_FAILED] = {"Не удалось подключиться к станции",
      "Could not connect to the station"},
+    [DEVICE_TEXT_ERROR_BLUETOOTH_MODULE] = {"Bluetooth-модуль не отвечает",
+     "The Bluetooth module does not answer"},
     [DEVICE_TEXT_ERROR_FILE_FAILED] = {"Не удалось воспроизвести файл",
      "Could not play the file"},
     [DEVICE_TEXT_ERROR_NOTHING_TO_RESUME] = {"Нечего продолжить - выберите",

@@ -135,6 +135,23 @@ Names for files are read from their tags, including Russian ones in older
 encodings. Whatever the tags do not say is replaced by what is known: the
 folder in place of the album, the file name in place of the title.
 
+### Bluetooth
+
+On a board with the [jradio-bt module](hardware.en.md#bluetooth-the-jradio-bt-module)
+the menu has a "Bluetooth" source - while the module answers; an unplugged
+module leaves the menu. It has no list: choosing the source opens the player
+screen at once, and until a phone connects the state line says where to look
+for us - the device shows in the phone's Bluetooth as "jRadio" for about two
+minutes after the source is chosen (and again after a press of the encoder).
+A phone that knows us connects on its own.
+
+From there it is the radio's screen: the phone's name where a station's goes,
+performer and track from the phone, the back/forward keys move through its
+queue, a press of the encoder pauses and resumes, the knob sets the volume and
+the phone's slider follows it (and the other way round). The position bar
+appears when the phone reports the track's length; cover art from the phone is
+the next step.
+
 ## Settings
 
 Language, the look of the home screen, how long lines scroll, how the buffer

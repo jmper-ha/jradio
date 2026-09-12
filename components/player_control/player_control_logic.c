@@ -135,7 +135,8 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
                                 : command->source == AUDIO_SOURCE_SD  ? PLAYER_CAP_SD
                                 : command->source == AUDIO_SOURCE_YANDEX ? PLAYER_CAP_YANDEX
                                 : command->source == AUDIO_SOURCE_DLNA ? PLAYER_CAP_DLNA
-                                                                      : 0U;
+                                : command->source == AUDIO_SOURCE_BLUETOOTH ? PLAYER_CAP_BLUETOOTH
+                                                                            : 0U;
         const bool supported = needed != 0U && (state->capabilities & needed) != 0U &&
                                !player_source_needs_absent_network(state, command->source);
         return supported ? PLAYER_OPERATION_SELECT_SOURCE : PLAYER_OPERATION_INVALID;
@@ -245,7 +246,12 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
         /* Only the rotor hands out tracks one after another. Asking a station
          * for the next track is meaningless, and a file list has no forward
          * button by design - it advances when a track ends. */
-        if (state->active_source != AUDIO_SOURCE_YANDEX) return PLAYER_OPERATION_INVALID;
+        /* And the phone: its queue is the rotor's shape, tracks one after
+         * another with a skip key. */
+        if (state->active_source != AUDIO_SOURCE_YANDEX &&
+            state->active_source != AUDIO_SOURCE_BLUETOOTH) {
+            return PLAYER_OPERATION_INVALID;
+        }
         /* Paused counts: skipping while paused lines the next track up, and
          * the alternative is a button that does nothing until you resume. */
         return state->playback_state == PLAYER_PLAYBACK_PLAYING ||
@@ -261,6 +267,14 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
          * With nothing playing there is no place in the list to move from, and
          * starting something would be a different gesture than the one asked
          * for. */
+        /* The phone has no list here at all - the two keys go to it as its
+         * own previous/next, whenever a track is on. */
+        if (state->active_source == AUDIO_SOURCE_BLUETOOTH) {
+            return state->playback_state == PLAYER_PLAYBACK_PLAYING ||
+                           state->playback_state == PLAYER_PLAYBACK_PAUSED
+                       ? step
+                       : PLAYER_OPERATION_NONE;
+        }
         if (state->active_item_index == PLAYER_ITEM_NONE) return PLAYER_OPERATION_NONE;
         if (audio_source_is_files(state->active_source) ||
             state->active_source == AUDIO_SOURCE_DLNA) {

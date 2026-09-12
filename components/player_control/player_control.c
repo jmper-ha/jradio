@@ -16,7 +16,10 @@
 
 #include "album_art.h"
 #include "audio_source.h"
+#include "board.h"
 #include "board_features.h"
+#include "bt_link.h"
+#include "bt_link_model.h"
 #include "device_settings.h"
 #include "device_text.h"
 #include "dlna_source.h"
@@ -495,9 +498,79 @@ static void player_file_media_removing(void)
     // usb_storage_media(), which both already say the drive is gone.
 }
 
+/* The Bluetooth module and the bus. Opening hands the three I2S pins to the
+ * module and waits for its word that it drives them; closing asks it to let
+ * go and takes them back only once it has. The order is the whole point -
+ * see board_audio_release_bus() - and both run on this task, which is the
+ * one that already blocks to open a station. */
+#define PLAYER_BT_MODE_TIMEOUT_MS 3000U
+/* The volume the module was last told, in its own 0..127, and the phone's
+ * last word on it; the two directions must not chase each other. */
+static uint8_t s_bt_volume_sent = 0xFFU;
+static uint8_t s_bt_volume_heard = 0xFFU;
+
+static bool player_bt_open(void)
+{
+    if (board_audio_release_bus() != ESP_OK) {
+        ESP_LOGW(TAG, "bluetooth: bus not released");
+        return false;
+    }
+    const esp_err_t err = bt_link_set_mode(JBT_MODE_SINK, PLAYER_BT_MODE_TIMEOUT_MS);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "bluetooth: module did not take the bus: %s", esp_err_to_name(err));
+        (void)board_audio_reclaim_bus();
+        return false;
+    }
+    s_bt_volume_sent = bt_link_volume_to_module(board_audio_volume());
+    (void)bt_link_set_volume(s_bt_volume_sent);
+    bt_link_state_t state;
+    bt_link_snapshot(&state);
+    s_bt_volume_heard = state.status.volume;
+    /* No phone yet: be found. A phone that knows us comes back on its own,
+     * and the window closes by itself once one is connected. */
+    if (state.status.connection != JBT_CONN_CONNECTED) (void)bt_link_pairing(true);
+    return true;
+}
+
+static void player_bt_close(void)
+{
+    (void)bt_link_pairing(false);
+    const esp_err_t err = bt_link_set_mode(JBT_MODE_OFF, PLAYER_BT_MODE_TIMEOUT_MS);
+    if (err != ESP_OK) {
+        /* Taking the bus back over a module still driving it would be two
+         * drivers on one wire; but a module that does not answer is not
+         * driving anything either - it is gone. The series resistors cover
+         * the remaining case, a module that answers late. */
+        ESP_LOGW(TAG, "bluetooth: module did not release the bus: %s", esp_err_to_name(err));
+    }
+    (void)board_audio_reclaim_bus();
+    album_art_clear();
+}
+
+/* The knob and the phone's slider, kept the same: the knob's change goes to
+ * the module, the phone's comes back to the board so the panel shows it. */
+static void player_bt_sync_volume(void)
+{
+    bt_link_state_t state;
+    bt_link_snapshot(&state);
+    if (state.status.volume != s_bt_volume_heard) {
+        s_bt_volume_heard = state.status.volume;
+        s_bt_volume_sent = state.status.volume;
+        board_audio_set_volume(bt_link_volume_to_percent(state.status.volume));
+        return;
+    }
+    const uint8_t wanted = bt_link_volume_to_module(board_audio_volume());
+    if (wanted != s_bt_volume_sent) {
+        s_bt_volume_sent = wanted;
+        (void)bt_link_set_volume(wanted);
+    }
+}
+
 static bool player_stop_active_source(audio_source_t source)
 {
-    if (audio_source_is_stations(source)) {
+    if (source == AUDIO_SOURCE_BLUETOOTH) {
+        player_bt_close();
+    } else if (audio_source_is_stations(source)) {
         const esp_err_t result = internet_radio_stop();
         if (result != ESP_OK) {
             ESP_LOGW(TAG, "internet radio stop failed: %s", esp_err_to_name(result));
@@ -722,6 +795,14 @@ static void player_control_task(void *arg)
             if (command.source == AUDIO_SOURCE_YANDEX) {
                 (void)yandex_catalog_request_refresh();
             }
+            if (command.source == AUDIO_SOURCE_BLUETOOTH && !player_bt_open()) {
+                /* The module refused or went quiet: the source is not open,
+                 * and saying so here is what keeps the manager and the bus in
+                 * agreement. */
+                (void)audio_source_manager_stop(&s_manager, command.source);
+                atomic_store_explicit(&s_active_source, AUDIO_SOURCE_NONE, memory_order_release);
+                break;
+            }
             /* Selecting a source never starts anything, the radio included.
              * It used to resume the last station here, which made every
              * arrival at the station list start playing whatever was on last -
@@ -864,8 +945,21 @@ static void player_control_task(void *arg)
                 started = player_adopt_internet_radio(snapshot.active_source) &&
                           internet_radio_start_saved_station();
                 break;
+            case AUDIO_SOURCE_BLUETOOTH: {
+                /* Play on the phone if one is here; otherwise open the door
+                 * again, which is what a speaker's play button does with no
+                 * phone around. */
+                bt_link_state_t state;
+                bt_link_snapshot(&state);
+                if (state.status.connection == JBT_CONN_CONNECTED) {
+                    started = bt_link_passthrough(JBT_KEY_PLAY) == ESP_OK;
+                } else {
+                    (void)bt_link_pairing(true);
+                    started = true;
+                }
+                break;
+            }
             case AUDIO_SOURCE_FM:
-            case AUDIO_SOURCE_BLUETOOTH:
                 /* Named in the enum, not built. Nothing to resume, and saying
                  * so here is what keeps the switch exhaustive. */
                 break;
@@ -880,14 +974,18 @@ static void player_control_task(void *arg)
             break;
         }
         case PLAYER_OPERATION_PAUSE:
-            if (audio_source_is_files(snapshot.active_source)) {
+            if (snapshot.active_source == AUDIO_SOURCE_BLUETOOTH) {
+                (void)bt_link_passthrough(JBT_KEY_PAUSE);
+            } else if (audio_source_is_files(snapshot.active_source)) {
                 (void)file_player_pause();
             } else {
                 (void)internet_radio_pause();
             }
             break;
         case PLAYER_OPERATION_RESUME:
-            if (audio_source_is_files(snapshot.active_source)) {
+            if (snapshot.active_source == AUDIO_SOURCE_BLUETOOTH) {
+                (void)bt_link_passthrough(JBT_KEY_PLAY);
+            } else if (audio_source_is_files(snapshot.active_source)) {
                 (void)file_player_resume();
             } else {
                 (void)internet_radio_resume();
@@ -928,6 +1026,10 @@ static void player_control_task(void *arg)
             /* Told to the rotor before the skip is asked for: the decode task
              * acts on it almost at once, and a track left early has to be
              * reported as rejected rather than as heard to the end. */
+            if (snapshot.active_source == AUDIO_SOURCE_BLUETOOTH) {
+                (void)bt_link_passthrough(JBT_KEY_NEXT);
+                break;
+            }
             if (snapshot.active_source == AUDIO_SOURCE_YANDEX) {
                 yandex_rotor_note_skip();
             }
@@ -941,7 +1043,9 @@ static void player_control_task(void *arg)
         case PLAYER_OPERATION_PREVIOUS_ITEM:
         case PLAYER_OPERATION_NEXT_ITEM: {
             const bool forward = operation == PLAYER_OPERATION_NEXT_ITEM;
-            if (audio_source_is_files(snapshot.active_source)) {
+            if (snapshot.active_source == AUDIO_SOURCE_BLUETOOTH) {
+                (void)bt_link_passthrough(forward ? JBT_KEY_NEXT : JBT_KEY_PREV);
+            } else if (audio_source_is_files(snapshot.active_source)) {
                 player_file_step(forward);
             } else if (snapshot.active_source == AUDIO_SOURCE_DLNA) {
                 /* The neighbouring playable row of the open container, which
@@ -1168,6 +1272,9 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     if (BOARD_HAS_DLNA && dlna_enabled) {
         snapshot->capabilities |= PLAYER_CAP_DLNA;
     }
+    if (BOARD_HAS_BLUETOOTH && bt_link_alive()) {
+        snapshot->capabilities |= PLAYER_CAP_BLUETOOTH;
+    }
     snapshot->active_source =
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
 
@@ -1186,6 +1293,48 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     snapshot->wifi_setup_ap = wifi_mode == WIFI_PROVISIONING_AP_SETUP;
 
     player_note_nothing_started(snapshot);
+
+    if (snapshot->active_source == AUDIO_SOURCE_BLUETOOTH) {
+        /* What the module last said. The phone's name takes the place of a
+         * station's, and "performer - track" the ICY line's, so both faces
+         * draw it through the station derivation with no list behind it -
+         * the way a media server's track is drawn. Nothing connected is
+         * stopped with an empty name, which the panel turns into the
+         * pairing hint. */
+        player_bt_sync_volume();
+        bt_link_state_t state;
+        bt_link_snapshot(&state);
+        const bool connected = state.status.connection == JBT_CONN_CONNECTED;
+        if (!bt_link_alive()) {
+            snapshot->playback_state = PLAYER_PLAYBACK_ERROR;
+            snprintf(snapshot->error, sizeof(snapshot->error), "%s",
+                     player_text(DEVICE_TEXT_ERROR_BLUETOOTH_MODULE));
+        } else if (!connected) {
+            snapshot->playback_state = PLAYER_PLAYBACK_STOPPED;
+        } else if (state.status.play == JBT_PLAY_PLAYING) {
+            snapshot->playback_state = PLAYER_PLAYBACK_PLAYING;
+        } else if (state.status.play == JBT_PLAY_PAUSED) {
+            snapshot->playback_state = PLAYER_PLAYBACK_PAUSED;
+        } else {
+            snapshot->playback_state = PLAYER_PLAYBACK_STOPPED;
+        }
+        snapshot->active_item_index = PLAYER_ITEM_NONE;
+        snapshot->item_count = 0U;
+        if (connected) {
+            snprintf(snapshot->context, sizeof(snapshot->context), "%s", state.peer_name);
+        }
+        /* The title alone here; the performer and the album travel as tags
+         * (player_control_track_tags), because a performer with a dash in
+         * their name - "Nora En Pure - Purified Radio", seen on the first
+         * phone - is cut in two by the ICY split. */
+        snprintf(snapshot->stream_title, sizeof(snapshot->stream_title), "%.*s",
+                 (int)sizeof(snapshot->stream_title) - 1, state.title);
+        snprintf(snapshot->codec, sizeof(snapshot->codec), "%s",
+                 state.status.codec == JBT_CODEC_AAC ? "AAC" : state.status.codec == JBT_CODEC_SBC ? "SBC" : "");
+        snapshot->sample_rate_hz = state.status.sample_rate;
+        snapshot->track_tag_revision = state.track_revision;
+        return;
+    }
 
     if (audio_source_is_files(snapshot->active_source)) {
         file_player_status_t usb_status;
@@ -1329,6 +1478,16 @@ bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_se
     if (elapsed_seconds == NULL || total_seconds == NULL) return false;
     const audio_source_t source =
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
+    if (source == AUDIO_SOURCE_BLUETOOTH) {
+        /* The phone reports its position once a second and the track's
+         * length with the track; a phone that reports neither shows no bar. */
+        bt_link_state_t state;
+        bt_link_snapshot(&state);
+        if (state.status.connection != JBT_CONN_CONNECTED || state.duration_ms == 0U) return false;
+        *elapsed_seconds = state.position_ms / 1000U;
+        *total_seconds = state.duration_ms / 1000U;
+        return true;
+    }
     if (!audio_source_is_files(source)) return false;
 
     file_player_status_t status;
@@ -1347,6 +1506,14 @@ bool player_control_track_tags(audio_tags_t *tags)
     audio_tags_clear(tags);
     const audio_source_t source =
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
+    if (source == AUDIO_SOURCE_BLUETOOTH) {
+        bt_link_state_t state;
+        bt_link_snapshot(&state);
+        snprintf(tags->title, sizeof(tags->title), "%.*s", (int)sizeof(tags->title) - 1, state.title);
+        snprintf(tags->artist, sizeof(tags->artist), "%.*s", (int)sizeof(tags->artist) - 1, state.artist);
+        snprintf(tags->album, sizeof(tags->album), "%.*s", (int)sizeof(tags->album) - 1, state.album);
+        return audio_tags_have_text(tags);
+    }
     if (!audio_source_is_files(source)) return false;
 
     file_player_get_tags(tags);

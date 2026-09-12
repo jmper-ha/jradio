@@ -43,7 +43,8 @@ the home screen. Details in [Hardware](doc/hardware.en.md).
 | **Cover art** | works | From the file's tag, from `cover.jpg` beside the music, from Yandex |
 | **Interface language** | works | Russian and English; the switch moves both the device screen and the web interface |
 | **Yandex categories** | not done | Only the account's own stations; there is no catalogue of genres and moods |
-| **Bluetooth, FM** | not done | No menu entries: the device shows only what it can actually do |
+| **Bluetooth** | in progress | Playing from a phone through the [jradio-bt](https://github.com/jmper-ha/jradio-bt) module on the same I2S bus: the phone's name, the track, the keys, the volume - [more](doc/usage.en.md#bluetooth). Without the module there is no menu entry |
+| **FM** | not done | No menu entry: the device shows only what it can actually do |
 
 ### Formats
 

@@ -154,6 +154,11 @@ static void write_capabilities(web_json_writer_t *writer,
     if ((player->capabilities & PLAYER_CAP_DLNA) != 0U) {
         write_capability(writer, &written, "dlna", AUDIO_SOURCE_DLNA, "files", language);
     }
+    /* Only while the module answers on its UART: the bit is its heartbeat.
+     * No list of any kind - the phone is the whole of the source. */
+    if ((player->capabilities & PLAYER_CAP_BLUETOOTH) != 0U) {
+        write_capability(writer, &written, "bluetooth", AUDIO_SOURCE_BLUETOOTH, "", language);
+    }
     web_json_literal(writer, "]");
 }
 
@@ -241,7 +246,11 @@ static void write_list(web_json_writer_t *writer, const player_snapshot_t *playe
     const bool files = audio_source_is_files(player->active_source);
     const bool browsable = files || player->active_source == AUDIO_SOURCE_DLNA;
     web_json_literal(writer, "\"list\":{\"kind\":");
-    web_json_literal(writer, browsable ? "\"files\"" : "\"stations\"");
+    /* The phone has no list on this side at all: an empty kind is what the
+     * page hides its list on. */
+    web_json_literal(writer, player->active_source == AUDIO_SOURCE_BLUETOOTH ? "\"\""
+                             : browsable                                     ? "\"files\""
+                                                                             : "\"stations\"");
     web_json_literal(writer, ",\"active_index\":");
     write_active_index(writer, player);
     web_json_literal(writer, ",\"revision\":");
@@ -754,6 +763,13 @@ static void capture_now_playing(const player_snapshot_t *player,
         const bool tagged = player_control_track_tags(&tags);
         ui_now_playing_for_file(player->context, player->stream_title,
                                 tagged ? &tags : NULL, now);
+        secure_zero(&tags, sizeof(tags));
+        return;
+    }
+    if (player->active_source == AUDIO_SOURCE_BLUETOOTH) {
+        audio_tags_t tags;
+        const bool tagged = player_control_track_tags(&tags);
+        ui_now_playing_for_phone(player->context, tagged ? &tags : NULL, now);
         secure_zero(&tags, sizeof(tags));
         return;
     }

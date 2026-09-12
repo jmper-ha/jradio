@@ -171,9 +171,9 @@ own.
 The same file names the parts this board does not carry: an FM tuner and
 Bluetooth. Their blocks are commented out rather than deleted - the file should
 answer "can this firmware drive one" with a no as well as with a yes. For
-Bluetooth the answer is final: the ESP32-S3 has no classic Bluetooth, only BLE,
-and A2DP is a classic-Bluetooth profile, so playing from a phone would need a
-receiver module of its own.
+Bluetooth on the chip itself the answer is final: the ESP32-S3 has no classic
+Bluetooth, only BLE, and A2DP is a classic-Bluetooth profile. So Bluetooth here
+is a module of its own - see [below](#bluetooth-the-jradio-bt-module).
 
 | Signal | GPIO | | Signal | GPIO |
 |---|---:|---|---|---:|
@@ -226,6 +226,38 @@ Worth knowing if you build the board:
 - the slot has no card-detect line, so an inserted card can only be found by
   trying to mount it - which is also why the card is not held mounted, see
   [Limits](diagnostics.en.md#limits). FAT16/FAT32 only, no exFAT.
+
+## Bluetooth: the jradio-bt module
+
+Playing from a phone (and, later, sending to headphones) is done by a second
+ESP32 - a classic WROOM-32, which does have Bluetooth Classic - running its
+own firmware, [jradio-bt](https://github.com/jmper-ha/jradio-bt). It sits on
+the same I2S bus as the PCM5102 and takes orders over a UART. Three lines in
+`board_options.h` turn it on:
+
+```c
+#define BLUETOOTH BLUETOOTH_JRADIO_BT
+#define BT_UART_TX_GPIO 13
+#define BT_UART_RX_GPIO 14
+```
+
+| S3 (jRadio) | WROOM (jradio-bt) | What |
+|---|---|---|
+| GPIO 13 | GPIO 16 (RX) | UART 921600 8N1, commands and answers |
+| GPIO 14 | GPIO 17 (TX) | |
+| GPIO 18 (BCLK) | GPIO 26 | the shared I2S bus, through 33-47 ohm at each end |
+| GPIO 17 (LRCK) | GPIO 25 | |
+| GPIO 16 (DOUT) | GPIO 22 | the same wire also feeds the DAC's DIN |
+| 3V3, GND | 3V3, GND | up to 200 mA peaks for the module |
+
+Who clocks the bus depends on what is playing. Normally the S3 does and the
+module keeps its three pins as inputs. When the "Bluetooth" source is chosen
+the S3 deletes its I2S channel and turns its pins into inputs, then asks the
+module to take over and waits for its acknowledgement; leaving the source runs
+the same in reverse. The 33-47 ohm resistors are for the instant of the
+hand-over, when both ends could be outputs. The module is offered as a source
+only while it answers on the UART: one that is unplugged or being flashed is
+not offered, rather than failing to open.
 
 ## What the home screen shows
 

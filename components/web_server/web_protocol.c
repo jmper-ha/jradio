@@ -725,6 +725,8 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
             parsed->player.source = AUDIO_SOURCE_YANDEX;
         } else if (strcmp(source->valuestring, "dlna") == 0) {
             parsed->player.source = AUDIO_SOURCE_DLNA;
+        } else if (strcmp(source->valuestring, "bluetooth") == 0) {
+            parsed->player.source = AUDIO_SOURCE_BLUETOOTH;
         } else {
             return false;
         }

@@ -204,6 +204,28 @@ static void test_each_line_of_a_file_falls_back_on_its_own(void)
     assert(strcmp(now.title, "16---eskapaden.mp3") == 0);
 }
 
+static void test_a_phone_keeps_a_dash_in_the_performers_name(void)
+{
+    /* Seen on the first phone tried: the performer of a podcast is
+     * "Nora En Pure - Purified Radio". Through the ICY split that became a
+     * performer "Nora En Pure" and a track "Purified Radio - Purified Radio
+     * 524"; the phone's tags are already two fields, and stay two. */
+    audio_tags_t tags;
+    memset(&tags, 0, sizeof(tags));
+    snprintf(tags.title, sizeof(tags.title), "Purified Radio 524");
+    snprintf(tags.artist, sizeof(tags.artist), "Nora En Pure - Purified Radio");
+    ui_now_playing_t now;
+    ui_now_playing_for_phone("iPhone_Den", &tags, &now);
+    assert(strcmp(now.heading, "iPhone_Den") == 0);
+    assert(strcmp(now.artist, "Nora En Pure - Purified Radio") == 0);
+    assert(strcmp(now.title, "Purified Radio 524") == 0);
+
+    /* No phone, nothing tagged: three empty lines, not a crash. */
+    ui_now_playing_for_phone(NULL, NULL, &now);
+    assert(now.heading[0] == '\0' && now.artist[0] == '\0' && now.title[0] == '\0');
+    ui_now_playing_for_phone("x", NULL, NULL);
+}
+
 static void test_neither_builder_writes_through_a_null(void)
 {
     ui_now_playing_for_file(NULL, NULL, NULL, NULL);
@@ -226,6 +248,7 @@ int main(void)
     test_a_station_reads_as_a_name_a_performer_and_a_track();
     test_a_file_reads_out_of_its_tags();
     test_each_line_of_a_file_falls_back_on_its_own();
+    test_a_phone_keeps_a_dash_in_the_performers_name();
     test_neither_builder_writes_through_a_null();
     puts("ui_now_playing tests passed");
     return 0;

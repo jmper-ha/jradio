@@ -84,6 +84,13 @@ bool ui_now_playing_split_title(const char *icy, const char *heading, char *arti
 void ui_now_playing_for_file(const char *directory, const char *file_name,
                              const audio_tags_t *tags, ui_now_playing_t *out);
 
+/* A phone over Bluetooth: its name where a station's goes, and the track's
+ * performer and title as the phone tagged them - never through the ICY
+ * split, which cut "Nora En Pure - Purified Radio" in two on the first
+ * phone tried. `tags` is NULL for a phone that named nothing yet. */
+void ui_now_playing_for_phone(const char *phone, const audio_tags_t *tags,
+                              ui_now_playing_t *out);
+
 /* A station, from the list and from the stream. */
 void ui_now_playing_for_station(bool name_from_list, const char *list_name,
                                 const char *stream_name, const char *icy_title,

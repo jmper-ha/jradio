@@ -98,6 +98,8 @@ typedef enum {
     DEVICE_TEXT_BUFFER_FORMAT,
     DEVICE_TEXT_BUFFER_UNKNOWN,
     DEVICE_TEXT_CHOOSE_TRACK,
+    /* The Bluetooth player with no phone on it: where to look for us. */
+    DEVICE_TEXT_BLUETOOTH_PAIRING,
     DEVICE_TEXT_CHOOSE_FILE,
     DEVICE_TEXT_OPENING_FILE,
     DEVICE_TEXT_SEARCHING_SERVER,
@@ -122,6 +124,7 @@ typedef enum {
 
     /* Errors the controller puts in the snapshot, which both faces show. */
     DEVICE_TEXT_ERROR_STATION_FAILED,
+    DEVICE_TEXT_ERROR_BLUETOOTH_MODULE,
     DEVICE_TEXT_ERROR_FILE_FAILED,
     DEVICE_TEXT_ERROR_NOTHING_TO_RESUME,
     DEVICE_TEXT_ERROR_FOLDER_FAILED,

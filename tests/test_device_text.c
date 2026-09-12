@@ -62,6 +62,7 @@ static void test_the_error_lines_fit_the_snapshot(void)
         DEVICE_TEXT_ERROR_NOTHING_TO_RESUME, DEVICE_TEXT_ERROR_FOLDER_FAILED,
         DEVICE_TEXT_ERROR_YANDEX_SUBSCRIPTION, DEVICE_TEXT_ERROR_YANDEX_REFRESH,
         DEVICE_TEXT_ERROR_BAD_COMMAND,      DEVICE_TEXT_ERROR_DEVICE_BUSY,
+        DEVICE_TEXT_ERROR_BLUETOOTH_MODULE,
     };
     for (size_t index = 0U; index < sizeof(errors) / sizeof(errors[0]); ++index) {
         assert(strlen(device_text(errors[index], DEVICE_LANGUAGE_RU)) < PLAYER_ERROR_MAX_LEN);

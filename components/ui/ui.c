@@ -1610,12 +1610,44 @@ static void ui_update_dlna_status(const player_snapshot_t *snapshot)
     ui_set_stream_readings(snapshot);
 }
 
+/* The phone, drawn the way a media server's track is: its name where a
+ * station's goes, "performer - track" under it. With no phone on, the state
+ * line says where to find the device; a phone on but idle says nothing,
+ * since its own screen is where play is pressed. */
+static void ui_update_bluetooth_status(const player_snapshot_t *snapshot)
+{
+    audio_tags_t tags;
+    const bool tagged = player_control_track_tags(&tags);
+    ui_now_playing_t now;
+    ui_now_playing_for_phone(snapshot->context, tagged ? &tags : NULL, &now);
+    ui_note_now_playing(&now);
+
+    ui_set_label_text_if_changed(s_source_title, now.heading[0] != '\0'
+                                                     ? now.heading
+                                                     : ui_text(DEVICE_TEXT_SOURCE_BLUETOOTH));
+    ui_scroller_set_text(&s_source_detail, now.title);
+    const char *state = "";
+    if (snapshot->playback_state == PLAYER_PLAYBACK_STOPPED && snapshot->context[0] == '\0') {
+        state = ui_text(DEVICE_TEXT_BLUETOOTH_PAIRING);
+    } else if (snapshot->playback_state != PLAYER_PLAYBACK_PLAYING &&
+               snapshot->playback_state != PLAYER_PLAYBACK_PAUSED &&
+               snapshot->playback_state != PLAYER_PLAYBACK_STOPPED) {
+        state = ui_radio_state_text(snapshot->playback_state);
+    }
+    ui_set_state_line_from(snapshot, state, now.artist);
+    ui_set_stream_readings(snapshot);
+}
+
 static void ui_update_radio_status(const player_snapshot_t *snapshot)
 {
     if (snapshot == NULL) return;
     ui_update_playback_marks(snapshot);
     if (audio_source_is_files(ui_player_state_source(&s_player_ui))) {
         ui_update_files_status(snapshot);
+        return;
+    }
+    if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_BLUETOOTH) {
+        ui_update_bluetooth_status(snapshot);
         return;
     }
     /* Both station sources render the same way: a name on top, a track under
@@ -3990,6 +4022,13 @@ static void ui_show_source(void)
         s_files_list_open_requested = true;
     }
     if (!ui_submit_player_command(&command)) return;
+    /* The phone is not a list to choose from: the player screen is the whole
+     * of this source, and while no phone is on it the screen says where to
+     * look for the device. */
+    if (selected_source == AUDIO_SOURCE_BLUETOOTH) {
+        ui_load_source_screen(AUDIO_SOURCE_BLUETOOTH);
+        return;
+    }
     // Both sources open on their list rather than the player: there is nothing
     // to look at on the player screen until something has been chosen.
     ui_show_station_list();
@@ -4732,7 +4771,9 @@ static void ui_handle_input(board_input_action_t action)
                     return;
                 }
                 command.kind = PLAYER_COMMAND_NEXT_TRACK;
-            } else if (has_list) {
+            } else if (has_list || source == AUDIO_SOURCE_BLUETOOTH) {
+                /* The phone's queue has both directions, and no list on this
+                 * side to page through: the keys go straight to it. */
                 command.kind = forward ? PLAYER_COMMAND_NEXT_ITEM
                                        : PLAYER_COMMAND_PREVIOUS_ITEM;
             } else {

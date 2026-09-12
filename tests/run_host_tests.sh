@@ -24,6 +24,7 @@ include_flags=(
     -I"${project_dir}/components/audio_tags/stb"
     -I"${project_dir}/components/audio_tags/tjpgd"
     -I"${project_dir}/components/board/include"
+    -I"${project_dir}/components/bt_link/include"
     -I"${project_dir}/components/diagnostics/include"
     -I"${project_dir}/components/dlna/include"
     -I"${project_dir}/components/internet_radio/include"
@@ -111,6 +112,21 @@ grep -Fq 'settings_csv_init();' main/main.c
 run_test audio_pcm_convert tests/test_audio_pcm_convert.c components/board/audio_pcm_convert.c
 run_test audio_volume tests/test_audio_volume.c components/board/audio_volume.c
 run_test audio_source tests/test_audio_source.c components/audio/audio_source_manager.c
+run_test bt_link_model tests/test_bt_link_model.c components/bt_link/bt_link_model.c \
+    components/bt_link/jbt_proto.c
+# The protocol is one file on both sides. When the module's repository sits
+# beside this one, the two copies have to be byte for byte the same, or the
+# boards will disagree about a frame while both of their tests pass.
+if [ -d "${project_dir}/../jradio-bt/components/jbt_proto" ]; then
+    for f in include/jbt_proto.h jbt_proto.c; do
+        if ! cmp -s "${project_dir}/components/bt_link/${f}" \
+                    "${project_dir}/../jradio-bt/components/jbt_proto/${f}"; then
+            echo "components/bt_link/${f} differs from ../jradio-bt/components/jbt_proto/${f}" >&2
+            exit 1
+        fi
+    done
+    echo "jbt_proto matches ../jradio-bt"
+fi
 run_test album_art_decode tests/test_album_art_decode.c components/audio_tags/tjpgd/tjpgd.c
 run_test audio_tags_text tests/test_audio_tags_text.c components/audio_tags/audio_tags_text.c
 run_test audio_tags_reader tests/test_audio_tags_reader.c \

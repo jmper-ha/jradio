@@ -268,12 +268,11 @@ static void board_audio_health_rearm(void)
      * straddles a window boundary. */
 }
 
-static esp_err_t board_audio_init(void)
+/* The channel on its own, apart from the mutex: it is created at boot and
+ * again every time the bus comes back from the Bluetooth module, which owns
+ * the same three pins while a phone plays through it. */
+static esp_err_t board_audio_create_channel(uint32_t sample_rate)
 {
-    s_audio_mutex = xSemaphoreCreateMutex();
-    if (s_audio_mutex == NULL) {
-        return ESP_ERR_NO_MEM;
-    }
     i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     channel_config.dma_desc_num = I2S_DMA_DESC_NUM;
     channel_config.dma_frame_num = I2S_DMA_FRAME_NUM;
@@ -291,7 +290,7 @@ static esp_err_t board_audio_init(void)
                         TAG, "register I2S TX callbacks failed");
 
     i2s_std_config_t std_config = {
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(AUDIO_DEFAULT_SAMPLE_RATE),
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate),
         /* PCM5102 uses the Philips I2S timing: audio data is delayed by one
          * BCLK after the LRCK edge.  MSB/left-justified timing shifts every
          * sample by one bit and is not the interface selected on this board. */
@@ -333,6 +332,56 @@ static esp_err_t board_audio_init(void)
      * source starts, so the DAC never starts from empty DMA descriptors. */
     s_audio_enabled = false;
     return ESP_OK;
+}
+
+static esp_err_t board_audio_init(void)
+{
+    s_audio_mutex = xSemaphoreCreateMutex();
+    if (s_audio_mutex == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    return board_audio_create_channel(AUDIO_DEFAULT_SAMPLE_RATE);
+}
+
+esp_err_t board_audio_release_bus(void)
+{
+    if (s_audio_mutex == NULL) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
+    esp_err_t result = ESP_OK;
+    if (s_i2s_tx != NULL) {
+        if (s_audio_enabled) {
+            (void)i2s_channel_disable(s_i2s_tx);
+            s_audio_enabled = false;
+        }
+        /* Deleting the channel is the only way to take the peripheral off
+         * the pads: a disabled channel still drives its idle levels, and the
+         * module about to clock the DAC would be fighting them. Then plain
+         * inputs, no pull - a pull would load the module's edges. */
+        result = i2s_del_channel(s_i2s_tx);
+        s_i2s_tx = NULL;
+        const gpio_num_t pins[] = {I2S_BCLK_GPIO, I2S_LRCK_GPIO, I2S_DOUT_GPIO};
+        for (size_t i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
+            (void)gpio_reset_pin(pins[i]);
+            (void)gpio_set_direction(pins[i], GPIO_MODE_INPUT);
+            (void)gpio_set_pull_mode(pins[i], GPIO_FLOATING);
+        }
+        ESP_LOGI(TAG, "I2S bus released");
+    }
+    xSemaphoreGive(s_audio_mutex);
+    return result;
+}
+
+esp_err_t board_audio_reclaim_bus(void)
+{
+    if (s_audio_mutex == NULL) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
+    esp_err_t result = ESP_OK;
+    if (s_i2s_tx == NULL) {
+        result = board_audio_create_channel(s_audio_sample_rate);
+        ESP_LOGI(TAG, "I2S bus reclaimed: %s", esp_err_to_name(result));
+    }
+    xSemaphoreGive(s_audio_mutex);
+    return result;
 }
 
 static esp_err_t board_audio_preload_silence(void)

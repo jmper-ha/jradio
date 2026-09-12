@@ -69,13 +69,18 @@ static void test_activation_maps_only_the_implemented_sources(void)
        where forgetting a case is invisible until somebody presses it. */
     assert(ui_feed_model_activate(UI_FEED_DLNA, &source));
     assert(source == AUDIO_SOURCE_DLNA);
+    /* And the same lesson a second time, with the phone: the tile said
+       "функция пока недоступна" the first time the module was plugged in.
+       Whether the tile is shown at all is the board's business (the menu
+       hides it without a module); opening it is this function's. */
+    assert(ui_feed_model_activate(UI_FEED_BLUETOOTH, &source));
+    assert(source == AUDIO_SOURCE_BLUETOOTH);
 
     /* Unimplemented modes must report failure rather than silently selecting
      * nothing, or the feed would look like it opened them. */
     source = AUDIO_SOURCE_INTERNET_RADIO;
-    assert(!ui_feed_model_activate(UI_FEED_BLUETOOTH, &source));
-    assert(source == AUDIO_SOURCE_NONE);
     assert(!ui_feed_model_activate(UI_FEED_FM, &source));
+    assert(source == AUDIO_SOURCE_NONE);
     assert(!ui_feed_model_activate(UI_FEED_YANDEX, &source));
     assert(!ui_feed_model_activate(UI_FEED_SETTINGS, &source));
 

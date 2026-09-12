@@ -60,6 +60,18 @@ static void test_the_derived_counts_match_the_measured_panels(void)
     /* The ring is the landscape ILI9488's, and at 320 px wide its outer pair
      * falls off both edges - which is the whole of what UI_FEED_SLOTS decides. */
     assert(UI_FEED_SLOTS == 3);
+#elif TFT_WIDTH == 320 && TFT_HEIGHT == 170
+    /* Seventy rows fewer than the first panel at the same faces: three list
+     * rows and three settings rows is what is left above the rule and the
+     * band, and a shape file that found a fourth by trimming a pitch would
+     * have clipped a face to do it. */
+    assert(UI_STATION_LIST_MAX_ROWS == 3U);
+    assert(UI_SETTINGS_MAX_ROWS == 3U);
+    /* The meter runs beside the cover, in 176 px from x=134: 20*6 + 19*2 =
+     * 158, ending at 292. */
+    assert(UI_VU_SEGMENT_W == 6 && UI_VU_SEGMENT_GAP == 2);
+    /* As wide as the first panel, so the same five slots. */
+    assert(UI_FEED_SLOTS == 5);
 #endif
 }
 
@@ -76,7 +88,8 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
     assert(UI_FONT_BODY_LINE_H > 0 && UI_FONT_TITLE_LINE_H > 0);
     assert(UI_FONT_TITLE_LINE_H >= UI_FONT_BODY_LINE_H);
 
-#if (TFT_WIDTH == 320 && TFT_HEIGHT == 240) || (TFT_WIDTH == 240 && TFT_HEIGHT == 320)
+#if (TFT_WIDTH == 320 && TFT_HEIGHT == 240) || (TFT_WIDTH == 240 && TFT_HEIGHT == 320) || \
+    (TFT_WIDTH == 320 && TFT_HEIGHT == 170)
     /* Both panels so far are laid out for the same four faces, and these are
      * the generated fonts' own line heights. A face regenerated at another
      * size has to come through here - and so does one regenerated at the same
@@ -84,14 +97,33 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
      * from 23 to 24: a capital carrying an accent is taller than any letter
      * the face held before. */
     assert(UI_FONT_BODY_PX == 14 && UI_FONT_TITLE_PX == 20);
-    assert(UI_FONT_ICON_PX == 24 && UI_FONT_DISPLAY_PX == 48);
     assert(UI_SRC_LINE_H == 19 && UI_SRC_TRACK_H == 24);
     assert(UI_SRC_ART_SIZE == 96);
     assert(UI_LIST_ICON_W == 30);
     assert(UI_LIST_NUMBER_W == 34);
-    assert(UI_FEED_ICON_SMALL_PX == 24 && UI_FEED_ICON_MEDIUM_PX == 32 &&
-           UI_FEED_ICON_LARGE_PX == 48);
+    assert(UI_FEED_ICON_SMALL_PX == 24 && UI_FEED_ICON_MEDIUM_PX == 32);
+#if TFT_HEIGHT == 170
+    /* The short panel: the same faces, a display face a step down for the
+     * pairing code, and a smaller selected tile - 84 px does not go between
+     * the title and the row of dots. The list home screen drops to the body
+     * face, which is the one place a face is not the title's. */
+    assert(UI_FONT_ICON_PX == 24 && UI_FONT_DISPLAY_PX == 32);
+    assert(UI_FEED_ICON_LARGE_PX == 44);
+    assert(UI_FEED_TILE == 60);
+    assert(UI_MENU_FONT_PX == 14 && UI_MENU_ROW_PITCH == 22);
+    /* The player's body stands beside the cover, not under it. */
+    assert(UI_SRC_BODY_X == UI_SRC_ART_X + UI_SRC_ART_SIZE + 8);
+    assert(UI_SRC_BODY_W == 196);
+#else
+    assert(UI_FONT_ICON_PX == 24 && UI_FONT_DISPLAY_PX == 48);
+    assert(UI_FEED_ICON_LARGE_PX == 48);
     assert(UI_FEED_TILE == 84);
+    /* Everything else keeps the list home screen in the title face and the
+     * player's body at the left margin - the defaults, which is to say what
+     * every panel did before the short one. */
+    assert(UI_MENU_FONT_PX == UI_FONT_TITLE_PX);
+    assert(UI_SRC_BODY_X == UI_CONTENT_X && UI_SRC_BODY_W == UI_CONTENT_W);
+#endif
 #elif TFT_WIDTH == 480 && TFT_HEIGHT == 320
     /* The 480x320 panel asks for its own pair, and these are those faces' own
      * line heights. 18 and 20 share a height for the reason ui_font_metrics.h
@@ -204,6 +236,12 @@ static void test_the_strip_slots_stay_in_their_lanes(void)
 
 static void test_the_player_stacks_downwards(void)
 {
+    /* The body's four lines stay in order and above the rule, on any shape:
+     * the header checks the rows against each other, and this is the line
+     * of readings under them, which it does not. */
+    assert(UI_SRC_STREAM_Y + UI_SRC_STREAM_H <= UI_SRC_RULE_TOP ||
+           UI_SRC_STREAM_X >= UI_SRC_ART_X + UI_SRC_ART_SIZE);
+    assert(UI_SRC_FOOT_Y + UI_SRC_LINE_H <= TFT_HEIGHT);
     /* The header's static assertions already refuse a transposed pair; these
      * are the two the shape file cannot get wrong on its own, because they
      * involve numbers derived from it. */

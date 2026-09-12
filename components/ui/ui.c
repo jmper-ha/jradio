@@ -716,6 +716,9 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     strip->weather_text = lv_label_create(screen);
     lv_obj_set_pos(strip->weather_text, UI_STRIP_WEATHER_TEXT_X, 5);
     lv_obj_set_width(strip->weather_text, UI_STRIP_WEATHER_TEXT_W);
+    /* One line whatever the reading: a label with a width wraps by default,
+     * and a wrapped degree sign hung under the strip. */
+    lv_label_set_long_mode(strip->weather_text, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(strip->weather_text, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_set_style_text_color(strip->weather_text, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_label_set_text(strip->weather_text, "");
@@ -1422,7 +1425,7 @@ static void ui_update_footer(void)
         lv_obj_clear_flag(s_source_progress, LV_OBJ_FLAG_HIDDEN);
         lv_obj_t *played = lv_obj_get_child(s_source_progress, 0);
         if (played != NULL) {
-            const int32_t width = (int32_t)(((unsigned int)UI_CONTENT_W * played_percent) / 100U);
+            const int32_t width = (int32_t)(((unsigned int)UI_SRC_BODY_W * played_percent) / 100U);
             const int32_t clamped = width < 1 ? 1 : width;
             // Written only on a change, like every other value in this loop:
             // a resize invalidates, and this runs every pass.
@@ -1921,7 +1924,7 @@ static void ui_create_menu_screen(void)
     // so this covers every label on the screen including any added later. The
     // default font has no Cyrillic and renders it as empty boxes, which is a
     // mistake that only shows up when a label first receives Russian text.
-    lv_obj_set_style_text_font(s_menu_screen, UI_FONT_TITLE, 0);
+    lv_obj_set_style_text_font(s_menu_screen, UI_FONT_MENU, 0);
 
     ui_status_strip_create(s_menu_screen, &s_menu_strip, "jRadio");
 
@@ -2361,7 +2364,7 @@ static void ui_create_settings_screen(void)
 
     lv_obj_t *card = lv_obj_create(s_qr_overlay);
     lv_obj_remove_style_all(card);
-    lv_obj_set_pos(card, (TFT_WIDTH - UI_QR_CARD) / 2, UI_QR_CARD_Y);
+    lv_obj_set_pos(card, UI_QR_CARD_X, UI_QR_CARD_Y);
     lv_obj_set_size(card, UI_QR_CARD, UI_QR_CARD);
     lv_obj_set_style_bg_color(card, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
@@ -2373,17 +2376,21 @@ static void ui_create_settings_screen(void)
     lv_qrcode_set_light_color(s_qr_code, lv_color_white());
     lv_obj_set_pos(s_qr_code, (UI_QR_CARD - UI_QR_SIZE) / 2, (UI_QR_CARD - UI_QR_SIZE) / 2);
 
+    /* Under the card on most panels, in the column beside it on the short
+     * one - where an address is wider than the column and wraps rather than
+     * being dotted, because a dotted address is no address at all. */
     s_qr_caption = lv_label_create(s_qr_overlay);
-    lv_obj_set_pos(s_qr_caption, 10, UI_QR_CARD_Y + UI_QR_CARD + 6);
-    lv_obj_set_width(s_qr_caption, UI_CONTENT_W);
+    lv_obj_set_pos(s_qr_caption, UI_QR_CAPTION_X, UI_QR_CAPTION_Y);
+    lv_obj_set_width(s_qr_caption, UI_QR_CAPTION_W);
     lv_obj_set_style_text_align(s_qr_caption, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(s_qr_caption, LV_LABEL_LONG_DOT);
+    lv_label_set_long_mode(s_qr_caption, UI_QR_TEXT_BESIDE ? LV_LABEL_LONG_WRAP
+                                                           : LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_qr_caption, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_label_set_text(s_qr_caption, "");
 
     s_qr_back = lv_label_create(s_qr_overlay);
-    lv_obj_set_pos(s_qr_back, 10, UI_QR_CARD_Y + UI_QR_CARD + 28);
-    lv_obj_set_width(s_qr_back, UI_CONTENT_W);
+    lv_obj_set_pos(s_qr_back, UI_QR_CAPTION_X, UI_QR_BACK_Y);
+    lv_obj_set_width(s_qr_back, UI_QR_CAPTION_W);
     lv_obj_set_style_text_align(s_qr_back, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(s_qr_back, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_qr_back, "");
@@ -2946,7 +2953,7 @@ static void ui_create_yandex_screen(void)
     ui_status_strip_create(s_yandex_screen, &s_yandex_strip, ui_text(DEVICE_TEXT_SOURCE_YANDEX));
 
     s_yandex_status = lv_label_create(s_yandex_screen);
-    lv_obj_set_pos(s_yandex_status, 12, 44);
+    lv_obj_set_pos(s_yandex_status, 12, UI_YANDEX_STATUS_Y);
     lv_obj_set_width(s_yandex_status, TFT_WIDTH - 24);
     lv_label_set_long_mode(s_yandex_status, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_yandex_status, lv_color_hex(UI_COLOR_MUTED), 0);
@@ -2957,8 +2964,8 @@ static void ui_create_yandex_screen(void)
      * half right. */
     s_yandex_code_panel = lv_obj_create(s_yandex_screen);
     lv_obj_remove_style_all(s_yandex_code_panel);
-    lv_obj_set_pos(s_yandex_code_panel, 12, 70);
-    lv_obj_set_size(s_yandex_code_panel, TFT_WIDTH - 24, 122);
+    lv_obj_set_pos(s_yandex_code_panel, 12, UI_YANDEX_PANEL_Y);
+    lv_obj_set_size(s_yandex_code_panel, TFT_WIDTH - 24, UI_YANDEX_PANEL_H);
     lv_obj_set_style_bg_color(s_yandex_code_panel, lv_color_hex(UI_COLOR_STRIP), 0);
     lv_obj_set_style_bg_opa(s_yandex_code_panel, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(s_yandex_code_panel, 8, 0);
@@ -2971,7 +2978,7 @@ static void ui_create_yandex_screen(void)
      * spills if a code is ever longer than the eight characters Yandex
      * issues. */
     s_yandex_code = lv_label_create(s_yandex_code_panel);
-    lv_obj_set_pos(s_yandex_code, 0, 6);
+    lv_obj_set_pos(s_yandex_code, 0, UI_YANDEX_CODE_Y);
     lv_obj_set_width(s_yandex_code, TFT_WIDTH - 24);
     lv_label_set_long_mode(s_yandex_code, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(s_yandex_code, LV_TEXT_ALIGN_CENTER, 0);
@@ -2983,7 +2990,7 @@ static void ui_create_yandex_screen(void)
      * too, so it takes the same Montserrat family - and both sizes are already
      * linked, so neither costs flash. */
     s_yandex_url = lv_label_create(s_yandex_code_panel);
-    lv_obj_set_pos(s_yandex_url, 0, 66);
+    lv_obj_set_pos(s_yandex_url, 0, UI_YANDEX_URL_Y);
     lv_obj_set_width(s_yandex_url, TFT_WIDTH - 24);
     lv_label_set_long_mode(s_yandex_url, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(s_yandex_url, LV_TEXT_ALIGN_CENTER, 0);
@@ -2992,7 +2999,7 @@ static void ui_create_yandex_screen(void)
     lv_label_set_text(s_yandex_url, "");
 
     s_yandex_countdown = lv_label_create(s_yandex_code_panel);
-    lv_obj_set_pos(s_yandex_countdown, 0, 98);
+    lv_obj_set_pos(s_yandex_countdown, 0, UI_YANDEX_COUNTDOWN_Y);
     lv_obj_set_style_text_font(s_yandex_countdown, UI_FONT_BODY, 0);
     lv_obj_set_width(s_yandex_countdown, TFT_WIDTH - 24);
     lv_obj_set_style_text_align(s_yandex_countdown, LV_TEXT_ALIGN_CENTER, 0);
@@ -3704,8 +3711,8 @@ static void ui_create_source_screen(void)
      * more perceived contrast than a solid block of the same colour, and at
      * 0x23303C these were there in principle and invisible in practice. */
     lv_obj_t *rule_top = lv_obj_create(s_source_screen);
-    lv_obj_set_pos(rule_top, 10, UI_SRC_RULE_TOP);
-    lv_obj_set_size(rule_top, UI_CONTENT_W, 1);
+    lv_obj_set_pos(rule_top, UI_SRC_BODY_X, UI_SRC_RULE_TOP);
+    lv_obj_set_size(rule_top, UI_SRC_BODY_W, 1);
     lv_obj_set_style_bg_color(rule_top, lv_color_hex(UI_COLOR_RULE), 0);
     lv_obj_set_style_border_width(rule_top, 0, 0);
     lv_obj_set_style_pad_all(rule_top, 0, 0);
@@ -3728,13 +3735,13 @@ static void ui_create_source_screen(void)
         }
         lv_obj_t *mark = lv_label_create(s_source_screen);
         lv_label_set_text(mark, channel == 0U ? "L" : "R");
-        lv_obj_set_pos(mark, UI_CONTENT_X + 2, UI_SRC_VU_Y - 3 + (int)channel * UI_SRC_VU_PITCH);
+        lv_obj_set_pos(mark, UI_SRC_BODY_X + 2, UI_SRC_VU_Y - 3 + (int)channel * UI_SRC_VU_PITCH);
         lv_obj_set_style_text_color(mark, lv_color_hex(UI_COLOR_DIM), 0);
     }
 
     lv_obj_t *rule_bottom = lv_obj_create(s_source_screen);
-    lv_obj_set_pos(rule_bottom, 10, UI_SRC_RULE_BOTTOM);
-    lv_obj_set_size(rule_bottom, UI_CONTENT_W, 1);
+    lv_obj_set_pos(rule_bottom, UI_SRC_BODY_X, UI_SRC_RULE_BOTTOM);
+    lv_obj_set_size(rule_bottom, UI_SRC_BODY_W, 1);
     lv_obj_set_style_bg_color(rule_bottom, lv_color_hex(UI_COLOR_RULE), 0);
     lv_obj_set_style_border_width(rule_bottom, 0, 0);
     lv_obj_set_style_pad_all(rule_bottom, 0, 0);
@@ -3746,8 +3753,8 @@ static void ui_create_source_screen(void)
      * one squeezed between two labels does not. Hidden for radio, which has no
      * end to be a fraction of. */
     s_source_progress = lv_obj_create(s_source_screen);
-    lv_obj_set_pos(s_source_progress, 10, UI_SRC_PROGRESS_Y);
-    lv_obj_set_size(s_source_progress, UI_CONTENT_W, UI_SRC_PROGRESS_H);
+    lv_obj_set_pos(s_source_progress, UI_SRC_BODY_X, UI_SRC_PROGRESS_Y);
+    lv_obj_set_size(s_source_progress, UI_SRC_BODY_W, UI_SRC_PROGRESS_H);
     lv_obj_set_style_bg_color(s_source_progress, lv_color_hex(0x23303C), 0);
     lv_obj_set_style_border_width(s_source_progress, 0, 0);
     lv_obj_set_style_radius(s_source_progress, 2, 0);
@@ -3764,7 +3771,7 @@ static void ui_create_source_screen(void)
     lv_obj_add_flag(s_source_progress, LV_OBJ_FLAG_HIDDEN);
 
     s_source_buffer = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_buffer, 10, UI_SRC_FOOT_Y);
+    lv_obj_set_pos(s_source_buffer, UI_SRC_BUFFER_X, UI_SRC_BUFFER_Y);
     lv_obj_set_style_text_color(s_source_buffer, lv_color_hex(UI_COLOR_DIM), 0);
 
     /* The same reading as a strip, in the same place and about the same size,
@@ -3772,7 +3779,7 @@ static void ui_create_source_screen(void)
      * still a shape rather than a hole. Hidden until the setting asks for it,
      * and until the footer's left slot is the buffer's to use. */
     s_source_buffer_graph = lv_obj_create(s_source_screen);
-    lv_obj_set_pos(s_source_buffer_graph, UI_CONTENT_X, UI_SRC_BUFFER_GRAPH_Y);
+    lv_obj_set_pos(s_source_buffer_graph, UI_SRC_BUFFER_X, UI_SRC_BUFFER_GRAPH_Y);
     lv_obj_set_size(s_source_buffer_graph, UI_BUFFER_GRAPH_W, UI_SRC_BUFFER_GRAPH_H);
     lv_obj_set_style_bg_color(s_source_buffer_graph, lv_color_hex(UI_COLOR_TILE), 0);
     lv_obj_set_style_border_width(s_source_buffer_graph, 0, 0);
@@ -3840,7 +3847,12 @@ static void ui_create_source_screen(void)
      * room - which the word never did. */
     s_source_pause = lv_obj_create(s_source_screen);
     lv_obj_set_size(s_source_pause, UI_SRC_PAUSE_SIZE, UI_SRC_PAUSE_SIZE);
+#if UI_SRC_PAUSE_CENTRED
     lv_obj_center(s_source_pause);
+#else
+    /* On the cover, where the shape says the middle of the screen is text. */
+    lv_obj_set_pos(s_source_pause, UI_SRC_PAUSE_X, UI_SRC_PAUSE_Y);
+#endif
     lv_obj_set_style_radius(s_source_pause, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(s_source_pause, lv_color_hex(0x000000), 0);
     // Translucent rather than solid: the badge has to read as laid over the
@@ -4274,9 +4286,9 @@ static void ui_render_player_state(void)
 static void ui_apply_seek_visual(bool seeking)
 {
     const int32_t height = seeking ? UI_SRC_PROGRESS_SEEK_H : UI_SRC_PROGRESS_H;
-    lv_obj_set_pos(s_source_progress, 10,
+    lv_obj_set_pos(s_source_progress, UI_SRC_BODY_X,
                    UI_SRC_PROGRESS_Y - (height - UI_SRC_PROGRESS_H) / 2);
-    lv_obj_set_size(s_source_progress, UI_CONTENT_W, height);
+    lv_obj_set_size(s_source_progress, UI_SRC_BODY_W, height);
     lv_obj_t *played = lv_obj_get_child(s_source_progress, 0);
     if (played != NULL) lv_obj_set_height(played, height);
 }

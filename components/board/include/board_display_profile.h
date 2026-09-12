@@ -17,7 +17,8 @@
 
 #if DISPLAY == DISPLAY_ILI9341_320_240 || DISPLAY == DISPLAY_ILI9341_240_320
 #include "display/ili9341.h"
-#elif DISPLAY == DISPLAY_ST7789_320_240 || DISPLAY == DISPLAY_ST7789_240_320
+#elif DISPLAY == DISPLAY_ST7789_320_240 || DISPLAY == DISPLAY_ST7789_240_320 || \
+    DISPLAY == DISPLAY_ST7789_320_170
 #include "display/st7789.h"
 #elif DISPLAY == DISPLAY_ILI9488_480_320 || DISPLAY == DISPLAY_ILI9488_320_480
 #include "display/ili9488.h"
@@ -77,6 +78,20 @@
  * was checked on the glass; the others are derived and marked so. */
 #ifndef TFT_SCROLL_REVERSED
 #define TFT_SCROLL_REVERSED 0
+#endif
+
+/* Where the glass starts in the controller's memory. A controller is made
+ * for the largest panel of its family and a smaller module shows a window of
+ * that memory, so a picture written at (0,0) lands off the visible edge unless
+ * every address is shifted by the margin. Zero for a module that uses all of
+ * its controller; the 320x170 ST7789 is the one in the catalogue that does
+ * not. Stated in the panel's own axes after the swap - the y gap is along the
+ * short side of a landscape build. */
+#ifndef TFT_X_GAP
+#define TFT_X_GAP 0
+#endif
+#ifndef TFT_Y_GAP
+#define TFT_Y_GAP 0
 #endif
 
 /* The panel's reset line, when the module brings one out. Revision 1's ILI9341

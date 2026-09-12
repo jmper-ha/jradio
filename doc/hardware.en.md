@@ -4,7 +4,7 @@
 
 ESP32-S3 in a QFN56 package, 16 MB flash, 8 MB PSRAM; a display over SPI -
 an ILI9341 or ST7789 320x240, or an ILI9488 or ST7796S 480x320, each of them either way
-up; a rotary encoder with a push button and four buttons; a
+up, or an ST7789 320x170 (landscape only); a rotary encoder with a push button and four buttons; a
 PCM5102 DAC over I2S with a line output; a USB host port for a FAT-formatted
 drive; a microSD slot over SPI.
 
@@ -48,6 +48,20 @@ ST7789, which with INVON renders the whole screen as a negative - and one
 horizontal mirror. Portrait has not been built yet and
 [`st7789.h`](../components/board/include/display/st7789.h) marks it as derived
 rather than measured. The driver that was not selected costs no flash at all.
+
+The same controller sits in the 1.9" 320x170 module - `DISPLAY_ST7789_320_170`,
+landscape only. Same wires, same driver, one difference: the controller's
+memory is 240x320 and the glass shows the middle 170 columns, so the profile
+sets `TFT_Y_GAP 35` - the offset esp_lcd adds to every window it addresses
+(`esp_lcd_panel_set_gap`). The margin is symmetric, so the user's mirrors do
+not move it. Taken off the panel 2026-09-12: IPS glass, inversion on, and both
+mirrors the other way round from the 2" module (the ribbon leaves from the
+other end). The screen is 70 rows shorter than the first one, and every
+screen has its own shape file,
+[`layout_320x170.h`](../components/ui/include/layout/layout_320x170.h): the
+player puts the cover on the left and everything else in a column beside it;
+the settings and the lists show three rows; the QR code has its caption at
+its side.
 
 The third panel in the catalogue is an ILI9488 480x320, measured on the board
 on 2026-09-04. It takes the same six wires as the ILI9341 but differs in one

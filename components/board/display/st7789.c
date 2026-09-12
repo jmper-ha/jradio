@@ -1,7 +1,8 @@
 #include "board_display_profile.h"
 #include "board_options.h"
 
-#if DISPLAY == DISPLAY_ST7789_320_240 || DISPLAY == DISPLAY_ST7789_240_320
+#if DISPLAY == DISPLAY_ST7789_320_240 || DISPLAY == DISPLAY_ST7789_240_320 || \
+    DISPLAY == DISPLAY_ST7789_320_170
 
 #include "esp_check.h"
 #include "esp_lcd_panel_ops.h"

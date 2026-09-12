@@ -70,6 +70,12 @@ SHAPES = {
     # between the two, as on the 240x320 panel, and the pair centred on a
     # canvas half again as tall.
     (320, 480): dict(tube=(160.0, 204.0), wordmark=(160, 304)),
+    # 320x170: the tube is 114 px across on a 170 px canvas, so it goes to the
+    # left with the wordmark beside it, a little below the eye's centre line
+    # so the lettering's rise reads as rising past the rim rather than out of
+    # it. The one shape where the two are side by side, because it is the one
+    # shape without the height for anything else.
+    (320, 170): dict(tube=(84.0, 85.0), wordmark=(222, 98)),
 }
 WEDGE_CENTER_DEG = 90.0  # 6 o'clock, the way a 6E5 is normally seen
 WEDGE_HALF_DEG = 33.0

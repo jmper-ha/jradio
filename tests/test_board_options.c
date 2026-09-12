@@ -28,7 +28,8 @@ static void test_display_group_is_complete_and_consistent(void)
     assert(DISPLAY == DISPLAY_ILI9341_320_240 || DISPLAY == DISPLAY_ILI9341_240_320 ||
            DISPLAY == DISPLAY_ST7789_320_240 || DISPLAY == DISPLAY_ST7789_240_320 ||
            DISPLAY == DISPLAY_ILI9488_480_320 || DISPLAY == DISPLAY_ILI9488_320_480 ||
-           DISPLAY == DISPLAY_ST7796S_480_320 || DISPLAY == DISPLAY_ST7796S_320_480);
+           DISPLAY == DISPLAY_ST7796S_480_320 || DISPLAY == DISPLAY_ST7796S_320_480 ||
+           DISPLAY == DISPLAY_ST7789_320_170);
     /* Only SPI2 and SPI3 can drive a panel on this part; SPI1 is the flash bus. */
     assert(DISPLAY_SPI_PERIPHERAL == 2 || DISPLAY_SPI_PERIPHERAL == 3);
     assert(TFT_CS_GPIO == 10);
@@ -78,6 +79,20 @@ static void test_display_group_is_complete_and_consistent(void)
     assert(TFT_RGB_ORDER_BGR == 1);
     assert(TFT_INVERT_COLOR == 0);
 #endif
+
+    /* Where the glass starts in the controller's memory. Zero on every module
+     * that shows all of it; the 1.9" ST7789 shows the middle 170 of 240
+     * columns, which after the swap is 35 rows down the screen's y. A gap on
+     * the wrong axis would put the picture 35 px to the right and 35 px
+     * short, and nothing in the log would say so. */
+    assert(TFT_X_GAP >= 0 && TFT_Y_GAP >= 0);
+#if DISPLAY == DISPLAY_ST7789_320_170
+    assert(TFT_X_GAP == 0);
+    assert(TFT_Y_GAP == 35);
+    assert(TFT_Y_GAP * 2 + TFT_HEIGHT == 240);
+#else
+    assert(TFT_X_GAP == 0 && TFT_Y_GAP == 0);
+#endif
 }
 
 static void test_every_panel_in_the_catalogue_has_its_own_number(void)
@@ -91,6 +106,7 @@ static void test_every_panel_in_the_catalogue_has_its_own_number(void)
         DISPLAY_ST7789_320_240, DISPLAY_ST7789_240_320,
         DISPLAY_ILI9488_480_320, DISPLAY_ILI9488_320_480,
         DISPLAY_ST7796S_480_320, DISPLAY_ST7796S_320_480,
+        DISPLAY_ST7789_320_170,
     };
     const size_t count = sizeof(panels) / sizeof(panels[0]);
     for (size_t i = 0; i < count; ++i) {
@@ -128,6 +144,10 @@ static void test_the_orientation_decides_the_geometry_and_nothing_else(void)
       DISPLAY == DISPLAY_ST7796S_480_320 || DISPLAY == DISPLAY_ST7796S_320_480
     assert(TFT_WIDTH + TFT_HEIGHT == 800);
     assert(TFT_WIDTH * TFT_HEIGHT == 153600);
+#elif DISPLAY == DISPLAY_ST7789_320_170
+    /* One way up only: the 1.9" module is a window onto a 240x320 memory,
+     * and its short side is what the window cuts. */
+    assert(TFT_WIDTH == 320 && TFT_HEIGHT == 170);
 #endif
 
     /* Portrait is how the controller addresses the panel natively; landscape

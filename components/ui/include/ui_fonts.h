@@ -51,6 +51,9 @@ extern const lv_font_t ui_font_seven_segment_112;
 #define UI_FONT_BODY (&UI_FONT_TEXT(UI_FONT_BODY_PX))
 /* Titles: list rows, group headings, the name of what is playing. */
 #define UI_FONT_TITLE (&UI_FONT_TEXT(UI_FONT_TITLE_PX))
+/* The list home screen's rows: the title face, unless the shape has no room
+ * for it - see UI_MENU_FONT_PX in ui_layout.h. */
+#define UI_FONT_MENU (&UI_FONT_TEXT(UI_MENU_FONT_PX))
 /* The symbol next to a row - a folder mark, a drive, a link. */
 #define UI_FONT_ICON (&UI_FONT_ICON_FACE(UI_FONT_ICON_PX))
 /* The one big glyph on a screen: the note standing in for missing cover art,

@@ -894,6 +894,11 @@ static esp_err_t board_display_init(bool flip_vertical, bool flip_horizontal)
                         "create " BOARD_PANEL_NAME " panel failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_swap_xy(panel, TFT_SWAP_XY), TAG,
                         "set landscape rotation failed");
+    /* Where the glass sits in the controller's memory; zero on every module
+     * that uses all of it. The driver adds it to each window it addresses,
+     * after the swap, so the numbers are in the screen's own axes. */
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_set_gap(panel, TFT_X_GAP, TFT_Y_GAP), TAG,
+                        "set panel gap failed");
     s_panel = panel;
     s_panel_io = io_handle;
     /* The whole frame is the scroll area - no fixed band at either end - so

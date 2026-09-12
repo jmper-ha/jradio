@@ -62,13 +62,16 @@
  * reading ending seven pixels before the digits. At the margin the reading is
  * its own thing, and the clock keeps its air on both sides.
  *
- * The reading is left-aligned after the picture, three pixels off it. Five
- * halves of the body size is what "-25°" needs with a little over. ui.c moves
- * the name and sets its width when the weather appears or goes, so a device
- * with the weather off is exactly what it was. */
+ * The reading is left-aligned after the picture, three pixels off it. Eleven
+ * quarters of the body size is what "+12°" needs with a pixel over: the plus
+ * is the widest glyph in it, 0.84 em against the minus's 0.36, and the five
+ * halves this stood at - sized on "-25°" - wrapped a plus reading onto a
+ * second line, seen on the 320x170 panel 2026-09-12. ui.c moves the name and
+ * sets its width when the weather appears or goes, so a device with the
+ * weather off is exactly what it was. */
 #define UI_STRIP_WEATHER_ICON_X UI_STRIP_CONTEXT_X
 #define UI_STRIP_WEATHER_ICON_Y ((UI_STRIP_H - UI_STRIP_WEATHER_ICON_PX) / 2)
-#define UI_STRIP_WEATHER_TEXT_W (UI_FONT_BODY_PX * 5 / 2)
+#define UI_STRIP_WEATHER_TEXT_W (UI_FONT_BODY_PX * 11 / 4)
 #define UI_STRIP_WEATHER_TEXT_X (UI_STRIP_WEATHER_ICON_X + UI_STRIP_WEATHER_ICON_PX + 3)
 #define UI_STRIP_CONTEXT_X_WITH_WEATHER (UI_STRIP_WEATHER_TEXT_X + UI_STRIP_WEATHER_TEXT_W + 6)
 #define UI_STRIP_CONTEXT_W_WITH_WEATHER (UI_STRIP_CLOCK_X - UI_STRIP_CONTEXT_X_WITH_WEATHER - 4)
@@ -108,13 +111,13 @@
  * soon as the SD card row appeared. The icon column is the carousel's 24 px
  * bitmap, so both home screens name an item the same way. */
 #define UI_MENU_ROW_Y (UI_STRIP_H + 4)
-/* A row is one line of the title face, and the rows are flush: the pitch and
- * the height are the same number because the face's own line height already
+/* A row is one line of the face, and the rows are flush: the pitch and the
+ * height are the same number because the face's own line height already
  * carries the space between lines. Written as the face rather than as 24, so a
  * shape that asks for bigger text gets rows to match instead of clipped
- * letters. */
-#define UI_MENU_ROW_PITCH UI_FONT_TITLE_LINE_H
-#define UI_MENU_ROW_H UI_FONT_TITLE_LINE_H
+ * letters. The face is the title's unless the shape says otherwise - a panel
+ * 170 px tall cannot stack six rows of it under the strip - so the pitch and
+ * the height are settled after the shape file, with the other overrides. */
 #define UI_MENU_ROW_X 6
 #define UI_MENU_ROW_W (TFT_WIDTH - 12)
 #define UI_MENU_ICON_X 12
@@ -168,15 +171,6 @@
  * face and five pixels of air. */
 #define UI_SET_NOTICE_H (UI_FONT_BODY_LINE_H + 5)
 
-/* The QR code and the white card behind it. The card is the quiet zone: the
- * generator fills its canvas edge to edge whenever the modules divide into it
- * evenly, and a code that runs straight into the dark background is a code a
- * phone refuses to read. 18 px of white on every side is four modules at the
- * smallest scale either payload produces. */
-#define UI_QR_SIZE 144
-#define UI_QR_CARD 180
-#define UI_QR_CARD_Y 4
-
 /* List screens: rows start straight under the strip, and a rule and the
  * position bar close the screen the way they close the player's. */
 #define UI_LIST_ROW_Y (UI_STRIP_H + 6)
@@ -224,12 +218,12 @@
  * and only its height is the layout's, one body line less the space the face
  * leaves under its baseline, so the two forms occupy the same row. */
 #define UI_SRC_BUFFER_GRAPH_H (UI_SRC_LINE_H - 4)
-#define UI_SRC_BUFFER_GRAPH_Y (UI_SRC_FOOT_Y + 2)
+#define UI_SRC_BUFFER_GRAPH_Y (UI_SRC_BUFFER_Y + 2)
 #define UI_SRC_TRACK_H UI_FONT_TITLE_LINE_H
-#define UI_SRC_VU_BLOCK_H 10
-#define UI_SRC_VU_PITCH 18
-/* Where the meter starts, just past the L and R marks on the left margin. */
-#define UI_SRC_VU_X (UI_CONTENT_X + 20)
+/* Where the meter starts, just past the L and R marks on the left margin of
+ * the player's body - the full width on most panels, the column beside the
+ * cover on the shortest. */
+#define UI_SRC_VU_X (UI_SRC_BODY_X + 20)
 #define UI_SRC_PROGRESS_H 4
 /* A hairline while it only reports, twice that while it is being aimed: the
  * bar is the control in scrubbing mode, and a 4 px target is not one. It grows
@@ -250,12 +244,134 @@
 #include "layout/layout_480x320.h"
 #elif TFT_WIDTH == 320 && TFT_HEIGHT == 480
 #include "layout/layout_320x480.h"
+#elif TFT_WIDTH == 320 && TFT_HEIGHT == 170
+#include "layout/layout_320x170.h"
 #else
 #error "no layout for this panel shape - copy components/ui/include/layout/layout_320x240.h to layout_<TFT_WIDTH>x<TFT_HEIGHT>.h, place the blocks it lists on the screen, and add an arm above"
 #endif
 
 /* Everything below follows from the panel and from the shape file, and is the
  * same arithmetic for every panel. */
+
+/* What a shape may take over and most do not. Each of these has one value
+ * every panel used until the 320x170 one arrived, and that value stands here
+ * as the default; the short panel states its own in its shape file, and the
+ * others are exactly what they were. A shape that takes one over takes the
+ * whole group, since the numbers were placed together. */
+
+/* The home screen's list rows: the title face at the face's own line height,
+ * flush, since that height already carries the space between lines. */
+#ifndef UI_MENU_FONT_PX
+#define UI_MENU_FONT_PX UI_FONT_TITLE_PX
+#endif
+#ifndef UI_MENU_ROW_PITCH
+#define UI_MENU_ROW_PITCH UI_FONT_LINE_H(UI_MENU_FONT_PX)
+#endif
+#ifndef UI_MENU_ROW_H
+#define UI_MENU_ROW_H UI_FONT_LINE_H(UI_MENU_FONT_PX)
+#endif
+
+/* The player's body - the rules, the meter, the position bar and the footer
+ * - starts at the left margin like every other block, and runs to the right
+ * one. On the short panel it starts beside the cover instead, because there
+ * is no room under it. The width is derived, so a shape moves one edge. */
+#ifndef UI_SRC_BODY_X
+#define UI_SRC_BODY_X UI_CONTENT_X
+#endif
+#define UI_SRC_BODY_W (TFT_WIDTH - UI_CONTENT_X - UI_SRC_BODY_X)
+/* The meter's two rows of blocks. */
+#ifndef UI_SRC_VU_BLOCK_H
+#define UI_SRC_VU_BLOCK_H 10
+#endif
+#ifndef UI_SRC_VU_PITCH
+#define UI_SRC_VU_PITCH 18
+#endif
+/* The footer's left slot - the buffer reading or the track's time - stands
+ * at the body's left margin on the footer row, unless the shape puts it
+ * somewhere else: the short panel has it under the cover, where the space
+ * is, and the footer beside the cover keeps only the controls. */
+#ifndef UI_SRC_BUFFER_X
+#define UI_SRC_BUFFER_X UI_SRC_BODY_X
+#endif
+#ifndef UI_SRC_BUFFER_Y
+#define UI_SRC_BUFFER_Y UI_SRC_FOOT_Y
+#endif
+/* The pause badge is centred on the screen, which on every panel but the
+ * short one is over the names; there it is over the cover, which is the
+ * only block that side of the screen. */
+#ifndef UI_SRC_PAUSE_CENTRED
+#define UI_SRC_PAUSE_CENTRED 1
+#endif
+
+/* The QR code and the white card behind it. The card is the quiet zone: the
+ * generator fills its canvas edge to edge whenever the modules divide into it
+ * evenly, and a code that runs straight into the dark background is a code a
+ * phone refuses to read. 18 px of white on every side is four modules at the
+ * smallest scale either payload produces.
+ *
+ * The card is centred with the caption and the way out under it, unless the
+ * shape puts the two beside it - which is what a panel with no room under a
+ * card a phone can read has to do. */
+#ifndef UI_QR_SIZE
+#define UI_QR_SIZE 144
+#endif
+#ifndef UI_QR_CARD
+#define UI_QR_CARD 180
+#endif
+#ifndef UI_QR_CARD_X
+#define UI_QR_CARD_X ((TFT_WIDTH - UI_QR_CARD) / 2)
+#endif
+#ifndef UI_QR_CARD_Y
+#define UI_QR_CARD_Y 4
+#endif
+#ifndef UI_QR_TEXT_BESIDE
+#define UI_QR_TEXT_BESIDE 0
+#endif
+#ifndef UI_QR_CAPTION_X
+#define UI_QR_CAPTION_X UI_CONTENT_X
+#endif
+#ifndef UI_QR_CAPTION_W
+#define UI_QR_CAPTION_W UI_CONTENT_W
+#endif
+#ifndef UI_QR_CAPTION_Y
+#define UI_QR_CAPTION_Y (UI_QR_CARD_Y + UI_QR_CARD + 6)
+#endif
+#ifndef UI_QR_BACK_Y
+#define UI_QR_BACK_Y (UI_QR_CARD_Y + UI_QR_CARD + 28)
+#endif
+_Static_assert(UI_QR_CARD_Y + UI_QR_CARD <= TFT_HEIGHT, "the QR card runs off the panel");
+_Static_assert(UI_QR_BACK_Y + UI_FONT_BODY_LINE_H <= TFT_HEIGHT,
+               "the QR screen's way out runs off the bottom of the panel");
+_Static_assert(UI_QR_CAPTION_X + UI_QR_CAPTION_W <= TFT_WIDTH,
+               "the QR screen's caption runs off the right edge");
+
+/* The Yandex pairing screen: a status line under the strip and a panel with
+ * the code in the display face, the address in the icon face and the
+ * countdown in the body face. Placed by eye on the first panel and left
+ * where they were on the larger ones, which had the room; the short panel
+ * takes the whole group over. */
+#ifndef UI_YANDEX_STATUS_Y
+#define UI_YANDEX_STATUS_Y 44
+#endif
+#ifndef UI_YANDEX_PANEL_Y
+#define UI_YANDEX_PANEL_Y 70
+#endif
+#ifndef UI_YANDEX_CODE_Y
+#define UI_YANDEX_CODE_Y 6
+#endif
+#ifndef UI_YANDEX_URL_Y
+#define UI_YANDEX_URL_Y 66
+#endif
+#ifndef UI_YANDEX_COUNTDOWN_Y
+#define UI_YANDEX_COUNTDOWN_Y 98
+#endif
+#ifndef UI_YANDEX_PANEL_H
+#define UI_YANDEX_PANEL_H 122
+#endif
+_Static_assert(UI_YANDEX_PANEL_Y + UI_YANDEX_PANEL_H <= TFT_HEIGHT,
+               "the Yandex pairing panel runs off the bottom of the panel");
+_Static_assert(UI_YANDEX_COUNTDOWN_Y + UI_FONT_BODY_LINE_H <= UI_YANDEX_PANEL_H,
+               "the Yandex countdown runs off its panel");
 
 /* The one number in this file that is time rather than geometry, and it is
  * here for the same reason as the rest: it is arithmetic over the panel, so it
@@ -338,8 +454,9 @@ _Static_assert(UI_SET_ROW_RIGHT - UI_SET_SWITCH_TEXT_X >= 120,
 _Static_assert(UI_LIST_NUMBER_W > UI_FONT_TITLE_PX * 1274 / 1000,
                "the station index leaves no gap before the name");
 /* Enough of the screen's name survives beside the weather to read "jRadio"
- * in the body face - six glyphs at just over half an em each. */
-_Static_assert(UI_STRIP_CONTEXT_W_WITH_WEATHER >= UI_FONT_BODY_PX * 4,
+ * in the body face - six glyphs, 3.1 em in all, at 14 px 44 of the 53 a 320
+ * px panel leaves. */
+_Static_assert(UI_STRIP_CONTEXT_W_WITH_WEATHER >= UI_FONT_BODY_PX * 7 / 2,
                "the status strip cannot hold the weather and the screen's name together");
 _Static_assert(UI_STRIP_WEATHER_ICON_PX <= UI_STRIP_H - 2,
                "the weather icon is taller than the status strip");
@@ -355,15 +472,28 @@ _Static_assert(UI_SETTINGS_MAX_ROWS >= 3U,
  * It covers the settings screen whole, strip included - there is nothing on
  * that screen it needs to leave visible, and a cover is what the QR overlay
  * beside it already does. */
+#ifndef UI_ABOUT_TITLE_Y
 #define UI_ABOUT_TITLE_Y 12
+#endif
+#ifndef UI_ABOUT_ROW_Y
 #define UI_ABOUT_ROW_Y (UI_ABOUT_TITLE_Y + UI_FONT_TITLE_LINE_H + 10)
+#endif
+#ifndef UI_ABOUT_ROW_PITCH
 #define UI_ABOUT_ROW_PITCH (UI_SRC_LINE_H + 2)
+#endif
 /* Firmware, when it was built, the web assets, the framework, and a line that
  * speaks up only when the first and the third disagree. */
 #define UI_ABOUT_ROWS 5U
-/* The two lines pinned to the bottom: who to write to, and how to leave. */
+/* The two lines pinned to the bottom: who to write to, and how to leave. The
+ * air around them is the shape's to trim - the short panel has none to give. */
+#ifndef UI_ABOUT_AUTHOR_Y
 #define UI_ABOUT_AUTHOR_Y (TFT_HEIGHT - 2 * UI_SRC_LINE_H - 12)
+#endif
+#ifndef UI_ABOUT_HINT_Y
 #define UI_ABOUT_HINT_Y (TFT_HEIGHT - UI_SRC_LINE_H - 6)
+#endif
+_Static_assert(UI_ABOUT_HINT_Y + UI_SRC_LINE_H <= TFT_HEIGHT,
+               "the About screen's last line runs off the panel");
 _Static_assert(UI_ABOUT_ROW_Y + (int)UI_ABOUT_ROWS * UI_ABOUT_ROW_PITCH <= UI_ABOUT_AUTHOR_Y,
                "the About screen's rows run into the address at the bottom");
 
@@ -413,10 +543,14 @@ _Static_assert(UI_SRC_STREAM_X >= UI_SRC_ART_X + UI_SRC_ART_SIZE ||
                    UI_SRC_STREAM_X + UI_SRC_STREAM_W <= UI_SRC_ART_X ||
                    UI_SRC_STREAM_Y >= UI_SRC_ART_Y + UI_SRC_ART_SIZE,
                "the player's stream readings run over its cover art");
-/* The strip stands in the footer's left margin, where the reading's text
- * stands, and must stop short of the like mark that follows it. */
-_Static_assert(UI_CONTENT_X + UI_BUFFER_GRAPH_W <= UI_SRC_LIKE_X,
+/* The strip stands where the reading's text stands, and when that is the
+ * footer row it must stop short of the like mark that follows it. Off that
+ * row it only has to be on the panel. */
+_Static_assert(UI_SRC_BUFFER_Y != UI_SRC_FOOT_Y ||
+                   UI_SRC_BUFFER_X + UI_BUFFER_GRAPH_W <= UI_SRC_LIKE_X,
                "the buffer graph runs into the like mark");
+_Static_assert(UI_SRC_BUFFER_X + UI_BUFFER_GRAPH_W <= TFT_WIDTH - UI_CONTENT_X,
+               "the buffer graph runs off the right edge");
 _Static_assert(UI_SRC_BUFFER_GRAPH_Y + UI_SRC_BUFFER_GRAPH_H <= TFT_HEIGHT,
                "the buffer graph runs off the bottom of the panel");
 /* Three digits of volume, and the right margin every other block keeps. */
@@ -429,8 +563,13 @@ _Static_assert(UI_SRC_FOOT_Y + UI_SRC_LINE_H <= TFT_HEIGHT,
  * this while every panel used the same 96 px square; the moment the size
  * became the shape's to choose, a tile grown one step too far would have been
  * a rule drawn across the album art. */
-_Static_assert(UI_SRC_ART_Y + UI_SRC_ART_SIZE <= UI_SRC_RULE_TOP,
+_Static_assert(UI_SRC_ART_Y + UI_SRC_ART_SIZE <= UI_SRC_RULE_TOP ||
+                   UI_SRC_BODY_X >= UI_SRC_ART_X + UI_SRC_ART_SIZE,
                "the player's cover art runs into the rule below it");
+/* A body that starts beside the cover still has to be wide enough for the
+ * meter and the footer; the meter's own assertion says whether it is. The
+ * cover, in that arrangement, must also not reach the bottom of the panel. */
+_Static_assert(UI_SRC_BODY_W >= 120, "the player's body is too narrow");
 /* And the note that stands in for a missing cover has to sit inside the tile
  * it is centred on. It is a bitmap and not a face any more, so nothing bounds
  * it from above the way LVGL's largest Montserrat bounded the glyph: a shape
@@ -446,3 +585,8 @@ _Static_assert(UI_SRC_ROW_TITLE <= UI_SRC_ROW_TRACK &&
                "the player's rows are out of order");
 _Static_assert(UI_SRC_RULE_BOTTOM < UI_SRC_FOOT_Y,
                "the player's footer collides with the meter above it");
+#if !UI_SRC_PAUSE_CENTRED
+_Static_assert(UI_SRC_PAUSE_X >= 0 && UI_SRC_PAUSE_X + UI_SRC_PAUSE_SIZE <= TFT_WIDTH &&
+                   UI_SRC_PAUSE_Y >= 0 && UI_SRC_PAUSE_Y + UI_SRC_PAUSE_SIZE <= TFT_HEIGHT,
+               "the pause badge is off the panel");
+#endif

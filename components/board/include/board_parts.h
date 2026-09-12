@@ -38,6 +38,14 @@
  * managed component. */
 #define DISPLAY_ST7789_320_240 3
 #define DISPLAY_ST7789_240_320 4
+/* ST7789 controller on the 1.9" 320x170 module - the same controller, the
+ * same wiring, and a third of the glass missing: the controller's memory is
+ * 240 columns and the panel shows the middle 170 of them, so the driver
+ * addresses the picture 35 columns in. Landscape only; nobody has mounted one
+ * on end, and the layout a screen this short needs was drawn for lying
+ * down. The number is out of sequence with its two siblings because it was
+ * added after the two 480x320 parts. */
+#define DISPLAY_ST7789_320_170 9
 /* ILI9488 controller over SPI, on the 480x320 panel. Read the same way as the
  * pairs above - one part, two orientations - with one difference that is not
  * cosmetic: this controller cannot be driven at 16 bits per pixel over SPI at

@@ -16,12 +16,21 @@
  * here swaps red and blue, which the boot splash shows at once. */
 #define TFT_RGB_ORDER_BGR 0
 
+#if DISPLAY == DISPLAY_ST7789_320_170
+/* The 1.9" module is an IPS panel, and every IPS ST7789 module seen so far
+ * wants INVON - the glass is built the other way round from the TN one
+ * below, so the same memory reads as a negative without it. Set from what
+ * these modules are, not measured on this one yet; if the splash comes up as
+ * a negative, this is the line. */
+#define TFT_INVERT_COLOR 1
+#else
 /* Measured 2026-08-28, and the reverse of what these modules are usually
  * described as needing: this one displays what it is sent, so the INVON that
  * the common advice calls for turned the whole splash into a negative. Sent as
  * INVOFF rather than skipped, so the state is the firmware's and not whatever
  * the controller happened to reset into. */
 #define TFT_INVERT_COLOR 0
+#endif
 
 /* Geometry and the MADCTL baseline. Like the ILI9341, this controller is
  * natively portrait and landscape is the same glass with MADCTL MV set, so the
@@ -42,6 +51,29 @@
  * build comes up mirrored, this is the line that was a guess. */
 #define TFT_MIRROR_X 0
 #define TFT_MIRROR_Y 0
+
+#elif DISPLAY == DISPLAY_ST7789_320_170
+
+/* The 1.9" module: a 320x170 window onto the controller's 240x320 memory,
+ * lying down. Landscape only - see board_parts.h. */
+#define TFT_WIDTH 320
+#define TFT_HEIGHT 170
+#define TFT_SWAP_XY 1
+/* The visible columns are the middle 170 of the controller's 240, so every
+ * address the driver sends along that axis is 35 in from where the memory
+ * starts - and 35 from where it ends, which is what lets the user's flips
+ * work without the margin moving: mirrored, the window is still centred.
+ * After the swap that axis is the screen's y. */
+#define TFT_X_GAP 0
+#define TFT_Y_GAP 35
+/* Seen on the panel 2026-09-12: the 2" module's landscape pair, carried
+ * across first, put the picture up half a turn round - both mirrors the
+ * other way - so this is that pair inverted. The same glass family, the same
+ * controller, and a different answer: the module's ribbon comes off the
+ * other end, which is what a half turn is. The gap above is symmetric, so
+ * the window stays centred under either mirror. */
+#define TFT_MIRROR_X 0
+#define TFT_MIRROR_Y 1
 
 #else
 

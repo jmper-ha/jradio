@@ -200,8 +200,8 @@ typedef struct {
     lv_obj_t *clock;
     lv_obj_t *rssi;
     /* The weather, at the left edge: a picture and a reading. Both hidden
-     * while there is nothing to show, and the screen's name moves back to the
-     * margin - see UI_STRIP_CONTEXT_X_WITH_WEATHER. */
+     * while there is nothing to show, and the screen's name is shown in
+     * their place - see ui_status_strip_update_weather(). */
     lv_obj_t *weather_icon;
     lv_obj_t *weather_text;
     bool weather_shown;
@@ -689,9 +689,14 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     lv_obj_set_style_pad_all(band, 0, 0);
     lv_obj_clear_flag(band, LV_OBJ_FLAG_SCROLLABLE);
 
+    /* The strip is sized from the body face, and its labels say so themselves
+     * rather than inheriting the screen's: the menu screen is set in the
+     * title face, and its 35 px lines in a 31 px strip left the clock and the
+     * temperature cut off at the bottom on the ST7796S. */
     strip->context = lv_label_create(screen);
     lv_obj_set_pos(strip->context, UI_STRIP_CONTEXT_X, 6);
     lv_obj_set_size(strip->context, UI_STRIP_CONTEXT_W, 19);
+    lv_obj_set_style_text_font(strip->context, UI_FONT_BODY, 0);
     lv_label_set_long_mode(strip->context, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(strip->context, lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_label_set_text(strip->context, context);
@@ -701,6 +706,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     strip->clock = lv_label_create(screen);
     lv_obj_set_pos(strip->clock, UI_STRIP_CLOCK_X, 5);
     lv_obj_set_width(strip->clock, UI_STRIP_CLOCK_W);
+    lv_obj_set_style_text_font(strip->clock, UI_FONT_BODY, 0);
     lv_obj_set_style_text_align(strip->clock, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(strip->clock, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_label_set_text(strip->clock, "");
@@ -716,6 +722,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     strip->weather_text = lv_label_create(screen);
     lv_obj_set_pos(strip->weather_text, UI_STRIP_WEATHER_TEXT_X, 5);
     lv_obj_set_width(strip->weather_text, UI_STRIP_WEATHER_TEXT_W);
+    lv_obj_set_style_text_font(strip->weather_text, UI_FONT_BODY, 0);
     /* One line whatever the reading: a label with a width wraps by default,
      * and a wrapped degree sign hung under the strip. */
     lv_label_set_long_mode(strip->weather_text, LV_LABEL_LONG_CLIP);
@@ -742,6 +749,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     }
     strip->rssi = lv_label_create(screen);
     lv_obj_set_pos(strip->rssi, UI_STRIP_RSSI_X, 6);
+    lv_obj_set_style_text_font(strip->rssi, UI_FONT_BODY, 0);
     lv_obj_set_style_text_color(strip->rssi, lv_color_hex(UI_COLOR_MUTED), 0);
     lv_label_set_text(strip->rssi, "");
 }
@@ -781,14 +789,11 @@ static void ui_status_strip_update_weather(ui_status_strip_t *strip)
     const bool shown = weather_current(&report);
     if (shown != strip->weather_shown) {
         strip->weather_shown = shown;
-        /* The screen's name moves along while the weather is up and back
-         * to the margin after, so a device with the weather off is exactly
-         * what it was. On a panel too narrow for both it steps aside
-         * instead - see UI_STRIP_NAME_FITS_WEATHER. */
-        lv_obj_set_x(strip->context, shown ? UI_STRIP_CONTEXT_X_WITH_WEATHER : UI_STRIP_CONTEXT_X);
-        lv_obj_set_width(strip->context,
-                         shown ? UI_STRIP_CONTEXT_W_WITH_WEATHER : UI_STRIP_CONTEXT_W);
-        if (shown && !UI_STRIP_NAME_FITS_WEATHER) {
+        /* The screen's name gives its place to the weather: it stood beside
+         * the reading until 2026-09-12, and of the three things at that end
+         * of the strip it is the one the user already knows, being on the
+         * screen it names. With the weather off the strip is what it was. */
+        if (shown) {
             lv_obj_add_flag(strip->context, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_clear_flag(strip->context, LV_OBJ_FLAG_HIDDEN);

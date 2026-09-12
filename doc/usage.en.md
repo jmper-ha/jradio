@@ -220,8 +220,9 @@ URL with a scheme. Changing it restarts the polling straight away; no reboot.
 Set up on the web page under "Weather"; the device has only the switch under
 "General". The temperature and a picture of the sky
 stand in the status strip to the left of the clock, on every screen that has a
-clock; while the weather is off or nothing has answered yet the strip looks as
-it always did.
+clock, in the place of the screen's name ("jRadio"), which goes while they are
+up; while the weather is off or nothing has answered yet the strip looks as it
+always did.
 
 The source is a choice: **Open-Meteo** (no key), **wttr.in** (no key) or
 **OpenWeatherMap** (an account key). Three rather than one because they fail

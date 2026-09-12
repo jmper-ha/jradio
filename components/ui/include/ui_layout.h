@@ -66,15 +66,13 @@
  * quarters of the body size is what "+12°" needs with a pixel over: the plus
  * is the widest glyph in it, 0.84 em against the minus's 0.36, and the five
  * halves this stood at - sized on "-25°" - wrapped a plus reading onto a
- * second line, seen on the 320x170 panel 2026-09-12. ui.c moves the name and
- * sets its width when the weather appears or goes, so a device with the
- * weather off is exactly what it was. */
+ * second line, seen on the 320x170 panel 2026-09-12. The screen's name is
+ * hidden while the weather is up - ui.c does that - so nothing else in the
+ * strip moves, and a device with the weather off is exactly what it was. */
 #define UI_STRIP_WEATHER_ICON_X UI_STRIP_CONTEXT_X
 #define UI_STRIP_WEATHER_ICON_Y ((UI_STRIP_H - UI_STRIP_WEATHER_ICON_PX) / 2)
 #define UI_STRIP_WEATHER_TEXT_W (UI_FONT_BODY_PX * 11 / 4)
 #define UI_STRIP_WEATHER_TEXT_X (UI_STRIP_WEATHER_ICON_X + UI_STRIP_WEATHER_ICON_PX + 3)
-#define UI_STRIP_CONTEXT_X_WITH_WEATHER (UI_STRIP_WEATHER_TEXT_X + UI_STRIP_WEATHER_TEXT_W + 6)
-#define UI_STRIP_CONTEXT_W_WITH_WEATHER (UI_STRIP_CLOCK_X - UI_STRIP_CONTEXT_X_WITH_WEATHER - 4)
 
 /* Home screen carousel. Every icon is a 24x24 design scaled to one of three
  * sizes, so a single axis is enough - the old row needed a per-glyph vertical
@@ -453,14 +451,10 @@ _Static_assert(UI_SET_ROW_RIGHT - UI_SET_SWITCH_TEXT_X >= 120,
  * is printed against the name it labels. */
 _Static_assert(UI_LIST_NUMBER_W > UI_FONT_TITLE_PX * 1274 / 1000,
                "the station index leaves no gap before the name");
-/* Whether enough of the screen's name survives beside the weather to read
- * "jRadio" in the body face - six glyphs, 3.1 em in all, at 14 px 44 of the
- * 53 a 320 px panel leaves. Where it does not - the portrait panels, 240 and
- * 320 px wide at the 18 px face - the name goes while the weather is up: of
- * the three things at that end of the strip it is the one the user already
- * knows, being on the screen it names. This stood as an assertion until
- * 2026-09-12, and no portrait build had compiled since the weather arrived. */
-#define UI_STRIP_NAME_FITS_WEATHER (UI_STRIP_CONTEXT_W_WITH_WEATHER >= UI_FONT_BODY_PX * 7 / 2)
+/* The weather ends before the clock with the clock's own air to spare - the
+ * reading is the only thing in the strip to its right until the clock. */
+_Static_assert(UI_STRIP_WEATHER_TEXT_X + UI_STRIP_WEATHER_TEXT_W + 4 <= UI_STRIP_CLOCK_X,
+               "the weather runs into the clock");
 _Static_assert(UI_STRIP_WEATHER_ICON_PX <= UI_STRIP_H - 2,
                "the weather icon is taller than the status strip");
 _Static_assert(UI_STATION_LIST_MAX_ROWS >= 3U,

@@ -46,10 +46,10 @@
 /* #define DISPLAY DISPLAY_ST7789_240_320 */
 /* #define DISPLAY DISPLAY_ILI9488_480_320 */
 /* #define DISPLAY DISPLAY_ILI9488_320_480 */
-/* #define DISPLAY DISPLAY_ST7796S_480_320 */
+#define DISPLAY DISPLAY_ST7796S_480_320
 /* #define DISPLAY DISPLAY_ST7796S_320_480 */
 /* The 1.9" module, landscape only - see board_parts.h. */
-#define DISPLAY DISPLAY_ST7789_320_170
+/* #define DISPLAY DISPLAY_ST7789_320_170 */
 
 /* SPI peripheral index: 2 selects SPI2, 3 selects SPI3. Mapped to the driver's
  * host enum in board.c, since the numbering of that enum is not the peripheral

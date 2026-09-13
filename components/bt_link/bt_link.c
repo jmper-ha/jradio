@@ -526,6 +526,11 @@ void bt_link_output_call_again(void)
     s_output_tried_us = 0;
 }
 
+bool bt_link_output_held_by_phone(void)
+{
+    return s_alive && s_wanted_mode == JBT_MODE_SINK;
+}
+
 bool bt_link_output_connected(void)
 {
     if (!s_alive || !s_output_enabled) return false;
@@ -699,6 +704,11 @@ esp_err_t bt_link_set_output(bool enabled, const char *address)
 
 void bt_link_output_call_again(void)
 {
+}
+
+bool bt_link_output_held_by_phone(void)
+{
+    return false;
 }
 
 bool bt_link_output_connected(void)

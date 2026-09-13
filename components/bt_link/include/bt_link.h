@@ -58,6 +58,9 @@ esp_err_t bt_link_set_output(bool enabled, const char *address);
  * switched on, then left to call itself; this starts the three again - the
  * page's choice of the speaker, even the same one, is that request. */
 void bt_link_output_call_again(void);
+/* True while the player has the module as a sink - the phone's - and so
+ * neither a scan nor the speaker is possible until that source is left. */
+bool bt_link_output_held_by_phone(void);
 /* Whether the output is on and the speaker connected: what the panel shows
  * beside the volume. */
 bool bt_link_output_connected(void);

@@ -458,7 +458,13 @@
     const chosen = safeString(body.chosen);
     const chosenName = safeString(body.chosen_name);
     btChosenName.textContent = chosen ? (chosenName || chosen) : t('bt.none');
-    btChosenState.textContent = chosen ? (body.connected === true ? t('bt.connected') : t('bt.disconnected')) : '';
+    /* The phone has the module: the speaker waits, and so does the search -
+       the button is off rather than opening a search that ends at once. */
+    const phone = body.phone === true;
+    btChosenState.textContent = chosen
+      ? (phone ? t('bt.phone') : body.connected === true ? t('bt.connected') : t('bt.disconnected'))
+      : '';
+    btScanButton.disabled = phone;
     btForgetButton.hidden = !chosen;
     const found = Array.isArray(body.found) ? body.found : [];
     const rows = found
@@ -479,7 +485,10 @@
       });
     btSpeakers.replaceChildren(...rows);
     btSpeakers.hidden = rows.length === 0;
-    if (body.scanning === true) {
+    if (phone) {
+      btSpeakersEmpty.textContent = t('bt.phone_note');
+      btSpeakersEmpty.hidden = false;
+    } else if (body.scanning === true) {
       btSpeakersEmpty.textContent = t('bt.scanning');
       btSpeakersEmpty.hidden = false;
     } else {
@@ -510,7 +519,7 @@
   }
 
   function startSpeakerScan() {
-    if (btTimer !== null) return;
+    if (btTimer !== null || btScanButton.disabled) return;
     btSpeakers.replaceChildren();
     btSpeakers.hidden = true;
     btSpeakersEmpty.textContent = t('bt.scanning');

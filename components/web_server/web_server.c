@@ -1670,7 +1670,10 @@ static esp_err_t web_server_bt_speakers_get(httpd_req_t *request)
 {
     char query[16] = {0};
     char value[4] = {0};
-    if (httpd_req_get_url_query_str(request, query, sizeof(query)) == ESP_OK &&
+    /* No scan while the phone has the module: the page is told so instead
+     * and does not ask. */
+    if (!bt_link_output_held_by_phone() &&
+        httpd_req_get_url_query_str(request, query, sizeof(query)) == ESP_OK &&
         httpd_query_key_value(query, "scan", value, sizeof(value)) == ESP_OK && value[0] == '1') {
         const esp_err_t started = bt_link_scan(true);
         if (started != ESP_OK && started != ESP_ERR_NOT_FINISHED) {
@@ -1691,6 +1694,8 @@ static esp_err_t web_server_bt_speakers_get(httpd_req_t *request)
     web_json_literal(&writer, bt_link_scanning() ? "true" : "false");
     web_json_literal(&writer, ",\"connected\":");
     web_json_literal(&writer, bt_link_output_connected() ? "true" : "false");
+    web_json_literal(&writer, ",\"phone\":");
+    web_json_literal(&writer, bt_link_output_held_by_phone() ? "true" : "false");
     web_json_literal(&writer, ",\"chosen\":");
     web_json_string(&writer, have_settings ? settings.bt_speaker : "");
     web_json_literal(&writer, ",\"chosen_name\":");

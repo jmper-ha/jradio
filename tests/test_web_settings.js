@@ -637,6 +637,24 @@ function lastYandexTimer() {
   await settle();
   assert.deepEqual(speakerPosts[speakerPosts.length - 1], {address: '', name: ''});
   assert.equal(elements['#bt-chosen-name'].textContent, 'не выбрана');
+  /* The phone has the module: the search button is off, the line beside
+     the speaker says why, and a click starts nothing. */
+  speakersReply = {...speakersReply, chosen: '3D:AB:55:FA:58:FC', chosen_name: 'JBL Flip', phone: true};
+  elements['#bt-scan'].disabled = false;
+  timers.filter((entry) => !entry.cleared && entry.delay === 1000).at(-1).callback();
+  await settle();
+  assert.equal(elements['#bt-scan'].disabled, true);
+  assert.equal(elements['#bt-chosen-state'].textContent, '(модуль занят телефоном)');
+  assert.equal(elements['#bt-speakers-empty'].hidden, false);
+  const beforePhoneClick = fetchCalls.length;
+  elements['#bt-scan'].emit('click');
+  await settle();
+  assert.equal(fetchCalls.length, beforePhoneClick);
+  speakersReply = {...speakersReply, phone: false, chosen: '', chosen_name: ''};
+  timers.filter((entry) => !entry.cleared && entry.delay === 4000).at(-1).callback();
+  await settle();
+  assert.equal(elements['#bt-scan'].disabled, false);
+
   /* The speaker comes and goes on its own, and no frame says so: the line is
      re-read every few seconds, so a speaker that reconnected while the page
      was open shows as connected without a reload. */

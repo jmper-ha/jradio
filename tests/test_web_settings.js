@@ -631,15 +631,27 @@ function lastYandexTimer() {
   assert.equal(elements['#bt-output-block'].hidden, false);
   await settle();
   assert.equal(elements['#bt-chosen-name'].textContent, 'не выбрана');
-  /* A scan: the list fills from what the module found, a click saves the
-     address and the name, and the chosen one is then a known speaker with
+  /* A scan: the line says "looking" from the click on, through the first
+     answer (the module has not begun yet) and the polls while it runs, and
+     only the poll that sees it over lets the list speak. Then a click saves
+     the address and the name, and the chosen one is a known speaker with
      its mark and its own "forget" - the found row for it goes. */
-  speakersReply = {...speakersReply, scanning: false,
-                   found: [{address: '3D:AB:55:FA:58:FC', name: 'JBL Flip', rssi: -60},
-                           {address: '01:02:03:04:05:06', name: '', rssi: -80}]};
+  speakersReply = {...speakersReply, scanning: false, found: []};
   elements['#bt-scan'].emit('click');
   await settle();
   assert.ok(fetchCalls.some((call) => call.url === '/api/bt/speakers?scan=1'));
+  assert.equal(elements['#bt-speakers-empty'].hidden, false);
+  assert.ok(elements['#bt-speakers-empty'].textContent.startsWith('Ищем'));
+  speakersReply = {...speakersReply, scanning: true};
+  timers.filter((entry) => !entry.cleared && entry.delay === 1000).at(-1).callback();
+  await settle();
+  assert.ok(elements['#bt-speakers-empty'].textContent.startsWith('Ищем'));
+  speakersReply = {...speakersReply, scanning: false,
+                   found: [{address: '3D:AB:55:FA:58:FC', name: 'JBL Flip', rssi: -60},
+                           {address: '01:02:03:04:05:06', name: '', rssi: -80}]};
+  timers.filter((entry) => !entry.cleared && entry.delay === 1000).at(-1).callback();
+  await settle();
+  assert.equal(elements['#bt-speakers-empty'].hidden, true);
   const speakerRows = elements['#bt-speakers'].children;
   assert.equal(speakerRows.length, 2);
   assert.equal(speakerRows[0].children[0].textContent, 'JBL Flip');

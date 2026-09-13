@@ -453,6 +453,8 @@
   const btChosenState = document.querySelector('#bt-chosen-state');
   const btScanButton = document.querySelector('#bt-scan');
   let btTimer = null;
+  /* idle | starting (asked, the module not yet begun) | scanning | done */
+  let btScan = 'idle';
   let btLoaded = false;
 
   function renderSpeakers(body) {
@@ -504,15 +506,23 @@
     }));
     btSpeakers.replaceChildren(...rows);
     btSpeakers.hidden = rows.length === 0;
+    /* The line under the list follows the page's own idea of the scan, not
+       the device's flag alone: the first answer after the click comes before
+       the module has begun, and "nothing found" for that instant, then
+       "looking" a second later, was a line that flashed shut and open. */
+    if (body.scanning === true) btScan = 'scanning';
+    else if (btScan === 'scanning') btScan = 'done';
     if (phone) {
       btSpeakersEmpty.textContent = t('bt.phone_note');
       btSpeakersEmpty.hidden = false;
-    } else if (body.scanning === true) {
+    } else if (btScan === 'starting' || btScan === 'scanning') {
       btSpeakersEmpty.textContent = t('bt.scanning');
       btSpeakersEmpty.hidden = false;
-    } else {
+    } else if (btScan === 'done' && found.length === 0) {
       btSpeakersEmpty.textContent = t('bt.scan_empty');
-      btSpeakersEmpty.hidden = rows.length > 0 || btTimer === null;
+      btSpeakersEmpty.hidden = false;
+    } else {
+      btSpeakersEmpty.hidden = true;
     }
   }
 
@@ -534,14 +544,22 @@
         .then((body) => {
           if (!isObject(body)) throw new Error('bad body');
           renderSpeakers(body);
-          if (body.scanning === true && attempt < 30) {
+          /* On until the module has begun and finished; a module that never
+             begins is given up on after the attempts. */
+          if ((btScan === 'starting' || btScan === 'scanning') && attempt < 30) {
             pollSpeakers(attempt + 1);
           } else {
             btTimer = null;
+            if (btScan === 'starting') {
+              btScan = 'idle';
+              btSpeakersEmpty.textContent = t('bt.scan_failed');
+              btSpeakersEmpty.hidden = false;
+            }
           }
         })
         .catch(() => {
           btTimer = null;
+          btScan = 'idle';
           btSpeakersEmpty.textContent = t('bt.scan_failed');
           btSpeakersEmpty.hidden = false;
         });
@@ -550,8 +568,7 @@
 
   function startSpeakerScan() {
     if (btTimer !== null || btScanButton.disabled) return;
-    btSpeakers.replaceChildren();
-    btSpeakers.hidden = true;
+    btScan = 'starting';
     btSpeakersEmpty.textContent = t('bt.scanning');
     btSpeakersEmpty.hidden = false;
     window.fetch('/api/bt/speakers?scan=1', {cache: 'no-store'})
@@ -564,6 +581,7 @@
         pollSpeakers(0);
       })
       .catch(() => {
+        btScan = 'idle';
         btSpeakersEmpty.textContent = t('bt.scan_failed');
         btSpeakersEmpty.hidden = false;
       });

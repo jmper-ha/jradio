@@ -118,14 +118,6 @@
 #define I2S_LRCK_GPIO 17
 /* No MCLK pin is wired, so the DAC has to derive its clock from BCLK. */
 #define AUDIO_DAC_HAS_MCLK 0
-/* The DAC's soft-mute line, when it is wired: while the sound goes to a
- * Bluetooth speaker the built-in output is muted, so the room does not hear
- * the same music twice, a few hundred milliseconds apart. On the PCM5102A
- * this is XSMT (low = mute), brought out on the purple modules as the XMT
- * pad; it is tied to 3.3 V there through a solder bridge or a pull-up,
- * which must be opened before the pin is driven. Leave undefined when not
- * wired: the output then plays on regardless. */
-/* #define AUDIO_DAC_MUTE_GPIO 15 */
 
 /* ======================================================================
  * USB host - flash drive, internal PHY
@@ -196,6 +188,14 @@
 #define BLUETOOTH BLUETOOTH_JRADIO_BT
 #define BT_UART_TX_GPIO 13
 #define BT_UART_RX_GPIO 14
+/* The DAC's soft-mute line, when it is wired: while the module sends the
+ * sound to a Bluetooth speaker the built-in output is muted, so the room
+ * does not hear the same music twice, a few hundred milliseconds apart. On
+ * the PCM5102A this is XSMT (low = mute), brought out on the purple modules
+ * as the XMT pad; it is tied to 3.3 V there through a solder bridge or a
+ * pull-up, which must be opened before the pin is driven. Leave undefined
+ * when not wired: the output then plays on regardless. */
+/* #define AUDIO_DAC_MUTE_GPIO 15 */
 
 /* ======================================================================
  * Optional features - what is built into this firmware

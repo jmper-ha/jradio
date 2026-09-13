@@ -36,5 +36,6 @@ esp_err_t web_server_stop(void);
  * ui_menu - the same place the home screen and autoplay get it. */
 bool web_server_yandex_available(void);
 bool web_server_dlna_available(void);
+bool web_server_bt_available(void);
 bool web_server_home_screen_available(bool yandex_enabled, bool dlna_enabled);
 #endif

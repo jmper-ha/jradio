@@ -119,6 +119,21 @@
                 </div>
               </div>
 
+              <div class="device-group" id="bt-output-block" hidden>
+                <h3 data-i18n="bt.group">Звук на Bluetooth</h3>
+                <div class="device-row">
+                  <label for="device-bt-output" data-i18n="bt.output">Отправлять на колонку</label>
+                  <input id="device-bt-output" type="checkbox" data-field="bt_output">
+                </div>
+                <p id="bt-chosen" class="field-note"><span data-i18n="bt.chosen">Колонка:</span> <strong id="bt-chosen-name">—</strong> <span id="bt-chosen-state"></span></p>
+                <ul id="bt-speakers" class="saved-networks" hidden></ul>
+                <p id="bt-speakers-empty" class="empty-state" hidden></p>
+                <div class="settings-actions">
+                  <button id="bt-scan" class="secondary-button" type="button" data-i18n="bt.scan">Найти колонки</button>
+                  <button id="bt-forget" class="secondary-button" type="button" hidden data-i18n="bt.forget">Забыть</button>
+                </div>
+              </div>
+
               <div class="device-group">
                 <h3 data-i18n="settings.group_time">Время</h3>
                 <div class="device-row">

@@ -68,6 +68,8 @@
      row: document.querySelector('#device-yandex-row'), gate: 'yandex_music'},
     {field: 'dlna', kind: 'switch', node: document.querySelector('#device-dlna'),
      row: document.querySelector('#device-dlna-row'), gate: 'dlna'},
+    {field: 'bt_output', kind: 'switch', node: document.querySelector('#device-bt-output'),
+     row: document.querySelector('#bt-output-block'), gate: 'bt_output'},
     {field: 'timezone', kind: 'choice', node: deviceTimezone},
     {field: 'ntp_server', kind: 'text', node: document.querySelector('#device-ntp')},
     {field: 'weather', kind: 'choice', node: document.querySelector('#device-weather')},
@@ -436,6 +438,116 @@
       });
   }
 
+  /* The speaker the module sends to. The list comes from a scan the module
+     runs; a click saves the choice through its own endpoint (it is an address
+     and a name, not a settings field), and the device applies it the way it
+     applies every setting. Polled while the module says it is scanning. */
+  const btSpeakers = document.querySelector('#bt-speakers');
+  const btSpeakersEmpty = document.querySelector('#bt-speakers-empty');
+  const btChosenName = document.querySelector('#bt-chosen-name');
+  const btChosenState = document.querySelector('#bt-chosen-state');
+  const btScanButton = document.querySelector('#bt-scan');
+  const btForgetButton = document.querySelector('#bt-forget');
+  let btTimer = null;
+  let btLoaded = false;
+
+  function renderSpeakers(body) {
+    const chosen = safeString(body.chosen);
+    const chosenName = safeString(body.chosen_name);
+    btChosenName.textContent = chosen ? (chosenName || chosen) : t('bt.none');
+    btChosenState.textContent = chosen ? (body.connected === true ? t('bt.connected') : t('bt.disconnected')) : '';
+    btForgetButton.hidden = !chosen;
+    const found = Array.isArray(body.found) ? body.found : [];
+    const rows = found
+      .filter((speaker) => isObject(speaker) && typeof speaker.address === 'string')
+      .map((speaker) => {
+        const row = document.createElement('li');
+        const pick = document.createElement('button');
+        pick.type = 'button';
+        const name = safeString(speaker.name) || t('bt.unnamed');
+        pick.textContent = name;
+        pick.classList.add('network-name');
+        pick.addEventListener('click', () => chooseSpeaker(speaker.address, name));
+        row.append(pick);
+        const rssi = Number.isSafeInteger(speaker.rssi) ? speaker.rssi : -100;
+        row.append(tag(`${signalLabel(rssi)} ${rssi} dBm`));
+        if (speaker.address === chosen) row.append(tag('✓'));
+        return row;
+      });
+    btSpeakers.replaceChildren(...rows);
+    btSpeakers.hidden = rows.length === 0;
+    if (body.scanning === true) {
+      btSpeakersEmpty.textContent = t('bt.scanning');
+      btSpeakersEmpty.hidden = false;
+    } else {
+      btSpeakersEmpty.textContent = t('bt.scan_empty');
+      btSpeakersEmpty.hidden = rows.length > 0 || btTimer === null;
+    }
+  }
+
+  function pollSpeakers(attempt) {
+    btTimer = window.setTimeout(() => {
+      window.fetch('/api/bt/speakers', {cache: 'no-store'})
+        .then((response) => response.json())
+        .then((body) => {
+          if (!isObject(body)) throw new Error('bad body');
+          renderSpeakers(body);
+          if (body.scanning === true && attempt < 30) {
+            pollSpeakers(attempt + 1);
+          } else {
+            btTimer = null;
+          }
+        })
+        .catch(() => {
+          btTimer = null;
+          btSpeakersEmpty.textContent = t('bt.scan_failed');
+          btSpeakersEmpty.hidden = false;
+        });
+    }, 1000);
+  }
+
+  function startSpeakerScan() {
+    if (btTimer !== null) return;
+    btSpeakers.replaceChildren();
+    btSpeakers.hidden = true;
+    btSpeakersEmpty.textContent = t('bt.scanning');
+    btSpeakersEmpty.hidden = false;
+    window.fetch('/api/bt/speakers?scan=1', {cache: 'no-store'})
+      .then((response) => response.json())
+      .then((body) => {
+        if (!isObject(body)) throw new Error('bad body');
+        renderSpeakers(body);
+        /* The module may have had to change role first; the scan itself
+           starts a moment later, so the poll goes on either way. */
+        pollSpeakers(0);
+      })
+      .catch(() => {
+        btSpeakersEmpty.textContent = t('bt.scan_failed');
+        btSpeakersEmpty.hidden = false;
+      });
+  }
+
+  function chooseSpeaker(address, name) {
+    window.fetch('/api/bt/speaker', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({address, name: address ? name : ''}),
+    })
+      .then((response) => response.json())
+      .then((body) => { if (isObject(body)) renderSpeakers(body); })
+      .catch(() => {});
+  }
+
+  function loadSpeakers() {
+    window.fetch('/api/bt/speakers', {cache: 'no-store'})
+      .then((response) => response.json())
+      .then((body) => { if (isObject(body)) renderSpeakers(body); })
+      .catch(() => {});
+  }
+
+  btScanButton.addEventListener('click', startSpeakerScan);
+  btForgetButton.addEventListener('click', () => chooseSpeaker('', ''));
+
   function applyWifiMode(wifi) {
     const wasApMode = apMode;
     /* The setup AP exactly, not merely "not connected": while an attempt is
@@ -746,6 +858,13 @@
       if (entry.row && entry.when && typeof payload[entry.when.field] === 'string') {
         entry.row.hidden = payload[entry.when.field] === entry.when.not;
       }
+    }
+    /* The speaker beside the switch, from its own endpoint, once the block
+       is on the page - once, not on every frame the device sends: the list
+       changes only by a scan or a choice, and both re-fetch it themselves. */
+    if (available.bt_output === true && !btLoaded) {
+      btLoaded = true;
+      loadSpeakers();
     }
     applyWeatherState(payload);
     return true;

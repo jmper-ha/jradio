@@ -86,6 +86,8 @@ const ids = [
   'device-scroll', 'device-buffer-view',
   'device-autoplay', 'device-yandex', 'device-yandex-row',
   'device-dlna', 'device-dlna-row',
+  'bt-output-block', 'device-bt-output', 'bt-speakers', 'bt-speakers-empty',
+  'bt-chosen', 'bt-chosen-name', 'bt-chosen-state', 'bt-scan', 'bt-forget',
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal',
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
@@ -149,7 +151,7 @@ let settingsReply = {
   autoplay: false,
   yandex_music: true, dlna: false, flip_vertical: false, flip_horizontal: true,
   brightness: 45, volume: 62,
-  available: {home_screen: true, yandex_music: false, dlna: true},
+  available: {home_screen: true, yandex_music: false, dlna: true, bt_output: true},
   brightness_min: 10, brightness_max: 90,
   screensaver: 'clock', screensaver_seconds: 120, screensaver_brightness: 15,
   idle_brightness_min: 5, idle_brightness_max: 50,
@@ -179,6 +181,10 @@ const confirmCalls = [];
 // GET after it answers.
 let scanStartOk = true;
 let scanReply = {state: 'done', networks: []};
+/* The module's speaker list: what GET /api/bt/speakers reports, and what a
+   choice posted to /api/bt/speaker comes back as. */
+let speakersReply = {available: true, scanning: false, connected: false, chosen: '', chosen_name: '', found: []};
+const speakerPosts = [];
 // What POST /api/restore answers, and the status it answers with.
 let restoreReply = {restored: ['wifi.json', 'settings.csv'], warnings: [], reboot: true};
 let restoreOk = true;
@@ -230,6 +236,14 @@ const context = {
           return Promise.resolve({ok: scanStartOk, json: () => Promise.resolve({})});
         }
         return Promise.resolve({ok: true, json: () => Promise.resolve(scanReply)});
+      }
+      if (String(url).startsWith('/api/bt/speaker')) {
+        if (options && options.method === 'POST' && typeof options.body === 'string') {
+          const body = JSON.parse(options.body);
+          speakerPosts.push(body);
+          speakersReply = {...speakersReply, chosen: body.address, chosen_name: body.name};
+        }
+        return Promise.resolve({ok: true, json: () => Promise.resolve(speakersReply)});
       }
       if (String(url).startsWith('/api/settings')) {
         if (options && options.method === 'POST' && settingsPostFails) {
@@ -593,6 +607,33 @@ function lastYandexTimer() {
   assert.equal(elements['#device-dlna-row'].hidden, false);
   assert.equal(elements['#device-dlna'].checked, false);
   assert.equal(elements['#device-home-screen-row'].hidden, false);
+  /* The Bluetooth block is on the page while the module answers, and the
+     speaker beside its switch comes from its own endpoint: none chosen yet. */
+  assert.equal(elements['#bt-output-block'].hidden, false);
+  await settle();
+  assert.equal(elements['#bt-chosen-name'].textContent, 'не выбрана');
+  assert.equal(elements['#bt-forget'].hidden, true);
+  /* A scan: the list fills from what the module found, a click saves the
+     address and the name, and the chosen one is marked. */
+  speakersReply = {...speakersReply, scanning: false,
+                   found: [{address: '3D:AB:55:FA:58:FC', name: 'JBL Flip', rssi: -60},
+                           {address: '01:02:03:04:05:06', name: '', rssi: -80}]};
+  elements['#bt-scan'].emit('click');
+  await settle();
+  assert.ok(fetchCalls.some((call) => call.url === '/api/bt/speakers?scan=1'));
+  const speakerRows = elements['#bt-speakers'].children;
+  assert.equal(speakerRows.length, 2);
+  assert.equal(speakerRows[0].children[0].textContent, 'JBL Flip');
+  assert.equal(speakerRows[1].children[0].textContent, 'без имени');
+  speakerRows[0].children[0].emit('click');
+  await settle();
+  assert.deepEqual(speakerPosts[speakerPosts.length - 1], {address: '3D:AB:55:FA:58:FC', name: 'JBL Flip'});
+  assert.equal(elements['#bt-chosen-name'].textContent, 'JBL Flip');
+  assert.equal(elements['#bt-forget'].hidden, false);
+  elements['#bt-forget'].emit('click');
+  await settle();
+  assert.deepEqual(speakerPosts[speakerPosts.length - 1], {address: '', name: ''});
+  assert.equal(elements['#bt-chosen-name'].textContent, 'не выбрана');
 
   settingsReply = {...settingsReply, autoplay: true};
   elements['#device-autoplay'].checked = true;

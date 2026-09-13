@@ -43,6 +43,10 @@ typedef struct {
     /* From the last EVENT. */
     uint8_t event;
     uint32_t events;
+    /* From the last KEY: a button on the speaker, in source mode. The
+     * count moves with every press so a reader acts on each one once. */
+    uint8_t key;
+    uint32_t keys;
     /* The cover: what the module announced and how far the fetch is. The
      * fetch is one request in flight at a time - COVER_GET, COVER_DATA, the
      * next - and the model only says what to ask for; the bytes go into a
@@ -54,6 +58,32 @@ typedef struct {
     uint32_t cover_done_hash; /* the hash of the last cover fully fetched */
     uint32_t cover_revision;  /* moves with every COVER_INFO */
 } bt_link_state_t;
+
+/* A speaker or headphones the module found while scanning. */
+#define BT_LINK_SCAN_MAX 8U
+typedef struct {
+    uint8_t address[6];
+    int8_t rssi;
+    char name[BT_LINK_NAME_MAX];
+} bt_link_found_t;
+
+/* The scan list is kept apart from the state: it is written by SCAN_RESULT
+ * frames and read by the settings page, and a new scan starts it over. */
+typedef struct {
+    bt_link_found_t found[BT_LINK_SCAN_MAX];
+    size_t count;
+    uint32_t revision;
+} bt_link_scan_t;
+
+void bt_link_scan_init(bt_link_scan_t *scan);
+/* Applies a SCAN_RESULT: a device already listed keeps its place and takes
+ * the newer signal and name; a new one is appended while there is room.
+ * False for any other frame or a malformed one. */
+bool bt_link_scan_apply(bt_link_scan_t *scan, const jbt_frame_t *frame);
+
+/* "AA:BB:CC:DD:EE:FF" <-> six bytes. */
+void bt_link_address_to_text(const uint8_t address[6], char *out, size_t out_size);
+bool bt_link_address_from_text(const char *text, uint8_t out[6]);
 
 /* The piece of a cover to ask for at most: a frame's payload less the
  * offset in front. */
@@ -74,6 +104,7 @@ typedef struct {
 #define BT_LINK_CHANGED_EVENT 0x80U
 #define BT_LINK_CHANGED_COVER_INFO 0x100U
 #define BT_LINK_CHANGED_COVER_DATA 0x200U
+#define BT_LINK_CHANGED_KEY 0x400U
 
 void bt_link_model_init(bt_link_state_t *state);
 

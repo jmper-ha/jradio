@@ -238,7 +238,7 @@ static void test_document_names_what_the_build_has(void)
     assert(device_settings_set_volume(&settings, 42));
 
     web_settings_view_t view;
-    web_settings_make_view(&view, &settings, true, false, false);
+    web_settings_make_view(&view, &settings, true, false, false, false);
     /* Room for the zone list as well: the document carries every zone the
        firmware knows, which the page builds its menu from. */
     char document[2048];
@@ -265,7 +265,7 @@ static void test_document_names_what_the_build_has(void)
     // A build without Yandex Music or a media server says so, so the page
     // drops those rows rather than offering switches behind which there is
     // nothing.
-    assert(strstr(document, "\"yandex_music\":false,\"dlna\":false}") != NULL);
+    assert(strstr(document, "\"yandex_music\":false,\"dlna\":false,\"bt_output\":false}") != NULL);
     assert(strstr(document, "\"home_screen\":true") != NULL);
     assert(strstr(document, "\"brightness_min\":10") != NULL);
     assert(strstr(document, "\"brightness_max\":90") != NULL);
@@ -303,7 +303,7 @@ static void test_document_names_what_the_build_has(void)
 
     /* Without a reading the report is null, not a zero. */
     assert(device_settings_set_weather_provider(&settings, DEVICE_WEATHER_OPENWEATHERMAP));
-    web_settings_make_view(&view, &settings, true, false, false);
+    web_settings_make_view(&view, &settings, true, false, false, false);
     const web_settings_document_t waiting = {
         .ntp_server = settings.ntp_server,
         .weather_latitude = settings.weather_latitude,
@@ -334,7 +334,7 @@ static void test_view_comparison_notices_every_field(void)
     assert(device_settings_init_at(&settings, test_path));
 
     web_settings_view_t base;
-    web_settings_make_view(&base, &settings, true, true, true);
+    web_settings_make_view(&base, &settings, true, true, true, true);
     web_settings_view_t other = base;
     assert(web_settings_view_equal(&base, &other));
 
@@ -357,6 +357,12 @@ static void test_view_comparison_notices_every_field(void)
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.autoplay = !base.autoplay;
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.bt_output = !base.bt_output;
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.bt_available = !base.bt_available;
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.yandex_music = !base.yandex_music;

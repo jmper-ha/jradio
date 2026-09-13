@@ -42,6 +42,8 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include <errno.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "board_features.h"
+#include "bt_link.h"
 #include "ui_menu.h"
 #include "web_backup.h"
 #include "web_cover.h"
@@ -1249,6 +1251,13 @@ bool web_server_dlna_available(void)
     return ui_menu_item_is_visible(UI_MENU_ITEM_DLNA, UI_MENU_VISIBLE_ALL);
 }
 
+/* The module, and answering: a board built for one that is unplugged has no
+ * speaker to offer. */
+bool web_server_bt_available(void)
+{
+    return BOARD_HAS_BLUETOOTH && bt_link_alive();
+}
+
 /* Whether the page should offer the home-screen choice, which depends on how
  * many rows would be left once the switches have had their say - so it is
  * asked with the settings as they are, not with everything on. */
@@ -1276,7 +1285,8 @@ static esp_err_t web_server_settings_api_get(httpd_req_t *request)
     web_settings_make_view(&view, &s_settings_scratch,
                            web_server_home_screen_available(s_settings_scratch.yandex_music,
                                                             s_settings_scratch.dlna),
-                           web_server_yandex_available(), web_server_dlna_available());
+                           web_server_yandex_available(), web_server_dlna_available(),
+                           web_server_bt_available());
     /* What the weather task last said, so the page can say beside the picker
      * whether the chosen service is answering - the panel shows a reading or
      * nothing, and nothing is not an explanation. */
@@ -1642,6 +1652,103 @@ static esp_err_t web_server_progress_get(httpd_req_t *request)
                            (ssize_t)web_json_length(&writer));
 }
 
+/* The speakers the module can send to: the ones a scan found, marked with
+ * the one chosen. ?scan=1 starts a scan first, and the page polls this
+ * while `scanning` is true. The choice itself is a POST beside it; both go
+ * through the settings the UI task applies, so the link learns of it the
+ * way it learns of every setting - from the file, on the change flag. */
+static esp_err_t web_server_bt_speakers_get(httpd_req_t *request)
+{
+    char query[16] = {0};
+    char value[4] = {0};
+    if (httpd_req_get_url_query_str(request, query, sizeof(query)) == ESP_OK &&
+        httpd_query_key_value(query, "scan", value, sizeof(value)) == ESP_OK && value[0] == '1') {
+        const esp_err_t started = bt_link_scan(true);
+        if (started != ESP_OK && started != ESP_ERR_NOT_FINISHED) {
+            ESP_LOGW(TAG, "bluetooth scan: %s", esp_err_to_name(started));
+        }
+    }
+    device_settings_t settings;
+    const bool have_settings = device_settings_init(&settings);
+    bt_link_scan_t scan;
+    bt_link_scan_snapshot(&scan);
+
+    web_json_writer_t writer;
+    web_json_init(&writer, s_file_chunk_buffer, sizeof(s_file_chunk_buffer),
+                  sizeof(s_file_chunk_buffer));
+    web_json_literal(&writer, "{\"available\":");
+    web_json_literal(&writer, web_server_bt_available() ? "true" : "false");
+    web_json_literal(&writer, ",\"scanning\":");
+    web_json_literal(&writer, bt_link_scanning() ? "true" : "false");
+    web_json_literal(&writer, ",\"connected\":");
+    web_json_literal(&writer, bt_link_output_connected() ? "true" : "false");
+    web_json_literal(&writer, ",\"chosen\":");
+    web_json_string(&writer, have_settings ? settings.bt_speaker : "");
+    web_json_literal(&writer, ",\"chosen_name\":");
+    web_json_string(&writer, have_settings ? settings.bt_speaker_name : "");
+    web_json_literal(&writer, ",\"found\":[");
+    for (size_t i = 0; i < scan.count; ++i) {
+        char address[18];
+        bt_link_address_to_text(scan.found[i].address, address, sizeof(address));
+        if (i > 0U) web_json_literal(&writer, ",");
+        web_json_literal(&writer, "{\"address\":");
+        web_json_string(&writer, address);
+        web_json_literal(&writer, ",\"name\":");
+        web_json_string(&writer, scan.found[i].name);
+        web_json_literal(&writer, ",\"rssi\":");
+        web_json_format(&writer, "%d", (int)scan.found[i].rssi);
+        web_json_literal(&writer, "}");
+    }
+    web_json_literal(&writer, "]}");
+    if (!web_json_valid(&writer)) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Speakers unavailable");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(request, "application/json; charset=utf-8");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    return httpd_resp_send(request, s_file_chunk_buffer, (ssize_t)web_json_length(&writer));
+}
+
+/* {"address":"AA:BB:CC:DD:EE:FF","name":"..."}; an empty address forgets
+ * the speaker. */
+static esp_err_t web_server_bt_speaker_post(httpd_req_t *request)
+{
+    if (request->content_len <= 0 || request->content_len >= WEB_SERVER_REQUEST_MAX_LEN) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Invalid request");
+        return ESP_FAIL;
+    }
+    char body[WEB_SERVER_REQUEST_MAX_LEN] = {0};
+    int received = 0;
+    while (received < request->content_len) {
+        const int read = httpd_req_recv(request, body + received, request->content_len - received);
+        if (read <= 0) {
+            httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Incomplete request");
+            return ESP_FAIL;
+        }
+        received += read;
+    }
+    cJSON *root = cJSON_ParseWithLength(body, (size_t)received);
+    const cJSON *address = root == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(root, "address");
+    const cJSON *name = root == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(root, "name");
+    uint8_t parsed[6];
+    if (!cJSON_IsString(address) ||
+        (address->valuestring[0] != '\0' && !bt_link_address_from_text(address->valuestring, parsed))) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Not an address");
+        return ESP_FAIL;
+    }
+    if (!device_settings_init(&s_settings_scratch) ||
+        !device_settings_set_bt_speaker(&s_settings_scratch, address->valuestring,
+                                        cJSON_IsString(name) ? name->valuestring : "")) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save settings");
+        return ESP_FAIL;
+    }
+    cJSON_Delete(root);
+    device_settings_mark_changed();
+    return web_server_bt_speakers_get(request);
+}
+
 static esp_err_t web_server_cover_get(httpd_req_t *request)
 {
     const album_art_status_t status = album_art_status();
@@ -1744,10 +1851,10 @@ esp_err_t web_server_start(void)
         // The HTTP worker is network-bound; keep it on core 0 with Wi-Fi and
         // lwIP so it cannot preempt the audio decoder pinned to core 1.
         config.core_id = 0;
-        // Thirty are registered below plus /ws; the spare ones exist
+        // Thirty-two are registered below plus /ws; the spare ones exist
         // because running out is not a build error - httpd_register_uri_handler
         // fails at startup and takes the whole web server down with it.
-        config.max_uri_handlers = 34;
+        config.max_uri_handlers = 36;
         config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
         config.send_wait_timeout = 1;
         config.lru_purge_enable = false;
@@ -1780,6 +1887,8 @@ esp_err_t web_server_start(void)
             {.uri = "/api/station-icon", .method = HTTP_POST, .handler = web_server_station_icon_post},
             {.uri = "/api/station-icon", .method = HTTP_GET, .handler = web_server_station_icon_get},
             {.uri = "/api/progress", .method = HTTP_GET, .handler = web_server_progress_get},
+            {.uri = "/api/bt/speakers", .method = HTTP_GET, .handler = web_server_bt_speakers_get},
+            {.uri = "/api/bt/speaker", .method = HTTP_POST, .handler = web_server_bt_speaker_post},
             {.uri = "/api/cover", .method = HTTP_GET, .handler = web_server_cover_get},
             {.uri = "/api/backup", .method = HTTP_GET, .handler = web_backup_get},
             {.uri = "/api/restore", .method = HTTP_POST, .handler = web_backup_restore_post},

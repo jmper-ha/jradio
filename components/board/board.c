@@ -652,6 +652,19 @@ esp_err_t board_audio_set_enabled(bool enabled)
     return result;
 }
 
+static board_audio_rate_listener_t s_rate_listener;
+
+void board_audio_set_rate_listener(board_audio_rate_listener_t listener)
+{
+    s_rate_listener = listener;
+    if (listener != NULL) listener(s_audio_sample_rate);
+}
+
+uint32_t board_audio_sample_rate(void)
+{
+    return s_audio_sample_rate;
+}
+
 esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
 {
     if (sample_rate == 0U || s_i2s_tx == NULL || s_audio_mutex == NULL) {
@@ -675,6 +688,7 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
         // The health window measures bytes against real time, so it is only
         // meaningful against the rate those bytes are actually clocked at.
         s_audio_sample_rate = sample_rate;
+        if (s_rate_listener != NULL) s_rate_listener(sample_rate);
         board_audio_health_rearm();
     }
     if (result == ESP_OK && was_enabled) {

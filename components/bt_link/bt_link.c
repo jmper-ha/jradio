@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "album_art.h"
+#include "board.h"
 #include "board_features.h"
 #include "board_options.h"
 #include "esp_heap_caps.h"
@@ -57,6 +58,37 @@ static uint8_t *s_cover;
 static int64_t s_cover_asked_us;
 static uint32_t s_cover_shown_hash;
 #define BT_LINK_COVER_RETRY_MS 800U
+/* The output: on/off and the speaker, from the settings; the scan list;
+ * and the source-mode bookkeeping the tick runs - asking for the mode
+ * again when the module lost it, and calling the speaker when it is not
+ * connected. Both are retried on a slow beat, since a speaker that is off
+ * answers nothing and asking every second would only fill the log. */
+static bool s_output_enabled;
+static uint8_t s_output_speaker[6];
+static bool s_output_has_speaker;
+static bt_link_scan_t s_scan;
+static volatile bool s_scanning;
+/* A scan asked for while the module was still changing role: started on
+ * the ack that says it is in source mode. */
+static volatile bool s_scan_pending;
+static bt_link_key_listener_t s_key_listener;
+/* The board's volume last sent to the speaker, as a percent, so a wheel
+ * turn on the speaker (which sets the board) is not echoed back to it. */
+static uint8_t s_output_volume_percent = 0xFFU;
+static int64_t s_output_tried_us;
+#define BT_LINK_OUTPUT_RETRY_MS 5000U
+/* SET_MODE without waiting: the tick asks, the ack arrives on this task
+ * like any frame, and the model records the mode. Used for the output,
+ * whose caller has nothing to wait for. */
+
+static esp_err_t bt_link_send(uint8_t type, uint8_t flags, const uint8_t *payload, size_t length);
+esp_err_t bt_link_set_volume(uint8_t volume);
+
+static esp_err_t bt_link_ask_mode(jbt_mode_t mode)
+{
+    const uint8_t payload[1] = {(uint8_t)mode};
+    return bt_link_send(JBT_MSG_SET_MODE, 0U, payload, sizeof(payload));
+}
 
 static esp_err_t bt_link_send(uint8_t type, uint8_t flags, const uint8_t *payload, size_t length)
 {
@@ -79,9 +111,21 @@ static esp_err_t bt_link_send(uint8_t type, uint8_t flags, const uint8_t *payloa
  * on its BOOTED event - a reboot takes it under two seconds, shorter than
  * the silence that would otherwise mark it gone, so the event is the only
  * sign of the reboot the host gets. */
+static void bt_link_on_rate(uint32_t sample_rate)
+{
+    uint8_t payload[6];
+    jbt_writer_t writer;
+    jbt_writer_init(&writer, payload, sizeof(payload));
+    jbt_put_u32(&writer, sample_rate);
+    jbt_put_u8(&writer, 16U);
+    jbt_put_u8(&writer, 2U);
+    (void)bt_link_send(JBT_MSG_I2S_FORMAT, 0U, payload, writer.length);
+}
+
 static void bt_link_greet(void)
 {
     (void)bt_link_set_name(BT_LINK_DEVICE_NAME);
+    bt_link_on_rate(board_audio_sample_rate());
     if (s_wanted_mode != JBT_MODE_OFF) {
         const uint8_t payload[1] = {s_wanted_mode};
         (void)bt_link_send(JBT_MSG_SET_MODE, 0U, payload, sizeof(payload));
@@ -172,6 +216,12 @@ static void bt_link_on_frame(const jbt_frame_t *frame)
         bt_link_cover_piece(frame);
         return;
     }
+    if (frame->type == JBT_MSG_SCAN_RESULT) {
+        xSemaphoreTake(s_state_lock, portMAX_DELAY);
+        (void)bt_link_scan_apply(&s_scan, frame);
+        xSemaphoreGive(s_state_lock);
+        return;
+    }
     xSemaphoreTake(s_state_lock, portMAX_DELAY);
     const uint32_t changed = bt_link_model_apply(&s_state, frame);
     xSemaphoreGive(s_state_lock);
@@ -186,7 +236,26 @@ static void bt_link_on_frame(const jbt_frame_t *frame)
         }
         s_cover_asked_us = 0;
     }
-    if (changed & BT_LINK_CHANGED_MODE_ACK) xSemaphoreGive(s_mode_ack);
+    if (changed & BT_LINK_CHANGED_STATUS) {
+        s_scanning = s_state.status.connection == JBT_CONN_SCANNING;
+    }
+    if ((changed & BT_LINK_CHANGED_KEY) && s_key_listener != NULL) {
+        s_key_listener((jbt_key_t)s_state.key);
+    }
+    if ((changed & BT_LINK_CHANGED_VOLUME) && s_output_enabled && s_state.status.mode == JBT_MODE_SOURCE) {
+        /* The speaker's own wheel: the board follows, and the module is not
+         * told back - it is the speaker's value already. */
+        s_output_volume_percent = bt_link_volume_to_percent(s_state.status.volume);
+        board_audio_set_volume(s_output_volume_percent);
+    }
+    if (changed & BT_LINK_CHANGED_MODE_ACK) {
+        xSemaphoreGive(s_mode_ack);
+        if (s_scan_pending && s_state.acked_mode == JBT_MODE_SOURCE) {
+            s_scan_pending = false;
+            const uint8_t payload[1] = {1U};
+            (void)bt_link_send(JBT_MSG_SCAN, 0U, payload, sizeof(payload));
+        }
+    }
     if (changed & BT_LINK_CHANGED_EVENT) {
         ESP_LOGI(TAG, "event %u", (unsigned)s_state.event);
         if (s_state.event == JBT_EVENT_BOOTED) {
@@ -240,6 +309,30 @@ static void bt_link_task(void *arg)
                         now - s_cover_asked_us > (int64_t)BT_LINK_COVER_RETRY_MS * 1000)) {
             bt_link_cover_request();
         }
+        /* The output: hold the module in source mode and on its speaker,
+         * unless the player has it as a sink. */
+        if (s_alive && s_output_enabled && s_wanted_mode != JBT_MODE_SINK &&
+            now - s_output_tried_us > (int64_t)BT_LINK_OUTPUT_RETRY_MS * 1000) {
+            s_output_tried_us = now;
+            bt_link_state_t state;
+            bt_link_snapshot(&state);
+            if (state.status.mode != JBT_MODE_SOURCE) {
+                s_wanted_mode = JBT_MODE_SOURCE;
+                (void)bt_link_ask_mode(JBT_MODE_SOURCE);
+            } else if (s_output_has_speaker && state.status.connection == JBT_CONN_NONE && !s_scanning) {
+                (void)bt_link_send(JBT_MSG_CONNECT, 0U, s_output_speaker, sizeof(s_output_speaker));
+            }
+        }
+        /* The knob, to the speaker: when the board's volume moves away from
+         * what the speaker last had, the speaker is told. Only while the
+         * output is up, and never in answer to the speaker's own wheel. */
+        if (s_alive && s_output_enabled && s_wanted_mode == JBT_MODE_SOURCE) {
+            const uint8_t percent = board_audio_volume();
+            if (percent != s_output_volume_percent) {
+                s_output_volume_percent = percent;
+                (void)bt_link_set_volume(bt_link_volume_to_module(percent));
+            }
+        }
     }
 }
 
@@ -273,6 +366,7 @@ esp_err_t bt_link_init(void)
         s_started = false;
         return ESP_ERR_NO_MEM;
     }
+    board_audio_set_rate_listener(bt_link_on_rate);
     ESP_LOGI(TAG, "uart tx %d rx %d at %d", BT_UART_TX_GPIO, BT_UART_RX_GPIO, BT_LINK_BAUD);
     return ESP_OK;
 }
@@ -331,6 +425,96 @@ void bt_link_peer_name(char *out, size_t out_size)
     xSemaphoreGive(s_state_lock);
 }
 
+esp_err_t bt_link_set_output(bool enabled, const char *address)
+{
+    uint8_t speaker[6];
+    const bool has_speaker = bt_link_address_from_text(address, speaker);
+    const bool changed = enabled != s_output_enabled || has_speaker != s_output_has_speaker ||
+                         (has_speaker && memcmp(speaker, s_output_speaker, sizeof(speaker)) != 0);
+    s_output_enabled = enabled;
+    s_output_has_speaker = has_speaker;
+    if (has_speaker) memcpy(s_output_speaker, speaker, sizeof(speaker));
+    if (!changed) return ESP_OK;
+    ESP_LOGI(TAG, "output %s, speaker %s", enabled ? "on" : "off", has_speaker ? address : "none");
+    /* The tick does the rest; here only what has to happen now: a speaker
+     * that changed is dropped, and an output switched off lets the module
+     * go - unless the player has it as a sink, which is its own business. */
+    if (s_alive && s_wanted_mode != JBT_MODE_SINK) {
+        if (!enabled) {
+            s_wanted_mode = JBT_MODE_OFF;
+            (void)bt_link_ask_mode(JBT_MODE_OFF);
+        } else {
+            (void)bt_link_send(JBT_MSG_DISCONNECT, 0U, NULL, 0U);
+            s_output_tried_us = 0;
+        }
+    }
+    return ESP_OK;
+}
+
+bool bt_link_output_connected(void)
+{
+    if (!s_alive || !s_output_enabled) return false;
+    bt_link_state_t state;
+    bt_link_snapshot(&state);
+    return state.status.mode == JBT_MODE_SOURCE && state.status.connection == JBT_CONN_CONNECTED;
+}
+
+esp_err_t bt_link_scan(bool on)
+{
+    if (!s_alive) return ESP_ERR_INVALID_STATE;
+    bt_link_state_t state;
+    bt_link_snapshot(&state);
+    if (state.status.mode != JBT_MODE_SOURCE) {
+        /* The scan needs the source role; ask for it and let the caller try
+         * again once the module reports it. */
+        if (s_wanted_mode == JBT_MODE_SINK) return ESP_ERR_INVALID_STATE;
+        if (on) {
+            xSemaphoreTake(s_state_lock, portMAX_DELAY);
+            bt_link_scan_init(&s_scan);
+            xSemaphoreGive(s_state_lock);
+            s_scan_pending = true;
+        }
+        s_wanted_mode = JBT_MODE_SOURCE;
+        (void)bt_link_ask_mode(JBT_MODE_SOURCE);
+        return ESP_ERR_NOT_FINISHED;
+    }
+    if (on) {
+        xSemaphoreTake(s_state_lock, portMAX_DELAY);
+        bt_link_scan_init(&s_scan);
+        xSemaphoreGive(s_state_lock);
+    }
+    const uint8_t payload[1] = {on ? 1U : 0U};
+    return bt_link_send(JBT_MSG_SCAN, 0U, payload, sizeof(payload));
+}
+
+void bt_link_scan_snapshot(bt_link_scan_t *out)
+{
+    if (out == NULL) return;
+    if (s_state_lock == NULL) {
+        bt_link_scan_init(out);
+        return;
+    }
+    xSemaphoreTake(s_state_lock, portMAX_DELAY);
+    *out = s_scan;
+    xSemaphoreGive(s_state_lock);
+}
+
+bool bt_link_scanning(void)
+{
+    return s_alive && s_scanning;
+}
+
+esp_err_t bt_link_i2s_format(uint32_t sample_rate, uint8_t bits, uint8_t channels)
+{
+    uint8_t payload[6];
+    jbt_writer_t writer;
+    jbt_writer_init(&writer, payload, sizeof(payload));
+    jbt_put_u32(&writer, sample_rate);
+    jbt_put_u8(&writer, bits);
+    jbt_put_u8(&writer, channels);
+    return bt_link_send(JBT_MSG_I2S_FORMAT, 0U, payload, writer.length);
+}
+
 esp_err_t bt_link_set_mode(jbt_mode_t mode, uint32_t timeout_ms)
 {
     s_wanted_mode = (uint8_t)mode;
@@ -351,6 +535,11 @@ esp_err_t bt_link_set_mode(jbt_mode_t mode, uint32_t timeout_ms)
         return ESP_FAIL;
     }
     return ESP_OK;
+}
+
+void bt_link_set_key_listener(bt_link_key_listener_t listener)
+{
+    s_key_listener = listener;
 }
 
 esp_err_t bt_link_pairing(bool on)
@@ -421,11 +610,52 @@ void bt_link_snapshot(bt_link_state_t *out)
     if (out != NULL) bt_link_model_init(out);
 }
 
+esp_err_t bt_link_set_output(bool enabled, const char *address)
+{
+    (void)enabled;
+    (void)address;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+bool bt_link_output_connected(void)
+{
+    return false;
+}
+
+esp_err_t bt_link_scan(bool on)
+{
+    (void)on;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+void bt_link_scan_snapshot(bt_link_scan_t *out)
+{
+    if (out != NULL) bt_link_scan_init(out);
+}
+
+bool bt_link_scanning(void)
+{
+    return false;
+}
+
+esp_err_t bt_link_i2s_format(uint32_t sample_rate, uint8_t bits, uint8_t channels)
+{
+    (void)sample_rate;
+    (void)bits;
+    (void)channels;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
 esp_err_t bt_link_set_mode(jbt_mode_t mode, uint32_t timeout_ms)
 {
     (void)mode;
     (void)timeout_ms;
     return ESP_ERR_NOT_SUPPORTED;
+}
+
+void bt_link_set_key_listener(bt_link_key_listener_t listener)
+{
+    (void)listener;
 }
 
 esp_err_t bt_link_pairing(bool on)

@@ -249,6 +249,19 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     if (read_value(path, "dlna", value, sizeof(value))) {
         (void)parse_bool(value, &settings->dlna);
     }
+    if (read_value(path, "bt_output", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->bt_output);
+    }
+    /* "-" stands for none: settings.csv has no empty values. */
+    if (settings_csv_get(path, "bt_speaker", settings->bt_speaker, sizeof(settings->bt_speaker)) &&
+        strcmp(settings->bt_speaker, "-") == 0) {
+        settings->bt_speaker[0] = '\0';
+    }
+    if (settings_csv_get(path, "bt_speaker_name", settings->bt_speaker_name,
+                         sizeof(settings->bt_speaker_name)) &&
+        strcmp(settings->bt_speaker_name, "-") == 0) {
+        settings->bt_speaker_name[0] = '\0';
+    }
     if (read_value(path, "volume", value, sizeof(value))) {
         char *end = NULL;
         const long parsed = strtol(value, &end, 10);
@@ -425,6 +438,30 @@ bool device_settings_set_dlna(device_settings_t *settings, bool enabled)
 {
     if (!save_value(settings, "dlna", enabled ? "1" : "0")) return false;
     settings->dlna = enabled;
+    return true;
+}
+
+bool device_settings_set_bt_output(device_settings_t *settings, bool enabled)
+{
+    if (!save_value(settings, "bt_output", enabled ? "1" : "0")) return false;
+    settings->bt_output = enabled;
+    return true;
+}
+
+bool device_settings_set_bt_speaker(device_settings_t *settings, const char *address,
+                                    const char *name)
+{
+    if (settings == NULL) return false;
+    const char *addr = address == NULL ? "" : address;
+    const char *label = name == NULL ? "" : name;
+    if (strlen(addr) >= sizeof(settings->bt_speaker) || strlen(label) >= sizeof(settings->bt_speaker_name)) {
+        return false;
+    }
+    /* settings.csv cannot hold an empty value, so "-" stands for none. */
+    if (!save_value(settings, "bt_speaker", addr[0] != '\0' ? addr : "-")) return false;
+    if (!save_value(settings, "bt_speaker_name", label[0] != '\0' ? label : "-")) return false;
+    snprintf(settings->bt_speaker, sizeof(settings->bt_speaker), "%s", addr);
+    snprintf(settings->bt_speaker_name, sizeof(settings->bt_speaker_name), "%s", label);
     return true;
 }
 
@@ -771,4 +808,19 @@ bool device_settings_published_switches(bool *yandex_music, bool *dlna)
     }
     PUBLISH_UNLOCK();
     return published;
+}
+
+bool device_settings_published_bt_output(bool *enabled, char *address, size_t address_size)
+{
+    bool known = false;
+    PUBLISH_LOCK();
+    known = s_have_published;
+    if (known) {
+        if (enabled != NULL) *enabled = s_published.bt_output;
+        if (address != NULL && address_size > 0U) {
+            snprintf(address, address_size, "%s", s_published.bt_speaker);
+        }
+    }
+    PUBLISH_UNLOCK();
+    return known;
 }

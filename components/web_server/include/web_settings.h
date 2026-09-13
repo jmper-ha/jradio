@@ -38,6 +38,7 @@ typedef enum {
     WEB_SETTINGS_FIELD_AUTOPLAY,
     WEB_SETTINGS_FIELD_YANDEX_MUSIC,
     WEB_SETTINGS_FIELD_DLNA,
+    WEB_SETTINGS_FIELD_BT_OUTPUT,
     WEB_SETTINGS_FIELD_FLIP_VERTICAL,
     WEB_SETTINGS_FIELD_FLIP_HORIZONTAL,
     WEB_SETTINGS_FIELD_BRIGHTNESS,
@@ -106,6 +107,7 @@ typedef struct {
     bool autoplay;
     bool yandex_music;
     bool dlna;
+    bool bt_output;
     bool flip_vertical;
     bool flip_horizontal;
     /* The zone as its row in device_timezone.h rather than its id: this view
@@ -124,12 +126,15 @@ typedef struct {
     bool home_screen_available;
     bool yandex_available;
     bool dlna_available;
+    /* The module is on the board and answering: the output switch and the
+     * speaker list mean something. */
+    bool bt_available;
 } web_settings_view_t;
 
 void web_settings_make_view(web_settings_view_t *view,
                             const device_settings_t *settings,
                             bool home_screen_available, bool yandex_available,
-                            bool dlna_available);
+                            bool dlna_available, bool bt_available);
 bool web_settings_view_equal(const web_settings_view_t *left,
                              const web_settings_view_t *right);
 

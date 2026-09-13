@@ -58,6 +58,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_ROW_AUTOPLAY] = {"Автовоспроизведение", "Autoplay"},
     [DEVICE_TEXT_ROW_YANDEX] = {"Яндекс Музыка", "Yandex Music"},
     [DEVICE_TEXT_ROW_WEATHER] = {"Погода", "Weather"},
+    [DEVICE_TEXT_ROW_BT_OUTPUT] = {"Звук на Bluetooth", "Sound over Bluetooth"},
     [DEVICE_TEXT_ROW_DLNA] = {"DLNA", "DLNA"},
     [DEVICE_TEXT_ROW_BRIGHTNESS] = {"Яркость", "Brightness"},
     [DEVICE_TEXT_ROW_SCREENSAVER] = {"Заставка", "Screensaver"},

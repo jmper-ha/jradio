@@ -46,6 +46,7 @@
 #include "file_track_progress.h"
 
 #include "audio_volume.h"
+#include "bt_link.h"
 #include "device_clock.h"
 #include "dlna_source.h"
 #include "ui_files_notice.h"
@@ -276,7 +277,7 @@ static lv_obj_t *s_settings_more_above;
 static lv_obj_t *s_settings_more_below;
 /* One per boolean setting, not per row on screen: only one group is open at
  * a time, so at most three are ever visible, but each keeps its own object. */
-#define UI_SETTINGS_SWITCH_COUNT 6U
+#define UI_SETTINGS_SWITCH_COUNT 7U
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
@@ -2578,6 +2579,10 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_DLNA,
                                  s_device_settings.dlna);
         break;
+    case UI_SETTINGS_ROW_BT_OUTPUT_FIELD:
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_BT_OUTPUT,
+                                 s_device_settings.bt_output);
+        break;
     case UI_SETTINGS_ROW_BRIGHTNESS_FIELD:
         /* Angle brackets while the knob owns the value: the cursor already
          * says which row, and this is the only thing that says the next click
@@ -2645,6 +2650,10 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     case UI_SETTINGS_ROW_WEATHER_FIELD:
         *index = 5U;
         *value = s_device_settings.weather_provider != DEVICE_WEATHER_OFF;
+        return true;
+    case UI_SETTINGS_ROW_BT_OUTPUT_FIELD:
+        *index = 6U;
+        *value = s_device_settings.bt_output;
         return true;
     default:
         return false;
@@ -2925,6 +2934,14 @@ static void ui_close_settings(void)
  * does not do: the backlight, the panel rotation, the output volume and the
  * Yandex row in both home screens all have to be told, and this task is the
  * only one allowed to tell them. */
+/* The module as an output, as the settings say. Told here on every change
+ * and at start: the link keeps it so from then on, whatever the player is
+ * doing, unless the player takes the module for a phone. */
+static void ui_apply_bt_output(void)
+{
+    (void)bt_link_set_output(s_device_settings.bt_output, s_device_settings.bt_speaker);
+}
+
 static void ui_reload_settings(void)
 {
     /* A knob being turned right now has not reached the file yet - the write
@@ -2953,6 +2970,7 @@ static void ui_reload_settings(void)
     /* Same shape: the task compares and does nothing unless the service or
      * the place moved. */
     weather_apply(&s_device_settings);
+    ui_apply_bt_output();
     ui_apply_source_visibility();
     /* The model is left alone while the settings screen is open: re-initialising
      * it moves the cursor back to the top, and someone standing at the device
@@ -3389,6 +3407,10 @@ static void ui_settings_change_selected(void)
     case UI_SETTINGS_ROW_DLNA_FIELD:
         changed = device_settings_set_dlna(&s_device_settings, !s_device_settings.dlna);
         if (changed) ui_apply_source_visibility();
+        break;
+    case UI_SETTINGS_ROW_BT_OUTPUT_FIELD:
+        changed = device_settings_set_bt_output(&s_device_settings, !s_device_settings.bt_output);
+        if (changed) ui_apply_bt_output();
         break;
     case UI_SETTINGS_ROW_WEATHER_FIELD:
         /* Off, or back to the service the page chose. The task is told the
@@ -5614,6 +5636,7 @@ esp_err_t ui_init(void)
     // back from a power cut at full blast when the user had it at 20 is the
     // kind of surprise a saved setting exists to prevent.
     board_audio_set_volume(s_device_settings.volume);
+    ui_apply_bt_output();
     // Before the task starts: a browser that connects first would otherwise be
     // told the device has no settings at all.
     device_settings_publish(&s_device_settings);

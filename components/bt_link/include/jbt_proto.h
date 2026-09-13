@@ -83,6 +83,7 @@ typedef enum {
     JBT_MSG_EVENT = 0x89,       /* u8 jbt_event_t, TLV: TEXT */
     JBT_MSG_LOG = 0x8A,         /* u8 level, TLV: TEXT */
     JBT_MSG_PONG = 0x8B,        /* u8 protocol, u8 fw_major, u8 fw_minor, u16 fw_build */
+    JBT_MSG_KEY = 0x8C,         /* u8 jbt_key_t: a button pressed on the speaker (source mode) */
     /* either direction */
     JBT_MSG_ACK = 0xFE,         /* u8 seq acknowledged, u8 jbt_result_t */
 } jbt_msg_t;

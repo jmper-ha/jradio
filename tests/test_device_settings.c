@@ -567,8 +567,38 @@ static void test_the_screensaver_settings_persist_and_are_checked(void)
     assert(settings.screensaver_brightness == DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT);
 }
 
+static void test_the_bluetooth_output_persists_and_forgets(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    /* Off, no speaker: a fresh card sends to the DAC. */
+    assert(!settings.bt_output);
+    assert(settings.bt_speaker[0] == '\0' && settings.bt_speaker_name[0] == '\0');
+
+    assert(device_settings_set_bt_output(&settings, true));
+    assert(device_settings_set_bt_speaker(&settings, "3D:AB:55:FA:58:FC", "JBL Flip"));
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.bt_output);
+    assert(strcmp(reloaded.bt_speaker, "3D:AB:55:FA:58:FC") == 0);
+    assert(strcmp(reloaded.bt_speaker_name, "JBL Flip") == 0);
+
+    /* Forgotten: an empty address, which the file cannot hold, so "-" stands
+     * in and reads back as empty. */
+    assert(device_settings_set_bt_speaker(&settings, "", ""));
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.bt_speaker[0] == '\0' && reloaded.bt_speaker_name[0] == '\0');
+    char value[8];
+    assert(settings_csv_get(test_path, "bt_speaker", value, sizeof(value)));
+    assert(strcmp(value, "-") == 0);
+    /* Too long to be an address is refused. */
+    assert(!device_settings_set_bt_speaker(&settings, "3D:AB:55:FA:58:FC:00", "x"));
+}
+
 int main(void)
 {
+    test_the_bluetooth_output_persists_and_forgets();
     test_defaults_and_load();
     test_values_and_unknown_lines_are_saved();
     test_invalid_values_do_not_change_model();

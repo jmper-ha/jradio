@@ -249,8 +249,64 @@ static void test_a_cover_is_fetched_piece_by_piece_and_only_once(void)
     assert(!bt_link_model_cover_wanted(&state, &offset, &length));
 }
 
+static void test_a_scan_lists_each_speaker_once_and_keeps_its_name(void)
+{
+    bt_link_scan_t scan;
+    bt_link_scan_init(&scan);
+    uint8_t payload[64];
+    jbt_writer_t writer;
+    const uint8_t jbl[6] = {0x3D, 0xAB, 0x55, 0xFA, 0x58, 0xFC};
+    const uint8_t other[6] = {1, 2, 3, 4, 5, 6};
+
+    jbt_writer_init(&writer, payload, sizeof(payload));
+    jbt_put_bytes(&writer, jbl, 6U);
+    jbt_put_u8(&writer, (uint8_t)-60);
+    jbt_put_u32(&writer, 0x240404U);
+    jbt_put_tlv_string(&writer, JBT_TAG_NAME, "JBL Flip");
+    jbt_frame_t frame = frame_of(JBT_MSG_SCAN_RESULT, payload, writer.length);
+    assert(bt_link_scan_apply(&scan, &frame));
+    assert(scan.count == 1U && scan.revision == 1U);
+    assert(strcmp(scan.found[0].name, "JBL Flip") == 0 && scan.found[0].rssi == -60);
+
+    /* Seen again, closer, without a name: the signal updates, the name stays. */
+    jbt_writer_init(&writer, payload, sizeof(payload));
+    jbt_put_bytes(&writer, jbl, 6U);
+    jbt_put_u8(&writer, (uint8_t)-50);
+    jbt_put_u32(&writer, 0x240404U);
+    frame = frame_of(JBT_MSG_SCAN_RESULT, payload, writer.length);
+    assert(bt_link_scan_apply(&scan, &frame));
+    assert(scan.count == 1U && scan.found[0].rssi == -50);
+    assert(strcmp(scan.found[0].name, "JBL Flip") == 0);
+
+    jbt_writer_init(&writer, payload, sizeof(payload));
+    jbt_put_bytes(&writer, other, 6U);
+    jbt_put_u8(&writer, (uint8_t)-80);
+    jbt_put_u32(&writer, 0x240404U);
+    frame = frame_of(JBT_MSG_SCAN_RESULT, payload, writer.length);
+    assert(bt_link_scan_apply(&scan, &frame));
+    assert(scan.count == 2U && scan.found[1].name[0] == '\0');
+
+    /* Too short to be a result; a frame of another type. */
+    frame = frame_of(JBT_MSG_SCAN_RESULT, payload, 5U);
+    assert(!bt_link_scan_apply(&scan, &frame));
+    frame = frame_of(JBT_MSG_STATUS, payload, writer.length);
+    assert(!bt_link_scan_apply(&scan, &frame));
+    assert(scan.count == 2U);
+
+    char text[18];
+    bt_link_address_to_text(jbl, text, sizeof(text));
+    assert(strcmp(text, "3D:AB:55:FA:58:FC") == 0);
+    uint8_t back[6];
+    assert(bt_link_address_from_text(text, back) && memcmp(back, jbl, 6U) == 0);
+    assert(bt_link_address_from_text("3d:ab:55:fa:58:fc", back) && memcmp(back, jbl, 6U) == 0);
+    assert(!bt_link_address_from_text("3D:AB:55:FA:58", back));
+    assert(!bt_link_address_from_text("3D:AB:55:FA:58:FC:00", back));
+    assert(!bt_link_address_from_text("", back));
+}
+
 int main(void)
 {
+    test_a_scan_lists_each_speaker_once_and_keeps_its_name();
     test_a_cover_is_fetched_piece_by_piece_and_only_once();
     test_a_status_frame_fills_the_snapshot();
     test_a_track_replaces_the_previous_one_whole();

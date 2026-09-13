@@ -160,7 +160,7 @@ static void test_each_group_has_expected_fields(void)
      * that has those features - the rows here that a board option can take
      * away. */
     assert(ui_settings_model_row_count(&model) ==
-           9U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA);
+           9U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
     assert(ui_settings_model_row_at(&model, 2U).id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_SCROLL_FIELD);
     assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_BUFFER_FIELD);
@@ -190,6 +190,14 @@ static void test_each_group_has_expected_fields(void)
            UI_SETTINGS_ROW_DLNA_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DLNA_FIELD);
+#endif
+#if BOARD_HAS_BLUETOOTH
+    /* The module as an output: a switch here, the speaker on the page. */
+    assert(ui_settings_model_row_at(&model, 7U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA).id ==
+           UI_SETTINGS_ROW_BT_OUTPUT_FIELD);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_BT_OUTPUT_FIELD);
+    assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_BT_OUTPUT_FIELD));
 #endif
     /* And the cursor still cannot walk out of the expanded group. */
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_NO_CHANGE);
@@ -415,7 +423,7 @@ static void test_the_longest_list_needs_the_window(void)
         if (count > longest) longest = count;
     }
     /* Three headings, the deepest group's fields, and About. */
-    assert(longest == 9U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA);
+    assert(longest == 9U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
     /* Whatever the longest is, every row of it is reachable with the window. */
     ui_settings_model_init(&model, true);
     model.expanded_group = (int)UI_SETTINGS_GROUP_GENERAL;

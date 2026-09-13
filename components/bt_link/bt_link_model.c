@@ -1,6 +1,7 @@
 #include "bt_link_model.h"
 
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 void bt_link_model_init(bt_link_state_t *state)
@@ -130,6 +131,13 @@ uint32_t bt_link_model_apply(bt_link_state_t *state, const jbt_frame_t *frame)
         ++state->cover_revision;
         return BT_LINK_CHANGED_COVER_INFO;
     }
+    case JBT_MSG_KEY: {
+        uint8_t key;
+        if (!jbt_get_u8(&reader, &key) || key > JBT_KEY_REWIND) return 0U;
+        state->key = key;
+        ++state->keys;
+        return BT_LINK_CHANGED_KEY;
+    }
     case JBT_MSG_EVENT: {
         uint8_t event;
         if (!jbt_get_u8(&reader, &event)) return 0U;
@@ -201,4 +209,68 @@ uint8_t bt_link_volume_to_percent(uint8_t module)
 {
     if (module > 127U) module = 127U;
     return (uint8_t)((module * 100U + 63U) / 127U);
+}
+
+void bt_link_scan_init(bt_link_scan_t *scan)
+{
+    memset(scan, 0, sizeof(*scan));
+}
+
+bool bt_link_scan_apply(bt_link_scan_t *scan, const jbt_frame_t *frame)
+{
+    if (scan == NULL || frame == NULL || frame->type != JBT_MSG_SCAN_RESULT) return false;
+    jbt_reader_t reader;
+    jbt_reader_init(&reader, frame->payload, frame->len);
+    uint8_t address[6];
+    uint8_t rssi;
+    uint32_t class_of_device;
+    if (!jbt_get_bytes(&reader, address, sizeof(address)) || !jbt_get_u8(&reader, &rssi) ||
+        !jbt_get_u32(&reader, &class_of_device)) {
+        return false;
+    }
+    char name[BT_LINK_NAME_MAX] = {0};
+    uint8_t tag;
+    const uint8_t *value;
+    uint8_t length;
+    while (jbt_get_tlv(&reader, &tag, &value, &length)) {
+        if (tag == JBT_TAG_NAME) jbt_tlv_to_string(value, length, name, sizeof(name));
+    }
+    bt_link_found_t *slot = NULL;
+    for (size_t i = 0; i < scan->count; ++i) {
+        if (memcmp(scan->found[i].address, address, sizeof(address)) == 0) {
+            slot = &scan->found[i];
+            break;
+        }
+    }
+    if (slot == NULL) {
+        if (scan->count >= BT_LINK_SCAN_MAX) return false;
+        slot = &scan->found[scan->count++];
+        memcpy(slot->address, address, sizeof(address));
+        slot->name[0] = '\0';
+    }
+    slot->rssi = (int8_t)rssi;
+    /* A name only replaces a name: a second sighting often comes without
+     * one, and blanking what the first brought would be a step back. */
+    if (name[0] != '\0') snprintf(slot->name, sizeof(slot->name), "%s", name);
+    ++scan->revision;
+    return true;
+}
+
+void bt_link_address_to_text(const uint8_t address[6], char *out, size_t out_size)
+{
+    snprintf(out, out_size, "%02X:%02X:%02X:%02X:%02X:%02X", address[0], address[1], address[2],
+             address[3], address[4], address[5]);
+}
+
+bool bt_link_address_from_text(const char *text, uint8_t out[6])
+{
+    if (text == NULL) return false;
+    unsigned int bytes[6];
+    char tail;
+    if (sscanf(text, "%2x:%2x:%2x:%2x:%2x:%2x%c", &bytes[0], &bytes[1], &bytes[2], &bytes[3], &bytes[4],
+               &bytes[5], &tail) != 6) {
+        return false;
+    }
+    for (int i = 0; i < 6; ++i) out[i] = (uint8_t)bytes[i];
+    return true;
 }

@@ -46,6 +46,34 @@ void bt_link_peer_name(char *out, size_t out_size);
  * after asking for off has returned. */
 esp_err_t bt_link_set_mode(jbt_mode_t mode, uint32_t timeout_ms);
 
+/* The module as an output. While on, and whenever the player is not using
+ * the module as a phone's sink, the link keeps the module in source mode
+ * listening to the I2S bus and connected to `address`; off, the module is
+ * left in off mode. player_control owns the sink; this owns the source,
+ * and the two never ask for the module at once because the player's sink
+ * source and the output are exclusive by construction (a phone playing
+ * through the DAC and the DAC going to a speaker cannot both be). */
+esp_err_t bt_link_set_output(bool enabled, const char *address);
+/* Whether the output is on and the speaker connected: what the panel shows
+ * beside the volume. */
+bool bt_link_output_connected(void);
+
+/* Starts (or stops) a scan for speakers; results accumulate in the scan
+ * list, read with bt_link_scan_snapshot(). The module must be in source
+ * mode, which set_output arranges. */
+esp_err_t bt_link_scan(bool on);
+void bt_link_scan_snapshot(bt_link_scan_t *out);
+bool bt_link_scanning(void);
+
+/* What the host is clocking on the bus, for the module's resampler. */
+esp_err_t bt_link_i2s_format(uint32_t sample_rate, uint8_t bits, uint8_t channels);
+
+/* A button pressed on the speaker while it is the output, delivered on
+ * the link's task: the player turns it into the command the panel's own
+ * buttons would send. */
+typedef void (*bt_link_key_listener_t)(jbt_key_t key);
+void bt_link_set_key_listener(bt_link_key_listener_t listener);
+
 esp_err_t bt_link_pairing(bool on);
 esp_err_t bt_link_passthrough(jbt_key_t key);
 /* 0..127 */

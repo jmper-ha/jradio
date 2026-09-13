@@ -1135,10 +1135,42 @@ static void player_control_task(void *arg)
     }
 }
 
+/* A button on the Bluetooth speaker, while it is the output: the same
+ * commands the panel's own buttons post, so whatever is playing - a
+ * station, a file, the rotor - answers to the speaker's play/pause and
+ * next/previous. Posted, not executed: this runs on the link's task. */
+static void player_speaker_key(jbt_key_t key)
+{
+    player_command_t command = {.item_index = PLAYER_ITEM_NONE};
+    player_snapshot_t snapshot;
+    player_control_get_snapshot(&snapshot);
+    command.source = snapshot.active_source;
+    switch (key) {
+    case JBT_KEY_PLAY:
+    case JBT_KEY_PAUSE:
+        command.kind = PLAYER_COMMAND_TOGGLE;
+        break;
+    case JBT_KEY_STOP:
+        command.kind = PLAYER_COMMAND_PAUSE;
+        break;
+    case JBT_KEY_NEXT:
+        command.kind = snapshot.active_source == AUDIO_SOURCE_YANDEX ? PLAYER_COMMAND_NEXT_TRACK
+                                                                     : PLAYER_COMMAND_NEXT_ITEM;
+        break;
+    case JBT_KEY_PREV:
+        command.kind = PLAYER_COMMAND_PREVIOUS_ITEM;
+        break;
+    default:
+        return;
+    }
+    (void)player_control_post(&command);
+}
+
 esp_err_t player_control_init(void)
 {
     s_bt_volume_lock = xSemaphoreCreateMutex();
     if (s_bt_volume_lock == NULL) return ESP_ERR_NO_MEM;
+    bt_link_set_key_listener(player_speaker_key);
     if (s_command_queue != NULL) {
         return ESP_OK;
     }

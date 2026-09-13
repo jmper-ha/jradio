@@ -21,6 +21,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "cJSON.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_system.h"
 #include "esp_http_server.h"
 
@@ -1293,8 +1294,16 @@ static esp_err_t web_server_settings_api_get(httpd_req_t *request)
     weather_status_t weather;
     weather_status(&weather);
     static const char *const k_weather_states[] = {"off", "no_key", "waiting", "ok", "failed"};
+    /* The built-in name from this board's MAC, for the placeholder under
+     * the field: what the device is called while the field is empty. */
+    unsigned char mac[6] = {0};
+    (void)esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    char default_name[DEVICE_NAME_MAX];
+    device_settings_default_name(mac, default_name, sizeof(default_name));
     const web_settings_document_t document = {
         .ntp_server = s_settings_scratch.ntp_server,
+        .device_name = s_settings_scratch.device_name,
+        .device_name_default = default_name,
         .weather_latitude = s_settings_scratch.weather_latitude,
         .weather_longitude = s_settings_scratch.weather_longitude,
         .openweathermap_key_set = weather_key_is_set(),

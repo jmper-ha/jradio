@@ -1628,8 +1628,13 @@ static void ui_update_bluetooth_status(const player_snapshot_t *snapshot)
                                                      : ui_text(DEVICE_TEXT_SOURCE_BLUETOOTH));
     ui_scroller_set_text(&s_source_detail, now.title);
     const char *state = "";
+    /* Room for the longer of the two texts with a 32-byte name in it. */
+    char pairing[96];
     if (snapshot->playback_state == PLAYER_PLAYBACK_STOPPED && snapshot->context[0] == '\0') {
-        state = ui_text(DEVICE_TEXT_BLUETOOTH_PAIRING);
+        char name[DEVICE_NAME_MAX];
+        device_settings_device_name(name, sizeof(name));
+        snprintf(pairing, sizeof(pairing), ui_text(DEVICE_TEXT_BLUETOOTH_PAIRING), name);
+        state = pairing;
     } else if (snapshot->playback_state != PLAYER_PLAYBACK_PLAYING &&
                snapshot->playback_state != PLAYER_PLAYBACK_PAUSED &&
                snapshot->playback_state != PLAYER_PLAYBACK_STOPPED) {
@@ -2942,6 +2947,16 @@ static void ui_apply_bt_output(void)
     (void)bt_link_set_output(s_device_settings.bt_output, s_device_settings.bt_speaker);
 }
 
+/* The name the module answers to, from the settings just published: the
+ * link sends it only when it changed. After the publish, since that is
+ * where the resolved name comes from. */
+static void ui_apply_device_name(void)
+{
+    char name[DEVICE_NAME_MAX];
+    device_settings_device_name(name, sizeof(name));
+    (void)bt_link_set_name(name);
+}
+
 static void ui_reload_settings(void)
 {
     /* A knob being turned right now has not reached the file yet - the write
@@ -2978,6 +2993,7 @@ static void ui_reload_settings(void)
      * be one Yandex switch out of date until the screen is left and reopened,
      * which is the narrower of the two problems. */
     device_settings_publish(&s_device_settings);
+    ui_apply_device_name();
     if (s_settings_open) {
         ui_update_settings();
     } else {
@@ -5640,6 +5656,7 @@ esp_err_t ui_init(void)
     // Before the task starts: a browser that connects first would otherwise be
     // told the device has no settings at all.
     device_settings_publish(&s_device_settings);
+    ui_apply_device_name();
     // Asked with both volumes assumed ready: this only decides whether there is
     // anything to wait for at all. What is actually there is settled later, by
     // ui_autoplay_step(), once the drive has had time to enumerate.

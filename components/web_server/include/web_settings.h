@@ -45,6 +45,7 @@ typedef enum {
     WEB_SETTINGS_FIELD_VOLUME,
     WEB_SETTINGS_FIELD_TIMEZONE,
     WEB_SETTINGS_FIELD_NTP_SERVER,
+    WEB_SETTINGS_FIELD_DEVICE_NAME,
     WEB_SETTINGS_FIELD_WEATHER,
     WEB_SETTINGS_FIELD_WEATHER_LATITUDE,
     WEB_SETTINGS_FIELD_WEATHER_LONGITUDE,
@@ -149,6 +150,10 @@ void web_settings_write(web_json_writer_t *writer,
  * key itself. */
 typedef struct {
     const char *ntp_server;
+    /* The name as stored - empty for the built-in one - and the built-in one
+     * itself, for the field's placeholder. */
+    const char *device_name;
+    const char *device_name_default;
     const char *weather_latitude;
     const char *weather_longitude;
     bool openweathermap_key_set;

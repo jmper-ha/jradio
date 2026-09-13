@@ -228,6 +228,10 @@
     'settings.yandex': ['Яндекс Музыка', 'Yandex Music'],
     'settings.timezone': ['Часовой пояс', 'Time zone'],
     'settings.ntp': ['Сервер времени', 'Time server'],
+    'settings.device_name': ['Имя устройства', 'Device name'],
+    'settings.device_name_note': [
+      'Так устройство называется в Bluetooth и как сеть Wi‑Fi при первой настройке. Пусто — имя из заводского номера.',
+      'What the device is called over Bluetooth and as the Wi‑Fi network during first setup. Empty means the built-in name.'],
     'settings.group_weather': ['Погода', 'Weather'],
     'bt.group': ['Звук на Bluetooth', 'Sound over Bluetooth'],
     'bt.output': ['Отправлять на колонку', 'Send to a speaker'],

@@ -208,6 +208,15 @@ static void test_apply_writes_through_to_the_file(void)
     assert(web_settings_apply(&settings, &after));
     const web_settings_change_t idle = {WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS, 10, ""};
     assert(web_settings_apply(&settings, &idle));
+    /* The device's name comes in as text and is refused by the setter where
+     * it would cut the settings line. */
+    web_settings_change_t name;
+    assert(parse_one("{\"field\":\"device_name\",\"value\":\"Кухня\"}", &name));
+    assert(name.field == WEB_SETTINGS_FIELD_DEVICE_NAME);
+    assert(web_settings_apply(&settings, &name));
+    assert(strcmp(settings.device_name, "Кухня") == 0);
+    const web_settings_change_t bad_name = {WEB_SETTINGS_FIELD_DEVICE_NAME, 0, "a,b"};
+    assert(!web_settings_apply(&settings, &bad_name));
 
     device_settings_t reloaded;
     assert(device_settings_init_at(&reloaded, test_path));
@@ -244,6 +253,8 @@ static void test_document_names_what_the_build_has(void)
     char document[2048];
     const web_settings_document_t extras = {
         .ntp_server = settings.ntp_server,
+        .device_name = settings.device_name,
+        .device_name_default = "jradio-B670",
         .weather_latitude = settings.weather_latitude,
         .weather_longitude = settings.weather_longitude,
         .openweathermap_key_set = true,
@@ -284,6 +295,10 @@ static void test_document_names_what_the_build_has(void)
        that adding a zone is one line of firmware. */
     assert(strstr(document, "\"timezone\":\"europe/moscow\"") != NULL);
     assert(strstr(document, "\"ntp_server\":\"pool.ntp.org\"") != NULL);
+    /* The name as stored - empty here - beside the built-in one the page
+       shows in its place. */
+    assert(strstr(document, "\"device_name\":\"\"") != NULL);
+    assert(strstr(document, "\"device_name_default\":\"jradio-B670\"") != NULL);
     assert(strstr(document, "\"timezones\":[{\"id\":") != NULL);
     /* The document was built for an English device above, so the zone names
        are English too: a page that said "Москва" beside "Brightness" would be

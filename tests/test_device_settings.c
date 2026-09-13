@@ -406,6 +406,31 @@ static void test_the_clock_settings_persist_and_are_checked(void)
     oversized[sizeof(oversized) - 1U] = '\0';
     assert(!device_settings_set_ntp_server(&settings, oversized));
 
+    /* The device's own name: empty on a card that never had one, which is
+       the built-in "jradio-XXXX" from the MAC. Trimmed, kept across a reload,
+       and emptied again by an empty field. A comma would cut the line. */
+    assert(settings.device_name[0] == '\0');
+    const unsigned char mac[6] = {0x68, 0xEE, 0x8F, 0x4D, 0xB6, 0x70};
+    char built_in[DEVICE_NAME_MAX];
+    device_settings_default_name(mac, built_in, sizeof(built_in));
+    assert(strcmp(built_in, "jradio-B670") == 0);
+    assert(device_settings_set_device_name(&settings, "  Кухня  "));
+    assert(strcmp(settings.device_name, "Кухня") == 0);
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(strcmp(reloaded.device_name, "Кухня") == 0);
+    assert(!device_settings_set_device_name(&settings, "a,b"));
+    assert(!device_settings_set_device_name(&settings, "a\tb"));
+    assert(!device_settings_set_device_name(&settings, "123456789012345678901234567890123"));
+    assert(strcmp(settings.device_name, "Кухня") == 0);
+    assert(device_settings_set_device_name(&settings, ""));
+    assert(settings.device_name[0] == '\0');
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.device_name[0] == '\0');
+    char published[DEVICE_NAME_MAX] = "x";
+    device_settings_publish(&settings);
+    assert(device_settings_published_name(published, sizeof(published)));
+    assert(published[0] == '\0');
+
     /* A file naming a zone this build has never heard of - an older card, or a
      * newer page - leaves the default standing rather than an empty string,
      * which would read as UTC. */

@@ -47,6 +47,7 @@ static const field_descriptor_t k_fields[] = {
     {"volume", WEB_SETTINGS_FIELD_VOLUME, {NULL}, true, false},
     {"timezone", WEB_SETTINGS_FIELD_TIMEZONE, {NULL}, false, true},
     {"ntp_server", WEB_SETTINGS_FIELD_NTP_SERVER, {NULL}, false, true},
+    {"device_name", WEB_SETTINGS_FIELD_DEVICE_NAME, {NULL}, false, true},
     {"weather", WEB_SETTINGS_FIELD_WEATHER, {WEB_SETTINGS_WEATHER_NAMES}, false, false},
     {"weather_latitude", WEB_SETTINGS_FIELD_WEATHER_LATITUDE, {NULL}, false, true},
     {"weather_longitude", WEB_SETTINGS_FIELD_WEATHER_LONGITUDE, {NULL}, false, true},
@@ -206,6 +207,8 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_timezone(settings, change->text);
     case WEB_SETTINGS_FIELD_NTP_SERVER:
         return device_settings_set_ntp_server(settings, change->text);
+    case WEB_SETTINGS_FIELD_DEVICE_NAME:
+        return device_settings_set_device_name(settings, change->text);
     case WEB_SETTINGS_FIELD_WEATHER:
         return device_settings_set_weather_provider(settings,
                                                     (device_weather_provider_t)change->value);
@@ -397,6 +400,10 @@ size_t web_settings_serialize(char *output, size_t output_size,
      * per queued frame. */
     web_json_literal(&writer, ",\"ntp_server\":");
     web_json_string(&writer, document->ntp_server == NULL ? "" : document->ntp_server);
+    web_json_literal(&writer, ",\"device_name\":");
+    web_json_string(&writer, document->device_name == NULL ? "" : document->device_name);
+    web_json_literal(&writer, ",\"device_name_default\":");
+    web_json_string(&writer, document->device_name_default == NULL ? "" : document->device_name_default);
     web_json_literal(&writer, ",\"weather_latitude\":");
     web_json_string(&writer,
                     document->weather_latitude == NULL ? "" : document->weather_latitude);

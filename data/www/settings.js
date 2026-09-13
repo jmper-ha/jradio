@@ -72,6 +72,9 @@
      row: document.querySelector('#bt-output-block'), gate: 'bt_output'},
     {field: 'timezone', kind: 'choice', node: deviceTimezone},
     {field: 'ntp_server', kind: 'text', node: document.querySelector('#device-ntp')},
+    /* Empty means the built-in name; the placeholder says what that is. */
+    {field: 'device_name', kind: 'text', node: document.querySelector('#device-name'),
+     placeholderField: 'device_name_default'},
     {field: 'weather', kind: 'choice', node: document.querySelector('#device-weather')},
     {field: 'weather_latitude', kind: 'text',
      node: document.querySelector('#device-weather-latitude')},
@@ -848,6 +851,9 @@
            life. */
         if (typeof value === 'string' && deviceHeld !== entry.field) {
           entry.node.value = value;
+        }
+        if (entry.placeholderField && typeof payload[entry.placeholderField] === 'string') {
+          entry.node.placeholder = payload[entry.placeholderField];
         }
       } else if (entry.kind === 'switch') {
         if (typeof value === 'boolean') entry.node.checked = value;

@@ -4,6 +4,7 @@
 #include "device_timezone.h"
 
 #ifdef ESP_PLATFORM
+#include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #endif
@@ -208,6 +209,13 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     char server[DEVICE_NTP_SERVER_MAX];
     if (settings_csv_get(path, "ntp_server", server, sizeof(server)) && server[0] != '\0') {
         memcpy(settings->ntp_server, server, strlen(server) + 1U);
+    }
+    /* "-" stands for the built-in name, as it does for no speaker: the file
+     * cannot hold an empty value. */
+    if (settings_csv_get(path, "device_name", settings->device_name,
+                         sizeof(settings->device_name)) &&
+        strcmp(settings->device_name, "-") == 0) {
+        settings->device_name[0] = '\0';
     }
     if (read_value(path, "weather", value, sizeof(value))) {
         settings->weather_provider = weather_provider_from_text(value);
@@ -517,6 +525,33 @@ bool device_settings_set_ntp_server(device_settings_t *settings, const char *hos
     return true;
 }
 
+bool device_settings_set_device_name(device_settings_t *settings, const char *name)
+{
+    if (settings == NULL) return false;
+    const char *start = name == NULL ? "" : name;
+    while (*start == ' ') ++start;
+    size_t length = strlen(start);
+    while (length > 0U && start[length - 1U] == ' ') --length;
+    if (length >= sizeof(settings->device_name)) return false;
+    for (size_t i = 0; i < length; ++i) {
+        const unsigned char character = (unsigned char)start[i];
+        if (character < ' ' || character == 0x7FU || character == ',') return false;
+    }
+    char value[DEVICE_NAME_MAX];
+    memcpy(value, start, length);
+    value[length] = '\0';
+    if (strcmp(settings->device_name, value) == 0) return true;
+    if (!save_value(settings, "device_name", length > 0U ? value : "-")) return false;
+    memcpy(settings->device_name, value, length + 1U);
+    return true;
+}
+
+void device_settings_default_name(const unsigned char mac[6], char *out, size_t size)
+{
+    if (out == NULL || size == 0U) return;
+    snprintf(out, size, "jradio-%02X%02X", mac == NULL ? 0U : mac[4], mac == NULL ? 0U : mac[5]);
+}
+
 bool device_settings_set_weather_provider(device_settings_t *settings,
                                           device_weather_provider_t provider)
 {
@@ -797,6 +832,27 @@ device_language_t device_settings_published_language(void)
     PUBLISH_UNLOCK();
     return language;
 }
+
+bool device_settings_published_name(char *out, size_t size)
+{
+    if (out == NULL || size == 0U) return false;
+    PUBLISH_LOCK();
+    const bool published = s_have_published;
+    snprintf(out, size, "%s", published ? s_published.device_name : "");
+    PUBLISH_UNLOCK();
+    return published;
+}
+
+#ifdef ESP_PLATFORM
+void device_settings_device_name(char *out, size_t size)
+{
+    if (out == NULL || size == 0U) return;
+    if (device_settings_published_name(out, size) && out[0] != '\0') return;
+    unsigned char mac[6] = {0};
+    (void)esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    device_settings_default_name(mac, out, size);
+}
+#endif
 
 bool device_settings_published_switches(bool *yandex_music, bool *dlna)
 {

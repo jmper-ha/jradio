@@ -5,8 +5,9 @@
 ## First run
 
 The device needs Wi-Fi. On its first start it brings up an access point of its
-own: connect to it from a phone, open `http://192.168.4.1` and pick your
-network. While the device is joined to no network at all, the settings page
+own, named after the device - `jradio-XXXX`, the XXXX from the board's serial
+number, until the settings give it another name: connect to it from a phone,
+open `http://192.168.4.1` and pick your network. While the device is joined to no network at all, the settings page
 shows the networks around it with their signal levels - pick one and type the
 password. Up to five networks are remembered, and after that it connects on its
 own.
@@ -141,22 +142,44 @@ On a board with the [jradio-bt module](hardware.en.md#bluetooth-the-jradio-bt-mo
 the menu has a "Bluetooth" source - while the module answers; an unplugged
 module leaves the menu. It has no list: choosing the source opens the player
 screen at once, and until a phone connects the state line says where to look
-for us - the device shows in the phone's Bluetooth as "jRadio" for about two
-minutes after the source is chosen (and again after a press of the encoder).
-A phone that knows us connects on its own.
+for us - the device shows in the phone's Bluetooth under its own name
+(`jradio-XXXX`, or whatever the settings say) for about two minutes after the
+source is chosen (and again after a press of the encoder). A phone that knows
+us connects on its own.
 
 From there it is the radio's screen: the phone's name where a station's goes,
-performer and track from the phone, the back/forward keys move through its
-queue, a press of the encoder pauses and resumes, the knob sets the volume and
-the phone's slider follows it (and the other way round). The position bar
-appears when the phone reports the track's length; cover art from the phone is
-the next step.
+performer, track and cover from the phone, the back/forward keys move through
+its queue, a press of the encoder pauses and resumes, the knob sets the volume
+and the phone's slider follows it (and the other way round). The position bar
+appears when the phone reports the track's length.
+
+#### Sound to a Bluetooth speaker
+
+The same module works the other way too: whatever the device plays - radio,
+files, Yandex, DLNA - goes to a Bluetooth speaker or headphones. It is switched
+on from the settings page of the web interface, in "Sound over Bluetooth":
+"Find speakers" lists what is around (the search takes about five seconds, and
+the Wi-Fi stream may stumble meanwhile - the module's antenna sits next to the
+board's), a tap on a result saves the choice, and from then on the device
+connects to that speaker on its own at every start. The device's screen has the
+same switch - "Sound over Bluetooth" among the general settings; a speaker
+cannot be chosen from the screen.
+
+The speaker's buttons work: pause and play, next and previous station (or
+track), its volume wheel turns the device's volume, and the device's knob sets
+the speaker's. While the sound goes to the speaker the built-in DAC plays too -
+the module listens on the same bus.
 
 ## Settings
 
 Language, the look of the home screen, how long lines scroll, how the buffer
 reading is shown, autoplay, Yandex Music, DLNA, screen brightness, flipping the
 picture vertically and horizontally, volume. They apply at once and are saved.
+
+In the web interface only - "Device name": what the device is called over
+Bluetooth and as the Wi-Fi network during first setup. An empty field is the
+built-in `jradio-XXXX`, shown in the field as its placeholder. Up to 32
+characters, no commas; a phone sees the new name on its next connection.
 
 The "Яндекс Музыка" and "DLNA" switches take the source away everywhere: the
 list on the screen, the carousel, and the web interface. A source switched off

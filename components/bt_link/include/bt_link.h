@@ -78,5 +78,8 @@ esp_err_t bt_link_pairing(bool on);
 esp_err_t bt_link_passthrough(jbt_key_t key);
 /* 0..127 */
 esp_err_t bt_link_set_volume(uint8_t volume);
+/* What the module calls itself to a phone or a speaker. Sent when it
+ * differs from the last one, and again in every greeting; until it is set
+ * the greeting uses the device's own name (device_settings_device_name). */
 esp_err_t bt_link_set_name(const char *name);
 esp_err_t bt_link_disconnect(void);

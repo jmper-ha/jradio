@@ -94,8 +94,9 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_BUFFER_FORMAT] = {"Буфер %u%%", "Buffer %u%%"},
     [DEVICE_TEXT_BUFFER_UNKNOWN] = {"Буфер --", "Buffer --"},
     [DEVICE_TEXT_CHOOSE_TRACK] = {"Выберите трек", "Choose a track"},
-    [DEVICE_TEXT_BLUETOOTH_PAIRING] = {"Найдите jRadio в Bluetooth телефона",
-     "Find jRadio in the phone's Bluetooth"},
+    /* A format: %s is the device's name, "jradio-XXXX" unless renamed. */
+    [DEVICE_TEXT_BLUETOOTH_PAIRING] = {"Найдите %s в Bluetooth телефона",
+     "Find %s in the phone's Bluetooth"},
     [DEVICE_TEXT_CHOOSE_FILE] = {"Выберите файл", "Choose a file"},
     [DEVICE_TEXT_OPENING_FILE] = {"Открытие файла", "Opening the file"},
     [DEVICE_TEXT_SEARCHING_SERVER] = {"Поиск медиасервера", "Looking for a media server"},

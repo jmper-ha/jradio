@@ -124,6 +124,13 @@ typedef enum {
  * comes from. */
 #define DEVICE_LAST_DLNA_TITLE_MAX 128
 
+/* What the device calls itself where a name is shown to a stranger: the
+ * Bluetooth name a phone or a speaker sees, and the setup access point's
+ * SSID. Up to 32 bytes, an SSID's limit, which Bluetooth allows too. Empty
+ * means the built-in "jradio-XXXX", from the last two bytes of the Wi-Fi
+ * MAC - the name the setup network has always had. */
+#define DEVICE_NAME_MAX 33
+
 /* A host name, not a URL: SNTP takes one and resolves it itself. Long enough
  * for the longest pool name anybody uses, and refused rather than truncated
  * past that - half a host name resolves to nothing at all. */
@@ -178,6 +185,8 @@ typedef struct {
     bool bt_output;
     char bt_speaker[18];
     char bt_speaker_name[DEVICE_BT_SPEAKER_NAME_MAX];
+    /* Empty for the built-in one; see DEVICE_NAME_MAX. */
+    char device_name[DEVICE_NAME_MAX];
     /* 0..100. Defaults to 80 rather than full: the first sound after a fresh
      * flash should not be at maximum. */
     unsigned char volume;
@@ -250,6 +259,21 @@ bool device_settings_set_timezone(device_settings_t *settings, const char *id);
  * the pool. Spaces, commas and anything unprintable are refused: the first
  * would not resolve, the second would cut the settings line in two. */
 bool device_settings_set_ntp_server(device_settings_t *settings, const char *host);
+/* The device's own name; empty puts the built-in one back. Trimmed of
+ * surrounding spaces; a comma or a control character is refused, the first
+ * because it would cut the settings line in two. */
+bool device_settings_set_device_name(device_settings_t *settings, const char *name);
+/* The built-in name for a Wi-Fi MAC: "jradio-XXXX". */
+void device_settings_default_name(const unsigned char mac[6], char *out, size_t size);
+/* The name as stored on the settings card, empty for the built-in one;
+ * false before the first publish. */
+bool device_settings_published_name(char *out, size_t size);
+#ifdef ESP_PLATFORM
+/* The name to show a stranger right now: the published one, or the built-in
+ * one from this board's MAC while nothing is published or the field is
+ * empty. */
+void device_settings_device_name(char *out, size_t size);
+#endif
 bool device_settings_set_weather_provider(device_settings_t *settings,
                                           device_weather_provider_t provider);
 /* The panel's one switch: off is off, on is the service the page last

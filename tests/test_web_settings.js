@@ -93,7 +93,7 @@ const ids = [
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
   'device-idle-brightness-value', 'device-screensaver-after-row',
   'device-idle-brightness-row',
-  'device-timezone', 'device-ntp',
+  'device-timezone', 'device-ntp', 'device-name',
   'device-weather', 'device-weather-latitude', 'device-weather-longitude',
   'device-weather-key', 'device-weather-key-row', 'device-weather-now-row',
   'device-weather-now',
@@ -157,6 +157,7 @@ let settingsReply = {
   idle_brightness_min: 5, idle_brightness_max: 50,
   screensaver_seconds_choices: [15, 30, 60, 120, 300, 600],
   timezone: 'asia/yekaterinburg', ntp_server: 'ntp.example.lan',
+  device_name: '', device_name_default: 'jradio-B670',
   weather: 'off', weather_latitude: '55.75', weather_longitude: '37.62',
   openweathermap_key_set: false, weather_state: 'off', weather_http_status: 0,
   weather_report: null,
@@ -1030,6 +1031,16 @@ function lastYandexTimer() {
   // to nothing, and the space is a typo rather than a choice.
   assert.deepEqual(JSON.parse(fetchCalls.at(-1).options.body),
                    {field: 'ntp_server', value: 'time.cloudflare.com'});
+
+  /* The device's name: empty on the card, so the field is empty and the
+     built-in name stands in as its placeholder; typed, it is sent trimmed. */
+  assert.equal(elements['#device-name'].value, '');
+  assert.equal(elements['#device-name'].placeholder, 'jradio-B670');
+  elements['#device-name'].value = ' Кухня ';
+  elements['#device-name'].emit('change');
+  await settle();
+  assert.deepEqual(JSON.parse(fetchCalls.at(-1).options.body),
+                   {field: 'device_name', value: 'Кухня'});
 
   /* The weather. Off on this device, so the key row and the reading are both
      out of the way, and the coordinates show what the card holds. */

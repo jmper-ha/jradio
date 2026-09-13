@@ -7,6 +7,7 @@
 #include "board.h"
 #include "board_features.h"
 #include "board_options.h"
+#include "device_settings.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 
@@ -33,7 +34,6 @@ static const char *TAG = "bt_link";
 #define BT_LINK_PING_MS 2000U
 #define BT_LINK_DEAD_MS 6500U
 /* The name the module announces. */
-#define BT_LINK_DEVICE_NAME "jRadio"
 
 static bt_link_state_t s_state;
 static SemaphoreHandle_t s_state_lock;
@@ -122,9 +122,24 @@ static void bt_link_on_rate(uint32_t sample_rate)
     (void)bt_link_send(JBT_MSG_I2S_FORMAT, 0U, payload, writer.length);
 }
 
+/* The name the module shows a phone or a speaker. Kept here so the greeting
+ * can repeat it after the module reboots, and so a settings change that
+ * leaves it as it was costs the module nothing. */
+static char s_name[DEVICE_NAME_MAX];
+
+static esp_err_t bt_link_send_name(void)
+{
+    uint8_t payload[2U + DEVICE_NAME_MAX];
+    jbt_writer_t writer;
+    jbt_writer_init(&writer, payload, sizeof(payload));
+    if (!jbt_put_tlv_string(&writer, JBT_TAG_NAME, s_name)) return ESP_ERR_INVALID_SIZE;
+    return bt_link_send(JBT_MSG_SET_NAME, 0U, payload, writer.length);
+}
+
 static void bt_link_greet(void)
 {
-    (void)bt_link_set_name(BT_LINK_DEVICE_NAME);
+    if (s_name[0] == '\0') device_settings_device_name(s_name, sizeof(s_name));
+    (void)bt_link_send_name();
     bt_link_on_rate(board_audio_sample_rate());
     if (s_wanted_mode != JBT_MODE_OFF) {
         const uint8_t payload[1] = {s_wanted_mode};
@@ -562,11 +577,11 @@ esp_err_t bt_link_set_volume(uint8_t volume)
 
 esp_err_t bt_link_set_name(const char *name)
 {
-    uint8_t payload[2U + 32U];
-    jbt_writer_t writer;
-    jbt_writer_init(&writer, payload, sizeof(payload));
-    if (!jbt_put_tlv_string(&writer, JBT_TAG_NAME, name)) return ESP_ERR_INVALID_SIZE;
-    return bt_link_send(JBT_MSG_SET_NAME, 0U, payload, writer.length);
+    if (name == NULL || name[0] == '\0' || strlen(name) >= sizeof(s_name)) return ESP_ERR_INVALID_ARG;
+    if (strcmp(s_name, name) == 0) return ESP_OK;
+    snprintf(s_name, sizeof(s_name), "%s", name);
+    if (!s_alive) return ESP_OK;
+    return bt_link_send_name();
 }
 
 esp_err_t bt_link_disconnect(void)

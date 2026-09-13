@@ -538,8 +538,12 @@ esp_err_t bt_link_set_mode(jbt_mode_t mode, uint32_t timeout_ms)
     (void)xSemaphoreTake(s_mode_ack, 0);
     const uint8_t payload[1] = {(uint8_t)mode};
     ESP_RETURN_ON_ERROR(bt_link_send(JBT_MSG_SET_MODE, 0U, payload, sizeof(payload)), TAG, "send");
+    /* A mode the module did not take is not wanted any more: left standing,
+     * a refused sink would keep the output policy from ever putting the
+     * speaker back. The module reports off after a failed switch anyway. */
     if (xSemaphoreTake(s_mode_ack, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
         ESP_LOGW(TAG, "no MODE_ACK for mode %d in %u ms", (int)mode, (unsigned)timeout_ms);
+        s_wanted_mode = JBT_MODE_OFF;
         return ESP_ERR_TIMEOUT;
     }
     bt_link_state_t state;
@@ -547,6 +551,7 @@ esp_err_t bt_link_set_mode(jbt_mode_t mode, uint32_t timeout_ms)
     if (state.acked_mode != (uint8_t)mode || state.acked_result != JBT_RESULT_OK) {
         ESP_LOGW(TAG, "mode %d refused: now %u, result %u", (int)mode, state.acked_mode,
                  state.acked_result);
+        s_wanted_mode = JBT_MODE_OFF;
         return ESP_FAIL;
     }
     return ESP_OK;

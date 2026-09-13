@@ -179,7 +179,9 @@ picture vertically and horizontally, volume. They apply at once and are saved.
 In the web interface only - "Device name": what the device is called over
 Bluetooth and as the Wi-Fi network during first setup. An empty field is the
 built-in `jradio-XXXX`, shown in the field as its placeholder. Up to 32
-characters, no commas; a phone sees the new name on its next connection.
+characters, no commas. A phone that already knows the device remembers the
+old name - to see the new one, forget the device in the phone's Bluetooth and
+find it again.
 
 The "Яндекс Музыка" and "DLNA" switches take the source away everywhere: the
 list on the screen, the carousel, and the web interface. A source switched off

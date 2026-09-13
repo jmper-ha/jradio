@@ -504,10 +504,19 @@ static void player_file_media_removing(void)
  * see board_audio_release_bus() - and both run on this task, which is the
  * one that already blocks to open a station. */
 #define PLAYER_BT_MODE_TIMEOUT_MS 3000U
-/* The volume the module was last told, in its own 0..127, and the phone's
- * last word on it; the two directions must not chase each other. */
-static uint8_t s_bt_volume_sent = 0xFFU;
+/* The phone's last word on the volume (its own 0..127) and the percent the
+ * board was set to for it; the two directions must not chase each other.
+ * The board is only told the knob moved when its percent differs from the
+ * one the phone's value was mapped to - the mapping is lossy (127 steps
+ * onto 100), and sending the phone's value back through it moved the
+ * phone's slider by a step and made the two disagree. */
 static uint8_t s_bt_volume_heard = 0xFFU;
+static uint8_t s_bt_volume_percent = 0xFFU;
+/* The sync runs on every task that builds a snapshot - the panel's and the
+ * web's - and two of them racing through it with one stale reading between
+ * them put an older value on the board after a newer one, now and then,
+ * while a phone's slider was being dragged. One at a time. */
+static SemaphoreHandle_t s_bt_volume_lock;
 
 static bool player_bt_open(void)
 {
@@ -521,14 +530,14 @@ static bool player_bt_open(void)
         (void)board_audio_reclaim_bus();
         return false;
     }
-    s_bt_volume_sent = bt_link_volume_to_module(board_audio_volume());
-    (void)bt_link_set_volume(s_bt_volume_sent);
-    bt_link_state_t state;
-    bt_link_snapshot(&state);
-    s_bt_volume_heard = state.status.volume;
+    s_bt_volume_percent = board_audio_volume();
+    (void)bt_link_set_volume(bt_link_volume_to_module(s_bt_volume_percent));
+    bt_link_brief_t brief;
+    bt_link_brief(&brief);
+    s_bt_volume_heard = brief.status.volume;
     /* No phone yet: be found. A phone that knows us comes back on its own,
      * and the window closes by itself once one is connected. */
-    if (state.status.connection != JBT_CONN_CONNECTED) (void)bt_link_pairing(true);
+    if (brief.status.connection != JBT_CONN_CONNECTED) (void)bt_link_pairing(true);
     return true;
 }
 
@@ -551,19 +560,25 @@ static void player_bt_close(void)
  * the module, the phone's comes back to the board so the panel shows it. */
 static void player_bt_sync_volume(void)
 {
-    bt_link_state_t state;
-    bt_link_snapshot(&state);
-    if (state.status.volume != s_bt_volume_heard) {
-        s_bt_volume_heard = state.status.volume;
-        s_bt_volume_sent = state.status.volume;
-        board_audio_set_volume(bt_link_volume_to_percent(state.status.volume));
-        return;
+    /* The module's word is read inside the lock, so a task that got here
+     * second cannot be holding an older reading than the one that got here
+     * first. */
+    if (s_bt_volume_lock == NULL) return;
+    xSemaphoreTake(s_bt_volume_lock, portMAX_DELAY);
+    bt_link_brief_t brief;
+    bt_link_brief(&brief);
+    if (brief.status.volume != s_bt_volume_heard) {
+        s_bt_volume_heard = brief.status.volume;
+        s_bt_volume_percent = bt_link_volume_to_percent(brief.status.volume);
+        board_audio_set_volume(s_bt_volume_percent);
+    } else {
+        const uint8_t percent = board_audio_volume();
+        if (percent != s_bt_volume_percent) {
+            s_bt_volume_percent = percent;
+            (void)bt_link_set_volume(bt_link_volume_to_module(percent));
+        }
     }
-    const uint8_t wanted = bt_link_volume_to_module(board_audio_volume());
-    if (wanted != s_bt_volume_sent) {
-        s_bt_volume_sent = wanted;
-        (void)bt_link_set_volume(wanted);
-    }
+    xSemaphoreGive(s_bt_volume_lock);
 }
 
 static bool player_stop_active_source(audio_source_t source)
@@ -949,9 +964,9 @@ static void player_control_task(void *arg)
                 /* Play on the phone if one is here; otherwise open the door
                  * again, which is what a speaker's play button does with no
                  * phone around. */
-                bt_link_state_t state;
-                bt_link_snapshot(&state);
-                if (state.status.connection == JBT_CONN_CONNECTED) {
+                bt_link_brief_t brief;
+                bt_link_brief(&brief);
+                if (brief.status.connection == JBT_CONN_CONNECTED) {
                     started = bt_link_passthrough(JBT_KEY_PLAY) == ESP_OK;
                 } else {
                     (void)bt_link_pairing(true);
@@ -1122,6 +1137,8 @@ static void player_control_task(void *arg)
 
 esp_err_t player_control_init(void)
 {
+    s_bt_volume_lock = xSemaphoreCreateMutex();
+    if (s_bt_volume_lock == NULL) return ESP_ERR_NO_MEM;
     if (s_command_queue != NULL) {
         return ESP_OK;
     }
@@ -1302,8 +1319,8 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
          * stopped with an empty name, which the panel turns into the
          * pairing hint. */
         player_bt_sync_volume();
-        bt_link_state_t state;
-        bt_link_snapshot(&state);
+        bt_link_brief_t state;
+        bt_link_brief(&state);
         const bool connected = state.status.connection == JBT_CONN_CONNECTED;
         if (!bt_link_alive()) {
             snapshot->playback_state = PLAYER_PLAYBACK_ERROR;
@@ -1320,15 +1337,13 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
         }
         snapshot->active_item_index = PLAYER_ITEM_NONE;
         snapshot->item_count = 0U;
-        if (connected) {
-            snprintf(snapshot->context, sizeof(snapshot->context), "%s", state.peer_name);
-        }
+        if (connected) bt_link_peer_name(snapshot->context, sizeof(snapshot->context));
         /* The title alone here; the performer and the album travel as tags
          * (player_control_track_tags), because a performer with a dash in
          * their name - "Nora En Pure - Purified Radio", seen on the first
          * phone - is cut in two by the ICY split. */
-        snprintf(snapshot->stream_title, sizeof(snapshot->stream_title), "%.*s",
-                 (int)sizeof(snapshot->stream_title) - 1, state.title);
+        bt_link_track_text(snapshot->stream_title, sizeof(snapshot->stream_title), NULL, 0U,
+                           NULL, 0U);
         snprintf(snapshot->codec, sizeof(snapshot->codec), "%s",
                  state.status.codec == JBT_CODEC_AAC ? "AAC" : state.status.codec == JBT_CODEC_SBC ? "SBC" : "");
         snapshot->sample_rate_hz = state.status.sample_rate;
@@ -1481,11 +1496,11 @@ bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_se
     if (source == AUDIO_SOURCE_BLUETOOTH) {
         /* The phone reports its position once a second and the track's
          * length with the track; a phone that reports neither shows no bar. */
-        bt_link_state_t state;
-        bt_link_snapshot(&state);
-        if (state.status.connection != JBT_CONN_CONNECTED || state.duration_ms == 0U) return false;
-        *elapsed_seconds = state.position_ms / 1000U;
-        *total_seconds = state.duration_ms / 1000U;
+        bt_link_brief_t brief;
+        bt_link_brief(&brief);
+        if (brief.status.connection != JBT_CONN_CONNECTED || brief.duration_ms == 0U) return false;
+        *elapsed_seconds = brief.position_ms / 1000U;
+        *total_seconds = brief.duration_ms / 1000U;
         return true;
     }
     if (!audio_source_is_files(source)) return false;
@@ -1507,11 +1522,8 @@ bool player_control_track_tags(audio_tags_t *tags)
     const audio_source_t source =
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
     if (source == AUDIO_SOURCE_BLUETOOTH) {
-        bt_link_state_t state;
-        bt_link_snapshot(&state);
-        snprintf(tags->title, sizeof(tags->title), "%.*s", (int)sizeof(tags->title) - 1, state.title);
-        snprintf(tags->artist, sizeof(tags->artist), "%.*s", (int)sizeof(tags->artist) - 1, state.artist);
-        snprintf(tags->album, sizeof(tags->album), "%.*s", (int)sizeof(tags->album) - 1, state.album);
+        bt_link_track_text(tags->title, sizeof(tags->title), tags->artist, sizeof(tags->artist),
+                           tags->album, sizeof(tags->album));
         return audio_tags_have_text(tags);
     }
     if (!audio_source_is_files(source)) return false;

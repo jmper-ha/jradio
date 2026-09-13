@@ -9,6 +9,7 @@
  * need no #if of their own. */
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "bt_link_model.h"
@@ -20,6 +21,24 @@ esp_err_t bt_link_init(void);
 bool bt_link_alive(void);
 
 void bt_link_snapshot(bt_link_state_t *out);
+
+/* The small part of the snapshot, for the callers that run on every
+ * frame the web or the panel builds: the whole bt_link_state_t is half a
+ * kilobyte of strings, and three copies of it on the httpd task's stack
+ * were what took the S3 down when a phone's slider moved fast. */
+typedef struct {
+    jbt_status_t status;
+    uint32_t position_ms;
+    uint32_t duration_ms;
+    uint32_t track_revision;
+} bt_link_brief_t;
+
+void bt_link_brief(bt_link_brief_t *out);
+
+/* One field of the track at a time, copied out under the lock. */
+void bt_link_track_text(char *title, size_t title_size, char *artist, size_t artist_size,
+                        char *album, size_t album_size);
+void bt_link_peer_name(char *out, size_t out_size);
 
 /* SET_MODE with its handshake: returns once the module has acked with the
  * mode asked for, or fails after `timeout_ms`. The caller owns the bus

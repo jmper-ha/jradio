@@ -5351,6 +5351,18 @@ static void ui_task(void *arg)
         default:
             break;
         }
+        /* The volume can change under this task: a phone over Bluetooth
+         * sets it straight on the board. Treated exactly like a turn of the
+         * knob - published, saved after it settles - or the next reload of
+         * the settings put the file's old value back, and the phone and the
+         * panel disagreed after every quick drag of the slider. */
+        if (!s_volume_save_pending && board_audio_volume() != s_device_settings.volume) {
+            s_device_settings.volume = board_audio_volume();
+            s_volume_save_pending = true;
+            s_volume_changed_ms = ui_tick_get_ms();
+            device_settings_publish(&s_device_settings);
+            ui_update_footer();
+        }
         if (ui_volume_commit_due(s_volume_save_pending, s_volume_changed_ms,
                                  ui_tick_get_ms(), UI_VOLUME_SETTLE_MS)) {
             s_volume_save_pending = false;

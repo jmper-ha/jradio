@@ -1736,7 +1736,11 @@ esp_err_t web_server_start(void)
         s_websocket_recovery_required = false;
     } else {
         httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-        config.stack_size = 6144;
+        /* 8 KB, up from 6: the worker builds a player snapshot for every
+         * event frame, and the Bluetooth source's snapshot - module state and
+         * tags on top of the rest - took the headroom to 1448 and then
+         * through the floor while a phone's volume slider was moving. */
+        config.stack_size = 8192;
         // The HTTP worker is network-bound; keep it on core 0 with Wi-Fi and
         // lwIP so it cannot preempt the audio decoder pinned to core 1.
         config.core_id = 0;

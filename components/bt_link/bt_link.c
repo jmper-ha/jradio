@@ -1,5 +1,6 @@
 #include "bt_link.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "album_art.h"
@@ -188,7 +189,21 @@ static void bt_link_on_frame(const jbt_frame_t *frame)
     if (changed & BT_LINK_CHANGED_MODE_ACK) xSemaphoreGive(s_mode_ack);
     if (changed & BT_LINK_CHANGED_EVENT) {
         ESP_LOGI(TAG, "event %u", (unsigned)s_state.event);
-        if (s_state.event == JBT_EVENT_BOOTED) bt_link_greet();
+        if (s_state.event == JBT_EVENT_BOOTED) {
+            /* A rebooted module has no phone, no track and no cover, and
+             * its STATUS arrives after this; until then the old ones would
+             * stand. The cover is taken down with the rest. */
+            xSemaphoreTake(s_state_lock, portMAX_DELAY);
+            const uint32_t events = s_state.events;
+            bt_link_model_init(&s_state);
+            s_state.events = events;
+            xSemaphoreGive(s_state_lock);
+            if (s_cover_shown_hash != 0U) {
+                album_art_clear();
+                s_cover_shown_hash = 0U;
+            }
+            bt_link_greet();
+        }
         if (s_state.event == JBT_EVENT_DISCONNECTED && s_cover_shown_hash != 0U) {
             /* The picture belonged to the phone that left. */
             album_art_clear();
@@ -279,6 +294,43 @@ void bt_link_snapshot(bt_link_state_t *out)
     xSemaphoreGive(s_state_lock);
 }
 
+void bt_link_brief(bt_link_brief_t *out)
+{
+    if (out == NULL) return;
+    memset(out, 0, sizeof(*out));
+    if (s_state_lock == NULL) return;
+    xSemaphoreTake(s_state_lock, portMAX_DELAY);
+    out->status = s_state.status;
+    out->position_ms = s_state.position_ms;
+    out->duration_ms = s_state.duration_ms;
+    out->track_revision = s_state.track_revision;
+    xSemaphoreGive(s_state_lock);
+}
+
+void bt_link_track_text(char *title, size_t title_size, char *artist, size_t artist_size,
+                        char *album, size_t album_size)
+{
+    if (title != NULL && title_size > 0U) title[0] = '\0';
+    if (artist != NULL && artist_size > 0U) artist[0] = '\0';
+    if (album != NULL && album_size > 0U) album[0] = '\0';
+    if (s_state_lock == NULL) return;
+    xSemaphoreTake(s_state_lock, portMAX_DELAY);
+    if (title != NULL) snprintf(title, title_size, "%s", s_state.title);
+    if (artist != NULL) snprintf(artist, artist_size, "%s", s_state.artist);
+    if (album != NULL) snprintf(album, album_size, "%s", s_state.album);
+    xSemaphoreGive(s_state_lock);
+}
+
+void bt_link_peer_name(char *out, size_t out_size)
+{
+    if (out == NULL || out_size == 0U) return;
+    out[0] = '\0';
+    if (s_state_lock == NULL) return;
+    xSemaphoreTake(s_state_lock, portMAX_DELAY);
+    snprintf(out, out_size, "%s", s_state.peer_name);
+    xSemaphoreGive(s_state_lock);
+}
+
 esp_err_t bt_link_set_mode(jbt_mode_t mode, uint32_t timeout_ms)
 {
     s_wanted_mode = (uint8_t)mode;
@@ -334,6 +386,24 @@ esp_err_t bt_link_disconnect(void)
 }
 
 #else /* !BOARD_HAS_BLUETOOTH */
+
+void bt_link_brief(bt_link_brief_t *out)
+{
+    if (out != NULL) memset(out, 0, sizeof(*out));
+}
+
+void bt_link_track_text(char *title, size_t title_size, char *artist, size_t artist_size,
+                        char *album, size_t album_size)
+{
+    if (title != NULL && title_size > 0U) title[0] = '\0';
+    if (artist != NULL && artist_size > 0U) artist[0] = '\0';
+    if (album != NULL && album_size > 0U) album[0] = '\0';
+}
+
+void bt_link_peer_name(char *out, size_t out_size)
+{
+    if (out != NULL && out_size > 0U) out[0] = '\0';
+}
 
 esp_err_t bt_link_init(void)
 {

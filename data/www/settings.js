@@ -468,7 +468,6 @@
     btChosenState.textContent = chosen
       ? (phone ? t('bt.phone') : connected ? t('bt.connected') : t('bt.disconnected'))
       : '';
-    btScanButton.disabled = phone;
     /* The speakers known come first and stay: a tap chooses, "forget"
        unpairs. What a scan found follows, without those already known. */
     const valid = (speaker) => isObject(speaker) && typeof speaker.address === 'string';
@@ -512,6 +511,11 @@
        "looking" a second later, was a line that flashed shut and open. */
     if (body.scanning === true) btScan = 'scanning';
     else if (btScan === 'scanning') btScan = 'done';
+    /* The button itself shows the scan: pressed down and saying so while it
+       runs, so a second press is not a press that did nothing. */
+    const running = btScan === 'starting' || btScan === 'scanning';
+    btScanButton.disabled = phone || running;
+    btScanButton.textContent = running ? t('bt.scanning_button') : t('bt.scan');
     if (phone) {
       btSpeakersEmpty.textContent = t('bt.phone_note');
       btSpeakersEmpty.hidden = false;
@@ -552,6 +556,8 @@
             btTimer = null;
             if (btScan === 'starting') {
               btScan = 'idle';
+              btScanButton.disabled = false;
+              btScanButton.textContent = t('bt.scan');
               btSpeakersEmpty.textContent = t('bt.scan_failed');
               btSpeakersEmpty.hidden = false;
             }
@@ -560,6 +566,8 @@
         .catch(() => {
           btTimer = null;
           btScan = 'idle';
+          btScanButton.disabled = false;
+          btScanButton.textContent = t('bt.scan');
           btSpeakersEmpty.textContent = t('bt.scan_failed');
           btSpeakersEmpty.hidden = false;
         });
@@ -569,6 +577,8 @@
   function startSpeakerScan() {
     if (btTimer !== null || btScanButton.disabled) return;
     btScan = 'starting';
+    btScanButton.disabled = true;
+    btScanButton.textContent = t('bt.scanning_button');
     btSpeakersEmpty.textContent = t('bt.scanning');
     btSpeakersEmpty.hidden = false;
     window.fetch('/api/bt/speakers?scan=1', {cache: 'no-store'})
@@ -582,6 +592,8 @@
       })
       .catch(() => {
         btScan = 'idle';
+        btScanButton.disabled = false;
+        btScanButton.textContent = t('bt.scan');
         btSpeakersEmpty.textContent = t('bt.scan_failed');
         btSpeakersEmpty.hidden = false;
       });

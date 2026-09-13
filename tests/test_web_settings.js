@@ -642,6 +642,8 @@ function lastYandexTimer() {
   assert.ok(fetchCalls.some((call) => call.url === '/api/bt/speakers?scan=1'));
   assert.equal(elements['#bt-speakers-empty'].hidden, false);
   assert.ok(elements['#bt-speakers-empty'].textContent.startsWith('Ищем'));
+  assert.equal(elements['#bt-scan'].disabled, true);
+  assert.equal(elements['#bt-scan'].textContent, 'Ищем…');
   speakersReply = {...speakersReply, scanning: true};
   timers.filter((entry) => !entry.cleared && entry.delay === 1000).at(-1).callback();
   await settle();
@@ -652,6 +654,8 @@ function lastYandexTimer() {
   timers.filter((entry) => !entry.cleared && entry.delay === 1000).at(-1).callback();
   await settle();
   assert.equal(elements['#bt-speakers-empty'].hidden, true);
+  assert.equal(elements['#bt-scan'].disabled, false);
+  assert.equal(elements['#bt-scan'].textContent, 'Найти колонки');
   const speakerRows = elements['#bt-speakers'].children;
   assert.equal(speakerRows.length, 2);
   assert.equal(speakerRows[0].children[0].textContent, 'JBL Flip');

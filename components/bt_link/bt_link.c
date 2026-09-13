@@ -512,6 +512,18 @@ void bt_link_peer_name(char *out, size_t out_size)
     xSemaphoreGive(s_state_lock);
 }
 
+bool bt_link_output_peer(char *address, size_t address_size, char *name, size_t name_size)
+{
+    if (address != NULL && address_size > 0U) address[0] = '\0';
+    if (name != NULL && name_size > 0U) name[0] = '\0';
+    if (!bt_link_output_connected() || s_state_lock == NULL) return false;
+    xSemaphoreTake(s_state_lock, portMAX_DELAY);
+    if (address != NULL) bt_link_address_to_text(s_state.status.peer, address, address_size);
+    if (name != NULL) snprintf(name, name_size, "%s", s_state.peer_name);
+    xSemaphoreGive(s_state_lock);
+    return true;
+}
+
 void bt_link_module_version(char *out, size_t out_size)
 {
     if (out == NULL || out_size == 0U) return;
@@ -548,7 +560,16 @@ esp_err_t bt_link_set_output(bool enabled, const char *address)
             s_wanted_mode = JBT_MODE_OFF;
             (void)bt_link_ask_mode(JBT_MODE_OFF);
         } else {
-            (void)bt_link_send(JBT_MSG_DISCONNECT, 0U, NULL, 0U);
+            /* Unless the choice is the device already sending - the UI
+             * adopting a speaker that called in by itself - in which case
+             * dropping it would be dropping the music. */
+            bool already = false;
+            if (has_speaker && s_speaker_connected && s_state_lock != NULL) {
+                xSemaphoreTake(s_state_lock, portMAX_DELAY);
+                already = memcmp(s_state.status.peer, speaker, sizeof(speaker)) == 0;
+                xSemaphoreGive(s_state_lock);
+            }
+            if (!already) (void)bt_link_send(JBT_MSG_DISCONNECT, 0U, NULL, 0U);
             s_output_tried_us = 0;
         }
     }
@@ -714,6 +735,13 @@ void bt_link_track_text(char *title, size_t title_size, char *artist, size_t art
 void bt_link_peer_name(char *out, size_t out_size)
 {
     if (out != NULL && out_size > 0U) out[0] = '\0';
+}
+
+bool bt_link_output_peer(char *address, size_t address_size, char *name, size_t name_size)
+{
+    if (address != NULL && address_size > 0U) address[0] = '\0';
+    if (name != NULL && name_size > 0U) name[0] = '\0';
+    return false;
 }
 
 void bt_link_module_version(char *out, size_t out_size)

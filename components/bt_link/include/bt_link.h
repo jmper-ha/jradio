@@ -39,6 +39,9 @@ void bt_link_brief(bt_link_brief_t *out);
 void bt_link_track_text(char *title, size_t title_size, char *artist, size_t artist_size,
                         char *album, size_t album_size);
 void bt_link_peer_name(char *out, size_t out_size);
+/* The device the module is sending to, while it is: address as text and
+ * the name it gave. False - and both empty - otherwise. */
+bool bt_link_output_peer(char *address, size_t address_size, char *name, size_t name_size);
 /* The module's firmware as "1.0.0", for the About page; empty while the
  * module has not answered. */
 void bt_link_module_version(char *out, size_t out_size);

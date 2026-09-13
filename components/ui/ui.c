@@ -2980,6 +2980,25 @@ static void ui_apply_device_name(void)
     (void)bt_link_set_name(name);
 }
 
+static void ui_adopt_speaker(void)
+{
+    char address[18];
+    char name[DEVICE_BT_SPEAKER_NAME_MAX];
+    if (!bt_link_output_peer(address, sizeof(address), name, sizeof(name))) return;
+    const bool other = strcmp(address, s_device_settings.bt_speaker) != 0;
+    /* The name arrives a moment after the connection; a stored one is
+     * completed when it comes, never overwritten with nothing. */
+    const bool named = name[0] != '\0' && strcmp(name, s_device_settings.bt_speaker_name) != 0;
+    if (!other && !named) return;
+    if (!device_settings_set_bt_speaker(&s_device_settings, address,
+                                        name[0] != '\0' ? name : (other ? "" : s_device_settings.bt_speaker_name))) {
+        return;
+    }
+    ESP_LOGI(TAG, "speaker is now %s \"%s\"", address, s_device_settings.bt_speaker_name);
+    device_settings_publish(&s_device_settings);
+    ui_apply_bt_output();
+}
+
 static void ui_reload_settings(void)
 {
     /* A knob being turned right now has not reached the file yet - the write
@@ -5437,6 +5456,11 @@ static void ui_task(void *arg)
             device_settings_publish(&s_device_settings);
             ui_update_footer();
         }
+        /* The speaker can change under this task too: a paired one that is
+         * switched on calls the module itself, whichever was chosen. What is
+         * playing is the speaker, so the choice follows it - the settings,
+         * the module's memory and the page then name the same device. */
+        ui_adopt_speaker();
         if (ui_volume_commit_due(s_volume_save_pending, s_volume_changed_ms,
                                  ui_tick_get_ms(), UI_VOLUME_SETTLE_MS)) {
             s_volume_save_pending = false;

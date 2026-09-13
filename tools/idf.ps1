@@ -138,7 +138,13 @@ if ($env:JRADIO_IDF) {
 
 # Says so rather than leaving the difference to be discovered in a build error:
 # a stale IDF_PATH is exactly what this script now steps around.
-if ($idf -and $env:IDF_PATH -and $env:IDF_PATH -ne $idf) {
+# Compared as resolved paths: the extension writes IDF_PATH with forward
+# slashes, and Windows does not mind, but a string comparison would.
+$activeIdf = ''
+if ($env:IDF_PATH -and (Test-Path -LiteralPath $env:IDF_PATH)) {
+    $activeIdf = (Resolve-Path -LiteralPath $env:IDF_PATH).Path
+}
+if ($idf -and $env:IDF_PATH -and $activeIdf -ne $idf) {
     Write-Host "tools/idf.ps1: ignoring IDF_PATH=$($env:IDF_PATH); set JRADIO_IDF to override"
 }
 
@@ -172,24 +178,61 @@ Write-Host "tools/idf.ps1: ESP-IDF $idf"
 # is how the VS Code extension reads it too. It prints some of them with
 # Write-Host, hence the merge of every stream.
 $activated = $false
-if ($manifestEntry.ContainsKey($idf)) {
-    $script = $manifestEntry[$idf].activationScript
-    if ($script -and (Test-Path -LiteralPath $script)) {
-        $lines = @()
-        try { $lines = @(& $script -e *>&1 | ForEach-Object { "$_" }) } catch { $lines = @() }
-        foreach ($line in $lines) {
-            $at = $line.IndexOf('=')
-            if ($at -lt 1) { continue }
-            $key = $line.Substring(0, $at)
-            $value = $line.Substring($at + 1)
-            if ($key -eq 'PATH') { $env:PATH = "$value;$env:PATH" }
-            elseif ($key -match '^[A-Z_]+$' -and $value) { Set-Item -Path "env:$key" -Value $value }
-        }
-        if ($env:IDF_PYTHON_ENV_PATH -and (Test-Path -LiteralPath (Join-Path $env:IDF_PYTHON_ENV_PATH 'Scripts/python.exe'))) {
-            Write-Host "tools/idf.ps1: activated by $script"
-            $activated = $true
-        }
+
+# Already activated - the task was started from a shell that ran export.ps1
+# or EIM's script, and the extension's own terminal exports the same
+# variables: the interpreter is named and the framework matches. Nothing to
+# do but use it.
+if ($env:IDF_PYTHON_ENV_PATH -and $activeIdf -eq $idf -and
+    (Test-Path -LiteralPath (Join-Path $env:IDF_PYTHON_ENV_PATH 'Scripts/python.exe'))) {
+    Write-Host "tools/idf.ps1: already activated"
+    $activated = $true
+}
+
+# EIM's activation script for this install: the manifest names it, and when
+# the manifest is not where this script looks (an EIM that keeps it
+# elsewhere, an install moved by hand), the script itself is still beside
+# the framework - C:\esp\v5.5.5\Microsoft.PowerShell_profile.ps1 next to
+# C:\esp\v5.5.5\esp-idf - which is what the desktop shortcut runs. A user
+# whose idf.py worked in the extension's terminal and not in the task had
+# exactly that: export.ps1 was tried, and it looks for the venv under the
+# profile where EIM never put it.
+$scripts = New-Object System.Collections.Generic.List[string]
+if ($manifestEntry.ContainsKey($idf) -and $manifestEntry[$idf].activationScript) {
+    $scripts.Add($manifestEntry[$idf].activationScript)
+}
+$scripts.Add((Join-Path (Split-Path -Parent $idf) 'Microsoft.PowerShell_profile.ps1'))
+$scripts.Add((Join-Path $idf 'Microsoft.PowerShell_profile.ps1'))
+foreach ($script in $scripts) {
+    if ($activated) { break }
+    if (-not (Test-Path -LiteralPath $script)) { continue }
+    $lines = @()
+    try { $lines = @(& $script -e *>&1 | ForEach-Object { "$_" }) } catch { $lines = @() }
+    foreach ($line in $lines) {
+        $at = $line.IndexOf('=')
+        if ($at -lt 1) { continue }
+        $key = $line.Substring(0, $at)
+        $value = $line.Substring($at + 1)
+        if ($key -eq 'PATH') { $env:PATH = "$value;$env:PATH" }
+        elseif ($key -match '^[A-Z_]+$' -and $value) { Set-Item -Path "env:$key" -Value $value }
     }
+    if ($env:IDF_PYTHON_ENV_PATH -and (Test-Path -LiteralPath (Join-Path $env:IDF_PYTHON_ENV_PATH 'Scripts/python.exe'))) {
+        Write-Host "tools/idf.ps1: activated by $script"
+        $activated = $true
+    } else {
+        Write-Host "tools/idf.ps1: $script did not name a Python environment; trying the next way"
+    }
+}
+
+function Write-EimNote {
+    Write-Host ''
+    Write-Host 'A framework installed by the ESP-IDF Installation Manager is activated by'
+    Write-Host 'the script it wrote beside the framework, and none was found at'
+    foreach ($script in $scripts) { Write-Host "  $script" }
+    Write-Host 'If idf.py works in the "ESP-IDF Terminal" of VS Code, that terminal knows'
+    Write-Host 'the Python environment: type  echo $env:IDF_PYTHON_ENV_PATH  there and set'
+    Write-Host 'IDF_PYTHON_ENV_PATH and IDF_PATH to what it shows before running the task.'
+    Write-Host "A framework cloned by hand needs install.bat run in $idf first."
 }
 
 if (-not $activated) {
@@ -209,7 +252,8 @@ if (-not $activated) {
     } catch {
         Get-Content $log | Write-Host
         Remove-Item $log -ErrorAction SilentlyContinue
-        Write-Host "tools/idf.ps1: export.ps1 failed - run install.bat in $idf first"
+        Write-Host "tools/idf.ps1: export.ps1 failed."
+        Write-EimNote
         exit 1
     } finally {
         $ErrorActionPreference = $strict
@@ -218,7 +262,8 @@ if (-not $activated) {
         -not (Test-Path -LiteralPath (Join-Path $env:IDF_PYTHON_ENV_PATH 'Scripts/python.exe'))) {
         Get-Content $log | Write-Host
         Remove-Item $log -ErrorAction SilentlyContinue
-        Write-Host "tools/idf.ps1: no Python environment after export.ps1 - run install.bat in $idf"
+        Write-Host "tools/idf.ps1: no Python environment after export.ps1."
+        Write-EimNote
         exit 1
     }
     Remove-Item $log -ErrorAction SilentlyContinue

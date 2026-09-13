@@ -88,7 +88,7 @@ const ids = [
   'device-autoplay', 'device-yandex', 'device-yandex-row',
   'device-dlna', 'device-dlna-row',
   'bt-output-block', 'device-bt-output', 'bt-speakers', 'bt-speakers-empty',
-  'bt-chosen', 'bt-chosen-name', 'bt-chosen-state', 'bt-scan', 'bt-forget',
+  'bt-chosen', 'bt-chosen-name', 'bt-chosen-state', 'bt-scan',
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal',
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
@@ -185,8 +185,10 @@ let scanStartOk = true;
 let scanReply = {state: 'done', networks: []};
 /* The module's speaker list: what GET /api/bt/speakers reports, and what a
    choice posted to /api/bt/speaker comes back as. */
-let speakersReply = {available: true, scanning: false, connected: false, chosen: '', chosen_name: '', found: []};
+let speakersReply = {available: true, scanning: false, connected: false, chosen: '', chosen_name: '',
+                     known: [], found: []};
 const speakerPosts = [];
+const speakerForgets = [];
 // What POST /api/restore answers, and the status it answers with.
 let restoreReply = {restored: ['wifi.json', 'settings.csv'], warnings: [], reboot: true};
 let restoreOk = true;
@@ -239,11 +241,24 @@ const context = {
         }
         return Promise.resolve({ok: true, json: () => Promise.resolve(scanReply)});
       }
+      if (String(url).startsWith('/api/bt/forget')) {
+        const body = JSON.parse(options.body);
+        speakerForgets.push(body.address);
+        speakersReply = {...speakersReply,
+                         known: speakersReply.known.filter((entry) => entry.address !== body.address),
+                         chosen: speakersReply.chosen === body.address ? '' : speakersReply.chosen,
+                         chosen_name: speakersReply.chosen === body.address ? '' : speakersReply.chosen_name};
+        return Promise.resolve({ok: true, json: () => Promise.resolve(speakersReply)});
+      }
       if (String(url).startsWith('/api/bt/speaker')) {
         if (options && options.method === 'POST' && typeof options.body === 'string') {
           const body = JSON.parse(options.body);
           speakerPosts.push(body);
-          speakersReply = {...speakersReply, chosen: body.address, chosen_name: body.name};
+          /* Chosen is known, as the device does it. */
+          const known = [{address: body.address, name: body.name}]
+            .concat(speakersReply.known.filter((entry) => entry.address !== body.address));
+          speakersReply = {...speakersReply, chosen: body.address, chosen_name: body.name,
+                           known: body.address ? known : speakersReply.known};
         }
         return Promise.resolve({ok: true, json: () => Promise.resolve(speakersReply)});
       }
@@ -616,9 +631,9 @@ function lastYandexTimer() {
   assert.equal(elements['#bt-output-block'].hidden, false);
   await settle();
   assert.equal(elements['#bt-chosen-name'].textContent, 'не выбрана');
-  assert.equal(elements['#bt-forget'].hidden, true);
   /* A scan: the list fills from what the module found, a click saves the
-     address and the name, and the chosen one is marked. */
+     address and the name, and the chosen one is then a known speaker with
+     its mark and its own "forget" - the found row for it goes. */
   speakersReply = {...speakersReply, scanning: false,
                    found: [{address: '3D:AB:55:FA:58:FC', name: 'JBL Flip', rssi: -60},
                            {address: '01:02:03:04:05:06', name: '', rssi: -80}]};
@@ -633,11 +648,21 @@ function lastYandexTimer() {
   await settle();
   assert.deepEqual(speakerPosts[speakerPosts.length - 1], {address: '3D:AB:55:FA:58:FC', name: 'JBL Flip'});
   assert.equal(elements['#bt-chosen-name'].textContent, 'JBL Flip');
-  assert.equal(elements['#bt-forget'].hidden, false);
-  elements['#bt-forget'].emit('click');
+  const knownRows = elements['#bt-speakers'].children;
+  assert.equal(knownRows.length, 2);
+  assert.equal(knownRows[0].children[0].textContent, 'JBL Flip');
+  assert.equal(knownRows[0].children[1].textContent, '✓');
+  assert.equal(knownRows[0].children[2].textContent, 'Забыть');
+  assert.equal(knownRows[1].children[0].textContent, 'без имени');
+  /* Forgetting the chosen one: the row goes, the choice with it. */
+  knownRows[0].children[2].emit('click');
   await settle();
-  assert.deepEqual(speakerPosts[speakerPosts.length - 1], {address: '', name: ''});
+  assert.deepEqual(speakerForgets, ['3D:AB:55:FA:58:FC']);
   assert.equal(elements['#bt-chosen-name'].textContent, 'не выбрана');
+  // Still in the scan's list, as a find again - with its signal, no "forget".
+  assert.equal(elements['#bt-speakers'].children.length, 2);
+  assert.equal(elements['#bt-speakers'].children[0].children[0].textContent, 'JBL Flip');
+  assert.ok(elements['#bt-speakers'].children[0].children[1].textContent.endsWith('dBm'));
   /* The phone has the module: the search button is off, the line beside
      the speaker says why, and a click starts nothing. */
   speakersReply = {...speakersReply, chosen: '3D:AB:55:FA:58:FC', chosen_name: 'JBL Flip', phone: true};

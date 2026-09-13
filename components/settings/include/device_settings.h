@@ -111,6 +111,13 @@ typedef enum {
  * this layer stores strings and knows nothing about UPnP. The sizes are
  * checked against those headers where the two meet - see dlna_source.c. */
 #define DEVICE_BT_SPEAKER_NAME_MAX 48
+/* The speakers the device has sent to, newest first, so the page can offer
+ * them without a scan: a person with a speaker and a pair of headphones
+ * switches between the two. Packed into one settings.csv value as
+ * "address<TAB>name|address<TAB>name", which is why a name may hold neither
+ * character, and capped where the value's 256 bytes run out. */
+#define DEVICE_BT_SPEAKERS_MAX 5
+#define DEVICE_BT_SPEAKERS_PACKED_MAX 256
 #define DEVICE_LAST_DLNA_SERVER_MAX 64
 #define DEVICE_LAST_DLNA_ID_MAX 64
 /* The three in one settings.csv value, tab-separated, under the file's own
@@ -185,6 +192,7 @@ typedef struct {
     bool bt_output;
     char bt_speaker[18];
     char bt_speaker_name[DEVICE_BT_SPEAKER_NAME_MAX];
+    char bt_speakers[DEVICE_BT_SPEAKERS_PACKED_MAX];
     /* Empty for the built-in one; see DEVICE_NAME_MAX. */
     char device_name[DEVICE_NAME_MAX];
     /* 0..100. Defaults to 80 rather than full: the first sound after a fresh
@@ -244,6 +252,22 @@ bool device_settings_set_dlna(device_settings_t *settings, bool enabled);
 bool device_settings_set_bt_output(device_settings_t *settings, bool enabled);
 /* The speaker to send to: its address and the name it was found under. An
  * empty address forgets it. */
+/* One of the remembered speakers, by position from the newest. */
+typedef struct {
+    char address[18];
+    char name[DEVICE_BT_SPEAKER_NAME_MAX];
+} device_bt_speaker_t;
+/* False past the end. */
+bool device_settings_bt_speaker_at(const device_settings_t *settings, size_t index,
+                                   device_bt_speaker_t *out);
+/* Puts the speaker first, with this name when one is given and the stored
+ * one otherwise; the list is trimmed to DEVICE_BT_SPEAKERS_MAX and to what
+ * the value holds. */
+bool device_settings_remember_bt_speaker(device_settings_t *settings, const char *address,
+                                         const char *name);
+/* Takes the speaker out of the list, and out of the choice when it was
+ * the chosen one. */
+bool device_settings_forget_bt_speaker(device_settings_t *settings, const char *address);
 bool device_settings_set_bt_speaker(device_settings_t *settings, const char *address,
                                     const char *name);
 /* Values above 100 are refused rather than clamped: a caller passing one has a

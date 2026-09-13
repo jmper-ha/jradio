@@ -717,6 +717,12 @@ esp_err_t bt_link_disconnect(void)
     return bt_link_send(JBT_MSG_DISCONNECT, 0U, NULL, 0U);
 }
 
+esp_err_t bt_link_forget(const uint8_t address[6])
+{
+    if (address == NULL) return ESP_ERR_INVALID_ARG;
+    return bt_link_send(JBT_MSG_FORGET, 0U, address, 6U);
+}
+
 #else /* !BOARD_HAS_BLUETOOTH */
 
 void bt_link_brief(bt_link_brief_t *out)
@@ -848,6 +854,12 @@ esp_err_t bt_link_set_name(const char *name)
 
 esp_err_t bt_link_disconnect(void)
 {
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+esp_err_t bt_link_forget(const uint8_t address[6])
+{
+    (void)address;
     return ESP_ERR_NOT_SUPPORTED;
 }
 

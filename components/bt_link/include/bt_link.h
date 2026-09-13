@@ -96,3 +96,6 @@ esp_err_t bt_link_set_volume(uint8_t volume);
  * the greeting uses the device's own name (device_settings_device_name). */
 esp_err_t bt_link_set_name(const char *name);
 esp_err_t bt_link_disconnect(void);
+/* The module unpairs this device and drops it if connected: a forgotten
+ * speaker must not call back and be adopted again. */
+esp_err_t bt_link_forget(const uint8_t address[6]);

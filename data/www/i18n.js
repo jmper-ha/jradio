@@ -243,6 +243,7 @@
     'bt.scanning': ['Ищем колонки и наушники… Включите на них режим сопряжения.', 'Looking for speakers and headphones… Put them in pairing mode.'],
     'bt.scan_empty': ['Ничего не найдено', 'Nothing found'],
     'bt.phone': ['(модуль занят телефоном)', '(the module is with the phone)'],
+    'bt.playing': ['играет', 'playing'],
     'bt.phone_note': ['Пока играет телефон, колонка и поиск ждут: модуль умеет только одно из двух. Выйдите из источника Bluetooth — и звук снова пойдёт на колонку.',
                       'While the phone plays, the speaker and the search wait: the module does one of the two at a time. Leave the Bluetooth source and the sound goes to the speaker again.'],
     'bt.scan_failed': ['Не удалось запустить поиск', 'Could not start the search'],

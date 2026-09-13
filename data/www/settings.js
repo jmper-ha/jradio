@@ -452,7 +452,6 @@
   const btChosenName = document.querySelector('#bt-chosen-name');
   const btChosenState = document.querySelector('#bt-chosen-state');
   const btScanButton = document.querySelector('#bt-scan');
-  const btForgetButton = document.querySelector('#bt-forget');
   let btTimer = null;
   let btLoaded = false;
 
@@ -463,28 +462,46 @@
     /* The phone has the module: the speaker waits, and so does the search -
        the button is off rather than opening a search that ends at once. */
     const phone = body.phone === true;
+    const connected = body.connected === true;
     btChosenState.textContent = chosen
-      ? (phone ? t('bt.phone') : body.connected === true ? t('bt.connected') : t('bt.disconnected'))
+      ? (phone ? t('bt.phone') : connected ? t('bt.connected') : t('bt.disconnected'))
       : '';
     btScanButton.disabled = phone;
-    btForgetButton.hidden = !chosen;
-    const found = Array.isArray(body.found) ? body.found : [];
-    const rows = found
-      .filter((speaker) => isObject(speaker) && typeof speaker.address === 'string')
-      .map((speaker) => {
-        const row = document.createElement('li');
-        const pick = document.createElement('button');
-        pick.type = 'button';
-        const name = safeString(speaker.name) || t('bt.unnamed');
-        pick.textContent = name;
-        pick.classList.add('network-name');
-        pick.addEventListener('click', () => chooseSpeaker(speaker.address, name));
-        row.append(pick);
-        const rssi = Number.isSafeInteger(speaker.rssi) ? speaker.rssi : -100;
-        row.append(tag(`${signalLabel(rssi)} ${rssi} dBm`));
-        if (speaker.address === chosen) row.append(tag('✓'));
-        return row;
-      });
+    /* The speakers known come first and stay: a tap chooses, "forget"
+       unpairs. What a scan found follows, without those already known. */
+    const valid = (speaker) => isObject(speaker) && typeof speaker.address === 'string';
+    const known = (Array.isArray(body.known) ? body.known : []).filter(valid);
+    const found = (Array.isArray(body.found) ? body.found : []).filter(valid)
+      .filter((speaker) => !known.some((entry) => entry.address === speaker.address));
+    const pickButton = (speaker) => {
+      const pick = document.createElement('button');
+      pick.type = 'button';
+      const name = safeString(speaker.name) || t('bt.unnamed');
+      pick.textContent = name;
+      pick.classList.add('network-name');
+      pick.addEventListener('click', () => chooseSpeaker(speaker.address, name));
+      return pick;
+    };
+    const rows = known.map((speaker) => {
+      const row = document.createElement('li');
+      row.append(pickButton(speaker));
+      if (speaker.address === chosen) {
+        row.append(tag(phone ? '✓' : connected ? t('bt.playing') : '✓'));
+      }
+      const forget = document.createElement('button');
+      forget.type = 'button';
+      forget.textContent = t('bt.forget');
+      forget.classList.add('secondary-button');
+      forget.addEventListener('click', () => forgetSpeaker(speaker.address));
+      row.append(forget);
+      return row;
+    }).concat(found.map((speaker) => {
+      const row = document.createElement('li');
+      row.append(pickButton(speaker));
+      const rssi = Number.isSafeInteger(speaker.rssi) ? speaker.rssi : -100;
+      row.append(tag(`${signalLabel(rssi)} ${rssi} dBm`));
+      return row;
+    }));
     btSpeakers.replaceChildren(...rows);
     btSpeakers.hidden = rows.length === 0;
     if (phone) {
@@ -497,6 +514,17 @@
       btSpeakersEmpty.textContent = t('bt.scan_empty');
       btSpeakersEmpty.hidden = rows.length > 0 || btTimer === null;
     }
+  }
+
+  function forgetSpeaker(address) {
+    window.fetch('/api/bt/forget', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({address}),
+    })
+      .then((response) => response.json())
+      .then((body) => { if (isObject(body)) renderSpeakers(body); })
+      .catch(() => {});
   }
 
   function pollSpeakers(attempt) {
@@ -578,7 +606,6 @@
   }
 
   btScanButton.addEventListener('click', startSpeakerScan);
-  btForgetButton.addEventListener('click', () => chooseSpeaker('', ''));
 
   function applyWifiMode(wifi) {
     const wasApMode = apMode;

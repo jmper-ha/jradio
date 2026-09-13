@@ -619,6 +619,46 @@ static void test_the_bluetooth_output_persists_and_forgets(void)
     assert(strcmp(value, "-") == 0);
     /* Too long to be an address is refused. */
     assert(!device_settings_set_bt_speaker(&settings, "3D:AB:55:FA:58:FC:00", "x"));
+
+    /* The speakers known: every one chosen or heard from, newest first, the
+       same address once, a name completed later, and each forgettable -
+       forgetting the chosen one clears the choice too. Names lose the
+       characters the packing uses. */
+    device_bt_speaker_t known;
+    assert(device_settings_bt_speaker_at(&settings, 0, &known));
+    assert(strcmp(known.address, "3D:AB:55:FA:58:FC") == 0 && strcmp(known.name, "JBL Flip") == 0);
+    assert(!device_settings_bt_speaker_at(&settings, 1, &known));
+    assert(device_settings_remember_bt_speaker(&settings, "49:A7:42:A0:2A:C2", ""));
+    assert(device_settings_bt_speaker_at(&settings, 0, &known));
+    assert(strcmp(known.address, "49:A7:42:A0:2A:C2") == 0 && known.name[0] == '\0');
+    assert(device_settings_remember_bt_speaker(&settings, "49:A7:42:A0:2A:C2", "HOCO|EQ2\tPlus"));
+    assert(device_settings_bt_speaker_at(&settings, 0, &known));
+    assert(strcmp(known.name, "HOCO EQ2 Plus") == 0);
+    assert(device_settings_bt_speaker_at(&settings, 1, &known));
+    assert(strcmp(known.address, "3D:AB:55:FA:58:FC") == 0);
+    assert(!device_settings_bt_speaker_at(&settings, 2, &known));
+    assert(device_settings_remember_bt_speaker(&settings, "3D:AB:55:FA:58:FC", NULL));
+    assert(device_settings_bt_speaker_at(&settings, 0, &known));
+    assert(strcmp(known.address, "3D:AB:55:FA:58:FC") == 0 && strcmp(known.name, "JBL Flip") == 0);
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(device_settings_bt_speaker_at(&reloaded, 1, &known));
+    assert(strcmp(known.name, "HOCO EQ2 Plus") == 0);
+    /* Six remembered keep the newest five. */
+    for (int i = 0; i < 6; ++i) {
+        char address[18];
+        snprintf(address, sizeof(address), "00:11:22:33:44:%02X", i);
+        assert(device_settings_remember_bt_speaker(&settings, address, "Box"));
+    }
+    assert(device_settings_bt_speaker_at(&settings, 4, &known));
+    assert(strcmp(known.address, "00:11:22:33:44:01") == 0);
+    assert(!device_settings_bt_speaker_at(&settings, 5, &known));
+    assert(device_settings_set_bt_speaker(&settings, "00:11:22:33:44:05", "Box"));
+    assert(device_settings_forget_bt_speaker(&settings, "00:11:22:33:44:05"));
+    assert(settings.bt_speaker[0] == '\0');
+    assert(device_settings_bt_speaker_at(&settings, 0, &known));
+    assert(strcmp(known.address, "00:11:22:33:44:04") == 0);
+    assert(device_settings_forget_bt_speaker(&settings, "00:11:22:33:44:01"));
+    assert(!device_settings_bt_speaker_at(&settings, 4, &known));
 }
 
 int main(void)

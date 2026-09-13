@@ -265,6 +265,8 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         strcmp(settings->bt_speaker, "-") == 0) {
         settings->bt_speaker[0] = '\0';
     }
+    (void)settings_csv_get(path, "bt_speakers", settings->bt_speakers, sizeof(settings->bt_speakers));
+    if (strcmp(settings->bt_speakers, "-") == 0) settings->bt_speakers[0] = '\0';
     if (settings_csv_get(path, "bt_speaker_name", settings->bt_speaker_name,
                          sizeof(settings->bt_speaker_name)) &&
         strcmp(settings->bt_speaker_name, "-") == 0) {
@@ -456,6 +458,113 @@ bool device_settings_set_bt_output(device_settings_t *settings, bool enabled)
     return true;
 }
 
+bool device_settings_bt_speaker_at(const device_settings_t *settings, size_t index,
+                                   device_bt_speaker_t *out)
+{
+    if (settings == NULL || out == NULL) return false;
+    const char *cursor = settings->bt_speakers;
+    for (size_t i = 0; *cursor != '\0'; ++i) {
+        const char *end = strchr(cursor, '|');
+        const size_t entry = end != NULL ? (size_t)(end - cursor) : strlen(cursor);
+        if (i == index) {
+            const char *tab = memchr(cursor, '\t', entry);
+            const size_t address = tab != NULL ? (size_t)(tab - cursor) : entry;
+            if (address >= sizeof(out->address)) return false;
+            memcpy(out->address, cursor, address);
+            out->address[address] = '\0';
+            const size_t name = tab != NULL ? entry - address - 1U : 0U;
+            const size_t kept = name < sizeof(out->name) ? name : sizeof(out->name) - 1U;
+            if (kept > 0U) memcpy(out->name, tab + 1, kept);
+            out->name[kept] = '\0';
+            return true;
+        }
+        if (end == NULL) break;
+        cursor = end + 1;
+    }
+    return false;
+}
+
+/* The list rebuilt with `first` at the front and `without` left out, into
+ * `packed`. The name's separators are turned into spaces: a speaker called
+ * "A|B" is rare, a list that splits in the wrong place is not worth it. */
+static void pack_bt_speakers(const device_settings_t *settings, const device_bt_speaker_t *first,
+                             const char *without, char *packed, size_t size)
+{
+    size_t used = 0U;
+    size_t count = 0U;
+    packed[0] = '\0';
+    for (size_t slot = 0; count < DEVICE_BT_SPEAKERS_MAX; ++slot) {
+        device_bt_speaker_t entry;
+        if (slot == 0U) {
+            if (first == NULL) continue;
+            entry = *first;
+        } else if (!device_settings_bt_speaker_at(settings, slot - 1U, &entry)) {
+            break;
+        } else if ((first != NULL && strcmp(entry.address, first->address) == 0) ||
+                   (without != NULL && strcmp(entry.address, without) == 0)) {
+            continue;
+        }
+        for (char *c = entry.name; *c != '\0'; ++c) {
+            if (*c == '|' || *c == '\t' || *c == ',' || (unsigned char)*c < ' ') *c = ' ';
+        }
+        const int n = snprintf(&packed[used], size - used, "%s%s\t%s", used > 0U ? "|" : "",
+                               entry.address, entry.name);
+        if (n < 0 || used + (size_t)n >= size) {
+            packed[used] = '\0';
+            break;
+        }
+        used += (size_t)n;
+        ++count;
+    }
+}
+
+static bool save_bt_speakers(device_settings_t *settings, const char *packed)
+{
+    if (strcmp(settings->bt_speakers, packed) == 0) return true;
+    if (!save_value(settings, "bt_speakers", packed[0] != '\0' ? packed : "-")) return false;
+    snprintf(settings->bt_speakers, sizeof(settings->bt_speakers), "%s", packed);
+    return true;
+}
+
+bool device_settings_remember_bt_speaker(device_settings_t *settings, const char *address,
+                                         const char *name)
+{
+    if (settings == NULL || address == NULL || address[0] == '\0' ||
+        strlen(address) >= sizeof(settings->bt_speaker)) {
+        return false;
+    }
+    device_bt_speaker_t first;
+    snprintf(first.address, sizeof(first.address), "%s", address);
+    first.name[0] = '\0';
+    if (name != NULL && name[0] != '\0') {
+        snprintf(first.name, sizeof(first.name), "%s", name);
+    } else {
+        /* No name given: the one on file, if this speaker is known. */
+        device_bt_speaker_t known;
+        for (size_t i = 0; device_settings_bt_speaker_at(settings, i, &known); ++i) {
+            if (strcmp(known.address, address) == 0) {
+                memcpy(first.name, known.name, sizeof(first.name));
+                break;
+            }
+        }
+    }
+    char packed[DEVICE_BT_SPEAKERS_PACKED_MAX];
+    pack_bt_speakers(settings, &first, NULL, packed, sizeof(packed));
+    return save_bt_speakers(settings, packed);
+}
+
+bool device_settings_forget_bt_speaker(device_settings_t *settings, const char *address)
+{
+    if (settings == NULL || address == NULL || address[0] == '\0') return false;
+    char packed[DEVICE_BT_SPEAKERS_PACKED_MAX];
+    pack_bt_speakers(settings, NULL, address, packed, sizeof(packed));
+    if (!save_bt_speakers(settings, packed)) return false;
+    if (strcmp(settings->bt_speaker, address) == 0) {
+        return device_settings_set_bt_speaker(settings, "", "");
+    }
+    return true;
+}
+
 bool device_settings_set_bt_speaker(device_settings_t *settings, const char *address,
                                     const char *name)
 {
@@ -470,6 +579,9 @@ bool device_settings_set_bt_speaker(device_settings_t *settings, const char *add
     if (!save_value(settings, "bt_speaker_name", label[0] != '\0' ? label : "-")) return false;
     snprintf(settings->bt_speaker, sizeof(settings->bt_speaker), "%s", addr);
     snprintf(settings->bt_speaker_name, sizeof(settings->bt_speaker_name), "%s", label);
+    /* A speaker chosen is a speaker known: the list is what the page offers
+     * next time, without a scan. */
+    if (addr[0] != '\0') (void)device_settings_remember_bt_speaker(settings, addr, label);
     return true;
 }
 

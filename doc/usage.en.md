@@ -165,7 +165,12 @@ three times: at once, ten and twenty seconds later. Then it keeps quiet and
 waits for the speaker to call (a paired speaker connects to its last source when
 switched on): each call is five seconds of transmitting on every channel, and a
 speaker that is off and called without end is a radio that stutters. To call
-again, tap the speaker in the list once more. The device's screen has the same
+again, tap the speaker in the list once more. Every speaker the device has
+ever sent to stays in the list (up to five, newest first) - a speaker and a
+pair of headphones are swapped with one tap, no scan; "Forget" beside each
+takes it out and unpairs it on the module. A paired speaker connects on its own
+when switched on - and then becomes the chosen one, whatever was chosen before:
+it is the one playing. The device's screen has the same
 switch - "Sound over Bluetooth" among the general settings; a speaker cannot be
 chosen from the screen.
 

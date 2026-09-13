@@ -1709,7 +1709,19 @@ static esp_err_t web_server_bt_speakers_get(httpd_req_t *request)
     web_json_string(&writer, have_settings ? settings.bt_speaker : "");
     web_json_literal(&writer, ",\"chosen_name\":");
     web_json_string(&writer, have_settings ? settings.bt_speaker_name : "");
-    web_json_literal(&writer, ",\"found\":[");
+    /* The speakers known - chosen before, or heard from - which the page
+     * offers without a scan. */
+    web_json_literal(&writer, ",\"known\":[");
+    device_bt_speaker_t known;
+    for (size_t i = 0; have_settings && device_settings_bt_speaker_at(&settings, i, &known); ++i) {
+        if (i > 0U) web_json_literal(&writer, ",");
+        web_json_literal(&writer, "{\"address\":");
+        web_json_string(&writer, known.address);
+        web_json_literal(&writer, ",\"name\":");
+        web_json_string(&writer, known.name);
+        web_json_literal(&writer, "}");
+    }
+    web_json_literal(&writer, "],\"found\":[");
     for (size_t i = 0; i < scan.count; ++i) {
         char address[18];
         bt_link_address_to_text(scan.found[i].address, address, sizeof(address));
@@ -1730,6 +1742,45 @@ static esp_err_t web_server_bt_speakers_get(httpd_req_t *request)
     httpd_resp_set_type(request, "application/json; charset=utf-8");
     httpd_resp_set_hdr(request, "Cache-Control", "no-store");
     return httpd_resp_send(request, s_file_chunk_buffer, (ssize_t)web_json_length(&writer));
+}
+
+/* {"address":"AA:BB:CC:DD:EE:FF"}: the speaker leaves the known list and
+ * the choice, and the module unpairs it - paired, it would call back when
+ * switched on and be adopted all over again. */
+static esp_err_t web_server_bt_forget_post(httpd_req_t *request)
+{
+    if (request->content_len <= 0 || request->content_len >= WEB_SERVER_REQUEST_MAX_LEN) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Invalid request");
+        return ESP_FAIL;
+    }
+    char body[WEB_SERVER_REQUEST_MAX_LEN] = {0};
+    int received = 0;
+    while (received < request->content_len) {
+        const int read = httpd_req_recv(request, body + received, request->content_len - received);
+        if (read <= 0) {
+            httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Incomplete request");
+            return ESP_FAIL;
+        }
+        received += read;
+    }
+    cJSON *root = cJSON_ParseWithLength(body, (size_t)received);
+    const cJSON *address = root == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(root, "address");
+    uint8_t parsed[6];
+    if (!cJSON_IsString(address) || !bt_link_address_from_text(address->valuestring, parsed)) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Not an address");
+        return ESP_FAIL;
+    }
+    if (!device_settings_init(&s_settings_scratch) ||
+        !device_settings_forget_bt_speaker(&s_settings_scratch, address->valuestring)) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save settings");
+        return ESP_FAIL;
+    }
+    cJSON_Delete(root);
+    device_settings_mark_changed();
+    (void)bt_link_forget(parsed);
+    return web_server_bt_speakers_get(request);
 }
 
 /* {"address":"AA:BB:CC:DD:EE:FF","name":"..."}; an empty address forgets
@@ -1879,7 +1930,7 @@ esp_err_t web_server_start(void)
         // Thirty-two are registered below plus /ws; the spare ones exist
         // because running out is not a build error - httpd_register_uri_handler
         // fails at startup and takes the whole web server down with it.
-        config.max_uri_handlers = 36;
+        config.max_uri_handlers = 37;
         config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
         config.send_wait_timeout = 1;
         config.lru_purge_enable = false;
@@ -1914,6 +1965,7 @@ esp_err_t web_server_start(void)
             {.uri = "/api/progress", .method = HTTP_GET, .handler = web_server_progress_get},
             {.uri = "/api/bt/speakers", .method = HTTP_GET, .handler = web_server_bt_speakers_get},
             {.uri = "/api/bt/speaker", .method = HTTP_POST, .handler = web_server_bt_speaker_post},
+            {.uri = "/api/bt/forget", .method = HTTP_POST, .handler = web_server_bt_forget_post},
             {.uri = "/api/cover", .method = HTTP_GET, .handler = web_server_cover_get},
             {.uri = "/api/backup", .method = HTTP_GET, .handler = web_backup_get},
             {.uri = "/api/restore", .method = HTTP_POST, .handler = web_backup_restore_post},

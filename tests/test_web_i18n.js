@@ -28,7 +28,7 @@ const i18n = context.window.jradioI18n;
 
 const PAGES = ['index.html', 'playlist.html', 'settings.html'];
 const MARKERS = ['data-i18n', 'data-i18n-aria', 'data-i18n-placeholder', 'data-i18n-title',
-                 'data-i18n-attr'];
+                 'data-i18n-page', 'data-i18n-attr'];
 
 function keysIn(html) {
   const found = new Set();
@@ -83,7 +83,7 @@ for (const script of ['app.js', 'playlist.js', 'settings.js']) {
  * mechanical: every run of Cyrillic between tags must belong to an element
  * that carries a key.
  *
- * The exceptions are each deliberate: <title> is set from `data-i18n-title` on
+ * The exceptions are each deliberate: <title> is set from `data-i18n-page` on
  * <body>, <noscript> is shown only when no script can translate it and so
  * carries both languages, and the two language names in the picker stay in
  * their own language so a reader who cannot read the current setting can still
@@ -93,6 +93,16 @@ const ALLOWED_UNTAGGED = [
   /JavaScript/,                    // <noscript>, deliberately bilingual
   /^Русский$/,                     // the picker names itself
 ];
+
+/* The tab's name lives on <body> under its own marker: under the tooltip's
+   it became a title attribute on the body, a hint following the cursor over
+   the whole page. */
+for (const page of PAGES) {
+  const html = fs.readFileSync(`data/www/${page}`, 'utf8');
+  const body = html.match(/<body[^>]*>/)[0];
+  assert.ok(!body.includes('data-i18n-title'), `${page}: <body> carries a tooltip marker`);
+  assert.ok(body.includes('data-i18n-page='), `${page}: <body> names no page title`);
+}
 
 for (const page of PAGES) {
   const html = fs.readFileSync(`data/www/${page}`, 'utf8');

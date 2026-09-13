@@ -525,9 +525,11 @@
   function paint() {
     if (document.documentElement) document.documentElement.lang = current;
     apply(document);
-    /* And the tab's name, which is not an element `apply` can walk to. */
+    /* And the tab's name, which is not an element `apply` can walk to. Its
+       own marker: as `data-i18n-title` it was also a tooltip on <body>, and
+       the page's name followed the cursor everywhere. */
     if (document.body && typeof document.body.getAttribute === 'function') {
-      const key = document.body.getAttribute('data-i18n-title');
+      const key = document.body.getAttribute('data-i18n-page');
       if (key) document.title = t(key);
     }
   }

@@ -29,6 +29,7 @@ extern const lv_image_dsc_t ui_feed_icon_bluetooth_32;
 extern const lv_image_dsc_t ui_feed_icon_bluetooth_44;
 extern const lv_image_dsc_t ui_feed_icon_bluetooth_48;
 extern const lv_image_dsc_t ui_feed_icon_bluetooth_64;
+extern const lv_image_dsc_t ui_feed_icon_bluetooth_16;
 extern const lv_image_dsc_t ui_feed_icon_radio_24;
 extern const lv_image_dsc_t ui_feed_icon_radio_32;
 extern const lv_image_dsc_t ui_feed_icon_radio_44;

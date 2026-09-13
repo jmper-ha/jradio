@@ -89,6 +89,8 @@
 /* A row that is on the screen but cannot be started: dimmer than the
  * unselected text, still plainly readable against the ground. */
 #define UI_COLOR_DISABLED 0x4E606C
+/* Bluetooth's own blue, for the rune beside the volume bar. */
+#define UI_COLOR_BLUETOOTH 0x3D9BFF
 /* Only ever a warning; never decoration, so it stays out of the ramp above. */
 #define UI_COLOR_NOTICE 0xFFD54F
 /* A state that is a failure rather than a step: "Connection error" and nothing
@@ -239,6 +241,10 @@ static unsigned int s_source_cover_generation;
 static lv_obj_t *s_source_volume;
 static lv_obj_t *s_source_volume_bar;
 static lv_obj_t *s_source_volume_icon;
+#ifdef UI_SRC_BT_ICON_X
+static lv_obj_t *s_source_bt_icon;
+#endif
+static bool s_source_to_speaker;
 /* The like mark, between the buffer reading and the volume. Only the rotor's
  * tracks have one, so it is hidden for every other source rather than shown
  * empty - an empty heart on a radio station would offer something the button
@@ -1445,6 +1451,23 @@ static void ui_update_footer(void)
         }
     } else {
         lv_obj_add_flag(s_source_progress, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    /* Where the sound goes: the rune appears (or the speaker icon becomes
+     * it, on a shape with no room) while a Bluetooth speaker has it. Only on
+     * a change - this runs every pass. */
+    const bool to_speaker = bt_link_output_connected();
+    if (to_speaker != s_source_to_speaker) {
+        s_source_to_speaker = to_speaker;
+#ifdef UI_SRC_BT_ICON_X
+        if (to_speaker) lv_obj_clear_flag(s_source_bt_icon, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s_source_bt_icon, LV_OBJ_FLAG_HIDDEN);
+#else
+        lv_image_set_src(s_source_volume_icon,
+                         to_speaker ? &ui_feed_icon_bluetooth_16 : &ui_feed_icon_volume_16);
+#endif
+        lv_obj_set_style_image_recolor(s_source_volume_icon,
+                                       lv_color_hex(to_speaker ? UI_COLOR_BLUETOOTH : UI_COLOR_MUTED), 0);
     }
 
     const uint8_t volume = board_audio_volume();
@@ -3864,6 +3887,19 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_volume_icon, UI_SRC_VOLUME_ICON_X, UI_SRC_FOOT_Y + 1);
     lv_obj_set_style_image_recolor(s_source_volume_icon, lv_color_hex(UI_COLOR_MUTED), 0);
     lv_obj_set_style_image_recolor_opa(s_source_volume_icon, LV_OPA_COVER, 0);
+#ifdef UI_SRC_BT_ICON_X
+    /* Says where the sound is going while it goes to a Bluetooth speaker:
+     * the rune in Bluetooth's blue, and the speaker beside it in the same,
+     * so the pair reads as one mark. Hidden otherwise. */
+    s_source_bt_icon = lv_image_create(s_source_screen);
+    lv_obj_remove_style_all(s_source_bt_icon);
+    lv_image_set_src(s_source_bt_icon, &ui_feed_icon_bluetooth_16);
+    lv_obj_set_size(s_source_bt_icon, 16, 16);
+    lv_obj_set_pos(s_source_bt_icon, UI_SRC_BT_ICON_X, UI_SRC_FOOT_Y + 1);
+    lv_obj_set_style_image_recolor(s_source_bt_icon, lv_color_hex(UI_COLOR_BLUETOOTH), 0);
+    lv_obj_set_style_image_recolor_opa(s_source_bt_icon, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_source_bt_icon, LV_OBJ_FLAG_HIDDEN);
+#endif
 
     s_source_volume_bar = lv_obj_create(s_source_screen);
     lv_obj_set_pos(s_source_volume_bar, UI_SRC_VOLUME_BAR_X, UI_SRC_FOOT_Y + 5);

@@ -88,6 +88,8 @@ static int64_t s_output_tried_us;
 static uint32_t s_output_call_gap_ms = BT_LINK_OUTPUT_RETRY_MS;
 static uint32_t s_output_calls;
 static bool s_output_calling;
+static bool s_dac_muted;
+static volatile bool s_speaker_connected;
 static int64_t s_output_called_us;
 
 static void bt_link_output_calls_reset(void)
@@ -285,6 +287,15 @@ static void bt_link_on_frame(const jbt_frame_t *frame)
     }
     if (changed & BT_LINK_CHANGED_STATUS) {
         s_scanning = s_state.status.connection == JBT_CONN_SCANNING;
+        s_speaker_connected = s_state.status.mode == JBT_MODE_SOURCE &&
+                              s_state.status.connection == JBT_CONN_CONNECTED;
+        /* The built-in DAC follows the speaker: muted while the speaker
+         * has the sound, back on the moment it has not. */
+        const bool to_speaker = bt_link_output_connected();
+        if (to_speaker != s_dac_muted) {
+            s_dac_muted = to_speaker;
+            board_audio_set_dac_muted(to_speaker);
+        }
     }
     if ((changed & BT_LINK_CHANGED_KEY) && s_key_listener != NULL) {
         s_key_listener((jbt_key_t)s_state.key);
@@ -318,6 +329,11 @@ static void bt_link_on_frame(const jbt_frame_t *frame)
             bt_link_model_init(&s_state);
             s_state.events = events;
             xSemaphoreGive(s_state_lock);
+            s_speaker_connected = false;
+            if (s_dac_muted) {
+                s_dac_muted = false;
+                board_audio_set_dac_muted(false);
+            }
             if (s_cover_shown_hash != 0U) {
                 album_art_clear();
                 s_cover_shown_hash = 0U;
@@ -345,6 +361,11 @@ static void bt_link_task(void *arg)
         const int64_t now = esp_timer_get_time();
         if (now - s_last_heard_us > (int64_t)BT_LINK_DEAD_MS * 1000 && s_alive) {
             s_alive = false;
+            s_speaker_connected = false;
+            if (s_dac_muted) {
+                s_dac_muted = false;
+                board_audio_set_dac_muted(false);
+            }
             ESP_LOGW(TAG, "module silent for %u ms", (unsigned)BT_LINK_DEAD_MS);
             xSemaphoreTake(s_state_lock, portMAX_DELAY);
             bt_link_model_init(&s_state);
@@ -502,6 +523,10 @@ esp_err_t bt_link_set_output(bool enabled, const char *address)
     if (has_speaker) memcpy(s_output_speaker, speaker, sizeof(speaker));
     if (!changed) return ESP_OK;
     ESP_LOGI(TAG, "output %s, speaker %s", enabled ? "on" : "off", has_speaker ? address : "none");
+    if (!enabled && s_dac_muted) {
+        s_dac_muted = false;
+        board_audio_set_dac_muted(false);
+    }
     /* The tick does the rest; here only what has to happen now: a speaker
      * that changed is dropped, and an output switched off lets the module
      * go - unless the player has it as a sink, which is its own business. */
@@ -533,10 +558,9 @@ bool bt_link_output_held_by_phone(void)
 
 bool bt_link_output_connected(void)
 {
-    if (!s_alive || !s_output_enabled) return false;
-    bt_link_state_t state;
-    bt_link_snapshot(&state);
-    return state.status.mode == JBT_MODE_SOURCE && state.status.connection == JBT_CONN_CONNECTED;
+    /* Two flags rather than a snapshot: the UI asks every pass, and a copy
+     * of the whole state each 10 ms is not what the answer costs. */
+    return s_alive && s_output_enabled && s_speaker_connected;
 }
 
 esp_err_t bt_link_scan(bool on)

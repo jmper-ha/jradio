@@ -259,6 +259,23 @@ hand-over, when both ends could be outputs. The module is offered as a source
 only while it answers on the UART: one that is unplugged or being flashed is
 not offered, rather than failing to open.
 
+The other way round - the sound going to a Bluetooth speaker - the S3 stays
+the master, the module listens on the bus, and the built-in DAC plays the same
+thing. To keep it quiet while the speaker plays, wire its soft-mute to a free
+GPIO and name it in `board_options.h`:
+
+```c
+#define AUDIO_DAC_MUTE_GPIO 15
+```
+
+On the PCM5102A that is XSMT (low is silence; the chip ramps the output down
+and up itself, so there is no click). The purple modules bring it out as the
+XMT pad, tied to 3.3 V right there - by a solder bridge or a pull-up. Open the
+bridge (a resistor may stay), connect the pad to the GPIO, 1 kOhm in series if
+you like. The S3 must drive it, not the module: only it knows whether the
+speaker is connected, and it needs the DAC playing again when the phone plays.
+Without the line the DAC simply plays always.
+
 ## What the home screen shows
 
 The home screen shows exactly what the firmware can make use of, and nothing

@@ -39,7 +39,10 @@ SIZES = (24, 32, 44, 48, 64)
 # two sizes because the cover tile it is centred on is two sizes: 64 in a 96 px
 # tile, 107 in a 160 px one - see UI_SRC_ART_NOTE_PX in the shape files.
 EXTRA_SIZES = {"volume": (16,), "heart": (16,), "heart_filled": (16,),
-               "heart_slash": (16,), "music_note": (64, 107)}
+               "heart_slash": (16,), "music_note": (64, 107),
+               # The carousel's sizes and one more: the rune beside the
+               # player's speaker while the sound goes to a Bluetooth speaker.
+               "bluetooth": SIZES + (16,)}
 
 # The weather icons in the status strip, one size per body face: 16 beside
 # the 14 px clock, 20 beside the 18 px one - see UI_STRIP_WEATHER_ICON_PX in

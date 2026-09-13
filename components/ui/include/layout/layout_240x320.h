@@ -70,6 +70,9 @@
 #define UI_SRC_FOOT_Y 290
 #define UI_SRC_LIKE_X 116
 #define UI_SRC_VOLUME_ICON_X 136
+/* No UI_SRC_BT_ICON_X: there is no gap before the speaker icon on this
+ * shape, so while the sound goes to a Bluetooth speaker the speaker icon
+ * itself becomes the rune. */
 #define UI_SRC_VOLUME_BAR_X 156
 #define UI_SRC_VOLUME_BAR_W 44
 #define UI_SRC_VOLUME_TEXT_X 206

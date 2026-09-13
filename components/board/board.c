@@ -334,12 +334,34 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     return ESP_OK;
 }
 
+void board_audio_set_dac_muted(bool muted)
+{
+#ifdef AUDIO_DAC_MUTE_GPIO
+    /* XSMT on the PCM5102A: low is mute, and the chip ramps the output down
+     * and up itself, so there is no click either way. */
+    (void)gpio_set_level(AUDIO_DAC_MUTE_GPIO, muted ? 0 : 1);
+#else
+    (void)muted;
+#endif
+}
+
 static esp_err_t board_audio_init(void)
 {
     s_audio_mutex = xSemaphoreCreateMutex();
     if (s_audio_mutex == NULL) {
         return ESP_ERR_NO_MEM;
     }
+#ifdef AUDIO_DAC_MUTE_GPIO
+    const gpio_config_t mute = {
+        .pin_bit_mask = 1ULL << AUDIO_DAC_MUTE_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_RETURN_ON_ERROR(gpio_config(&mute), TAG, "configure DAC mute");
+    board_audio_set_dac_muted(false);
+#endif
     return board_audio_create_channel(AUDIO_DEFAULT_SAMPLE_RATE);
 }
 

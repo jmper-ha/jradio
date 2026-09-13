@@ -538,11 +538,29 @@
       .catch(() => {});
   }
 
+  /* The speaker connects and drops on its own - switched off, walked out of
+     range, back again - and no frame carries that, so the line beside the
+     switch is re-read every few seconds while the page is on screen. Not
+     during a scan: that poll refreshes it already. */
+  let btRefreshTimer = null;
+  function scheduleSpeakerRefresh() {
+    if (btRefreshTimer !== null) return;
+    btRefreshTimer = window.setTimeout(() => {
+      btRefreshTimer = null;
+      if (document.hidden || btTimer !== null) {
+        scheduleSpeakerRefresh();
+        return;
+      }
+      loadSpeakers();
+    }, 4000);
+  }
+
   function loadSpeakers() {
     window.fetch('/api/bt/speakers', {cache: 'no-store'})
       .then((response) => response.json())
       .then((body) => { if (isObject(body)) renderSpeakers(body); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(scheduleSpeakerRefresh);
   }
 
   btScanButton.addEventListener('click', startSpeakerScan);

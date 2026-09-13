@@ -436,8 +436,10 @@ vm.runInContext(fs.readFileSync('data/www/settings.js', 'utf8'), context);
   await settle();
 }
 
+/* The speaker line's own 4 s re-read sits in the same list; it is not the
+   Yandex poll. */
 function lastYandexTimer() {
-  return timers.filter((entry) => !entry.cleared).at(-1);
+  return timers.filter((entry) => !entry.cleared && entry.delay !== 4000).at(-1);
 }
 
 (async () => {
@@ -634,6 +636,22 @@ function lastYandexTimer() {
   await settle();
   assert.deepEqual(speakerPosts[speakerPosts.length - 1], {address: '', name: ''});
   assert.equal(elements['#bt-chosen-name'].textContent, 'не выбрана');
+  /* The speaker comes and goes on its own, and no frame says so: the line is
+     re-read every few seconds, so a speaker that reconnected while the page
+     was open shows as connected without a reload. */
+  speakersReply = {...speakersReply, chosen: '3D:AB:55:FA:58:FC', chosen_name: 'JBL Flip', connected: true};
+  /* The scan's own poll is still pending from above; let it run out first,
+     as it would on the device once the module reports the scan over. */
+  timers.filter((entry) => !entry.cleared && entry.delay === 1000).at(-1).callback();
+  await settle();
+  const speakerRefresh = timers.filter((entry) => !entry.cleared && entry.delay === 4000).at(-1);
+  assert.ok(speakerRefresh);
+  const beforeSpeakerRefresh = fetchCalls.length;
+  speakerRefresh.callback();
+  await settle();
+  assert.equal(fetchCalls.slice(beforeSpeakerRefresh).filter((call) => call.url === '/api/bt/speakers').length, 1);
+  assert.equal(elements['#bt-chosen-state'].textContent, '(подключена)');
+  assert.ok(timers.filter((entry) => !entry.cleared && entry.delay === 4000).length >= 2);
 
   settingsReply = {...settingsReply, autoplay: true};
   elements['#device-autoplay'].checked = true;

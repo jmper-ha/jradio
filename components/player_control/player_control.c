@@ -1139,6 +1139,8 @@ static void player_control_task(void *arg)
  * commands the panel's own buttons post, so whatever is playing - a
  * station, a file, the rotor - answers to the speaker's play/pause and
  * next/previous. Posted, not executed: this runs on the link's task. */
+#define PLAYER_SPEAKER_VOLUME_STEP 5
+
 static void player_speaker_key(jbt_key_t key)
 {
     player_command_t command = {.item_index = PLAYER_ITEM_NONE};
@@ -1160,6 +1162,17 @@ static void player_speaker_key(jbt_key_t key)
     case JBT_KEY_PREV:
         command.kind = PLAYER_COMMAND_PREVIOUS_ITEM;
         break;
+    case JBT_KEY_VOLUME_UP:
+    case JBT_KEY_VOLUME_DOWN: {
+        /* The wheel steps the board's volume like the knob does; the link's
+         * tick then tells the speaker the new level, and the UI adopts it. */
+        const int step = key == JBT_KEY_VOLUME_UP ? PLAYER_SPEAKER_VOLUME_STEP : -PLAYER_SPEAKER_VOLUME_STEP;
+        int volume = (int)board_audio_volume() + step;
+        if (volume < 0) volume = 0;
+        if (volume > 100) volume = 100;
+        board_audio_set_volume((uint8_t)volume);
+        return;
+    }
     default:
         return;
     }

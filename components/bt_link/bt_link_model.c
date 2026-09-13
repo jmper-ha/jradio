@@ -133,7 +133,7 @@ uint32_t bt_link_model_apply(bt_link_state_t *state, const jbt_frame_t *frame)
     }
     case JBT_MSG_KEY: {
         uint8_t key;
-        if (!jbt_get_u8(&reader, &key) || key > JBT_KEY_REWIND) return 0U;
+        if (!jbt_get_u8(&reader, &key) || key > JBT_KEY_MUTE) return 0U;
         state->key = key;
         ++state->keys;
         return BT_LINK_CHANGED_KEY;

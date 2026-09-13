@@ -130,6 +130,11 @@ typedef enum {
     JBT_KEY_PREV = 4,
     JBT_KEY_FAST_FORWARD = 5,
     JBT_KEY_REWIND = 6,
+    /* A speaker's volume wheel usually arrives as these, not as absolute
+     * volume; the host steps its own volume and tells the speaker back. */
+    JBT_KEY_VOLUME_UP = 7,
+    JBT_KEY_VOLUME_DOWN = 8,
+    JBT_KEY_MUTE = 9,
 } jbt_key_t;
 
 typedef enum {

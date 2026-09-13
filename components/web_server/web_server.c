@@ -719,6 +719,15 @@ static esp_err_t web_server_about_get(httpd_req_t *request)
     cJSON_AddBoolToObject(web, "present", info.web.present);
     cJSON_AddStringToObject(root, "idf", info.idf);
     cJSON_AddBoolToObject(root, "matched", version_info_matched(&info));
+    /* The Bluetooth module's own firmware, while it answers: a board built
+     * without it, or with it unplugged, shows no line at all. */
+    char module_version[16];
+    bt_link_module_version(module_version, sizeof(module_version));
+    cJSON *module = cJSON_AddObjectToObject(root, "module");
+    if (module != NULL) {
+        cJSON_AddBoolToObject(module, "present", module_version[0] != '\0');
+        cJSON_AddStringToObject(module, "version", module_version);
+    }
     cJSON_AddStringToObject(root, "author", VERSION_INFO_AUTHOR);
 
     char *json = cJSON_PrintUnformatted(root);

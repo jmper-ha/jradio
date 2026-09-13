@@ -364,6 +364,7 @@
     'about.firmware': ['Прошивка', 'Firmware'],
     'about.built': ['Собрана', 'Built'],
     'about.web': ['Веб-интерфейс', 'Web UI'],
+    'about.module': ['Модуль Bluetooth', 'Bluetooth module'],
     'about.mismatch': ['Версии прошивки и веб-интерфейса не совпадают',
                        'The firmware and the web interface are from different builds'],
     'backup.title': ['Резервная копия', 'Backup'],

@@ -73,6 +73,7 @@ const ids = [
   'socket-state', 'wifi-form', 'wifi-ssid', 'wifi-password', 'wifi-password-reveal',
   'wifi-submit',
   'about-firmware', 'about-built', 'about-web', 'about-idf', 'about-notice',
+  'about-module-label', 'about-module',
   'about-author',
   'wifi-status', 'wifi-active', 'wifi-ip', 'saved-networks',
   'saved-networks-empty', 'wifi-add', 'wifi-cancel', 'wifi-scan',
@@ -984,20 +985,26 @@ function lastYandexTimer() {
   assert.equal(elements['#about-web'].textContent, 'v1.1.0');
   assert.equal(elements['#about-idf'].textContent, 'v5.5.5');
   assert.equal(elements['#about-notice'].hidden, false);
+  // No module answered: no line for it at all, rather than "unknown".
+  assert.equal(elements['#about-module'].hidden, true);
+  assert.equal(elements['#about-module-label'].hidden, true);
   // The address is the device's answer, not a string written into the page,
   // and it is offered as something to write to.
   assert.equal(elements['#about-author'].textContent, 'someone@example.com');
   assert.equal(elements['#about-author'].href, 'mailto:someone@example.com');
 
-  // Agreement is the quiet case.
+  // Agreement is the quiet case; a module that answers gets its line.
   aboutReply = {
     firmware: {version: 'v1.2.0', built: 'Sep  6 2026', present: true},
     web: {version: 'v1.2.0', built: '2026-09-06', present: true},
     idf: 'v5.5.5', matched: true, author: 'someone@example.com',
+    module: {present: true, version: '1.0.0'},
   };
   await reload();
   assert.equal(elements['#about-web'].textContent, 'v1.2.0');
   assert.equal(elements['#about-notice'].hidden, true);
+  assert.equal(elements['#about-module'].hidden, false);
+  assert.equal(elements['#about-module'].textContent, '1.0.0');
 
   // A web half the device could not read says so, and does *not* raise the
   // mismatch notice: an image flashed before the stamp existed is old, not

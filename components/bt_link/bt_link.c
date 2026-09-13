@@ -512,6 +512,19 @@ void bt_link_peer_name(char *out, size_t out_size)
     xSemaphoreGive(s_state_lock);
 }
 
+void bt_link_module_version(char *out, size_t out_size)
+{
+    if (out == NULL || out_size == 0U) return;
+    out[0] = '\0';
+    if (!s_alive || s_state_lock == NULL) return;
+    xSemaphoreTake(s_state_lock, portMAX_DELAY);
+    if (s_state.protocol != 0U) {
+        snprintf(out, out_size, "%u.%u.%u", (unsigned)s_state.fw_major, (unsigned)s_state.fw_minor,
+                 (unsigned)s_state.fw_build);
+    }
+    xSemaphoreGive(s_state_lock);
+}
+
 esp_err_t bt_link_set_output(bool enabled, const char *address)
 {
     uint8_t speaker[6];
@@ -699,6 +712,11 @@ void bt_link_track_text(char *title, size_t title_size, char *artist, size_t art
 }
 
 void bt_link_peer_name(char *out, size_t out_size)
+{
+    if (out != NULL && out_size > 0U) out[0] = '\0';
+}
+
+void bt_link_module_version(char *out, size_t out_size)
 {
     if (out != NULL && out_size > 0U) out[0] = '\0';
 }

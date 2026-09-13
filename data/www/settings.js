@@ -27,6 +27,8 @@
   const aboutBuilt = document.querySelector('#about-built');
   const aboutWeb = document.querySelector('#about-web');
   const aboutIdf = document.querySelector('#about-idf');
+  const aboutModuleLabel = document.querySelector('#about-module-label');
+  const aboutModule = document.querySelector('#about-module');
   const aboutNotice = document.querySelector('#about-notice');
   const aboutAuthor = document.querySelector('#about-author');
   const yandexStatus = document.querySelector('#yandex-status');
@@ -1294,6 +1296,13 @@
     aboutBuilt.textContent = named(firmware.built);
     aboutWeb.textContent = named(web.version);
     aboutIdf.textContent = named(payload.idf);
+    /* The Bluetooth module's firmware: a line only while a module answers,
+       since a board without one has nothing to say here. */
+    const module = isObject(payload.module) ? payload.module : {};
+    const moduleShown = module.present === true;
+    aboutModuleLabel.hidden = !moduleShown;
+    aboutModule.hidden = !moduleShown;
+    aboutModule.textContent = moduleShown ? named(module.version) : '';
     /* Only when the two are known and differ. A web half that could not be
        read is old, not mismatched, and the "неизвестно" beside it has already
        said so - the same rule the device's own screen follows. */

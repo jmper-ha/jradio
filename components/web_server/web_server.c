@@ -1755,6 +1755,8 @@ static esp_err_t web_server_bt_speaker_post(httpd_req_t *request)
     }
     cJSON_Delete(root);
     device_settings_mark_changed();
+    /* Tapping the speaker already chosen is a request to call it again. */
+    bt_link_output_call_again();
     return web_server_bt_speakers_get(request);
 }
 

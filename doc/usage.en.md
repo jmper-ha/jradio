@@ -160,10 +160,14 @@ files, Yandex, DLNA - goes to a Bluetooth speaker or headphones. It is switched
 on from the settings page of the web interface, in "Sound over Bluetooth":
 "Find speakers" lists what is around (the search takes about five seconds, and
 the Wi-Fi stream may stumble meanwhile - the module's antenna sits next to the
-board's), a tap on a result saves the choice, and from then on the device
-connects to that speaker on its own at every start. The device's screen has the
-same switch - "Sound over Bluetooth" among the general settings; a speaker
-cannot be chosen from the screen.
+board's), a tap on a result saves the choice, and the device calls the speaker -
+three times: at once, ten and twenty seconds later. Then it keeps quiet and
+waits for the speaker to call (a paired speaker connects to its last source when
+switched on): each call is five seconds of transmitting on every channel, and a
+speaker that is off and called without end is a radio that stutters. To call
+again, tap the speaker in the list once more. The device's screen has the same
+switch - "Sound over Bluetooth" among the general settings; a speaker cannot be
+chosen from the screen.
 
 The speaker's buttons work: pause and play, next and previous station (or
 track), its volume wheel turns the device's volume, and the device's knob sets

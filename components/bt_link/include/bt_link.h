@@ -54,6 +54,10 @@ esp_err_t bt_link_set_mode(jbt_mode_t mode, uint32_t timeout_ms);
  * source and the output are exclusive by construction (a phone playing
  * through the DAC and the DAC going to a speaker cannot both be). */
 esp_err_t bt_link_set_output(bool enabled, const char *address);
+/* The speaker is called three times after it is chosen or the output is
+ * switched on, then left to call itself; this starts the three again - the
+ * page's choice of the speaker, even the same one, is that request. */
+void bt_link_output_call_again(void);
 /* Whether the output is on and the speaker connected: what the panel shows
  * beside the volume. */
 bool bt_link_output_connected(void);

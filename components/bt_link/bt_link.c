@@ -77,6 +77,26 @@ static bt_link_key_listener_t s_key_listener;
 static uint8_t s_output_volume_percent = 0xFFU;
 static int64_t s_output_tried_us;
 #define BT_LINK_OUTPUT_RETRY_MS 5000U
+/* Calling a speaker that does not answer is five seconds of paging on every
+ * channel, and with the module's antenna beside the board's Wi-Fi one, a
+ * call every five seconds is a stream that stutters all day. A speaker is
+ * called three times - at once, ten and twenty seconds later - after it is
+ * chosen, the output switched on, or the module back in source mode; then
+ * the module keeps quiet and waits for the speaker to call, which a paired
+ * one does when it is switched on. */
+#define BT_LINK_OUTPUT_CALLS_MAX 3U
+static uint32_t s_output_call_gap_ms = BT_LINK_OUTPUT_RETRY_MS;
+static uint32_t s_output_calls;
+static bool s_output_calling;
+static int64_t s_output_called_us;
+
+static void bt_link_output_calls_reset(void)
+{
+    s_output_call_gap_ms = BT_LINK_OUTPUT_RETRY_MS;
+    s_output_calls = 0U;
+    s_output_calling = false;
+    s_output_called_us = 0;
+}
 /* SET_MODE without waiting: the tick asks, the ack arrives on this task
  * like any frame, and the model records the mode. Used for the output,
  * whose caller has nothing to wait for. */
@@ -251,6 +271,18 @@ static void bt_link_on_frame(const jbt_frame_t *frame)
         }
         s_cover_asked_us = 0;
     }
+    if (changed & BT_LINK_CHANGED_PLAY) {
+        /* Stopped - the phone's player closed - takes the picture down;
+         * playing again fetches it back (see the model). */
+        if (s_state.status.play == JBT_PLAY_STOPPED) {
+            if (s_cover_shown_hash != 0U) {
+                album_art_clear();
+                s_cover_shown_hash = 0U;
+            }
+        } else {
+            s_cover_asked_us = 0;
+        }
+    }
     if (changed & BT_LINK_CHANGED_STATUS) {
         s_scanning = s_state.status.connection == JBT_CONN_SCANNING;
     }
@@ -264,6 +296,10 @@ static void bt_link_on_frame(const jbt_frame_t *frame)
         board_audio_set_volume(s_output_volume_percent);
     }
     if (changed & BT_LINK_CHANGED_MODE_ACK) {
+        /* Back in source mode - after the phone, or a module reboot - the
+         * module itself calls the last speaker once; the three calls from
+         * here start over too. */
+        if (s_state.acked_mode == JBT_MODE_SOURCE) bt_link_output_calls_reset();
         xSemaphoreGive(s_mode_ack);
         if (s_scan_pending && s_state.acked_mode == JBT_MODE_SOURCE) {
             s_scan_pending = false;
@@ -334,8 +370,23 @@ static void bt_link_task(void *arg)
             if (state.status.mode != JBT_MODE_SOURCE) {
                 s_wanted_mode = JBT_MODE_SOURCE;
                 (void)bt_link_ask_mode(JBT_MODE_SOURCE);
+            } else if (state.status.connection == JBT_CONN_CONNECTED) {
+                bt_link_output_calls_reset();
             } else if (s_output_has_speaker && state.status.connection == JBT_CONN_NONE && !s_scanning) {
-                (void)bt_link_send(JBT_MSG_CONNECT, 0U, s_output_speaker, sizeof(s_output_speaker));
+                if (s_output_calling) {
+                    /* The last call went unanswered. */
+                    s_output_calling = false;
+                    s_output_call_gap_ms *= 2U;
+                    s_output_called_us = now;
+                    if (s_output_calls >= BT_LINK_OUTPUT_CALLS_MAX) {
+                        ESP_LOGI(TAG, "the speaker does not answer; waiting for it to call");
+                    }
+                } else if (s_output_calls < BT_LINK_OUTPUT_CALLS_MAX &&
+                           now - s_output_called_us >= (int64_t)s_output_call_gap_ms * 1000) {
+                    s_output_calling = true;
+                    ++s_output_calls;
+                    (void)bt_link_send(JBT_MSG_CONNECT, 0U, s_output_speaker, sizeof(s_output_speaker));
+                }
             }
         }
         /* The knob, to the speaker: when the board's volume moves away from
@@ -463,7 +514,16 @@ esp_err_t bt_link_set_output(bool enabled, const char *address)
             s_output_tried_us = 0;
         }
     }
+    /* A speaker just chosen, or the output just switched on, gets its
+     * three calls afresh. */
+    bt_link_output_calls_reset();
     return ESP_OK;
+}
+
+void bt_link_output_call_again(void)
+{
+    bt_link_output_calls_reset();
+    s_output_tried_us = 0;
 }
 
 bool bt_link_output_connected(void)
@@ -635,6 +695,10 @@ esp_err_t bt_link_set_output(bool enabled, const char *address)
     (void)enabled;
     (void)address;
     return ESP_ERR_NOT_SUPPORTED;
+}
+
+void bt_link_output_call_again(void)
+{
 }
 
 bool bt_link_output_connected(void)

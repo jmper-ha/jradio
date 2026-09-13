@@ -97,6 +97,14 @@ uint32_t bt_link_model_apply(bt_link_state_t *state, const jbt_frame_t *frame)
         uint8_t play;
         if (!jbt_get_u8(&reader, &play) || play > JBT_PLAY_PAUSED) return 0U;
         state->status.play = play;
+        /* Stopped is the player closed, not a pause: its picture goes, and
+         * what was fetched is forgotten so that playing again fetches it
+         * back (the module still holds it and announces it again). */
+        state->cover_held = play == JBT_PLAY_STOPPED;
+        if (state->cover_held) {
+            state->cover_received = 0U;
+            state->cover_done_hash = 0U;
+        }
         return BT_LINK_CHANGED_PLAY;
     }
     case JBT_MSG_VOLUME: {
@@ -128,6 +136,7 @@ uint32_t bt_link_model_apply(bt_link_state_t *state, const jbt_frame_t *frame)
         state->cover_kind = kind;
         state->cover_hash = hash;
         state->cover_received = 0U;
+        state->cover_held = false;
         ++state->cover_revision;
         return BT_LINK_CHANGED_COVER_INFO;
     }
@@ -152,6 +161,7 @@ uint32_t bt_link_model_apply(bt_link_state_t *state, const jbt_frame_t *frame)
 bool bt_link_model_cover_wanted(const bt_link_state_t *state, uint32_t *offset, uint16_t *length)
 {
     if (state->cover_size == 0U || state->cover_size > BT_LINK_COVER_MAX) return false;
+    if (state->cover_held) return false;
     if (state->cover_hash == state->cover_done_hash) return false;
     if (state->cover_received >= state->cover_size) return false;
     const uint32_t left = state->cover_size - state->cover_received;

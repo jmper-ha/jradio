@@ -222,6 +222,26 @@ static void test_a_cover_is_fetched_piece_by_piece_and_only_once(void)
     assert(bt_link_model_apply(&state, &announce) == BT_LINK_CHANGED_COVER_INFO);
     assert(!bt_link_model_cover_wanted(&state, &offset, &length));
 
+    /* The phone's player closed: the picture is not wanted, and once the
+     * phone plays again it is fetched back; a pause holds it. */
+    const uint8_t stopped[1] = {JBT_PLAY_STOPPED};
+    const jbt_frame_t stop = frame_of(JBT_MSG_PLAY_STATE, stopped, 1U);
+    assert(bt_link_model_apply(&state, &stop) == BT_LINK_CHANGED_PLAY);
+    assert(state.cover_held && state.cover_done_hash == 0U);
+    assert(!bt_link_model_cover_wanted(&state, &offset, &length));
+    const uint8_t playing[1] = {JBT_PLAY_PLAYING};
+    const jbt_frame_t play = frame_of(JBT_MSG_PLAY_STATE, playing, 1U);
+    assert(bt_link_model_apply(&state, &play) == BT_LINK_CHANGED_PLAY);
+    assert(!state.cover_held);
+    assert(bt_link_model_cover_wanted(&state, &offset, &length) && offset == 0U);
+    const uint8_t paused[1] = {JBT_PLAY_PAUSED};
+    const jbt_frame_t pause = frame_of(JBT_MSG_PLAY_STATE, paused, 1U);
+    assert(bt_link_model_apply(&state, &pause) == BT_LINK_CHANGED_PLAY);
+    assert(bt_link_model_cover_wanted(&state, &offset, &length));
+    /* Stopped again, then a new picture announced by a new player: shown. */
+    assert(bt_link_model_apply(&state, &stop) == BT_LINK_CHANGED_PLAY);
+    assert(!bt_link_model_cover_wanted(&state, &offset, &length));
+
     /* A different cover is; one the module says has no bytes is not; one
      * larger than the host will hold is not either. */
     jbt_writer_init(&writer, info, sizeof(info));

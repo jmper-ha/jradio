@@ -56,6 +56,9 @@ typedef struct {
     uint32_t cover_hash;      /* what the module holds */
     uint32_t cover_received;  /* bytes fetched so far, contiguous from 0 */
     uint32_t cover_done_hash; /* the hash of the last cover fully fetched */
+    /* Set when the phone stopped (not paused): the picture is taken down and
+     * not fetched again until something plays or a new one is announced. */
+    bool cover_held;
     uint32_t cover_revision;  /* moves with every COVER_INFO */
 } bt_link_state_t;
 

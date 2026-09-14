@@ -750,8 +750,48 @@ static void test_only_a_volume_loses_its_cover_when_a_drive_goes(void)
     assert(!player_media_removal_clears_cover(AUDIO_SOURCE_BLUETOOTH));
 }
 
+static void test_the_phone_is_a_source_only_while_the_module_answers(void)
+{
+    /* The capability is the module's heartbeat: a board built for one that
+     * is unplugged offers nothing, and no network is needed either way. */
+    player_snapshot_t state = {.wifi_connected = false, .capabilities = PLAYER_CAP_INTERNET_RADIO};
+    const player_command_t select = {.kind = PLAYER_COMMAND_SELECT_SOURCE,
+                                     .source = AUDIO_SOURCE_BLUETOOTH};
+    assert(player_control_decide(&state, &select) == PLAYER_OPERATION_INVALID);
+    state.capabilities |= PLAYER_CAP_BLUETOOTH;
+    assert(player_control_decide(&state, &select) == PLAYER_OPERATION_SELECT_SOURCE);
+}
+
+static void test_the_phones_queue_takes_both_keys_and_the_skip(void)
+{
+    /* No list on this side, so the keys are not bounded by an index: they
+     * go to the phone whenever a track is on, paused included, and do
+     * nothing with no phone playing. The skip key the rotor has works here
+     * too - a queue is a chain. */
+    player_snapshot_t state = {.active_source = AUDIO_SOURCE_BLUETOOTH,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING,
+                               .active_item_index = PLAYER_ITEM_NONE};
+    const player_command_t next = {.kind = PLAYER_COMMAND_NEXT_ITEM};
+    const player_command_t previous = {.kind = PLAYER_COMMAND_PREVIOUS_ITEM};
+    const player_command_t skip = {.kind = PLAYER_COMMAND_NEXT_TRACK};
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NEXT_ITEM);
+    assert(player_control_decide(&state, &previous) == PLAYER_OPERATION_PREVIOUS_ITEM);
+    assert(player_control_decide(&state, &skip) == PLAYER_OPERATION_NEXT_TRACK);
+    state.playback_state = PLAYER_PLAYBACK_PAUSED;
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NEXT_ITEM);
+    state.playback_state = PLAYER_PLAYBACK_STOPPED;
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NONE);
+    assert(player_control_decide(&state, &skip) == PLAYER_OPERATION_INVALID);
+    /* And a stopped phone source still starts on play - that is the pairing
+     * window, or the phone's own play, which the executor decides. */
+    const player_command_t play = {.kind = PLAYER_COMMAND_PLAY};
+    assert(player_control_decide(&state, &play) == PLAYER_OPERATION_START_SAVED);
+}
+
 int main(void)
 {
+    test_the_phone_is_a_source_only_while_the_module_answers();
+    test_the_phones_queue_takes_both_keys_and_the_skip();
     test_the_track_keys_stop_at_the_ends_of_the_catalog();
     test_the_track_keys_leave_the_ends_of_a_directory_to_the_executor();
     test_the_rotor_has_no_track_keys_of_this_kind();

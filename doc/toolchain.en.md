@@ -117,6 +117,14 @@ the extension - and activates it, so `export.sh` never has to be run by hand.
 The port is detected automatically when only one board is attached; with several,
 name the one you want in `ESPPORT`.
 
+If a task cannot find the Python environment (`ESP-IDF Python virtual
+environment … not found`) while `idf.py` works in the "ESP-IDF Terminal", the
+framework was installed by the ESP-IDF Installation Manager, which keeps the
+environment where `export.ps1` does not look. The script tries the manager's own
+activation script (`Microsoft.PowerShell_profile.ps1` beside the `esp-idf`
+folder); failing that, run the task from that "ESP-IDF Terminal" - the
+variables are set there, and the script uses them.
+
 **The first build reaches the internet** even after the environment is
 installed: the component manager downloads LVGL, the codecs and the panel
 drivers, and the littlefs component installs `littlefs-python` from PyPI. What

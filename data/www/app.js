@@ -269,6 +269,10 @@
       'M0 5.6h12.69a2.7 2.7 0 1 0 0 2.8H0Z' +
       'M24 10.6H11.31a2.7 2.7 0 1 1 0 2.8H24Z' +
       'M0 15.6h12.69a2.7 2.7 0 1 0 0 2.8H0Z"/></svg>',
+    /* The rune, as the panel draws it: a stem with the two bows. */
+    bluetooth:
+      '<svg class="source-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+      '<path class="stroke" d="M7 7.5l9 9-4.5 4.5V3l4.5 4.5-9 9"/></svg>',
     yandex:
       '<svg class="source-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
       '<path d="M20.43 12.93 16.86 12.18 19.55 16.11 15.83 13.15 17.02 18.79 14.26 13.63' +

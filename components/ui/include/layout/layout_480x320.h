@@ -94,6 +94,9 @@
 #define UI_SRC_FOOT_Y 288
 #define UI_SRC_LIKE_X 200
 #define UI_SRC_VOLUME_ICON_X 280
+/* The Bluetooth rune while the sound goes to a speaker, left of the
+ * speaker icon, in the gap after the like mark. */
+#define UI_SRC_BT_ICON_X 262
 #define UI_SRC_VOLUME_BAR_X 306
 #define UI_SRC_VOLUME_BAR_W 100
 #define UI_SRC_VOLUME_TEXT_X 420

@@ -67,6 +67,13 @@ static const ui_settings_row_t s_field_rows[] = {
         .kind = UI_SETTINGS_ROW_FIELD,
     },
 #endif
+#if BOARD_HAS_BLUETOOTH
+    {
+        .id = UI_SETTINGS_ROW_BT_OUTPUT_FIELD,
+        .group = UI_SETTINGS_GROUP_GENERAL,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+#endif
     {
         .id = UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
         .group = UI_SETTINGS_GROUP_DISPLAY,

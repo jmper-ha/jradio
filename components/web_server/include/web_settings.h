@@ -38,12 +38,14 @@ typedef enum {
     WEB_SETTINGS_FIELD_AUTOPLAY,
     WEB_SETTINGS_FIELD_YANDEX_MUSIC,
     WEB_SETTINGS_FIELD_DLNA,
+    WEB_SETTINGS_FIELD_BT_OUTPUT,
     WEB_SETTINGS_FIELD_FLIP_VERTICAL,
     WEB_SETTINGS_FIELD_FLIP_HORIZONTAL,
     WEB_SETTINGS_FIELD_BRIGHTNESS,
     WEB_SETTINGS_FIELD_VOLUME,
     WEB_SETTINGS_FIELD_TIMEZONE,
     WEB_SETTINGS_FIELD_NTP_SERVER,
+    WEB_SETTINGS_FIELD_DEVICE_NAME,
     WEB_SETTINGS_FIELD_WEATHER,
     WEB_SETTINGS_FIELD_WEATHER_LATITUDE,
     WEB_SETTINGS_FIELD_WEATHER_LONGITUDE,
@@ -106,6 +108,7 @@ typedef struct {
     bool autoplay;
     bool yandex_music;
     bool dlna;
+    bool bt_output;
     bool flip_vertical;
     bool flip_horizontal;
     /* The zone as its row in device_timezone.h rather than its id: this view
@@ -124,12 +127,15 @@ typedef struct {
     bool home_screen_available;
     bool yandex_available;
     bool dlna_available;
+    /* The module is on the board and answering: the output switch and the
+     * speaker list mean something. */
+    bool bt_available;
 } web_settings_view_t;
 
 void web_settings_make_view(web_settings_view_t *view,
                             const device_settings_t *settings,
                             bool home_screen_available, bool yandex_available,
-                            bool dlna_available);
+                            bool dlna_available, bool bt_available);
 bool web_settings_view_equal(const web_settings_view_t *left,
                              const web_settings_view_t *right);
 
@@ -144,6 +150,10 @@ void web_settings_write(web_json_writer_t *writer,
  * key itself. */
 typedef struct {
     const char *ntp_server;
+    /* The name as stored - empty for the built-in one - and the built-in one
+     * itself, for the field's placeholder. */
+    const char *device_name;
+    const char *device_name_default;
     const char *weather_latitude;
     const char *weather_longitude;
     bool openweathermap_key_set;

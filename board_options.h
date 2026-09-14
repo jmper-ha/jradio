@@ -179,13 +179,23 @@
  * ====================================================================== */
 
 /* The ESP32-S3 has no classic Bluetooth at all - its radio is Wi-Fi and BLE -
- * and A2DP is a classic-Bluetooth profile. So this is not "not fitted yet"
- * the way FM is: on this chip it cannot be fitted, and playing from a phone
- * over Bluetooth needs a receiver module of its own feeding the I2S input, or
- * a different part.
- *
- * Left named so the answer is written down where the question is asked. */
-// #define BLUETOOTH BLUETOOTH_A2DP_SINK
+ * and A2DP is a classic-Bluetooth profile. So on this chip it cannot be
+ * fitted, and playing from a phone over Bluetooth is done by a module of its
+ * own: jradio-bt, a second ESP32 on the same I2S bus, driven over a UART.
+ * With it fitted, uncomment the three lines; the pins are free ones on this
+ * board (13 and 14 are RTC-capable, in case the sleep button ever needs
+ * them - then move these to 38/39). */
+#define BLUETOOTH BLUETOOTH_JRADIO_BT
+#define BT_UART_TX_GPIO 13
+#define BT_UART_RX_GPIO 14
+/* The DAC's soft-mute line, when it is wired: while the module sends the
+ * sound to a Bluetooth speaker the built-in output is muted, so the room
+ * does not hear the same music twice, a few hundred milliseconds apart. On
+ * the PCM5102A this is XSMT (low = mute), brought out on the purple modules
+ * as the XMT pad; it is tied to 3.3 V there through a solder bridge or a
+ * pull-up, which must be opened before the pin is driven. Leave undefined
+ * when not wired: the output then plays on regardless. */
+/* #define AUDIO_DAC_MUTE_GPIO 15 */
 
 /* ======================================================================
  * Optional features - what is built into this firmware

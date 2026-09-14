@@ -406,6 +406,31 @@ static void test_the_clock_settings_persist_and_are_checked(void)
     oversized[sizeof(oversized) - 1U] = '\0';
     assert(!device_settings_set_ntp_server(&settings, oversized));
 
+    /* The device's own name: empty on a card that never had one, which is
+       the built-in "jradio-XXXX" from the MAC. Trimmed, kept across a reload,
+       and emptied again by an empty field. A comma would cut the line. */
+    assert(settings.device_name[0] == '\0');
+    const unsigned char mac[6] = {0x68, 0xEE, 0x8F, 0x4D, 0xB6, 0x70};
+    char built_in[DEVICE_NAME_MAX];
+    device_settings_default_name(mac, built_in, sizeof(built_in));
+    assert(strcmp(built_in, "jradio-B670") == 0);
+    assert(device_settings_set_device_name(&settings, "  Кухня  "));
+    assert(strcmp(settings.device_name, "Кухня") == 0);
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(strcmp(reloaded.device_name, "Кухня") == 0);
+    assert(!device_settings_set_device_name(&settings, "a,b"));
+    assert(!device_settings_set_device_name(&settings, "a\tb"));
+    assert(!device_settings_set_device_name(&settings, "123456789012345678901234567890123"));
+    assert(strcmp(settings.device_name, "Кухня") == 0);
+    assert(device_settings_set_device_name(&settings, ""));
+    assert(settings.device_name[0] == '\0');
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.device_name[0] == '\0');
+    char published[DEVICE_NAME_MAX] = "x";
+    device_settings_publish(&settings);
+    assert(device_settings_published_name(published, sizeof(published)));
+    assert(published[0] == '\0');
+
     /* A file naming a zone this build has never heard of - an older card, or a
      * newer page - leaves the default standing rather than an empty string,
      * which would read as UTC. */
@@ -567,8 +592,78 @@ static void test_the_screensaver_settings_persist_and_are_checked(void)
     assert(settings.screensaver_brightness == DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT);
 }
 
+static void test_the_bluetooth_output_persists_and_forgets(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    /* Off, no speaker: a fresh card sends to the DAC. */
+    assert(!settings.bt_output);
+    assert(settings.bt_speaker[0] == '\0' && settings.bt_speaker_name[0] == '\0');
+
+    assert(device_settings_set_bt_output(&settings, true));
+    assert(device_settings_set_bt_speaker(&settings, "3D:AB:55:FA:58:FC", "JBL Flip"));
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.bt_output);
+    assert(strcmp(reloaded.bt_speaker, "3D:AB:55:FA:58:FC") == 0);
+    assert(strcmp(reloaded.bt_speaker_name, "JBL Flip") == 0);
+
+    /* Forgotten: an empty address, which the file cannot hold, so "-" stands
+     * in and reads back as empty. */
+    assert(device_settings_set_bt_speaker(&settings, "", ""));
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.bt_speaker[0] == '\0' && reloaded.bt_speaker_name[0] == '\0');
+    char value[8];
+    assert(settings_csv_get(test_path, "bt_speaker", value, sizeof(value)));
+    assert(strcmp(value, "-") == 0);
+    /* Too long to be an address is refused. */
+    assert(!device_settings_set_bt_speaker(&settings, "3D:AB:55:FA:58:FC:00", "x"));
+
+    /* The speakers known: every one chosen or heard from, newest first, the
+       same address once, a name completed later, and each forgettable -
+       forgetting the chosen one clears the choice too. Names lose the
+       characters the packing uses. */
+    device_bt_speaker_t known;
+    assert(device_settings_bt_speaker_at(&settings, 0, &known));
+    assert(strcmp(known.address, "3D:AB:55:FA:58:FC") == 0 && strcmp(known.name, "JBL Flip") == 0);
+    assert(!device_settings_bt_speaker_at(&settings, 1, &known));
+    assert(device_settings_remember_bt_speaker(&settings, "49:A7:42:A0:2A:C2", ""));
+    assert(device_settings_bt_speaker_at(&settings, 0, &known));
+    assert(strcmp(known.address, "49:A7:42:A0:2A:C2") == 0 && known.name[0] == '\0');
+    assert(device_settings_remember_bt_speaker(&settings, "49:A7:42:A0:2A:C2", "HOCO|EQ2\tPlus"));
+    assert(device_settings_bt_speaker_at(&settings, 0, &known));
+    assert(strcmp(known.name, "HOCO EQ2 Plus") == 0);
+    assert(device_settings_bt_speaker_at(&settings, 1, &known));
+    assert(strcmp(known.address, "3D:AB:55:FA:58:FC") == 0);
+    assert(!device_settings_bt_speaker_at(&settings, 2, &known));
+    assert(device_settings_remember_bt_speaker(&settings, "3D:AB:55:FA:58:FC", NULL));
+    assert(device_settings_bt_speaker_at(&settings, 0, &known));
+    assert(strcmp(known.address, "3D:AB:55:FA:58:FC") == 0 && strcmp(known.name, "JBL Flip") == 0);
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(device_settings_bt_speaker_at(&reloaded, 1, &known));
+    assert(strcmp(known.name, "HOCO EQ2 Plus") == 0);
+    /* Six remembered keep the newest five. */
+    for (int i = 0; i < 6; ++i) {
+        char address[18];
+        snprintf(address, sizeof(address), "00:11:22:33:44:%02X", i);
+        assert(device_settings_remember_bt_speaker(&settings, address, "Box"));
+    }
+    assert(device_settings_bt_speaker_at(&settings, 4, &known));
+    assert(strcmp(known.address, "00:11:22:33:44:01") == 0);
+    assert(!device_settings_bt_speaker_at(&settings, 5, &known));
+    assert(device_settings_set_bt_speaker(&settings, "00:11:22:33:44:05", "Box"));
+    assert(device_settings_forget_bt_speaker(&settings, "00:11:22:33:44:05"));
+    assert(settings.bt_speaker[0] == '\0');
+    assert(device_settings_bt_speaker_at(&settings, 0, &known));
+    assert(strcmp(known.address, "00:11:22:33:44:04") == 0);
+    assert(device_settings_forget_bt_speaker(&settings, "00:11:22:33:44:01"));
+    assert(!device_settings_bt_speaker_at(&settings, 4, &known));
+}
+
 int main(void)
 {
+    test_the_bluetooth_output_persists_and_forgets();
     test_defaults_and_load();
     test_values_and_unknown_lines_are_saved();
     test_invalid_values_do_not_change_model();

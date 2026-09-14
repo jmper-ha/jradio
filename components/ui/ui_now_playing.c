@@ -188,6 +188,17 @@ void ui_now_playing_for_file(const char *directory, const char *file_name,
     copy_string(tagged ? tags->artist : "", out->artist, sizeof(out->artist));
 }
 
+void ui_now_playing_for_phone(const char *phone, const audio_tags_t *tags,
+                              ui_now_playing_t *out)
+{
+    if (out == NULL) return;
+    memset(out, 0, sizeof(*out));
+    copy_string(phone != NULL ? phone : "", out->heading, sizeof(out->heading));
+    if (tags == NULL) return;
+    copy_string(tags->title, out->title, sizeof(out->title));
+    copy_string(tags->artist, out->artist, sizeof(out->artist));
+}
+
 void ui_now_playing_for_station(bool name_from_list, const char *list_name,
                                 const char *stream_name, const char *icy_title,
                                 ui_now_playing_t *out)

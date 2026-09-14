@@ -110,6 +110,14 @@ typedef enum {
  * Sized here rather than from the dlna headers, the way the Yandex fields are:
  * this layer stores strings and knows nothing about UPnP. The sizes are
  * checked against those headers where the two meet - see dlna_source.c. */
+#define DEVICE_BT_SPEAKER_NAME_MAX 48
+/* The speakers the device has sent to, newest first, so the page can offer
+ * them without a scan: a person with a speaker and a pair of headphones
+ * switches between the two. Packed into one settings.csv value as
+ * "address<TAB>name|address<TAB>name", which is why a name may hold neither
+ * character, and capped where the value's 256 bytes run out. */
+#define DEVICE_BT_SPEAKERS_MAX 5
+#define DEVICE_BT_SPEAKERS_PACKED_MAX 256
 #define DEVICE_LAST_DLNA_SERVER_MAX 64
 #define DEVICE_LAST_DLNA_ID_MAX 64
 /* The three in one settings.csv value, tab-separated, under the file's own
@@ -122,6 +130,13 @@ typedef enum {
  * behind the others: a heading is what the screen says, not where the music
  * comes from. */
 #define DEVICE_LAST_DLNA_TITLE_MAX 128
+
+/* What the device calls itself where a name is shown to a stranger: the
+ * Bluetooth name a phone or a speaker sees, and the setup access point's
+ * SSID. Up to 32 bytes, an SSID's limit, which Bluetooth allows too. Empty
+ * means the built-in "jradio-XXXX", from the last two bytes of the Wi-Fi
+ * MAC - the name the setup network has always had. */
+#define DEVICE_NAME_MAX 33
 
 /* A host name, not a URL: SNTP takes one and resolves it itself. Long enough
  * for the longest pool name anybody uses, and refused rather than truncated
@@ -170,6 +185,16 @@ typedef struct {
      * switch above, and stored the same way: the build decides whether the row
      * can exist at all, this only decides whether it does. */
     bool dlna;
+    /* The Bluetooth module as an output: whatever plays goes to the speaker
+     * or headphones named below instead of the DAC. Off by default. The
+     * speaker is its address as "AA:BB:CC:DD:EE:FF" and the name it gave
+     * when it was found, kept only for the settings page. */
+    bool bt_output;
+    char bt_speaker[18];
+    char bt_speaker_name[DEVICE_BT_SPEAKER_NAME_MAX];
+    char bt_speakers[DEVICE_BT_SPEAKERS_PACKED_MAX];
+    /* Empty for the built-in one; see DEVICE_NAME_MAX. */
+    char device_name[DEVICE_NAME_MAX];
     /* 0..100. Defaults to 80 rather than full: the first sound after a fresh
      * flash should not be at maximum. */
     unsigned char volume;
@@ -224,6 +249,27 @@ bool device_settings_set_flip_horizontal_value(device_settings_t *settings, int 
 bool device_settings_set_autoplay(device_settings_t *settings, bool enabled);
 bool device_settings_set_yandex_music(device_settings_t *settings, bool enabled);
 bool device_settings_set_dlna(device_settings_t *settings, bool enabled);
+bool device_settings_set_bt_output(device_settings_t *settings, bool enabled);
+/* The speaker to send to: its address and the name it was found under. An
+ * empty address forgets it. */
+/* One of the remembered speakers, by position from the newest. */
+typedef struct {
+    char address[18];
+    char name[DEVICE_BT_SPEAKER_NAME_MAX];
+} device_bt_speaker_t;
+/* False past the end. */
+bool device_settings_bt_speaker_at(const device_settings_t *settings, size_t index,
+                                   device_bt_speaker_t *out);
+/* Puts the speaker first, with this name when one is given and the stored
+ * one otherwise; the list is trimmed to DEVICE_BT_SPEAKERS_MAX and to what
+ * the value holds. */
+bool device_settings_remember_bt_speaker(device_settings_t *settings, const char *address,
+                                         const char *name);
+/* Takes the speaker out of the list, and out of the choice when it was
+ * the chosen one. */
+bool device_settings_forget_bt_speaker(device_settings_t *settings, const char *address);
+bool device_settings_set_bt_speaker(device_settings_t *settings, const char *address,
+                                    const char *name);
 /* Values above 100 are refused rather than clamped: a caller passing one has a
  * bug, and silently accepting it would hide it. */
 bool device_settings_set_volume(device_settings_t *settings, unsigned char volume);
@@ -237,6 +283,21 @@ bool device_settings_set_timezone(device_settings_t *settings, const char *id);
  * the pool. Spaces, commas and anything unprintable are refused: the first
  * would not resolve, the second would cut the settings line in two. */
 bool device_settings_set_ntp_server(device_settings_t *settings, const char *host);
+/* The device's own name; empty puts the built-in one back. Trimmed of
+ * surrounding spaces; a comma or a control character is refused, the first
+ * because it would cut the settings line in two. */
+bool device_settings_set_device_name(device_settings_t *settings, const char *name);
+/* The built-in name for a Wi-Fi MAC: "jradio-XXXX". */
+void device_settings_default_name(const unsigned char mac[6], char *out, size_t size);
+/* The name as stored on the settings card, empty for the built-in one;
+ * false before the first publish. */
+bool device_settings_published_name(char *out, size_t size);
+#ifdef ESP_PLATFORM
+/* The name to show a stranger right now: the published one, or the built-in
+ * one from this board's MAC while nothing is published or the field is
+ * empty. */
+void device_settings_device_name(char *out, size_t size);
+#endif
 bool device_settings_set_weather_provider(device_settings_t *settings,
                                           device_weather_provider_t provider);
 /* The panel's one switch: off is off, on is the service the page last
@@ -325,6 +386,8 @@ bool device_settings_read_published(device_settings_t *copy);
  * that has not been told yet should assume a source is there rather than take
  * it away for the first second after boot. */
 bool device_settings_published_switches(bool *yandex_music, bool *dlna);
+/* The published Bluetooth output: whether it is on and which speaker. */
+bool device_settings_published_bt_output(bool *enabled, char *address, size_t address_size);
 
 /* The language out of that same copy, for the components that put words on a
  * screen or into a browser without owning the settings - the controller's

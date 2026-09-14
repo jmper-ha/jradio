@@ -46,6 +46,7 @@
 #include "file_track_progress.h"
 
 #include "audio_volume.h"
+#include "bt_link.h"
 #include "device_clock.h"
 #include "dlna_source.h"
 #include "ui_files_notice.h"
@@ -88,6 +89,8 @@
 /* A row that is on the screen but cannot be started: dimmer than the
  * unselected text, still plainly readable against the ground. */
 #define UI_COLOR_DISABLED 0x4E606C
+/* Bluetooth's own blue, for the rune beside the volume bar. */
+#define UI_COLOR_BLUETOOTH 0x3D9BFF
 /* Only ever a warning; never decoration, so it stays out of the ramp above. */
 #define UI_COLOR_NOTICE 0xFFD54F
 /* A state that is a failure rather than a step: "Connection error" and nothing
@@ -238,6 +241,10 @@ static unsigned int s_source_cover_generation;
 static lv_obj_t *s_source_volume;
 static lv_obj_t *s_source_volume_bar;
 static lv_obj_t *s_source_volume_icon;
+#ifdef UI_SRC_BT_ICON_X
+static lv_obj_t *s_source_bt_icon;
+#endif
+static bool s_source_to_speaker;
 /* The like mark, between the buffer reading and the volume. Only the rotor's
  * tracks have one, so it is hidden for every other source rather than shown
  * empty - an empty heart on a radio station would offer something the button
@@ -276,7 +283,7 @@ static lv_obj_t *s_settings_more_above;
 static lv_obj_t *s_settings_more_below;
 /* One per boolean setting, not per row on screen: only one group is open at
  * a time, so at most three are ever visible, but each keeps its own object. */
-#define UI_SETTINGS_SWITCH_COUNT 6U
+#define UI_SETTINGS_SWITCH_COUNT 7U
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
@@ -1446,6 +1453,23 @@ static void ui_update_footer(void)
         lv_obj_add_flag(s_source_progress, LV_OBJ_FLAG_HIDDEN);
     }
 
+    /* Where the sound goes: the rune appears (or the speaker icon becomes
+     * it, on a shape with no room) while a Bluetooth speaker has it. Only on
+     * a change - this runs every pass. */
+    const bool to_speaker = bt_link_output_connected();
+    if (to_speaker != s_source_to_speaker) {
+        s_source_to_speaker = to_speaker;
+#ifdef UI_SRC_BT_ICON_X
+        if (to_speaker) lv_obj_clear_flag(s_source_bt_icon, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s_source_bt_icon, LV_OBJ_FLAG_HIDDEN);
+#else
+        lv_image_set_src(s_source_volume_icon,
+                         to_speaker ? &ui_feed_icon_bluetooth_16 : &ui_feed_icon_volume_16);
+#endif
+        lv_obj_set_style_image_recolor(s_source_volume_icon,
+                                       lv_color_hex(to_speaker ? UI_COLOR_BLUETOOTH : UI_COLOR_MUTED), 0);
+    }
+
     const uint8_t volume = board_audio_volume();
     char volume_text[8];
     snprintf(volume_text, sizeof(volume_text), "%u", (unsigned int)volume);
@@ -1610,12 +1634,49 @@ static void ui_update_dlna_status(const player_snapshot_t *snapshot)
     ui_set_stream_readings(snapshot);
 }
 
+/* The phone, drawn the way a media server's track is: its name where a
+ * station's goes, "performer - track" under it. With no phone on, the state
+ * line says where to find the device; a phone on but idle says nothing,
+ * since its own screen is where play is pressed. */
+static void ui_update_bluetooth_status(const player_snapshot_t *snapshot)
+{
+    audio_tags_t tags;
+    const bool tagged = player_control_track_tags(&tags);
+    ui_now_playing_t now;
+    ui_now_playing_for_phone(snapshot->context, tagged ? &tags : NULL, &now);
+    ui_note_now_playing(&now);
+
+    ui_set_label_text_if_changed(s_source_title, now.heading[0] != '\0'
+                                                     ? now.heading
+                                                     : ui_text(DEVICE_TEXT_SOURCE_BLUETOOTH));
+    ui_scroller_set_text(&s_source_detail, now.title);
+    const char *state = "";
+    /* Room for the longer of the two texts with a 32-byte name in it. */
+    char pairing[96];
+    if (snapshot->playback_state == PLAYER_PLAYBACK_STOPPED && snapshot->context[0] == '\0') {
+        char name[DEVICE_NAME_MAX];
+        device_settings_device_name(name, sizeof(name));
+        snprintf(pairing, sizeof(pairing), ui_text(DEVICE_TEXT_BLUETOOTH_PAIRING), name);
+        state = pairing;
+    } else if (snapshot->playback_state != PLAYER_PLAYBACK_PLAYING &&
+               snapshot->playback_state != PLAYER_PLAYBACK_PAUSED &&
+               snapshot->playback_state != PLAYER_PLAYBACK_STOPPED) {
+        state = ui_radio_state_text(snapshot->playback_state);
+    }
+    ui_set_state_line_from(snapshot, state, now.artist);
+    ui_set_stream_readings(snapshot);
+}
+
 static void ui_update_radio_status(const player_snapshot_t *snapshot)
 {
     if (snapshot == NULL) return;
     ui_update_playback_marks(snapshot);
     if (audio_source_is_files(ui_player_state_source(&s_player_ui))) {
         ui_update_files_status(snapshot);
+        return;
+    }
+    if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_BLUETOOTH) {
+        ui_update_bluetooth_status(snapshot);
         return;
     }
     /* Both station sources render the same way: a name on top, a track under
@@ -2546,6 +2607,10 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_DLNA,
                                  s_device_settings.dlna);
         break;
+    case UI_SETTINGS_ROW_BT_OUTPUT_FIELD:
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_BT_OUTPUT,
+                                 s_device_settings.bt_output);
+        break;
     case UI_SETTINGS_ROW_BRIGHTNESS_FIELD:
         /* Angle brackets while the knob owns the value: the cursor already
          * says which row, and this is the only thing that says the next click
@@ -2613,6 +2678,10 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     case UI_SETTINGS_ROW_WEATHER_FIELD:
         *index = 5U;
         *value = s_device_settings.weather_provider != DEVICE_WEATHER_OFF;
+        return true;
+    case UI_SETTINGS_ROW_BT_OUTPUT_FIELD:
+        *index = 6U;
+        *value = s_device_settings.bt_output;
         return true;
     default:
         return false;
@@ -2893,6 +2962,43 @@ static void ui_close_settings(void)
  * does not do: the backlight, the panel rotation, the output volume and the
  * Yandex row in both home screens all have to be told, and this task is the
  * only one allowed to tell them. */
+/* The module as an output, as the settings say. Told here on every change
+ * and at start: the link keeps it so from then on, whatever the player is
+ * doing, unless the player takes the module for a phone. */
+static void ui_apply_bt_output(void)
+{
+    (void)bt_link_set_output(s_device_settings.bt_output, s_device_settings.bt_speaker);
+}
+
+/* The name the module answers to, from the settings just published: the
+ * link sends it only when it changed. After the publish, since that is
+ * where the resolved name comes from. */
+static void ui_apply_device_name(void)
+{
+    char name[DEVICE_NAME_MAX];
+    device_settings_device_name(name, sizeof(name));
+    (void)bt_link_set_name(name);
+}
+
+static void ui_adopt_speaker(void)
+{
+    char address[18];
+    char name[DEVICE_BT_SPEAKER_NAME_MAX];
+    if (!bt_link_output_peer(address, sizeof(address), name, sizeof(name))) return;
+    const bool other = strcmp(address, s_device_settings.bt_speaker) != 0;
+    /* The name arrives a moment after the connection; a stored one is
+     * completed when it comes, never overwritten with nothing. */
+    const bool named = name[0] != '\0' && strcmp(name, s_device_settings.bt_speaker_name) != 0;
+    if (!other && !named) return;
+    if (!device_settings_set_bt_speaker(&s_device_settings, address,
+                                        name[0] != '\0' ? name : (other ? "" : s_device_settings.bt_speaker_name))) {
+        return;
+    }
+    ESP_LOGI(TAG, "speaker is now %s \"%s\"", address, s_device_settings.bt_speaker_name);
+    device_settings_publish(&s_device_settings);
+    ui_apply_bt_output();
+}
+
 static void ui_reload_settings(void)
 {
     /* A knob being turned right now has not reached the file yet - the write
@@ -2921,6 +3027,7 @@ static void ui_reload_settings(void)
     /* Same shape: the task compares and does nothing unless the service or
      * the place moved. */
     weather_apply(&s_device_settings);
+    ui_apply_bt_output();
     ui_apply_source_visibility();
     /* The model is left alone while the settings screen is open: re-initialising
      * it moves the cursor back to the top, and someone standing at the device
@@ -2928,6 +3035,7 @@ static void ui_reload_settings(void)
      * be one Yandex switch out of date until the screen is left and reopened,
      * which is the narrower of the two problems. */
     device_settings_publish(&s_device_settings);
+    ui_apply_device_name();
     if (s_settings_open) {
         ui_update_settings();
     } else {
@@ -3357,6 +3465,10 @@ static void ui_settings_change_selected(void)
     case UI_SETTINGS_ROW_DLNA_FIELD:
         changed = device_settings_set_dlna(&s_device_settings, !s_device_settings.dlna);
         if (changed) ui_apply_source_visibility();
+        break;
+    case UI_SETTINGS_ROW_BT_OUTPUT_FIELD:
+        changed = device_settings_set_bt_output(&s_device_settings, !s_device_settings.bt_output);
+        if (changed) ui_apply_bt_output();
         break;
     case UI_SETTINGS_ROW_WEATHER_FIELD:
         /* Off, or back to the service the page chose. The task is told the
@@ -3794,6 +3906,19 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_volume_icon, UI_SRC_VOLUME_ICON_X, UI_SRC_FOOT_Y + 1);
     lv_obj_set_style_image_recolor(s_source_volume_icon, lv_color_hex(UI_COLOR_MUTED), 0);
     lv_obj_set_style_image_recolor_opa(s_source_volume_icon, LV_OPA_COVER, 0);
+#ifdef UI_SRC_BT_ICON_X
+    /* Says where the sound is going while it goes to a Bluetooth speaker:
+     * the rune in Bluetooth's blue, and the speaker beside it in the same,
+     * so the pair reads as one mark. Hidden otherwise. */
+    s_source_bt_icon = lv_image_create(s_source_screen);
+    lv_obj_remove_style_all(s_source_bt_icon);
+    lv_image_set_src(s_source_bt_icon, &ui_feed_icon_bluetooth_16);
+    lv_obj_set_size(s_source_bt_icon, 16, 16);
+    lv_obj_set_pos(s_source_bt_icon, UI_SRC_BT_ICON_X, UI_SRC_FOOT_Y + 1);
+    lv_obj_set_style_image_recolor(s_source_bt_icon, lv_color_hex(UI_COLOR_BLUETOOTH), 0);
+    lv_obj_set_style_image_recolor_opa(s_source_bt_icon, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_source_bt_icon, LV_OBJ_FLAG_HIDDEN);
+#endif
 
     s_source_volume_bar = lv_obj_create(s_source_screen);
     lv_obj_set_pos(s_source_volume_bar, UI_SRC_VOLUME_BAR_X, UI_SRC_FOOT_Y + 5);
@@ -3990,6 +4115,13 @@ static void ui_show_source(void)
         s_files_list_open_requested = true;
     }
     if (!ui_submit_player_command(&command)) return;
+    /* The phone is not a list to choose from: the player screen is the whole
+     * of this source, and while no phone is on it the screen says where to
+     * look for the device. */
+    if (selected_source == AUDIO_SOURCE_BLUETOOTH) {
+        ui_load_source_screen(AUDIO_SOURCE_BLUETOOTH);
+        return;
+    }
     // Both sources open on their list rather than the player: there is nothing
     // to look at on the player screen until something has been chosen.
     ui_show_station_list();
@@ -4732,7 +4864,9 @@ static void ui_handle_input(board_input_action_t action)
                     return;
                 }
                 command.kind = PLAYER_COMMAND_NEXT_TRACK;
-            } else if (has_list) {
+            } else if (has_list || source == AUDIO_SOURCE_BLUETOOTH) {
+                /* The phone's queue has both directions, and no list on this
+                 * side to page through: the keys go straight to it. */
                 command.kind = forward ? PLAYER_COMMAND_NEXT_ITEM
                                        : PLAYER_COMMAND_PREVIOUS_ITEM;
             } else {
@@ -5310,6 +5444,23 @@ static void ui_task(void *arg)
         default:
             break;
         }
+        /* The volume can change under this task: a phone over Bluetooth
+         * sets it straight on the board. Treated exactly like a turn of the
+         * knob - published, saved after it settles - or the next reload of
+         * the settings put the file's old value back, and the phone and the
+         * panel disagreed after every quick drag of the slider. */
+        if (!s_volume_save_pending && board_audio_volume() != s_device_settings.volume) {
+            s_device_settings.volume = board_audio_volume();
+            s_volume_save_pending = true;
+            s_volume_changed_ms = ui_tick_get_ms();
+            device_settings_publish(&s_device_settings);
+            ui_update_footer();
+        }
+        /* The speaker can change under this task too: a paired one that is
+         * switched on calls the module itself, whichever was chosen. What is
+         * playing is the speaker, so the choice follows it - the settings,
+         * the module's memory and the page then name the same device. */
+        ui_adopt_speaker();
         if (ui_volume_commit_due(s_volume_save_pending, s_volume_changed_ms,
                                  ui_tick_get_ms(), UI_VOLUME_SETTLE_MS)) {
             s_volume_save_pending = false;
@@ -5561,9 +5712,11 @@ esp_err_t ui_init(void)
     // back from a power cut at full blast when the user had it at 20 is the
     // kind of surprise a saved setting exists to prevent.
     board_audio_set_volume(s_device_settings.volume);
+    ui_apply_bt_output();
     // Before the task starts: a browser that connects first would otherwise be
     // told the device has no settings at all.
     device_settings_publish(&s_device_settings);
+    ui_apply_device_name();
     // Asked with both volumes assumed ready: this only decides whether there is
     // anything to wait for at all. What is actually there is settled later, by
     // ui_autoplay_step(), once the drive has had time to enumerate.

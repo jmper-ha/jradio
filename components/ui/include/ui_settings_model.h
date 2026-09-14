@@ -28,6 +28,10 @@ typedef enum {
      * A build without Yandex Music has no switch for it in General. */
     UI_SETTINGS_ROW_YANDEX_FIELD,
     UI_SETTINGS_ROW_DLNA_FIELD,
+    /* The module as an output - the sound goes to a speaker over Bluetooth
+     * instead of the DAC. Only the switch here; which speaker is the page's,
+     * where a list can be shown. */
+    UI_SETTINGS_ROW_BT_OUTPUT_FIELD,
     UI_SETTINGS_ROW_DISPLAY_GROUP,
     UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
     /* The mode only. Its wait and its idle level are numbers nobody sets

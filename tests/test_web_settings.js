@@ -73,6 +73,7 @@ const ids = [
   'socket-state', 'wifi-form', 'wifi-ssid', 'wifi-password', 'wifi-password-reveal',
   'wifi-submit',
   'about-firmware', 'about-built', 'about-web', 'about-idf', 'about-notice',
+  'about-module-label', 'about-module',
   'about-author',
   'wifi-status', 'wifi-active', 'wifi-ip', 'saved-networks',
   'saved-networks-empty', 'wifi-add', 'wifi-cancel', 'wifi-scan',
@@ -86,12 +87,14 @@ const ids = [
   'device-scroll', 'device-buffer-view',
   'device-autoplay', 'device-yandex', 'device-yandex-row',
   'device-dlna', 'device-dlna-row',
+  'bt-output-block', 'device-bt-output', 'bt-speakers', 'bt-speakers-empty',
+  'bt-chosen', 'bt-chosen-name', 'bt-chosen-state', 'bt-scan',
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal',
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
   'device-idle-brightness-value', 'device-screensaver-after-row',
   'device-idle-brightness-row',
-  'device-timezone', 'device-ntp',
+  'device-timezone', 'device-ntp', 'device-name',
   'device-weather', 'device-weather-latitude', 'device-weather-longitude',
   'device-weather-key', 'device-weather-key-row', 'device-weather-now-row',
   'device-weather-now',
@@ -149,12 +152,13 @@ let settingsReply = {
   autoplay: false,
   yandex_music: true, dlna: false, flip_vertical: false, flip_horizontal: true,
   brightness: 45, volume: 62,
-  available: {home_screen: true, yandex_music: false, dlna: true},
+  available: {home_screen: true, yandex_music: false, dlna: true, bt_output: true},
   brightness_min: 10, brightness_max: 90,
   screensaver: 'clock', screensaver_seconds: 120, screensaver_brightness: 15,
   idle_brightness_min: 5, idle_brightness_max: 50,
   screensaver_seconds_choices: [15, 30, 60, 120, 300, 600],
   timezone: 'asia/yekaterinburg', ntp_server: 'ntp.example.lan',
+  device_name: '', device_name_default: 'jradio-B670',
   weather: 'off', weather_latitude: '55.75', weather_longitude: '37.62',
   openweathermap_key_set: false, weather_state: 'off', weather_http_status: 0,
   weather_report: null,
@@ -179,6 +183,12 @@ const confirmCalls = [];
 // GET after it answers.
 let scanStartOk = true;
 let scanReply = {state: 'done', networks: []};
+/* The module's speaker list: what GET /api/bt/speakers reports, and what a
+   choice posted to /api/bt/speaker comes back as. */
+let speakersReply = {available: true, scanning: false, connected: false, chosen: '', chosen_name: '',
+                     known: [], found: []};
+const speakerPosts = [];
+const speakerForgets = [];
 // What POST /api/restore answers, and the status it answers with.
 let restoreReply = {restored: ['wifi.json', 'settings.csv'], warnings: [], reboot: true};
 let restoreOk = true;
@@ -230,6 +240,27 @@ const context = {
           return Promise.resolve({ok: scanStartOk, json: () => Promise.resolve({})});
         }
         return Promise.resolve({ok: true, json: () => Promise.resolve(scanReply)});
+      }
+      if (String(url).startsWith('/api/bt/forget')) {
+        const body = JSON.parse(options.body);
+        speakerForgets.push(body.address);
+        speakersReply = {...speakersReply,
+                         known: speakersReply.known.filter((entry) => entry.address !== body.address),
+                         chosen: speakersReply.chosen === body.address ? '' : speakersReply.chosen,
+                         chosen_name: speakersReply.chosen === body.address ? '' : speakersReply.chosen_name};
+        return Promise.resolve({ok: true, json: () => Promise.resolve(speakersReply)});
+      }
+      if (String(url).startsWith('/api/bt/speaker')) {
+        if (options && options.method === 'POST' && typeof options.body === 'string') {
+          const body = JSON.parse(options.body);
+          speakerPosts.push(body);
+          /* Chosen is known, as the device does it. */
+          const known = [{address: body.address, name: body.name}]
+            .concat(speakersReply.known.filter((entry) => entry.address !== body.address));
+          speakersReply = {...speakersReply, chosen: body.address, chosen_name: body.name,
+                           known: body.address ? known : speakersReply.known};
+        }
+        return Promise.resolve({ok: true, json: () => Promise.resolve(speakersReply)});
       }
       if (String(url).startsWith('/api/settings')) {
         if (options && options.method === 'POST' && settingsPostFails) {
@@ -422,8 +453,10 @@ vm.runInContext(fs.readFileSync('data/www/settings.js', 'utf8'), context);
   await settle();
 }
 
+/* The speaker line's own 4 s re-read sits in the same list; it is not the
+   Yandex poll. */
 function lastYandexTimer() {
-  return timers.filter((entry) => !entry.cleared).at(-1);
+  return timers.filter((entry) => !entry.cleared && entry.delay !== 4000).at(-1);
 }
 
 (async () => {
@@ -593,6 +626,93 @@ function lastYandexTimer() {
   assert.equal(elements['#device-dlna-row'].hidden, false);
   assert.equal(elements['#device-dlna'].checked, false);
   assert.equal(elements['#device-home-screen-row'].hidden, false);
+  /* The Bluetooth block is on the page while the module answers, and the
+     speaker beside its switch comes from its own endpoint: none chosen yet. */
+  assert.equal(elements['#bt-output-block'].hidden, false);
+  await settle();
+  assert.equal(elements['#bt-chosen-name'].textContent, 'не выбрана');
+  /* A scan: the line says "looking" from the click on, through the first
+     answer (the module has not begun yet) and the polls while it runs, and
+     only the poll that sees it over lets the list speak. Then a click saves
+     the address and the name, and the chosen one is a known speaker with
+     its mark and its own "forget" - the found row for it goes. */
+  speakersReply = {...speakersReply, scanning: false, found: []};
+  elements['#bt-scan'].emit('click');
+  await settle();
+  assert.ok(fetchCalls.some((call) => call.url === '/api/bt/speakers?scan=1'));
+  assert.equal(elements['#bt-speakers-empty'].hidden, false);
+  assert.ok(elements['#bt-speakers-empty'].textContent.startsWith('Ищем'));
+  assert.equal(elements['#bt-scan'].disabled, true);
+  assert.equal(elements['#bt-scan'].textContent, 'Ищем…');
+  speakersReply = {...speakersReply, scanning: true};
+  timers.filter((entry) => !entry.cleared && entry.delay === 1000).at(-1).callback();
+  await settle();
+  assert.ok(elements['#bt-speakers-empty'].textContent.startsWith('Ищем'));
+  speakersReply = {...speakersReply, scanning: false,
+                   found: [{address: '3D:AB:55:FA:58:FC', name: 'JBL Flip', rssi: -60},
+                           {address: '01:02:03:04:05:06', name: '', rssi: -80}]};
+  timers.filter((entry) => !entry.cleared && entry.delay === 1000).at(-1).callback();
+  await settle();
+  assert.equal(elements['#bt-speakers-empty'].hidden, true);
+  assert.equal(elements['#bt-scan'].disabled, false);
+  assert.equal(elements['#bt-scan'].textContent, 'Найти колонки');
+  const speakerRows = elements['#bt-speakers'].children;
+  assert.equal(speakerRows.length, 2);
+  assert.equal(speakerRows[0].children[0].textContent, 'JBL Flip');
+  assert.equal(speakerRows[1].children[0].textContent, 'без имени');
+  speakerRows[0].children[0].emit('click');
+  await settle();
+  assert.deepEqual(speakerPosts[speakerPosts.length - 1], {address: '3D:AB:55:FA:58:FC', name: 'JBL Flip'});
+  assert.equal(elements['#bt-chosen-name'].textContent, 'JBL Flip');
+  const knownRows = elements['#bt-speakers'].children;
+  assert.equal(knownRows.length, 2);
+  assert.equal(knownRows[0].children[0].textContent, 'JBL Flip');
+  assert.equal(knownRows[0].children[1].textContent, '✓');
+  assert.equal(knownRows[0].children[2].textContent, 'Забыть');
+  assert.equal(knownRows[1].children[0].textContent, 'без имени');
+  /* Forgetting the chosen one: the row goes, the choice with it. */
+  knownRows[0].children[2].emit('click');
+  await settle();
+  assert.deepEqual(speakerForgets, ['3D:AB:55:FA:58:FC']);
+  assert.equal(elements['#bt-chosen-name'].textContent, 'не выбрана');
+  // Still in the scan's list, as a find again - with its signal, no "forget".
+  assert.equal(elements['#bt-speakers'].children.length, 2);
+  assert.equal(elements['#bt-speakers'].children[0].children[0].textContent, 'JBL Flip');
+  assert.ok(elements['#bt-speakers'].children[0].children[1].textContent.endsWith('dBm'));
+  /* The phone has the module: the search button is off, the line beside
+     the speaker says why, and a click starts nothing. */
+  speakersReply = {...speakersReply, chosen: '3D:AB:55:FA:58:FC', chosen_name: 'JBL Flip', phone: true};
+  elements['#bt-scan'].disabled = false;
+  timers.filter((entry) => !entry.cleared && entry.delay === 1000).at(-1).callback();
+  await settle();
+  assert.equal(elements['#bt-scan'].disabled, true);
+  assert.equal(elements['#bt-chosen-state'].textContent, '(модуль занят телефоном)');
+  assert.equal(elements['#bt-speakers-empty'].hidden, false);
+  const beforePhoneClick = fetchCalls.length;
+  elements['#bt-scan'].emit('click');
+  await settle();
+  assert.equal(fetchCalls.length, beforePhoneClick);
+  speakersReply = {...speakersReply, phone: false, chosen: '', chosen_name: ''};
+  timers.filter((entry) => !entry.cleared && entry.delay === 4000).at(-1).callback();
+  await settle();
+  assert.equal(elements['#bt-scan'].disabled, false);
+
+  /* The speaker comes and goes on its own, and no frame says so: the line is
+     re-read every few seconds, so a speaker that reconnected while the page
+     was open shows as connected without a reload. */
+  speakersReply = {...speakersReply, chosen: '3D:AB:55:FA:58:FC', chosen_name: 'JBL Flip', connected: true};
+  /* The scan's own poll is still pending from above; let it run out first,
+     as it would on the device once the module reports the scan over. */
+  timers.filter((entry) => !entry.cleared && entry.delay === 1000).at(-1).callback();
+  await settle();
+  const speakerRefresh = timers.filter((entry) => !entry.cleared && entry.delay === 4000).at(-1);
+  assert.ok(speakerRefresh);
+  const beforeSpeakerRefresh = fetchCalls.length;
+  speakerRefresh.callback();
+  await settle();
+  assert.equal(fetchCalls.slice(beforeSpeakerRefresh).filter((call) => call.url === '/api/bt/speakers').length, 1);
+  assert.equal(elements['#bt-chosen-state'].textContent, '(подключена)');
+  assert.ok(timers.filter((entry) => !entry.cleared && entry.delay === 4000).length >= 2);
 
   settingsReply = {...settingsReply, autoplay: true};
   elements['#device-autoplay'].checked = true;
@@ -906,20 +1026,26 @@ function lastYandexTimer() {
   assert.equal(elements['#about-web'].textContent, 'v1.1.0');
   assert.equal(elements['#about-idf'].textContent, 'v5.5.5');
   assert.equal(elements['#about-notice'].hidden, false);
+  // No module answered: no line for it at all, rather than "unknown".
+  assert.equal(elements['#about-module'].hidden, true);
+  assert.equal(elements['#about-module-label'].hidden, true);
   // The address is the device's answer, not a string written into the page,
   // and it is offered as something to write to.
   assert.equal(elements['#about-author'].textContent, 'someone@example.com');
   assert.equal(elements['#about-author'].href, 'mailto:someone@example.com');
 
-  // Agreement is the quiet case.
+  // Agreement is the quiet case; a module that answers gets its line.
   aboutReply = {
     firmware: {version: 'v1.2.0', built: 'Sep  6 2026', present: true},
     web: {version: 'v1.2.0', built: '2026-09-06', present: true},
     idf: 'v5.5.5', matched: true, author: 'someone@example.com',
+    module: {present: true, version: '1.0.0'},
   };
   await reload();
   assert.equal(elements['#about-web'].textContent, 'v1.2.0');
   assert.equal(elements['#about-notice'].hidden, true);
+  assert.equal(elements['#about-module'].hidden, false);
+  assert.equal(elements['#about-module'].textContent, '1.0.0');
 
   // A web half the device could not read says so, and does *not* raise the
   // mismatch notice: an image flashed before the stamp existed is old, not
@@ -971,6 +1097,16 @@ function lastYandexTimer() {
   // to nothing, and the space is a typo rather than a choice.
   assert.deepEqual(JSON.parse(fetchCalls.at(-1).options.body),
                    {field: 'ntp_server', value: 'time.cloudflare.com'});
+
+  /* The device's name: empty on the card, so the field is empty and the
+     built-in name stands in as its placeholder; typed, it is sent trimmed. */
+  assert.equal(elements['#device-name'].value, '');
+  assert.equal(elements['#device-name'].placeholder, 'jradio-B670');
+  elements['#device-name'].value = ' Кухня ';
+  elements['#device-name'].emit('change');
+  await settle();
+  assert.deepEqual(JSON.parse(fetchCalls.at(-1).options.body),
+                   {field: 'device_name', value: 'Кухня'});
 
   /* The weather. Off on this device, so the key row and the reading are both
      out of the way, and the coordinates show what the card holds. */

@@ -5,8 +5,9 @@
 ## First run
 
 The device needs Wi-Fi. On its first start it brings up an access point of its
-own: connect to it from a phone, open `http://192.168.4.1` and pick your
-network. While the device is joined to no network at all, the settings page
+own, named after the device - `jradio-XXXX`, the XXXX from the board's serial
+number, until the settings give it another name: connect to it from a phone,
+open `http://192.168.4.1` and pick your network. While the device is joined to no network at all, the settings page
 shows the networks around it with their signal levels - pick one and type the
 password. Up to five networks are remembered, and after that it connects on its
 own.
@@ -135,11 +136,61 @@ Names for files are read from their tags, including Russian ones in older
 encodings. Whatever the tags do not say is replaced by what is known: the
 folder in place of the album, the file name in place of the title.
 
+### Bluetooth
+
+On a board with the [jradio-bt module](hardware.en.md#bluetooth-the-jradio-bt-module)
+the menu has a "Bluetooth" source - while the module answers; an unplugged
+module leaves the menu. It has no list: choosing the source opens the player
+screen at once, and until a phone connects the state line says where to look
+for us - the device shows in the phone's Bluetooth under its own name
+(`jradio-XXXX`, or whatever the settings say) for about two minutes after the
+source is chosen (and again after a press of the encoder). A phone that knows
+us connects on its own.
+
+From there it is the radio's screen: the phone's name where a station's goes,
+performer, track and cover from the phone, the back/forward keys move through
+its queue, a press of the encoder pauses and resumes, the knob sets the volume
+and the phone's slider follows it (and the other way round). The position bar
+appears when the phone reports the track's length.
+
+#### Sound to a Bluetooth speaker
+
+The same module works the other way too: whatever the device plays - radio,
+files, Yandex, DLNA - goes to a Bluetooth speaker or headphones. It is switched
+on from the settings page of the web interface, in "Sound over Bluetooth":
+"Find speakers" lists what is around (the search takes about five seconds, and
+the Wi-Fi stream may stumble meanwhile - the module's antenna sits next to the
+board's), a tap on a result saves the choice, and the device calls the speaker -
+three times: at once, ten and twenty seconds later. Then it keeps quiet and
+waits for the speaker to call (a paired speaker connects to its last source when
+switched on): each call is five seconds of transmitting on every channel, and a
+speaker that is off and called without end is a radio that stutters. To call
+again, tap the speaker in the list once more. Every speaker the device has
+ever sent to stays in the list (up to five, newest first) - a speaker and a
+pair of headphones are swapped with one tap, no scan; "Forget" beside each
+takes it out and unpairs it on the module. A paired speaker connects on its own
+when switched on - and then becomes the chosen one, whatever was chosen before:
+it is the one playing. The device's screen has the same
+switch - "Sound over Bluetooth" among the general settings; a speaker cannot be
+chosen from the screen.
+
+The speaker's buttons work: pause and play, next and previous station (or
+track), its volume wheel turns the device's volume, and the device's knob sets
+the speaker's. While the sound goes to the speaker the built-in DAC plays too -
+the module listens on the same bus.
+
 ## Settings
 
 Language, the look of the home screen, how long lines scroll, how the buffer
 reading is shown, autoplay, Yandex Music, DLNA, screen brightness, flipping the
 picture vertically and horizontally, volume. They apply at once and are saved.
+
+In the web interface only - "Device name": what the device is called over
+Bluetooth and as the Wi-Fi network during first setup. An empty field is the
+built-in `jradio-XXXX`, shown in the field as its placeholder. Up to 32
+characters, no commas. A phone that already knows the device remembers the
+old name - to see the new one, forget the device in the phone's Bluetooth and
+find it again.
 
 The "Яндекс Музыка" and "DLNA" switches take the source away everywhere: the
 list on the screen, the carousel, and the web interface. A source switched off

@@ -18,7 +18,23 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
                             uint32_t timeout_ms);
 esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloaded);
 esp_err_t board_audio_set_sample_rate(uint32_t sample_rate);
+/* Told every time the output rate changes, and once on registration with
+ * the current rate. For the Bluetooth module, which listens to the bus
+ * and has to know what it is hearing; the board does not know the module. */
+typedef void (*board_audio_rate_listener_t)(uint32_t sample_rate);
+void board_audio_set_rate_listener(board_audio_rate_listener_t listener);
+uint32_t board_audio_sample_rate(void);
 esp_err_t board_audio_set_enabled(bool enabled);
+/* The I2S pins handed to the Bluetooth module and taken back: released, the
+ * channel is gone and the three pins are inputs; reclaimed, the channel is
+ * created again at the last sample rate, disabled, ready for the next
+ * start. Both are no-ops when already in that state. */
+esp_err_t board_audio_release_bus(void);
+esp_err_t board_audio_reclaim_bus(void);
+/* The DAC's soft mute, on boards that wire AUDIO_DAC_MUTE_GPIO; a no-op
+ * elsewhere. The stream keeps going either way - only the analogue output
+ * is silenced, which is what a Bluetooth speaker taking the sound wants. */
+void board_audio_set_dac_muted(bool muted);
 esp_err_t board_audio_self_test(uint32_t duration_ms);
 /* Monotonic count of I2S TX underruns (DMA ran dry mid-playback, i.e. an
  * audible dropout). Nothing else reports these; poll and diff to attribute

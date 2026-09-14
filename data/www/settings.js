@@ -27,6 +27,8 @@
   const aboutBuilt = document.querySelector('#about-built');
   const aboutWeb = document.querySelector('#about-web');
   const aboutIdf = document.querySelector('#about-idf');
+  const aboutModuleLabel = document.querySelector('#about-module-label');
+  const aboutModule = document.querySelector('#about-module');
   const aboutNotice = document.querySelector('#about-notice');
   const aboutAuthor = document.querySelector('#about-author');
   const yandexStatus = document.querySelector('#yandex-status');
@@ -68,8 +70,13 @@
      row: document.querySelector('#device-yandex-row'), gate: 'yandex_music'},
     {field: 'dlna', kind: 'switch', node: document.querySelector('#device-dlna'),
      row: document.querySelector('#device-dlna-row'), gate: 'dlna'},
+    {field: 'bt_output', kind: 'switch', node: document.querySelector('#device-bt-output'),
+     row: document.querySelector('#bt-output-block'), gate: 'bt_output'},
     {field: 'timezone', kind: 'choice', node: deviceTimezone},
     {field: 'ntp_server', kind: 'text', node: document.querySelector('#device-ntp')},
+    /* Empty means the built-in name; the placeholder says what that is. */
+    {field: 'device_name', kind: 'text', node: document.querySelector('#device-name'),
+     placeholderField: 'device_name_default'},
     {field: 'weather', kind: 'choice', node: document.querySelector('#device-weather')},
     {field: 'weather_latitude', kind: 'text',
      node: document.querySelector('#device-weather-latitude')},
@@ -436,6 +443,200 @@
       });
   }
 
+  /* The speaker the module sends to. The list comes from a scan the module
+     runs; a click saves the choice through its own endpoint (it is an address
+     and a name, not a settings field), and the device applies it the way it
+     applies every setting. Polled while the module says it is scanning. */
+  const btSpeakers = document.querySelector('#bt-speakers');
+  const btSpeakersEmpty = document.querySelector('#bt-speakers-empty');
+  const btChosenName = document.querySelector('#bt-chosen-name');
+  const btChosenState = document.querySelector('#bt-chosen-state');
+  const btScanButton = document.querySelector('#bt-scan');
+  let btTimer = null;
+  /* idle | starting (asked, the module not yet begun) | scanning | done */
+  let btScan = 'idle';
+  let btLoaded = false;
+
+  function renderSpeakers(body) {
+    const chosen = safeString(body.chosen);
+    const chosenName = safeString(body.chosen_name);
+    btChosenName.textContent = chosen ? (chosenName || chosen) : t('bt.none');
+    /* The phone has the module: the speaker waits, and so does the search -
+       the button is off rather than opening a search that ends at once. */
+    const phone = body.phone === true;
+    const connected = body.connected === true;
+    btChosenState.textContent = chosen
+      ? (phone ? t('bt.phone') : connected ? t('bt.connected') : t('bt.disconnected'))
+      : '';
+    /* The speakers known come first and stay: a tap chooses, "forget"
+       unpairs. What a scan found follows, without those already known. */
+    const valid = (speaker) => isObject(speaker) && typeof speaker.address === 'string';
+    const known = (Array.isArray(body.known) ? body.known : []).filter(valid);
+    const found = (Array.isArray(body.found) ? body.found : []).filter(valid)
+      .filter((speaker) => !known.some((entry) => entry.address === speaker.address));
+    const pickButton = (speaker) => {
+      const pick = document.createElement('button');
+      pick.type = 'button';
+      const name = safeString(speaker.name) || t('bt.unnamed');
+      pick.textContent = name;
+      pick.classList.add('network-name');
+      pick.addEventListener('click', () => chooseSpeaker(speaker.address, name));
+      return pick;
+    };
+    const rows = known.map((speaker) => {
+      const row = document.createElement('li');
+      row.append(pickButton(speaker));
+      if (speaker.address === chosen) {
+        row.append(tag(phone ? '✓' : connected ? t('bt.playing') : '✓'));
+      }
+      const forget = document.createElement('button');
+      forget.type = 'button';
+      forget.textContent = t('bt.forget');
+      forget.classList.add('secondary-button');
+      forget.addEventListener('click', () => forgetSpeaker(speaker.address));
+      row.append(forget);
+      return row;
+    }).concat(found.map((speaker) => {
+      const row = document.createElement('li');
+      row.append(pickButton(speaker));
+      const rssi = Number.isSafeInteger(speaker.rssi) ? speaker.rssi : -100;
+      row.append(tag(`${signalLabel(rssi)} ${rssi} dBm`));
+      return row;
+    }));
+    btSpeakers.replaceChildren(...rows);
+    btSpeakers.hidden = rows.length === 0;
+    /* The line under the list follows the page's own idea of the scan, not
+       the device's flag alone: the first answer after the click comes before
+       the module has begun, and "nothing found" for that instant, then
+       "looking" a second later, was a line that flashed shut and open. */
+    if (body.scanning === true) btScan = 'scanning';
+    else if (btScan === 'scanning') btScan = 'done';
+    /* The button itself shows the scan: pressed down and saying so while it
+       runs, so a second press is not a press that did nothing. */
+    const running = btScan === 'starting' || btScan === 'scanning';
+    btScanButton.disabled = phone || running;
+    btScanButton.textContent = running ? t('bt.scanning_button') : t('bt.scan');
+    if (phone) {
+      btSpeakersEmpty.textContent = t('bt.phone_note');
+      btSpeakersEmpty.hidden = false;
+    } else if (btScan === 'starting' || btScan === 'scanning') {
+      btSpeakersEmpty.textContent = t('bt.scanning');
+      btSpeakersEmpty.hidden = false;
+    } else if (btScan === 'done' && found.length === 0) {
+      btSpeakersEmpty.textContent = t('bt.scan_empty');
+      btSpeakersEmpty.hidden = false;
+    } else {
+      btSpeakersEmpty.hidden = true;
+    }
+  }
+
+  function forgetSpeaker(address) {
+    window.fetch('/api/bt/forget', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({address}),
+    })
+      .then((response) => response.json())
+      .then((body) => { if (isObject(body)) renderSpeakers(body); })
+      .catch(() => {});
+  }
+
+  function pollSpeakers(attempt) {
+    btTimer = window.setTimeout(() => {
+      window.fetch('/api/bt/speakers', {cache: 'no-store'})
+        .then((response) => response.json())
+        .then((body) => {
+          if (!isObject(body)) throw new Error('bad body');
+          renderSpeakers(body);
+          /* On until the module has begun and finished; a module that never
+             begins is given up on after the attempts. */
+          if ((btScan === 'starting' || btScan === 'scanning') && attempt < 30) {
+            pollSpeakers(attempt + 1);
+          } else {
+            btTimer = null;
+            if (btScan === 'starting') {
+              btScan = 'idle';
+              btScanButton.disabled = false;
+              btScanButton.textContent = t('bt.scan');
+              btSpeakersEmpty.textContent = t('bt.scan_failed');
+              btSpeakersEmpty.hidden = false;
+            }
+          }
+        })
+        .catch(() => {
+          btTimer = null;
+          btScan = 'idle';
+          btScanButton.disabled = false;
+          btScanButton.textContent = t('bt.scan');
+          btSpeakersEmpty.textContent = t('bt.scan_failed');
+          btSpeakersEmpty.hidden = false;
+        });
+    }, 1000);
+  }
+
+  function startSpeakerScan() {
+    if (btTimer !== null || btScanButton.disabled) return;
+    btScan = 'starting';
+    btScanButton.disabled = true;
+    btScanButton.textContent = t('bt.scanning_button');
+    btSpeakersEmpty.textContent = t('bt.scanning');
+    btSpeakersEmpty.hidden = false;
+    window.fetch('/api/bt/speakers?scan=1', {cache: 'no-store'})
+      .then((response) => response.json())
+      .then((body) => {
+        if (!isObject(body)) throw new Error('bad body');
+        renderSpeakers(body);
+        /* The module may have had to change role first; the scan itself
+           starts a moment later, so the poll goes on either way. */
+        pollSpeakers(0);
+      })
+      .catch(() => {
+        btScan = 'idle';
+        btScanButton.disabled = false;
+        btScanButton.textContent = t('bt.scan');
+        btSpeakersEmpty.textContent = t('bt.scan_failed');
+        btSpeakersEmpty.hidden = false;
+      });
+  }
+
+  function chooseSpeaker(address, name) {
+    window.fetch('/api/bt/speaker', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({address, name: address ? name : ''}),
+    })
+      .then((response) => response.json())
+      .then((body) => { if (isObject(body)) renderSpeakers(body); })
+      .catch(() => {});
+  }
+
+  /* The speaker connects and drops on its own - switched off, walked out of
+     range, back again - and no frame carries that, so the line beside the
+     switch is re-read every few seconds while the page is on screen. Not
+     during a scan: that poll refreshes it already. */
+  let btRefreshTimer = null;
+  function scheduleSpeakerRefresh() {
+    if (btRefreshTimer !== null) return;
+    btRefreshTimer = window.setTimeout(() => {
+      btRefreshTimer = null;
+      if (document.hidden || btTimer !== null) {
+        scheduleSpeakerRefresh();
+        return;
+      }
+      loadSpeakers();
+    }, 4000);
+  }
+
+  function loadSpeakers() {
+    window.fetch('/api/bt/speakers', {cache: 'no-store'})
+      .then((response) => response.json())
+      .then((body) => { if (isObject(body)) renderSpeakers(body); })
+      .catch(() => {})
+      .finally(scheduleSpeakerRefresh);
+  }
+
+  btScanButton.addEventListener('click', startSpeakerScan);
+
   function applyWifiMode(wifi) {
     const wasApMode = apMode;
     /* The setup AP exactly, not merely "not connected": while an attempt is
@@ -719,6 +920,9 @@
         if (typeof value === 'string' && deviceHeld !== entry.field) {
           entry.node.value = value;
         }
+        if (entry.placeholderField && typeof payload[entry.placeholderField] === 'string') {
+          entry.node.placeholder = payload[entry.placeholderField];
+        }
       } else if (entry.kind === 'switch') {
         if (typeof value === 'boolean') entry.node.checked = value;
       } else if (entry.kind === 'secret') {
@@ -746,6 +950,13 @@
       if (entry.row && entry.when && typeof payload[entry.when.field] === 'string') {
         entry.row.hidden = payload[entry.when.field] === entry.when.not;
       }
+    }
+    /* The speaker beside the switch, from its own endpoint, once the block
+       is on the page - once, not on every frame the device sends: the list
+       changes only by a scan or a choice, and both re-fetch it themselves. */
+    if (available.bt_output === true && !btLoaded) {
+      btLoaded = true;
+      loadSpeakers();
     }
     applyWeatherState(payload);
     return true;
@@ -1142,6 +1353,13 @@
     aboutBuilt.textContent = named(firmware.built);
     aboutWeb.textContent = named(web.version);
     aboutIdf.textContent = named(payload.idf);
+    /* The Bluetooth module's firmware: a line only while a module answers,
+       since a board without one has nothing to say here. */
+    const module = isObject(payload.module) ? payload.module : {};
+    const moduleShown = module.present === true;
+    aboutModuleLabel.hidden = !moduleShown;
+    aboutModule.hidden = !moduleShown;
+    aboutModule.textContent = moduleShown ? named(module.version) : '';
     /* Only when the two are known and differ. A web half that could not be
        read is old, not mismatched, and the "неизвестно" beside it has already
        said so - the same rule the device's own screen follows. */

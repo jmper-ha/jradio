@@ -228,7 +228,29 @@
     'settings.yandex': ['Яндекс Музыка', 'Yandex Music'],
     'settings.timezone': ['Часовой пояс', 'Time zone'],
     'settings.ntp': ['Сервер времени', 'Time server'],
+    'settings.device_name': ['Имя устройства', 'Device name'],
+    'settings.device_name_note': [
+      'Так устройство называется в Bluetooth и как сеть Wi‑Fi при первой настройке. Пусто — имя из заводского номера.',
+      'What the device is called over Bluetooth and as the Wi‑Fi network during first setup. Empty means the built-in name.'],
     'settings.group_weather': ['Погода', 'Weather'],
+    'bt.group': ['Звук на Bluetooth', 'Sound over Bluetooth'],
+    'bt.output': ['Отправлять на колонку', 'Send to a speaker'],
+    'bt.chosen': ['Колонка:', 'Speaker:'],
+    'bt.none': ['не выбрана', 'none chosen'],
+    'bt.connected': ['(подключена)', '(connected)'],
+    'bt.disconnected': ['(не подключена)', '(not connected)'],
+    'bt.scan': ['Найти колонки', 'Find speakers'],
+    'bt.scanning': ['Ищем колонки и наушники… Включите на них режим сопряжения.', 'Looking for speakers and headphones… Put them in pairing mode.'],
+    'bt.scanning_button': ['Ищем…', 'Looking…'],
+    'bt.scan_empty': ['Ничего нового не найдено. Колонка в режиме сопряжения? Уже подключённая на поиск не отвечает.',
+                      'Nothing new found. Is the speaker in pairing mode? One already connected does not answer a search.'],
+    'bt.phone': ['(модуль занят телефоном)', '(the module is with the phone)'],
+    'bt.playing': ['играет', 'playing'],
+    'bt.phone_note': ['Пока играет телефон, колонка и поиск ждут: модуль умеет только одно из двух. Выйдите из источника Bluetooth — и звук снова пойдёт на колонку.',
+                      'While the phone plays, the speaker and the search wait: the module does one of the two at a time. Leave the Bluetooth source and the sound goes to the speaker again.'],
+    'bt.scan_failed': ['Не удалось запустить поиск', 'Could not start the search'],
+    'bt.forget': ['Забыть', 'Forget'],
+    'bt.unnamed': ['без имени', 'unnamed'],
     'settings.weather': ['Источник', 'Source'],
     'settings.weather_off': ['Выключено', 'Off'],
     'settings.latitude': ['Широта', 'Latitude'],
@@ -345,6 +367,7 @@
     'about.firmware': ['Прошивка', 'Firmware'],
     'about.built': ['Собрана', 'Built'],
     'about.web': ['Веб-интерфейс', 'Web UI'],
+    'about.module': ['Модуль Bluetooth', 'Bluetooth module'],
     'about.mismatch': ['Версии прошивки и веб-интерфейса не совпадают',
                        'The firmware and the web interface are from different builds'],
     'backup.title': ['Резервная копия', 'Backup'],
@@ -502,9 +525,11 @@
   function paint() {
     if (document.documentElement) document.documentElement.lang = current;
     apply(document);
-    /* And the tab's name, which is not an element `apply` can walk to. */
+    /* And the tab's name, which is not an element `apply` can walk to. Its
+       own marker: as `data-i18n-title` it was also a tooltip on <body>, and
+       the page's name followed the cursor everywhere. */
     if (document.body && typeof document.body.getAttribute === 'function') {
-      const key = document.body.getAttribute('data-i18n-title');
+      const key = document.body.getAttribute('data-i18n-page');
       if (key) document.title = t(key);
     }
   }

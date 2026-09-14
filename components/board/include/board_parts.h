@@ -87,11 +87,17 @@
 #define FM_TUNER_RDA5807 1
 
 #define BLUETOOTH_NONE 0
-/* Classic Bluetooth A2DP sink. Named but unreachable on this part: the
- * ESP32-S3 radio does BLE only, so an audio sink needs a module of its own
- * feeding I2S or UART. Selecting it on an S3 is a mistake worth catching by
- * name rather than by silence. */
+/* Classic Bluetooth A2DP sink on this chip. Named but unreachable: the
+ * ESP32-S3 radio does BLE only, so an audio sink needs a module of its own.
+ * Selecting it on an S3 is a mistake worth catching by name rather than by
+ * silence. */
 #define BLUETOOTH_A2DP_SINK 1
+/* That module: jradio-bt, a second ESP32 (classic) on the same I2S bus,
+ * taking orders over a UART - see BT_UART_TX_GPIO / BT_UART_RX_GPIO. The
+ * host asks it to drive the bus while a phone plays and takes the bus back
+ * afterwards; the protocol between them is components/bt_link/jbt_proto.h,
+ * the same file on both sides. */
+#define BLUETOOTH_JRADIO_BT 2
 
 /* For the options that are not a part but a yes/no: whether a feature is built
  * into this firmware at all. Prefixed rather than plain ON/OFF, which are far

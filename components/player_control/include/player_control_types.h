@@ -48,6 +48,10 @@
  * found. The source is therefore always offered, the search happens when it is
  * selected, and "no server answered" is a line on the browser screen. */
 #define PLAYER_CAP_DLNA (1U << 4)
+/* The Bluetooth module, and only while it answers on its UART: a board
+ * built for one that is unplugged, dead or being flashed offers no source,
+ * rather than one that fails to open. */
+#define PLAYER_CAP_BLUETOOTH (1U << 5)
 
 #ifdef __cplusplus
 extern "C" {

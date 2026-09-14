@@ -208,6 +208,15 @@ static void test_apply_writes_through_to_the_file(void)
     assert(web_settings_apply(&settings, &after));
     const web_settings_change_t idle = {WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS, 10, ""};
     assert(web_settings_apply(&settings, &idle));
+    /* The device's name comes in as text and is refused by the setter where
+     * it would cut the settings line. */
+    web_settings_change_t name;
+    assert(parse_one("{\"field\":\"device_name\",\"value\":\"Кухня\"}", &name));
+    assert(name.field == WEB_SETTINGS_FIELD_DEVICE_NAME);
+    assert(web_settings_apply(&settings, &name));
+    assert(strcmp(settings.device_name, "Кухня") == 0);
+    const web_settings_change_t bad_name = {WEB_SETTINGS_FIELD_DEVICE_NAME, 0, "a,b"};
+    assert(!web_settings_apply(&settings, &bad_name));
 
     device_settings_t reloaded;
     assert(device_settings_init_at(&reloaded, test_path));
@@ -238,12 +247,14 @@ static void test_document_names_what_the_build_has(void)
     assert(device_settings_set_volume(&settings, 42));
 
     web_settings_view_t view;
-    web_settings_make_view(&view, &settings, true, false, false);
+    web_settings_make_view(&view, &settings, true, false, false, false);
     /* Room for the zone list as well: the document carries every zone the
        firmware knows, which the page builds its menu from. */
     char document[2048];
     const web_settings_document_t extras = {
         .ntp_server = settings.ntp_server,
+        .device_name = settings.device_name,
+        .device_name_default = "jradio-B670",
         .weather_latitude = settings.weather_latitude,
         .weather_longitude = settings.weather_longitude,
         .openweathermap_key_set = true,
@@ -265,7 +276,7 @@ static void test_document_names_what_the_build_has(void)
     // A build without Yandex Music or a media server says so, so the page
     // drops those rows rather than offering switches behind which there is
     // nothing.
-    assert(strstr(document, "\"yandex_music\":false,\"dlna\":false}") != NULL);
+    assert(strstr(document, "\"yandex_music\":false,\"dlna\":false,\"bt_output\":false}") != NULL);
     assert(strstr(document, "\"home_screen\":true") != NULL);
     assert(strstr(document, "\"brightness_min\":10") != NULL);
     assert(strstr(document, "\"brightness_max\":90") != NULL);
@@ -284,6 +295,10 @@ static void test_document_names_what_the_build_has(void)
        that adding a zone is one line of firmware. */
     assert(strstr(document, "\"timezone\":\"europe/moscow\"") != NULL);
     assert(strstr(document, "\"ntp_server\":\"pool.ntp.org\"") != NULL);
+    /* The name as stored - empty here - beside the built-in one the page
+       shows in its place. */
+    assert(strstr(document, "\"device_name\":\"\"") != NULL);
+    assert(strstr(document, "\"device_name_default\":\"jradio-B670\"") != NULL);
     assert(strstr(document, "\"timezones\":[{\"id\":") != NULL);
     /* The document was built for an English device above, so the zone names
        are English too: a page that said "Москва" beside "Brightness" would be
@@ -303,7 +318,7 @@ static void test_document_names_what_the_build_has(void)
 
     /* Without a reading the report is null, not a zero. */
     assert(device_settings_set_weather_provider(&settings, DEVICE_WEATHER_OPENWEATHERMAP));
-    web_settings_make_view(&view, &settings, true, false, false);
+    web_settings_make_view(&view, &settings, true, false, false, false);
     const web_settings_document_t waiting = {
         .ntp_server = settings.ntp_server,
         .weather_latitude = settings.weather_latitude,
@@ -334,7 +349,7 @@ static void test_view_comparison_notices_every_field(void)
     assert(device_settings_init_at(&settings, test_path));
 
     web_settings_view_t base;
-    web_settings_make_view(&base, &settings, true, true, true);
+    web_settings_make_view(&base, &settings, true, true, true, true);
     web_settings_view_t other = base;
     assert(web_settings_view_equal(&base, &other));
 
@@ -357,6 +372,12 @@ static void test_view_comparison_notices_every_field(void)
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.autoplay = !base.autoplay;
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.bt_output = !base.bt_output;
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.bt_available = !base.bt_available;
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.yandex_music = !base.yandex_music;

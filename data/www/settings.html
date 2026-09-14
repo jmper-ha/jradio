@@ -11,7 +11,7 @@
   <script src="/theme.js"></script>
   <script src="/i18n.js"></script>
 </head>
-<body data-i18n-title="title.settings">
+<body data-i18n-page="title.settings">
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="/" data-i18n-aria="nav.back_to_player" aria-label="Вернуться к плееру">
@@ -84,6 +84,12 @@
                     <option value="en">English</option>
                   </select>
                 </div>
+                <div class="device-row">
+                  <label for="device-name" data-i18n="settings.device_name">Имя устройства</label>
+                  <input id="device-name" type="text" spellcheck="false" autocapitalize="off"
+                         autocomplete="off" maxlength="32" data-field="device_name">
+                </div>
+                <p class="field-note" data-i18n="settings.device_name_note">Так устройство называется в Bluetooth и как сеть Wi‑Fi при первой настройке. Пусто — имя из заводского номера.</p>
                 <div class="device-row" id="device-home-screen-row">
                   <label for="device-home-screen" data-i18n="settings.home_screen">Главный экран</label>
                   <select id="device-home-screen" data-field="home_screen">
@@ -116,6 +122,20 @@
                 <div class="device-row" id="device-dlna-row">
                   <label for="device-dlna">DLNA</label>
                   <input id="device-dlna" type="checkbox" data-field="dlna">
+                </div>
+              </div>
+
+              <div class="device-group" id="bt-output-block" hidden>
+                <h3 data-i18n="bt.group">Звук на Bluetooth</h3>
+                <div class="device-row">
+                  <label for="device-bt-output" data-i18n="bt.output">Отправлять на колонку</label>
+                  <input id="device-bt-output" type="checkbox" data-field="bt_output">
+                </div>
+                <p id="bt-chosen" class="field-note"><span data-i18n="bt.chosen">Колонка:</span> <strong id="bt-chosen-name">—</strong> <span id="bt-chosen-state"></span></p>
+                <ul id="bt-speakers" class="saved-networks" hidden></ul>
+                <p id="bt-speakers-empty" class="empty-state" hidden></p>
+                <div class="settings-actions">
+                  <button id="bt-scan" class="secondary-button" type="button" data-i18n="bt.scan">Найти колонки</button>
                 </div>
               </div>
 
@@ -348,6 +368,7 @@
               <dt data-i18n="about.built">Собрана</dt><dd id="about-built">—</dd>
               <dt data-i18n="about.web">Веб-интерфейс</dt><dd id="about-web">—</dd>
               <dt>ESP-IDF</dt><dd id="about-idf">—</dd>
+              <dt id="about-module-label" data-i18n="about.module" hidden>Модуль Bluetooth</dt><dd id="about-module" hidden>—</dd>
             </dl>
 
             <p id="about-notice" class="settings-status is-error" hidden></p>

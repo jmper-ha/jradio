@@ -37,8 +37,12 @@
 #define BOARD_HAS_FM_RADIO 0
 #endif
 
-#if defined(BLUETOOTH) && BLUETOOTH != BLUETOOTH_NONE
+/* Only the external module counts: the on-chip sink stays a name, since
+ * nothing on this chip can be it. */
+#if defined(BLUETOOTH) && BLUETOOTH == BLUETOOTH_JRADIO_BT
 #define BOARD_HAS_BLUETOOTH 1
+#elif defined(BLUETOOTH) && BLUETOOTH == BLUETOOTH_A2DP_SINK
+#error "BLUETOOTH_A2DP_SINK cannot be fitted on an ESP32-S3; use BLUETOOTH_JRADIO_BT with a jradio-bt module"
 #else
 #define BOARD_HAS_BLUETOOTH 0
 #endif

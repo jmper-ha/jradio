@@ -18,6 +18,8 @@
 #include "freertos/task.h"
 #include "nvs_flash.h"
 
+#include "device_settings.h"
+
 #define WIFI_PROVISIONING_RETRIES_PER_NETWORK 3
 #define WIFI_RECONNECT_TASK_STACK_SIZE 4096
 /* A scan of every channel takes a few seconds; well past that it is not slow,
@@ -294,11 +296,11 @@ static esp_err_t wifi_configure_static_ap_ip(void)
 
 static esp_err_t wifi_start_ap_setup(void)
 {
-    uint8_t mac[6] = {0};
-    ESP_RETURN_ON_ERROR(esp_read_mac(mac, ESP_MAC_WIFI_STA), TAG, "read Wi-Fi MAC");
-
+    /* The device's own name - "jradio-XXXX" unless the settings say
+     * otherwise - so the network on the phone's list and the name in its
+     * Bluetooth list are the same word. */
     char ssid[WIFI_SETTINGS_SSID_MAX_LEN + 1];
-    snprintf(ssid, sizeof(ssid), "jradio-%02X%02X", mac[4], mac[5]);
+    device_settings_device_name(ssid, sizeof(ssid));
     status_set_connection(WIFI_PROVISIONING_AP_SETUP, ssid, "192.168.4.1");
 
     ESP_RETURN_ON_ERROR(wifi_stop_if_running(), TAG, "stop Wi-Fi before AP");

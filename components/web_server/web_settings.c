@@ -40,12 +40,14 @@ static const field_descriptor_t k_fields[] = {
     {"autoplay", WEB_SETTINGS_FIELD_AUTOPLAY, {NULL}, false, false},
     {"yandex_music", WEB_SETTINGS_FIELD_YANDEX_MUSIC, {NULL}, false, false},
     {"dlna", WEB_SETTINGS_FIELD_DLNA, {NULL}, false, false},
+    {"bt_output", WEB_SETTINGS_FIELD_BT_OUTPUT, {NULL}, false, false},
     {"flip_vertical", WEB_SETTINGS_FIELD_FLIP_VERTICAL, {NULL}, false, false},
     {"flip_horizontal", WEB_SETTINGS_FIELD_FLIP_HORIZONTAL, {NULL}, false, false},
     {"brightness", WEB_SETTINGS_FIELD_BRIGHTNESS, {NULL}, true, false},
     {"volume", WEB_SETTINGS_FIELD_VOLUME, {NULL}, true, false},
     {"timezone", WEB_SETTINGS_FIELD_TIMEZONE, {NULL}, false, true},
     {"ntp_server", WEB_SETTINGS_FIELD_NTP_SERVER, {NULL}, false, true},
+    {"device_name", WEB_SETTINGS_FIELD_DEVICE_NAME, {NULL}, false, true},
     {"weather", WEB_SETTINGS_FIELD_WEATHER, {WEB_SETTINGS_WEATHER_NAMES}, false, false},
     {"weather_latitude", WEB_SETTINGS_FIELD_WEATHER_LATITUDE, {NULL}, false, true},
     {"weather_longitude", WEB_SETTINGS_FIELD_WEATHER_LONGITUDE, {NULL}, false, true},
@@ -191,6 +193,8 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_yandex_music(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_DLNA:
         return device_settings_set_dlna(settings, change->value != 0);
+    case WEB_SETTINGS_FIELD_BT_OUTPUT:
+        return device_settings_set_bt_output(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_FLIP_VERTICAL:
         return device_settings_set_flip_vertical(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_FLIP_HORIZONTAL:
@@ -203,6 +207,8 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_timezone(settings, change->text);
     case WEB_SETTINGS_FIELD_NTP_SERVER:
         return device_settings_set_ntp_server(settings, change->text);
+    case WEB_SETTINGS_FIELD_DEVICE_NAME:
+        return device_settings_set_device_name(settings, change->text);
     case WEB_SETTINGS_FIELD_WEATHER:
         return device_settings_set_weather_provider(settings,
                                                     (device_weather_provider_t)change->value);
@@ -228,7 +234,7 @@ bool web_settings_apply(device_settings_t *settings,
 void web_settings_make_view(web_settings_view_t *view,
                             const device_settings_t *settings,
                             bool home_screen_available, bool yandex_available,
-                            bool dlna_available)
+                            bool dlna_available, bool bt_available)
 {
     if (view == NULL) return;
     if (settings == NULL) {
@@ -245,6 +251,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .autoplay = settings->autoplay,
         .yandex_music = settings->yandex_music,
         .dlna = settings->dlna,
+        .bt_output = settings->bt_output,
         .flip_vertical = settings->flip_vertical,
         .flip_horizontal = settings->flip_horizontal,
         .timezone = (uint8_t)device_timezone_index_of(settings->timezone),
@@ -255,6 +262,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .home_screen_available = home_screen_available,
         .yandex_available = yandex_available,
         .dlna_available = dlna_available,
+        .bt_available = bt_available,
     };
 }
 
@@ -273,7 +281,7 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->brightness == right->brightness &&
            left->autoplay == right->autoplay &&
            left->yandex_music == right->yandex_music &&
-           left->dlna == right->dlna &&
+           left->dlna == right->dlna && left->bt_output == right->bt_output &&
            left->flip_vertical == right->flip_vertical &&
            left->flip_horizontal == right->flip_horizontal &&
            left->timezone == right->timezone && left->weather == right->weather &&
@@ -282,7 +290,8 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->screensaver_brightness == right->screensaver_brightness &&
            left->home_screen_available == right->home_screen_available &&
            left->yandex_available == right->yandex_available &&
-           left->dlna_available == right->dlna_available;
+           left->dlna_available == right->dlna_available &&
+           left->bt_available == right->bt_available;
 }
 
 /* The id of the zone a view carries, or the default's when the card names one
@@ -312,6 +321,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_literal(writer, view->yandex_music ? "true" : "false");
     web_json_literal(writer, ",\"dlna\":");
     web_json_literal(writer, view->dlna ? "true" : "false");
+    web_json_literal(writer, ",\"bt_output\":");
+    web_json_literal(writer, view->bt_output ? "true" : "false");
     web_json_literal(writer, ",\"flip_vertical\":");
     web_json_literal(writer, view->flip_vertical ? "true" : "false");
     web_json_literal(writer, ",\"flip_horizontal\":");
@@ -338,6 +349,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_literal(writer, view->yandex_available ? "true" : "false");
     web_json_literal(writer, ",\"dlna\":");
     web_json_literal(writer, view->dlna_available ? "true" : "false");
+    web_json_literal(writer, ",\"bt_output\":");
+    web_json_literal(writer, view->bt_available ? "true" : "false");
     web_json_literal(writer, "},\"brightness_min\":");
     web_json_format(writer, "%d", WEB_SETTINGS_BRIGHTNESS_MIN);
     web_json_literal(writer, ",\"brightness_max\":");
@@ -387,6 +400,10 @@ size_t web_settings_serialize(char *output, size_t output_size,
      * per queued frame. */
     web_json_literal(&writer, ",\"ntp_server\":");
     web_json_string(&writer, document->ntp_server == NULL ? "" : document->ntp_server);
+    web_json_literal(&writer, ",\"device_name\":");
+    web_json_string(&writer, document->device_name == NULL ? "" : document->device_name);
+    web_json_literal(&writer, ",\"device_name_default\":");
+    web_json_string(&writer, document->device_name_default == NULL ? "" : document->device_name_default);
     web_json_literal(&writer, ",\"weather_latitude\":");
     web_json_string(&writer,
                     document->weather_latitude == NULL ? "" : document->weather_latitude);

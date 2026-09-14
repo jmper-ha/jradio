@@ -232,6 +232,10 @@ typedef struct {
     // Whether the last open answered 206 rather than 200 - that is, whether
     // the Range was honoured and what is buffered is still the continuation.
     bool range_granted;
+    /* The Location of the last 3xx answer, taken off the headers as they
+     * pass: the client keeps its own copy but will not follow it from an
+     * https:// origin to an http:// one. */
+    char redirect_location[RADIO_HLS_URL_MAX];
     atomic_bool skip_requested;
     atomic_bool direct_stop_requested;
     atomic_bool direct_paused;
@@ -1174,6 +1178,9 @@ static esp_err_t radio_http_event(esp_http_client_event_t *event)
         taskENTER_CRITICAL(&s_status_lock);
         snprintf(radio->status.station, sizeof(radio->status.station), "%s", event->header_value);
         taskEXIT_CRITICAL(&s_status_lock);
+    } else if (strcasecmp(event->header_key, "Location") == 0) {
+        snprintf(radio->redirect_location, sizeof(radio->redirect_location), "%s",
+                 event->header_value);
     }
     return ESP_OK;
 }
@@ -1210,6 +1217,7 @@ static esp_err_t radio_http_connect(internet_radio_context_t *radio, const char 
         err = esp_http_client_set_header(radio->http, "Range", range);
     }
     unsigned int redirects = 0U;
+    radio->redirect_location[0] = '\0';
     while (err == ESP_OK) {
         // MALLOC_CAP_DMA is reported separately and deliberately: it is a
         // strict subset of the internal pool (PSRAM never carries this flag,
@@ -1259,8 +1267,23 @@ static esp_err_t radio_http_connect(internet_radio_context_t *radio, const char 
             ESP_LOGE(TAG, "HTTP redirect limit reached; status=%d", status_code);
             break;
         }
-        ESP_LOGI(TAG, "HTTP redirect %u: status=%d", redirects + 1U, status_code);
-        err = esp_http_client_set_redirection(radio->http);
+        ESP_LOGI(TAG, "HTTP redirect %u: status=%d -> %s", redirects + 1U, status_code,
+                 radio->redirect_location);
+        /* Followed by hand, from the Location taken off the headers: the
+         * client's own esp_http_client_set_redirection() refuses to go from
+         * an https:// origin to an http:// target as a downgrade, and
+         * stations do exactly that - a TLS front door on port 443 sending
+         * the player to the Icecast on port 8002. There is nothing here a
+         * downgrade could expose: the stream is public and the player sends
+         * no secret. A relative Location, which the client resolves and the
+         * header alone does not, is left to the client's own follow. */
+        if (strncasecmp(radio->redirect_location, "http://", 7) == 0 ||
+            strncasecmp(radio->redirect_location, "https://", 8) == 0) {
+            err = esp_http_client_set_url(radio->http, radio->redirect_location);
+        } else {
+            err = esp_http_client_set_redirection(radio->http);
+        }
+        radio->redirect_location[0] = '\0';
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "HTTP redirect target unavailable: %s", esp_err_to_name(err));
             break;

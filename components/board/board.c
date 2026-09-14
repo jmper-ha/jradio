@@ -707,15 +707,8 @@ cleanup:
     return result;
 }
 
-esp_err_t board_display_draw_wire(int x1, int y1, int x2, int y2, const uint16_t *pixels)
+static esp_err_t board_display_send(int x1, int y1, int x2, int y2, const uint16_t *pixels)
 {
-    if (s_panel == NULL || pixels == NULL || x1 < 0 || y1 < 0 || x2 <= x1 || y2 <= y1 ||
-        x2 > TFT_WIDTH || y2 > TFT_HEIGHT) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    /* One call, however big: esp_lcd splits it into bus-sized transactions
-     * itself and keeps CS held between them, so the panel sees one write of
-     * the whole rectangle, and the done callback fires once, at the end. */
     ESP_RETURN_ON_ERROR(esp_lcd_panel_draw_bitmap(s_panel, x1, y1, x2, y2, pixels), TAG,
                         "draw display rectangle failed");
     if (LCD_WAIT_FOR_TRANSFER &&
@@ -724,6 +717,39 @@ esp_err_t board_display_draw_wire(int x1, int y1, int x2, int y2, const uint16_t
         return ESP_ERR_TIMEOUT;
     }
     return ESP_OK;
+}
+
+esp_err_t board_display_draw_wire(int x1, int y1, int x2, int y2, const uint16_t *pixels)
+{
+    if (s_panel == NULL || pixels == NULL || x1 < 0 || y1 < 0 || x2 <= x1 || y2 <= y1 ||
+        x2 > TFT_WIDTH || y2 > TFT_HEIGHT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#if TFT_PIXEL_WIRE_BYTES > 2
+    /* A panel that takes 18-bit colour has its driver convert every pixel
+     * into a buffer of its own before the transfer - a buffer sized for one
+     * band of LCD_DRAW_LINES rows, and written with no check of the size.
+     * The screensaver's clock, a 288 x 130 block on the 480 px panel handed
+     * over in one call, ran a hundred kilobytes past it into the heap; the
+     * network task died of it, every time the clock came up. So on such a
+     * panel the rectangle goes in bands of as many rows as that buffer
+     * holds at this width, each waited for, since the driver has the one
+     * buffer. */
+    const int width = x2 - x1;
+    int rows = (TFT_WIDTH * LCD_DRAW_LINES) / width;
+    if (rows < 1) rows = 1;
+    for (int y = y1; y < y2; y += rows) {
+        const int end = (y2 - y) < rows ? y2 : y + rows;
+        ESP_RETURN_ON_ERROR(board_display_send(x1, y, x2, end, pixels + (y - y1) * width), TAG,
+                            "band");
+    }
+    return ESP_OK;
+#else
+    /* One call, however big: esp_lcd splits it into bus-sized transactions
+     * itself and keeps CS held between them, so the panel sees one write of
+     * the whole rectangle, and the done callback fires once, at the end. */
+    return board_display_send(x1, y1, x2, y2, pixels);
+#endif
 }
 
 void board_display_to_wire(uint16_t *pixels, size_t count)

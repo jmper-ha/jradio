@@ -185,9 +185,9 @@
  * With it fitted, uncomment the three lines; the pins are free ones on this
  * board (13 and 14 are RTC-capable, in case the sleep button ever needs
  * them - then move these to 38/39). */
-#define BLUETOOTH BLUETOOTH_JRADIO_BT
-#define BT_UART_TX_GPIO 13
-#define BT_UART_RX_GPIO 14
+/* #define BLUETOOTH BLUETOOTH_JRADIO_BT */
+/* #define BT_UART_TX_GPIO 13 */
+/* #define BT_UART_RX_GPIO 14 */
 /* The DAC's soft-mute line, when it is wired: while the module sends the
  * sound to a Bluetooth speaker the built-in output is muted, so the room
  * does not hear the same music twice, a few hundred milliseconds apart. On
@@ -225,3 +225,16 @@
  * the source is selected, and a line on the browser screen saying nothing
  * answered. */
 #define DLNA FEATURE_ON
+
+/* ======================================================================
+ * Your own board
+ * ====================================================================== */
+
+/* What differs on the bench from the file above lives in
+ * board_options.local.h beside it - a file git ignores, included last, so
+ * a module wired on one board and a DAC mute line on another never turn
+ * into commits. It may define anything left commented out above; to change
+ * a value the file above already sets, #undef it there first. */
+#if __has_include("board_options.local.h")
+#include "board_options.local.h"
+#endif

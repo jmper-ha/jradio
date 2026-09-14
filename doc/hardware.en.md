@@ -22,6 +22,13 @@ The parts with drivers are listed in
 [`board_parts.h`](../components/board/include/board_parts.h). A typo fails the
 build rather than producing a device that misbehaves.
 
+What your board does differently from this file is best kept in
+`board_options.local.h` beside it: git ignores it, and `board_options.h`
+includes it last. Everything the main file leaves commented out goes there -
+the Bluetooth module, say, or the DAC's mute line; to change a value the main
+file already sets, `#undef` it there first. Pulling the repository then never
+overwrites your wiring, and your wiring never ends up in a commit.
+
 Which way up the panel stands is part of its name too: `DISPLAY_ILI9341_240_320`
 is the same module on its end. The orientation decides the layout of all six
 screens and cannot be derived from the wiring - the same reason the resolution
@@ -232,8 +239,9 @@ Worth knowing if you build the board:
 Playing from a phone (and, later, sending to headphones) is done by a second
 ESP32 - a classic WROOM-32, which does have Bluetooth Classic - running its
 own firmware, [jradio-bt](https://github.com/jmper-ha/jradio-bt). It sits on
-the same I2S bus as the PCM5102 and takes orders over a UART. Three lines in
-`board_options.h` turn it on:
+the same I2S bus as the PCM5102 and takes orders over a UART. Off by default;
+three lines - in `board_options.h`, or in your own `board_options.local.h` -
+turn it on:
 
 ```c
 #define BLUETOOTH BLUETOOTH_JRADIO_BT

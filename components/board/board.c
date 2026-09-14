@@ -340,6 +340,7 @@ void board_audio_set_dac_muted(bool muted)
     /* XSMT on the PCM5102A: low is mute, and the chip ramps the output down
      * and up itself, so there is no click either way. */
     (void)gpio_set_level(AUDIO_DAC_MUTE_GPIO, muted ? 0 : 1);
+    ESP_LOGI(TAG, "DAC %s", muted ? "muted" : "unmuted");
 #else
     (void)muted;
 #endif

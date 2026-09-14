@@ -52,3 +52,6 @@ img/
 # External audit reports and idea drafts
 audit/
 release/
+
+# The bench board: what board_options.h says plus board_options.local.h
+board_options.local.h

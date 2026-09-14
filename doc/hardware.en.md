@@ -221,7 +221,10 @@ Worth knowing if you build the board:
   The DMA ring of 8 x 512 frames (~93 ms) was chosen to stop clicking and must
   not be shrunk;
 - **tie the PCM5102 module's SCK to ground and XSMT to 3.3 V.** Left floating
-  they produce rare dropouts with a perfectly healthy digital path;
+  they produce rare dropouts with a perfectly healthy digital path. If XSMT is
+  given to the mute line instead (`AUDIO_DAC_MUTE_GPIO`, see the
+  [module section](#bluetooth-the-jradio-bt-module)), an S3 pin holds it, and
+  the factory bridge to 3.3 V has to be cut - a pin cannot out-pull it;
 - debouncing is done in software. Internal pull-ups are enabled for the buttons
   (GPIO 45, 46 and 21 are unstable without them) and disabled for the encoder,
   where the external ones suffice;

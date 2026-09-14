@@ -3,6 +3,42 @@ cmake_minimum_required(VERSION 3.16)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(jradio)
 
+# board_options.h ends by including board_options.local.h - a board's own
+# wiring, ignored by git. The compiler finds the file beside board_options.h
+# when there is one; what the build keeps in its config directory is a copy
+# of it, or a placeholder, refreshed by tools/board_options_local.cmake
+# before any component is compiled. That copy is what every object records
+# as its dependency while the real file is absent, which is the whole point:
+# resolved straight from the source tree, a file created after the first
+# build changed nothing the build could see (the dependency scan had noted
+# nothing for a file that was not there), and a bench board was flashed
+# without its module. Now creating, editing or deleting the file changes the
+# copy, and the copy's change rebuilds what reads board_options.h.
+set(board_options_local "${CMAKE_CURRENT_SOURCE_DIR}/board_options.local.h")
+set(board_options_local_copy "${CMAKE_BINARY_DIR}/config/board_options.local.h")
+set(board_options_local_sync "${CMAKE_CURRENT_SOURCE_DIR}/tools/board_options_local.cmake")
+# Once now, so the copy exists for the first dependency scan.
+execute_process(COMMAND ${CMAKE_COMMAND} -DSOURCE=${board_options_local}
+                        -DCOPY=${board_options_local_copy} -P ${board_options_local_sync})
+# A target rather than a command with an OUTPUT, because a target runs on
+# every build, and the copy is its BYPRODUCT: that makes the copy an output
+# ninja knows, so everything whose dependency scan named it is rebuilt when
+# it changes - and, the command being restat, left alone when the script
+# found nothing to rewrite. (A declared output with a never-created "always"
+# input was tried: restat saw that input unchanged and skipped the sync.)
+add_custom_target(board_options_local ALL
+    COMMAND ${CMAKE_COMMAND} -DSOURCE=${board_options_local}
+            -DCOPY=${board_options_local_copy} -P ${board_options_local_sync}
+    BYPRODUCTS "${board_options_local_copy}"
+    COMMENT "Syncing board_options.local.h")
+idf_build_get_property(board_options_components BUILD_COMPONENTS)
+foreach(component ${board_options_components})
+    idf_component_get_property(component_lib ${component} COMPONENT_LIB)
+    if(TARGET ${component_lib})
+        add_dependencies(${component_lib} board_options_local)
+    endif()
+endforeach()
+
 # Static Web UI is flashed explicitly with `idf.py littlefs-flash`; normal firmware
 # flashes must preserve /littlefs/config/wifi.json.
 #

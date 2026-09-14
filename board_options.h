@@ -234,7 +234,9 @@
  * board_options.local.h beside it - a file git ignores, included last, so
  * a module wired on one board and a DAC mute line on another never turn
  * into commits. It may define anything left commented out above; to change
- * a value the file above already sets, #undef it there first. */
+ * a value the file above already sets, #undef it there first. What is
+ * included is the build's copy of it (see the root CMakeLists.txt for why),
+ * a placeholder when there is no such file. */
 #if __has_include("board_options.local.h")
 #include "board_options.local.h"
 #endif

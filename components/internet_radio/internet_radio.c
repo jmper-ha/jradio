@@ -2043,8 +2043,15 @@ static void radio_load_catalog(internet_radio_context_t *radio)
     }
     text[bytes_read] = '\0';
     (void)station_catalog_load_text(text, radio->catalog);
-    if (station_catalog_append_if_missing(radio->catalog, &s_europa_plus_station)) {
-        ESP_LOGI(TAG, "added built-in AAC station to catalog");
+    /* Only as a last resort, when the file gave nothing: an empty or
+     * unreadable-but-present catalog would otherwise leave the device with
+     * no station to play, so it keeps one built in. A curated list is left
+     * exactly as written - a user with 38 stations was surprised to find 39,
+     * this station appended to every catalog since it seeded the AAC decoder
+     * when that support was new. */
+    if (radio->catalog->count == 0 &&
+        station_catalog_append_if_missing(radio->catalog, &s_europa_plus_station)) {
+        ESP_LOGI(TAG, "empty catalog; added the built-in station");
     }
     free(text);
     ESP_LOGI(TAG, "loaded %u internet radio stations", (unsigned int)radio->catalog->count);

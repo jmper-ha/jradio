@@ -28,6 +28,19 @@ static void test_the_stacked_form_carries_the_same_three_readings(void)
     assert(strcmp(text, "--\n-- kbps\n--") == 0);
 }
 
+static void test_a_playing_stream_without_a_bitrate_shows_two_readings(void)
+{
+    /* A phone over Bluetooth names its codec and rate and never a bitrate;
+       so does a server that sends no icy-br. Playing, the line has two
+       readings and no dash - the dash is for "not known yet", not "never". */
+    char text[48];
+
+    ui_radio_stream_text(text, sizeof(text), "SBC", 0, 44100);
+    assert(strcmp(text, "SBC  |  44100") == 0);
+    ui_radio_stream_lines(text, sizeof(text), "AAC", 0, 48000);
+    assert(strcmp(text, "AAC\n48000") == 0);
+}
+
 static void test_known_bitrate_includes_codec(void)
 {
     char text[48];
@@ -52,9 +65,12 @@ static void test_sample_rate_formatting(void)
     ui_radio_stream_text(text, sizeof(text), "MP3", 64, 22050);
     assert(strcmp(text, "MP3  |  64 kbps  |  22050") == 0);
 
-    /* A rate known before the bitrate is, and vice versa. */
+    /* A rate known with no bitrate is a stream that plays and has none to
+       give - the bitrate reading goes rather than dashes (see the test
+       above); a bitrate known before the rate keeps the rate's dash, since
+       the rate is coming with the first frame. */
     ui_radio_stream_text(text, sizeof(text), "AAC", 0, 48000);
-    assert(strcmp(text, "AAC  |  -- kbps  |  48000") == 0);
+    assert(strcmp(text, "AAC  |  48000") == 0);
     ui_radio_stream_text(text, sizeof(text), "AAC", 128, 0);
     assert(strcmp(text, "AAC  |  128 kbps  |  --") == 0);
 }
@@ -83,6 +99,7 @@ int main(void)
 {
     test_unknown_bitrate_keeps_reported_codec();
     test_the_stacked_form_carries_the_same_three_readings();
+    test_a_playing_stream_without_a_bitrate_shows_two_readings();
     test_known_bitrate_includes_codec();
     test_sample_rate_formatting();
     test_missing_codec_falls_back();

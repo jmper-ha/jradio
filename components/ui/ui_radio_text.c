@@ -14,14 +14,7 @@ static void ui_radio_stream_fields(char *text, size_t text_size, const char *cod
                                    const char *separator)
 {
     const char *display_codec = codec != NULL && codec[0] != '\0' ? codec : "--";
-    char bitrate_text[16];
     char rate_text[16];
-
-    if (bitrate_kbps > 0U) {
-        snprintf(bitrate_text, sizeof(bitrate_text), "%u kbps", (unsigned int)bitrate_kbps);
-    } else {
-        snprintf(bitrate_text, sizeof(bitrate_text), "-- kbps");
-    }
 
     if (sample_rate_hz > 0U) {
         snprintf(rate_text, sizeof(rate_text), "%u", (unsigned int)sample_rate_hz);
@@ -29,6 +22,22 @@ static void ui_radio_stream_fields(char *text, size_t text_size, const char *cod
         snprintf(rate_text, sizeof(rate_text), "--");
     }
 
+    /* A stream that plays with no bitrate to report - a phone over
+     * Bluetooth, a server that sends no icy-br - shows the two readings it
+     * has rather than a dash where the third would be. The dash stays only
+     * while nothing plays yet, when it says "not known yet" rather than
+     * "not going to be", which is the reading the web page makes too. */
+    if (bitrate_kbps == 0U && sample_rate_hz > 0U) {
+        snprintf(text, text_size, "%s%s%s", display_codec, separator, rate_text);
+        return;
+    }
+
+    char bitrate_text[16];
+    if (bitrate_kbps > 0U) {
+        snprintf(bitrate_text, sizeof(bitrate_text), "%u kbps", (unsigned int)bitrate_kbps);
+    } else {
+        snprintf(bitrate_text, sizeof(bitrate_text), "-- kbps");
+    }
     snprintf(text, text_size, "%s%s%s%s%s", display_codec, separator, bitrate_text, separator,
              rate_text);
 }

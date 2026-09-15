@@ -132,3 +132,8 @@ CONFIG_FATFS_CODEPAGE_866=y
 # RADIO_HTTP_STREAM_TIMEOUT_MS in internet_radio.c.
 CONFIG_LWIP_TCP_SACK_OUT=y
 CONFIG_LWIP_TCP_OOSEQ_MAX_PBUFS=12
+
+# The Bluetooth link's task keeps its 8 KB stack in PSRAM - see bt_link.c:
+# internal RAM is what the decoder task and TLS need, and on the ILI9488 the
+# link's stack was the difference between Yandex Music playing and not.
+CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y

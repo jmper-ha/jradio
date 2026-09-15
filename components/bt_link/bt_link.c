@@ -27,7 +27,11 @@ static const char *TAG = "bt_link";
 #define BT_LINK_UART UART_NUM_1
 #define BT_LINK_BAUD 921600
 #define BT_LINK_RX_RING 4096
-#define BT_LINK_TX_RING 2048
+/* No transmit ring: a frame is at most 520 bytes, six milliseconds on the
+ * wire, and uart_write_bytes() simply waits them out. Two kilobytes of
+ * internal RAM matter more - see the stack below. */
+#define BT_LINK_TX_RING 0
+#define BT_LINK_TASK_STACK 8192
 /* A PING every two seconds of silence, and three missed answers before the
  * module counts as gone: a reboot of the module is about four seconds, so a
  * brief absence is not reported as a failure. */
@@ -448,8 +452,21 @@ esp_err_t bt_link_init(void)
                                      UART_PIN_NO_CHANGE),
                         TAG, "uart pins");
     s_started = true;
-    /* 8 KB: the cover is decoded on this task - see bt_link_cover_piece(). */
-    if (xTaskCreate(bt_link_task, "bt_link", 8192, NULL, 6, NULL) != pdPASS) {
+    /* 8 KB, and in PSRAM: the cover is decoded on this task (see
+     * bt_link_cover_piece()), which is what the size is for, and internal
+     * RAM is the pool the radio's decoder task and every TLS handshake
+     * draw on. On the ILI9488, whose driver keeps a 14 KB conversion
+     * buffer there, the module's 8 KB was the difference between Yandex
+     * Music opening and "failed to create direct decoder task" - measured:
+     * 26 KB free with the largest block 8 KB. A stack in external memory
+     * is allowed for a task that never has the cache turned off under it,
+     * and this one touches no flash; the control block stays internal. */
+    static StaticTask_t s_task_block;
+    void *stack = heap_caps_malloc(BT_LINK_TASK_STACK, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (stack == NULL ||
+        xTaskCreateStatic(bt_link_task, "bt_link", BT_LINK_TASK_STACK, NULL, 6, stack,
+                          &s_task_block) == NULL) {
+        free(stack);
         s_started = false;
         return ESP_ERR_NO_MEM;
     }

@@ -229,6 +229,9 @@
     'settings.timezone': ['Часовой пояс', 'Time zone'],
     'settings.ntp': ['Сервер времени', 'Time server'],
     'settings.device_name': ['Имя устройства', 'Device name'],
+    'settings.device_name_note_wifi': [
+      'Так называется сеть Wi‑Fi устройства при первой настройке. Пусто — имя из заводского номера.',
+      'What the device\'s Wi‑Fi network is called during first setup. Empty means the built-in name.'],
     'settings.device_name_note': [
       'Так устройство называется в Bluetooth и как сеть Wi‑Fi при первой настройке. Пусто — имя из заводского номера.',
       'What the device is called over Bluetooth and as the Wi‑Fi network during first setup. Empty means the built-in name.'],

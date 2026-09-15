@@ -951,6 +951,14 @@
         entry.row.hidden = payload[entry.when.field] === entry.when.not;
       }
     }
+    /* The note under the name says what the name is for, and Bluetooth is
+       only one of those on a board that has the module. */
+    const nameNote = document.querySelector('#device-name-note');
+    if (nameNote) {
+      nameNote.setAttribute('data-i18n', available.bt_output === true
+        ? 'settings.device_name_note' : 'settings.device_name_note_wifi');
+      nameNote.textContent = t(nameNote.getAttribute('data-i18n'));
+    }
     /* The speaker beside the switch, from its own endpoint, once the block
        is on the page - once, not on every frame the device sends: the list
        changes only by a scan or a choice, and both re-fetch it themselves. */

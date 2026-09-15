@@ -94,7 +94,7 @@ const ids = [
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
   'device-idle-brightness-value', 'device-screensaver-after-row',
   'device-idle-brightness-row',
-  'device-timezone', 'device-ntp', 'device-name',
+  'device-timezone', 'device-ntp', 'device-name', 'device-name-note',
   'device-weather', 'device-weather-latitude', 'device-weather-longitude',
   'device-weather-key', 'device-weather-key-row', 'device-weather-now-row',
   'device-weather-now',
@@ -1099,7 +1099,9 @@ function lastYandexTimer() {
                    {field: 'ntp_server', value: 'time.cloudflare.com'});
 
   /* The device's name: empty on the card, so the field is empty and the
-     built-in name stands in as its placeholder; typed, it is sent trimmed. */
+     built-in name stands in as its placeholder; typed, it is sent trimmed.
+     The note names Bluetooth only on a board with the module - this one. */
+  assert.ok(elements['#device-name-note'].textContent.includes('Bluetooth'));
   assert.equal(elements['#device-name'].value, '');
   assert.equal(elements['#device-name'].placeholder, 'jradio-B670');
   elements['#device-name'].value = ' Кухня ';

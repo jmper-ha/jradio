@@ -34,16 +34,25 @@ static void test_a_status_frame_fills_the_snapshot(void)
     assert(state.status.volume == 90);
     assert(strcmp(state.peer_name, "Pixel") == 0);
 
-    /* A later STATUS without a name clears it: the name belongs to the
-     * connection it came with. */
+    /* A later STATUS without a name clears it, and the track with it: both
+     * belong to the connection they came with, and a phone that left must
+     * not leave its song on the screen. */
+    snprintf(state.title, sizeof(state.title), "Song");
+    snprintf(state.artist, sizeof(state.artist), "Band");
+    state.position_ms = 1234U;
+    const uint32_t revision_before = state.track_revision;
     jbt_writer_init(&writer, payload, sizeof(payload));
     jbt_status_t gone = status;
     gone.connection = JBT_CONN_NONE;
     memset(gone.peer, 0, sizeof(gone.peer));
     assert(jbt_put_status(&writer, &gone));
     const jbt_frame_t frame2 = frame_of(JBT_MSG_STATUS, payload, writer.length);
-    assert(bt_link_model_apply(&state, &frame2) == BT_LINK_CHANGED_STATUS);
+    assert(bt_link_model_apply(&state, &frame2) == (BT_LINK_CHANGED_STATUS | BT_LINK_CHANGED_TRACK));
     assert(state.peer_name[0] == '\0');
+    assert(state.title[0] == '\0' && state.artist[0] == '\0' && state.position_ms == 0U);
+    assert(state.track_revision == revision_before + 1U);
+    /* And a STATUS with nothing to clear reports only itself. */
+    assert(bt_link_model_apply(&state, &frame2) == BT_LINK_CHANGED_STATUS);
 
     /* Too short to be a STATUS: nothing changes. */
     const jbt_frame_t frame3 = frame_of(JBT_MSG_STATUS, payload, 3U);

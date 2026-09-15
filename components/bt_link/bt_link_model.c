@@ -31,7 +31,24 @@ static uint32_t bt_link_apply_status(bt_link_state_t *state, const jbt_frame_t *
             bt_link_copy_tlv_string(value, length, state->peer_name, sizeof(state->peer_name));
         }
     }
-    return BT_LINK_CHANGED_STATUS;
+    uint32_t changed = BT_LINK_CHANGED_STATUS;
+    /* The track belongs to the connection it came with: a phone that left
+     * takes its title, performer and album with it, or the screen would
+     * name a song nobody is playing - and go on naming it after the source
+     * was left and entered again. */
+    if (status.connection != JBT_CONN_CONNECTED &&
+        (state->title[0] != '\0' || state->artist[0] != '\0' || state->album[0] != '\0' ||
+         state->duration_ms != 0U || state->position_ms != 0U)) {
+        state->title[0] = '\0';
+        state->artist[0] = '\0';
+        state->album[0] = '\0';
+        state->duration_ms = 0U;
+        state->track_no = 0U;
+        state->position_ms = 0U;
+        ++state->track_revision;
+        changed |= BT_LINK_CHANGED_TRACK;
+    }
+    return changed;
 }
 
 static uint32_t bt_link_apply_track(bt_link_state_t *state, const jbt_frame_t *frame)

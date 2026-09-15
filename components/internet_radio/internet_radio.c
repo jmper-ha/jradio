@@ -20,6 +20,7 @@
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include "board.h"
 #include "board_audio_format.h"
@@ -84,6 +85,10 @@
  * so it only has to be short enough to keep the loop answering a stop request. */
 #define RADIO_HTTP_READ_WAIT_MS 20U
 #define RADIO_HTTP_RECONNECT_DELAY_MS 500U
+/* An open that took this long before failing waited on a host that never
+ * answered; it is not tried again. Half the client's 10 s timeout, so a
+ * slow server that does answer within it still gets its retries. */
+#define RADIO_HTTP_CONNECT_GIVE_UP_MS 5000
 /* Backlog held ahead of the decoder. 16 KB was about a second at 128 kbps but
  * only 90 ms of a 1441 kbps FLAC stream - less cushion than the I2S DMA
  * itself - so high-bitrate streams glitched on any network jitter. 64 KB was
@@ -2311,8 +2316,22 @@ static bool radio_start_stream(const char *url, const char *name, size_t station
     atomic_store_explicit(&s_radio.direct_paused, false, memory_order_release);
     esp_err_t err = ESP_FAIL;
     for (unsigned int attempt = 0U; attempt < RADIO_HTTP_CONNECT_RETRIES; ++attempt) {
+        const int64_t began_us = esp_timer_get_time();
         err = radio_stream_open(&s_radio, url);
         if (err == ESP_OK) break;
+        /* The retries are for a failure that came back at once - a reset, a
+         * 5xx, a server that dropped the request - not for a host that did
+         * not answer at all. This runs on the player's own task, and three
+         * attempts at a dead host were thirty seconds during which no press
+         * and no other station got through; the second and third attempts
+         * ran after the listener had already chosen something else. An
+         * attempt that spent its whole timeout waiting is the answer. */
+        const int64_t spent_ms = (esp_timer_get_time() - began_us) / 1000;
+        if (spent_ms >= RADIO_HTTP_CONNECT_GIVE_UP_MS) {
+            ESP_LOGW(TAG, "HTTP connect took %lld ms and failed with %s; not retrying",
+                     (long long)spent_ms, esp_err_to_name(err));
+            break;
+        }
         if (attempt + 1U < RADIO_HTTP_CONNECT_RETRIES) {
             ESP_LOGW(TAG, "HTTP connect retry %u/%u after %s",
                      attempt + 1U, RADIO_HTTP_CONNECT_RETRIES, esp_err_to_name(err));

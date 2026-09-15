@@ -141,6 +141,27 @@ SPARK_RAYS = ((23, 0.61), (47, 0.71), (71, 0.80), (103, 0.92), (144, 1.00), (180
 SPARK_CORE = 0.30
 
 
+def draw_music_note(size):
+    """The beamed pair of notes, the same drawing the web player uses.
+
+    Geometry copied unit for unit off `.track-art-mark` in data/www/index.html
+    - both faces stand in for a missing cover, and a single eighth note here
+    against a beamed pair there was the one place the two disagreed. Solid
+    fill, like the mark the browser paints.
+    """
+    image, d, s = canvas(size)
+    # The beam, sloping up to the right.
+    d.polygon([(9.6 * s, 5.2 * s), (19.4 * s, 3 * s), (19.4 * s, 5.7 * s), (9.6 * s, 7.9 * s)],
+              fill=255)
+    # The two stems.
+    d.rectangle([9.6 * s, 5.2 * s, 11.3 * s, 17.6 * s], fill=255)
+    d.rectangle([17.7 * s, 3 * s, 19.4 * s, 15.6 * s], fill=255)
+    # The two heads, tilted only by their width against their height.
+    d.ellipse([4.7 * s, 14.8 * s, 10.7 * s, 20.0 * s], fill=255)
+    d.ellipse([12.8 * s, 12.8 * s, 18.8 * s, 18.0 * s], fill=255)
+    return finish(image, size)
+
+
 def draw_spark(size, cx=14.08, cy=10.24, rmax=11.3):
     image, d, s = canvas(size)
     points = []
@@ -205,10 +226,11 @@ ICONS = (
     # What is drawn on the cover tile when there is no cover. A bitmap and not
     # LV_SYMBOL_AUDIO in the display face, because that face stops at
     # Montserrat 48 - LVGL ships no larger - and a 160 px tile wants a note
-    # two thirds of its width. The ink is 0.75 of the box tall, so a note
-    # scaled to two thirds of a tile fills half the tile's height, which is
-    # the share the 48 px glyph took in the 96 px tile it was drawn for.
-    ("music_note", ("glyph", 0xE405)),
+    # two thirds of its width. Drawn rather than taken from the icon font so
+    # it is the same mark the browser paints; the ink spans 0.71 of the box,
+    # so a note scaled to two thirds of a tile fills about half the tile's
+    # height, the share the 48 px glyph took in the 96 px tile it replaced.
+    ("music_note", ("draw", draw_music_note)),
     # The sky, beside the clock. Ten pictures for every condition three
     # services can report - see weather_icon_t - and day and night only where
     # the sky itself is the picture: a cloud looks the same at midnight, a

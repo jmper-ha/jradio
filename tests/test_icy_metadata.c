@@ -75,10 +75,48 @@ static void test_empty_metadata_keeps_audio_alignment(void)
     assert(audio[2] == 0xa3 && audio[3] == 0xa4);
 }
 
+/* What one server put where the song should be: its backend's JSON reply
+ * and a chunked terminator. That is not a title, and the line ends are not
+ * part of one either. */
+static void test_a_json_title_is_no_title(void)
+{
+    icy_metadata_t parser;
+    title_capture_t capture = {0};
+    uint8_t audio[16] = {0};
+    size_t audio_length = 0;
+    static const char block[] =
+        "StreamTitle='{\"status\":1,\"message\":\"Ok\",\"result\":\"Ok\",\"errorCode\":0}\r\n0\r\n\r\n';";
+    /* One audio byte, then the block: the interval is 1. */
+    uint8_t input[2 + 5 * 16];
+    memset(input, 0, sizeof(input));
+    input[0] = 0xAA;
+    input[1] = 5;
+    memcpy(&input[2], block, sizeof(block) - 1U);
+
+    icy_metadata_init(&parser, 1, capture_title, &capture);
+    assert(icy_metadata_feed(&parser, input, sizeof(input), audio, sizeof(audio),
+                             &audio_length) == ICY_METADATA_OK);
+    assert(capture.calls == 1);
+    assert(capture.title[0] == '\0');
+
+    /* A real title with a stray line end keeps its words. */
+    static const char ok[] = "StreamTitle='Artist - Track\r\n';";
+    uint8_t input2[2 + 2 * 16];
+    memset(input2, 0, sizeof(input2));
+    input2[0] = 0xAA;
+    input2[1] = 2;
+    memcpy(&input2[2], ok, sizeof(ok) - 1U);
+    icy_metadata_init(&parser, 1, capture_title, &capture);
+    assert(icy_metadata_feed(&parser, input2, sizeof(input2), audio, sizeof(audio),
+                             &audio_length) == ICY_METADATA_OK);
+    assert(strcmp(capture.title, "Artist - Track") == 0);
+}
+
 int main(void)
 {
     test_passthrough_without_metadata();
     test_extracts_title_across_network_chunks();
+    test_a_json_title_is_no_title();
     test_empty_metadata_keeps_audio_alignment();
     puts("icy_metadata tests passed");
     return 0;

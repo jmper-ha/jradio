@@ -28,8 +28,21 @@ static void icy_metadata_publish_title(icy_metadata_t *parser)
     }
     memcpy(title, value, length);
     title[length] = '\0';
+    /* Trimmed of the line ends a broken server leaves in it, and emptied
+     * when what is left is not a title at all: 101.ru sends
+     * StreamTitle='{"status":1,"message":"Ok",...}\r\n0\r\n\r\n' - its
+     * backend's own reply and a chunked terminator where the song should
+     * be - and that is not something to put on a screen. A title never
+     * begins with a brace or a bracket. */
+    while (length > 0U && (title[length - 1U] == '\r' || title[length - 1U] == '\n' ||
+                           title[length - 1U] == ' ')) {
+        title[--length] = '\0';
+    }
+    const char *start = title;
+    while (*start == ' ' || *start == '\r' || *start == '\n') ++start;
+    if (*start == '{' || *start == '[') start = "";
     if (parser->title_callback != NULL) {
-        parser->title_callback(parser->title_context, title);
+        parser->title_callback(parser->title_context, start);
     }
 }
 

@@ -55,6 +55,27 @@
  * fixed 116 would do once the panel is only 240 wide. */
 #define UI_STRIP_CONTEXT_W (UI_STRIP_CLOCK_X - UI_STRIP_CONTEXT_X - 4)
 
+/* The sleep timer's mark, in the gap between the clock and the signal group:
+ * the crescent, then the minutes left. Beside the clock because that is what
+ * it is about - a time the device acts at - and on the right of it because
+ * the left of the strip is already the weather's.
+ *
+ * The digits do not fit on every panel. On a 240 px one the clock ends 22
+ * pixels before the bars, which is the crescent and nothing else, so
+ * UI_STRIP_SLEEP_TEXT_FITS is false there and the panel shows the mark alone;
+ * the number is on the screensaver and on the web page, and the mark's job in
+ * the strip is to say that the device is going to switch itself off, which a
+ * crescent says on its own. */
+#define UI_STRIP_SLEEP_ICON_PX UI_STRIP_WEATHER_ICON_PX
+#define UI_STRIP_SLEEP_ICON_X (UI_STRIP_CLOCK_X + UI_STRIP_CLOCK_W + 2)
+#define UI_STRIP_SLEEP_ICON_Y ((UI_STRIP_H - UI_STRIP_SLEEP_ICON_PX) / 2)
+#define UI_STRIP_SLEEP_TEXT_X (UI_STRIP_SLEEP_ICON_X + UI_STRIP_SLEEP_ICON_PX + 2)
+/* Three halves of the body size: two digits and a pixel over, the same way
+ * the weather's reading is sized. */
+#define UI_STRIP_SLEEP_TEXT_W (UI_FONT_BODY_PX * 3 / 2)
+#define UI_STRIP_SLEEP_TEXT_FITS \
+    (UI_STRIP_SLEEP_TEXT_X + UI_STRIP_SLEEP_TEXT_W + 4 <= UI_STRIP_BARS_X)
+
 /* The weather, when it is on: a picture and a reading at the left edge of the
  * strip, where the screen's name stands otherwise, and the name moves along
  * to make room. The first draft put the pair just left of the clock, reading
@@ -453,6 +474,11 @@ _Static_assert(UI_LIST_NUMBER_W > UI_FONT_TITLE_PX * 1274 / 1000,
                "the station index leaves no gap before the name");
 /* The weather ends before the clock with the clock's own air to spare - the
  * reading is the only thing in the strip to its right until the clock. */
+/* The crescent itself has to fit on every panel, digits or no digits: without
+ * it there is no indicator at all, and a mark drawn under the signal bars
+ * would be worse than none. */
+_Static_assert(UI_STRIP_SLEEP_ICON_X + UI_STRIP_SLEEP_ICON_PX + 4 <= UI_STRIP_BARS_X,
+               "no room beside the clock for the sleep timer's mark");
 _Static_assert(UI_STRIP_WEATHER_TEXT_X + UI_STRIP_WEATHER_TEXT_W + 4 <= UI_STRIP_CLOCK_X,
                "the weather runs into the clock");
 _Static_assert(UI_STRIP_WEATHER_ICON_PX <= UI_STRIP_H - 2,

@@ -14,7 +14,8 @@
 | `POST /api/settings` | Changes one setting: `{"field":…,"value":…}`, `timezone`, `ntp_server`, `weather`, `weather_latitude`, `weather_longitude`, `openweathermap_key`, `screensaver`, `screensaver_seconds` and `screensaver_brightness` included |
 | `GET /api/backup` | The device configuration as one zip: `wifi.json`, `settings.csv`, `yandex.json`, `weather.json` |
 | `POST /api/restore` | Restores it: the whole archive or a single file, named by `?name=` |
-| `GET /api/progress` | Track position, buffer fill, cover signature |
+| `GET /api/progress` | Track position, buffer fill, cover signature, what the sleep timer has left |
+| `POST /api/sleep-timer` | The sleep timer: `{"minutes":45}`, zero turns it off |
 | `GET /api/cover` | The current cover, 96x96, as a BMP |
 | `GET /api/stations` | The station names of the active source |
 | `POST /api/station-test` | Plays an address on the device without touching the playlist |
@@ -34,6 +35,13 @@ WebSocket commands: `player.play`, `player.pause`, `player.toggle`,
 state arrives as diffs - `player`, `list`, `wifi`, `settings`; anything large -
 the playlist, media directories - goes over REST, because it does not fit in a
 frame and must not spend internal SRAM.
+
+The sleep timer is cut along that same line, and is a good illustration of
+where it runs: **how long is set** is a change, so it arrives over the socket
+beside the settings (`"sleep":{"minutes":45}`), while **how long is left** is a
+ticking number and rides on the position poll. So a tab left open on a stopped
+player stays quiet while there is no timer, and starts asking once a second the
+moment one appears - set from another browser, or on the device itself.
 
 `GET /api/settings` carries two things the live socket updates do not: the name
 of the time server (`ntp_server`) and the list of time zones to choose from

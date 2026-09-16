@@ -171,6 +171,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_HINT_REFRESH] = {"OK - обновить, удержание - назад",
      "OK - refresh, hold - back"},
     [DEVICE_TEXT_HINT_LINK] = {"OK - привязать, удержание - назад", "OK - link, hold - back"},
+    [DEVICE_TEXT_MINUTES_SHORT] = {"мин", "min"},
 };
 
 /* An id added to the enum without a string here does not compile. That is the

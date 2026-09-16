@@ -38,6 +38,7 @@
 #include "ui_settings_model.h"
 #include "ui_station_list.h"
 #include "ui_text_scroll.h"
+#include "sleep_timer.h"
 #include "ui_status_bar.h"
 #include "weather.h"
 #include "ui_web_address.h"
@@ -209,6 +210,13 @@ typedef struct {
     lv_obj_t *weather_text;
     bool weather_shown;
     weather_icon_t weather_icon_kind;
+    /* The sleep timer's crescent and the minutes beside it, hidden while no
+     * timer is running - which is nearly always, so they cost a hidden object
+     * and a compare. The minutes last drawn, so a strip is only touched on
+     * the minute it changes rather than every pass. */
+    lv_obj_t *sleep_icon;
+    lv_obj_t *sleep_text;
+    uint16_t sleep_minutes;
     lv_obj_t *bars[UI_WIFI_BARS];
     /* Per strip, not shared: only the active screen's is refreshed, so a
      * shared cache would go stale the moment the screen changed and leave the
@@ -269,6 +277,15 @@ static lv_obj_t *s_source_progress;
 /* Same deal as the volume, and for the same reason: the panel follows the knob
  * on the very next detent, settings.csv follows once it stops turning. */
 #define UI_BRIGHTNESS_SETTLE_MS 1500U
+/* The sleep timer's last seconds. The music is taken down rather than cut
+ * off: waking up to the last half-second of a song at full volume is what a
+ * sleep timer exists to avoid, and ten seconds is long enough to be a fade
+ * and short enough that the device is not left playing quietly for a minute
+ * after its time. The ramp is on the output only - settings.csv is never
+ * written with it, so the level the listener chose is what the device wakes
+ * at. */
+#define UI_SLEEP_FADE_MS 10000U
+
 /* Going to sleep: how long the stream is given to stop before the power goes
  * anyway. Bounded because a source that will not stop must not keep the board
  * awake with its screen already dark. */
@@ -533,6 +550,11 @@ static uint32_t ui_tick_get_ms(void);
  * ui_volume_commit_due() for why the two are separate. */
 static bool s_volume_save_pending;
 static uint32_t s_volume_changed_ms;
+/* The sleep timer's fade, between its expiry and the board going down. The
+ * volume is walked to zero while it is set, and nothing saves the volume
+ * meanwhile - see the poll loop. */
+static bool s_sleep_fading;
+static uint32_t s_sleep_fade_started_ms;
 static bool s_brightness_save_pending;
 static uint32_t s_brightness_changed_ms;
 
@@ -688,6 +710,12 @@ static const char *ui_radio_state_text(player_playback_state_t state)
     return "Unknown";
 }
 
+/* The sleep timer's crescent at this panel's strip size. Two levels so the
+ * size macro is expanded before it is pasted - the same shape the weather's
+ * picture uses below, and the fonts before it. */
+#define UI_SLEEP_BITMAP_(px) ui_feed_icon_bedtime_##px
+#define UI_SLEEP_BITMAP(px) UI_SLEEP_BITMAP_(px)
+
 /* Builds the strip on `screen`. Left slot names the screen, centre carries the
  * clock and the right the signal - the same three positions everywhere, so
  * moving between screens does not move the eye. */
@@ -746,6 +774,28 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     lv_obj_add_flag(strip->weather_text, LV_OBJ_FLAG_HIDDEN);
     strip->weather_shown = false;
     strip->weather_icon_kind = WEATHER_ICON_NONE;
+
+    /* The sleep timer, right of the clock. Built hidden and stays that way
+     * unless somebody sets a timer. */
+    strip->sleep_icon = lv_image_create(screen);
+    lv_obj_set_pos(strip->sleep_icon, UI_STRIP_SLEEP_ICON_X, UI_STRIP_SLEEP_ICON_Y);
+    lv_image_set_src(strip->sleep_icon, &UI_SLEEP_BITMAP(UI_STRIP_SLEEP_ICON_PX));
+    /* The accent, where the weather's picture is the clock's shade: one says
+     * what the sky is doing, the other that the device is about to switch
+     * itself off, and only one of those is worth a colour. */
+    lv_obj_set_style_image_recolor(strip->sleep_icon, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_image_recolor_opa(strip->sleep_icon, LV_OPA_COVER, 0);
+    lv_obj_add_flag(strip->sleep_icon, LV_OBJ_FLAG_HIDDEN);
+
+    strip->sleep_text = lv_label_create(screen);
+    lv_obj_set_pos(strip->sleep_text, UI_STRIP_SLEEP_TEXT_X, 5);
+    lv_obj_set_width(strip->sleep_text, UI_STRIP_SLEEP_TEXT_W);
+    lv_obj_set_style_text_font(strip->sleep_text, UI_FONT_BODY, 0);
+    lv_label_set_long_mode(strip->sleep_text, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_color(strip->sleep_text, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_label_set_text(strip->sleep_text, "");
+    lv_obj_add_flag(strip->sleep_text, LV_OBJ_FLAG_HIDDEN);
+    strip->sleep_minutes = 0U;
 
     for (int bar = 0; bar < UI_WIFI_BARS; ++bar) {
         lv_obj_t *block = lv_obj_create(screen);
@@ -863,6 +913,12 @@ static lv_obj_t *s_saver_time;
 static lv_obj_t *s_saver_date;
 static lv_obj_t *s_saver_icon;
 static lv_obj_t *s_saver_temperature;
+/* The sleep timer, on the same middle line: the crescent and the minutes
+ * left. This is the screen the timer is actually watched from - the panel is
+ * asleep and the room is dark - so here it always gets its number. */
+static lv_obj_t *s_saver_sleep_icon;
+static lv_obj_t *s_saver_sleep_text;
+static bool s_saver_sleep_shown;
 static lv_obj_t *s_saver_track;
 /* The block's bitmap, in the panel's wire order once rendered. */
 static lv_draw_buf_t s_saver_bitmap;
@@ -960,6 +1016,20 @@ static void ui_create_screensaver(void)
     lv_obj_set_style_text_color(s_saver_temperature, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_saver_temperature, "");
 
+    s_saver_sleep_icon = lv_image_create(s_saver_block);
+    lv_obj_set_pos(s_saver_sleep_icon, 0,
+                   line_y + (s_saver_line_h - UI_SAVER_WEATHER_ICON_PX) / 2);
+    lv_image_set_src(s_saver_sleep_icon, &UI_SLEEP_BITMAP(UI_SAVER_WEATHER_ICON_PX));
+    lv_obj_set_style_image_recolor(s_saver_sleep_icon, lv_color_hex(UI_COLOR_DIM), 0);
+    lv_obj_set_style_image_recolor_opa(s_saver_sleep_icon, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_saver_sleep_icon, LV_OBJ_FLAG_HIDDEN);
+
+    s_saver_sleep_text = lv_label_create(s_saver_block);
+    lv_obj_set_pos(s_saver_sleep_text, 0, line_y + (s_saver_line_h - text_h) / 2);
+    lv_obj_set_style_text_color(s_saver_sleep_text, lv_color_hex(UI_COLOR_DIM), 0);
+    lv_label_set_text(s_saver_sleep_text, "");
+    lv_obj_add_flag(s_saver_sleep_text, LV_OBJ_FLAG_HIDDEN);
+
     s_saver_track = lv_label_create(s_saver_block);
     lv_obj_set_pos(s_saver_track, 0, line_y + s_saver_line_h + UI_SAVER_GAP);
     lv_obj_set_width(s_saver_track, s_saver_block_w);
@@ -1021,13 +1091,24 @@ static void ui_screensaver_place_middle_line(void)
     const int temperature_w = s_saver_icon_shown ? lv_obj_get_width(s_saver_temperature) : 0;
     const int weather_w =
         s_saver_icon_shown ? UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2 + temperature_w : 0;
-    const int total = date_w + (weather_w > 0 && date_w > 0 ? UI_SAVER_INLINE_GAP : 0) + weather_w;
+    /* The timer's pair is built like the weather's and laid out like it, at
+     * the end of the line: date, sky, sleep. */
+    const int sleep_minutes_w = s_saver_sleep_shown ? lv_obj_get_width(s_saver_sleep_text) : 0;
+    const int sleep_w =
+        s_saver_sleep_shown ? UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2 + sleep_minutes_w : 0;
+    const int total = date_w + (weather_w > 0 && date_w > 0 ? UI_SAVER_INLINE_GAP : 0) +
+                      weather_w +
+                      (sleep_w > 0 && (date_w > 0 || weather_w > 0) ? UI_SAVER_INLINE_GAP : 0) +
+                      sleep_w;
     int x = (s_saver_block_w - total) / 2;
     if (x < 0) x = 0;
     lv_obj_set_x(s_saver_date, x);
     x += date_w + (date_w > 0 ? UI_SAVER_INLINE_GAP : 0);
     lv_obj_set_x(s_saver_icon, x);
     lv_obj_set_x(s_saver_temperature, x + UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2);
+    if (weather_w > 0) x += weather_w + UI_SAVER_INLINE_GAP;
+    lv_obj_set_x(s_saver_sleep_icon, x);
+    lv_obj_set_x(s_saver_sleep_text, x + UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2);
 }
 
 /* The bitmap for a report's picture at the screensaver's size. */
@@ -1097,6 +1178,27 @@ static void ui_screensaver_refresh_text(bool force)
             lv_obj_add_flag(s_saver_icon, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(s_saver_temperature, LV_OBJ_FLAG_HIDDEN);
             s_saver_icon_kind = WEATHER_ICON_NONE;
+        }
+    }
+
+    /* The minutes left, with their unit: the line has room here, and "45"
+     * alone beside a date and a temperature would be one number too many to
+     * read at a glance in the dark. */
+    const uint16_t sleep_minutes = sleep_timer_service_remaining_minutes();
+    if (sleep_minutes != 0U) {
+        snprintf(text, sizeof(text), "%u %s", (unsigned)sleep_minutes,
+                 ui_text(DEVICE_TEXT_MINUTES_SHORT));
+        changed |= ui_set_label_text_note_change(s_saver_sleep_text, text);
+    }
+    if ((sleep_minutes != 0U) != s_saver_sleep_shown) {
+        changed = true;
+        s_saver_sleep_shown = sleep_minutes != 0U;
+        if (s_saver_sleep_shown) {
+            lv_obj_clear_flag(s_saver_sleep_icon, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(s_saver_sleep_text, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_saver_sleep_icon, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_saver_sleep_text, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -1259,6 +1361,32 @@ static void ui_screensaver_poll(uint32_t now_ms)
     if ((int32_t)(now_ms - s_saver_draw_after_ms) >= 0) ui_screensaver_draw();
 }
 
+/* Shows or hides the crescent and its minutes. Zero minutes is the whole of
+ * "no timer" - see sleep_timer_remaining_minutes(), which never returns it
+ * while one is running. */
+static void ui_status_strip_update_sleep(ui_status_strip_t *strip)
+{
+    const uint16_t minutes = sleep_timer_service_remaining_minutes();
+    if (minutes == strip->sleep_minutes) return;
+    const bool was_shown = strip->sleep_minutes != 0U;
+    strip->sleep_minutes = minutes;
+    if ((minutes != 0U) != was_shown) {
+        if (minutes != 0U) {
+            lv_obj_clear_flag(strip->sleep_icon, LV_OBJ_FLAG_HIDDEN);
+            if (UI_STRIP_SLEEP_TEXT_FITS) {
+                lv_obj_clear_flag(strip->sleep_text, LV_OBJ_FLAG_HIDDEN);
+            }
+        } else {
+            lv_obj_add_flag(strip->sleep_icon, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(strip->sleep_text, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (minutes == 0U) return;
+    char text[8];
+    snprintf(text, sizeof(text), "%u", (unsigned)minutes);
+    ui_set_label_text_if_changed(strip->sleep_text, text);
+}
+
 static void ui_status_strip_update(ui_status_strip_t *strip,
                                    const player_snapshot_t *snapshot)
 {
@@ -1271,6 +1399,7 @@ static void ui_status_strip_update(ui_status_strip_t *strip,
     ui_status_clock_text(clock_text, sizeof(clock_text), have_time, hour, minute);
     ui_set_label_text_if_changed(strip->clock, clock_text);
     ui_status_strip_update_weather(strip);
+    ui_status_strip_update_sleep(strip);
 
     const uint8_t bars = ui_status_wifi_bars(snapshot->wifi_rssi_valid,
                                              snapshot->wifi_rssi_dbm);
@@ -4598,15 +4727,52 @@ static void ui_enter_deep_sleep(void)
     board_deep_sleep();  /* does not return */
 }
 
+/* One pass of the sleep timer's fade; the last one sends the board to sleep.
+ * Driven from the poll loop rather than by sleeping inside a loop of its own,
+ * because the screen and the buttons have to stay alive through it: ten
+ * seconds of a frozen panel would read as a crash, and a listener who is
+ * still awake has to be able to stop it. */
+static void ui_sleep_fade_step(uint32_t now_ms)
+{
+    const uint8_t chosen = s_device_settings.volume;
+    const uint32_t elapsed_ms = now_ms - s_sleep_fade_started_ms;
+    if (elapsed_ms >= UI_SLEEP_FADE_MS) {
+        /* Put back before anything else: ui_enter_deep_sleep() writes a
+         * volume that was waiting to be saved, and the one it must never
+         * write is the zero this fade ends on. */
+        board_audio_set_volume(chosen);
+        s_sleep_fading = false;
+        ui_enter_deep_sleep();
+        return;
+    }
+    board_audio_set_volume(
+        (uint8_t)((uint32_t)chosen * (UI_SLEEP_FADE_MS - elapsed_ms) / UI_SLEEP_FADE_MS));
+}
+
+/* Whoever touches a control during those ten seconds is awake, and a device
+ * that switches itself off under their hands would be indistinguishable from
+ * a fault. The timer itself is already spent by then - it is one-shot - so
+ * this leaves the player running with no timer, which is what the gesture
+ * means. */
+static void ui_sleep_fade_cancel(void)
+{
+    if (!s_sleep_fading) return;
+    s_sleep_fading = false;
+    board_audio_set_volume(s_device_settings.volume);
+    ESP_LOGI(TAG, "sleep timer cancelled by a key press");
+}
+
 static void ui_handle_input(board_input_action_t action)
 {
     /* Before the screensaver, and from every screen: holding F1 means sleep
      * wherever the user is, and having to wake the clock first only to hold
      * the same button again would be a puzzle, not a feature. */
     if (action == BOARD_INPUT_ACTION_SLEEP_LONG) {
+        s_sleep_fading = false;  /* about to sleep anyway, and by request */
         ui_enter_deep_sleep();
         return;
     }
+    ui_sleep_fade_cancel();
     /* A press that only wakes the screensaver goes no further: with the panel
      * dark nobody could see what it would have done. */
     if (ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms())) {
@@ -5523,7 +5689,8 @@ static void ui_task(void *arg)
          * knob - published, saved after it settles - or the next reload of
          * the settings put the file's old value back, and the phone and the
          * panel disagreed after every quick drag of the slider. */
-        if (!s_volume_save_pending && board_audio_volume() != s_device_settings.volume) {
+        if (!s_volume_save_pending && !s_sleep_fading &&
+            board_audio_volume() != s_device_settings.volume) {
             s_device_settings.volume = board_audio_volume();
             s_volume_save_pending = true;
             s_volume_changed_ms = ui_tick_get_ms();
@@ -5551,6 +5718,15 @@ static void ui_task(void *arg)
         if (device_settings_take_changed()) {
             ui_reload_settings();
         }
+        /* The sleep timer, in the same pass as everything else that watches a
+         * clock. Taking the expiry is what disarms it, so this can only start
+         * the fade once. */
+        if (!s_sleep_fading && sleep_timer_service_take_expired()) {
+            s_sleep_fading = true;
+            s_sleep_fade_started_ms = ui_tick_get_ms();
+            ESP_LOGI(TAG, "sleep timer expired; fading out");
+        }
+        if (s_sleep_fading) ui_sleep_fade_step(ui_tick_get_ms());
         ui_screensaver_poll(ui_tick_get_ms());
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
@@ -5710,6 +5886,10 @@ esp_err_t ui_init(void)
                  (int)UI_FONT_BODY->line_height, (int)UI_FONT_BODY_LINE_H,
                  (int)UI_FONT_TITLE->line_height, (int)UI_FONT_TITLE_LINE_H);
     }
+
+    /* Before the web server exists to arm it and before the task that
+     * watches it starts. */
+    sleep_timer_service_init();
 
     s_input_queue = xQueueCreate(UI_INPUT_QUEUE_LENGTH, sizeof(board_input_action_t));
     if (s_input_queue == NULL) {

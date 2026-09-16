@@ -858,6 +858,37 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   color: var(--muted);
 }
 
+/* The sleep timer, on its own line under the position and the volume: three
+   things read left to right - what it is, how long, how long is left. Muted
+   until a timer is running, when the crescent and the countdown take the
+   accent, so an armed timer is visible from across the room and a page with
+   none is quiet. */
+.sleep-timer {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  color: var(--muted);
+  font-size: .85rem;
+}
+
+.sleep-timer.is-armed { color: var(--accent); }
+
+.sleep-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: currentColor;
+}
+
+/* Narrower than a settings-page select: this one holds "90 мин" and sits in a
+   row with two other things. */
+.sleep-select { min-width: 7rem; height: 28px; }
+
+/* Beside the menu, not at the far end of the line: it belongs to the number
+   in the menu, and pushed to the right edge it read as a second, unrelated
+   reading. */
+.sleep-remaining { font-variant-numeric: tabular-nums; }
+
 .volume-icon {
   width: 16px;
   height: 16px;
@@ -1693,6 +1724,7 @@ a.secondary-button { text-decoration: none; color: inherit; }
   .player-bar:not(.is-expanded) .play-toggle svg { width: 22px; height: 22px; }
 
   .player-bar:not(.is-expanded) .track-progress,
+  .player-bar:not(.is-expanded) .sleep-timer,
   .player-bar:not(.is-expanded) .player-bottom,
   .player-bar:not(.is-expanded) .volume-control,
   .player-bar:not(.is-expanded) .stream-details,
@@ -1743,6 +1775,7 @@ a.secondary-button { text-decoration: none; color: inherit; }
   .player-bar.is-expanded .track-copy { order: 3; }
   .player-bar.is-expanded .player-transport { order: 4; }
   .player-bar.is-expanded .volume-control { order: 5; width: 100%; margin-left: 0; }
+  .player-bar.is-expanded .sleep-timer { order: 6; width: 100%; }
   /* Expanded, the button moves to its own corner: in the middle of the column
      it reads as part of the transport. The row that starts the card keeps
      clear of it - the position line's total would otherwise be printed under

@@ -33,6 +33,9 @@
   const streamMeta = document.querySelector('#stream-meta');
   const playerError = document.querySelector('#player-error');
   const commandStatus = document.querySelector('#command-status');
+  const sleepTimer = document.querySelector('#sleep-timer');
+  const sleepSelect = document.querySelector('#sleep-select');
+  const sleepRemaining = document.querySelector('#sleep-remaining');
   const mediaList = document.querySelector('#media-list');
   const listTitle = document.querySelector('#list-title');
   const listCount = document.querySelector('#list-count');
@@ -86,6 +89,11 @@
        to do with the track, so it arrives in the settings section of the
        snapshot and is pushed again whenever the knob moves. */
     volume: null,
+    /* What the device answered last: the timer that is set, and how long it
+       has left. Both come from /api/progress, which the page already polls -
+       a countdown is exactly the kind of number that must not cost a push a
+       second. */
+    sleep: {minutes: 0, remaining: 0},
   };
 
   const volume = {holding: false, busy: false, queued: null};
@@ -548,12 +556,93 @@
       ? value.total_seconds : null;
     renderProgress();
     renderCover(value.cover);
+    applySleep(value.sleep);
+  }
+
+  /* The presets. A quarter of an hour apart up to an hour, then the two
+     lengths somebody puts a whole record on for. */
+  const sleepChoices = [0, 15, 30, 45, 60, 90, 120];
+
+  function renderSleepChoices() {
+    const chosen = sleepSelect.value;
+    sleepSelect.replaceChildren(...sleepChoices.map((minutes) => {
+      const option = document.createElement('option');
+      option.value = String(minutes);
+      option.textContent = minutes === 0 ? t('sleep.off') : t('sleep.minutes', {n: minutes});
+      return option;
+    }));
+    sleepSelect.value = chosen === '' ? '0' : chosen;
+  }
+
+  /* "44:59". Minutes and seconds rather than the panel's whole minutes: the
+     page is looked at while the timer is being set, and a number that only
+     moves once a minute reads as one that is not running at all. */
+  function sleepRemainingText(seconds) {
+    if (!Number.isSafeInteger(seconds) || seconds <= 0) return '';
+    const minutes = Math.floor(seconds / 60);
+    const rest = seconds % 60;
+    return `${minutes}:${String(rest).padStart(2, '0')}`;
+  }
+
+  function renderSleep() {
+    const armed = state.sleep.minutes > 0;
+    sleepTimer.classList.toggle('is-armed', armed);
+    /* Not while the menu is open under the user's finger: the poll answers
+       once a second, and setting the value would shut it. */
+    if (document.activeElement !== sleepSelect) {
+      sleepSelect.value = String(state.sleep.minutes);
+    }
+    sleepRemaining.textContent = armed ? sleepRemainingText(state.sleep.remaining) : '';
+  }
+
+  /* Two ways in, and they carry different halves. The socket says what is set
+     - armed, cancelled, run out - because that is a change and changes are
+     pushed; the position poll brings the seconds, because a countdown ticks
+     and ticking things are polled. A frame without the remainder therefore
+     leaves the remainder alone. */
+  function applySleep(payload) {
+    const value = isObject(payload) ? payload : {};
+    const was = state.sleep.minutes;
+    state.sleep.minutes = Number.isSafeInteger(value.minutes) ? value.minutes : 0;
+    if (Number.isSafeInteger(value.remaining_seconds)) {
+      state.sleep.remaining = value.remaining_seconds;
+    } else if (state.sleep.minutes === 0) {
+      state.sleep.remaining = 0;
+    }
+    renderSleep();
+    /* A timer that has just been set, or has just run out, changes the answer
+       to "is there anything to poll for" - see progressWanted(). */
+    if ((was > 0) !== (state.sleep.minutes > 0)) syncProgressPolling();
+  }
+
+  function sendSleepTimer(minutes) {
+    window.fetch('/api/sleep-timer', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({minutes}),
+    })
+      .then((response) => {
+        if (!response || response.ok !== true) throw new Error('request failed');
+        return response.json();
+      })
+      // The device's own answer, not what was asked for: it is the one that
+      // decides, and the countdown starts from its clock.
+      .then((payload) => applySleep(payload))
+      .catch(() => {
+        commandStatus.textContent = t('sleep.failed');
+        commandStatus.classList.add('is-error');
+      });
   }
 
   // Nothing to ask about while the socket is down or the source is stopped:
-  // neither a position nor a cover exists then.
+  // neither a position nor a cover exists then - and the sleep timer says so
+  // over the socket, which is what turns the poll back on for its countdown.
   function progressWanted() {
-    return state.connected && state.activeSource !== 'none' &&
+    if (!state.connected) return false;
+    // A running timer keeps the fast cadence with the player stopped: the
+    // countdown is a ticking number and has to look like one.
+    if (state.sleep.minutes > 0) return true;
+    return state.activeSource !== 'none' &&
       (state.player.state === 'playing' || state.player.state === 'paused' ||
        state.player.state === 'connecting');
   }
@@ -1139,6 +1228,7 @@
     const previousList = state.list;
     if (nextList) state.list = nextList;
     applySettings(message.settings);
+    applySleep(message.sleep);
     renderSources();
     updatePlaylistLink();
     renderPlayer();
@@ -1249,6 +1339,7 @@
       case 'settings.update':
         if (!acceptSectionRevision(message)) break;
         applySettings(message.settings);
+        applySleep(message.sleep);
         break;
       case 'command.result':
         handleCommandResult(message);
@@ -1331,6 +1422,13 @@
   volumeInput.addEventListener('input', holdVolume);
   volumeInput.addEventListener('change', commitVolume);
   listSearch.addEventListener('input', applyListFilter);
+  sleepSelect.addEventListener('change', () => {
+    const minutes = Number.parseInt(sleepSelect.value, 10);
+    sendSleepTimer(Number.isFinite(minutes) ? minutes : 0);
+  });
+  /* The menu is built here rather than in the markup, so a language changed
+     on the device or in another tab relabels it like everything else. */
+  window.jradioI18n.onChange(renderSleepChoices);
   /* Folded away on a phone the bar shows only the cover, the title and pause;
      the position, the volume and the stream's numbers live in the expanded
      card. On a large screen the button is hidden - everything fits there. */
@@ -1344,6 +1442,8 @@
   dislikeTrack.addEventListener('click', () => sendCommand('player.dislike'));
   renderSources();
   updatePlaylistLink();
+  renderSleepChoices();
+  renderSleep();
   renderPlayer();
   renderList();
   scheduleProgress(progressIdleDelay);

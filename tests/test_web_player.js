@@ -92,6 +92,7 @@ const ids = [
   'track-cover', 'track-progress', 'track-elapsed', 'track-total',
   'progress-rail', 'progress-fill', 'progress-seek',
   'volume-control', 'volume-input', 'volume-value',
+  'sleep-timer', 'sleep-select', 'sleep-remaining',
   'stream-meta', 'player-error', 'command-status', 'media-list',
   'list-title', 'list-count', 'list-items', 'list-empty', 'list-offline', 'list-loading', 'list-loading-text', 'list-search',
   'player-bar', 'player-expand',
@@ -774,6 +775,48 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
   assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.next_item');
   elements['#previous-item'].emit('click');
   assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
+
+  /* The sleep timer. The menu is built by the page, the countdown rides on the
+     progress poll, and the device is what decides - the page draws its
+     answer and never its own arithmetic. */
+  assert.equal(elements['#sleep-select'].children.length, 7);
+  assert.equal(elements['#sleep-select'].children[0].textContent, 'Выключен');
+  assert.equal(elements['#sleep-select'].children[3].textContent, '45 мин');
+  assert.equal(elements['#sleep-remaining'].textContent, '');
+
+  /* The answer is what is drawn, and it is the device's clock: a timer armed
+     a moment ago already has less than its whole span to run. */
+  progressReply = {minutes: 45, remaining_seconds: 2699};  // the POST's answer
+  elements['#sleep-select'].value = '45';
+  elements['#sleep-select'].emit('change');
+  const armed = progressCalls.at(-1);
+  assert.equal(armed.url, '/api/sleep-timer');
+  assert.equal(armed.options.method, 'POST');
+  assert.deepEqual(JSON.parse(armed.options.body), {minutes: 45});
+  await settle();
+  assert.equal(elements['#sleep-remaining'].textContent, '44:59');
+  assert.ok(elements['#sleep-timer'].classList.values.has('is-armed'));
+
+  /* A timer set from the panel, or from another browser, arrives with the
+     settings - it is a change, and changes are pushed. The frame carries no
+     countdown, which is the poll's half, so the seconds already drawn stay
+     where they are. */
+  sendEvent(second, {
+    type: 'settings.update', revision: 920, settings: {volume: 30},
+    sleep: {minutes: 30},
+  });
+  assert.equal(elements['#sleep-select'].value, '30');
+  assert.equal(elements['#sleep-remaining'].textContent, '44:59');
+
+  /* And when it runs out the row goes quiet again rather than sticking at one
+     minute - the device sends zero, which is the whole of "no timer". */
+  sendEvent(second, {
+    type: 'settings.update', revision: 921, settings: {volume: 30},
+    sleep: {minutes: 0},
+  });
+  assert.equal(elements['#sleep-remaining'].textContent, '');
+  assert.equal(elements['#sleep-select'].value, '0');
+  assert.ok(!elements['#sleep-timer'].classList.values.has('is-armed'));
 
   second.emit('close');
   assert.equal(elements['#socket-state'].textContent, 'Нет связи');

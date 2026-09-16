@@ -157,6 +157,9 @@ run_test ui_layout tests/test_ui_layout.c
 # decisions, and the reason the screen exists is the one where they disagree.
 run_test ui_about tests/test_ui_about.c components/ui/ui_about.c components/settings/device_text.c
 run_test board_input tests/test_board_input.c components/board/board_input.c
+# The sleep timer's arithmetic, which is all of it that can be wrong: the
+# rounding the panel shows and the millisecond counter wrapping mid-countdown.
+run_test sleep_timer tests/test_sleep_timer.c components/ui/sleep_timer.c
 run_test board_button_gesture tests/test_board_button_gesture.c components/board/board_input.c
 # Reading a media server on the LAN. Every fixture in these is bytes taken off
 # the wire from the server here, not something written from the specification:

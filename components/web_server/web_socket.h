@@ -88,6 +88,13 @@ typedef struct {
 typedef struct {
     bool known;
     web_settings_view_t view;
+    /* The sleep timer, which is not a setting - it is never written to the
+     * card - but travels here because it is the same kind of thing: device
+     * state a page cannot work out for itself, changed from the panel or from
+     * another browser, and changing about as rarely. Only the length that is
+     * set; the countdown ticks and so is polled with the position, which is
+     * the rule this file follows for everything that moves once a second. */
+    uint16_t sleep_minutes;
 } web_socket_settings_state_t;
 
 int web_server_command_result(char *output, size_t output_size,

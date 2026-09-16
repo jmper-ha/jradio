@@ -56,6 +56,14 @@
                               'Stream details appear once it connects'],
     'player.untitled': ['Без названия', 'Untitled'],
     'player.volume_failed': ['Не удалось изменить громкость', 'Could not change the volume'],
+
+    /* The sleep timer. The countdown itself is digits and needs no words; the
+       menu is minutes, so one string with the number in it serves every
+       entry and a new preset costs nothing. */
+    'sleep.label': ['Таймер сна', 'Sleep timer'],
+    'sleep.off': ['Выключен', 'Off'],
+    'sleep.minutes': ['{n} мин', '{n} min'],
+    'sleep.failed': ['Не удалось установить таймер', 'Could not set the timer'],
     'player.command_failed': ['Команда не выполнена', 'The command did not go through'],
     'player.command_too_long': ['Команда слишком длинная', 'The command is too long'],
     /* The units, which are words rather than symbols in both languages and so

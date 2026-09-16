@@ -155,6 +155,9 @@ typedef enum {
     DEVICE_TEXT_HINT_REFRESH,
     DEVICE_TEXT_HINT_LINK,
 
+    /* The sleep timer's unit, beside the minutes on the screensaver. */
+    DEVICE_TEXT_MINUTES_SHORT,
+
     DEVICE_TEXT_COUNT,
 } device_text_id_t;
 

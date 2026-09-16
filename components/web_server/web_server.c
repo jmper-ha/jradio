@@ -28,6 +28,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "wifi_provisioning.h"
 #include "internet_radio.h"
 #include "player_control.h"
+#include "sleep_timer.h"
 #include "station_catalog.h"
 #include "weather.h"
 #include "ui_now_playing.h"
@@ -1628,6 +1629,16 @@ static esp_err_t web_server_progress_get(httpd_req_t *request)
         web_json_format(&writer, "%u", (unsigned)buffer_percent);
         web_json_literal(&writer, ",");
     }
+    /* The sleep timer rides on this poll rather than one of its own: the page
+     * already asks once a second for the position, and a countdown is exactly
+     * the kind of ticking number that must not cost a WebSocket frame a
+     * second per browser. Seconds and not minutes, so the page can round the
+     * way the panel does and show the last minute honestly. */
+    web_json_literal(&writer, "\"sleep\":{\"minutes\":");
+    web_json_format(&writer, "%u", (unsigned)sleep_timer_service_minutes());
+    web_json_literal(&writer, ",\"remaining_seconds\":");
+    web_json_format(&writer, "%u", (unsigned)sleep_timer_service_remaining_seconds());
+    web_json_literal(&writer, "},");
     /* The generation is what the page watches: the picture itself comes from
      * /api/cover, and re-fetching 27 KB once a second to find out it has not
      * changed is exactly what this number exists to prevent.
@@ -1668,6 +1679,59 @@ static esp_err_t web_server_progress_get(httpd_req_t *request)
     httpd_resp_set_hdr(request, "Cache-Control", "no-store");
     return httpd_resp_send(request, s_file_chunk_buffer,
                            (ssize_t)web_json_length(&writer));
+}
+
+/* The sleep timer, armed and cancelled from the page. Its own endpoint and
+ * not a device setting: what would be saved is a deadline, and a deadline
+ * restored after a reboot is a device that switches itself off some minutes
+ * after coming back. The countdown itself travels with /api/progress.
+ *
+ * Zero minutes cancels - one route in, so a page that means "off" and a page
+ * that means "no timer" cannot end up on different paths. */
+static esp_err_t web_server_sleep_timer_post(httpd_req_t *request)
+{
+    if (request->content_len <= 0 || request->content_len >= WEB_SERVER_REQUEST_MAX_LEN) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Invalid request");
+        return ESP_FAIL;
+    }
+    char body[WEB_SERVER_REQUEST_MAX_LEN] = {0};
+    int received = 0;
+    while (received < request->content_len) {
+        const int read = httpd_req_recv(request, body + received, request->content_len - received);
+        if (read <= 0) {
+            httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Incomplete request");
+            return ESP_FAIL;
+        }
+        received += read;
+    }
+    cJSON *root = cJSON_ParseWithLength(body, (size_t)received);
+    const cJSON *minutes = root == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(root, "minutes");
+    if (!cJSON_IsNumber(minutes) || minutes->valuedouble < 0.0 ||
+        minutes->valuedouble > (double)SLEEP_TIMER_MAX_MINUTES) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Not a number of minutes");
+        return ESP_FAIL;
+    }
+    const uint16_t requested = (uint16_t)minutes->valuedouble;
+    cJSON_Delete(root);
+    sleep_timer_service_set(requested);
+    ESP_LOGI(TAG, "sleep timer set to %u minutes", (unsigned)requested);
+
+    web_json_writer_t writer;
+    web_json_init(&writer, s_file_chunk_buffer, sizeof(s_file_chunk_buffer),
+                  sizeof(s_file_chunk_buffer));
+    web_json_literal(&writer, "{\"minutes\":");
+    web_json_format(&writer, "%u", (unsigned)sleep_timer_service_minutes());
+    web_json_literal(&writer, ",\"remaining_seconds\":");
+    web_json_format(&writer, "%u", (unsigned)sleep_timer_service_remaining_seconds());
+    web_json_literal(&writer, "}");
+    if (!web_json_valid(&writer)) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Sleep timer unavailable");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(request, "application/json; charset=utf-8");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    return httpd_resp_send(request, s_file_chunk_buffer, (ssize_t)web_json_length(&writer));
 }
 
 /* The speakers the module can send to: the ones a scan found, marked with
@@ -1963,6 +2027,8 @@ esp_err_t web_server_start(void)
             {.uri = "/api/station-icon", .method = HTTP_POST, .handler = web_server_station_icon_post},
             {.uri = "/api/station-icon", .method = HTTP_GET, .handler = web_server_station_icon_get},
             {.uri = "/api/progress", .method = HTTP_GET, .handler = web_server_progress_get},
+            {.uri = "/api/sleep-timer", .method = HTTP_POST,
+             .handler = web_server_sleep_timer_post},
             {.uri = "/api/bt/speakers", .method = HTTP_GET, .handler = web_server_bt_speakers_get},
             {.uri = "/api/bt/speaker", .method = HTTP_POST, .handler = web_server_bt_speaker_post},
             {.uri = "/api/bt/forget", .method = HTTP_POST, .handler = web_server_bt_forget_post},

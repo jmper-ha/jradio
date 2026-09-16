@@ -49,6 +49,9 @@ EXTRA_SIZES = {"volume": (16,), "heart": (16,), "heart_filled": (16,),
 # the shape files. 24 and 32 are the screensaver's, beside its title-face
 # date (UI_SAVER_WEATHER_ICON_PX).
 WEATHER_SIZES = (16, 20, 24, 32)
+# The sleep timer's crescent takes exactly the weather's sizes: it stands
+# beside the clock in the strip, and beside the screensaver's date.
+EXTRA_SIZES["bedtime"] = WEATHER_SIZES
 WEATHER_ICONS = ("clear_day", "clear_night", "partly_cloudy_day", "partly_cloudy_night",
                  "cloudy", "fog", "rain", "snow", "sleet", "thunderstorm")
 for _name in WEATHER_ICONS:
@@ -236,6 +239,11 @@ ICONS = (
     # the sky itself is the picture: a cloud looks the same at midnight, a
     # clear sky does not. Material's own sun and moon, so the pair reads as one
     # family with the sun-behind-cloud beside it.
+    # The sleep timer, beside the clock: Material's "bedtime", the crescent
+    # Android puts on the same idea. Its near-twin below is the weather's
+    # clear night - the two never mean the same thing, and they are told apart
+    # by where they stand and by the accent this one is painted in.
+    ("bedtime", ("glyph", 0xEF44)),
     ("clear_day", ("glyph", 0xE81A)),
     ("clear_night", ("glyph", 0xF159)),
     ("partly_cloudy_day", ("glyph", 0xF172)),

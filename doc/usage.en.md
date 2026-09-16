@@ -95,6 +95,31 @@ module loses power for the duration - the panel, the DAC, the card, the
 Bluetooth module, USB; without it only the chip sleeps and the peripherals stay
 fed and drawing current.
 
+### The sleep timer
+
+Play for so long, then sleep. It is set in the web interface, on the player
+page: a crescent, "Sleep timer" and a menu - 15, 30, 45, 60, 90, 120 minutes,
+or off - with the countdown beside it. The timer lives in the device and not
+in the tab: close the browser and it still runs, and one set from a phone
+shows up at once on another player page left open.
+
+When the time is up the volume **fades to nothing over ten seconds** and only
+then does the device go to sleep, by the same route as holding F1. Waking to
+the last half-minute of a track at full volume is exactly what a sleep timer
+is for. Touching any button or the knob during those ten seconds calls the
+sleep off and puts the volume back: whoever pressed it is plainly awake. The
+saved volume is never touched by the fade - the device wakes at the level you
+were listening to.
+
+On the device's own screen a running timer is a crescent beside the clock with
+the minutes left (on the narrow 240 px panel only the crescent fits there).
+On the screensaver it is on the same line as the date and the weather. No
+crescent, no timer.
+
+The timer is not saved: it lives until it fires or until a reboot. Saving it
+would mean saving a moment in time, and a device that switches itself off some
+minutes after coming back is the least explicable thing it could do.
+
 A single press lands after a short delay - before that it cannot be told from
 the beginning of a double press.
 

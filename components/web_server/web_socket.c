@@ -18,6 +18,7 @@
 #include "esp_log.h"
 
 #include "device_settings.h"
+#include "sleep_timer.h"
 #include "player_control.h"
 #include "station_catalog.h"
 #include "web_server.h"
@@ -307,6 +308,11 @@ static void write_settings(web_json_writer_t *writer,
 {
     web_json_literal(writer, "\"settings\":");
     web_settings_write(writer, &settings->view);
+    /* Beside the settings object rather than inside it: what that object
+     * holds is settings.csv, and this is not in the file. */
+    web_json_literal(writer, ",\"sleep\":{\"minutes\":");
+    web_json_format(writer, "%u", (unsigned)settings->sleep_minutes);
+    web_json_literal(writer, "}");
 }
 
 static const char *event_type(web_socket_event_kind_t kind)
@@ -467,6 +473,7 @@ uint32_t web_socket_changed_sections(
      * left open follows what is being done at the device. */
     if (current_settings->known &&
         (!previous_settings->known ||
+         previous_settings->sleep_minutes != current_settings->sleep_minutes ||
          !web_settings_view_equal(&previous_settings->view,
                                   &current_settings->view))) {
         changes |= WEB_SOCKET_SECTION_SETTINGS;
@@ -591,6 +598,10 @@ static void capture_settings_state(web_socket_settings_state_t *output)
                            web_server_yandex_available(), web_server_dlna_available(),
                            web_server_bt_available());
     output->known = true;
+    /* Read here and not from the page, so that a timer armed on one browser
+     * reaches the others - and so that the page knows to start asking for the
+     * countdown at all. */
+    output->sleep_minutes = sleep_timer_service_minutes();
     /* The published copy carries the path of the file the drive was playing,
      * which the browser is never shown and this stack frame has no reason to
      * keep. */

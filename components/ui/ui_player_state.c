@@ -390,3 +390,13 @@ bool ui_player_state_pending_item(const ui_player_state_t *state, size_t *item_i
     *item_index = state->pending_command.item_index;
     return true;
 }
+
+bool ui_player_state_list_is_the_only_screen(audio_source_t source, size_t active_item_index,
+                                             player_playback_state_t playback)
+{
+    if (source != AUDIO_SOURCE_INTERNET_RADIO && source != AUDIO_SOURCE_YANDEX) return false;
+    if (active_item_index != PLAYER_ITEM_NONE) return false;
+    /* Stopped and nothing else: an error has a message on the player screen
+     * worth reading, and paused means a station is loaded and waiting. */
+    return playback == PLAYER_PLAYBACK_STOPPED;
+}

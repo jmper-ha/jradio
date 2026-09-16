@@ -433,7 +433,11 @@ static ui_click_gesture_t s_like_click;
  * screen has to close it - a thick bar left behind would be a mode with no way
  * back into it. */
 static ui_seek_t s_player_seek;
-static bool s_waiting_for_radio_station;
+/* A source is open with nothing playing and nothing chosen - so its list is
+ * what the screen should be showing. Armed when that source's screen is
+ * loaded, and read a moment later, because "nothing is playing" is only true
+ * once the start that may be on its way has had time to arrive. */
+static bool s_waiting_for_source_item;
 /* Autoplay asked the media server to resume, and whether anything came of it
  * is only knowable by waiting: the search and the browse happen on the player
  * task, and the answer arrives as a snapshot. Nothing playing means the server
@@ -445,7 +449,7 @@ static bool s_dlna_resume_waiting;
 static uint32_t s_dlna_resume_started_ms;
 static bool s_dlna_resume_settled;
 static uint32_t s_dlna_resume_settled_ms;
-static uint32_t s_radio_station_wait_started_ms;
+static uint32_t s_source_item_wait_started_ms;
 /* Both browsers reuse this list screen - the volumes' and the media server's.
  * Anywhere but at the top of the tree it shows a ".." row above the entries, so
  * every listing index is one below its row. */
@@ -4159,24 +4163,30 @@ static void ui_load_source_screen(audio_source_t selected_source)
         ui_set_state_line("Connecting...", "", false);
         ui_scroller_set_text(&s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
-        s_waiting_for_radio_station = true;
-        s_radio_station_wait_started_ms = ui_tick_get_ms();
+        s_waiting_for_source_item = true;
+        s_source_item_wait_started_ms = ui_tick_get_ms();
     } else if (selected_source == AUDIO_SOURCE_YANDEX) {
-        /* Connecting like a station, but without the wait that falls back to
-         * the radio list: this source has its own screen to fall back to, and
-         * its station name is known before the first byte arrives. */
+        /* Connecting like a station: its name is known before the first byte
+         * arrives, so the line says so rather than sitting idle.
+         *
+         * And armed like the radio, for the case this screen cannot tell from
+         * a start: the web picking the source and nothing else. Until
+         * 2026-09-16 only the radio was, and choosing Yandex Music in the
+         * browser left the panel on a player reading "Stopped" for ever while
+         * the browser showed the stations - reported from the bench. */
         ui_set_state_line("Connecting...", "", false);
         ui_set_label_text_if_changed(s_source_stream, "");
-        s_waiting_for_radio_station = false;
+        s_waiting_for_source_item = true;
+        s_source_item_wait_started_ms = ui_tick_get_ms();
     } else if (audio_source_is_files(selected_source)) {
-        s_waiting_for_radio_station = false;
+        s_waiting_for_source_item = false;
         // Nothing plays until a file is chosen, so this screen opens idle
         // rather than pretending to connect.
         ui_set_state_line(ui_text(DEVICE_TEXT_CHOOSE_FILE), "", false);
         ui_scroller_set_text(&s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
     } else if (selected_source == AUDIO_SOURCE_DLNA) {
-        s_waiting_for_radio_station = false;
+        s_waiting_for_source_item = false;
         /* Nothing plays until a track is chosen, as on a volume - but unlike a
          * volume the listing is not there yet: the search listens for a couple
          * of seconds before the browser can open. Saying so beats an idle
@@ -4185,7 +4195,7 @@ static void ui_load_source_screen(audio_source_t selected_source)
         ui_scroller_set_text(&s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
     } else {
-        s_waiting_for_radio_station = false;
+        s_waiting_for_source_item = false;
         ui_set_state_line("Not implemented", "", false);
         ui_scroller_set_text(&s_source_detail, "");
         ui_set_label_text_if_changed(s_source_stream, "");
@@ -4291,7 +4301,7 @@ static bool ui_open_radio_home(void)
 
 static void ui_load_menu_screen(void)
 {
-    s_waiting_for_radio_station = false;
+    s_waiting_for_source_item = false;
     if (!ui_home_screen_exists()) {
         s_radio_home_pending = !ui_open_radio_home();
         return;
@@ -4451,7 +4461,7 @@ static void ui_load_station_list_screen(void)
     ESP_LOGI(TAG, "show list: source=%d player_state=%d active_item=%u",
              (int)snapshot.active_source, (int)snapshot.playback_state,
              (unsigned int)snapshot.active_item_index);
-    s_waiting_for_radio_station = false;
+    s_waiting_for_source_item = false;
     s_files_listing_revision = player_control_listing_revision();
     ui_reset_list_from_snapshot(&snapshot);
     lv_screen_load(s_station_list_screen);
@@ -4484,7 +4494,7 @@ static void ui_show_station_list(void)
     // closed here rather than at each caller.
     ui_end_seek();
     if (!ui_player_state_show_station_list(&s_player_ui)) return;
-    s_waiting_for_radio_station = false;
+    s_waiting_for_source_item = false;
     ui_request_files_reveal();
     ui_load_station_list_screen();
 }
@@ -5387,13 +5397,19 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
         }
     }
 
-    if (s_waiting_for_radio_station &&
-        snapshot->active_source == AUDIO_SOURCE_INTERNET_RADIO &&
-        snapshot->active_item_index == PLAYER_ITEM_NONE &&
-        snapshot->playback_state == PLAYER_PLAYBACK_STOPPED &&
-        (uint32_t)(ui_tick_get_ms() - s_radio_station_wait_started_ms) >=
+    if (s_waiting_for_source_item &&
+        ui_player_state_list_is_the_only_screen(snapshot->active_source,
+                                                snapshot->active_item_index,
+                                                snapshot->playback_state) &&
+        (uint32_t)(ui_tick_get_ms() - s_source_item_wait_started_ms) >=
             UI_RADIO_EMPTY_LIST_DELAY_MS) {
-        ui_show_station_list();
+        s_waiting_for_source_item = false;
+        /* Worth a line: this is the panel following a choice made somewhere
+         * else, and when it did not happen the report was "the browser shows
+         * the stations and the screen says Stopped". */
+        ESP_LOGI(TAG, "source %d is open with nothing playing; showing its list",
+                 (int)snapshot->active_source);
+        ui_open_source_list(snapshot->active_source);
     }
 
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
@@ -5518,7 +5534,7 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         // That screen arms the "no station to play" fallback, which opens the
         // list after a moment. Autoplay has a station, so the only thing that
         // fallback could do here is flip away from the screen just loaded.
-        s_waiting_for_radio_station = false;
+        s_waiting_for_source_item = false;
         return;
     }
     case UI_AUTOPLAY_DLNA: {
@@ -5573,6 +5589,10 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         };
         (void)ui_submit_player_command(&play);
         ui_load_source_screen(AUDIO_SOURCE_YANDEX);
+        // As for the radio: that screen arms the "nothing to play" fallback,
+        // and autoplay has a station, so it could only flip away from the
+        // screen just loaded.
+        s_waiting_for_source_item = false;
         return;
     }
     case UI_AUTOPLAY_FILE_UNAVAILABLE:
@@ -5903,7 +5923,7 @@ esp_err_t ui_init(void)
     ui_vu_meter_init(&s_vu_state[0]);
     ui_vu_meter_init(&s_vu_state[1]);
     s_vu_updated_ms = ui_tick_get_ms();
-    s_waiting_for_radio_station = false;
+    s_waiting_for_source_item = false;
     /* PSRAM, and not fatal if it fails: without it the tile keeps showing its
      * placeholder and everything else on the screen still works. */
     /* The decoder fits pictures into whatever the layout keeps for them, and

@@ -64,3 +64,14 @@ bool ui_player_state_is_pending(const ui_player_state_t *state);
 bool ui_player_state_started_elsewhere(const ui_player_state_t *state,
                                        const player_snapshot_t *snapshot);
 bool ui_player_state_pending_item(const ui_player_state_t *state, size_t *item_index);
+/* Whether a source that is open has its list as the only sensible screen: it
+ * is a list of stations, nothing has been chosen from it and nothing is
+ * playing or on its way. That is what a source picked in the browser looks
+ * like a moment later, and the panel has to follow it there - it showed a
+ * player reading "Stopped" instead, which is what was reported on
+ * 2026-09-16 for Yandex Music.
+ *
+ * Only the two station lists. A file volume and the media server look the same
+ * here but have a listing to wait for first, and their own waits above it. */
+bool ui_player_state_list_is_the_only_screen(audio_source_t source, size_t active_item_index,
+                                             player_playback_state_t playback);

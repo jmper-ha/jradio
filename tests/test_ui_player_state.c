@@ -770,8 +770,35 @@ static void test_a_start_from_the_web_is_told_from_one_of_our_own(void)
     assert(!ui_player_state_started_elsewhere(NULL, &playing));
 }
 
+
+/* A source open with nothing chosen and nothing playing: the browser picked it
+ * and the panel has to show its list, not a player reading "Stopped". */
+static void test_a_chosen_source_with_nothing_playing_wants_its_list(void)
+{
+    assert(ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_INTERNET_RADIO,
+                                                   PLAYER_ITEM_NONE,
+                                                   PLAYER_PLAYBACK_STOPPED));
+    assert(ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_YANDEX, PLAYER_ITEM_NONE,
+                                                   PLAYER_PLAYBACK_STOPPED));
+    /* A start on its way, or one that has arrived, is the player's screen. */
+    assert(!ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_YANDEX, PLAYER_ITEM_NONE,
+                                                    PLAYER_PLAYBACK_CONNECTING));
+    assert(!ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_YANDEX, PLAYER_ITEM_NONE,
+                                                    PLAYER_PLAYBACK_PLAYING));
+    /* A station is chosen: it is paused or it failed, and either is worth
+     * reading on the player screen. */
+    assert(!ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_INTERNET_RADIO, 3U,
+                                                    PLAYER_PLAYBACK_STOPPED));
+    /* The volumes and the media server have a listing to wait for first. */
+    assert(!ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_USB, PLAYER_ITEM_NONE,
+                                                    PLAYER_PLAYBACK_STOPPED));
+    assert(!ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_DLNA, PLAYER_ITEM_NONE,
+                                                    PLAYER_PLAYBACK_STOPPED));
+}
+
 int main(void)
 {
+    test_a_chosen_source_with_nothing_playing_wants_its_list();
     test_the_card_gets_the_same_views_as_the_drive();
     test_a_yandex_row_can_be_selected_and_confirmed();
     test_a_station_row_can_be_selected_without_a_source();

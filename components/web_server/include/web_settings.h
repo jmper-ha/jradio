@@ -165,6 +165,10 @@ typedef struct {
     bool weather_valid;
     int weather_temperature;
     const char *weather_icon;
+    /* The sleep timer, which is not a setting and is not on the card - see
+     * sleep_timer.h - but arrives on this page because this is where it is
+     * set. Minutes, zero when none is running. */
+    uint16_t sleep_minutes;
 } web_settings_document_t;
 
 /* The same object as a standalone document, plus what is not worth a place in

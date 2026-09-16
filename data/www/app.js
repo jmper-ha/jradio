@@ -34,7 +34,6 @@
   const playerError = document.querySelector('#player-error');
   const commandStatus = document.querySelector('#command-status');
   const sleepTimer = document.querySelector('#sleep-timer');
-  const sleepSelect = document.querySelector('#sleep-select');
   const sleepRemaining = document.querySelector('#sleep-remaining');
   const mediaList = document.querySelector('#media-list');
   const listTitle = document.querySelector('#list-title');
@@ -559,21 +558,6 @@
     applySleep(value.sleep);
   }
 
-  /* The presets. A quarter of an hour apart up to an hour, then the two
-     lengths somebody puts a whole record on for. */
-  const sleepChoices = [0, 15, 30, 45, 60, 90, 120];
-
-  function renderSleepChoices() {
-    const chosen = sleepSelect.value;
-    sleepSelect.replaceChildren(...sleepChoices.map((minutes) => {
-      const option = document.createElement('option');
-      option.value = String(minutes);
-      option.textContent = minutes === 0 ? t('sleep.off') : t('sleep.minutes', {n: minutes});
-      return option;
-    }));
-    sleepSelect.value = chosen === '' ? '0' : chosen;
-  }
-
   /* "44:59". Minutes and seconds rather than the panel's whole minutes: the
      page is looked at while the timer is being set, and a number that only
      moves once a minute reads as one that is not running at all. */
@@ -584,14 +568,12 @@
     return `${minutes}:${String(rest).padStart(2, '0')}`;
   }
 
+  /* Nothing at all while no timer is running: this is a reading, and a
+     reading of nothing is a line that has to be read to find out it says
+     nothing. The timer is set on the settings page. */
   function renderSleep() {
     const armed = state.sleep.minutes > 0;
-    sleepTimer.classList.toggle('is-armed', armed);
-    /* Not while the menu is open under the user's finger: the poll answers
-       once a second, and setting the value would shut it. */
-    if (document.activeElement !== sleepSelect) {
-      sleepSelect.value = String(state.sleep.minutes);
-    }
+    sleepTimer.hidden = !armed;
     sleepRemaining.textContent = armed ? sleepRemainingText(state.sleep.remaining) : '';
   }
 
@@ -613,25 +595,6 @@
     /* A timer that has just been set, or has just run out, changes the answer
        to "is there anything to poll for" - see progressWanted(). */
     if ((was > 0) !== (state.sleep.minutes > 0)) syncProgressPolling();
-  }
-
-  function sendSleepTimer(minutes) {
-    window.fetch('/api/sleep-timer', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({minutes}),
-    })
-      .then((response) => {
-        if (!response || response.ok !== true) throw new Error('request failed');
-        return response.json();
-      })
-      // The device's own answer, not what was asked for: it is the one that
-      // decides, and the countdown starts from its clock.
-      .then((payload) => applySleep(payload))
-      .catch(() => {
-        commandStatus.textContent = t('sleep.failed');
-        commandStatus.classList.add('is-error');
-      });
   }
 
   // Nothing to ask about while the socket is down or the source is stopped:
@@ -1422,13 +1385,6 @@
   volumeInput.addEventListener('input', holdVolume);
   volumeInput.addEventListener('change', commitVolume);
   listSearch.addEventListener('input', applyListFilter);
-  sleepSelect.addEventListener('change', () => {
-    const minutes = Number.parseInt(sleepSelect.value, 10);
-    sendSleepTimer(Number.isFinite(minutes) ? minutes : 0);
-  });
-  /* The menu is built here rather than in the markup, so a language changed
-     on the device or in another tab relabels it like everything else. */
-  window.jradioI18n.onChange(renderSleepChoices);
   /* Folded away on a phone the bar shows only the cover, the title and pause;
      the position, the volume and the stream's numbers live in the expanded
      card. On a large screen the button is hidden - everything fits there. */
@@ -1442,7 +1398,6 @@
   dislikeTrack.addEventListener('click', () => sendCommand('player.dislike'));
   renderSources();
   updatePlaylistLink();
-  renderSleepChoices();
   renderSleep();
   renderPlayer();
   renderList();

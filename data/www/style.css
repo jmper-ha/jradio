@@ -858,20 +858,17 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   color: var(--muted);
 }
 
-/* The sleep timer, on its own line under the position and the volume: three
-   things read left to right - what it is, how long, how long is left. Muted
-   until a timer is running, when the crescent and the countdown take the
-   accent, so an armed timer is visible from across the room and a page with
-   none is quiet. */
+/* The sleep timer, on its own line under the position and the volume. A
+   reading and not a control - it is set on the settings page - so it is drawn
+   in the accent and only exists while a timer is running: the row is hidden
+   outright otherwise, rather than sitting there saying nothing. */
 .sleep-timer {
   display: flex;
   align-items: center;
   gap: .45rem;
-  color: var(--muted);
+  color: var(--accent);
   font-size: .85rem;
 }
-
-.sleep-timer.is-armed { color: var(--accent); }
 
 .sleep-icon {
   width: 16px;
@@ -879,10 +876,6 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   flex: none;
   fill: currentColor;
 }
-
-/* Narrower than a settings-page select: this one holds "90 мин" and sits in a
-   row with two other things. */
-.sleep-select { min-width: 7rem; height: 28px; }
 
 /* Beside the menu, not at the far end of the line: it belongs to the number
    in the menu, and pushed to the right edge it read as a second, unrelated

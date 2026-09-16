@@ -45,6 +45,7 @@
   const yandexStationsEmpty = document.querySelector('#yandex-stations-empty');
   const deviceStatus = document.querySelector('#device-status');
   const deviceTimezone = document.querySelector('#device-timezone');
+  const sleepSelect = document.querySelector('#sleep-select');
   const backupStatus = document.querySelector('#backup-status');
   const backupFile = document.querySelector('#backup-file');
   const backupRestore = document.querySelector('#backup-restore');
@@ -748,6 +749,10 @@
       // Absent until the device has published its own; the REST load on page
       // open is what fills the fields in the meantime.
       if (isObject(message.settings)) applyLiveSettings(message.settings);
+      /* Beside the settings and not inside them, because it is not one - see
+         applySleepTimer(). The REST document carries it inside, where it is
+         one member of the page's own document. */
+      applySleepTimer(message.sleep);
       return;
     }
     if (message.type === 'wifi.update') {
@@ -760,6 +765,7 @@
       if (!haveSnapshot || !validRevision(message) || message.revision <= lastRevision) return;
       lastRevision = message.revision;
       applyLiveSettings(message.settings);
+      applySleepTimer(message.sleep);
     }
   }
 
@@ -852,6 +858,7 @@
 
   function setDeviceDisabled(disabled) {
     for (const entry of deviceFields) entry.node.disabled = disabled;
+    sleepSelect.disabled = disabled;
   }
 
   /* The zones come from the device rather than sitting in the markup: the list
@@ -888,9 +895,63 @@
     }));
   }
 
+  /* The sleep timer. It sits among the device settings on this page and
+     behaves like them, but it goes to its own endpoint and is never written to
+     the card: what would be saved is a deadline - see sleep_timer.h. The
+     lengths: a quarter of an hour apart up to an hour, then the two somebody
+     puts a whole record on for. */
+  const sleepChoices = [0, 15, 30, 45, 60, 90, 120];
+
+  function renderSleepChoices() {
+    const chosen = sleepSelect.value;
+    sleepSelect.replaceChildren(...sleepChoices.map((minutes) => {
+      const option = document.createElement('option');
+      option.value = String(minutes);
+      option.textContent = minutes === 0 ? t('sleep.off') : t('sleep.minutes', {n: minutes});
+      return option;
+    }));
+    sleepSelect.value = chosen === '' ? '0' : chosen;
+  }
+
+  /* Both the REST document and the live frame carry it, in the same shape.
+     Left alone while the menu is open under a finger. */
+  function applySleepTimer(payload) {
+    if (!isObject(payload) || !Number.isSafeInteger(payload.minutes)) return;
+    if (document.activeElement === sleepSelect) return;
+    sleepSelect.value = String(payload.minutes);
+  }
+
+  function sendSleepTimer(minutes) {
+    sleepSelect.disabled = true;
+    window.fetch('/api/sleep-timer', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({minutes}),
+    })
+      .then((response) => {
+        if (!response || response.ok !== true) throw new Error('request failed');
+        return response.json();
+      })
+      // What the device now holds, not what was asked for: it is the one that
+      // decides, and it is what the player page will be counting down.
+      .then((payload) => {
+        applySleepTimer(payload);
+        deviceStatus.textContent = t('common.saved');
+        deviceStatus.classList.remove('is-error');
+        deviceStatus.classList.add('is-success');
+      })
+      .catch(() => {
+        deviceStatus.textContent = t('sleep.failed');
+        deviceStatus.classList.remove('is-success');
+        deviceStatus.classList.add('is-error');
+      })
+      .then(() => { sleepSelect.disabled = false; });
+  }
+
   function applyDeviceSettings(payload) {
     if (!isObject(payload)) return false;
     applyLanguage(payload);
+    applySleepTimer(payload.sleep);
     const available = isObject(payload.available) ? payload.available : {};
     // Before the values below, or the zone would be set on an empty list.
     fillTimezones(payload.timezones);
@@ -1102,6 +1163,14 @@
   }
 
   function bindDeviceFields() {
+    renderSleepChoices();
+    /* Built here rather than in the markup, so a language changed on the
+       device or in another tab relabels the menu with everything else. */
+    window.jradioI18n.onChange(renderSleepChoices);
+    sleepSelect.addEventListener('change', () => {
+      const minutes = Number.parseInt(sleepSelect.value, 10);
+      sendSleepTimer(Number.isFinite(minutes) ? minutes : 0);
+    });
     for (const entry of deviceFields) {
       if (entry.kind === 'number') {
         // The readout follows the handle; the write waits for it to be let go,

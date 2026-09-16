@@ -15,7 +15,7 @@
 | `GET /api/backup` | The device configuration as one zip: `wifi.json`, `settings.csv`, `yandex.json`, `weather.json` |
 | `POST /api/restore` | Restores it: the whole archive or a single file, named by `?name=` |
 | `GET /api/progress` | Track position, buffer fill, cover signature, what the sleep timer has left |
-| `POST /api/sleep-timer` | The sleep timer: `{"minutes":45}`, zero turns it off |
+| `POST /api/sleep-timer` | The sleep timer: `{"minutes":45}`, zero turns it off. Set in the settings, shown on the player page |
 | `GET /api/cover` | The current cover, 96x96, as a BMP |
 | `GET /api/stations` | The station names of the active source |
 | `POST /api/station-test` | Plays an address on the device without touching the playlist |

@@ -151,6 +151,13 @@
                          autocapitalize="off" autocomplete="off" maxlength="63"
                          placeholder="pool.ntp.org" data-field="ntp_server">
                 </div>
+                <!-- Not a setting: it is never written to the card, and it is
+                     here because this is the page about time. The countdown
+                     is on the player page, where it is watched. -->
+                <div class="device-row">
+                  <label for="sleep-select" data-i18n="sleep.label">Таймер сна</label>
+                  <select id="sleep-select"></select>
+                </div>
               </div>
 
               <div class="device-group">

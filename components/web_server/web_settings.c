@@ -410,6 +410,12 @@ size_t web_settings_serialize(char *output, size_t output_size,
     web_json_literal(&writer, ",\"weather_longitude\":");
     web_json_string(&writer,
                     document->weather_longitude == NULL ? "" : document->weather_longitude);
+    /* Not a setting either, and for a different reason: it is not written to
+     * the card at all. It travels with the settings because the page that
+     * sets it is this one. */
+    web_json_literal(&writer, ",\"sleep\":{\"minutes\":");
+    web_json_format(&writer, "%u", (unsigned)document->sleep_minutes);
+    web_json_literal(&writer, "}");
     /* Whether, never what: the key is a secret and the page has no need of
      * it beyond knowing there is one. */
     web_json_literal(&writer, ",\"openweathermap_key_set\":");

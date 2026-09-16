@@ -94,7 +94,7 @@ const ids = [
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
   'device-idle-brightness-value', 'device-screensaver-after-row',
   'device-idle-brightness-row',
-  'device-timezone', 'device-ntp', 'device-name', 'device-name-note',
+  'device-timezone', 'device-ntp', 'sleep-select', 'device-name', 'device-name-note',
   'device-weather', 'device-weather-latitude', 'device-weather-longitude',
   'device-weather-key', 'device-weather-key-row', 'device-weather-now-row',
   'device-weather-now',
@@ -139,6 +139,7 @@ class FakeWebSocket {
 
 const timers = [];
 const fetchCalls = [];
+let sleepPostFails = false;
 // Answers the Yandex Music polling; each test sets what the device would say.
 let yandexReply = {
   state: 'idle', error: 'none', user_code: '', verification_url: '',
@@ -261,6 +262,15 @@ const context = {
                            known: body.address ? known : speakersReply.known};
         }
         return Promise.resolve({ok: true, json: () => Promise.resolve(speakersReply)});
+      }
+      if (String(url).startsWith('/api/sleep-timer')) {
+        if (sleepPostFails) return Promise.reject(new Error('refused'));
+        const asked = JSON.parse(options.body);
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({minutes: asked.minutes,
+                                       remaining_seconds: asked.minutes * 60}),
+        });
       }
       if (String(url).startsWith('/api/settings')) {
         if (options && options.method === 'POST' && settingsPostFails) {
@@ -727,6 +737,22 @@ function lastYandexTimer() {
   assert.equal(elements['#device-status'].textContent, 'Сохранено');
   assert.equal(elements['#device-autoplay'].disabled, false);
 
+  /* The sleep timer sits among the settings and is set like one, but it goes
+     to its own endpoint: it is never written to the card, because what would
+     be saved is a deadline. */
+  assert.equal(elements['#sleep-select'].children.length, 7);
+  assert.equal(elements['#sleep-select'].children[0].textContent, 'Выключен');
+  assert.equal(elements['#sleep-select'].children[3].textContent, '45 мин');
+
+  elements['#sleep-select'].value = '45';
+  elements['#sleep-select'].emit('change');
+  await settle();
+  const sleepPost = fetchCalls.filter((call) => call.url === '/api/sleep-timer').at(-1);
+  assert.equal(sleepPost.options.method, 'POST');
+  assert.deepEqual(JSON.parse(sleepPost.options.body), {minutes: 45});
+  assert.equal(elements['#device-status'].textContent, 'Сохранено');
+  assert.equal(elements['#sleep-select'].disabled, false);
+
   /* A slider writes when it is let go, not while it is being dragged: the
      readout follows the handle on its own. Brightness is the page's only
      slider now - the volume left it, having a knob on the device and a
@@ -828,7 +854,11 @@ function lastYandexTimer() {
   sendEvent(second, {
     type: 'settings.update', revision: 9,
     settings: {...settingsReply, brightness: 70, scroll: 'left', buffer_view: 'text'},
+    /* The sleep timer rides in the same frame, which is how a timer set on
+       the device - or in another browser - reaches this menu. */
+    sleep: {minutes: 30},
   });
+  assert.equal(elements['#sleep-select'].value, '30');
   assert.equal(elements['#device-brightness'].value, '70');
   assert.equal(elements['#device-brightness-value'].textContent, '70');
   assert.equal(elements['#device-scroll'].value, 'left');

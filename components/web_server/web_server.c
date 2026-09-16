@@ -1324,6 +1324,7 @@ static esp_err_t web_server_settings_api_get(httpd_req_t *request)
         .weather_valid = weather.report.valid,
         .weather_temperature = weather.report.temperature_c,
         .weather_icon = weather_icon_name(weather.report.icon),
+        .sleep_minutes = sleep_timer_service_minutes(),
     };
     const size_t length = web_settings_serialize(s_file_chunk_buffer,
                                                  sizeof(s_file_chunk_buffer),

@@ -97,11 +97,15 @@ fed and drawing current.
 
 ### The sleep timer
 
-Play for so long, then sleep. It is set in the web interface, on the player
-page: a crescent, "Sleep timer" and a menu - 15, 30, 45, 60, 90, 120 minutes,
-or off - with the countdown beside it. The timer lives in the device and not
-in the tab: close the browser and it still runs, and one set from a phone
-shows up at once on another player page left open.
+Play for so long, then sleep. It is set in the web interface, in the settings
+under "Time", beside the time zone and the time server: a menu of 15, 30, 45,
+60, 90, 120 minutes, or off. The timer lives in the device and not in the tab:
+close the browser and it still runs, and one set from a phone shows up at once
+in any other tab that is open.
+
+It is shown on the player page: a crescent, "Sleep timer" and the countdown,
+under the volume. While no timer is running there is no row there at all -
+nobody should have to read a line to find out it says nothing.
 
 When the time is up the volume **fades to nothing over ten seconds** and only
 then does the device go to sleep, by the same route as holding F1. Waking to

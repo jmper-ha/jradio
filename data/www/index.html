@@ -175,19 +175,16 @@
             </div>
           </div>
 
-          <!-- The sleep timer. On the player page and not in the settings
-               because it is not a setting: it is something done to this
-               evening's listening, and it belongs beside the transport that
-               started it. The device holds it - close the tab and it still
-               runs - so what is drawn here is only ever what the device
-               last answered. -->
-          <div id="sleep-timer" class="sleep-timer">
+          <!-- The sleep timer, as a reading and not a control: it is set on
+               the settings page, beside the clock it belongs to, and what is
+               shown here is how long is left. The whole row goes when no
+               timer is running - an empty line saying nothing is worse than
+               no line at all. -->
+          <div id="sleep-timer" class="sleep-timer" hidden>
             <svg class="sleep-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M9.4 3.1A9 9 0 1 0 20.9 13.4 7.4 7.4 0 0 1 9.4 3.1Z"/>
             </svg>
-            <label for="sleep-select" data-i18n="sleep.label">Таймер сна</label>
-            <select id="sleep-select" class="sleep-select"
-                    data-i18n-aria="sleep.label" aria-label="Таймер сна"></select>
+            <span data-i18n="sleep.label">Таймер сна</span>
             <output id="sleep-remaining" class="sleep-remaining"></output>
           </div>
         </div>

@@ -145,6 +145,8 @@ run_test board_audio_health tests/test_board_audio_health.c \
     components/board/board_audio_health.c
 run_test board_audio_startup tests/test_board_audio_startup.c \
     components/board/board_audio_startup.c
+run_test board_amplifier tests/test_board_amplifier.c \
+    components/board/board_amplifier.c
 # The half of version_info that has no device in it: the stamp comes off a
 # filesystem, so refusing a truncated or hand-edited one is the part worth
 # testing, and none of it needs ESP-IDF.

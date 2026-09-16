@@ -260,6 +260,39 @@ Worth knowing if you build the board:
   trying to mount it - which is also why the card is not held mounted, see
   [Limits](diagnostics.en.md#limits). FAT16/FAT32 only, no exFAT.
 
+### The amplifier's MUTE pin
+
+If the board drives speakers through an amplifier rather than only a line
+output, its MUTE / SD / standby input can be handed to the firmware:
+
+```c
+#define AUDIO_AMP_GPIO 39
+#define AUDIO_AMP_ON_LEVEL 1
+```
+
+`AUDIO_AMP_ON_LEVEL` is the level at which the amplifier plays; the other
+polarity is a zero, so no inverter is needed. The firmware holds that level
+for exactly as long as sound is actually being produced: while the S3 itself
+plays, and while the I2S bus is in the Bluetooth module's hands (receiving
+from a phone, the module clocks the DAC and the amplifier is needed just the
+same). Stopped, paused, or with the sound sent to a Bluetooth speaker
+(`AUDIO_DAC_MUTE_GPIO`), the pin takes the other level, so a stopped player is
+not a warm amplifier hissing into the speakers.
+
+Two things, both about clicks:
+
+- **at rest the pin has to sit at the quiet level.** Through reset and the
+  first milliseconds of boot nothing drives it - pull it with a resistor
+  towards the side that mutes the amplifier, or the speakers get whatever the
+  DAC puts out as its supply comes up;
+- muting happens **before** the I2S clock stops, not after: a DAC whose BCLK
+  disappears under it thumps, and not hearing that is the whole point of the
+  pin.
+
+This is not the same as `AUDIO_DAC_MUTE_GPIO` below: that one is the DAC's own
+soft mute, asserted when the sound goes to a Bluetooth speaker. Both can be
+wired at once, and then a muted DAC mutes the amplifier too.
+
 ## Bluetooth: the jradio-bt module
 
 Playing from a phone (and, later, sending to headphones) is done by a second

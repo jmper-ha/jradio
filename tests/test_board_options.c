@@ -221,6 +221,11 @@ static void test_audio_group_matches_the_fixed_i2s_slots(void)
     /* The PCM5102 has no MCLK input on this board; enabling it would need a
      * fourth pin that does not exist. */
     assert(AUDIO_DAC_HAS_MCLK == 0);
+#ifdef AUDIO_AMP_GPIO
+    /* Either polarity is allowed, but only a level: the firmware writes this
+     * value straight to the pad and its complement for the other state. */
+    assert(AUDIO_AMP_ON_LEVEL == 0 || AUDIO_AMP_ON_LEVEL == 1);
+#endif
     assert(AUDIO_DEFAULT_SAMPLE_RATE == 44100);
     assert(AUDIO_BITS_PER_SAMPLE == 16);
     assert(AUDIO_CHANNEL_COUNT == 2);
@@ -338,6 +343,21 @@ static void test_no_pin_is_claimed_by_two_devices(void)
         BUTTON_NEXT_GPIO,
 #endif
         I2S_DOUT_GPIO, I2S_BCLK_GPIO, I2S_LRCK_GPIO,
+        /* The optional audio lines. These are exactly the ones a board grows
+         * later, onto a pin somebody remembered as free - which is the
+         * mistake this test exists for. */
+#ifdef AUDIO_AMP_GPIO
+        AUDIO_AMP_GPIO,
+#endif
+#ifdef AUDIO_DAC_MUTE_GPIO
+        AUDIO_DAC_MUTE_GPIO,
+#endif
+#ifdef PERIPHERAL_POWER_GPIO
+        PERIPHERAL_POWER_GPIO,
+#endif
+#if BOARD_HAS_BLUETOOTH
+        BT_UART_TX_GPIO, BT_UART_RX_GPIO,
+#endif
 #if BOARD_HAS_USB
         USB_DM_GPIO, USB_DP_GPIO,
 #endif

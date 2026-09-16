@@ -126,6 +126,25 @@
 /* No MCLK pin is wired, so the DAC has to derive its clock from BCLK. */
 #define AUDIO_DAC_HAS_MCLK 0
 
+/* The amplifier's MUTE / SD / standby input, for boards that drive speakers
+ * instead of (or beside) the line output. The firmware holds it at
+ * AUDIO_AMP_ON_LEVEL for as long as sound is actually being produced - by
+ * this chip, or by the Bluetooth module while it has the I2S bus - and at the
+ * other level the rest of the time, so a stopped player is not a quiet hiss
+ * and a warm amplifier.
+ *
+ * Either polarity fits: AUDIO_AMP_ON_LEVEL is the level that lets the
+ * amplifier play. Wire the pin so that its resting state - what the chip
+ * leaves it at through reset and the first moments of boot, before anything
+ * is driven - is the muted one, with a resistor to that rail; otherwise the
+ * speakers get the DAC's power-up thump.
+ *
+ * This is not AUDIO_DAC_MUTE_GPIO below: that one is the DAC's own soft mute
+ * and is asserted when the sound is being sent to a Bluetooth speaker. Both
+ * can be wired at once, and then a muted DAC mutes the amplifier too. */
+/* #define AUDIO_AMP_GPIO 39 */
+/* #define AUDIO_AMP_ON_LEVEL 1 */
+
 /* ======================================================================
  * Deep sleep - cutting power to everything outside the module
  * ====================================================================== */

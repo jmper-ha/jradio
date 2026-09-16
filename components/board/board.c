@@ -21,6 +21,7 @@
 
 #include "audio_volume.h"
 #include "board.h"
+#include "board_amplifier.h"
 #include "board_audio_health.h"
 #include "board_audio_startup.h"
 #include "board_audio_format.h"
@@ -57,6 +58,9 @@
  * option stay a plain number. Verified rather than assumed. */
 _Static_assert(LEDC_TIMER_13_BIT == 13,
                "ledc_timer_bit_t no longer equals its bit count");
+#if defined(AUDIO_AMP_GPIO) && !defined(AUDIO_AMP_ON_LEVEL)
+#error "AUDIO_AMP_GPIO also needs AUDIO_AMP_ON_LEVEL: which level lets the amplifier play"
+#endif
 #if defined(PERIPHERAL_POWER_GPIO) && !defined(PERIPHERAL_POWER_ON_LEVEL)
 #error "PERIPHERAL_POWER_GPIO also needs PERIPHERAL_POWER_ON_LEVEL: which level feeds the board"
 #endif
@@ -347,15 +351,41 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     return ESP_OK;
 }
 
+/* What the amplifier is being told right now, and the two things besides
+ * s_audio_enabled that decide it - see board_amplifier_should_play(). */
+static bool s_amp_playing;
+static bool s_bus_released;
+static bool s_dac_muted;
+
+/* Writes the pin, or does nothing at all on a board with no such pin. Every
+ * caller is one of the three inputs changing, so this is where the rule is
+ * applied rather than at each site. */
+static void board_amp_drive(bool play)
+{
+#ifdef AUDIO_AMP_GPIO
+    if (play == s_amp_playing) return;
+    s_amp_playing = play;
+    (void)gpio_set_level(AUDIO_AMP_GPIO, play ? AUDIO_AMP_ON_LEVEL : !AUDIO_AMP_ON_LEVEL);
+    ESP_LOGI(TAG, "amplifier %s", play ? "unmuted" : "muted");
+#else
+    s_amp_playing = play;
+#endif
+}
+
+static void board_amp_apply(void)
+{
+    board_amp_drive(board_amplifier_should_play(s_audio_enabled, s_bus_released, s_dac_muted));
+}
+
 void board_audio_set_dac_muted(bool muted)
 {
+    s_dac_muted = muted;
+    board_amp_apply();
 #ifdef AUDIO_DAC_MUTE_GPIO
     /* XSMT on the PCM5102A: low is mute, and the chip ramps the output down
      * and up itself, so there is no click either way. */
     (void)gpio_set_level(AUDIO_DAC_MUTE_GPIO, muted ? 0 : 1);
     ESP_LOGI(TAG, "DAC %s", muted ? "muted" : "unmuted");
-#else
-    (void)muted;
 #endif
 }
 
@@ -365,6 +395,20 @@ static esp_err_t board_audio_init(void)
     if (s_audio_mutex == NULL) {
         return ESP_ERR_NO_MEM;
     }
+#ifdef AUDIO_AMP_GPIO
+    /* Muted first, before the DAC is given a clock: whatever the pin's
+     * resting state was, from here on it is ours and it is quiet. */
+    const gpio_config_t amp = {
+        .pin_bit_mask = 1ULL << AUDIO_AMP_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_RETURN_ON_ERROR(gpio_config(&amp), TAG, "configure amplifier mute");
+    (void)gpio_set_level(AUDIO_AMP_GPIO, !AUDIO_AMP_ON_LEVEL);
+    s_amp_playing = false;
+#endif
 #ifdef AUDIO_DAC_MUTE_GPIO
     const gpio_config_t mute = {
         .pin_bit_mask = 1ULL << AUDIO_DAC_MUTE_GPIO,
@@ -385,6 +429,11 @@ esp_err_t board_audio_release_bus(void)
     xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
     esp_err_t result = ESP_OK;
     if (s_i2s_tx != NULL) {
+        /* Before the channel goes down, so the amplifier does not blink off
+         * and on around a handover the listener should not hear at all: the
+         * module picks up the same DAC a moment later. */
+        s_bus_released = true;
+        board_amp_apply();
         if (s_audio_enabled) {
             (void)i2s_channel_disable(s_i2s_tx);
             s_audio_enabled = false;
@@ -416,6 +465,10 @@ esp_err_t board_audio_reclaim_bus(void)
         result = board_audio_create_channel(s_audio_sample_rate);
         ESP_LOGI(TAG, "I2S bus reclaimed: %s", esp_err_to_name(result));
     }
+    /* The channel comes back disabled, so this mutes the amplifier until a
+     * source starts - which is the point: the module has stopped playing. */
+    s_bus_released = false;
+    board_amp_apply();
     xSemaphoreGive(s_audio_mutex);
     return result;
 }
@@ -673,6 +726,10 @@ esp_err_t board_audio_set_enabled(bool enabled)
                 result = i2s_channel_enable(s_i2s_tx);
             }
         } else {
+            /* The amplifier goes quiet before the clock stops rather than
+             * after it: a DAC whose BCLK disappears under it thumps, and not
+             * hearing that is the whole point of the pin. */
+            board_amp_drive(false);
             result = i2s_channel_disable(s_i2s_tx);
         }
         if (result == ESP_OK) {
@@ -683,6 +740,10 @@ esp_err_t board_audio_set_enabled(bool enabled)
             }
             ESP_LOGI(TAG, "PCM5102 I2S output %s", enabled ? "enabled" : "disabled");
         }
+        /* After the state is settled - including when the disable above
+         * failed, which leaves the channel running and the amplifier is put
+         * back where it was. */
+        board_amp_apply();
     }
     xSemaphoreGive(s_audio_mutex);
     return result;
@@ -1147,6 +1208,9 @@ void board_deep_sleep(void)
      * the panel going dark is the acknowledgement that the hold registered,
      * and everything below takes a moment. */
     (void)board_backlight_set(0);
+    /* Playback has already been stopped by the caller; this is the belt to
+     * that braces, because the rail under the amplifier is about to go. */
+    board_amp_drive(false);
     board_peripheral_power(false);
 #ifdef PERIPHERAL_POWER_GPIO
     /* Held, or the level is lost the instant the chip sleeps and everything

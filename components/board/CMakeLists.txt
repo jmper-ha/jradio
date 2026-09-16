@@ -1,5 +1,6 @@
 idf_component_register(
-    SRCS "audio_pcm_convert.c" "audio_volume.c" "board.c" "board_audio_health.c"
+    SRCS "audio_pcm_convert.c" "audio_volume.c" "board.c" "board_amplifier.c"
+         "board_audio_health.c"
          "board_audio_startup.c" "board_input.c" "boot_splash_image.c"
          "pcm_diagnostics.c"
          # One per display controller; the unselected ones compile to nothing.

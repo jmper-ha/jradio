@@ -83,7 +83,7 @@ void board_button_gesture_init(board_button_gesture_t *gesture);
  * only when the hold never fired, `hold` the moment the press passes the
  * threshold - so a long press never also delivers a short one. The two
  * actions are arguments because more than one button needs this: the encoder
- * and F1 each have their own pair. */
+ * and the sleep button (F1) each have their own pair. */
 board_input_action_t board_button_gesture_update(board_button_gesture_t *gesture, bool pressed,
                                                  uint32_t elapsed_ms,
                                                  board_input_action_t click,

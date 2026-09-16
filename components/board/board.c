@@ -1122,7 +1122,8 @@ void board_peripheral_power(bool on)
 
 /* Only an RTC-capable pad can wake the chip - on the S3 that is GPIO 0-21 -
  * and a board that cannot wake must not sleep, or the only way back is the
- * reset button. The button was moved onto such a pin on the bench for this. */
+ * reset button. F1 - the sleep button on this board - was moved onto such a
+ * pin on the bench for exactly that. */
 #if BUTTON_SLEEP_GPIO >= 0 && BUTTON_SLEEP_GPIO < SOC_RTCIO_PIN_COUNT
 #define BOARD_CAN_SLEEP 1
 #endif

@@ -4538,10 +4538,11 @@ static void ui_yandex_step_start(const player_snapshot_t *snapshot)
     }
 }
 
-/* F1 held. Everything outside the chip is about to lose power, so what is
- * playing is stopped rather than cut mid-frame, the settings that were
- * waiting out their settle timer are written, and the module is told to drop
- * its Bluetooth link while it still has power to do it politely.
+/* The sleep button (F1) held. Everything outside the chip is about to lose
+ * power, so what is playing is stopped rather than cut mid-frame, the
+ * settings that were waiting out their settle timer are written, and the
+ * module is told to drop its Bluetooth link while it still has power to do it
+ * politely.
  *
  * Nothing about the session is saved here: waking is a fresh boot, the resume
  * point was written when the source was chosen, and the autoplay setting

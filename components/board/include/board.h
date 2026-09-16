@@ -19,10 +19,11 @@ esp_err_t board_backlight_set(uint8_t percent);
  * PERIPHERAL_POWER_GPIO; a no-op elsewhere. board_init() turns it on, and
  * only deep sleep turns it off. */
 void board_peripheral_power(bool on);
-/* False on a board whose F1 button is not on an RTC pin: such a board could
- * not be woken by it, so it is never offered the sleep. */
+/* False on a board whose sleep button (F1 here) is not on an RTC pin: such a
+ * board could not be woken by it, so it is never offered the sleep. */
 bool board_deep_sleep_supported(void);
-/* Cuts the peripherals, arms the F1 button as the wake source and sleeps.
+/* Cuts the peripherals, arms BUTTON_SLEEP_GPIO - F1 - as the wake source and
+ * sleeps.
  * Does not return: waking is a fresh boot, so whatever has to be saved is
  * saved by the caller before it calls this. */
 void board_deep_sleep(void);

@@ -43,8 +43,8 @@ static void test_a_short_press_reports_on_release(void)
 }
 
 /* The same state machine, another button's pair of actions - the sleep button
- * held is what puts the board to sleep, and its short press must stay its
- * own. */
+ * (F1 on the silkscreen) held is what puts the board to sleep, and its short
+ * press must stay its own. */
 static void test_each_button_reports_its_own_actions(void)
 {
     board_button_gesture_t gesture;

@@ -64,6 +64,10 @@ static portMUX_TYPE s_ap_hint_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool s_initialized;
 static bool s_started;
 static bool s_wifi_started;
+/* Set once, on the way into deep sleep. The radio going down raises a
+ * disconnect like any other, and without this the reconnect machinery would
+ * answer it by bringing Wi-Fi straight back up. */
+static bool s_stopped;
 static bool s_pending_commit;
 /* The network the current attempt belongs to, by name. */
 static char s_current_ssid[WIFI_SETTINGS_SSID_MAX_LEN + 1U];
@@ -542,7 +546,7 @@ static void wifi_reconnect_task(void *arg)
             continue;
         }
         const wifi_provisioning_status_t status = wifi_provisioning_status();
-        if (!wifi_provisioning_should_reconnect(status.mode)) {
+        if (s_stopped || !wifi_provisioning_should_reconnect(status.mode)) {
             continue;
         }
 
@@ -636,7 +640,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
              MAC2STR(disconnected->bssid), (unsigned)disconnected->reason,
              (int)disconnected->rssi);
     const wifi_provisioning_status_t status = wifi_provisioning_status();
-    if (!wifi_provisioning_should_reconnect(status.mode) || s_reconnect_queue == NULL) {
+    if (s_stopped || !wifi_provisioning_should_reconnect(status.mode) ||
+        s_reconnect_queue == NULL) {
         return;
     }
     wifi_disconnect_command_t command = {
@@ -972,6 +977,14 @@ esp_err_t wifi_provisioning_forget_network(const char *ssid)
     s_current_ssid[0] = '\0';
     taskEXIT_CRITICAL(&s_settings_lock);
     return wifi_restart_from_top();
+}
+
+esp_err_t wifi_provisioning_stop(void)
+{
+    s_stopped = true;
+    const esp_err_t err = wifi_stop_if_running();
+    if (err == ESP_OK) ESP_LOGI(TAG, "Wi-Fi stopped");
+    return err;
 }
 
 esp_err_t wifi_provisioning_prioritize_network(const char *ssid)

@@ -15,8 +15,8 @@
  * -1 is what esp_lcd uses for a pin that is not there (TFT_RESET_GPIO), and
  * it is not a GPIO number, so it cannot collide with a real pin. */
 #define BOARD_GPIO_NOT_WIRED -1
-#ifndef BUTTON_F1_GPIO
-#define BUTTON_F1_GPIO BOARD_GPIO_NOT_WIRED
+#ifndef BUTTON_SLEEP_GPIO
+#define BUTTON_SLEEP_GPIO BOARD_GPIO_NOT_WIRED
 #endif
 #ifndef BUTTON_F2_GPIO
 #define BUTTON_F2_GPIO BOARD_GPIO_NOT_WIRED
@@ -39,11 +39,13 @@ typedef enum {
     BOARD_INPUT_ACTION_ENCODER_LEFT,
     BOARD_INPUT_ACTION_ENCODER_RIGHT,
     BOARD_INPUT_ACTION_ENCODER_BUTTON,
-    /* Wired, debounced and delivered, but nothing on the UI side acts on
-     * them: they are the two buttons kept free for whatever comes next. F2
-     * used to mean "back" and lost the job to the encoder's long press, which
-     * already did the same thing everywhere F2 did. */
-    BOARD_INPUT_ACTION_F1,
+    /* The sleep button (F1 on the silkscreen) held is what puts the board to
+     * sleep; its short press and F2 are wired, debounced and delivered with
+     * nothing acting on them yet - F2 is spoken for, a panel of quick
+     * settings. F2 used to mean "back" and lost the job to the encoder's long
+     * press, which already did the same thing everywhere F2 did. */
+    BOARD_INPUT_ACTION_SLEEP_BUTTON,
+    BOARD_INPUT_ACTION_SLEEP_LONG,
     BOARD_INPUT_ACTION_F2,
     BOARD_INPUT_ACTION_BTN_PREV,
     BOARD_INPUT_ACTION_BTN_NEXT,
@@ -77,8 +79,15 @@ void board_encoder_decoder_init(board_encoder_decoder_t *decoder, int left_level
 board_input_action_t board_encoder_decoder_update(board_encoder_decoder_t *decoder, int left_level,
                                                   int right_level);
 void board_button_gesture_init(board_button_gesture_t *gesture);
+/* One button's click-or-hold, told apart. `click` is reported on release and
+ * only when the hold never fired, `hold` the moment the press passes the
+ * threshold - so a long press never also delivers a short one. The two
+ * actions are arguments because more than one button needs this: the encoder
+ * and F1 each have their own pair. */
 board_input_action_t board_button_gesture_update(board_button_gesture_t *gesture, bool pressed,
-                                                 uint32_t elapsed_ms);
+                                                 uint32_t elapsed_ms,
+                                                 board_input_action_t click,
+                                                 board_input_action_t hold);
 
 #ifdef ESP_PLATFORM
 #include "esp_err.h"

@@ -84,6 +84,10 @@ esp_err_t wifi_provisioning_save_network(const char *ssid, const char *password)
  * a network the device no longer remembers is a state nothing else expects. */
 esp_err_t wifi_provisioning_forget_network(const char *ssid);
 esp_err_t wifi_provisioning_prioritize_network(const char *ssid);
+/* Takes the radio down and leaves it down: the way into deep sleep, where
+ * leaving the access point cleanly is politer than vanishing and letting it
+ * time the device out. Nothing brings Wi-Fi back - waking is a reboot. */
+esp_err_t wifi_provisioning_stop(void);
 esp_err_t wifi_provisioning_disconnect_active(void);
 
 /* Looking around for networks to join. Offered only while the setup AP is up:

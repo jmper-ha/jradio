@@ -63,12 +63,37 @@ nothing.
 | Double press | Open the station or file list; the music keeps playing |
 | Triple press | Scrub: the knob picks a position, a press applies it |
 | Long press | Home screen; playback stops |
+| Hold F1 | Deep sleep |
 | F3 | Previous track or station |
 | F4 | Next track or station |
 
-F1 and F2 do nothing at the moment: they are kept for whatever comes next. F2
-used to mean "back" and lost the job to the encoder's long press, which did the
-same thing everywhere F2 did.
+A short press on F1 and F2 does nothing at the moment: they are kept for
+whatever comes next. F2 used to mean "back" and lost the job to the encoder's
+long press, which did the same thing everywhere F2 did.
+
+### Deep sleep
+
+Hold F1 for a second and the device goes to sleep: the screen goes dark at
+once, then playback stops, the settings that were waiting out their second of
+quiet are written (volume, brightness), the Bluetooth module lets go of the
+speaker, and Wi-Fi leaves the network properly. It works from every screen,
+the screensaver included.
+
+The same F1 wakes it. Waking is an ordinary boot with all of its seconds -
+sleep saves no state. What plays afterwards is decided by the **Autoplay**
+setting: on, and the device returns to what was being listened to; off, and it
+comes up on the home screen.
+
+The sleep button has to sit on a pin that can wake the chip - on the ESP32-S3
+that is GPIO 0-21 - which is why `BUTTON_SLEEP_GPIO` in `board_options.h` is
+21. If it ended up elsewhere on your board, sleep is simply not offered:
+falling asleep with no way to wake means the RESET button is the only way
+back.
+
+If `board_options.h` defines `PERIPHERAL_POWER_GPIO`, everything outside the
+module loses power for the duration - the panel, the DAC, the card, the
+Bluetooth module, USB; without it only the chip sleeps and the peripherals stay
+fed and drawing current.
 
 A single press lands after a short delay - before that it cannot be told from
 the beginning of a double press.

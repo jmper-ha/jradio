@@ -269,6 +269,13 @@ static lv_obj_t *s_source_progress;
 /* Same deal as the volume, and for the same reason: the panel follows the knob
  * on the very next detent, settings.csv follows once it stops turning. */
 #define UI_BRIGHTNESS_SETTLE_MS 1500U
+/* Going to sleep: how long the stream is given to stop before the power goes
+ * anyway. Bounded because a source that will not stop must not keep the board
+ * awake with its screen already dark. */
+#define UI_SLEEP_STOP_WAIT_MS 2000
+/* And how long the module is given to answer "off". Short: a module that is
+ * not talking loses power a moment later either way. */
+#define UI_SLEEP_BT_TIMEOUT_MS 500U
 
 static lv_obj_t *s_source_vu[2][UI_VU_SEGMENTS];
 /* Colour last written to each block, so an unchanged one is left alone; see
@@ -4531,8 +4538,74 @@ static void ui_yandex_step_start(const player_snapshot_t *snapshot)
     }
 }
 
+/* F1 held. Everything outside the chip is about to lose power, so what is
+ * playing is stopped rather than cut mid-frame, the settings that were
+ * waiting out their settle timer are written, and the module is told to drop
+ * its Bluetooth link while it still has power to do it politely.
+ *
+ * Nothing about the session is saved here: waking is a fresh boot, the resume
+ * point was written when the source was chosen, and the autoplay setting
+ * alone decides whether it is used - which is what the user asked for. */
+static void ui_enter_deep_sleep(void)
+{
+    if (!board_deep_sleep_supported()) {
+        ESP_LOGW(TAG, "deep sleep is not available on this board");
+        return;
+    }
+    ESP_LOGW(TAG, "deep sleep requested");
+    /* The screen goes first, before the second or so of shutting down below:
+     * it is the only acknowledgement the user gets that the hold registered,
+     * and a panel still showing the player reads as a button that did
+     * nothing. */
+    (void)board_backlight_set(0);
+
+    const player_command_t stop = {
+        .kind = PLAYER_COMMAND_STOP_SOURCE,
+        .source = AUDIO_SOURCE_NONE,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    /* Posted past ui_submit_player_command: its view machine can refuse while
+     * another command is still pending, and there is no screen left to refuse
+     * on behalf of. */
+    if (player_control_post(&stop)) {
+        for (int waited_ms = 0; waited_ms < UI_SLEEP_STOP_WAIT_MS; waited_ms += 20) {
+            player_snapshot_t snapshot;
+            player_control_get_snapshot(&snapshot);
+            if (snapshot.playback_state == PLAYER_PLAYBACK_STOPPED) break;
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+    }
+
+    /* Whatever was waiting out its settle timer is written now - a volume set
+     * a second before the hold would otherwise be lost, and the device would
+     * come back at the old one. */
+    if (s_volume_save_pending) {
+        s_volume_save_pending = false;
+        (void)device_settings_set_volume(&s_device_settings, board_audio_volume());
+    }
+    if (s_brightness_save_pending) {
+        s_brightness_save_pending = false;
+        (void)device_settings_set_brightness(&s_device_settings, s_device_settings.brightness);
+    }
+
+    /* On a board that does not cut the module's power this is what actually
+     * releases the speaker; on one that does, it is the difference between a
+     * disconnect and a peer that simply vanished. */
+    (void)bt_link_set_mode(JBT_MODE_OFF, UI_SLEEP_BT_TIMEOUT_MS);
+    (void)wifi_provisioning_stop();
+
+    board_deep_sleep();  /* does not return */
+}
+
 static void ui_handle_input(board_input_action_t action)
 {
+    /* Before the screensaver, and from every screen: holding F1 means sleep
+     * wherever the user is, and having to wake the clock first only to hold
+     * the same button again would be a puzzle, not a feature. */
+    if (action == BOARD_INPUT_ACTION_SLEEP_LONG) {
+        ui_enter_deep_sleep();
+        return;
+    }
     /* A press that only wakes the screensaver goes no further: with the panel
      * dark nobody could see what it would have done. */
     if (ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms())) {

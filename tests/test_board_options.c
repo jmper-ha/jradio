@@ -186,8 +186,8 @@ static void test_control_pins_are_distinct(void)
         ENCODER_RIGHT_GPIO, ENCODER_LEFT_GPIO, ENCODER_BUTTON_GPIO,
         /* Each button only when wired: a board without one has the line at
          * BOARD_GPIO_NOT_WIRED, and two of those would read as a clash. */
-#if BUTTON_F1_GPIO >= 0
-        BUTTON_F1_GPIO,
+#if BUTTON_SLEEP_GPIO >= 0
+        BUTTON_SLEEP_GPIO,
 #endif
 #if BUTTON_F2_GPIO >= 0
         BUTTON_F2_GPIO,
@@ -325,8 +325,8 @@ static void test_no_pin_is_claimed_by_two_devices(void)
         ENCODER_RIGHT_GPIO, ENCODER_LEFT_GPIO, ENCODER_BUTTON_GPIO,
         /* Each button only when wired: a board without one has the line at
          * BOARD_GPIO_NOT_WIRED, and two of those would read as a clash. */
-#if BUTTON_F1_GPIO >= 0
-        BUTTON_F1_GPIO,
+#if BUTTON_SLEEP_GPIO >= 0
+        BUTTON_SLEEP_GPIO,
 #endif
 #if BUTTON_F2_GPIO >= 0
         BUTTON_F2_GPIO,

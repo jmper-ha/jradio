@@ -83,16 +83,23 @@
 #define ENCODER_LEFT_GPIO 7
 #define ENCODER_BUTTON_GPIO 6
 
-/* Two of the four are named for what they do rather than for the silkscreen:
- * the third and fourth buttons are the track keys everywhere they do anything
- * at all, so a name that says F3 only makes the wiring harder to read back.
+/* Three of the four are named for what they do rather than for the
+ * silkscreen: the third and fourth buttons are the track keys everywhere they
+ * do anything at all, and the first is the one that sleeps and wakes the
+ * board, so a name that says F3 only makes the wiring harder to read back.
+ * F2 keeps its label because nothing is on it yet.
  *
  * Any of the four may be left out: a line that is missing means the button
  * is not wired, and board_input.h defaults it to "not wired" rather than
  * failing the build - that button then never fires. The encoder cannot be
- * left out. */
-#define BUTTON_F1_GPIO 45
-#define BUTTON_F2_GPIO 21
+ * left out.
+ *
+ * The sleep button (F1 on the silkscreen) has to sit on an RTC-capable pin -
+ * the S3 has RTC_GPIO 0-21 - because only those can wake the chip. F1 and F2
+ * were swapped on the bench for exactly that, 2026-09-16; anywhere else and
+ * the board is simply never offered the sleep. */
+#define BUTTON_SLEEP_GPIO 21
+#define BUTTON_F2_GPIO 45
 #define BUTTON_PREV_GPIO 46
 #define BUTTON_NEXT_GPIO 9
 
@@ -118,6 +125,27 @@
 #define I2S_LRCK_GPIO 17
 /* No MCLK pin is wired, so the DAC has to derive its clock from BCLK. */
 #define AUDIO_DAC_HAS_MCLK 0
+
+/* ======================================================================
+ * Deep sleep - cutting power to everything outside the module
+ * ====================================================================== */
+
+/* One pin driving the switch (a load switch, or a P-MOSFET high side) that
+ * feeds the panel, the DAC, the card, the Bluetooth module and the USB port.
+ * Asleep the chip itself costs microamps, and without this line those parts
+ * go on drawing their milliamps regardless - the switch is what makes deep
+ * sleep worth entering. Leave undefined when no such switch is fitted: the
+ * board then sleeps with its peripherals still fed.
+ *
+ * PERIPHERAL_POWER_ON_LEVEL is the level that turns them ON, so either
+ * polarity of switch fits. Wire the gate so that its resting state - the
+ * level it sits at before the firmware drives anything - is the ON one, or
+ * the board comes up dark after a plain reset.
+ *
+ * The pin is held across deep sleep (gpio_hold_en + the deep-sleep hold), so
+ * it keeps the off level while everything else is isolated. */
+/* #define PERIPHERAL_POWER_GPIO 38 */
+/* #define PERIPHERAL_POWER_ON_LEVEL 1 */
 
 /* ======================================================================
  * USB host - flash drive, internal PHY

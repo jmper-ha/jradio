@@ -10,9 +10,9 @@ int main(void)
     board_input_debouncer_t released_debouncer;
     board_encoder_decoder_t encoder;
 
-#if BUTTON_F1_GPIO >= 0
-    assert(board_input_action_from_gpio(BUTTON_F1_GPIO, 0) == BOARD_INPUT_ACTION_F1);
-    assert(board_input_action_from_gpio(BUTTON_F1_GPIO, 1) == BOARD_INPUT_ACTION_NONE);
+#if BUTTON_SLEEP_GPIO >= 0
+    assert(board_input_action_from_gpio(BUTTON_SLEEP_GPIO, 0) == BOARD_INPUT_ACTION_SLEEP_BUTTON);
+    assert(board_input_action_from_gpio(BUTTON_SLEEP_GPIO, 1) == BOARD_INPUT_ACTION_NONE);
 #endif
     assert(board_input_action_from_gpio(ENCODER_LEFT_GPIO, 0) == BOARD_INPUT_ACTION_ENCODER_LEFT);
     assert(board_input_action_from_gpio(ENCODER_RIGHT_GPIO, 0) == BOARD_INPUT_ACTION_ENCODER_RIGHT);

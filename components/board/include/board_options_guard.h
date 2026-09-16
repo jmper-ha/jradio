@@ -22,7 +22,7 @@
 
 #if defined(TFT_CS_GPIO) || defined(I2S_DOUT_GPIO) || defined(USB_DP_GPIO) || \
     defined(ENCODER_LEFT_GPIO) || defined(TFT_BACKLIGHT_GPIO) ||              \
-    defined(BUTTON_F1_GPIO) || defined(DISPLAY) || defined(AUDIO_DAC) ||      \
+    defined(BUTTON_SLEEP_GPIO) || defined(DISPLAY) || defined(AUDIO_DAC) ||      \
     defined(SDC_CS_GPIO) || defined(YANDEX_MUSIC) || defined(FM_TUNER) ||     \
     defined(BLUETOOTH) || defined(DLNA)
 #error "board_options.h: a name here is already defined elsewhere - most likely \

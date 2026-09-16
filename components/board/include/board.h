@@ -14,6 +14,18 @@
  * why only these two have to be here. */
 esp_err_t board_init(bool flip_vertical, bool flip_horizontal);
 esp_err_t board_backlight_set(uint8_t percent);
+/* The switch feeding everything outside the module - the panel, the DAC, the
+ * card, the Bluetooth module, the USB port - on boards that wire
+ * PERIPHERAL_POWER_GPIO; a no-op elsewhere. board_init() turns it on, and
+ * only deep sleep turns it off. */
+void board_peripheral_power(bool on);
+/* False on a board whose F1 button is not on an RTC pin: such a board could
+ * not be woken by it, so it is never offered the sleep. */
+bool board_deep_sleep_supported(void);
+/* Cuts the peripherals, arms the F1 button as the wake source and sleeps.
+ * Does not return: waking is a fresh boot, so whatever has to be saved is
+ * saved by the caller before it calls this. */
+void board_deep_sleep(void);
 esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
                             uint32_t timeout_ms);
 esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloaded);

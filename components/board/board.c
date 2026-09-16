@@ -6,6 +6,8 @@
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
 #include "driver/ledc.h"
+#include "driver/rtc_io.h"
+#include "soc/soc_caps.h"
 #include "driver/spi_master.h"
 #include "esp_check.h"
 #include "esp_err.h"
@@ -13,6 +15,7 @@
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
+#include "esp_sleep.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
@@ -54,6 +57,16 @@
  * option stay a plain number. Verified rather than assumed. */
 _Static_assert(LEDC_TIMER_13_BIT == 13,
                "ledc_timer_bit_t no longer equals its bit count");
+#if defined(PERIPHERAL_POWER_GPIO) && !defined(PERIPHERAL_POWER_ON_LEVEL)
+#error "PERIPHERAL_POWER_GPIO also needs PERIPHERAL_POWER_ON_LEVEL: which level feeds the board"
+#endif
+/* How long the rails outside the module are given before anything is
+ * addressed: the panel's own reset sequence follows, and the card wants a
+ * quiet supply for its first command. */
+#define PERIPHERAL_POWER_SETTLE_MS 50
+/* The longest we wait for the sleep button to come back up before sleeping
+ * anyway - see board_deep_sleep(). */
+#define BOARD_SLEEP_RELEASE_WAIT_MS 3000
 #define BACKLIGHT_DUTY_RES ((ledc_timer_bit_t)BACKLIGHT_DUTY_BITS)
 #define BACKLIGHT_MAX_DUTY ((1U << BACKLIGHT_DUTY_BITS) - 1U)
 #define I2S_BYTES_PER_FRAME \
@@ -1075,9 +1088,99 @@ esp_err_t board_display_scroll(int offset)
     return esp_lcd_panel_io_tx_param(s_panel_io, 0x37, param, sizeof(param));
 }
 
+/* The switch that feeds everything outside the module - see
+ * PERIPHERAL_POWER_GPIO in board_options.h. A board without one keeps its
+ * peripherals fed and these are no-ops, which is why the calls are
+ * unconditional at their sites. */
+void board_peripheral_power(bool on)
+{
+#ifdef PERIPHERAL_POWER_GPIO
+    const int level = on ? PERIPHERAL_POWER_ON_LEVEL : !PERIPHERAL_POWER_ON_LEVEL;
+    /* A pin held from a previous sleep refuses to change level until the
+     * hold is lifted, and coming out of deep sleep is exactly when that
+     * matters: the hold survives the wake. */
+    (void)gpio_hold_dis(PERIPHERAL_POWER_GPIO);
+    const gpio_config_t config = {
+        .pin_bit_mask = 1ULL << PERIPHERAL_POWER_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    (void)gpio_config(&config);
+    (void)gpio_set_level(PERIPHERAL_POWER_GPIO, level);
+    ESP_LOGI(TAG, "peripheral power %s", on ? "on" : "off");
+    if (on) {
+        /* Rails settle, and the panel and the card want a moment before
+         * their first transaction. */
+        vTaskDelay(pdMS_TO_TICKS(PERIPHERAL_POWER_SETTLE_MS));
+    }
+#else
+    (void)on;
+#endif
+}
+
+/* Only an RTC-capable pad can wake the chip - on the S3 that is GPIO 0-21 -
+ * and a board that cannot wake must not sleep, or the only way back is the
+ * reset button. The button was moved onto such a pin on the bench for this. */
+#if BUTTON_SLEEP_GPIO >= 0 && BUTTON_SLEEP_GPIO < SOC_RTCIO_PIN_COUNT
+#define BOARD_CAN_SLEEP 1
+#endif
+
+bool board_deep_sleep_supported(void)
+{
+#ifdef BOARD_CAN_SLEEP
+    return true;
+#else
+    return false;
+#endif
+}
+
+void board_deep_sleep(void)
+{
+#ifndef BOARD_CAN_SLEEP
+    ESP_LOGE(TAG, "deep sleep refused: no wake button on an RTC pin");
+    return;
+#else
+    /* The screen first, because it is the one part of this the user sees:
+     * the panel going dark is the acknowledgement that the hold registered,
+     * and everything below takes a moment. */
+    (void)board_backlight_set(0);
+    board_peripheral_power(false);
+#ifdef PERIPHERAL_POWER_GPIO
+    /* Held, or the level is lost the instant the chip sleeps and everything
+     * powers back up in the dark. Both calls are needed: the first pins the
+     * pad, the second keeps digital pads pinned across deep sleep. */
+    (void)gpio_hold_en(PERIPHERAL_POWER_GPIO);
+    gpio_deep_sleep_hold_en();
+#endif
+
+    /* Waiting the button out: armed while it is still down, the chip wakes
+     * from the very press that sent it to sleep. Bounded, because a button
+     * that reads as stuck must not strand the board awake with its screen
+     * off - sleeping and waking at once is still better than that. */
+    for (int waited_ms = 0; waited_ms < BOARD_SLEEP_RELEASE_WAIT_MS; waited_ms += 20) {
+        if (gpio_get_level(BUTTON_SLEEP_GPIO) != 0) break;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    /* The internal pull-up of the digital pad is gone once the chip sleeps;
+     * what holds the line high then is the RTC pad's own, so it is enabled
+     * here. Without it the input floats and the board wakes on noise. */
+    (void)rtc_gpio_pullup_en(BUTTON_SLEEP_GPIO);
+    (void)rtc_gpio_pulldown_dis(BUTTON_SLEEP_GPIO);
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_sleep_enable_ext1_wakeup_io(
+        1ULL << BUTTON_SLEEP_GPIO, ESP_EXT1_WAKEUP_ANY_LOW));
+    ESP_LOGW(TAG, "entering deep sleep");
+    esp_deep_sleep_start();
+#endif
+}
+
 esp_err_t board_init(bool flip_vertical, bool flip_horizontal)
 {
     ESP_LOGI(TAG, "initializing input, PWM backlight, I2S and " BOARD_PANEL_NAME);
+    /* Before any of them is addressed, and before the hold from a previous
+     * deep sleep would keep them dark. */
+    board_peripheral_power(true);
     ESP_RETURN_ON_ERROR(board_input_init(), TAG, "configure input GPIOs failed");
     ESP_RETURN_ON_ERROR(board_backlight_init(), TAG, "initialize backlight failed");
     ESP_RETURN_ON_ERROR(board_audio_init(), TAG, "initialize PCM5102 I2S output failed");

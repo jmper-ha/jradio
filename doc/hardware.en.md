@@ -185,8 +185,8 @@ is a module of its own - see [below](#bluetooth-the-jradio-bt-module).
 | Signal | GPIO | | Signal | GPIO |
 |---|---:|---|---|---:|
 | TFT CS | 10 | | Encoder button | 6 |
-| TFT DC | 47 | | F1 | 45 |
-| TFT MOSI | 11 | | F2 | 21 |
+| TFT DC | 47 | | F1 | 21 |
+| TFT MOSI | 11 | | F2 | 45 |
 | TFT SCLK | 12 | | F3 | 46 |
 | Backlight | 2 | | F4 | 9 |
 | Encoder right | 5 | | PCM5102 DOUT | 16 |
@@ -206,6 +206,29 @@ their `BUTTON_*_GPIO` lines (and `BUTTONS_USE_INTERNAL_PULLUPS`) out, the
 firmware still builds, and a button that is not declared is never configured,
 never polled and never fires. The encoder is required - without it the device
 cannot be driven.
+
+The first button carries a requirement the others do not: held, it puts the
+board to sleep, and only an RTC-capable pin can wake the chip - on the
+ESP32-S3, GPIO 0-21. So it sits on 21 - and is named `BUTTON_SLEEP_GPIO` in
+the options rather than after the silkscreen - while F2 took its former 45.
+Putting it on a pin without RTC is allowed: the firmware still builds and the
+button still works, but sleep is not offered.
+
+### Cutting the peripherals during sleep
+
+The optional `PERIPHERAL_POWER_GPIO` line (38, 39 and 48 are free) drives the
+switch that feeds everything outside the module: the panel, the DAC, the card,
+the Bluetooth module, the USB port. `PERIPHERAL_POWER_ON_LEVEL` says which
+level opens it - 1 for an ordinary load switch, 0 for a high-side P-channel
+MOSFET. The firmware raises the pin first thing in `board_init()` and gives it
+50 ms to settle, and in deep sleep it lowers and holds it (`gpio_hold_en` plus
+the deep-sleep hold) - otherwise the level would be lost the instant the chip
+sleeps and everything would come back up in the dark. Size the switch for the
+whole load with margin: the panel with its backlight and the Bluetooth module
+peak well above their average draw.
+
+Without that line only the chip sleeps - the peripherals stay fed, and the
+backlight, the DAC and the module keep drawing current.
 
 Worth knowing if you build the board:
 

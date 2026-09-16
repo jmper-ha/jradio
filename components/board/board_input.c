@@ -22,13 +22,14 @@ void board_button_gesture_init(board_button_gesture_t *gesture)
 }
 
 board_input_action_t board_button_gesture_update(board_button_gesture_t *gesture, bool pressed,
-                                                 uint32_t elapsed_ms)
+                                                 uint32_t elapsed_ms,
+                                                 board_input_action_t click,
+                                                 board_input_action_t hold)
 {
     if (gesture == NULL) return BOARD_INPUT_ACTION_NONE;
     if (!pressed) {
-        const board_input_action_t action = gesture->pressed && !gesture->long_sent
-                                                ? BOARD_INPUT_ACTION_ENCODER_BUTTON
-                                                : BOARD_INPUT_ACTION_NONE;
+        const board_input_action_t action =
+            gesture->pressed && !gesture->long_sent ? click : BOARD_INPUT_ACTION_NONE;
         *gesture = (board_button_gesture_t){0};
         return action;
     }
@@ -42,7 +43,7 @@ board_input_action_t board_button_gesture_update(board_button_gesture_t *gesture
     gesture->held_ms += elapsed_ms;
     if (gesture->held_ms >= BOARD_INPUT_LONG_PRESS_MS) {
         gesture->long_sent = true;
-        return BOARD_INPUT_ACTION_ENCODER_LONG;
+        return hold;
     }
     return BOARD_INPUT_ACTION_NONE;
 }
@@ -59,6 +60,9 @@ board_input_action_t board_button_gesture_update(board_button_gesture_t *gesture
 typedef struct {
     int gpio_num;
     board_input_action_t action;
+    /* NONE for a button read as a plain edge; anything else makes this
+     * channel tell a click from a hold and report that on the hold. */
+    board_input_action_t hold_action;
     board_input_debouncer_t debouncer;
     board_button_gesture_t gesture;
 } board_input_channel_t;
@@ -66,8 +70,10 @@ typedef struct {
 static const char *TAG = "input";
 static QueueHandle_t s_event_queue;
 static board_input_channel_t s_channels[] = {
-    {.gpio_num = ENCODER_BUTTON_GPIO, .action = BOARD_INPUT_ACTION_ENCODER_BUTTON},
-    {.gpio_num = BUTTON_F1_GPIO, .action = BOARD_INPUT_ACTION_F1},
+    {.gpio_num = ENCODER_BUTTON_GPIO, .action = BOARD_INPUT_ACTION_ENCODER_BUTTON,
+     .hold_action = BOARD_INPUT_ACTION_ENCODER_LONG},
+    {.gpio_num = BUTTON_SLEEP_GPIO, .action = BOARD_INPUT_ACTION_SLEEP_BUTTON,
+     .hold_action = BOARD_INPUT_ACTION_SLEEP_LONG},
     {.gpio_num = BUTTON_F2_GPIO, .action = BOARD_INPUT_ACTION_F2},
     {.gpio_num = BUTTON_PREV_GPIO, .action = BOARD_INPUT_ACTION_BTN_PREV},
     {.gpio_num = BUTTON_NEXT_GPIO, .action = BOARD_INPUT_ACTION_BTN_NEXT},
@@ -97,12 +103,15 @@ static void board_input_task(void *arg)
             // level again would only suggest releases were handled here.
             const bool press_confirmed =
                 board_input_debouncer_update(&channel->debouncer, pressed);
-            // The encoder button has to tell a click from a hold, so it reads
-            // the debounced level rather than the edge.
-            const board_input_action_t generated = channel->gpio_num == ENCODER_BUTTON_GPIO
-                ? board_button_gesture_update(&channel->gesture,
-                                              channel->debouncer.stable_pressed, INPUT_POLL_MS)
-                : (press_confirmed ? channel->action : BOARD_INPUT_ACTION_NONE);
+            // A button that has a hold of its own reads the debounced level
+            // rather than the edge: that is what lets it tell a click from a
+            // press that stayed down.
+            const board_input_action_t generated =
+                channel->hold_action != BOARD_INPUT_ACTION_NONE
+                    ? board_button_gesture_update(&channel->gesture,
+                                                  channel->debouncer.stable_pressed, INPUT_POLL_MS,
+                                                  channel->action, channel->hold_action)
+                    : (press_confirmed ? channel->action : BOARD_INPUT_ACTION_NONE);
             if (generated != BOARD_INPUT_ACTION_NONE &&
                 xQueueSend(s_event_queue, &generated, 0) != pdTRUE) {
                 ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)generated);
@@ -129,7 +138,7 @@ board_input_action_t board_input_action_from_gpio(int gpio_num, int level)
         {ENCODER_LEFT_GPIO, BOARD_INPUT_ACTION_ENCODER_LEFT},
         {ENCODER_RIGHT_GPIO, BOARD_INPUT_ACTION_ENCODER_RIGHT},
         {ENCODER_BUTTON_GPIO, BOARD_INPUT_ACTION_ENCODER_BUTTON},
-        {BUTTON_F1_GPIO, BOARD_INPUT_ACTION_F1},
+        {BUTTON_SLEEP_GPIO, BOARD_INPUT_ACTION_SLEEP_BUTTON},
         {BUTTON_F2_GPIO, BOARD_INPUT_ACTION_F2},
         {BUTTON_PREV_GPIO, BOARD_INPUT_ACTION_BTN_PREV},
         {BUTTON_NEXT_GPIO, BOARD_INPUT_ACTION_BTN_NEXT},
@@ -260,7 +269,7 @@ esp_err_t board_input_init(void)
         .intr_type = GPIO_INTR_DISABLE,
     };
     const gpio_config_t button_config = {
-        .pin_bit_mask = board_input_pin_bit(BUTTON_F1_GPIO) | board_input_pin_bit(BUTTON_F2_GPIO) |
+        .pin_bit_mask = board_input_pin_bit(BUTTON_SLEEP_GPIO) | board_input_pin_bit(BUTTON_F2_GPIO) |
                         board_input_pin_bit(BUTTON_PREV_GPIO) |
                         board_input_pin_bit(BUTTON_NEXT_GPIO),
         .mode = GPIO_MODE_INPUT,

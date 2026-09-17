@@ -250,8 +250,27 @@ static void test_the_track_line(void)
     ui_screensaver_track_text(NULL, 0, "a", "b", "c");
 }
 
+
+/* The date the block falls back to when the full line will not fit beside the
+ * weather - the weekday is the part a person can supply for themselves. */
+static void test_the_short_date_drops_the_weekday(void)
+{
+    char text[64];
+    ui_screensaver_date_short_text(text, sizeof(text), DEVICE_LANGUAGE_RU, true, 16, 9);
+    assert(strcmp(text, "16 сентября") == 0);
+    ui_screensaver_date_short_text(text, sizeof(text), DEVICE_LANGUAGE_EN, true, 16, 9);
+    assert(strcmp(text, "16 September") == 0);
+    /* And it is empty on an unset clock, like the long one: an empty line is
+     * what the layout reads as "no date to place". */
+    ui_screensaver_date_short_text(text, sizeof(text), DEVICE_LANGUAGE_RU, false, 16, 9);
+    assert(text[0] == '\0');
+    ui_screensaver_date_short_text(text, sizeof(text), DEVICE_LANGUAGE_RU, true, 0, 13);
+    assert(text[0] == '\0');
+}
+
 int main(void)
 {
+    test_the_short_date_drops_the_weekday();
     test_nothing_happens_while_the_saver_is_off();
     test_dim_takes_the_backlight_down_after_the_wait_and_a_press_passes();
     test_blank_turns_the_panel_off_and_the_waking_press_goes_no_further();

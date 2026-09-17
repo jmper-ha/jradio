@@ -97,6 +97,16 @@ void ui_screensaver_time_text(char *out, size_t out_size, bool have_time, int ho
 void ui_screensaver_date_text(char *out, size_t out_size, device_language_t language,
                               bool have_date, int day, int month, int weekday);
 
+/* The same date without the weekday - "11 сентября" / "11 September".
+ *
+ * What the block falls back to when the full line does not fit beside the
+ * weather: on a portrait panel the block is 256 px wide and "16 сентября, вт"
+ * with a picture and +11° beside it came to 293, so the temperature ran off
+ * the right edge and showed as a lone plus. The weekday is the part a person
+ * can supply for themselves. */
+void ui_screensaver_date_short_text(char *out, size_t out_size, device_language_t language,
+                                    bool have_date, int day, int month);
+
 /* One line for what is playing: "performer - track" when both are known, the
  * track alone otherwise, and the heading - the station, the album - when the
  * stream has said nothing about the track yet. Empty when nothing is known. */

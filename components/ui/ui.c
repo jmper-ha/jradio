@@ -923,6 +923,18 @@ static lv_obj_t *s_saver_temperature;
 static lv_obj_t *s_saver_sleep_icon;
 static lv_obj_t *s_saver_sleep_text;
 static bool s_saver_sleep_shown;
+/* How much of the date the middle line has room for. Decided by measuring
+ * (see ui_screensaver_refresh_text) and then kept, because the decision is
+ * what stops the line flipping between two forms: written long every pass and
+ * shortened every pass, the block would be rendered afresh every second
+ * instead of once a minute. Reset whenever something else on the line appears
+ * or goes, which is the only way it can get roomier. */
+typedef enum {
+    UI_SAVER_DATE_FULL = 0,
+    UI_SAVER_DATE_NO_WEEKDAY,
+    UI_SAVER_DATE_NONE,
+} ui_saver_date_form_t;
+static ui_saver_date_form_t s_saver_date_form;
 static lv_obj_t *s_saver_track;
 /* The block's bitmap, in the panel's wire order once rendered. */
 static lv_draw_buf_t s_saver_bitmap;
@@ -1088,6 +1100,23 @@ static bool ui_set_label_text_note_change(lv_obj_t *label, const char *text)
  * parts centred together, the picture and its number close, the date a
  * clear gap away. The labels size themselves to their text, which is why the
  * layout pass has to come first. */
+/* What the middle line would take, laid out as below. Measured rather than
+ * estimated: the parts are labels that size themselves to their text, and the
+ * text is a month name in one of two languages. */
+static int ui_screensaver_middle_line_width(void)
+{
+    lv_obj_update_layout(s_saver_block);
+    const int date_w = lv_obj_get_width(s_saver_date);
+    const int temperature_w = s_saver_icon_shown ? lv_obj_get_width(s_saver_temperature) : 0;
+    const int weather_w =
+        s_saver_icon_shown ? UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2 + temperature_w : 0;
+    const int sleep_minutes_w = s_saver_sleep_shown ? lv_obj_get_width(s_saver_sleep_text) : 0;
+    const int sleep_w =
+        s_saver_sleep_shown ? UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2 + sleep_minutes_w : 0;
+    return date_w + (weather_w > 0 && date_w > 0 ? UI_SAVER_INLINE_GAP : 0) + weather_w +
+           (sleep_w > 0 && (date_w > 0 || weather_w > 0) ? UI_SAVER_INLINE_GAP : 0) + sleep_w;
+}
+
 static void ui_screensaver_place_middle_line(void)
 {
     lv_obj_update_layout(s_saver_block);
@@ -1097,13 +1126,7 @@ static void ui_screensaver_place_middle_line(void)
         s_saver_icon_shown ? UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2 + temperature_w : 0;
     /* The timer's pair is built like the weather's and laid out like it, at
      * the end of the line: date, sky, sleep. */
-    const int sleep_minutes_w = s_saver_sleep_shown ? lv_obj_get_width(s_saver_sleep_text) : 0;
-    const int sleep_w =
-        s_saver_sleep_shown ? UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2 + sleep_minutes_w : 0;
-    const int total = date_w + (weather_w > 0 && date_w > 0 ? UI_SAVER_INLINE_GAP : 0) +
-                      weather_w +
-                      (sleep_w > 0 && (date_w > 0 || weather_w > 0) ? UI_SAVER_INLINE_GAP : 0) +
-                      sleep_w;
+    const int total = ui_screensaver_middle_line_width();
     int x = (s_saver_block_w - total) / 2;
     if (x < 0) x = 0;
     lv_obj_set_x(s_saver_date, x);
@@ -1154,8 +1177,19 @@ static void ui_screensaver_refresh_text(bool force)
     int month = 0;
     int weekday = 0;
     const bool have_date = device_clock_today(&day, &month, &weekday);
-    ui_screensaver_date_text(text, sizeof(text), s_device_settings.language, have_date, day,
-                             month, weekday);
+    /* In whatever form last fitted; the decision is remade at the end of this
+     * function, once everything else on the line has its text - what has to
+     * fit is the whole line, and the date is the only part of it that can
+     * give way. */
+    if (s_saver_date_form == UI_SAVER_DATE_NONE) {
+        text[0] = '\0';
+    } else if (s_saver_date_form == UI_SAVER_DATE_NO_WEEKDAY) {
+        ui_screensaver_date_short_text(text, sizeof(text), s_device_settings.language, have_date,
+                                       day, month);
+    } else {
+        ui_screensaver_date_text(text, sizeof(text), s_device_settings.language, have_date, day,
+                                 month, weekday);
+    }
     changed |= ui_set_label_text_note_change(s_saver_date, text);
 
     /* The same reading the strip shows, so the two never disagree. */
@@ -1174,6 +1208,9 @@ static void ui_screensaver_refresh_text(bool force)
     }
     if (show_weather != s_saver_icon_shown) {
         changed = true;
+        /* The line just gained or lost a part, so how much date fits is an
+         * open question again. */
+        s_saver_date_form = UI_SAVER_DATE_FULL;
         s_saver_icon_shown = show_weather;
         if (show_weather) {
             lv_obj_clear_flag(s_saver_icon, LV_OBJ_FLAG_HIDDEN);
@@ -1196,6 +1233,7 @@ static void ui_screensaver_refresh_text(bool force)
     }
     if ((sleep_minutes != 0U) != s_saver_sleep_shown) {
         changed = true;
+        s_saver_date_form = UI_SAVER_DATE_FULL;
         s_saver_sleep_shown = sleep_minutes != 0U;
         if (s_saver_sleep_shown) {
             lv_obj_clear_flag(s_saver_sleep_icon, LV_OBJ_FLAG_HIDDEN);
@@ -1210,6 +1248,38 @@ static void ui_screensaver_refresh_text(bool force)
     ui_screensaver_track_text(track, sizeof(track), s_now_playing.heading, s_now_playing.artist,
                               s_now_playing.title);
     changed |= ui_set_label_text_note_change(s_saver_track, track);
+
+    /* The line has to fit inside the block, and in Russian on a portrait panel
+     * it does not: "16 сентября, вт" beside a crescent and +11° measured 293 px
+     * in a 256 px block, and what ran off the right edge was the temperature -
+     * the degrees disappeared and the plus stayed, which is how it was
+     * reported. So the date gives way in two steps, the weekday first and then
+     * the date itself; the weather and the timer are readings that cannot be
+     * shortened, and a person knows what day it is.
+     *
+     * Only ever measured here, after every part has its text - that is what
+     * makes it the whole line rather than a guess about one of them. */
+    /* Measured only when something on the line moved - otherwise the answer is
+     * the one this already acted on. Each step drops the part a person can
+     * best do without: the weekday, then the date. The weather and the timer
+     * are readings that cannot be shortened. */
+    while (changed && have_date && s_saver_date_form != UI_SAVER_DATE_NONE) {
+        const int width = ui_screensaver_middle_line_width();
+        if (width <= s_saver_block_w) break;
+        s_saver_date_form = s_saver_date_form == UI_SAVER_DATE_FULL ? UI_SAVER_DATE_NO_WEEKDAY
+                                                                   : UI_SAVER_DATE_NONE;
+        if (s_saver_date_form == UI_SAVER_DATE_NO_WEEKDAY) {
+            ESP_LOGI(TAG, "screensaver: the middle line wants %d px of %d; the weekday goes",
+                     width, s_saver_block_w);
+            ui_screensaver_date_short_text(text, sizeof(text), s_device_settings.language,
+                                           have_date, day, month);
+        } else {
+            ESP_LOGI(TAG, "screensaver: still %d px of %d; the date goes too", width,
+                     s_saver_block_w);
+            text[0] = '\0';
+        }
+        (void)ui_set_label_text_note_change(s_saver_date, text);
+    }
 
     /* Once a minute in practice: the time is what changes. */
     if (changed) {

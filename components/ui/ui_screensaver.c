@@ -111,6 +111,16 @@ static const char *const k_weekdays[2][7] = {
                             "Saturday"},
 };
 
+void ui_screensaver_date_short_text(char *out, size_t out_size, device_language_t language,
+                                    bool have_date, int day, int month)
+{
+    if (out == NULL || out_size == 0U) return;
+    out[0] = '\0';
+    if (!have_date || day < 1 || day > 31 || month < 1 || month > 12) return;
+    const int lang = language == DEVICE_LANGUAGE_EN ? DEVICE_LANGUAGE_EN : DEVICE_LANGUAGE_RU;
+    snprintf(out, out_size, "%d %s", day, k_months[lang][month - 1]);
+}
+
 void ui_screensaver_date_text(char *out, size_t out_size, device_language_t language,
                               bool have_date, int day, int month, int weekday)
 {

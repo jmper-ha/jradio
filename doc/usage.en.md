@@ -116,9 +116,9 @@ saved volume is never touched by the fade - the device wakes at the level you
 were listening to.
 
 On the device's own screen a running timer is a crescent beside the clock with
-the minutes left (on the narrow 240 px panel only the crescent fits there).
-On the screensaver it is on the same line as the date and the weather. No
-crescent, no timer.
+the minutes left (on the narrow 240 px panel only the crescent fits there). On
+the clock screensaver it is a small line above the digits: the crescent and
+what is left. No crescent, no timer.
 
 The timer is not saved: it lives until it fires or until a reboot. Saving it
 would mean saving a moment in time, and a device that switches itself off some

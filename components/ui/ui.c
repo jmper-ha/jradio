@@ -942,6 +942,9 @@ static bool s_saver_bitmap_ok;
 static int s_saver_block_w;
 static int s_saver_block_h;
 static int s_saver_line_h;
+/* The line above the digits, including the gap under it: what the sleep timer
+ * is drawn on, and what everything else is pushed down by. */
+static int s_saver_sleep_line_h;
 static uint32_t s_saver_text_ms;
 static bool s_saver_icon_shown;
 static weather_icon_t s_saver_icon_kind;
@@ -988,11 +991,26 @@ static void ui_create_screensaver(void)
                      LV_TEXT_FLAG_NONE);
     const int text_h = lv_font_get_line_height(UI_FONT_SAVER_TEXT);
     s_saver_line_h = text_h > UI_SAVER_WEATHER_ICON_PX ? text_h : UI_SAVER_WEATHER_ICON_PX;
+    /* A small line above the digits, kept for the sleep timer. Above them
+     * because it is the one thing here that is about to happen rather than
+     * about now, and in the text face because a countdown in seven-segment
+     * digits would read as a second clock.
+     *
+     * The line is reserved whether or not a timer is running: the block is one
+     * bitmap, sized once. What it costs is that much of the range the block is
+     * placed in across the panel - on the shortest one, 170 px with a 122 px
+     * block, about half of it. The drift itself is along the other axis and is
+     * not touched; what shrinks is how differently the block can sit from one
+     * night to the next. */
+    const int sleep_line_h =
+        text_h > UI_STRIP_SLEEP_ICON_PX ? text_h : UI_STRIP_SLEEP_ICON_PX;
+    s_saver_sleep_line_h = sleep_line_h + UI_SAVER_GAP;
     const int floor_w = TFT_WIDTH * 3 / 5;
     int width = time_size.x > floor_w ? time_size.x : floor_w;
     width = (width + 31) / 32 * 32;
     s_saver_block_w = width > TFT_WIDTH ? TFT_WIDTH / 32 * 32 : width;
-    s_saver_block_h = time_size.y + UI_SAVER_GAP + s_saver_line_h + UI_SAVER_GAP + text_h;
+    s_saver_block_h = s_saver_sleep_line_h + time_size.y + UI_SAVER_GAP + s_saver_line_h +
+                      UI_SAVER_GAP + text_h;
 
     /* Hidden for good: the snapshot draws a hidden object all the same, and
      * a visible one would be drawn on the panel by LVGL as well. */
@@ -1005,7 +1023,7 @@ static void ui_create_screensaver(void)
     /* Grey, not the accent: this is a night screen, and the digits are the
      * biggest thing on it. The lines under them a shade darker again. */
     s_saver_time = lv_label_create(s_saver_block);
-    lv_obj_set_pos(s_saver_time, 0, 0);
+    lv_obj_set_pos(s_saver_time, 0, s_saver_sleep_line_h);
     lv_obj_set_width(s_saver_time, s_saver_block_w);
     lv_obj_set_style_text_align(s_saver_time, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(s_saver_time, UI_FONT_SAVER_CLOCK, 0);
@@ -1015,7 +1033,7 @@ static void ui_create_screensaver(void)
     /* The middle line is three things laid side by side and centred as one:
      * the date, the weather's picture and its temperature. Their x is set
      * whenever their text is, from their measured widths. */
-    const int line_y = time_size.y + UI_SAVER_GAP;
+    const int line_y = s_saver_sleep_line_h + time_size.y + UI_SAVER_GAP;
     s_saver_date = lv_label_create(s_saver_block);
     lv_obj_set_pos(s_saver_date, 0, line_y + (s_saver_line_h - text_h) / 2);
     lv_obj_set_style_text_color(s_saver_date, lv_color_hex(UI_COLOR_DIM), 0);
@@ -1032,16 +1050,19 @@ static void ui_create_screensaver(void)
     lv_obj_set_style_text_color(s_saver_temperature, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_saver_temperature, "");
 
+    /* The top line: the crescent at the strip's size rather than the
+     * screensaver's, because this line is one line of text tall and the
+     * weather's 24 px picture would not sit in it. Their x is set with their
+     * text, from the measured width of the pair. */
     s_saver_sleep_icon = lv_image_create(s_saver_block);
-    lv_obj_set_pos(s_saver_sleep_icon, 0,
-                   line_y + (s_saver_line_h - UI_SAVER_WEATHER_ICON_PX) / 2);
-    lv_image_set_src(s_saver_sleep_icon, &UI_SLEEP_BITMAP(UI_SAVER_WEATHER_ICON_PX));
+    lv_obj_set_pos(s_saver_sleep_icon, 0, (sleep_line_h - UI_STRIP_SLEEP_ICON_PX) / 2);
+    lv_image_set_src(s_saver_sleep_icon, &UI_SLEEP_BITMAP(UI_STRIP_SLEEP_ICON_PX));
     lv_obj_set_style_image_recolor(s_saver_sleep_icon, lv_color_hex(UI_COLOR_DIM), 0);
     lv_obj_set_style_image_recolor_opa(s_saver_sleep_icon, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_saver_sleep_icon, LV_OBJ_FLAG_HIDDEN);
 
     s_saver_sleep_text = lv_label_create(s_saver_block);
-    lv_obj_set_pos(s_saver_sleep_text, 0, line_y + (s_saver_line_h - text_h) / 2);
+    lv_obj_set_pos(s_saver_sleep_text, 0, (sleep_line_h - text_h) / 2);
     lv_obj_set_style_text_color(s_saver_sleep_text, lv_color_hex(UI_COLOR_DIM), 0);
     lv_label_set_text(s_saver_sleep_text, "");
     lv_obj_add_flag(s_saver_sleep_text, LV_OBJ_FLAG_HIDDEN);
@@ -1110,22 +1131,13 @@ static int ui_screensaver_middle_line_width(void)
     const int temperature_w = s_saver_icon_shown ? lv_obj_get_width(s_saver_temperature) : 0;
     const int weather_w =
         s_saver_icon_shown ? UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2 + temperature_w : 0;
-    const int sleep_minutes_w = s_saver_sleep_shown ? lv_obj_get_width(s_saver_sleep_text) : 0;
-    const int sleep_w =
-        s_saver_sleep_shown ? UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2 + sleep_minutes_w : 0;
-    return date_w + (weather_w > 0 && date_w > 0 ? UI_SAVER_INLINE_GAP : 0) + weather_w +
-           (sleep_w > 0 && (date_w > 0 || weather_w > 0) ? UI_SAVER_INLINE_GAP : 0) + sleep_w;
+    return date_w + (weather_w > 0 && date_w > 0 ? UI_SAVER_INLINE_GAP : 0) + weather_w;
 }
 
 static void ui_screensaver_place_middle_line(void)
 {
     lv_obj_update_layout(s_saver_block);
     const int date_w = lv_obj_get_width(s_saver_date);
-    const int temperature_w = s_saver_icon_shown ? lv_obj_get_width(s_saver_temperature) : 0;
-    const int weather_w =
-        s_saver_icon_shown ? UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2 + temperature_w : 0;
-    /* The timer's pair is built like the weather's and laid out like it, at
-     * the end of the line: date, sky, sleep. */
     const int total = ui_screensaver_middle_line_width();
     int x = (s_saver_block_w - total) / 2;
     if (x < 0) x = 0;
@@ -1133,9 +1145,21 @@ static void ui_screensaver_place_middle_line(void)
     x += date_w + (date_w > 0 ? UI_SAVER_INLINE_GAP : 0);
     lv_obj_set_x(s_saver_icon, x);
     lv_obj_set_x(s_saver_temperature, x + UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2);
-    if (weather_w > 0) x += weather_w + UI_SAVER_INLINE_GAP;
+}
+
+/* The line above the digits: the crescent and the minutes, centred as one
+ * pair. Its own function because it is its own line - the middle one is three
+ * things that have to share a width, this is two that always fit. */
+static void ui_screensaver_place_sleep_line(void)
+{
+    if (!s_saver_sleep_shown) return;
+    lv_obj_update_layout(s_saver_block);
+    const int minutes_w = lv_obj_get_width(s_saver_sleep_text);
+    const int total = UI_STRIP_SLEEP_ICON_PX + UI_SAVER_GAP / 2 + minutes_w;
+    int x = (s_saver_block_w - total) / 2;
+    if (x < 0) x = 0;
     lv_obj_set_x(s_saver_sleep_icon, x);
-    lv_obj_set_x(s_saver_sleep_text, x + UI_SAVER_WEATHER_ICON_PX + UI_SAVER_GAP / 2);
+    lv_obj_set_x(s_saver_sleep_text, x + UI_STRIP_SLEEP_ICON_PX + UI_SAVER_GAP / 2);
 }
 
 /* The bitmap for a report's picture at the screensaver's size. */
@@ -1233,7 +1257,6 @@ static void ui_screensaver_refresh_text(bool force)
     }
     if ((sleep_minutes != 0U) != s_saver_sleep_shown) {
         changed = true;
-        s_saver_date_form = UI_SAVER_DATE_FULL;
         s_saver_sleep_shown = sleep_minutes != 0U;
         if (s_saver_sleep_shown) {
             lv_obj_clear_flag(s_saver_sleep_icon, LV_OBJ_FLAG_HIDDEN);
@@ -1284,6 +1307,7 @@ static void ui_screensaver_refresh_text(bool force)
     /* Once a minute in practice: the time is what changes. */
     if (changed) {
         ui_screensaver_place_middle_line();
+        ui_screensaver_place_sleep_line();
         ui_screensaver_render_block();
     }
 }

@@ -144,6 +144,14 @@ idf.py -p PORT littlefs-flash     # overwrites the whole data partition
 idf.py -p PORT monitor
 ```
 
+`PORT` is the board's **UART port, not its USB one**. The USB connector is
+wired for the host role (D- and D+ sit on GPIO 19 and 20, where the drive
+goes), the built-in USB-Serial-JTAG is on those same pins and cannot be used
+for flashing, so both the write and the log go through a USB-UART bridge on
+UART0. It shows up as `/dev/ttyUSB0` or `/dev/ttyACM0` depending on the
+bridge, and as `COMn` on Windows; on a module with two connectors it is the
+one marked UART or COM.
+
 `littlefs-flash` **destroys user data** - playlist edits, saved networks,
 device settings and the Yandex Music account link: all of it lives on that one
 partition. Take a copy first - `curl -O -J http://<ip>/api/backup` - and put it

@@ -77,6 +77,10 @@ A whole board in one write (ESP32-S3, 16 MB flash):
 
     esptool.py --chip esp32s3 -p <port> -b 460800 write_flash 0x0 jradio-${version}-full.bin
 
+The port is the board's UART one: its USB connector is wired for USB Host and
+the built-in USB-Serial-JTAG shares those pins, so the write goes through a
+USB-UART bridge - /dev/ttyUSB0 or /dev/ttyACM0 on Linux, COMn on Windows.
+
 Or piece by piece - the app alone keeps the device's data partition, which is
 what an update wants:
 

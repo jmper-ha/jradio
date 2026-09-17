@@ -253,6 +253,9 @@ Worth knowing if you build the board:
   where the external ones suffice;
 - USB VBUS is permanently powered; a drive left on the bus across a reboot is
   re-enumerated by a logical power cycle of the root port;
+- **the board is flashed over UART only.** The USB connector is given to the
+  host role, and with GPIO 19 and 20 goes the built-in USB-Serial-JTAG, so
+  esptool and the log run through a USB-UART bridge on UART0 (GPIO 43 and 44);
 - the microSD slot has an SPI bus of its own, SPI3: the display has no MISO
   wired, which a card cannot work without. GPIO 40, 41 and 42 are the external
   JTAG pins, and the card takes them over;

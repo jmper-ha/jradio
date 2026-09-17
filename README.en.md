@@ -14,7 +14,7 @@ buttons on the device itself, or from a browser on a phone or a computer.
 |---|---|
 | SoC | ESP32-S3 in a QFN56 package, 16 MB flash, 8 MB PSRAM |
 | Display | over SPI: ILI9341 or ST7789 320x240, ILI9488 or ST7796S 480x320 - each of them either way up; ST7789 320x170 (the 1.9" module) - landscape only |
-| Audio | PCM5102 DAC over I2S, line output; 16-bit stereo |
+| Audio | PCM5102 DAC over I2S, line output; 16-bit stereo; an optional amplifier MUTE line |
 | Media | USB host for a flash drive and a microSD slot, FAT16 or FAT32 |
 | Network | 2.4 GHz Wi-Fi, up to five saved networks, a web interface on the LAN |
 | Controls | a rotary encoder with a push button and four buttons |
@@ -40,6 +40,8 @@ the home screen. Details in [Hardware](doc/hardware.en.md).
 | **Screensaver** | works | Dim, dark, or a clock floating across the dark panel with the date, the weather and the track; after 15 s to 10 min untouched — [more](doc/usage.en.md#settings) |
 | **Volume** | works | The knob, the web player and Settings; remembered |
 | **Autoplay** | works | Starts whatever was playing when the device was switched off: a station, a track off a drive, a Yandex station or a container on a media server |
+| **Deep sleep** | works | Holding the first button puts the device out: playback stops, Bluetooth and Wi-Fi leave properly, and with a power switch wired everything outside the module loses power too. The same button wakes it - [more](doc/usage.en.md#deep-sleep) |
+| **Sleep timer** | works | Play for 15 to 120 minutes, then fade the volume away and sleep; set in the web settings, with the countdown on the screen and on the player page - [more](doc/usage.en.md#the-sleep-timer) |
 | **Cover art** | works | From the file's tag, from `cover.jpg` beside the music, from Yandex |
 | **Interface language** | works | Russian and English; the switch moves both the device screen and the web interface |
 | **Yandex categories** | not done | Only the account's own stations; there is no catalogue of genres and moods |

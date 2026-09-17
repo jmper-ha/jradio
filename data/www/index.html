@@ -187,6 +187,17 @@
             <span data-i18n="sleep.label">Таймер сна</span>
             <output id="sleep-remaining" class="sleep-remaining"></output>
           </div>
+
+          <!-- The alarm, the same way: a reading of what is set on the
+               settings page, so a phone says what the device will do without
+               anyone walking over to it. Gone entirely when none is set. -->
+          <div id="alarm-row" class="sleep-timer" hidden>
+            <svg class="sleep-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6v-5a6 6 0 0 0-4.5-5.8V4a1.5 1.5 0 0 0-3 0v1.2A6 6 0 0 0 6 11v5l-2 2v1h16v-1Z"/>
+            </svg>
+            <span id="alarm-label"></span>
+            <output id="alarm-days" class="sleep-remaining"></output>
+          </div>
         </div>
 
         <!-- Phone only: on a large screen the panel shows everything already. -->

@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "alarm_schedule.h"
 #include "cJSON.h"
 #include "device_timezone.h"
 #include "web_json.h"
@@ -55,6 +56,11 @@ static const field_descriptor_t k_fields[] = {
     {"screensaver", WEB_SETTINGS_FIELD_SCREENSAVER, {WEB_SETTINGS_SCREENSAVER_NAMES}, false, false},
     {"screensaver_seconds", WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS, {NULL}, true, false},
     {"screensaver_brightness", WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS, {NULL}, true, false},
+    {"alarm_enabled", WEB_SETTINGS_FIELD_ALARM_ENABLED, {NULL}, false, false},
+    {"alarm_time", WEB_SETTINGS_FIELD_ALARM_TIME, {NULL}, false, true},
+    {"alarm_days", WEB_SETTINGS_FIELD_ALARM_DAYS, {NULL}, true, false},
+    {"alarm_station", WEB_SETTINGS_FIELD_ALARM_STATION, {NULL}, true, false},
+    {"alarm_volume", WEB_SETTINGS_FIELD_ALARM_VOLUME, {NULL}, true, false},
 };
 
 /* A provider the page has no name for - a newer card - reads as off, which is
@@ -131,6 +137,12 @@ static bool parse_value(const field_descriptor_t *descriptor, const cJSON *value
         if (number <= 0 || !device_settings_screensaver_seconds_valid((unsigned int)number)) {
             return false;
         }
+    } else if (descriptor->field == WEB_SETTINGS_FIELD_ALARM_DAYS) {
+        /* Never empty, which is the state the whole feature is arranged to
+         * make unreachable, and never a bit the week does not have. */
+        if (number <= 0 || number > (int)ALARM_DAYS_ALL) return false;
+    } else if (descriptor->field == WEB_SETTINGS_FIELD_ALARM_STATION) {
+        if (number < 0 || number > DEVICE_ALARM_STATION_MAX) return false;
     } else if (number < 0 || number > 100) {
         return false;
     }
@@ -223,6 +235,20 @@ bool web_settings_apply(device_settings_t *settings,
     case WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS:
         return device_settings_set_screensaver_brightness(settings,
                                                           (unsigned char)change->value);
+    case WEB_SETTINGS_FIELD_ALARM_ENABLED:
+        return device_settings_set_alarm_enabled(settings, change->value != 0);
+    case WEB_SETTINGS_FIELD_ALARM_TIME: {
+        uint8_t hour = 0U;
+        uint8_t minute = 0U;
+        if (!alarm_time_parse(change->text, &hour, &minute)) return false;
+        return device_settings_set_alarm_time(settings, hour, minute);
+    }
+    case WEB_SETTINGS_FIELD_ALARM_DAYS:
+        return device_settings_set_alarm_days(settings, (unsigned int)change->value);
+    case WEB_SETTINGS_FIELD_ALARM_STATION:
+        return device_settings_set_alarm_station(settings, (unsigned int)change->value);
+    case WEB_SETTINGS_FIELD_ALARM_VOLUME:
+        return device_settings_set_alarm_volume(settings, (unsigned char)change->value);
     case WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY:
         /* Not the card's: the handler routes it to the key file. */
         return false;
@@ -259,6 +285,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .screensaver = (uint8_t)settings->screensaver,
         .screensaver_seconds = settings->screensaver_seconds,
         .screensaver_brightness = settings->screensaver_brightness,
+        .alarm = settings->alarm,
         .home_screen_available = home_screen_available,
         .yandex_available = yandex_available,
         .dlna_available = dlna_available,
@@ -288,6 +315,12 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->screensaver == right->screensaver &&
            left->screensaver_seconds == right->screensaver_seconds &&
            left->screensaver_brightness == right->screensaver_brightness &&
+           left->alarm.enabled == right->alarm.enabled &&
+           left->alarm.hour == right->alarm.hour &&
+           left->alarm.minute == right->alarm.minute &&
+           left->alarm.days == right->alarm.days &&
+           left->alarm.station == right->alarm.station &&
+           left->alarm.volume == right->alarm.volume &&
            left->home_screen_available == right->home_screen_available &&
            left->yandex_available == right->yandex_available &&
            left->dlna_available == right->dlna_available &&
@@ -341,6 +374,22 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_format(writer, "%u", (unsigned)view->screensaver_seconds);
     web_json_literal(writer, ",\"screensaver_brightness\":");
     web_json_format(writer, "%u", (unsigned)view->screensaver_brightness);
+    /* Five flat members under the names the page posts back, the way every
+     * other setting here reads: the page's field table is then one line per
+     * row and needs no special case, and the player's indicator reads the two
+     * it cares about straight out of the frame. */
+    web_json_literal(writer, ",\"alarm_enabled\":");
+    web_json_literal(writer, view->alarm.enabled ? "true" : "false");
+    web_json_literal(writer, ",\"alarm_time\":");
+    char alarm_time[6];
+    alarm_time_format(alarm_time, sizeof(alarm_time), view->alarm.hour, view->alarm.minute);
+    web_json_string(writer, alarm_time);
+    web_json_literal(writer, ",\"alarm_days\":");
+    web_json_format(writer, "%u", (unsigned)view->alarm.days);
+    web_json_literal(writer, ",\"alarm_station\":");
+    web_json_format(writer, "%u", (unsigned)view->alarm.station);
+    web_json_literal(writer, ",\"alarm_volume\":");
+    web_json_format(writer, "%u", (unsigned)view->alarm.volume);
     /* What this build has, not what it is set to: a switch for a source the
      * firmware was compiled without would change a value nothing reads. */
     web_json_literal(writer, ",\"available\":{\"home_screen\":");

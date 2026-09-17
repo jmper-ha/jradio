@@ -35,6 +35,9 @@
   const commandStatus = document.querySelector('#command-status');
   const sleepTimer = document.querySelector('#sleep-timer');
   const sleepRemaining = document.querySelector('#sleep-remaining');
+  const alarmRow = document.querySelector('#alarm-row');
+  const alarmLabel = document.querySelector('#alarm-label');
+  const alarmDaysOut = document.querySelector('#alarm-days');
   const mediaList = document.querySelector('#media-list');
   const listTitle = document.querySelector('#list-title');
   const listCount = document.querySelector('#list-count');
@@ -93,6 +96,7 @@
        a countdown is exactly the kind of number that must not cost a push a
        second. */
     sleep: {minutes: 0, remaining: 0},
+    alarm: {enabled: false, time: '', days: 0},
   };
 
   const volume = {holding: false, busy: false, queued: null};
@@ -444,10 +448,54 @@
          before the device has said which language it wants. */
       setConnected(state.connected);
     }
+    applyAlarm(value);
     const level = value.volume;
     if (!Number.isSafeInteger(level) || level < 0 || level > 100) return;
     state.volume = level;
     renderVolume();
+  }
+
+  /* Which days, in as few words as the three common answers allow: a whole
+     week, the working ones, the other two. Anything else is the short day
+     names, which is what a list of four days has to be. Sunday is bit 0, the
+     device's own numbering; the names read Monday first. */
+  const ALARM_DAY_KEYS = ['alarm.sun', 'alarm.mon', 'alarm.tue', 'alarm.wed', 'alarm.thu',
+                          'alarm.fri', 'alarm.sat'];
+  const ALARM_DAYS_ALL = 0x7f;
+  const ALARM_WEEKDAYS = 0x3e;
+  const ALARM_WEEKEND = 0x41;
+
+  function alarmDaysText(days) {
+    if (days === ALARM_DAYS_ALL) return t('alarm.every_day');
+    if (days === ALARM_WEEKDAYS) return t('alarm.weekdays');
+    if (days === ALARM_WEEKEND) return t('alarm.weekend');
+    const names = [];
+    for (let day = 1; day <= 7; day += 1) {
+      const bit = day % 7;
+      if ((days & (1 << bit)) !== 0) names.push(t(ALARM_DAY_KEYS[bit]));
+    }
+    return names.join(' ');
+  }
+
+  function renderAlarm() {
+    const shown = state.alarm.enabled && state.alarm.time !== '';
+    alarmRow.hidden = !shown;
+    if (!shown) {
+      alarmLabel.textContent = '';
+      alarmDaysOut.textContent = '';
+      return;
+    }
+    alarmLabel.textContent = t('alarm.at', {time: state.alarm.time});
+    alarmDaysOut.textContent = alarmDaysText(state.alarm.days);
+  }
+
+  /* Off the settings frame, which is where it is set and where it changes.
+     Nothing polls for it: an alarm is a time, not a countdown. */
+  function applyAlarm(value) {
+    if (typeof value.alarm_enabled === 'boolean') state.alarm.enabled = value.alarm_enabled;
+    if (typeof value.alarm_time === 'string') state.alarm.time = value.alarm_time;
+    if (Number.isSafeInteger(value.alarm_days)) state.alarm.days = value.alarm_days;
+    renderAlarm();
   }
 
   function paintProgress(elapsed, total) {
@@ -1399,6 +1447,7 @@
   renderSources();
   updatePlaylistLink();
   renderSleep();
+  renderAlarm();
   renderPlayer();
   renderList();
   scheduleProgress(progressIdleDelay);

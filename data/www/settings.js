@@ -46,6 +46,8 @@
   const deviceStatus = document.querySelector('#device-status');
   const deviceTimezone = document.querySelector('#device-timezone');
   const sleepSelect = document.querySelector('#sleep-select');
+  const alarmDayChips = Array.from(document.querySelectorAll('#device-alarm-days [data-day]'));
+  const alarmStation = document.querySelector('#device-alarm-station');
   const backupStatus = document.querySelector('#backup-status');
   const backupFile = document.querySelector('#backup-file');
   const backupRestore = document.querySelector('#backup-restore');
@@ -104,6 +106,17 @@
      output: document.querySelector('#device-idle-brightness-value'),
      row: document.querySelector('#device-idle-brightness-row'),
      when: {field: 'screensaver', not: 'off'}},
+    {field: 'alarm_enabled', kind: 'switch', node: document.querySelector('#device-alarm')},
+    /* An <input type="time"> hands over "07:30", which is what the device
+       stores and what it sends back, so it travels as text like a host
+       name. */
+    {field: 'alarm_time', kind: 'text', node: document.querySelector('#device-alarm-time')},
+    /* The days are not here: seven buttons are one answer, and the rule that
+       the last one cannot be turned off has nowhere to live in this table. */
+    {field: 'alarm_station', kind: 'number', node: alarmStation},
+    {field: 'alarm_volume', kind: 'number',
+     node: document.querySelector('#device-alarm-volume'),
+     output: document.querySelector('#device-alarm-volume-value')},
     {field: 'flip_vertical', kind: 'switch', node: document.querySelector('#device-flip-vertical')},
     {field: 'flip_horizontal', kind: 'switch',
      node: document.querySelector('#device-flip-horizontal')},
@@ -859,6 +872,7 @@
   function setDeviceDisabled(disabled) {
     for (const entry of deviceFields) entry.node.disabled = disabled;
     sleepSelect.disabled = disabled;
+    for (const chip of alarmDayChips) chip.disabled = disabled;
   }
 
   /* The zones come from the device rather than sitting in the markup: the list
@@ -948,6 +962,100 @@
       .then(() => { sleepSelect.disabled = false; });
   }
 
+  /* The alarm's days: seven buttons carrying the device's own bits, Sunday as
+     bit 0 the way struct tm counts, Monday first for the reader.
+   
+     One rule, and it is refused here as well as in the firmware: the last day
+     standing cannot be turned off. An alarm switched on with no day to ring on
+     is the one state worth making unreachable - it looks armed and never goes
+     off. */
+  const ALARM_DAYS_ALL = 0x7f;
+  let alarmDays = ALARM_DAYS_ALL;
+
+  function renderAlarmDays() {
+    for (const chip of alarmDayChips) {
+      const bit = 1 << Number.parseInt(chip.dataset.day, 10);
+      const on = (alarmDays & bit) !== 0;
+      chip.classList.toggle('is-on', on);
+      chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+  }
+
+  function applyAlarmDays(mask) {
+    if (!Number.isSafeInteger(mask) || mask <= 0 || mask > ALARM_DAYS_ALL) return;
+    alarmDays = mask;
+    renderAlarmDays();
+  }
+
+  function toggleAlarmDay(chip) {
+    const bit = 1 << Number.parseInt(chip.dataset.day, 10);
+    const next = alarmDays ^ bit;
+    if (next === 0) {
+      deviceStatus.textContent = t('alarm.one_day');
+      deviceStatus.classList.remove('is-success');
+      deviceStatus.classList.add('is-error');
+      return;
+    }
+    applyAlarmDays(next);
+    sendDeviceChange('alarm_days', next);
+  }
+
+  /* The station picker. Off /api/stations with the source named rather than
+     out of the playlist file: what the alarm stores is a row number, and the
+     device is what numbers the rows - a browser counting lines of a CSV would
+     be one malformed line away from dialling something else.
+
+     The number may arrive before the list does, since they come from two
+     requests, so it is kept here and applied again once the options exist. */
+  let alarmStationWanted = 0;
+  // Whether the options are there yet, and whether they are the empty-playlist
+  // line. Kept here rather than read back off the <select>, which is one more
+  // thing that can be in a state nobody expected.
+  let alarmStationsFilled = false;
+  let alarmStationsEmpty = false;
+  let alarmStationEmptyOption = null;
+
+  function fillAlarmStations(labels) {
+    alarmStationsFilled = true;
+    alarmStationsEmpty = labels.length === 0;
+    if (alarmStationsEmpty) {
+      alarmStationEmptyOption = document.createElement('option');
+      alarmStationEmptyOption.value = '0';
+      alarmStationEmptyOption.textContent = t('alarm.no_stations');
+      alarmStation.replaceChildren(alarmStationEmptyOption);
+      return;
+    }
+    alarmStationEmptyOption = null;
+    alarmStation.replaceChildren(...labels.map((label, index) => {
+      const option = document.createElement('option');
+      option.value = String(index + 1);
+      // The number the device itself shows, counting from one.
+      option.textContent = `${index + 1}. ${label}`;
+      return option;
+    }));
+    alarmStation.value = String(alarmStationWanted);
+    // A station number the playlist no longer reaches: a <select> answers ''
+    // to that, and the first row is the honest thing to show instead.
+    if (alarmStation.value === '') alarmStation.value = '1';
+  }
+
+  function loadAlarmStations() {
+    window.fetch('/api/stations?source=internet_radio', {headers: {Accept: 'application/json'}})
+      .then((response) => {
+        if (!response || response.ok !== true) throw new Error('request failed');
+        return response.json();
+      })
+      .then((payload) => {
+        if (!isObject(payload) || !Array.isArray(payload.items)) return;
+        fillAlarmStations(payload.items.map((item) => (
+          isObject(item) && typeof item.label === 'string' ? item.label : '')));
+      })
+      // A picker that could not be filled keeps whatever it had; the rest of
+      // the page is still usable, and the alarm keeps the station it was set
+      // to either way.
+      .catch(() => {});
+  }
+
   function applyDeviceSettings(payload) {
     if (!isObject(payload)) return false;
     applyLanguage(payload);
@@ -1026,6 +1134,16 @@
     if (available.bt_output === true && !btLoaded) {
       btLoaded = true;
       loadSpeakers();
+    }
+    /* Neither fits the field table above: the days are seven buttons, and
+       the station's options come from their own request and may not be here
+       yet. */
+    applyAlarmDays(payload.alarm_days);
+    if (Number.isSafeInteger(payload.alarm_station)) {
+      alarmStationWanted = payload.alarm_station;
+      if (alarmStationsFilled && !alarmStationsEmpty) {
+        alarmStation.value = String(alarmStationWanted);
+      }
     }
     applyWeatherState(payload);
     return true;
@@ -1164,6 +1282,18 @@
 
   function bindDeviceFields() {
     renderSleepChoices();
+    renderAlarmDays();
+    loadAlarmStations();
+    /* The empty-playlist line is the only text in the picker, and it is a
+       translation like the menu's. */
+    window.jradioI18n.onChange(() => {
+      if (alarmStationEmptyOption !== null) {
+        alarmStationEmptyOption.textContent = t('alarm.no_stations');
+      }
+    });
+    for (const chip of alarmDayChips) {
+      chip.addEventListener('click', () => { toggleAlarmDay(chip); });
+    }
     /* Built here rather than in the markup, so a language changed on the
        device or in another tab relabels the menu with everything else. */
     window.jradioI18n.onChange(renderSleepChoices);

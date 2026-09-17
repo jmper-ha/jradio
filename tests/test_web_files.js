@@ -102,7 +102,7 @@ const ids = [
   'track-cover', 'track-progress', 'track-elapsed', 'track-total',
   'progress-rail', 'progress-fill', 'progress-seek',
   'volume-control', 'volume-input', 'volume-value',
-  'sleep-timer', 'sleep-remaining',
+  'sleep-timer', 'sleep-remaining', 'alarm-row', 'alarm-label', 'alarm-days',
   'stream-meta', 'player-error', 'command-status', 'media-list',
   'list-title', 'list-count', 'list-items', 'list-empty', 'list-offline', 'list-loading', 'list-loading-text', 'list-search',
   'player-bar', 'player-expand',

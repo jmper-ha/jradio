@@ -64,6 +64,31 @@
     'sleep.off': ['Выключен', 'Off'],
     'sleep.minutes': ['{n} мин', '{n} min'],
     'sleep.failed': ['Не удалось установить таймер', 'Could not set the timer'],
+
+    /* The alarm clock. The day names are the short forms a calendar uses;
+       Monday is shown first while the bit each one carries counts from
+       Sunday, the way the C library does. */
+    'alarm.group': ['Будильник', 'Alarm clock'],
+    'alarm.enabled': ['Включён', 'On'],
+    'alarm.time': ['Время', 'Time'],
+    'alarm.days': ['Дни', 'Days'],
+    'alarm.station': ['Станция', 'Station'],
+    'alarm.volume': ['Громкость', 'Volume'],
+    'alarm.mon': ['Пн', 'Mon'],
+    'alarm.tue': ['Вт', 'Tue'],
+    'alarm.wed': ['Ср', 'Wed'],
+    'alarm.thu': ['Чт', 'Thu'],
+    'alarm.fri': ['Пт', 'Fri'],
+    'alarm.sat': ['Сб', 'Sat'],
+    'alarm.sun': ['Вс', 'Sun'],
+    'alarm.one_day': ['Нужен хотя бы один день', 'At least one day is needed'],
+    'alarm.no_stations': ['Плейлист пуст', 'The playlist is empty'],
+    /* The player page's indicator: the bell, the time, and which days in
+       short - "будильник 07:30, Пн–Пт" reads at a glance. */
+    'alarm.at': ['Будильник {time}', 'Alarm {time}'],
+    'alarm.every_day': ['каждый день', 'every day'],
+    'alarm.weekdays': ['по будням', 'weekdays'],
+    'alarm.weekend': ['по выходным', 'weekends'],
     'player.command_failed': ['Команда не выполнена', 'The command did not go through'],
     'player.command_too_long': ['Команда слишком длинная', 'The command is too long'],
     /* The units, which are words rather than symbols in both languages and so

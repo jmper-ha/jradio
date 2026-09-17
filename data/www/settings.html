@@ -161,6 +161,47 @@
               </div>
 
               <div class="device-group">
+                <h3 data-i18n="alarm.group">Будильник</h3>
+                <div class="device-row">
+                  <label for="device-alarm" data-i18n="alarm.enabled">Включён</label>
+                  <input id="device-alarm" type="checkbox" data-field="alarm_enabled">
+                </div>
+                <div class="device-row">
+                  <label for="device-alarm-time" data-i18n="alarm.time">Время</label>
+                  <input id="device-alarm-time" type="time" required data-field="alarm_time">
+                </div>
+                <!-- Seven buttons rather than seven checkboxes: they are one
+                     answer, and the last one cannot be turned off - an alarm
+                     with no day is switched on and never rings. Monday first
+                     for the reader; the bit each carries is the C library's,
+                     Sunday as 0. -->
+                <div class="device-row device-row-stacked">
+                  <span class="row-label" data-i18n="alarm.days">Дни</span>
+                  <div id="device-alarm-days" class="day-chips">
+                    <button type="button" class="day-chip" data-day="1" data-i18n="alarm.mon">Пн</button>
+                    <button type="button" class="day-chip" data-day="2" data-i18n="alarm.tue">Вт</button>
+                    <button type="button" class="day-chip" data-day="3" data-i18n="alarm.wed">Ср</button>
+                    <button type="button" class="day-chip" data-day="4" data-i18n="alarm.thu">Чт</button>
+                    <button type="button" class="day-chip" data-day="5" data-i18n="alarm.fri">Пт</button>
+                    <button type="button" class="day-chip" data-day="6" data-i18n="alarm.sat">Сб</button>
+                    <button type="button" class="day-chip" data-day="0" data-i18n="alarm.sun">Вс</button>
+                  </div>
+                </div>
+                <div class="device-row">
+                  <label for="device-alarm-station" data-i18n="alarm.station">Станция</label>
+                  <select id="device-alarm-station" data-field="alarm_station"></select>
+                </div>
+                <div class="device-row">
+                  <label for="device-alarm-volume" data-i18n="alarm.volume">Громкость</label>
+                  <span class="device-slider">
+                    <input id="device-alarm-volume" type="range" min="0" max="100" step="5"
+                           data-field="alarm_volume">
+                    <output id="device-alarm-volume-value">40</output>
+                  </span>
+                </div>
+              </div>
+
+              <div class="device-group">
                 <h3 data-i18n="settings.group_weather">Погода</h3>
                 <div class="device-row">
                   <label for="device-weather" data-i18n="settings.weather">Источник</label>

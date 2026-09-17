@@ -52,6 +52,15 @@ typedef enum {
     WEB_SETTINGS_FIELD_SCREENSAVER,
     WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS,
     WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS,
+    /* The alarm clock, one row per request like everything else here. The
+     * time is text because "07:30" is what an <input type="time"> hands over
+     * and what settings.csv stores; the days are the bitmask out of
+     * alarm_schedule.h, and zero is refused the whole way down. */
+    WEB_SETTINGS_FIELD_ALARM_ENABLED,
+    WEB_SETTINGS_FIELD_ALARM_TIME,
+    WEB_SETTINGS_FIELD_ALARM_DAYS,
+    WEB_SETTINGS_FIELD_ALARM_STATION,
+    WEB_SETTINGS_FIELD_ALARM_VOLUME,
     /* Not a device setting at all - a secret that goes to its own file - but
      * it arrives on the same page in the same shape, so it is parsed here and
      * routed by the handler: web_settings_apply() refuses it. */
@@ -124,6 +133,12 @@ typedef struct {
     uint8_t screensaver;
     uint16_t screensaver_seconds;
     uint8_t screensaver_brightness;
+    /* The alarm as it is set. In the live diff rather than in the document
+     * beside the time server: the player page carries an indicator for it, and
+     * a change made on one phone has to reach the other one - six bytes is
+     * what that costs per queued frame. It goes out as five flat members named
+     * the way they are posted back, not as an object. */
+    alarm_config_t alarm;
     bool home_screen_available;
     bool yandex_available;
     bool dlna_available;

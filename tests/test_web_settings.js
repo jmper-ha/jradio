@@ -95,12 +95,22 @@ const ids = [
   'device-idle-brightness-value', 'device-screensaver-after-row',
   'device-idle-brightness-row',
   'device-timezone', 'device-ntp', 'sleep-select', 'device-name', 'device-name-note',
+  'device-alarm', 'device-alarm-time', 'device-alarm-station', 'device-alarm-volume',
+  'device-alarm-volume-value',
   'device-weather', 'device-weather-latitude', 'device-weather-longitude',
   'device-weather-key', 'device-weather-key-row', 'device-weather-now-row',
   'device-weather-now',
   'backup-status', 'backup-file', 'backup-restore',
 ];
 const elements = Object.fromEntries(ids.map((id) => [`#${id}`, new Element()]));
+/* The alarm's seven day buttons, in the order the markup puts them and each
+   carrying the bit the device uses - Sunday is 0, and it is last on the page. */
+const alarmDayChips = [1, 2, 3, 4, 5, 6, 0].map((day) => {
+  const chip = new Element();
+  chip.dataset.day = String(day);
+  return chip;
+});
+const alarmDayByBit = Object.fromEntries(alarmDayChips.map((chip) => [chip.dataset.day, chip]));
 elements['#wifi-form'].elements = {
   ssid: elements['#wifi-ssid'],
   password: elements['#wifi-password'],
@@ -112,7 +122,9 @@ const documentRef = {
      them alone. What the tests below check is the text the page writes. */
   documentElement: {lang: 'ru'},
   querySelectorAll(selector) {
-    return selector === '.card[data-section]' ? sectionCards : [];
+    if (selector === '.card[data-section]') return sectionCards;
+    if (selector === '#device-alarm-days [data-day]') return alarmDayChips;
+    return [];
   },
   querySelector(selector) { return elements[selector]; },
   createElement() { return new Element(); },
@@ -163,10 +175,22 @@ let settingsReply = {
   weather: 'off', weather_latitude: '55.75', weather_longitude: '37.62',
   openweathermap_key_set: false, weather_state: 'off', weather_http_status: 0,
   weather_report: null,
+  /* Not the defaults: Tuesday and Thursday at twenty to seven, the second
+     station, quietly - a page that ignored these would still look right
+     against 07:00 every day. */
+  alarm_enabled: true, alarm_time: '06:40', alarm_days: 0x14, alarm_station: 2,
+  alarm_volume: 25,
   timezones: [
     {id: 'europe/moscow', label: 'Москва (UTC+3)'},
     {id: 'asia/yekaterinburg', label: 'Екатеринбург (UTC+5)'},
   ],
+};
+/* The radio catalogue the alarm's picker is filled from. Three stations, so a
+   picker that numbered them from zero is caught. */
+let stationsReply = {
+  kind: 'stations', source: 'internet_radio', revision: 4, count: 3,
+  items: [{index: 0, label: 'Радио Рекорд'}, {index: 1, label: 'Jazz FM'},
+          {index: 2, label: 'Nightwave Plaza'}],
 };
 let settingsPostFails = false;
 // GET /api/about. The versions differ on purpose: a page that ignored the
@@ -262,6 +286,9 @@ const context = {
                            known: body.address ? known : speakersReply.known};
         }
         return Promise.resolve({ok: true, json: () => Promise.resolve(speakersReply)});
+      }
+      if (String(url).startsWith('/api/stations')) {
+        return Promise.resolve({ok: true, json: () => Promise.resolve(stationsReply)});
       }
       if (String(url).startsWith('/api/sleep-timer')) {
         if (sleepPostFails) return Promise.reject(new Error('refused'));
@@ -752,6 +779,53 @@ function lastYandexTimer() {
   assert.deepEqual(JSON.parse(sleepPost.options.body), {minutes: 45});
   assert.equal(elements['#device-status'].textContent, 'Сохранено');
   assert.equal(elements['#sleep-select'].disabled, false);
+
+  /* The alarm. What the device answered is on the page: the time, the two
+     days as pressed chips, the station by the number the device numbers it
+     with, and the volume. */
+  assert.equal(elements['#device-alarm'].checked, true);
+  assert.equal(elements['#device-alarm-time'].value, '06:40');
+  assert.equal(elements['#device-alarm-station'].value, '2');
+  assert.equal(elements['#device-alarm-volume'].value, '25');
+  assert.equal(elements['#device-alarm-volume-value'].textContent, '25');
+  // Tuesday and Thursday - bits 2 and 4 - and nothing else.
+  assert.equal(alarmDayByBit['2'].classList.values.has('is-on'), true);
+  assert.equal(alarmDayByBit['4'].classList.values.has('is-on'), true);
+  assert.equal(alarmDayByBit['1'].classList.values.has('is-on'), false);
+  assert.equal(alarmDayByBit['0'].classList.values.has('is-on'), false);
+  /* The picker is filled from the device's own catalogue, numbered from one
+     the way the panel prints it - not from the playlist file, whose rows the
+     browser would have to count itself. */
+  assert.equal(elements['#device-alarm-station'].children.length, 3);
+  assert.equal(elements['#device-alarm-station'].children[0].value, '1');
+  assert.equal(elements['#device-alarm-station'].children[1].textContent, '2. Jazz FM');
+
+  // Pressing a day sends the whole mask, since that is what the device stores.
+  settingsReply = {...settingsReply, alarm_days: 0x54};
+  alarmDayByBit['6'].emit('click');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' && call.options &&
+                                           call.options.method === 'POST').at(-1).options.body),
+    {field: 'alarm_days', value: 0x54});
+
+  /* Down to one day, and then the rule: the last one standing cannot be
+     turned off. An alarm switched on with no day to ring on looks armed and
+     never goes off, so the click is refused here as well as in the firmware
+     and nothing is sent. */
+  settingsReply = {...settingsReply, alarm_days: 0x14};
+  alarmDayByBit['6'].emit('click');
+  await settle();
+  settingsReply = {...settingsReply, alarm_days: 0x04};
+  alarmDayByBit['4'].emit('click');
+  await settle();
+  assert.equal(alarmDayByBit['2'].classList.values.has('is-on'), true);
+  const beforeLastDay = fetchCalls.length;
+  alarmDayByBit['2'].emit('click');
+  await settle();
+  assert.equal(fetchCalls.length, beforeLastDay);
+  assert.equal(alarmDayByBit['2'].classList.values.has('is-on'), true);
+  assert.equal(elements['#device-status'].textContent, 'Нужен хотя бы один день');
 
   /* A slider writes when it is let go, not while it is being dragged: the
      readout follows the handle on its own. Brightness is the page's only

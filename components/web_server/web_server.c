@@ -951,7 +951,19 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
 {
     player_snapshot_t snapshot;
     player_control_get_snapshot(&snapshot);
-    const bool rotor = snapshot.active_source == AUDIO_SOURCE_YANDEX;
+    bool rotor = snapshot.active_source == AUDIO_SOURCE_YANDEX;
+    /* `?source=internet_radio` asks for the radio's own list whatever happens
+     * to be playing. The settings page needs it to offer the alarm a station,
+     * and the number it offers has to be the number the device will dial -
+     * which is this list's row, not the browser's idea of the playlist file. */
+    char query[48];
+    if (httpd_req_get_url_query_str(request, query, sizeof(query)) == ESP_OK) {
+        char value[24];
+        if (httpd_query_key_value(query, "source", value, sizeof(value)) == ESP_OK &&
+            strcmp(value, "internet_radio") == 0) {
+            rotor = false;
+        }
+    }
     const size_t count = rotor ? yandex_catalog_count() : internet_radio_station_count();
 
     web_json_writer_t writer;

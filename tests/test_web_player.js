@@ -92,7 +92,7 @@ const ids = [
   'track-cover', 'track-progress', 'track-elapsed', 'track-total',
   'progress-rail', 'progress-fill', 'progress-seek',
   'volume-control', 'volume-input', 'volume-value',
-  'sleep-timer', 'sleep-remaining',
+  'sleep-timer', 'sleep-remaining', 'alarm-row', 'alarm-label', 'alarm-days',
   'stream-meta', 'player-error', 'command-status', 'media-list',
   'list-title', 'list-count', 'list-items', 'list-empty', 'list-offline', 'list-loading', 'list-loading-text', 'list-search',
   'player-bar', 'player-expand',
@@ -806,6 +806,34 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
   });
   assert.equal(elements['#sleep-timer'].hidden, true);
   assert.equal(elements['#sleep-remaining'].textContent, '');
+
+  /* The alarm is a reading too, and a plainer one: it is a time, not a
+     countdown, so nothing polls for it and the settings frame is the whole
+     story. Days are the device's bits, Sunday as 0. */
+  assert.equal(elements['#alarm-row'].hidden, true);
+
+  sendEvent(second, {
+    type: 'settings.update', revision: 922,
+    settings: {volume: 30, alarm_enabled: true, alarm_time: '07:30', alarm_days: 0x3e},
+  });
+  assert.equal(elements['#alarm-row'].hidden, false);
+  assert.equal(elements['#alarm-label'].textContent, 'Будильник 07:30');
+  // Monday to Friday has a name; a list of five short ones would not read.
+  assert.equal(elements['#alarm-days'].textContent, 'по будням');
+
+  sendEvent(second, {
+    type: 'settings.update', revision: 923,
+    settings: {volume: 30, alarm_enabled: true, alarm_time: '07:30', alarm_days: 0x22},
+  });
+  // Monday first, whatever order the bits are in.
+  assert.equal(elements['#alarm-days'].textContent, 'Пн Пт');
+
+  sendEvent(second, {
+    type: 'settings.update', revision: 924,
+    settings: {volume: 30, alarm_enabled: false, alarm_time: '07:30', alarm_days: 0x7f},
+  });
+  assert.equal(elements['#alarm-row'].hidden, true);
+  assert.equal(elements['#alarm-label'].textContent, '');
 
   second.emit('close');
   assert.equal(elements['#socket-state'].textContent, 'Нет связи');

@@ -1205,6 +1205,43 @@ input[type="checkbox"]:checked { background: var(--accent); border-color: var(--
 input[type="checkbox"]:checked::after { transform: translateX(15px); }
 input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
 
+/* The alarm's seven days. A row of its own rather than a control beside its
+   label: seven chips and a label do not fit across a phone, and wrapping them
+   under a label that keeps its own column leaves the first line short. */
+.device-row-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: .4rem;
+  padding-top: .5rem;
+  padding-bottom: .5rem;
+}
+
+.day-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem;
+}
+
+/* They share the row evenly and stay tappable: a chip is a target for a thumb
+   before it is a label. */
+.day-chip {
+  flex: 1 1 2.4rem;
+  min-width: 2.4rem;
+  padding: .4rem .2rem;
+  font-size: .8rem;
+  text-align: center;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.day-chip.is-on {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 .device-slider {
   display: flex;
   align-items: center;

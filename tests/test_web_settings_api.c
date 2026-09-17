@@ -218,6 +218,30 @@ static void test_apply_writes_through_to_the_file(void)
     const web_settings_change_t bad_name = {WEB_SETTINGS_FIELD_DEVICE_NAME, 0, "a,b"};
     assert(!web_settings_apply(&settings, &bad_name));
 
+    /* The alarm, one row per request like everything else. The time arrives as
+     * text, since that is what an <input type="time"> has to send. */
+    web_settings_change_t alarm_time;
+    assert(parse_one("{\"field\":\"alarm_time\",\"value\":\"06:05\"}", &alarm_time));
+    assert(web_settings_apply(&settings, &alarm_time));
+    const web_settings_change_t bad_time = {WEB_SETTINGS_FIELD_ALARM_TIME, 0, "6:5"};
+    assert(!web_settings_apply(&settings, &bad_time));
+    const web_settings_change_t alarm_on = {WEB_SETTINGS_FIELD_ALARM_ENABLED, 1, ""};
+    assert(web_settings_apply(&settings, &alarm_on));
+    const web_settings_change_t alarm_days = {WEB_SETTINGS_FIELD_ALARM_DAYS, 0x3E, ""};
+    assert(web_settings_apply(&settings, &alarm_days));
+    const web_settings_change_t alarm_station = {WEB_SETTINGS_FIELD_ALARM_STATION, 7, ""};
+    assert(web_settings_apply(&settings, &alarm_station));
+    const web_settings_change_t alarm_volume = {WEB_SETTINGS_FIELD_ALARM_VOLUME, 30, ""};
+    assert(web_settings_apply(&settings, &alarm_volume));
+    /* An empty mask is refused all the way down: a page that managed to send
+     * one must not be able to leave an alarm that is on and never rings. */
+    web_settings_change_t no_days;
+    assert(!parse_one("{\"field\":\"alarm_days\",\"value\":0}", &no_days));
+    const web_settings_change_t empty_days = {WEB_SETTINGS_FIELD_ALARM_DAYS, 0, ""};
+    assert(!web_settings_apply(&settings, &empty_days));
+    assert(!parse_one("{\"field\":\"alarm_days\",\"value\":128}", &no_days));
+    assert(!parse_one("{\"field\":\"alarm_station\",\"value\":100}", &no_days));
+
     device_settings_t reloaded;
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.brightness == 35);
@@ -229,6 +253,11 @@ static void test_apply_writes_through_to_the_file(void)
     assert(reloaded.screensaver == DEVICE_SCREENSAVER_CLOCK);
     assert(reloaded.screensaver_seconds == 600);
     assert(reloaded.screensaver_brightness == 10);
+    assert(reloaded.alarm.enabled);
+    assert(reloaded.alarm.hour == 6U && reloaded.alarm.minute == 5U);
+    assert(reloaded.alarm.days == 0x3EU);
+    assert(reloaded.alarm.station == 7U);
+    assert(reloaded.alarm.volume == 30U);
     char nothing[8];
     assert(!settings_csv_get(test_path, "openweathermap_key", nothing, sizeof(nothing)));
 
@@ -289,6 +318,13 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"idle_brightness_min\":5") != NULL);
     assert(strstr(document, "\"idle_brightness_max\":50") != NULL);
     assert(strstr(document, "\"screensaver_seconds_choices\":[15,30,60,120,300,600]") != NULL);
+    /* Flat members named the way they are posted back, so the page's field
+     * table needs no special case for them. */
+    assert(strstr(document, "\"alarm_enabled\":false") != NULL);
+    assert(strstr(document, "\"alarm_time\":\"07:00\"") != NULL);
+    assert(strstr(document, "\"alarm_days\":127") != NULL);
+    assert(strstr(document, "\"alarm_station\":1") != NULL);
+    assert(strstr(document, "\"alarm_volume\":40") != NULL);
 
     /* The clock: the zone as an id and the server as it stands, plus the list
        to choose from - which is sent rather than written into the page, so
@@ -399,6 +435,27 @@ static void test_view_comparison_notices_every_field(void)
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.yandex_available = !base.yandex_available;
+    assert(!web_settings_view_equal(&base, &other));
+    /* Every one of the alarm's five: it is set in a browser and has to reach
+     * the others, so a field left out of this comparison is a phone showing
+     * yesterday's alarm. */
+    other = base;
+    other.alarm.enabled = !base.alarm.enabled;
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.alarm.hour = (uint8_t)(base.alarm.hour + 1U);
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.alarm.minute = (uint8_t)(base.alarm.minute + 5U);
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.alarm.days = 0x3EU;
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.alarm.station = (uint8_t)(base.alarm.station + 1U);
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.alarm.volume = (uint8_t)(base.alarm.volume + 5U);
     assert(!web_settings_view_equal(&base, &other));
 }
 

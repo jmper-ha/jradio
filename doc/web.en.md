@@ -11,13 +11,13 @@
 | `GET /api/dlna` | Contents of the container open on the media server; `searching` means it is still being looked for |
 | `GET /api/about` | The firmware and web versions, ESP-IDF, the author's address |
 | `GET /api/settings` | The device settings, the same ones its own screen has |
-| `POST /api/settings` | Changes one setting: `{"field":…,"value":…}`, `timezone`, `ntp_server`, `weather`, `weather_latitude`, `weather_longitude`, `openweathermap_key`, `screensaver`, `screensaver_seconds` and `screensaver_brightness` included |
+| `POST /api/settings` | Changes one setting: `{"field":…,"value":…}`, `timezone`, `ntp_server`, `weather`, `weather_latitude`, `weather_longitude`, `openweathermap_key`, `screensaver`, `screensaver_seconds`, `screensaver_brightness` and the alarm's five - `alarm_enabled`, `alarm_time` (`"07:30"`), `alarm_days` (a 1-127 mask), `alarm_station` (numbered from one), `alarm_volume` - included |
 | `GET /api/backup` | The device configuration as one zip: `wifi.json`, `settings.csv`, `yandex.json`, `weather.json` |
 | `POST /api/restore` | Restores it: the whole archive or a single file, named by `?name=` |
 | `GET /api/progress` | Track position, buffer fill, cover signature, what the sleep timer has left |
 | `POST /api/sleep-timer` | The sleep timer: `{"minutes":45}`, zero turns it off. Set in the settings, shown on the player page |
 | `GET /api/cover` | The current cover, 96x96, as a BMP |
-| `GET /api/stations` | The station names of the active source |
+| `GET /api/stations` | The station names of the active source; `?source=internet_radio` asks for the radio's own list whatever the device is doing |
 | `POST /api/station-test` | Plays an address on the device without touching the playlist |
 | `GET /api/station-icon` | An uploaded station picture, by file name |
 | `POST /api/station-icon` | Uploads a station picture; the device names the file |
@@ -42,6 +42,25 @@ beside the settings (`"sleep":{"minutes":45}`), while **how long is left** is a
 ticking number and rides on the position poll. So a tab left open on a stopped
 player stays quiet while there is no timer, and starts asking once a second the
 moment one appears - set from another browser, or on the device itself.
+
+The alarm, unlike the timer, is a setting, and it travels whole in the settings
+diff: five flat members named the way they are posted back (`alarm_enabled`,
+`alarm_time`, `alarm_days`, `alarm_station`, `alarm_volume`). The page's field
+table then needs one line for each, and the player's indicator reads the two it
+cares about straight out of the frame. There is nothing to poll for: an alarm
+is a time, not a countdown.
+
+The days are a mask where bit 0 is Sunday, the way `struct tm` counts. Zero is
+refused the whole way down - by the request parser and by the setter - because
+an alarm switched on with no day to ring on looks armed and never goes off. The
+page will not let the last day be unticked, for the same reason.
+
+The alarm's station number is a row of the list
+`GET /api/stations?source=internet_radio` answers with. The parameter exists
+for it: without one the endpoint describes the active source, and a station for
+the morning has to be picked while anything at all is playing. Counting lines
+of the playlist file in the browser would be one malformed line worse - the
+device is what numbers the rows.
 
 `GET /api/settings` carries two things the live socket updates do not: the name
 of the time server (`ntp_server`) and the list of time zones to choose from

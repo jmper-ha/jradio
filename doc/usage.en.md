@@ -124,6 +124,50 @@ The timer is not saved: it lives until it fires or until a reboot. Saving it
 would mean saving a moment in time, and a device that switches itself off some
 minutes after coming back is the least explicable thing it could do.
 
+### The alarm clock
+
+Radio at a set time. It is configured in the web interface, in the settings, in
+the "Alarm clock" group under "Time": the switch, the time, the days of the
+week, the station and the volume. At least one day is always ticked - the last
+one cannot be turned off, because an alarm that is on and never rings looks
+armed and is not.
+
+The station is picked by the number the device itself uses, so after editing
+the playlist it is worth checking that the row you wanted has not moved. The
+volume is applied for the ringing and is **not written** to the card: a quiet
+morning level must not overwrite the evening's.
+
+At the minute it is set for, the device brings the backlight up, leaves the
+screensaver, applies its volume and starts the station. There is no automatic
+stop - it plays until you stop it.
+
+**If the device is asleep**, it wakes for it by itself, and more than once. The
+sleep is taken in hops: the first wake-up is ten minutes before the alarm, and
+it is a quiet one. The panel is not lit, the peripheral rail (where
+`PERIPHERAL_POWER_GPIO` is wired) stays off, and only Wi-Fi comes up - to ask a
+time server what the hour really is. A sleeping board counts time on an
+internal RC oscillator and drifts by minutes over a night; that check takes the
+minutes back off. Then it sleeps on until a minute before the alarm and only
+then boots properly - with the network, the catalogue and a buffer, so the
+sound starts on the minute rather than a boot after it.
+
+That last boot runs **with the panel dark**: nobody asked to have the room lit
+a minute before the alarm. The backlight comes up with the ringing, or earlier
+if somebody presses a key. Autoplay is skipped on that boot: what should play
+is the alarm's station, not whatever was on last night.
+
+The sleep button wakes the device as usual even while it is sleeping towards an
+alarm - the timer and the button are armed together.
+
+On the device's own screen an armed alarm is a bell beside the clock, in the
+place the sleep timer's crescent uses, and the timer wins when both are set: it
+is the one about to act, while the alarm will still be there tomorrow. There is
+no time beside the bell - two characters fit there - and when it rings is on
+the settings page. The clock screensaver does not show the alarm at all.
+
+On the player page there is a row with the bell, the time and the days: "every
+day", "weekdays", "weekends", or the short day names. No alarm, no row.
+
 A single press lands after a short delay - before that it cannot be told from
 the beginning of a double press.
 

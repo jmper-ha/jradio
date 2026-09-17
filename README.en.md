@@ -42,6 +42,7 @@ the home screen. Details in [Hardware](doc/hardware.en.md).
 | **Autoplay** | works | Starts whatever was playing when the device was switched off: a station, a track off a drive, a Yandex station or a container on a media server |
 | **Deep sleep** | works | Holding the first button puts the device out: playback stops, Bluetooth and Wi-Fi leave properly, and with a power switch wired everything outside the module loses power too. The same button wakes it - [more](doc/usage.en.md#deep-sleep) |
 | **Sleep timer** | works | Play for 15 to 120 minutes, then fade the volume away and sleep; set in the web settings, with the countdown on the screen and on the player page - [more](doc/usage.en.md#the-sleep-timer) |
+| **Alarm clock** | works | A station at a set time, on the days you choose and at its own volume. A sleeping device wakes for it by itself: quietly ten minutes early to correct its clock, then a minute before it rings - [more](doc/usage.en.md#the-alarm-clock) |
 | **Cover art** | works | From the file's tag, from `cover.jpg` beside the music, from Yandex |
 | **Interface language** | works | Russian and English; the switch moves both the device screen and the web interface |
 | **Yandex categories** | not done | Only the account's own stations; there is no catalogue of genres and moods |

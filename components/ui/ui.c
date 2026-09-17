@@ -5847,12 +5847,30 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
         return;
     }
     (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_INTERNET_RADIO);
+    /* Both posted straight to the controller, past ui_submit_player_command:
+     * its view machine refuses a second command while the first is still
+     * unconfirmed by a snapshot, and these two are inseparable - the source,
+     * then the row inside it. Sent through the gate, the select went and the
+     * row was answered with "player command rejected: busy or invalid; kind=5",
+     * which on the bench was a device that switched to the radio at the right
+     * minute and then sat there silent.
+     *
+     * This is the route the browser's own "play station N" already takes, and
+     * the panel has followed a source it did not choose since acc3bf7.
+     *
+     * The order matters and the queue keeps it: a command is decided when it
+     * is dequeued, so by the time the row is read the radio is the active
+     * source. Decided any earlier - with the rotor still active - the same
+     * number would have named a Yandex station. */
     const player_command_t select = {
         .kind = PLAYER_COMMAND_SELECT_SOURCE,
         .source = AUDIO_SOURCE_INTERNET_RADIO,
         .item_index = PLAYER_ITEM_NONE,
     };
-    if (!ui_submit_player_command(&select)) return;
+    if (!player_control_post(&select)) {
+        ESP_LOGW(TAG, "alarm: the player queue is full");
+        return;
+    }
     /* The station by its row, not PLAYER_COMMAND_PLAY: play resumes whatever
      * was last on, and the alarm names its own. */
     const player_command_t start = {
@@ -5860,7 +5878,7 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
         .source = AUDIO_SOURCE_INTERNET_RADIO,
         .item_index = index,
     };
-    (void)ui_submit_player_command(&start);
+    (void)player_control_post(&start);
     ui_load_source_screen(AUDIO_SOURCE_INTERNET_RADIO);
     /* That screen arms the "no station to play" fallback, which opens the list
      * after a moment; the alarm has a station. */

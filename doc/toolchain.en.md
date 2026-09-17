@@ -152,6 +152,54 @@ idf.py -p /dev/ttyACM0 flash monitor
 used. Do not put it in `.bashrc`: it puts its own Python ahead of the system
 one, and that breaks something unrelated sooner or later.
 
+### Windows: "idf.py is not recognized as a cmdlet"
+
+The most frequent question, and nothing is broken. `idf.py` is not a program
+installed into the system: it lives in `%IDF_PATH%\tools\idf.py` and only
+works together with its environment - its own Python, the compiler, ninja. What
+puts all of that on `PATH` is the activation script, and it does so **for the
+current terminal session only**. Hence the command works in the terminal the
+installer opens and does not in an ordinary VS Code one.
+
+`IDF_PATH` and `IDF_TOOLS_PATH` have nothing to do with it: they say *where*
+the environment is, they do not add it to `PATH`. Setting them permanently is
+not needed and is rather harmful - after an upgrade they go on naming the old
+version; the activation script sets them itself. User variables are enough,
+system ones are not required, but **VS Code reads the environment when it
+starts** - variables added while the editor was open need it closed completely
+and opened again.
+
+What to do, simplest first:
+
+1. **Build with the VS Code tasks** - `Terminal` -> `Run Task…` ->
+   `ESP-IDF: Build`. The tasks call `tools\idf.ps1`, which finds the installed
+   environment itself (including one put there by the ESP-IDF Installation
+   Manager) and activates it. Nothing has to be set.
+2. **Call that same script by hand** from any terminal in the project folder:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File tools\idf.ps1 --list-targets
+   powershell -ExecutionPolicy Bypass -File tools\idf.ps1 build
+   ```
+
+3. **Activate the environment in this session**, if it is `idf.py` itself you
+   want:
+
+   ```powershell
+   . C:\Espressif\frameworks\esp-idf-v5.5.5\export.ps1
+   idf.py --list-targets
+   ```
+
+   The leading dot and space are required: without them the script runs in a
+   child process and `PATH` comes back as it was. If PowerShell refuses to run
+   it, `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first. On an
+   ESP-IDF Installation Manager install the activation is done not by
+   `export.ps1` but by the `Microsoft.PowerShell_profile.ps1` it wrote beside
+   the `esp-idf` folder.
+4. **Open the extension's terminal** - `Ctrl+Shift+P` -> `ESP-IDF: Open ESP-IDF
+   Terminal`. It is the same window the installer opens, with the environment
+   already activated.
+
 ## 5. The device's port
 
 - **Linux:** `/dev/ttyACM*` or `/dev/ttyUSB*`, depending on the bridge on the
@@ -168,7 +216,7 @@ empty, a monitor is almost certainly open in another window.
 | Message | What it is | What to do |
 |---|---|---|
 | The extension's wizard fails part-way with errors (seen on Windows) | no system Python, or the Microsoft Store stub is on PATH | install Python from python.org, tick "Add to PATH", turn the Store aliases off, and run the wizard again |
-| `idf.py: command not found` | environment not activated | `source .../export.sh` in this same session, or build with the VS Code tasks |
+| `idf.py: command not found`, on Windows "idf.py is not recognized" | the environment is not activated in this terminal session | `source .../export.sh`, on Windows `. ...\export.ps1` - or build with the VS Code tasks, see [above](#windows-idfpy-is-not-recognized-as-a-cmdlet) |
 | `Permission denied: '/dev/ttyACM0'` | user is not in the port's group | `usermod -aG dialout`, then log out and back in |
 | `Failed to connect to ESP32-S3` | charge-only cable, port busy, or the board is not in download mode | change the cable; close the monitor; hold BOOT, tap RESET, release BOOT |
 | `Could not find a version that satisfies the requirement littlefs-python` | the network blinked while the data image was being built | run `idf.py build` again; only what is missing is fetched |

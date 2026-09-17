@@ -47,6 +47,7 @@
   const deviceTimezone = document.querySelector('#device-timezone');
   const sleepSelect = document.querySelector('#sleep-select');
   const alarmDayChips = Array.from(document.querySelectorAll('#device-alarm-days [data-day]'));
+  const alarmDaysRow = document.querySelector('#device-alarm-days-row');
   const alarmStation = document.querySelector('#device-alarm-station');
   const backupStatus = document.querySelector('#backup-status');
   const backupFile = document.querySelector('#backup-file');
@@ -97,7 +98,8 @@
        steps the device names, and a slider would offer every second between.
        Both rows exist only while the screensaver is on - `when` names the
        field and the value that hides them, the way the device's own screen
-       drops the rows. */
+       drops the rows. A switch gates its rows through `whenOn` instead: the
+       alarm's four are only there while it is on. */
     {field: 'screensaver_seconds', kind: 'number',
      node: document.querySelector('#device-screensaver-after'),
      row: document.querySelector('#device-screensaver-after-row'),
@@ -110,13 +112,16 @@
     /* An <input type="time"> hands over "07:30", which is what the device
        stores and what it sends back, so it travels as text like a host
        name. */
-    {field: 'alarm_time', kind: 'text', node: document.querySelector('#device-alarm-time')},
+    {field: 'alarm_time', kind: 'text', node: document.querySelector('#device-alarm-time'),
+     row: document.querySelector('#device-alarm-time-row'), whenOn: 'alarm_enabled'},
     /* The days are not here: seven buttons are one answer, and the rule that
        the last one cannot be turned off has nowhere to live in this table. */
-    {field: 'alarm_station', kind: 'number', node: alarmStation},
+    {field: 'alarm_station', kind: 'number', node: alarmStation,
+     row: document.querySelector('#device-alarm-station-row'), whenOn: 'alarm_enabled'},
     {field: 'alarm_volume', kind: 'number',
      node: document.querySelector('#device-alarm-volume'),
-     output: document.querySelector('#device-alarm-volume-value')},
+     output: document.querySelector('#device-alarm-volume-value'),
+     row: document.querySelector('#device-alarm-volume-row'), whenOn: 'alarm_enabled'},
     {field: 'flip_vertical', kind: 'switch', node: document.querySelector('#device-flip-vertical')},
     {field: 'flip_horizontal', kind: 'switch',
      node: document.querySelector('#device-flip-horizontal')},
@@ -1119,6 +1124,12 @@
       if (entry.row && entry.when && typeof payload[entry.when.field] === 'string') {
         entry.row.hidden = payload[entry.when.field] === entry.when.not;
       }
+      /* A row that belongs to a switch: gone while it is off, and its value
+         untouched - it is still on the card, and turning the switch back on
+         shows it exactly as it was. */
+      if (entry.row && entry.whenOn && typeof payload[entry.whenOn] === 'boolean') {
+        entry.row.hidden = payload[entry.whenOn] !== true;
+      }
     }
     /* The note under the name says what the name is for, and Bluetooth is
        only one of those on a board that has the module. */
@@ -1139,6 +1150,10 @@
        the station's options come from their own request and may not be here
        yet. */
     applyAlarmDays(payload.alarm_days);
+    // The days are not in the field table, so their row is gated here.
+    if (typeof payload.alarm_enabled === 'boolean') {
+      alarmDaysRow.hidden = payload.alarm_enabled !== true;
+    }
     if (Number.isSafeInteger(payload.alarm_station)) {
       alarmStationWanted = payload.alarm_station;
       if (alarmStationsFilled && !alarmStationsEmpty) {

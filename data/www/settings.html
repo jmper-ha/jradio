@@ -166,7 +166,12 @@
                   <label for="device-alarm" data-i18n="alarm.enabled">Включён</label>
                   <input id="device-alarm" type="checkbox" data-field="alarm_enabled">
                 </div>
-                <div class="device-row">
+                <!-- The four rows below belong to the switch above and are
+                     hidden while it is off. What they hold stays on the card,
+                     so switching the alarm back on brings it back exactly as
+                     it was. They start hidden in the markup, or they would
+                     flash into view before the device has answered. -->
+                <div class="device-row" id="device-alarm-time-row" hidden>
                   <label for="device-alarm-time" data-i18n="alarm.time">Время</label>
                   <input id="device-alarm-time" type="time" required data-field="alarm_time">
                 </div>
@@ -175,7 +180,7 @@
                      with no day is switched on and never rings. Monday first
                      for the reader; the bit each carries is the C library's,
                      Sunday as 0. -->
-                <div class="device-row device-row-stacked">
+                <div class="device-row device-row-stacked" id="device-alarm-days-row" hidden>
                   <span class="row-label" data-i18n="alarm.days">Дни</span>
                   <div id="device-alarm-days" class="day-chips">
                     <button type="button" class="day-chip" data-day="1" data-i18n="alarm.mon">Пн</button>
@@ -187,11 +192,11 @@
                     <button type="button" class="day-chip" data-day="0" data-i18n="alarm.sun">Вс</button>
                   </div>
                 </div>
-                <div class="device-row">
+                <div class="device-row" id="device-alarm-station-row" hidden>
                   <label for="device-alarm-station" data-i18n="alarm.station">Станция</label>
                   <select id="device-alarm-station" data-field="alarm_station"></select>
                 </div>
-                <div class="device-row">
+                <div class="device-row" id="device-alarm-volume-row" hidden>
                   <label for="device-alarm-volume" data-i18n="alarm.volume">Громкость</label>
                   <span class="device-slider">
                     <input id="device-alarm-volume" type="range" min="0" max="100" step="5"

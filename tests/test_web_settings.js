@@ -96,7 +96,8 @@ const ids = [
   'device-idle-brightness-row',
   'device-timezone', 'device-ntp', 'sleep-select', 'device-name', 'device-name-note',
   'device-alarm', 'device-alarm-time', 'device-alarm-station', 'device-alarm-volume',
-  'device-alarm-volume-value',
+  'device-alarm-volume-value', 'device-alarm-time-row', 'device-alarm-days-row',
+  'device-alarm-station-row', 'device-alarm-volume-row',
   'device-weather', 'device-weather-latitude', 'device-weather-longitude',
   'device-weather-key', 'device-weather-key-row', 'device-weather-now-row',
   'device-weather-now',
@@ -826,6 +827,30 @@ function lastYandexTimer() {
   assert.equal(fetchCalls.length, beforeLastDay);
   assert.equal(alarmDayByBit['2'].classList.values.has('is-on'), true);
   assert.equal(elements['#device-status'].textContent, 'Нужен хотя бы один день');
+
+  /* Switched off, the four rows go and the values stay: they are still on the
+     card, and switching it back on has to bring them back as they were rather
+     than at the defaults. */
+  settingsReply = {...settingsReply, alarm_enabled: false};
+  elements['#device-alarm'].checked = false;
+  elements['#device-alarm'].emit('change');
+  await settle();
+  assert.equal(elements['#device-alarm-time-row'].hidden, true);
+  assert.equal(elements['#device-alarm-days-row'].hidden, true);
+  assert.equal(elements['#device-alarm-station-row'].hidden, true);
+  assert.equal(elements['#device-alarm-volume-row'].hidden, true);
+  assert.equal(elements['#device-alarm-time'].value, '06:40');
+  assert.equal(elements['#device-alarm-station'].value, '2');
+  assert.equal(elements['#device-alarm-volume'].value, '25');
+  assert.equal(alarmDayByBit['2'].classList.values.has('is-on'), true);
+
+  settingsReply = {...settingsReply, alarm_enabled: true};
+  elements['#device-alarm'].checked = true;
+  elements['#device-alarm'].emit('change');
+  await settle();
+  assert.equal(elements['#device-alarm-time-row'].hidden, false);
+  assert.equal(elements['#device-alarm-days-row'].hidden, false);
+  assert.equal(elements['#device-alarm-time'].value, '06:40');
 
   /* A slider writes when it is let go, not while it is being dragged: the
      readout follows the handle on its own. Brightness is the page's only

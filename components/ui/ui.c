@@ -576,6 +576,14 @@ static uint32_t s_alarm_ring_started_ms;
  * board comes up a minute early on purpose, and lighting a bedroom at 6:59 is
  * not what was asked for. Cleared by the alarm going off or by any press. */
 static bool s_alarm_boot_dark;
+/* The level the alarm set, and that it is still standing. The poll loop below
+ * adopts and saves any volume that moved under it - that is how a phone's
+ * Bluetooth slider reaches the card - and the alarm's must not be adopted: it
+ * is applied for the ringing only, so that waking quietly does not cost the
+ * listener the level they set last night. The hold ends the moment anything
+ * moves the volume off it, and from then on it is theirs. */
+static bool s_alarm_volume_held;
+static uint8_t s_alarm_volume;
 /* How long the ring waits for Wi-Fi before trying anyway: a station cannot be
  * selected while the network is down - player_control_decide() answers INVALID
  * - and an alarm that gives up silently is worse than one that tries and shows
@@ -5831,6 +5839,8 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
      * set last night, and a reboot has to come back to theirs and not to
      * this one. */
     board_audio_set_volume(s_device_settings.alarm.volume);
+    s_alarm_volume = s_device_settings.alarm.volume;
+    s_alarm_volume_held = true;
 
     /* Nothing else may start on top of it: autoplay is still waiting for the
      * network at this point on an alarm boot, and would resume last night's
@@ -5968,7 +5978,12 @@ static void ui_task(void *arg)
          * knob - published, saved after it settles - or the next reload of
          * the settings put the file's old value back, and the phone and the
          * panel disagreed after every quick drag of the slider. */
-        if (!s_volume_save_pending && !s_sleep_fading &&
+        /* Somebody has moved the volume off the one the alarm set, so it is
+         * an ordinary volume again and the adoption below may have it. */
+        if (s_alarm_volume_held && board_audio_volume() != s_alarm_volume) {
+            s_alarm_volume_held = false;
+        }
+        if (!s_volume_save_pending && !s_sleep_fading && !s_alarm_volume_held &&
             board_audio_volume() != s_device_settings.volume) {
             s_device_settings.volume = board_audio_volume();
             s_volume_save_pending = true;

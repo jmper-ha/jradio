@@ -12,7 +12,11 @@
  * the switches are known stays the way it was written. Everything else the
  * settings decide - brightness, volume - is applied later by the UI, which is
  * why only these two have to be here. */
-esp_err_t board_init(bool flip_vertical, bool flip_horizontal);
+/* `dark` leaves the backlight at zero when the board comes up: the alarm's
+ * last hop boots a minute before it rings, and a panel that lights the bedroom
+ * at 6:59 is not what the alarm was set for. The splash is still drawn - the
+ * UI raises the backlight when the alarm goes off, or at the first press. */
+esp_err_t board_init(bool flip_vertical, bool flip_horizontal, bool dark);
 esp_err_t board_backlight_set(uint8_t percent);
 /* The switch feeding everything outside the module - the panel, the DAC, the
  * card, the Bluetooth module, the USB port - on boards that wire
@@ -24,9 +28,20 @@ void board_peripheral_power(bool on);
 bool board_deep_sleep_supported(void);
 /* Cuts the peripherals, arms BUTTON_SLEEP_GPIO - F1 - as the wake source and
  * sleeps.
+ *
+ * `wake_after_seconds` arms the RTC timer as a second source, for the alarm
+ * clock: 0 leaves the button as the only way back. Both sources are live at
+ * once, so a board sleeping until the morning still answers the button.
+ *
  * Does not return: waking is a fresh boot, so whatever has to be saved is
  * saved by the caller before it calls this. */
-void board_deep_sleep(void);
+void board_deep_sleep(uint32_t wake_after_seconds);
+/* The same sleep from a board that was never brought up: the alarm's quiet
+ * wake-up runs before board_init(), decides it is still too early, and goes
+ * back down without ever lighting the panel or raising the peripheral rail -
+ * which is still held off from the sleep before it. Arms both sources and
+ * touches nothing else. Does not return. */
+void board_deep_sleep_again(uint32_t wake_after_seconds);
 esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
                             uint32_t timeout_ms);
 esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloaded);

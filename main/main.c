@@ -3,6 +3,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "esp_sleep.h"
+
+#include "alarm_schedule.h"
 #include "board.h"
 #include "board_features.h"
 #include "bt_link.h"
@@ -42,6 +45,75 @@ static void start_optional(const char *what, esp_err_t result)
     }
 }
 
+/* How long the quiet wake gives a time server before it gives up and works
+ * with the clock the RTC kept. Long enough for Wi-Fi to associate and one
+ * round trip, short enough that a network that is simply gone does not eat the
+ * lead the hop was given. */
+#define ALARM_SYNC_WAIT_MS 15000U
+
+/* The alarm's quiet wake-up, and the only reason anything here runs before the
+ * board exists.
+ *
+ * A board sleeping until the morning counts the night on its internal RC
+ * oscillator, which is worth minutes by dawn. So the sleep is taken in hops:
+ * this one wakes ten minutes early, brings up nothing but Wi-Fi, asks a time
+ * server what the hour really is, and either goes straight back down until a
+ * minute before the alarm or - if the corrected clock says the alarm is nearly
+ * here - lets the ordinary boot carry on. The panel is never lit and the
+ * peripheral rail is never raised: on a board that wires PERIPHERAL_POWER_GPIO
+ * it is still held low from the sleep before this one.
+ *
+ * Returns true when Wi-Fi and the clock have been started, so app_main does
+ * not start either of them twice. */
+static bool alarm_quiet_wake(const device_settings_t *settings, bool settings_read)
+{
+    if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER) return false;
+    if (!settings_read || !alarm_config_valid(&settings->alarm)) {
+        /* The timer fired but there is nothing to ring: the alarm was switched
+         * off through the web while the board slept. An ordinary boot, which
+         * is a device on its home screen rather than one that quietly went
+         * back to sleep with no way to tell. */
+        ESP_LOGW(TAG, "woken by the alarm timer with no alarm set; booting");
+        return false;
+    }
+
+    ESP_LOGI(TAG, "alarm check: bringing up Wi-Fi to correct the clock");
+    start_optional("Wi-Fi", wifi_provisioning_init());
+    start_optional("Wi-Fi", wifi_provisioning_start());
+    device_clock_init(settings->ntp_server, settings->timezone);
+    /* A failure here is not fatal: the clock the board woke with is the one it
+     * went to sleep with plus however far the oscillator drifted, which is
+     * still close enough to ring on. */
+    (void)device_clock_wait_sync(ALARM_SYNC_WAIT_MS);
+
+    int weekday = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    const bool clock_valid = device_clock_moment(&weekday, &hour, &minute, &second);
+    uint32_t ahead = 0U;
+    if (clock_valid) {
+        (void)alarm_schedule_next_seconds(&settings->alarm, weekday, hour, minute, second,
+                                          &ahead);
+    }
+    uint32_t sleep_seconds = 0U;
+    const alarm_boot_action_t action =
+        alarm_boot_decide(&settings->alarm, clock_valid, ahead, &sleep_seconds);
+    if (action == ALARM_BOOT_SLEEP_AGAIN) {
+        ESP_LOGI(TAG, "alarm in %u s; sleeping %u s more", (unsigned int)ahead,
+                 (unsigned int)sleep_seconds);
+        /* Or the radio going down raises a disconnect that the reconnect
+         * machinery answers by bringing Wi-Fi straight back up. */
+        (void)wifi_provisioning_stop();
+        board_deep_sleep_again(sleep_seconds);  /* does not return */
+    }
+    if (action == ALARM_BOOT_PROCEED) {
+        ESP_LOGI(TAG, "alarm in %u s; staying up for it", (unsigned int)ahead);
+        alarm_boot_mark_pending();
+    }
+    return true;
+}
+
 static void input_log_task(void *arg)
 {
     (void)arg;
@@ -76,21 +148,31 @@ void app_main(void)
     if (!settings_read) {
         ESP_LOGW(TAG, "settings unreadable at boot; splash drawn unflipped");
     }
+    /* Before the board, and the only thing that is: this may not be a boot at
+     * all but a hop in the night, and a hop that lights the panel has already
+     * failed at being quiet. It either does not return or leaves the ordinary
+     * boot to carry on below. */
+    const bool network_started = alarm_quiet_wake(&boot_settings, settings_read);
     // Fatal on purpose: without the board there is no screen, no sound and no
     // controls, and without player_control and the UI there is nothing to
     // drive them with. A reboot loop is at least an honest signal there.
     ESP_ERROR_CHECK(board_init(settings_read && boot_settings.flip_vertical,
-                               settings_read && boot_settings.flip_horizontal));
-    start_optional("Wi-Fi", wifi_provisioning_init());
-    start_optional("Wi-Fi", wifi_provisioning_start());
-    // After Wi-Fi is up so the first query has somewhere to go, but it does
-    // not depend on being connected - SNTP retries on its own and the clock
-    // reads unset until an answer arrives.
-    /* The zone and the server come off the card, and a card that would not
-     * read leaves both at their defaults - a clock on Moscow time is what this
-     * device had before either was a setting. */
-    device_clock_init(settings_read ? boot_settings.ntp_server : NULL,
-                      settings_read ? boot_settings.timezone : NULL);
+                               settings_read && boot_settings.flip_horizontal,
+                               alarm_boot_pending()));
+    /* Both may already be up: the alarm check above needs the network and the
+     * clock before the board exists, and neither is started twice. */
+    if (!network_started) {
+        start_optional("Wi-Fi", wifi_provisioning_init());
+        start_optional("Wi-Fi", wifi_provisioning_start());
+        // After Wi-Fi is up so the first query has somewhere to go, but it does
+        // not depend on being connected - SNTP retries on its own and the clock
+        // reads unset until an answer arrives.
+        /* The zone and the server come off the card, and a card that would not
+         * read leaves both at their defaults - a clock on Moscow time is what
+         * this device had before either was a setting. */
+        device_clock_init(settings_read ? boot_settings.ntp_server : NULL,
+                          settings_read ? boot_settings.timezone : NULL);
+    }
     /* Same place and the same reason: it waits for the network on its own,
      * and it reads its service and its coordinates off the same card. */
     start_optional("weather", weather_init(settings_read ? &boot_settings : NULL));

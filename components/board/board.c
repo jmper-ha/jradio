@@ -1198,9 +1198,45 @@ bool board_deep_sleep_supported(void)
 #endif
 }
 
-void board_deep_sleep(void)
+/* The wake sources, armed the same way on both paths into the sleep: the
+ * button's pull-up has to be the RTC pad's own - the digital pad's is gone the
+ * instant the chip sleeps, and the input would float and wake on noise - and
+ * the timer is only armed when the alarm asked for one. */
+#ifdef BOARD_CAN_SLEEP
+static void board_arm_wake_sources(uint32_t wake_after_seconds)
+{
+    (void)rtc_gpio_pullup_en(BUTTON_SLEEP_GPIO);
+    (void)rtc_gpio_pulldown_dis(BUTTON_SLEEP_GPIO);
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_sleep_enable_ext1_wakeup_io(
+        1ULL << BUTTON_SLEEP_GPIO, ESP_EXT1_WAKEUP_ANY_LOW));
+    if (wake_after_seconds > 0U) {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(
+            esp_sleep_enable_timer_wakeup((uint64_t)wake_after_seconds * 1000000ULL));
+        ESP_LOGW(TAG, "waking in %u s for the alarm", (unsigned int)wake_after_seconds);
+    }
+}
+#endif
+
+void board_deep_sleep_again(uint32_t wake_after_seconds)
 {
 #ifndef BOARD_CAN_SLEEP
+    (void)wake_after_seconds;
+    ESP_LOGE(TAG, "deep sleep refused: no wake button on an RTC pin");
+    return;
+#else
+    /* Nothing to shut down: this is a board that woke on the timer, found the
+     * alarm still far off and never initialised anything. The peripheral rail
+     * is where the previous sleep left it, held low across the wake. */
+    board_arm_wake_sources(wake_after_seconds);
+    ESP_LOGW(TAG, "back to deep sleep");
+    esp_deep_sleep_start();
+#endif
+}
+
+void board_deep_sleep(uint32_t wake_after_seconds)
+{
+#ifndef BOARD_CAN_SLEEP
+    (void)wake_after_seconds;
     ESP_LOGE(TAG, "deep sleep refused: no wake button on an RTC pin");
     return;
 #else
@@ -1228,19 +1264,13 @@ void board_deep_sleep(void)
         if (gpio_get_level(BUTTON_SLEEP_GPIO) != 0) break;
         vTaskDelay(pdMS_TO_TICKS(20));
     }
-    /* The internal pull-up of the digital pad is gone once the chip sleeps;
-     * what holds the line high then is the RTC pad's own, so it is enabled
-     * here. Without it the input floats and the board wakes on noise. */
-    (void)rtc_gpio_pullup_en(BUTTON_SLEEP_GPIO);
-    (void)rtc_gpio_pulldown_dis(BUTTON_SLEEP_GPIO);
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_sleep_enable_ext1_wakeup_io(
-        1ULL << BUTTON_SLEEP_GPIO, ESP_EXT1_WAKEUP_ANY_LOW));
+    board_arm_wake_sources(wake_after_seconds);
     ESP_LOGW(TAG, "entering deep sleep");
     esp_deep_sleep_start();
 #endif
 }
 
-esp_err_t board_init(bool flip_vertical, bool flip_horizontal)
+esp_err_t board_init(bool flip_vertical, bool flip_horizontal, bool dark)
 {
     ESP_LOGI(TAG, "initializing input, PWM backlight, I2S and " BOARD_PANEL_NAME);
     /* Before any of them is addressed, and before the hold from a previous
@@ -1251,7 +1281,9 @@ esp_err_t board_init(bool flip_vertical, bool flip_horizontal)
     ESP_RETURN_ON_ERROR(board_audio_init(), TAG, "initialize PCM5102 I2S output failed");
     ESP_RETURN_ON_ERROR(board_display_init(flip_vertical, flip_horizontal), TAG,
                         "initialize " BOARD_PANEL_NAME " failed");
-    ESP_RETURN_ON_ERROR(board_backlight_set(50), TAG, "set initial backlight failed");
-    ESP_LOGI(TAG, "board initialized; display shows the boot splash");
+    ESP_RETURN_ON_ERROR(board_backlight_set(dark ? 0 : 50), TAG,
+                        "set initial backlight failed");
+    ESP_LOGI(TAG, "board initialized; display shows the boot splash%s",
+             dark ? " behind a dark backlight" : "");
     return ESP_OK;
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 /* Wall-clock time, kept by SNTP.
  *
@@ -27,6 +28,19 @@ void device_clock_apply(const char *server, const char *timezone_id);
  * true afterwards even if the network goes away - the oscillator keeps
  * counting, and a clock that drifts a little beats a clock that blanks. */
 bool device_clock_now(int *hour, int *minute);
+/* Everything the alarm needs in one reading, so the four fields cannot come
+ * from two sides of a minute boundary: weekday counting from Sunday as 0, the
+ * hour, the minute and the second. False until the first synchronisation -
+ * except after a deep sleep, where the RTC kept counting and the clock is
+ * usable the moment the chip comes back, drift and all. */
+bool device_clock_moment(int *weekday, int *hour, int *minute, int *second);
+
+/* Blocks until SNTP reports a fresh answer or the timeout runs out; true when
+ * one arrived. Only the alarm's quiet wake uses it: the clock it woke with is
+ * the one the RTC's internal oscillator kept through the night, and this is
+ * what trims the minutes of drift off it before the last hop is measured. */
+bool device_clock_wait_sync(uint32_t timeout_ms);
+
 /* The local date, under the same rule: false until the first synchronisation.
  * `month` is 1..12 and `weekday` counts from Sunday as 0, the way struct tm
  * does, because that is what every reader has to feed a name table with. */

@@ -38,6 +38,7 @@
 #include "ui_settings_model.h"
 #include "ui_station_list.h"
 #include "ui_text_scroll.h"
+#include "alarm_schedule.h"
 #include "sleep_timer.h"
 #include "ui_status_bar.h"
 #include "weather.h"
@@ -562,6 +563,22 @@ static uint32_t s_sleep_fade_started_ms;
 static bool s_brightness_save_pending;
 static uint32_t s_brightness_changed_ms;
 
+/* The alarm clock. The guard turns "is it the alarm's minute" - asked on every
+ * pass - into one firing; the ring is then pending until there is a network to
+ * reach the station over, the way autoplay's is. */
+static alarm_guard_t s_alarm_guard;
+static bool s_alarm_ring_pending;
+static uint32_t s_alarm_ring_started_ms;
+/* The panel stays dark between the alarm's own boot and the alarm itself: the
+ * board comes up a minute early on purpose, and lighting a bedroom at 6:59 is
+ * not what was asked for. Cleared by the alarm going off or by any press. */
+static bool s_alarm_boot_dark;
+/* How long the ring waits for Wi-Fi before trying anyway: a station cannot be
+ * selected while the network is down - player_control_decide() answers INVALID
+ * - and an alarm that gives up silently is worse than one that tries and shows
+ * the error. */
+#define UI_ALARM_NETWORK_WAIT_MS 60000U
+
 /* Every write to the backlight goes through here, so the screensaver knows
  * what the panel is at and can put it back: it applies its own level on every
  * pass, and a direct write from a settings reload would otherwise have lit the
@@ -569,6 +586,9 @@ static uint32_t s_brightness_changed_ms;
 static uint8_t s_backlight_applied = 255U;
 static void ui_backlight_apply(uint8_t percent)
 {
+    /* The minute the board is up for the alarm and nothing else: every level
+     * anyone asks for reads as zero until it rings. */
+    if (s_alarm_boot_dark) percent = 0U;
     if (percent == s_backlight_applied) return;
     s_backlight_applied = percent;
     (void)board_backlight_set(percent);
@@ -4828,7 +4848,19 @@ static void ui_enter_deep_sleep(void)
     (void)bt_link_set_mode(JBT_MODE_OFF, UI_SLEEP_BT_TIMEOUT_MS);
     (void)wifi_provisioning_stop();
 
-    board_deep_sleep();  /* does not return */
+    /* The alarm is what decides whether the board sleeps with a timer as well
+     * as the button. Asked here rather than remembered, so an alarm moved or
+     * switched off in the browser a minute ago is the one that counts. The
+     * clock is read last, with the Wi-Fi already down: SNTP cannot move it
+     * under us between the reading and the sleep. */
+    int weekday = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    const bool clock_valid = device_clock_moment(&weekday, &hour, &minute, &second);
+    const uint32_t wake_after = alarm_sleep_wake_after_seconds(
+        &s_device_settings.alarm, clock_valid, weekday, hour, minute, second);
+    board_deep_sleep(wake_after);  /* does not return */
 }
 
 /* One pass of the sleep timer's fade; the last one sends the board to sleep.
@@ -4877,6 +4909,13 @@ static void ui_handle_input(board_input_action_t action)
         return;
     }
     ui_sleep_fade_cancel();
+    /* Somebody is up before the alarm is: the panel is theirs again. Before
+     * the screensaver's own wake, so the level this puts back is the one the
+     * saver then keeps. */
+    if (s_alarm_boot_dark) {
+        s_alarm_boot_dark = false;
+        ui_backlight_apply(s_device_settings.brightness);
+    }
     /* A press that only wakes the screensaver goes no further: with the panel
      * dark nobody could see what it would have done. */
     if (ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms())) {
@@ -5720,6 +5759,90 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
     }
 }
 
+/* Is this the alarm's minute? Asked once a second rather than on every pass:
+ * the question is about a minute on a wall clock, and reading the clock a
+ * hundred times a second to answer it is work for nothing. */
+#define UI_ALARM_CHECK_MS 1000U
+static uint32_t s_alarm_checked_ms;
+static void ui_alarm_poll(uint32_t now_ms)
+{
+    if ((uint32_t)(now_ms - s_alarm_checked_ms) < UI_ALARM_CHECK_MS) return;
+    s_alarm_checked_ms = now_ms;
+    int weekday = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    if (!device_clock_moment(&weekday, &hour, &minute, &second)) return;
+    if (!alarm_guard_take_due(&s_alarm_guard, &s_device_settings.alarm, weekday, hour,
+                              minute)) {
+        return;
+    }
+    ESP_LOGI(TAG, "alarm: %02d:%02d, station %u at volume %u", hour, minute,
+             (unsigned int)s_device_settings.alarm.station,
+             (unsigned int)s_device_settings.alarm.volume);
+    s_alarm_ring_pending = true;
+    s_alarm_ring_started_ms = now_ms;
+}
+
+/* The alarm going off. Held back until there is a network, the way autoplay
+ * is and for the same reason: player_control_decide() answers INVALID for a
+ * network source while the Wi-Fi is down, and the command would be dropped
+ * with nothing on screen to say why. */
+static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
+{
+    if (!s_alarm_ring_pending) return;
+    const bool waited =
+        (uint32_t)(ui_tick_get_ms() - s_alarm_ring_started_ms) >= UI_ALARM_NETWORK_WAIT_MS;
+    if (!snapshot->wifi_connected && !waited) return;
+    s_alarm_ring_pending = false;
+
+    /* The panel first, whatever else follows: the light is half of what an
+     * alarm is, and it has been held down since this boot began. */
+    s_alarm_boot_dark = false;
+    ui_backlight_apply(s_device_settings.brightness);
+    (void)ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms());
+
+    /* Applied, never saved - the poll loop only writes a volume that a knob
+     * made pending. Waking quietly must not cost the listener the level they
+     * set last night, and a reboot has to come back to theirs and not to
+     * this one. */
+    board_audio_set_volume(s_device_settings.alarm.volume);
+
+    /* Nothing else may start on top of it: autoplay is still waiting for the
+     * network at this point on an alarm boot, and would resume last night's
+     * source over this morning's station. */
+    s_autoplay_pending = false;
+
+    const size_t index = (size_t)s_device_settings.alarm.station - 1U;
+    if (player_control_station_at(index) == NULL) {
+        /* The playlist was edited down since the alarm was set. The screen is
+         * lit and the volume is up, which is as much of an alarm as there is
+         * to give. */
+        ESP_LOGW(TAG, "alarm: station %u is not in the catalogue",
+                 (unsigned int)s_device_settings.alarm.station);
+        return;
+    }
+    (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_INTERNET_RADIO);
+    const player_command_t select = {
+        .kind = PLAYER_COMMAND_SELECT_SOURCE,
+        .source = AUDIO_SOURCE_INTERNET_RADIO,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    if (!ui_submit_player_command(&select)) return;
+    /* The station by its row, not PLAYER_COMMAND_PLAY: play resumes whatever
+     * was last on, and the alarm names its own. */
+    const player_command_t start = {
+        .kind = PLAYER_COMMAND_SELECT_ITEM,
+        .source = AUDIO_SOURCE_INTERNET_RADIO,
+        .item_index = index,
+    };
+    (void)ui_submit_player_command(&start);
+    ui_load_source_screen(AUDIO_SOURCE_INTERNET_RADIO);
+    /* That screen arms the "no station to play" fallback, which opens the list
+     * after a moment; the alarm has a station. */
+    s_waiting_for_source_item = false;
+}
+
 /* Runs every poll, not only when something changed: the meter is an animation,
  * and its whole job is to keep moving between PCM blocks - 26 ms of MP3, 93 ms
  * of FLAC, against a 10 ms loop. */
@@ -5841,10 +5964,15 @@ static void ui_task(void *arg)
             ESP_LOGI(TAG, "sleep timer expired; fading out");
         }
         if (s_sleep_fading) ui_sleep_fade_step(ui_tick_get_ms());
+        /* The alarm watches the same clock in the same pass. Not while the
+         * sleep timer is fading out: that ends in a deep sleep a few seconds
+         * from now, and whatever the alarm started would be stopped again. */
+        if (!s_sleep_fading) ui_alarm_poll(ui_tick_get_ms());
         ui_screensaver_poll(ui_tick_get_ms());
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
+        ui_alarm_ring_step(&snapshot);
         // Only the strip on screen: the others are on parents LVGL is not
         // drawing, so writing them would be work for nothing.
         {
@@ -6065,6 +6193,11 @@ esp_err_t ui_init(void)
     ui_create_station_list_screen();
     ui_create_screensaver();
     ui_screensaver_init(&s_saver, ui_tick_get_ms());
+    alarm_guard_init(&s_alarm_guard);
+    /* Taken once, and it decides two things further down: the panel stays dark
+     * until the alarm rings, and autoplay does not resume last night's source
+     * over this morning's station. */
+    s_alarm_boot_dark = alarm_boot_take_pending();
     if (!device_settings_init(&s_device_settings)) {
         lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
     } else {
@@ -6088,7 +6221,11 @@ esp_err_t ui_init(void)
     // Asked with both volumes assumed ready: this only decides whether there is
     // anything to wait for at all. What is actually there is settled later, by
     // ui_autoplay_step(), once the drive has had time to enumerate.
-    s_autoplay_pending = ui_autoplay_decide(&s_device_settings, FILE_BROWSER_MEDIA_READY,
+    /* Never on a boot the alarm asked for: it is still set here, nothing has
+     * had a key to press yet, and the station about to ring is not the one
+     * that was playing last night. */
+    s_autoplay_pending = !s_alarm_boot_dark &&
+                         ui_autoplay_decide(&s_device_settings, FILE_BROWSER_MEDIA_READY,
                                             FILE_BROWSER_MEDIA_READY, true,
                                             BOARD_HAS_YANDEX_MUSIC,
                                             BOARD_HAS_DLNA) != UI_AUTOPLAY_HOME;

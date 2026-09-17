@@ -125,6 +125,21 @@ alarm_boot_action_t alarm_boot_decide(const alarm_config_t *config, bool clock_v
     return ALARM_BOOT_SLEEP_AGAIN;
 }
 
+#ifdef ESP_PLATFORM
+static bool s_boot_pending;
+
+void alarm_boot_mark_pending(void) { s_boot_pending = true; }
+
+bool alarm_boot_pending(void) { return s_boot_pending; }
+
+bool alarm_boot_take_pending(void)
+{
+    const bool pending = s_boot_pending;
+    s_boot_pending = false;
+    return pending;
+}
+#endif
+
 static bool two_digits(const char *text, uint8_t *out)
 {
     if (text[0] < '0' || text[0] > '9' || text[1] < '0' || text[1] > '9') return false;

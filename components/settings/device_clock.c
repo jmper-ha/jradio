@@ -9,6 +9,8 @@
 
 #include "esp_log.h"
 #include "esp_netif_sntp.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "device_settings.h"
 #include "device_timezone.h"
@@ -103,6 +105,34 @@ bool device_clock_now(int *hour, int *minute)
     return true;
 }
 
+bool device_clock_moment(int *weekday, int *hour, int *minute, int *second)
+{
+    if (weekday == NULL || hour == NULL || minute == NULL || second == NULL) return false;
+    const time_t now = time(NULL);
+    if (now < 1600000000) return false;
+    struct tm local;
+    localtime_r(&now, &local);
+    *weekday = local.tm_wday;
+    *hour = local.tm_hour;
+    *minute = local.tm_min;
+    /* A leap second reads as 60; the callers range-check their inputs, so it
+     * is pulled back rather than handed on. */
+    *second = local.tm_sec > 59 ? 59 : local.tm_sec;
+    return true;
+}
+
+bool device_clock_wait_sync(uint32_t timeout_ms)
+{
+    if (!s_started) return false;
+    const esp_err_t err = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(timeout_ms));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "no answer from %s in %u ms: %s", s_server, (unsigned int)timeout_ms,
+                 esp_err_to_name(err));
+        return false;
+    }
+    return true;
+}
+
 bool device_clock_today(int *day, int *month, int *weekday)
 {
     if (day == NULL || month == NULL || weekday == NULL) return false;
@@ -124,6 +154,21 @@ void device_clock_init(const char *server, const char *timezone_id)
 {
     (void)server;
     (void)timezone_id;
+}
+
+bool device_clock_moment(int *weekday, int *hour, int *minute, int *second)
+{
+    (void)weekday;
+    (void)hour;
+    (void)minute;
+    (void)second;
+    return false;
+}
+
+bool device_clock_wait_sync(uint32_t timeout_ms)
+{
+    (void)timeout_ms;
+    return false;
 }
 
 void device_clock_apply(const char *server, const char *timezone_id)

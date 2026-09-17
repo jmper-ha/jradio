@@ -120,6 +120,19 @@ typedef enum {
 alarm_boot_action_t alarm_boot_decide(const alarm_config_t *config, bool clock_valid,
                                       uint32_t seconds_to_alarm, uint32_t *sleep_seconds);
 
+#ifdef ESP_PLATFORM
+/* This boot exists because the alarm is about to go off.
+ *
+ * Set by the boot path before anything else runs and taken once by the UI, so
+ * that autoplay does not resume last night's station a minute before the
+ * alarm switches to this morning's - and so the panel stays dark until it
+ * rings. A plain flag needs no lock: it is written while app_main is still the
+ * only task and read after that. */
+void alarm_boot_mark_pending(void);
+bool alarm_boot_pending(void);
+bool alarm_boot_take_pending(void);
+#endif
+
 /* "HH:MM" both ways, since the setting is stored and sent as text. The parser
  * takes exactly five characters and two-digit fields - "7:5" is refused, not
  * guessed at. */

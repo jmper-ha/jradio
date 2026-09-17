@@ -65,7 +65,10 @@
  * UI_STRIP_SLEEP_TEXT_FITS is false there and the panel shows the mark alone;
  * the number is on the screensaver and on the web page, and the mark's job in
  * the strip is to say that the device is going to switch itself off, which a
- * crescent says on its own. */
+ * crescent says on its own.
+ *
+ * The alarm clock's bell stands in the same slot when no timer is running -
+ * one mark at a time, and the timer wins. */
 #define UI_STRIP_SLEEP_ICON_PX UI_STRIP_WEATHER_ICON_PX
 #define UI_STRIP_SLEEP_ICON_X (UI_STRIP_CLOCK_X + UI_STRIP_CLOCK_W + 2)
 #define UI_STRIP_SLEEP_ICON_Y ((UI_STRIP_H - UI_STRIP_SLEEP_ICON_PX) / 2)

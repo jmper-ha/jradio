@@ -218,6 +218,9 @@ typedef struct {
     lv_obj_t *sleep_icon;
     lv_obj_t *sleep_text;
     uint16_t sleep_minutes;
+    /* Whether that same icon is currently the alarm's bell rather than the
+     * timer's crescent: one mark at a time in the one slot. */
+    bool alarm_shown;
     lv_obj_t *bars[UI_WIFI_BARS];
     /* Per strip, not shared: only the active screen's is refreshed, so a
      * shared cache would go stale the moment the screen changed and leave the
@@ -737,8 +740,10 @@ static const char *ui_radio_state_text(player_playback_state_t state)
 /* The sleep timer's crescent at this panel's strip size. Two levels so the
  * size macro is expanded before it is pasted - the same shape the weather's
  * picture uses below, and the fonts before it. */
+#define UI_ALARM_BITMAP_(px) ui_feed_icon_alarm_##px
 #define UI_SLEEP_BITMAP_(px) ui_feed_icon_bedtime_##px
 #define UI_SLEEP_BITMAP(px) UI_SLEEP_BITMAP_(px)
+#define UI_ALARM_BITMAP(px) UI_ALARM_BITMAP_(px)
 
 /* Builds the strip on `screen`. Left slot names the screen, centre carries the
  * clock and the right the signal - the same three positions everywhere, so
@@ -820,6 +825,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     lv_label_set_text(strip->sleep_text, "");
     lv_obj_add_flag(strip->sleep_text, LV_OBJ_FLAG_HIDDEN);
     strip->sleep_minutes = 0U;
+    strip->alarm_shown = false;
 
     for (int bar = 0; bar < UI_WIFI_BARS; ++bar) {
         lv_obj_t *block = lv_obj_create(screen);
@@ -1482,27 +1488,45 @@ static void ui_screensaver_poll(uint32_t now_ms)
 /* Shows or hides the crescent and its minutes. Zero minutes is the whole of
  * "no timer" - see sleep_timer_remaining_minutes(), which never returns it
  * while one is running. */
+/* The one slot beside the clock, and what stands in it: the sleep timer's
+ * crescent with the minutes left, or the alarm clock's bell, or nothing.
+ *
+ * The timer wins when both are set, which is Ден's call and the right one: the
+ * timer is the one about to act, and the alarm will still be there tomorrow.
+ * The bell carries no time - the slot holds two characters and an alarm's is
+ * five - and it does not need to: the mark's job is to say the device will act
+ * on its own, and when is on the settings page and in the browser. */
 static void ui_status_strip_update_sleep(ui_status_strip_t *strip)
 {
     const uint16_t minutes = sleep_timer_service_remaining_minutes();
-    if (minutes == strip->sleep_minutes) return;
-    const bool was_shown = strip->sleep_minutes != 0U;
+    const bool alarm = minutes == 0U && alarm_config_valid(&s_device_settings.alarm);
+    if (minutes == strip->sleep_minutes && alarm == strip->alarm_shown) return;
+    const bool was_shown = strip->sleep_minutes != 0U || strip->alarm_shown;
+    const bool was_alarm = strip->alarm_shown;
+    const bool shown = minutes != 0U || alarm;
     strip->sleep_minutes = minutes;
-    if ((minutes != 0U) != was_shown) {
-        if (minutes != 0U) {
+    strip->alarm_shown = alarm;
+
+    if (alarm != was_alarm) {
+        lv_image_set_src(strip->sleep_icon,
+                         alarm ? (const void *)&UI_ALARM_BITMAP(UI_STRIP_SLEEP_ICON_PX)
+                               : (const void *)&UI_SLEEP_BITMAP(UI_STRIP_SLEEP_ICON_PX));
+    }
+    if (shown != was_shown) {
+        if (shown) {
             lv_obj_clear_flag(strip->sleep_icon, LV_OBJ_FLAG_HIDDEN);
-            if (UI_STRIP_SLEEP_TEXT_FITS) {
-                lv_obj_clear_flag(strip->sleep_text, LV_OBJ_FLAG_HIDDEN);
-            }
         } else {
             lv_obj_add_flag(strip->sleep_icon, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(strip->sleep_text, LV_OBJ_FLAG_HIDDEN);
         }
     }
-    if (minutes == 0U) return;
-    char text[8];
-    snprintf(text, sizeof(text), "%u", (unsigned)minutes);
-    ui_set_label_text_if_changed(strip->sleep_text, text);
+    if (minutes != 0U && UI_STRIP_SLEEP_TEXT_FITS) {
+        char text[8];
+        snprintf(text, sizeof(text), "%u", (unsigned)minutes);
+        ui_set_label_text_if_changed(strip->sleep_text, text);
+        lv_obj_clear_flag(strip->sleep_text, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(strip->sleep_text, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void ui_status_strip_update(ui_status_strip_t *strip,

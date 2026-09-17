@@ -52,6 +52,9 @@ WEATHER_SIZES = (16, 20, 24, 32)
 # The sleep timer's crescent takes exactly the weather's sizes: it stands
 # beside the clock in the strip, and beside the screensaver's date.
 EXTRA_SIZES["bedtime"] = WEATHER_SIZES
+# The alarm clock sits in the same slot in the status strip as the sleep
+# timer's crescent, so it needs the same sizes.
+EXTRA_SIZES["alarm"] = WEATHER_SIZES
 WEATHER_ICONS = ("clear_day", "clear_night", "partly_cloudy_day", "partly_cloudy_night",
                  "cloudy", "fog", "rain", "snow", "sleet", "thunderstorm")
 for _name in WEATHER_ICONS:
@@ -244,6 +247,7 @@ ICONS = (
     # clear night - the two never mean the same thing, and they are told apart
     # by where they stand and by the accent this one is painted in.
     ("bedtime", ("glyph", 0xEF44)),
+    ("alarm", ("glyph", 0xE855)),
     ("clear_day", ("glyph", 0xE81A)),
     ("clear_night", ("glyph", 0xF159)),
     ("partly_cloudy_day", ("glyph", 0xF172)),

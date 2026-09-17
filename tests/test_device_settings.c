@@ -661,6 +661,70 @@ static void test_the_bluetooth_output_persists_and_forgets(void)
     assert(!device_settings_bt_speaker_at(&settings, 4, &known));
 }
 
+static void test_the_alarm_persists_and_is_checked(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    /* Off, but already pointing at something sensible, so switching it on is
+     * one tap rather than four. */
+    assert(!settings.alarm.enabled);
+    assert(settings.alarm.hour == DEVICE_ALARM_HOUR_DEFAULT);
+    assert(settings.alarm.minute == DEVICE_ALARM_MINUTE_DEFAULT);
+    assert(settings.alarm.days == ALARM_DAYS_ALL);
+    assert(settings.alarm.station == DEVICE_ALARM_STATION_DEFAULT);
+    assert(settings.alarm.volume == DEVICE_ALARM_VOLUME_DEFAULT);
+
+    assert(device_settings_set_alarm_enabled(&settings, true));
+    assert(device_settings_set_alarm_time(&settings, 6U, 45U));
+    assert(device_settings_set_alarm_days(&settings, 0x3EU));
+    assert(device_settings_set_alarm_station(&settings, 12U));
+    assert(device_settings_set_alarm_volume(&settings, 35U));
+
+    /* Refused, not clamped, and the model is left as it was. */
+    assert(!device_settings_set_alarm_time(&settings, 24U, 0U));
+    assert(!device_settings_set_alarm_time(&settings, 6U, 60U));
+    /* The state worth making unreachable: switched on, no day to ring on. */
+    assert(!device_settings_set_alarm_days(&settings, 0U));
+    assert(!device_settings_set_alarm_days(&settings, 0x80U));
+    assert(!device_settings_set_alarm_station(&settings, DEVICE_ALARM_STATION_MAX + 1U));
+    assert(!device_settings_set_alarm_volume(&settings, 101U));
+
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.alarm.enabled);
+    assert(reloaded.alarm.hour == 6U && reloaded.alarm.minute == 45U);
+    assert(reloaded.alarm.days == 0x3EU);
+    assert(reloaded.alarm.station == 12U);
+    assert(reloaded.alarm.volume == 35U);
+    assert(alarm_config_valid(&reloaded.alarm));
+}
+
+/* A hand-edited card: every damaged field falls back to what the device would
+ * have had anyway, and the alarm still rings. */
+static void test_a_corrupt_alarm_leaves_the_defaults(void)
+{
+    (void)unlink(test_path);
+    FILE *file = fopen(test_path, "w");
+    assert(file != NULL);
+    fputs("alarm_enabled,1\n"
+          "alarm_time,7-30\n"
+          "alarm_days,0\n"
+          "alarm_station,200\n"
+          "alarm_volume,abc\n",
+          file);
+    fclose(file);
+
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    assert(settings.alarm.enabled);
+    assert(settings.alarm.hour == DEVICE_ALARM_HOUR_DEFAULT);
+    assert(settings.alarm.minute == DEVICE_ALARM_MINUTE_DEFAULT);
+    assert(settings.alarm.days == ALARM_DAYS_ALL);
+    assert(settings.alarm.station == DEVICE_ALARM_STATION_DEFAULT);
+    assert(settings.alarm.volume == DEVICE_ALARM_VOLUME_DEFAULT);
+}
+
 int main(void)
 {
     test_the_bluetooth_output_persists_and_forgets();
@@ -681,6 +745,8 @@ int main(void)
     test_the_screensaver_settings_persist_and_are_checked();
     test_brightness_persists_and_refuses_a_dark_panel();
     test_a_corrupt_brightness_leaves_the_default();
+    test_the_alarm_persists_and_is_checked();
+    test_a_corrupt_alarm_leaves_the_defaults();
     puts("device_settings tests passed");
     return 0;
 }

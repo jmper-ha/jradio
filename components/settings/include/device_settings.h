@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "alarm_schedule.h"
 #include "device_language.h"
 #include "device_timezone.h"
 
@@ -157,6 +158,20 @@ typedef enum {
 #define DEVICE_WEATHER_LATITUDE_DEFAULT "55.75"
 #define DEVICE_WEATHER_LONGITUDE_DEFAULT "37.62"
 
+/* The alarm before anyone has set it: seven in the morning, every day, the
+ * first station, and quieter than the device's own default - being woken is
+ * not the moment to discover the volume was left at eighty.
+ *
+ * The station is a number counting from 1, and the cap is
+ * STATION_CATALOG_MAX_ENTRIES written out: this layer stores what the user
+ * picked off a list and has no business depending on the catalog, the way the
+ * Yandex and DLNA sizes above are spelled out here too. */
+#define DEVICE_ALARM_HOUR_DEFAULT 7
+#define DEVICE_ALARM_MINUTE_DEFAULT 0
+#define DEVICE_ALARM_STATION_DEFAULT 1
+#define DEVICE_ALARM_STATION_MAX 99
+#define DEVICE_ALARM_VOLUME_DEFAULT 40
+
 /* Loud enough to be obviously working, quiet enough that a fresh flash does
  * not startle anyone. */
 #define DEVICE_VOLUME_DEFAULT 80
@@ -222,6 +237,11 @@ typedef struct {
     /* The idle backlight, a percentage like `brightness` and refused at zero
      * for the same reason: zero is the blank mode, not a level. */
     unsigned char screensaver_brightness;
+    /* The alarm clock; see alarm_schedule.h, which owns both the shape and
+     * every question that can be asked of it. One struct rather than five
+     * loose fields because it is one thing to the user and travels as one to
+     * the page and to the sleep. */
+    alarm_config_t alarm;
     device_last_source_t last_source;
     char last_file[DEVICE_LAST_FILE_MAX];
     char last_yandex_id[DEVICE_LAST_YANDEX_ID_MAX];
@@ -319,6 +339,20 @@ bool device_settings_set_screensaver_seconds(device_settings_t *settings, unsign
 bool device_settings_screensaver_seconds_valid(unsigned int seconds);
 bool device_settings_set_screensaver_brightness(device_settings_t *settings,
                                                 unsigned char brightness);
+bool device_settings_set_alarm_enabled(device_settings_t *settings, bool enabled);
+/* Refused outside the day, not wrapped: a time nobody set is an alarm that
+ * goes off at a time nobody expects. */
+bool device_settings_set_alarm_time(device_settings_t *settings, unsigned int hour,
+                                    unsigned int minute);
+/* The day mask out of alarm_schedule.h. Zero is refused rather than stored:
+ * an alarm with no days is switched on and does nothing, which is the one
+ * state worth making unreachable - the page will not let the last day go
+ * either. */
+bool device_settings_set_alarm_days(device_settings_t *settings, unsigned int days);
+/* The station's number as it is printed, counting from 1. Zero is allowed and
+ * means none is chosen, which is what a device with an empty playlist has. */
+bool device_settings_set_alarm_station(device_settings_t *settings, unsigned int number);
+bool device_settings_set_alarm_volume(device_settings_t *settings, unsigned char volume);
 /* Recorded as playback starts, so a power cut still leaves the last choice
  * behind. Writing "none" clears the resume point. */
 bool device_settings_set_last_source(device_settings_t *settings,

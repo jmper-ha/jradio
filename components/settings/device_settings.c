@@ -169,6 +169,12 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         .screensaver_brightness = DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT,
         .yandex_music = true,
         .dlna = true,
+        .alarm = {.enabled = false,
+                  .hour = DEVICE_ALARM_HOUR_DEFAULT,
+                  .minute = DEVICE_ALARM_MINUTE_DEFAULT,
+                  .days = ALARM_DAYS_ALL,
+                  .station = DEVICE_ALARM_STATION_DEFAULT,
+                  .volume = DEVICE_ALARM_VOLUME_DEFAULT},
     };
     memcpy(settings->storage_path, path, strlen(path) + 1U);
     memcpy(settings->timezone, DEVICE_TIMEZONE_DEFAULT_ID,
@@ -309,6 +315,41 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         const long parsed = strtol(value, &end, 10);
         if (end != NULL && *end == '\0' && parsed > 0 && parsed <= 100) {
             settings->screensaver_brightness = (unsigned char)parsed;
+        }
+    }
+    if (read_value(path, "alarm_enabled", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->alarm.enabled);
+    }
+    if (read_value(path, "alarm_time", value, sizeof(value))) {
+        uint8_t hour = 0U;
+        uint8_t minute = 0U;
+        if (alarm_time_parse(value, &hour, &minute)) {
+            settings->alarm.hour = hour;
+            settings->alarm.minute = minute;
+        }
+    }
+    /* Anything outside the seven bits - and zero with it - leaves every day
+     * standing, which is the one reading of a damaged mask that still rings. */
+    if (read_value(path, "alarm_days", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        if (end != NULL && *end == '\0' && parsed > 0 && parsed <= (long)ALARM_DAYS_ALL) {
+            settings->alarm.days = (uint8_t)parsed;
+        }
+    }
+    if (read_value(path, "alarm_station", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        if (end != NULL && *end == '\0' && parsed >= 0 &&
+            parsed <= (long)DEVICE_ALARM_STATION_MAX) {
+            settings->alarm.station = (uint8_t)parsed;
+        }
+    }
+    if (read_value(path, "alarm_volume", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        if (end != NULL && *end == '\0' && parsed >= 0 && parsed <= 100) {
+            settings->alarm.volume = (unsigned char)parsed;
         }
     }
     if (read_value(path, "last_source", value, sizeof(value))) {
@@ -718,6 +759,61 @@ bool device_settings_set_screensaver_brightness(device_settings_t *settings,
     snprintf(text, sizeof(text), "%u", (unsigned int)brightness);
     if (!save_value(settings, "screensaver_brightness", text)) return false;
     settings->screensaver_brightness = brightness;
+    return true;
+}
+
+bool device_settings_set_alarm_enabled(device_settings_t *settings, bool enabled)
+{
+    if (settings == NULL) return false;
+    if (settings->alarm.enabled == enabled) return true;
+    if (!save_value(settings, "alarm_enabled", enabled ? "1" : "0")) return false;
+    settings->alarm.enabled = enabled;
+    return true;
+}
+
+bool device_settings_set_alarm_time(device_settings_t *settings, unsigned int hour,
+                                    unsigned int minute)
+{
+    if (settings == NULL || hour > 23U || minute > 59U) return false;
+    if (settings->alarm.hour == hour && settings->alarm.minute == minute) return true;
+    char text[6];
+    alarm_time_format(text, sizeof(text), (uint8_t)hour, (uint8_t)minute);
+    if (!save_value(settings, "alarm_time", text)) return false;
+    settings->alarm.hour = (uint8_t)hour;
+    settings->alarm.minute = (uint8_t)minute;
+    return true;
+}
+
+bool device_settings_set_alarm_days(device_settings_t *settings, unsigned int days)
+{
+    if (settings == NULL || days == 0U || days > ALARM_DAYS_ALL) return false;
+    if (settings->alarm.days == days) return true;
+    char text[8];
+    snprintf(text, sizeof(text), "%u", days);
+    if (!save_value(settings, "alarm_days", text)) return false;
+    settings->alarm.days = (uint8_t)days;
+    return true;
+}
+
+bool device_settings_set_alarm_station(device_settings_t *settings, unsigned int number)
+{
+    if (settings == NULL || number > DEVICE_ALARM_STATION_MAX) return false;
+    if (settings->alarm.station == number) return true;
+    char text[8];
+    snprintf(text, sizeof(text), "%u", number);
+    if (!save_value(settings, "alarm_station", text)) return false;
+    settings->alarm.station = (uint8_t)number;
+    return true;
+}
+
+bool device_settings_set_alarm_volume(device_settings_t *settings, unsigned char volume)
+{
+    if (settings == NULL || volume > 100U) return false;
+    if (settings->alarm.volume == volume) return true;
+    char text[8];
+    snprintf(text, sizeof(text), "%u", (unsigned int)volume);
+    if (!save_value(settings, "alarm_volume", text)) return false;
+    settings->alarm.volume = volume;
     return true;
 }
 

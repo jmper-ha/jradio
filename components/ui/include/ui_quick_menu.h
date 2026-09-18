@@ -39,6 +39,17 @@ typedef uint32_t ui_quick_mask_t;
 #define UI_QUICK_VISIBLE(item) ((ui_quick_mask_t)1U << (unsigned)(item))
 #define UI_QUICK_VISIBLE_ALL ((ui_quick_mask_t)~(ui_quick_mask_t)0U)
 
+/* How many functions the window shows at once - all of them, which is the
+ * point: a panel that exists to be read at a glance should not hide a row
+ * behind a scroll. It is four rather than UI_QUICK_ITEM_COUNT so that a fifth
+ * function added later scrolls instead of silently running off the panel, and
+ * ui.c asserts this against the height the layout leaves room for.
+ *
+ * The window is drawn only as tall as the functions it actually has, so a
+ * board whose Bluetooth module is quiet gets three rows, not three and a
+ * gap. */
+#define UI_QUICK_ROWS 4U
+
 typedef struct {
     bool open;
     /* False: the knob moves between rows. True: the knob moves the value on
@@ -46,6 +57,9 @@ typedef struct {
      * of the interaction. */
     bool editing;
     ui_quick_item_t item;
+    /* The first of the rows on screen, counted in visible items rather than in
+     * enum values: the window scrolls, and what scrolls is what is drawn. */
+    uint8_t top;
     ui_quick_mask_t visible;
     uint32_t last_input_ms;
 } ui_quick_menu_t;
@@ -111,4 +125,17 @@ extern const uint16_t ui_quick_sleep_choices[UI_QUICK_SLEEP_CHOICE_COUNT];
  * with the nearest step in that direction rather than snapped silently. */
 uint16_t ui_quick_sleep_step(uint16_t minutes, int direction);
 
+/* What the window draws, row by row. `row` counts from the top of the window,
+ * 0..UI_QUICK_ROWS-1, and a window with fewer functions than rows answers
+ * UI_QUICK_ITEM_COUNT for the rows that have nothing in them. */
+ui_quick_item_t ui_quick_menu_row_item(const ui_quick_menu_t *state, uint8_t row);
+/* Which of those rows carries the cursor. */
+uint8_t ui_quick_menu_cursor_row(const ui_quick_menu_t *state);
+/* Where the cursor is in the whole list, and how long the list is - what a
+ * scrollbar would need, and what the tests check the scrolling against. */
+uint8_t ui_quick_menu_position(const ui_quick_menu_t *state);
+
+/* The panel's own name for a function, which is not always the settings
+ * screen's: a row here is a name beside a value in a window that is not the
+ * full width, so "Sound over Bluetooth" is asked for as the speaker it is. */
 const char *ui_quick_item_label(ui_quick_item_t item, device_language_t language);

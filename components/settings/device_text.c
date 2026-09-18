@@ -63,6 +63,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_ROW_BRIGHTNESS] = {"Яркость", "Brightness"},
     [DEVICE_TEXT_ROW_SLEEP_TIMER] = {"Таймер сна", "Sleep timer"},
     [DEVICE_TEXT_ROW_ALARM] = {"Будильник", "Alarm"},
+    [DEVICE_TEXT_ROW_BT_SPEAKER] = {"Колонка BT", "BT speaker"},
     [DEVICE_TEXT_ROW_SCREENSAVER] = {"Заставка", "Screensaver"},
     [DEVICE_TEXT_SCREENSAVER_OFF] = {"Нет", "None"},
     [DEVICE_TEXT_SCREENSAVER_DIM] = {"Затемнение", "Dim"},

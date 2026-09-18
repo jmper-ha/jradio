@@ -131,10 +131,10 @@ static void test_numbers_are_range_checked(void)
     web_settings_change_t change;
     assert(parse_one("{\"field\":\"brightness\",\"value\":10}", &change));
     assert(change.value == WEB_SETTINGS_BRIGHTNESS_MIN);
-    assert(parse_one("{\"field\":\"brightness\",\"value\":90}", &change));
+    assert(parse_one("{\"field\":\"brightness\",\"value\":100}", &change));
     assert(change.value == WEB_SETTINGS_BRIGHTNESS_MAX);
     assert(!parse_one("{\"field\":\"brightness\",\"value\":9}", &change));
-    assert(!parse_one("{\"field\":\"brightness\",\"value\":91}", &change));
+    assert(!parse_one("{\"field\":\"brightness\",\"value\":101}", &change));
     assert(!parse_one("{\"field\":\"brightness\",\"value\":-5}", &change));
 
     // The volume has the whole range: silence is a thing to ask for.
@@ -308,7 +308,7 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"yandex_music\":false,\"dlna\":false,\"bt_output\":false}") != NULL);
     assert(strstr(document, "\"home_screen\":true") != NULL);
     assert(strstr(document, "\"brightness_min\":10") != NULL);
-    assert(strstr(document, "\"brightness_max\":90") != NULL);
+    assert(strstr(document, "\"brightness_max\":100") != NULL);
     /* The screensaver, in the live part - the panel's own screen changes it
        too - with its window and its list of waits, so the page offers exactly
        the steps the knob does. */

@@ -191,6 +191,84 @@ static void test_an_untouched_panel_closes_itself(void)
     assert(!ui_quick_menu_idle_expired(&state, 0xFFFFFFFFU));
 }
 
+/* Every function has a row of its own: the window is as tall as the list, and
+   the point of the panel is that nothing is hidden behind a scroll. */
+static void test_every_function_has_a_row(void)
+{
+    ui_quick_menu_t state;
+    open_with_all_rows(&state);
+    assert(ui_quick_menu_visible_count(&state) == 4U);
+    assert(ui_quick_menu_visible_count(&state) <= (uint8_t)UI_QUICK_ROWS);
+
+    assert(ui_quick_menu_row_item(&state, 0U) == UI_QUICK_ITEM_SLEEP);
+    assert(ui_quick_menu_row_item(&state, 1U) == UI_QUICK_ITEM_ALARM);
+    assert(ui_quick_menu_row_item(&state, 2U) == UI_QUICK_ITEM_BT_OUTPUT);
+    assert(ui_quick_menu_row_item(&state, 3U) == UI_QUICK_ITEM_BRIGHTNESS);
+
+    /* Walking the list twice round moves the cursor and nothing else: with
+       every function on a row there is nothing to scroll. */
+    for (int step = 0; step < 2 * (int)UI_QUICK_ITEM_COUNT; ++step) {
+        assert(ui_quick_menu_cursor_row(&state) == ui_quick_menu_position(&state));
+        assert(ui_quick_menu_row_item(&state, ui_quick_menu_cursor_row(&state)) == state.item);
+        assert(ui_quick_menu_row_item(&state, 0U) == UI_QUICK_ITEM_SLEEP);
+        (void)ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1100U);
+    }
+}
+
+/* The invariant that has to hold however many rows and functions there are, so
+   that a fifth function added later - which would scroll - is still drawn with
+   the cursor on it. */
+static void test_the_cursor_is_always_on_a_drawn_row(void)
+{
+    ui_quick_menu_t state;
+    open_with_all_rows(&state);
+    for (int direction = 0; direction < 2; ++direction) {
+        const board_input_action_t turn = direction == 0 ? BOARD_INPUT_ACTION_ENCODER_RIGHT
+                                                        : BOARD_INPUT_ACTION_ENCODER_LEFT;
+        for (int step = 0; step < 3 * (int)UI_QUICK_ITEM_COUNT; ++step) {
+            const uint8_t row = ui_quick_menu_cursor_row(&state);
+            assert(row < (uint8_t)UI_QUICK_ROWS);
+            assert(ui_quick_menu_row_item(&state, row) == state.item);
+            (void)ui_quick_menu_handle(&state, turn, 1200U);
+        }
+    }
+}
+
+/* Fewer functions than rows: the spare rows are empty, and nothing pretends
+   otherwise - ui.c draws the window only as tall as the rows in use. A board
+   with no Bluetooth module is exactly this. */
+static void test_a_short_list_leaves_rows_empty(void)
+{
+    ui_quick_menu_t state;
+    ui_quick_menu_init(&state);
+    assert(ui_quick_menu_visible_count(&state) == 2U);
+    assert(ui_quick_menu_open(&state, 100U));
+    assert(ui_quick_menu_row_item(&state, 0U) == UI_QUICK_ITEM_SLEEP);
+    assert(ui_quick_menu_row_item(&state, 1U) == UI_QUICK_ITEM_ALARM);
+    for (uint8_t row = 2U; row < (uint8_t)UI_QUICK_ROWS; ++row) {
+        assert(ui_quick_menu_row_item(&state, row) == UI_QUICK_ITEM_COUNT);
+    }
+    /* Past the end of the window, and out of range. */
+    assert(ui_quick_menu_row_item(&state, (uint8_t)UI_QUICK_ROWS) == UI_QUICK_ITEM_COUNT);
+    assert(ui_quick_menu_row_item(NULL, 0U) == UI_QUICK_ITEM_COUNT);
+
+    /* The module answering adds its row without moving the cursor off the row
+       somebody is looking at. */
+    (void)ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 200U);
+    assert(state.item == UI_QUICK_ITEM_ALARM);
+    ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_BT_OUTPUT, true);
+    assert(state.item == UI_QUICK_ITEM_ALARM);
+    assert(ui_quick_menu_cursor_row(&state) == 1U);
+    assert(ui_quick_menu_row_item(&state, 2U) == UI_QUICK_ITEM_BT_OUTPUT);
+
+    /* And it going quiet again takes its row away, leaving the cursor where it
+       was: the row above it did not move. */
+    ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_BT_OUTPUT, false);
+    assert(state.item == UI_QUICK_ITEM_ALARM);
+    assert(ui_quick_menu_cursor_row(&state) == 1U);
+    assert(ui_quick_menu_row_item(&state, 2U) == UI_QUICK_ITEM_COUNT);
+}
+
 static void test_the_sleep_row_is_a_ring(void)
 {
     /* Up through the list and round to off, which is what makes it a ring
@@ -255,6 +333,9 @@ int main(void)
     test_a_row_that_disappears_takes_the_cursor_with_it();
     test_one_row_left_is_not_a_spin();
     test_a_panel_with_no_rows_does_not_open();
+    test_every_function_has_a_row();
+    test_the_cursor_is_always_on_a_drawn_row();
+    test_a_short_list_leaves_rows_empty();
     test_an_untouched_panel_closes_itself();
     test_the_sleep_row_is_a_ring();
     test_every_row_is_named_in_both_languages();

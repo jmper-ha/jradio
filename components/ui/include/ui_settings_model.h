@@ -91,12 +91,15 @@ typedef struct {
     bool home_screen;
 } ui_settings_model_t;
 
-/* Brightness runs 10..90 rather than 0..100: the panel is unreadable below
- * about 10, and 0 looks like the device died. The step is what one detent
+/* Brightness runs 10..100 rather than 0..100: the panel is unreadable below
+ * about 10, and 0 looks like the device died. The top used to be 90 for no
+ * reason anybody could name - the backlight's own limit is 100 and the setting
+ * has always accepted it - so the last tenth was simply out of reach from the
+ * device (Ден asked for it back, 2026-09-18). The step is what one detent
  * changes - fine enough to settle on a level, coarse enough to cross the range
  * without grinding the knob. */
 #define UI_SETTINGS_BRIGHTNESS_MIN 10
-#define UI_SETTINGS_BRIGHTNESS_MAX 90
+#define UI_SETTINGS_BRIGHTNESS_MAX 100
 #define UI_SETTINGS_BRIGHTNESS_STEP 5
 
 /* `home_screen` is what ui_menu_home_screen_needed() says for the device as it

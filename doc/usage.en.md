@@ -81,7 +81,15 @@ timer**, the **alarm**, **sound over a Bluetooth speaker** and the
 clear of the status strip - the sleep timer's crescent and the alarm's bell are
 in that strip, and they are what the window changes.
 
-One function at a time: its name on top, its value below.
+Every function at once, a row each: the name on the left, the value on the
+right. The row under the cursor is filled, and on that row the value turns amber
+once the knob has taken it. There is nothing to scroll - the window is exactly
+as tall as the rows it has, so without a Bluetooth module it is one row shorter
+rather than one row empty.
+
+The values are short because they share the row with the name: the alarm's is
+the time itself (`07:00`), or "off"; the sleep timer's is "45 min"; the speaker
+and the brightness read "on"/"off" and "75%".
 
 | Gesture | What it does |
 |---|---|
@@ -348,7 +356,7 @@ and the list row the cursor is on. "Left-right" runs the line out to its end
 and back again; "Left" runs it out, holds for a second, and shows it whole from
 the start. Either way the pause before the next pass is 3 seconds.
 
-Brightness is a number from 10 to 90 rather than a switch: click the row, the
+Brightness is a number from 10 to 100 rather than a switch: click the row, the
 number is taken into angle brackets, and turning the knob then changes it. The
 panel follows on every detent. Clicking again releases the knob, and it moves
 through the list as before.

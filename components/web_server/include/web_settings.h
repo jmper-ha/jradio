@@ -22,9 +22,14 @@
  * duplicated rather than pulled in: the reason for the window is the panel -
  * unreadable below about ten, and zero looks like a dead device - so the web
  * slider has to stop where the knob does, but this component has no business
- * depending on the on-device screen. */
+ * depending on the on-device screen.
+ *
+ * Duplicated, so both have to be changed together: raising the panel's top to
+ * 100 on its own left this validator refusing the value the knob could now
+ * reach, and the page - which takes its slider's range from the document this
+ * writes - went on offering 90. */
 #define WEB_SETTINGS_BRIGHTNESS_MIN 10
-#define WEB_SETTINGS_BRIGHTNESS_MAX 90
+#define WEB_SETTINGS_BRIGHTNESS_MAX 100
 /* Likewise UI_SETTINGS_IDLE_BRIGHTNESS_MIN/MAX: the screensaver's level runs
  * lower, since a glow in a dark room is what dimming is for. */
 #define WEB_SETTINGS_IDLE_BRIGHTNESS_MIN 5

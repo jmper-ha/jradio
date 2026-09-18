@@ -70,9 +70,14 @@
 #define UI_INPUT_QUEUE_LENGTH 16
 /* Measured, not guessed: at 6144 the periodic health report found this task
  * down to 504 bytes of headroom - LVGL's rendering plus a logging call, with
- * an interrupt frame able to land on top at any moment. The peak draw is
- * around 5.6 KB, so this leaves roughly 2.5 KB of margin. */
-#define UI_TASK_STACK_SIZE 8192
+ * an interrupt frame able to land on top at any moment. The peak draw was
+ * around 5.6 KB then, which left 8192 with roughly 2.5 KB of margin.
+ *
+ * Raised to 10240 on 2026-09-18, when the quick panel took the least-seen
+ * headroom from 3272 to 2696 bytes - the smallest of any task on the board.
+ * The panel is meant to grow another row or two, and the cost of being wrong
+ * here is a stack overflow in the task that owns the screen. */
+#define UI_TASK_STACK_SIZE 10240
 #define UI_TASK_PRIORITY 4
 
 /* The screens share one palette, stated here rather than repeated as literals.
@@ -4962,19 +4967,32 @@ static void ui_sleep_fade_cancel(void)
  * evening rather than on the bench. */
 static ui_quick_menu_t s_quick;
 static lv_obj_t *s_quick_window;
-static lv_obj_t *s_quick_name;
-static lv_obj_t *s_quick_value_box;
-static lv_obj_t *s_quick_value;
+/* One set of widgets per drawn row, rewritten as the list scrolls under them:
+ * the rows are positions on the window, not the functions themselves. */
+static lv_obj_t *s_quick_row[UI_QUICK_ROWS];
+static lv_obj_t *s_quick_name[UI_QUICK_ROWS];
+static lv_obj_t *s_quick_value[UI_QUICK_ROWS];
+_Static_assert(UI_QUICK_ROWS == UI_QUICK_ROW_COUNT,
+               "the model draws a different number of rows than the layout leaves room for");
 /* Whether the window is up, which is not the same as the model being open: the
  * closing slide still runs for a fifth of a second after the model has let go
  * of the knob. */
 static bool s_quick_visible;
 /* What is on the window now, so a poll that finds nothing changed costs no
- * invalidation. The panel is polled ten times a second and LVGL repaints a
- * label whose text is set again whether or not the text differs. */
-static char s_quick_value_shown[32];
-static ui_quick_item_t s_quick_item_shown;
+ * invalidation. The panel is polled a hundred times a second and LVGL repaints
+ * a label whose text is set again whether or not the text differs. */
+static char s_quick_value_shown[UI_QUICK_ROWS][32];
+static ui_quick_item_t s_quick_item_shown[UI_QUICK_ROWS];
+/* 0xFF means "nothing is highlighted yet", which is what the window is on the
+ * pass that puts it up: without it the first row's fill would be skipped as
+ * already correct. */
+#define UI_QUICK_CURSOR_NONE 0xFFU
+static uint8_t s_quick_cursor_shown = UI_QUICK_CURSOR_NONE;
 static bool s_quick_editing_shown;
+/* How many rows the window is drawn with now. The Bluetooth row comes and goes
+ * while the firmware runs, and a window that kept its tallest height would show
+ * an empty band instead - so the window follows the list. */
+static uint8_t s_quick_rows_shown;
 
 static void ui_quick_set_y(void *target, int32_t value)
 {
@@ -4995,47 +5013,56 @@ static void ui_quick_create(void)
     lv_obj_set_style_border_width(s_quick_window, 1, 0);
     lv_obj_add_flag(s_quick_window, LV_OBJ_FLAG_HIDDEN);
 
-    s_quick_name = lv_label_create(s_quick_window);
-    lv_obj_set_pos(s_quick_name, UI_QUICK_PAD_X, UI_QUICK_PAD_Y);
-    lv_obj_set_size(s_quick_name, UI_QUICK_TEXT_W, UI_FONT_BODY_LINE_H);
-    /* One line, dotted rather than wrapped: a name that wrapped would push the
-     * value out of a window whose height is fixed. */
-    lv_label_set_long_mode(s_quick_name, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(s_quick_name, UI_FONT_BODY, 0);
-    lv_obj_set_style_text_color(s_quick_name, lv_color_hex(UI_COLOR_MUTED), 0);
-    lv_label_set_text(s_quick_name, "");
+    for (unsigned row = 0U; row < UI_QUICK_ROWS; ++row) {
+        /* The row itself is only a fill: it carries the cursor, and the cursor
+         * is what says which of the three the knob is on. */
+        s_quick_row[row] = lv_obj_create(s_quick_window);
+        lv_obj_remove_style_all(s_quick_row[row]);
+        lv_obj_remove_flag(s_quick_row[row], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_pos(s_quick_row[row], UI_QUICK_PAD_X - 4,
+                       UI_QUICK_PAD_Y + (int)row * UI_QUICK_ROW_H);
+        lv_obj_set_size(s_quick_row[row], UI_QUICK_TEXT_W + 8, UI_QUICK_ROW_H);
+        lv_obj_set_style_radius(s_quick_row[row], 5, 0);
+        lv_obj_set_style_bg_color(s_quick_row[row], lv_color_hex(UI_COLOR_SELECTED), 0);
+        lv_obj_set_style_bg_opa(s_quick_row[row], LV_OPA_TRANSP, 0);
 
-    /* The value sits in a box, and the box is what says who the knob belongs
-     * to: an outline in the accent colour means the next detent moves this
-     * value, a dim one means it moves to the next function. Without it the two
-     * modes look identical and the first turn is a guess. */
-    s_quick_value_box = lv_obj_create(s_quick_window);
-    lv_obj_remove_style_all(s_quick_value_box);
-    lv_obj_remove_flag(s_quick_value_box, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(s_quick_value_box, UI_QUICK_PAD_X,
-                   UI_QUICK_PAD_Y + UI_FONT_BODY_LINE_H + UI_QUICK_GAP);
-    lv_obj_set_size(s_quick_value_box, UI_QUICK_TEXT_W, UI_QUICK_VALUE_H);
-    lv_obj_set_style_bg_color(s_quick_value_box, lv_color_hex(UI_COLOR_GROUND), 0);
-    lv_obj_set_style_bg_opa(s_quick_value_box, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(s_quick_value_box, 6, 0);
-    lv_obj_set_style_border_width(s_quick_value_box, 1, 0);
-    lv_obj_set_style_border_color(s_quick_value_box, lv_color_hex(UI_COLOR_RULE), 0);
+        const int text_y = (UI_QUICK_ROW_H - UI_FONT_BODY_LINE_H) / 2;
+        s_quick_name[row] = lv_label_create(s_quick_window);
+        lv_obj_set_pos(s_quick_name[row], UI_QUICK_PAD_X,
+                       UI_QUICK_PAD_Y + (int)row * UI_QUICK_ROW_H + text_y);
+        lv_obj_set_size(s_quick_name[row], UI_QUICK_NAME_W, UI_FONT_BODY_LINE_H);
+        /* One line, dotted rather than wrapped: a name that wrapped would push
+         * the rows below it out of a window whose height is fixed. */
+        lv_label_set_long_mode(s_quick_name[row], LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_font(s_quick_name[row], UI_FONT_BODY, 0);
+        lv_obj_set_style_text_color(s_quick_name[row], lv_color_hex(UI_COLOR_MUTED), 0);
+        lv_label_set_text(s_quick_name[row], "");
 
-    s_quick_value = lv_label_create(s_quick_value_box);
-    lv_obj_set_size(s_quick_value, UI_QUICK_TEXT_W - 12, UI_FONT_TITLE_LINE_H);
-    lv_obj_set_pos(s_quick_value, 6, (UI_QUICK_VALUE_H - UI_FONT_TITLE_LINE_H) / 2);
-    lv_obj_set_style_text_align(s_quick_value, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(s_quick_value, UI_FONT_TITLE, 0);
-    lv_obj_set_style_text_color(s_quick_value, lv_color_hex(UI_COLOR_TEXT), 0);
-    lv_label_set_text(s_quick_value, "");
+        /* The value is pinned to the right of the row, and its colour is what
+         * says who the knob belongs to: amber while it is moving this value,
+         * ordinary text while it is moving between rows. Without that the two
+         * modes look identical and the first turn is a guess. */
+        s_quick_value[row] = lv_label_create(s_quick_window);
+        lv_obj_set_pos(s_quick_value[row], UI_QUICK_PAD_X + UI_QUICK_NAME_W + 6,
+                       UI_QUICK_PAD_Y + (int)row * UI_QUICK_ROW_H + text_y);
+        lv_obj_set_size(s_quick_value[row], UI_QUICK_VALUE_W, UI_FONT_BODY_LINE_H);
+        lv_label_set_long_mode(s_quick_value[row], LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_align(s_quick_value[row], LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_set_style_text_font(s_quick_value[row], UI_FONT_BODY, 0);
+        lv_obj_set_style_text_color(s_quick_value[row], lv_color_hex(UI_COLOR_TEXT), 0);
+        lv_label_set_text(s_quick_value[row], "");
+    }
 }
 
-/* The value as the window shows it. The four rows are read from where the
- * value actually lives - the timer service, the settings this task holds - so
- * a change made from the web page appears here without anything telling us. */
-static void ui_quick_value_text(char *out, size_t size)
+/* The value as the window shows it. Every row is read from where the value
+ * actually lives - the timer service, the settings this task holds - so a
+ * change made from the web page appears here without anything telling us.
+ *
+ * Short, because a row is a name and a value side by side: the alarm's hour
+ * *is* its "on", and the switches are one word. */
+static void ui_quick_value_text(ui_quick_item_t item, char *out, size_t size)
 {
-    switch (s_quick.item) {
+    switch (item) {
     case UI_QUICK_ITEM_SLEEP: {
         const uint16_t minutes = sleep_timer_service_minutes();
         if (minutes == 0U) {
@@ -5047,11 +5074,8 @@ static void ui_quick_value_text(char *out, size_t size)
         break;
     }
     case UI_QUICK_ITEM_ALARM:
-        /* The time beside the word, because "on" alone raises exactly the
-         * question the strip's bell already raises: on at what hour. */
         if (s_device_settings.alarm.enabled) {
-            snprintf(out, size, "%s  %02u:%02u", ui_text(DEVICE_TEXT_ON),
-                     (unsigned)s_device_settings.alarm.hour,
+            snprintf(out, size, "%02u:%02u", (unsigned)s_device_settings.alarm.hour,
                      (unsigned)s_device_settings.alarm.minute);
         } else {
             snprintf(out, size, "%s", ui_text(DEVICE_TEXT_OFF));
@@ -5070,30 +5094,69 @@ static void ui_quick_value_text(char *out, size_t size)
     }
 }
 
+/* The window as tall as `rows` functions, with the spare row widgets taken off
+ * screen. Called when the count changes, which is rare - the module answering
+ * or going quiet - and never per frame. */
+static void ui_quick_layout_rows(uint8_t rows)
+{
+    if (rows == 0U) rows = 1U;
+    if (rows > (uint8_t)UI_QUICK_ROWS) rows = (uint8_t)UI_QUICK_ROWS;
+    s_quick_rows_shown = rows;
+    lv_obj_set_size(s_quick_window, UI_QUICK_W, UI_QUICK_H_FOR(rows));
+    for (unsigned row = 0U; row < UI_QUICK_ROWS; ++row) {
+        const bool used = row < rows;
+        if (used) {
+            lv_obj_remove_flag(s_quick_row[row], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(s_quick_name[row], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(s_quick_value[row], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_quick_row[row], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_quick_name[row], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_quick_value[row], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
 static void ui_quick_refresh(void)
 {
     if (s_quick_window == NULL) return;
-    if (s_quick.item != s_quick_item_shown) {
-        s_quick_item_shown = s_quick.item;
-        lv_label_set_text(s_quick_name,
-                          ui_quick_item_label(s_quick.item, s_device_settings.language));
-        /* The cached value belongs to the row that just left. */
-        s_quick_value_shown[0] = '\0';
+    const uint8_t rows = ui_quick_menu_visible_count(&s_quick);
+    if (rows != s_quick_rows_shown) ui_quick_layout_rows(rows);
+    const uint8_t cursor = ui_quick_menu_cursor_row(&s_quick);
+    /* One comparison for the whole window rather than one per row: the cursor
+     * and the mode are single values, and when either moves two rows change. */
+    const bool marks_stale =
+        cursor != s_quick_cursor_shown || s_quick.editing != s_quick_editing_shown;
+    for (unsigned row = 0U; row < UI_QUICK_ROWS; ++row) {
+        const ui_quick_item_t item = ui_quick_menu_row_item(&s_quick, (uint8_t)row);
+        const bool item_moved = item != s_quick_item_shown[row];
+        if (item_moved) {
+            s_quick_item_shown[row] = item;
+            /* An empty row happens on a board whose module is not answering:
+             * three rows of window, two functions in it. */
+            lv_label_set_text(s_quick_name[row],
+                              item == UI_QUICK_ITEM_COUNT
+                                  ? ""
+                                  : ui_quick_item_label(item, s_device_settings.language));
+            s_quick_value_shown[row][0] = '\0';
+        }
+        char value[sizeof(s_quick_value_shown[0])];
+        ui_quick_value_text(item, value, sizeof(value));
+        if (strcmp(value, s_quick_value_shown[row]) != 0) {
+            snprintf(s_quick_value_shown[row], sizeof(s_quick_value_shown[row]), "%s", value);
+            lv_label_set_text(s_quick_value[row], value);
+        }
+        if (!marks_stale && !item_moved) continue;
+        const bool is_cursor = (uint8_t)row == cursor && item != UI_QUICK_ITEM_COUNT;
+        lv_obj_set_style_bg_opa(s_quick_row[row], is_cursor ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_text_color(s_quick_name[row],
+                                    lv_color_hex(is_cursor ? UI_COLOR_TEXT : UI_COLOR_MUTED), 0);
+        lv_obj_set_style_text_color(
+            s_quick_value[row],
+            lv_color_hex(is_cursor && s_quick.editing ? UI_COLOR_ACCENT : UI_COLOR_TEXT), 0);
     }
-    char value[sizeof(s_quick_value_shown)];
-    ui_quick_value_text(value, sizeof(value));
-    if (strcmp(value, s_quick_value_shown) != 0) {
-        snprintf(s_quick_value_shown, sizeof(s_quick_value_shown), "%s", value);
-        lv_label_set_text(s_quick_value, value);
-    }
-    if (s_quick.editing != s_quick_editing_shown) {
-        s_quick_editing_shown = s_quick.editing;
-        const uint32_t edge = s_quick.editing ? UI_COLOR_ACCENT : UI_COLOR_RULE;
-        lv_obj_set_style_border_color(s_quick_value_box, lv_color_hex(edge), 0);
-        lv_obj_set_style_text_color(s_quick_value,
-                                    lv_color_hex(s_quick.editing ? UI_COLOR_ACCENT
-                                                                 : UI_COLOR_TEXT), 0);
-    }
+    s_quick_cursor_shown = cursor;
+    s_quick_editing_shown = s_quick.editing;
 }
 
 static void ui_quick_hidden_cb(lv_anim_t *anim)
@@ -5111,7 +5174,10 @@ static void ui_quick_slide(bool down)
 {
     if (s_quick_window == NULL) return;
     lv_anim_delete(s_quick_window, ui_quick_set_y);
-    const int32_t to = down ? UI_QUICK_Y : -UI_QUICK_H;
+    /* Off the top by its own height, not by the tallest the window can be: a
+     * three-row window parked at -UI_QUICK_H would leave a band of it on the
+     * screen, and the slide would start from the wrong place. */
+    const int32_t to = down ? UI_QUICK_Y : -(int32_t)lv_obj_get_height(s_quick_window);
     if (UI_QUICK_SLIDE_MS == 0U) {
         lv_obj_set_y(s_quick_window, to);
         if (!down) lv_obj_add_flag(s_quick_window, LV_OBJ_FLAG_HIDDEN);
@@ -5135,11 +5201,17 @@ static void ui_quick_show(void)
     if (s_quick_window == NULL) return;
     s_quick_visible = true;
     /* Filled before it is on screen: the first frame of the slide already
-     * carries the row the knob is on. */
-    s_quick_item_shown = UI_QUICK_ITEM_COUNT;
-    s_quick_value_shown[0] = '\0';
-    s_quick_editing_shown = !s_quick.editing;
+     * carries the rows and the cursor. Every cache is put out of date first,
+     * because what was drawn last time was another screen's worth of state. */
+    for (unsigned row = 0U; row < UI_QUICK_ROWS; ++row) {
+        s_quick_item_shown[row] = UI_QUICK_ITEM_COUNT;
+        s_quick_value_shown[row][0] = '\0';
+    }
+    s_quick_cursor_shown = UI_QUICK_CURSOR_NONE;
     ui_quick_refresh();
+    /* Above the top edge by the height it has just been given, so the slide
+     * starts off screen whatever the row count turned out to be. */
+    lv_obj_set_y(s_quick_window, -(int32_t)lv_obj_get_height(s_quick_window));
     lv_obj_remove_flag(s_quick_window, LV_OBJ_FLAG_HIDDEN);
     ui_quick_slide(true);
 }

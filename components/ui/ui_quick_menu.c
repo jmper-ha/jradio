@@ -25,6 +25,60 @@ static ui_quick_item_t item_step(ui_quick_item_t item, int direction, ui_quick_m
     return (ui_quick_item_t)next;
 }
 
+/* The cursor's place in the visible sequence, and the item at a given place:
+ * the window scrolls over what is drawn, and what is drawn is the sequence
+ * with the hidden rows taken out. */
+static uint8_t position_of(ui_quick_mask_t visible, ui_quick_item_t item)
+{
+    uint8_t position = 0U;
+    for (unsigned index = 0U; index < (unsigned)UI_QUICK_ITEM_COUNT; ++index) {
+        if ((ui_quick_item_t)index == item) return position;
+        if (item_visible(visible, (ui_quick_item_t)index)) ++position;
+    }
+    return 0U;
+}
+
+static ui_quick_item_t item_at_position(ui_quick_mask_t visible, uint8_t position)
+{
+    uint8_t seen = 0U;
+    for (unsigned index = 0U; index < (unsigned)UI_QUICK_ITEM_COUNT; ++index) {
+        if (!item_visible(visible, (ui_quick_item_t)index)) continue;
+        if (seen == position) return (ui_quick_item_t)index;
+        ++seen;
+    }
+    return UI_QUICK_ITEM_COUNT;
+}
+
+static uint8_t visible_count(ui_quick_mask_t visible)
+{
+    uint8_t count = 0U;
+    for (unsigned index = 0U; index < (unsigned)UI_QUICK_ITEM_COUNT; ++index) {
+        if (item_visible(visible, (ui_quick_item_t)index)) ++count;
+    }
+    return count;
+}
+
+/* Keeps the drawn window over the cursor, and never past the end of the list.
+ * Called after everything that can move either - a turn of the knob, a row
+ * appearing or going away - rather than at each of those sites, because the
+ * rule is one rule and two copies of it would be two rules. */
+static void clamp_window(ui_quick_menu_t *state)
+{
+    const uint8_t count = visible_count(state->visible);
+    if (count <= (uint8_t)UI_QUICK_ROWS) {
+        state->top = 0U;
+        return;
+    }
+    const uint8_t last_top = (uint8_t)(count - (uint8_t)UI_QUICK_ROWS);
+    if (state->top > last_top) state->top = last_top;
+    const uint8_t at = position_of(state->visible, state->item);
+    if (at < state->top) {
+        state->top = at;
+    } else if (at >= (uint8_t)(state->top + (uint8_t)UI_QUICK_ROWS)) {
+        state->top = (uint8_t)(at - (uint8_t)UI_QUICK_ROWS + 1U);
+    }
+}
+
 static ui_quick_item_t first_visible(ui_quick_mask_t visible)
 {
     for (unsigned index = 0U; index < (unsigned)UI_QUICK_ITEM_COUNT; ++index) {
@@ -43,6 +97,7 @@ void ui_quick_menu_init(ui_quick_menu_t *state)
      * to us. Starting with all four would draw a Bluetooth row for one pass on
      * a board that has no module. */
     state->visible = UI_QUICK_VISIBLE(UI_QUICK_ITEM_SLEEP) | UI_QUICK_VISIBLE(UI_QUICK_ITEM_ALARM);
+    state->top = 0U;
     state->last_input_ms = 0U;
 }
 
@@ -51,14 +106,18 @@ void ui_quick_menu_set_visible(ui_quick_menu_t *state, ui_quick_item_t item, boo
     if (state == NULL || (unsigned)item >= (unsigned)UI_QUICK_ITEM_COUNT) return;
     if (visible) {
         state->visible |= UI_QUICK_VISIBLE(item);
+        clamp_window(state);
         return;
     }
     state->visible &= ~UI_QUICK_VISIBLE(item);
-    if (state->item != item) return;
-    /* The cursor was standing on it. Leave edit mode with it: a knob assigned
-     * to a row that is no longer drawn would move a value nobody can see. */
-    state->editing = false;
-    state->item = first_visible(state->visible);
+    if (state->item == item) {
+        /* The cursor was standing on it. Leave edit mode with it: a knob
+         * assigned to a row that is no longer drawn would move a value nobody
+         * can see. */
+        state->editing = false;
+        state->item = first_visible(state->visible);
+    }
+    clamp_window(state);
 }
 
 bool ui_quick_menu_item_visible(const ui_quick_menu_t *state, ui_quick_item_t item)
@@ -70,11 +129,7 @@ bool ui_quick_menu_item_visible(const ui_quick_menu_t *state, ui_quick_item_t it
 uint8_t ui_quick_menu_visible_count(const ui_quick_menu_t *state)
 {
     if (state == NULL) return 0U;
-    uint8_t count = 0U;
-    for (unsigned index = 0U; index < (unsigned)UI_QUICK_ITEM_COUNT; ++index) {
-        if (item_visible(state->visible, (ui_quick_item_t)index)) ++count;
-    }
-    return count;
+    return visible_count(state->visible);
 }
 
 bool ui_quick_menu_open(ui_quick_menu_t *state, uint32_t now_ms)
@@ -87,6 +142,7 @@ bool ui_quick_menu_open(ui_quick_menu_t *state, uint32_t now_ms)
      * left ten minutes ago is a riddle, not a convenience. */
     state->editing = false;
     state->item = first_visible(state->visible);
+    state->top = 0U;
     state->last_input_ms = now_ms;
     return true;
 }
@@ -135,6 +191,7 @@ ui_quick_result_t ui_quick_menu_handle(ui_quick_menu_t *state,
         const ui_quick_item_t next = item_step(state->item, direction, state->visible);
         if (next == state->item) return UI_QUICK_RESULT_NONE;
         state->item = next;
+        clamp_window(state);
         return UI_QUICK_RESULT_MOVED;
     }
     default:
@@ -147,6 +204,25 @@ bool ui_quick_menu_idle_expired(const ui_quick_menu_t *state, uint32_t now_ms)
 {
     if (state == NULL || !state->open) return false;
     return (uint32_t)(now_ms - state->last_input_ms) >= UI_QUICK_MENU_IDLE_MS;
+}
+
+ui_quick_item_t ui_quick_menu_row_item(const ui_quick_menu_t *state, uint8_t row)
+{
+    if (state == NULL || row >= (uint8_t)UI_QUICK_ROWS) return UI_QUICK_ITEM_COUNT;
+    return item_at_position(state->visible, (uint8_t)(state->top + row));
+}
+
+uint8_t ui_quick_menu_cursor_row(const ui_quick_menu_t *state)
+{
+    if (state == NULL) return 0U;
+    const uint8_t at = position_of(state->visible, state->item);
+    return at >= state->top ? (uint8_t)(at - state->top) : 0U;
+}
+
+uint8_t ui_quick_menu_position(const ui_quick_menu_t *state)
+{
+    if (state == NULL) return 0U;
+    return position_of(state->visible, state->item);
 }
 
 uint16_t ui_quick_sleep_step(uint16_t minutes, int direction)
@@ -170,7 +246,9 @@ const char *ui_quick_item_label(ui_quick_item_t item, device_language_t language
     switch (item) {
     case UI_QUICK_ITEM_SLEEP: return device_text(DEVICE_TEXT_ROW_SLEEP_TIMER, language);
     case UI_QUICK_ITEM_ALARM: return device_text(DEVICE_TEXT_ROW_ALARM, language);
-    case UI_QUICK_ITEM_BT_OUTPUT: return device_text(DEVICE_TEXT_ROW_BT_OUTPUT, language);
+    /* Not DEVICE_TEXT_ROW_BT_OUTPUT: "Sound over Bluetooth" is a settings row,
+     * where the width is the panel's. Here it shares a row with its value. */
+    case UI_QUICK_ITEM_BT_OUTPUT: return device_text(DEVICE_TEXT_ROW_BT_SPEAKER, language);
     case UI_QUICK_ITEM_BRIGHTNESS: return device_text(DEVICE_TEXT_ROW_BRIGHTNESS, language);
     default: break;
     }

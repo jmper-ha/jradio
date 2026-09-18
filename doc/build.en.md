@@ -40,8 +40,13 @@ one file for offset 0 into `release/<version>/`, with checksums and a note on
 flashing. The data image it makes afresh, without `wifi.json`, `yandex.json`
 and `weather.json`: what the build stages from a developer's machine must not
 end up in a file for somebody else's board - such a board opens its own setup
-access point on the first boot. The script refuses a dirty tree, and a
-`build/jradio.bin` whose version is not the tag's.
+access point on the first boot. The script refuses a dirty tree, a
+`build/jradio.bin` whose version is not the tag's, and a
+`board_options.local.h` sitting beside it: git does not see that file, but it
+decides the panel, the pinout and which sources exist - v1.2.0's first upload
+went out with this bench's portrait panel and its Bluetooth module instead of
+the defaults. Move it aside and build again; for an image meant for one
+particular board, `JRADIO_RELEASE_ALLOW_LOCAL=1`.
 
 The `-dirty` suffix can go stale. It is computed at configure time, and editing
 a file does not move the branch ref, so a build from a dirty tree may report a

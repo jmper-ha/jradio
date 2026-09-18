@@ -28,6 +28,18 @@ version=$(git describe --tags --dirty --always)
 case "${version}" in
     *-dirty) echo "the working tree is dirty; a release is built from a commit" >&2; exit 1 ;;
 esac
+# A clean tree says nothing about board_options.local.h, which git ignores - and
+# that file is what decides the panel, the pinout and which sources exist. The
+# first upload of v1.2.0 was built with one: every board that flashed it got
+# this bench's portrait panel, its Bluetooth module and its mute pin instead of
+# the defaults board_options.h documents. The override exists for a deliberate
+# one-board image; the default is to refuse.
+if [ -f "${project_dir}/board_options.local.h" ] && \
+   [ "${JRADIO_RELEASE_ALLOW_LOCAL:-0}" != "1" ]; then
+    echo "board_options.local.h is present: a release is built from board_options.h alone" >&2
+    echo "move it aside and build again, or set JRADIO_RELEASE_ALLOW_LOCAL=1 to release this board's own image" >&2
+    exit 1
+fi
 # What the firmware in build/ says it is has to be the same string, or the
 # files would be named after a tag the binary does not carry.
 built=$(strings "${build_dir}/jradio.bin" | grep -m1 -E '^v[0-9]+\.[0-9]+\.[0-9]+' || true)

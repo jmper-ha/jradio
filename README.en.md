@@ -39,7 +39,7 @@ the home screen. Details in [Hardware](doc/hardware.en.md).
 | **Weather** | works | Temperature and an icon beside the clock; Open-Meteo, wttr.in or OpenWeatherMap to choose from, coordinates in the web settings — [more](doc/usage.en.md#weather) |
 | **Screensaver** | works | Dim, dark, or a clock floating across the dark panel with the date, the weather and the track; after 15 s to 10 min untouched — [more](doc/usage.en.md#settings) |
 | **Volume** | works | The knob, the web player and Settings; remembered |
-| **Autoplay** | works | Starts whatever was playing when the device was switched off: a station, a track off a drive, a Yandex station or a container on a media server |
+| **Autoplay** | works | Starts whatever was playing when the device was switched off: a station, a track off a drive, a Yandex station or a container on a media server; for Bluetooth it brings back the screen that waits for a phone |
 | **Deep sleep** | works | Holding the first button puts the device out: playback stops, Bluetooth and Wi-Fi leave properly, and with a power switch wired everything outside the module loses power too. The same button wakes it - [more](doc/usage.en.md#deep-sleep) |
 | **Quick panel** | works | F2 drops a window over the screen: the sleep timer, the alarm, the brightness and the BT speaker - on the knob, without leaving the player - [more](doc/usage.en.md#the-quick-panel) |
 | **Sleep timer** | works | Play for 15 to 120 minutes, then fade the volume away and sleep; set in the web settings, with the countdown on the screen and on the player page - [more](doc/usage.en.md#the-sleep-timer) |

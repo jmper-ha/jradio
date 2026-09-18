@@ -509,7 +509,18 @@ static audio_source_t s_files_unavailable_source = AUDIO_SOURCE_NONE;
 // 12 seconds, and twelve would have been a coin toss decided by how many times
 // that access point answered the scan.
 #define UI_AUTOPLAY_NETWORK_WAIT_MS 25000U
+/* The Bluetooth module is a board of its own and does not reboot with us, so it
+ * meets a returning UART link in the middle of its own re-setup and refuses the
+ * mode change: "mode 1 refused: now 0" and then "module did not take the bus".
+ * Measured on the bench - the first ask landed at 2.99 s and the module was
+ * settled by 3.9 - so the answer is to ask again rather than to guess a delay
+ * long enough for every case. Four asks, a second and a half apart, and then
+ * the home screen. */
+#define UI_AUTOPLAY_BT_RETRY_MS 1500U
+#define UI_AUTOPLAY_BT_ATTEMPTS 4U
 static bool s_autoplay_pending;
+static uint8_t s_autoplay_bt_attempts;
+static uint32_t s_autoplay_bt_asked_ms;
 static uint32_t s_autoplay_started_ms;
 static bool s_files_list_open_requested;
 static unsigned int s_files_list_open_revision;
@@ -5891,6 +5902,13 @@ static void ui_remember_playing(const player_snapshot_t *snapshot)
         (void)device_settings_set_last_dlna(&s_device_settings, server, container, track, title);
         return;
     }
+    case AUDIO_SOURCE_BLUETOOTH:
+        /* Written as soon as the source is active, not when sound arrives: the
+         * phone decides that, and waiting for a phone is the normal state of
+         * this screen rather than an unfinished one. */
+        (void)device_settings_set_last_source(&s_device_settings,
+                                              DEVICE_LAST_SOURCE_BLUETOOTH);
+        return;
     case AUDIO_SOURCE_SD:
     case AUDIO_SOURCE_USB: {
         (void)device_settings_set_last_source(&s_device_settings,
@@ -6112,17 +6130,79 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     ui_update_radio_status(snapshot);
 }
 
+/* Coming back to the phone's screen, which is a handover rather than a start:
+ * nothing is played - the phone decides that - so what is waited for is the
+ * module taking the I2S bus, and that is read back from the snapshot. */
+static void ui_autoplay_bluetooth_step(const player_snapshot_t *snapshot, bool waited)
+{
+    if (snapshot->active_source == AUDIO_SOURCE_BLUETOOTH) {
+        s_autoplay_pending = false;
+        ESP_LOGI(TAG, "autoplay: back to the Bluetooth screen after %u ask%s",
+                 (unsigned)s_autoplay_bt_attempts, s_autoplay_bt_attempts == 1U ? "" : "s");
+        return;
+    }
+    if ((snapshot->capabilities & PLAYER_CAP_BLUETOOTH) == 0U) {
+        /* The module answers about ten seconds after the board does, so a
+         * missing capability is not yet an answer. Once the wait is out it is:
+         * unplugged, or powered from a rail this board does not control. */
+        if (!waited) return;
+        s_autoplay_pending = false;
+        ESP_LOGW(TAG, "autoplay: the Bluetooth module is not answering");
+        ui_show_menu();
+        return;
+    }
+    if (s_autoplay_bt_attempts != 0U &&
+        (uint32_t)(ui_tick_get_ms() - s_autoplay_bt_asked_ms) < UI_AUTOPLAY_BT_RETRY_MS) {
+        return;
+    }
+    if (s_autoplay_bt_attempts >= UI_AUTOPLAY_BT_ATTEMPTS) {
+        s_autoplay_pending = false;
+        ESP_LOGW(TAG, "autoplay: the module would not take the bus; the home screen instead");
+        ui_show_menu();
+        return;
+    }
+    (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_BLUETOOTH);
+    const player_command_t select = {
+        .kind = PLAYER_COMMAND_SELECT_SOURCE,
+        .source = AUDIO_SOURCE_BLUETOOTH,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    /* Straight to the queue, not through ui_submit_player_command(): that gate
+     * refuses a second command while the first is unconfirmed, and a select the
+     * module refused is never confirmed - so every retry was swallowed by the
+     * gate rather than reaching the module, and the count ran out without a
+     * single further ask. The same trap the alarm's station fell into. */
+    if (!player_control_post(&select)) return;
+    ++s_autoplay_bt_attempts;
+    s_autoplay_bt_asked_ms = ui_tick_get_ms();
+    /* No PLAY after it, unlike every other source: the phone is what starts,
+     * and asking it to would have this device deciding for one somebody is
+     * holding. The screen goes up on the first ask - it is where the answer
+     * will be visible either way. */
+    ui_load_source_screen(AUDIO_SOURCE_BLUETOOTH);
+    s_waiting_for_source_item = false;
+}
+
 static void ui_autoplay_step(const player_snapshot_t *snapshot)
 {
     if (!s_autoplay_pending) return;
     const ui_autoplay_action_t action =
         ui_autoplay_decide(&s_device_settings, snapshot->usb_media, snapshot->sd_media, false,
-                           BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA);
+                           BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, BOARD_HAS_BLUETOOTH);
     const bool waited =
         (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_WAIT_MS;
     // Hold off only while the answer could still change: a drive that has not
     // shown up yet may still mount.
     if (action == UI_AUTOPLAY_FILE_UNAVAILABLE && !waited) return;
+    /* And the Bluetooth module answers about ten seconds after the board does,
+     * which is what puts the capability in the snapshot. Selecting the source
+     * before that is refused by player_control_decide() - the capability is
+     * what it checks - so this waits for it exactly as the drive is waited
+     * for. */
+    if (action == UI_AUTOPLAY_BLUETOOTH &&
+        (snapshot->capabilities & PLAYER_CAP_BLUETOOTH) == 0U && !waited) {
+        return;
+    }
     /* And a station cannot be selected before there is a network to reach it
      * over. player_control_decide() answers INVALID for a network source while
      * the Wi-Fi is down, which is what "invalid player command kind=0" in the
@@ -6140,6 +6220,12 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
     if ((action == UI_AUTOPLAY_RADIO || action == UI_AUTOPLAY_YANDEX ||
          action == UI_AUTOPLAY_DLNA) &&
         !snapshot->wifi_connected && !waited_for_network) {
+        return;
+    }
+    /* The only action that is not settled in one pass: it is confirmed by the
+     * snapshot, and until then it keeps its place in the queue. */
+    if (action == UI_AUTOPLAY_BLUETOOTH) {
+        ui_autoplay_bluetooth_step(snapshot, waited);
         return;
     }
     s_autoplay_pending = false;
@@ -6231,6 +6317,9 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         s_waiting_for_source_item = false;
         return;
     }
+    case UI_AUTOPLAY_BLUETOOTH:
+        // Handled above: it is the one action that outlives a single pass.
+        return;
     case UI_AUTOPLAY_FILE_UNAVAILABLE:
         (void)ui_menu_select_source(&s_menu, ui_autoplay_source(&s_device_settings));
         ui_show_source();
@@ -6762,8 +6851,8 @@ esp_err_t ui_init(void)
     s_autoplay_pending = !s_alarm_boot_dark &&
                          ui_autoplay_decide(&s_device_settings, FILE_BROWSER_MEDIA_READY,
                                             FILE_BROWSER_MEDIA_READY, true,
-                                            BOARD_HAS_YANDEX_MUSIC,
-                                            BOARD_HAS_DLNA) != UI_AUTOPLAY_HOME;
+                                            BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA,
+                                            BOARD_HAS_BLUETOOTH) != UI_AUTOPLAY_HOME;
     s_autoplay_started_ms = ui_tick_get_ms();
     /* Through the same call the rest of the firmware uses, so a device with no
      * home screen boots straight into the radio instead of onto a screen it

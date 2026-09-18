@@ -9,6 +9,7 @@ audio_source_t ui_autoplay_source(const device_settings_t *settings)
     case DEVICE_LAST_SOURCE_INTERNET_RADIO: return AUDIO_SOURCE_INTERNET_RADIO;
     case DEVICE_LAST_SOURCE_YANDEX: return AUDIO_SOURCE_YANDEX;
     case DEVICE_LAST_SOURCE_DLNA: return AUDIO_SOURCE_DLNA;
+    case DEVICE_LAST_SOURCE_BLUETOOTH: return AUDIO_SOURCE_BLUETOOTH;
     case DEVICE_LAST_SOURCE_USB:
     case DEVICE_LAST_SOURCE_SD:
         /* The path wins over the remembered source, because the two are
@@ -34,7 +35,7 @@ ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
                                         file_browser_media_t usb_media,
                                         file_browser_media_t sd_media,
                                         bool file_present, bool yandex_built,
-                                        bool dlna_built)
+                                        bool dlna_built, bool bluetooth_built)
 {
     if (settings == NULL || !settings->autoplay) return UI_AUTOPLAY_HOME;
 
@@ -64,6 +65,12 @@ ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
             return UI_AUTOPLAY_HOME;
         }
         return UI_AUTOPLAY_DLNA;
+    case DEVICE_LAST_SOURCE_BLUETOOTH:
+        /* No resume point to check, and no switch in Settings to consult: the
+         * module either answers or the row is not offered anywhere. There is
+         * nothing to wait for a network for either - the phone is the
+         * network. */
+        return bluetooth_built ? UI_AUTOPLAY_BLUETOOTH : UI_AUTOPLAY_HOME;
     case DEVICE_LAST_SOURCE_USB:
     case DEVICE_LAST_SOURCE_SD: {
         // Asked of the volume that will actually be opened - see

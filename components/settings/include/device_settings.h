@@ -73,6 +73,11 @@ typedef enum {
     DEVICE_LAST_SOURCE_SD,
     DEVICE_LAST_SOURCE_YANDEX,
     DEVICE_LAST_SOURCE_DLNA,
+    /* The phone's own source. Nothing is resumed for it - there is no track to
+     * start and no list to open - but the screen is, because that screen is the
+     * whole of this source: a device left waiting for a phone should come back
+     * waiting for a phone. */
+    DEVICE_LAST_SOURCE_BLUETOOTH,
 } device_last_source_t;
 
 #define DEVICE_SETTINGS_PATH "/littlefs/config/settings.csv"

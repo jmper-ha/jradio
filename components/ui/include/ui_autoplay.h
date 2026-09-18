@@ -30,6 +30,11 @@ typedef enum {
      * list of libraries with nothing playable in it, so with nothing
      * remembered this is not returned. */
     UI_AUTOPLAY_DLNA,
+    /* Come back to the Bluetooth screen. Nothing is started: the phone is what
+     * plays, and until it does the screen is where it says to look for the
+     * device. So this is a screen to open rather than a thing to resume - which
+     * is exactly what the source is. */
+    UI_AUTOPLAY_BLUETOOTH,
     /* The volume is there and so is the remembered file: play it. */
     UI_AUTOPLAY_FILE,
     /* The volume is there but the file is not - a different stick or card, or
@@ -46,16 +51,21 @@ typedef enum {
  * since it needs the filesystem, and it is only consulted when the volume is
  * usable.
  *
- * `yandex_built` and `dlna_built` are whether this firmware was built with
- * those sources at all - build options, which this layer cannot see. Whether
- * the user kept each row is settings->yandex_music and settings->dlna and is
- * checked here: a source taken off the home screen should not come back on its
- * own at the next power-on. */
+ * `yandex_built`, `dlna_built` and `bluetooth_built` are whether this firmware
+ * was built with those sources at all - build options, which this layer cannot
+ * see. Whether the user kept each row is settings->yandex_music and
+ * settings->dlna and is checked here: a source taken off the home screen should
+ * not come back on its own at the next power-on.
+ *
+ * Whether the Bluetooth *module* is answering yet is deliberately not asked
+ * here: it comes up a good ten seconds after the board does, so the caller
+ * holds the decision until the capability arrives or its wait runs out. A
+ * module that never answers ends on the home screen. */
 ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
                                         file_browser_media_t usb_media,
                                         file_browser_media_t sd_media,
                                         bool file_present, bool yandex_built,
-                                        bool dlna_built);
+                                        bool dlna_built, bool bluetooth_built);
 
 // Which source the decision was about, so the caller can select it without
 // reading last_source a second time and getting the mapping wrong.

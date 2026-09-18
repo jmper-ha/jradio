@@ -130,6 +130,12 @@ sleep saves no state. What plays afterwards is decided by the **Autoplay**
 setting: on, and the device returns to what was being listened to; off, and it
 comes up on the home screen.
 
+Bluetooth is the one case where autoplay brings back a **screen** rather than
+sound: the phone is what plays, so there is nothing for the device to resume - it
+comes back waiting for a phone, which is what that screen is. The module answers
+about ten seconds after power-on and autoplay waits those seconds out; if it
+never answers, the home screen opens instead.
+
 The sleep button has to sit on a pin that can wake the chip - on the ESP32-S3
 that is GPIO 0-21 - which is why `BUTTON_SLEEP_GPIO` in `board_options.h` is
 21. If it ended up elsewhere on your board, sleep is simply not offered:

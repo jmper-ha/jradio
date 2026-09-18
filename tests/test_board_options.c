@@ -189,8 +189,8 @@ static void test_control_pins_are_distinct(void)
 #if BUTTON_SLEEP_GPIO >= 0
         BUTTON_SLEEP_GPIO,
 #endif
-#if BUTTON_F2_GPIO >= 0
-        BUTTON_F2_GPIO,
+#if BUTTON_QUICK_MENU_GPIO >= 0
+        BUTTON_QUICK_MENU_GPIO,
 #endif
 #if BUTTON_PREV_GPIO >= 0
         BUTTON_PREV_GPIO,
@@ -333,8 +333,8 @@ static void test_no_pin_is_claimed_by_two_devices(void)
 #if BUTTON_SLEEP_GPIO >= 0
         BUTTON_SLEEP_GPIO,
 #endif
-#if BUTTON_F2_GPIO >= 0
-        BUTTON_F2_GPIO,
+#if BUTTON_QUICK_MENU_GPIO >= 0
+        BUTTON_QUICK_MENU_GPIO,
 #endif
 #if BUTTON_PREV_GPIO >= 0
         BUTTON_PREV_GPIO,

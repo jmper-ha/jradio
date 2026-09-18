@@ -64,12 +64,49 @@ nothing.
 | Triple press | Scrub: the knob picks a position, a press applies it |
 | Long press | Home screen; playback stops |
 | Hold F1 | Deep sleep |
+| F2 | The quick panel - a window over whatever is on screen |
 | F3 | Previous track or station |
 | F4 | Next track or station |
 
-A short press on F1 and F2 does nothing at the moment: they are kept for
-whatever comes next. F2 used to mean "back" and lost the job to the encoder's
-long press, which did the same thing everywhere F2 did.
+A short press on F1 does nothing at the moment; it is kept for whatever comes
+next. F2 used to mean "back" and lost the job to the encoder's long press,
+which did the same thing everywhere F2 did; it now carries the quick panel.
+
+### The quick panel
+
+F2 drops a window from the top of the screen with the four things somebody
+reaches for while the music plays, without leaving the player: the **sleep
+timer**, the **alarm**, **sound over a Bluetooth speaker** and the
+**brightness**. The window is deliberately not the whole width, and it stays
+clear of the status strip - the sleep timer's crescent and the alarm's bell are
+in that strip, and they are what the window changes.
+
+One function at a time: its name on top, its value below.
+
+| Gesture | What it does |
+|---|---|
+| Turn the knob | The next function |
+| Press the knob | Take the value - its outline turns amber |
+| Turn it then | Move the value |
+| Press again | Give the value back, browse the functions again |
+| F2, hold the knob | Close the window |
+| F1, F3, F4 | Close it too, and do nothing else |
+
+The "sound over Bluetooth" row is there only while the module answers and the
+player is not itself listening to a phone: sending the sound to a speaker while
+the same module is taking a stream from a phone is the one thing it cannot do.
+The sleep timer cycles - off, 15, 30, 45, 60, 90, 120 minutes - which is the
+list the settings page offers.
+
+The window closes itself after ten seconds without a press. That is not
+decoration: while it is up the knob belongs to it rather than to the volume, so
+one left open would look like a knob that had stopped working. The screensaver
+coming up closes it as well.
+
+The values are the same ones the web page has: the alarm, the brightness and
+the speaker switch are written to `settings.csv`, while the sleep timer is a
+deadline and is never saved (see [the sleep timer](#the-sleep-timer)). A change
+made from a browser shows up in the open window at once.
 
 ### Deep sleep
 

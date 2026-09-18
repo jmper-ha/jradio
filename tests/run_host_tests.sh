@@ -221,6 +221,8 @@ run_test ui_busy_bar tests/test_ui_busy_bar.c components/ui/ui_busy_bar.c
 run_test ui_feed_model tests/test_ui_feed_model.c components/ui/ui_feed_model.c \
     components/ui/ui_menu.c components/settings/device_text.c
 run_test ui_player_state tests/test_ui_player_state.c components/ui/ui_player_state.c
+run_test ui_quick_menu tests/test_ui_quick_menu.c components/ui/ui_quick_menu.c \
+    components/settings/device_text.c
 run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c \
     components/internet_radio/radio_stream_format.c
 run_test ui_now_playing tests/test_ui_now_playing.c components/ui/ui_now_playing.c

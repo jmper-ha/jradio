@@ -87,7 +87,8 @@
  * silkscreen: the third and fourth buttons are the track keys everywhere they
  * do anything at all, and the first is the one that sleeps and wakes the
  * board, so a name that says F3 only makes the wiring harder to read back.
- * F2 keeps its label because nothing is on it yet.
+ * The second is the quick panel and is named for that; F2 is what the
+ * silkscreen calls it.
  *
  * Any of the four may be left out: a line that is missing means the button
  * is not wired, and board_input.h defaults it to "not wired" rather than
@@ -99,7 +100,7 @@
  * were swapped on the bench for exactly that, 2026-09-16; anywhere else and
  * the board is simply never offered the sleep. */
 #define BUTTON_SLEEP_GPIO 21
-#define BUTTON_F2_GPIO 45
+#define BUTTON_QUICK_MENU_GPIO 45
 #define BUTTON_PREV_GPIO 46
 #define BUTTON_NEXT_GPIO 9
 

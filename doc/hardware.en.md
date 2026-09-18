@@ -186,7 +186,7 @@ is a module of its own - see [below](#bluetooth-the-jradio-bt-module).
 |---|---:|---|---|---:|
 | TFT CS | 10 | | Encoder button | 6 |
 | TFT DC | 47 | | F1 | 21 |
-| TFT MOSI | 11 | | F2 | 45 |
+| TFT MOSI | 11 | | F2, the quick panel | 45 |
 | TFT SCLK | 12 | | F3 | 46 |
 | Backlight | 2 | | F4 | 9 |
 | Encoder right | 5 | | PCM5102 DOUT | 16 |

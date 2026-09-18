@@ -18,8 +18,17 @@
 #ifndef BUTTON_SLEEP_GPIO
 #define BUTTON_SLEEP_GPIO BOARD_GPIO_NOT_WIRED
 #endif
-#ifndef BUTTON_F2_GPIO
-#define BUTTON_F2_GPIO BOARD_GPIO_NOT_WIRED
+/* The old name for the same pin. A board file written before the button
+ * was given its job still says F2, and this is a header nobody's local
+ * copy is in git - dropping the name would leave that button silently
+ * unwired, which is the one failure the fallback below cannot show. */
+#ifdef BUTTON_F2_GPIO
+#ifndef BUTTON_QUICK_MENU_GPIO
+#define BUTTON_QUICK_MENU_GPIO BUTTON_F2_GPIO
+#endif
+#endif
+#ifndef BUTTON_QUICK_MENU_GPIO
+#define BUTTON_QUICK_MENU_GPIO BOARD_GPIO_NOT_WIRED
 #endif
 #ifndef BUTTON_PREV_GPIO
 #define BUTTON_PREV_GPIO BOARD_GPIO_NOT_WIRED
@@ -40,13 +49,14 @@ typedef enum {
     BOARD_INPUT_ACTION_ENCODER_RIGHT,
     BOARD_INPUT_ACTION_ENCODER_BUTTON,
     /* The sleep button (F1 on the silkscreen) held is what puts the board to
-     * sleep; its short press and F2 are wired, debounced and delivered with
-     * nothing acting on them yet - F2 is spoken for, a panel of quick
-     * settings. F2 used to mean "back" and lost the job to the encoder's long
-     * press, which already did the same thing everywhere F2 did. */
+     * sleep; its short press is wired, debounced and delivered with nothing
+     * acting on it yet. The second button opens the quick panel and is named
+     * for that rather than for the silkscreen - it used to mean "back" and
+     * lost the job to the encoder's long press, which already did the same
+     * thing everywhere F2 did. */
     BOARD_INPUT_ACTION_SLEEP_BUTTON,
     BOARD_INPUT_ACTION_SLEEP_LONG,
-    BOARD_INPUT_ACTION_F2,
+    BOARD_INPUT_ACTION_QUICK_MENU,
     BOARD_INPUT_ACTION_BTN_PREV,
     BOARD_INPUT_ACTION_BTN_NEXT,
     BOARD_INPUT_ACTION_ENCODER_LONG,

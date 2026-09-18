@@ -74,7 +74,7 @@ static board_input_channel_t s_channels[] = {
      .hold_action = BOARD_INPUT_ACTION_ENCODER_LONG},
     {.gpio_num = BUTTON_SLEEP_GPIO, .action = BOARD_INPUT_ACTION_SLEEP_BUTTON,
      .hold_action = BOARD_INPUT_ACTION_SLEEP_LONG},
-    {.gpio_num = BUTTON_F2_GPIO, .action = BOARD_INPUT_ACTION_F2},
+    {.gpio_num = BUTTON_QUICK_MENU_GPIO, .action = BOARD_INPUT_ACTION_QUICK_MENU},
     {.gpio_num = BUTTON_PREV_GPIO, .action = BOARD_INPUT_ACTION_BTN_PREV},
     {.gpio_num = BUTTON_NEXT_GPIO, .action = BOARD_INPUT_ACTION_BTN_NEXT},
 };
@@ -139,7 +139,7 @@ board_input_action_t board_input_action_from_gpio(int gpio_num, int level)
         {ENCODER_RIGHT_GPIO, BOARD_INPUT_ACTION_ENCODER_RIGHT},
         {ENCODER_BUTTON_GPIO, BOARD_INPUT_ACTION_ENCODER_BUTTON},
         {BUTTON_SLEEP_GPIO, BOARD_INPUT_ACTION_SLEEP_BUTTON},
-        {BUTTON_F2_GPIO, BOARD_INPUT_ACTION_F2},
+        {BUTTON_QUICK_MENU_GPIO, BOARD_INPUT_ACTION_QUICK_MENU},
         {BUTTON_PREV_GPIO, BOARD_INPUT_ACTION_BTN_PREV},
         {BUTTON_NEXT_GPIO, BOARD_INPUT_ACTION_BTN_NEXT},
     };
@@ -269,7 +269,7 @@ esp_err_t board_input_init(void)
         .intr_type = GPIO_INTR_DISABLE,
     };
     const gpio_config_t button_config = {
-        .pin_bit_mask = board_input_pin_bit(BUTTON_SLEEP_GPIO) | board_input_pin_bit(BUTTON_F2_GPIO) |
+        .pin_bit_mask = board_input_pin_bit(BUTTON_SLEEP_GPIO) | board_input_pin_bit(BUTTON_QUICK_MENU_GPIO) |
                         board_input_pin_bit(BUTTON_PREV_GPIO) |
                         board_input_pin_bit(BUTTON_NEXT_GPIO),
         .mode = GPIO_MODE_INPUT,

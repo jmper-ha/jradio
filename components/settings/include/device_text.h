@@ -71,6 +71,11 @@ typedef enum {
     DEVICE_TEXT_ROW_YANDEX,
     DEVICE_TEXT_ROW_DLNA,
     DEVICE_TEXT_ROW_BRIGHTNESS,
+    /* The two the quick panel names that no settings row does: the sleep
+     * timer is set from the panel and from the web page, never from the
+     * settings screen, and the alarm's own rows live in the browser. */
+    DEVICE_TEXT_ROW_SLEEP_TIMER,
+    DEVICE_TEXT_ROW_ALARM,
     DEVICE_TEXT_ROW_SCREENSAVER,
     DEVICE_TEXT_SCREENSAVER_OFF,
     DEVICE_TEXT_SCREENSAVER_DIM,

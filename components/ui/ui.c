@@ -32,6 +32,7 @@
 #include "ui_feed_icons.h"
 #include "ui_feed_model.h"
 #include "ui_player_state.h"
+#include "ui_quick_menu.h"
 #include "ui_now_playing.h"
 #include "ui_radio_text.h"
 #include "ui_seek.h"
@@ -281,6 +282,15 @@ static lv_obj_t *s_source_progress;
 /* Same deal as the volume, and for the same reason: the panel follows the knob
  * on the very next detent, settings.csv follows once it stops turning. */
 #define UI_BRIGHTNESS_SETTLE_MS 1500U
+/* How long the quick panel takes to come down from the top edge, and to go
+ * back up.
+ *
+ * Measured, not chosen: one frame of this window is the window's own area plus
+ * the strip it uncovers, and on the 320x480 panel that is 35-45 ms - so this
+ * is five or six frames. Set it to 0 and the window simply appears, which is
+ * the fallback if a slower panel turns the slide into the stepping motion the
+ * screensaver's first three attempts had. */
+#define UI_QUICK_SLIDE_MS 180U
 /* The sleep timer's last seconds. The music is taken down rather than cut
  * off: waking up to the last half-second of a song at full volume is what a
  * sleep timer exists to avoid, and ten seconds is long enough to be a fade
@@ -3791,15 +3801,11 @@ static void ui_settings_change_selected(void)
     if (changed) device_settings_publish(&s_device_settings);
 }
 
-/* The number fields. Separate from ui_settings_change_selected() because a
- * click and a detent mean different things here: the click only decides who
- * the knob belongs to, and this is the turn that moves the value. */
-static void ui_settings_change_number(int direction)
+/* One detent of brightness, wherever the detent came from: the settings row
+ * below and the quick panel both end up here, because the deferred save is the
+ * part that must not be written twice. */
+static void ui_brightness_step(int direction)
 {
-    const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
-    if (selected != UI_SETTINGS_ROW_BRIGHTNESS_FIELD) {
-        return;
-    }
     const int next = ui_settings_brightness_step((int)s_device_settings.brightness, direction);
     if (next == (int)s_device_settings.brightness) return;
     /* Straight to the panel, saved later. Writing settings.csv per detent is
@@ -3810,6 +3816,18 @@ static void ui_settings_change_number(int direction)
     s_brightness_save_pending = true;
     s_brightness_changed_ms = ui_tick_get_ms();
     device_settings_publish(&s_device_settings);
+}
+
+/* The number fields. Separate from ui_settings_change_selected() because a
+ * click and a detent mean different things here: the click only decides who
+ * the knob belongs to, and this is the turn that moves the value. */
+static void ui_settings_change_number(int direction)
+{
+    const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
+    if (selected != UI_SETTINGS_ROW_BRIGHTNESS_FIELD) {
+        return;
+    }
+    ui_brightness_step(direction);
 }
 
 static void ui_create_station_list_screen(void)
@@ -4930,6 +4948,285 @@ static void ui_sleep_fade_cancel(void)
     ESP_LOGI(TAG, "sleep timer cancelled by a key press");
 }
 
+/* --- The quick panel -------------------------------------------------------
+ *
+ * One window, on LVGL's top layer so it is drawn over whichever screen is
+ * loaded. The panel has to be reachable from the player, the station list and
+ * the home screen alike, and a copy per screen would be four windows to keep
+ * in step - which is how two of them would end up disagreeing.
+ *
+ * The objects are created once, at start-up, and only shown and hidden
+ * afterwards. Building them on the press is the tempting shape and the wrong
+ * one: an allocation that exhausts the LVGL pool is a silent while(1) inside
+ * the refresh, and one that happens on a button press happens on a Tuesday
+ * evening rather than on the bench. */
+static ui_quick_menu_t s_quick;
+static lv_obj_t *s_quick_window;
+static lv_obj_t *s_quick_name;
+static lv_obj_t *s_quick_value_box;
+static lv_obj_t *s_quick_value;
+/* Whether the window is up, which is not the same as the model being open: the
+ * closing slide still runs for a fifth of a second after the model has let go
+ * of the knob. */
+static bool s_quick_visible;
+/* What is on the window now, so a poll that finds nothing changed costs no
+ * invalidation. The panel is polled ten times a second and LVGL repaints a
+ * label whose text is set again whether or not the text differs. */
+static char s_quick_value_shown[32];
+static ui_quick_item_t s_quick_item_shown;
+static bool s_quick_editing_shown;
+
+static void ui_quick_set_y(void *target, int32_t value)
+{
+    lv_obj_set_y((lv_obj_t *)target, (int32_t)value);
+}
+
+static void ui_quick_create(void)
+{
+    s_quick_window = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(s_quick_window);
+    lv_obj_remove_flag(s_quick_window, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(s_quick_window, UI_QUICK_W, UI_QUICK_H);
+    lv_obj_set_pos(s_quick_window, UI_QUICK_X, -UI_QUICK_H);
+    lv_obj_set_style_bg_color(s_quick_window, lv_color_hex(UI_COLOR_TILE), 0);
+    lv_obj_set_style_bg_opa(s_quick_window, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_quick_window, 8, 0);
+    lv_obj_set_style_border_color(s_quick_window, lv_color_hex(UI_COLOR_TILE_EDGE), 0);
+    lv_obj_set_style_border_width(s_quick_window, 1, 0);
+    lv_obj_add_flag(s_quick_window, LV_OBJ_FLAG_HIDDEN);
+
+    s_quick_name = lv_label_create(s_quick_window);
+    lv_obj_set_pos(s_quick_name, UI_QUICK_PAD_X, UI_QUICK_PAD_Y);
+    lv_obj_set_size(s_quick_name, UI_QUICK_TEXT_W, UI_FONT_BODY_LINE_H);
+    /* One line, dotted rather than wrapped: a name that wrapped would push the
+     * value out of a window whose height is fixed. */
+    lv_label_set_long_mode(s_quick_name, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_font(s_quick_name, UI_FONT_BODY, 0);
+    lv_obj_set_style_text_color(s_quick_name, lv_color_hex(UI_COLOR_MUTED), 0);
+    lv_label_set_text(s_quick_name, "");
+
+    /* The value sits in a box, and the box is what says who the knob belongs
+     * to: an outline in the accent colour means the next detent moves this
+     * value, a dim one means it moves to the next function. Without it the two
+     * modes look identical and the first turn is a guess. */
+    s_quick_value_box = lv_obj_create(s_quick_window);
+    lv_obj_remove_style_all(s_quick_value_box);
+    lv_obj_remove_flag(s_quick_value_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(s_quick_value_box, UI_QUICK_PAD_X,
+                   UI_QUICK_PAD_Y + UI_FONT_BODY_LINE_H + UI_QUICK_GAP);
+    lv_obj_set_size(s_quick_value_box, UI_QUICK_TEXT_W, UI_QUICK_VALUE_H);
+    lv_obj_set_style_bg_color(s_quick_value_box, lv_color_hex(UI_COLOR_GROUND), 0);
+    lv_obj_set_style_bg_opa(s_quick_value_box, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_quick_value_box, 6, 0);
+    lv_obj_set_style_border_width(s_quick_value_box, 1, 0);
+    lv_obj_set_style_border_color(s_quick_value_box, lv_color_hex(UI_COLOR_RULE), 0);
+
+    s_quick_value = lv_label_create(s_quick_value_box);
+    lv_obj_set_size(s_quick_value, UI_QUICK_TEXT_W - 12, UI_FONT_TITLE_LINE_H);
+    lv_obj_set_pos(s_quick_value, 6, (UI_QUICK_VALUE_H - UI_FONT_TITLE_LINE_H) / 2);
+    lv_obj_set_style_text_align(s_quick_value, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(s_quick_value, UI_FONT_TITLE, 0);
+    lv_obj_set_style_text_color(s_quick_value, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_label_set_text(s_quick_value, "");
+}
+
+/* The value as the window shows it. The four rows are read from where the
+ * value actually lives - the timer service, the settings this task holds - so
+ * a change made from the web page appears here without anything telling us. */
+static void ui_quick_value_text(char *out, size_t size)
+{
+    switch (s_quick.item) {
+    case UI_QUICK_ITEM_SLEEP: {
+        const uint16_t minutes = sleep_timer_service_minutes();
+        if (minutes == 0U) {
+            snprintf(out, size, "%s", ui_text(DEVICE_TEXT_OFF));
+        } else {
+            snprintf(out, size, "%u %s", (unsigned)minutes,
+                     ui_text(DEVICE_TEXT_MINUTES_SHORT));
+        }
+        break;
+    }
+    case UI_QUICK_ITEM_ALARM:
+        /* The time beside the word, because "on" alone raises exactly the
+         * question the strip's bell already raises: on at what hour. */
+        if (s_device_settings.alarm.enabled) {
+            snprintf(out, size, "%s  %02u:%02u", ui_text(DEVICE_TEXT_ON),
+                     (unsigned)s_device_settings.alarm.hour,
+                     (unsigned)s_device_settings.alarm.minute);
+        } else {
+            snprintf(out, size, "%s", ui_text(DEVICE_TEXT_OFF));
+        }
+        break;
+    case UI_QUICK_ITEM_BT_OUTPUT:
+        snprintf(out, size, "%s",
+                 ui_text(s_device_settings.bt_output ? DEVICE_TEXT_ON : DEVICE_TEXT_OFF));
+        break;
+    case UI_QUICK_ITEM_BRIGHTNESS:
+        snprintf(out, size, "%u%%", (unsigned)s_device_settings.brightness);
+        break;
+    default:
+        if (size > 0U) out[0] = '\0';
+        break;
+    }
+}
+
+static void ui_quick_refresh(void)
+{
+    if (s_quick_window == NULL) return;
+    if (s_quick.item != s_quick_item_shown) {
+        s_quick_item_shown = s_quick.item;
+        lv_label_set_text(s_quick_name,
+                          ui_quick_item_label(s_quick.item, s_device_settings.language));
+        /* The cached value belongs to the row that just left. */
+        s_quick_value_shown[0] = '\0';
+    }
+    char value[sizeof(s_quick_value_shown)];
+    ui_quick_value_text(value, sizeof(value));
+    if (strcmp(value, s_quick_value_shown) != 0) {
+        snprintf(s_quick_value_shown, sizeof(s_quick_value_shown), "%s", value);
+        lv_label_set_text(s_quick_value, value);
+    }
+    if (s_quick.editing != s_quick_editing_shown) {
+        s_quick_editing_shown = s_quick.editing;
+        const uint32_t edge = s_quick.editing ? UI_COLOR_ACCENT : UI_COLOR_RULE;
+        lv_obj_set_style_border_color(s_quick_value_box, lv_color_hex(edge), 0);
+        lv_obj_set_style_text_color(s_quick_value,
+                                    lv_color_hex(s_quick.editing ? UI_COLOR_ACCENT
+                                                                 : UI_COLOR_TEXT), 0);
+    }
+}
+
+static void ui_quick_hidden_cb(lv_anim_t *anim)
+{
+    (void)anim;
+    if (s_quick_window != NULL) lv_obj_add_flag(s_quick_window, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* Down from the top edge, and back up.
+ *
+ * The window's own area is what each frame of this costs - the window plus the
+ * strip it uncovers - so it is affordable where a full-screen animation is
+ * not. UI_QUICK_SLIDE_MS at 0 turns the whole thing into one placement. */
+static void ui_quick_slide(bool down)
+{
+    if (s_quick_window == NULL) return;
+    lv_anim_delete(s_quick_window, ui_quick_set_y);
+    const int32_t to = down ? UI_QUICK_Y : -UI_QUICK_H;
+    if (UI_QUICK_SLIDE_MS == 0U) {
+        lv_obj_set_y(s_quick_window, to);
+        if (!down) lv_obj_add_flag(s_quick_window, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_anim_t anim;
+    lv_anim_init(&anim);
+    lv_anim_set_var(&anim, s_quick_window);
+    lv_anim_set_exec_cb(&anim, ui_quick_set_y);
+    lv_anim_set_values(&anim, lv_obj_get_y(s_quick_window), to);
+    lv_anim_set_duration(&anim, UI_QUICK_SLIDE_MS);
+    /* Slowing into place: a linear slide of a solid block reads as a jump on
+     * a panel this size. */
+    lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
+    if (!down) lv_anim_set_completed_cb(&anim, ui_quick_hidden_cb);
+    lv_anim_start(&anim);
+}
+
+static void ui_quick_show(void)
+{
+    if (s_quick_window == NULL) return;
+    s_quick_visible = true;
+    /* Filled before it is on screen: the first frame of the slide already
+     * carries the row the knob is on. */
+    s_quick_item_shown = UI_QUICK_ITEM_COUNT;
+    s_quick_value_shown[0] = '\0';
+    s_quick_editing_shown = !s_quick.editing;
+    ui_quick_refresh();
+    lv_obj_remove_flag(s_quick_window, LV_OBJ_FLAG_HIDDEN);
+    ui_quick_slide(true);
+}
+
+static void ui_quick_hide(void)
+{
+    if (s_quick_window == NULL || !s_quick_visible) return;
+    s_quick_visible = false;
+    ui_quick_slide(false);
+}
+
+/* One detent on the row the knob owns. Each row is applied the way its own
+ * setting already is elsewhere in this file, deliberately: the quick panel is
+ * another way to reach these four, not another place where they are written. */
+static void ui_quick_apply_step(int direction)
+{
+    switch (s_quick.item) {
+    case UI_QUICK_ITEM_SLEEP: {
+        const uint16_t next = ui_quick_sleep_step(sleep_timer_service_minutes(), direction);
+        sleep_timer_service_set(next);
+        ESP_LOGI(TAG, "quick panel: sleep timer %u min", (unsigned)next);
+        break;
+    }
+    case UI_QUICK_ITEM_ALARM: {
+        /* A switch, so either direction flips it: a knob that only turned the
+         * alarm on clockwise would need a second guess to turn it off. */
+        const bool next = !s_device_settings.alarm.enabled;
+        if (!device_settings_set_alarm_enabled(&s_device_settings, next)) {
+            ESP_LOGW(TAG, "quick panel: the alarm switch was not saved");
+            break;
+        }
+        device_settings_publish(&s_device_settings);
+        ESP_LOGI(TAG, "quick panel: alarm %s", next ? "on" : "off");
+        break;
+    }
+    case UI_QUICK_ITEM_BT_OUTPUT: {
+        const bool next = !s_device_settings.bt_output;
+        if (!device_settings_set_bt_output(&s_device_settings, next)) {
+            ESP_LOGW(TAG, "quick panel: the Bluetooth switch was not saved");
+            break;
+        }
+        ui_apply_bt_output();
+        device_settings_publish(&s_device_settings);
+        ESP_LOGI(TAG, "quick panel: sound over Bluetooth %s", next ? "on" : "off");
+        break;
+    }
+    case UI_QUICK_ITEM_BRIGHTNESS:
+        ui_brightness_step(direction);
+        break;
+    default:
+        break;
+    }
+}
+
+/* Which rows the panel has, asked every pass because one of them comes and
+ * goes: the Bluetooth row is there while the module answers and the player is
+ * not listening to a phone - sending the sound to a speaker while a phone is
+ * feeding it is the one combination the module cannot do. */
+static void ui_quick_sync_rows(void)
+{
+#if BOARD_HAS_BLUETOOTH
+    const bool bluetooth = bt_link_alive() &&
+                           ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_BLUETOOTH;
+#else
+    const bool bluetooth = false;
+#endif
+    ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_BT_OUTPUT, bluetooth);
+}
+
+static void ui_quick_poll(uint32_t now_ms)
+{
+    if (s_quick_window == NULL) return;
+    ui_quick_sync_rows();
+    if (!s_quick.open) return;
+    /* An untouched panel closes itself, because while it is up the knob is
+     * not the volume. And the screensaver coming up closes it too: what is
+     * behind a dark panel is not a setting anybody is reading. */
+    if (ui_quick_menu_idle_expired(&s_quick, now_ms) || s_saver_view.active) {
+        ui_quick_menu_close(&s_quick);
+        ui_quick_hide();
+        return;
+    }
+    /* Values move under the panel: the web page has the same four settings,
+     * and the sleep timer counts down on its own. */
+    ui_quick_refresh();
+}
+
 static void ui_handle_input(board_input_action_t action)
 {
     /* Before the screensaver, and from every screen: holding F1 means sleep
@@ -4952,6 +5249,39 @@ static void ui_handle_input(board_input_action_t action)
      * dark nobody could see what it would have done. */
     if (ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms())) {
         return;
+    }
+
+    /* The quick panel owns the knob while it is up, so it is asked before any
+     * screen's own handler. The settings screen is the exception: there the
+     * knob is already spoken for row by row, and a window over that list would
+     * cover the very rows it duplicates. */
+    if (!s_settings_open) {
+        const bool quick_was_open = s_quick.open;
+        switch (ui_quick_menu_handle(&s_quick, action, ui_tick_get_ms())) {
+        case UI_QUICK_RESULT_OPENED:
+            ui_quick_show();
+            return;
+        case UI_QUICK_RESULT_CLOSED:
+            ui_quick_hide();
+            return;
+        case UI_QUICK_RESULT_MOVED:
+            ui_quick_refresh();
+            return;
+        case UI_QUICK_RESULT_STEP_UP:
+            ui_quick_apply_step(1);
+            ui_quick_refresh();
+            return;
+        case UI_QUICK_RESULT_STEP_DOWN:
+            ui_quick_apply_step(-1);
+            ui_quick_refresh();
+            return;
+        default:
+            break;
+        }
+        /* Open, and the press meant nothing to the panel: it is still the
+         * panel's press. Letting it through would work the screen underneath
+         * while the window covers the part that shows what happened. */
+        if (quick_was_open) return;
     }
 
     /* Anybody touching a control has taken over from the resume, and a browser
@@ -6026,6 +6356,7 @@ static void ui_task(void *arg)
          * from now, and whatever the alarm started would be stopped again. */
         if (!s_sleep_fading) ui_alarm_poll(ui_tick_get_ms());
         ui_screensaver_poll(ui_tick_get_ms());
+        ui_quick_poll(ui_tick_get_ms());
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
@@ -6249,6 +6580,12 @@ esp_err_t ui_init(void)
     ui_create_source_screen();
     ui_create_station_list_screen();
     ui_create_screensaver();
+    ui_quick_create();
+    ui_quick_menu_init(&s_quick);
+    /* Always there, both of them: the backlight is what somebody reaches for
+     * in the evening, and the sleep timer and the alarm have no rows on the
+     * settings screen at all. The Bluetooth row is added by the poll. */
+    ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_BRIGHTNESS, true);
     ui_screensaver_init(&s_saver, ui_tick_get_ms());
     alarm_guard_init(&s_alarm_guard);
     /* Taken once, and it decides two things further down: the panel stays dark

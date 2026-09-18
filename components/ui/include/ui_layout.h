@@ -367,6 +367,59 @@ _Static_assert(UI_QR_BACK_Y + UI_FONT_BODY_LINE_H <= TFT_HEIGHT,
 _Static_assert(UI_QR_CAPTION_X + UI_QR_CAPTION_W <= TFT_WIDTH,
                "the QR screen's caption runs off the right edge");
 
+/* The quick panel: the window the second button drops from the top of the
+ * panel, over whatever screen is up.
+ *
+ * Every number here is a consequence, so no shape file has to be touched to
+ * gain it - which is the point. Three quarters of the width because the window
+ * is deliberately not the panel: what is behind it stays visible, and that is
+ * how it reads as a panel over the screen rather than a screen of its own.
+ * The height is the two lines it holds - the function's name in the body face,
+ * its value in the title face - and the air around them. A shape that wants
+ * something else overrides these like any other. */
+#ifndef UI_QUICK_W
+#define UI_QUICK_W ((TFT_WIDTH * 3) / 4)
+#endif
+#ifndef UI_QUICK_PAD_X
+#define UI_QUICK_PAD_X 12
+#endif
+#ifndef UI_QUICK_PAD_Y
+#define UI_QUICK_PAD_Y 9
+#endif
+/* The gap between the name and the value, and the value's own box. The box is
+ * what says who the knob belongs to: dim while the knob is moving between
+ * functions, accent while it is moving the value. */
+#ifndef UI_QUICK_GAP
+#define UI_QUICK_GAP 4
+#endif
+#ifndef UI_QUICK_VALUE_H
+#define UI_QUICK_VALUE_H (UI_FONT_TITLE_LINE_H + 6)
+#endif
+#ifndef UI_QUICK_H
+#define UI_QUICK_H (2 * UI_QUICK_PAD_Y + UI_FONT_BODY_LINE_H + UI_QUICK_GAP + UI_QUICK_VALUE_H)
+#endif
+#ifndef UI_QUICK_X
+#define UI_QUICK_X ((TFT_WIDTH - UI_QUICK_W) / 2)
+#endif
+/* Below the strip rather than over it: the clock, the signal and the two marks
+ * the panel itself is about - the sleep timer's crescent and the alarm's bell -
+ * are in that strip, and covering them would hide the very thing the window is
+ * changing. */
+#ifndef UI_QUICK_Y
+#define UI_QUICK_Y (UI_STRIP_H + 6)
+#endif
+#ifndef UI_QUICK_TEXT_W
+#define UI_QUICK_TEXT_W (UI_QUICK_W - 2 * UI_QUICK_PAD_X)
+#endif
+_Static_assert(UI_QUICK_X >= 0 && UI_QUICK_X + UI_QUICK_W <= TFT_WIDTH,
+               "the quick panel runs off the side of the panel");
+_Static_assert(UI_QUICK_Y + UI_QUICK_H <= TFT_HEIGHT,
+               "the quick panel runs off the bottom of the panel");
+/* Two of the four values are numbers with a unit beside them ("45 мин", "60%"),
+ * and the longest name is "Sound over Bluetooth" - so the window has to hold a
+ * line of text, not a word. Below this it is a box with dots in it. */
+_Static_assert(UI_QUICK_TEXT_W >= 140, "the quick panel is too narrow for its names");
+
 /* The Yandex pairing screen: a status line under the strip and a panel with
  * the code in the display face, the address in the icon face and the
  * countdown in the body face. Placed by eye on the first panel and left

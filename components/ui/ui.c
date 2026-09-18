@@ -4972,6 +4972,11 @@ static lv_obj_t *s_quick_window;
 static lv_obj_t *s_quick_row[UI_QUICK_ROWS];
 static lv_obj_t *s_quick_name[UI_QUICK_ROWS];
 static lv_obj_t *s_quick_value[UI_QUICK_ROWS];
+/* Every row carries both a reading and a switch, and shows the one its function
+ * needs: the two kinds of row have to line up on the same right edge, and a
+ * widget created when the cursor first lands on a switch is an allocation on a
+ * button press - the thing this window is built at start-up to avoid. */
+static lv_obj_t *s_quick_switch[UI_QUICK_ROWS];
 _Static_assert(UI_QUICK_ROWS == UI_QUICK_ROW_COUNT,
                "the model draws a different number of rows than the layout leaves room for");
 /* Whether the window is up, which is not the same as the model being open: the
@@ -4983,6 +4988,7 @@ static bool s_quick_visible;
  * a label whose text is set again whether or not the text differs. */
 static char s_quick_value_shown[UI_QUICK_ROWS][32];
 static ui_quick_item_t s_quick_item_shown[UI_QUICK_ROWS];
+static bool s_quick_switch_shown[UI_QUICK_ROWS];
 /* 0xFF means "nothing is highlighted yet", which is what the window is on the
  * pass that puts it up: without it the first row's fill would be skipped as
  * already correct. */
@@ -5051,6 +5057,30 @@ static void ui_quick_create(void)
         lv_obj_set_style_text_font(s_quick_value[row], UI_FONT_BODY, 0);
         lv_obj_set_style_text_color(s_quick_value[row], lv_color_hex(UI_COLOR_TEXT), 0);
         lv_label_set_text(s_quick_value[row], "");
+
+        /* The switch rows get the same widget the settings screen uses, styled
+         * the same way: a switch that looked different here would read as a
+         * different kind of setting. It sits at the row's right edge, where the
+         * reading on the other rows ends. */
+        s_quick_switch[row] = lv_switch_create(s_quick_window);
+        lv_obj_set_size(s_quick_switch[row], UI_QUICK_SWITCH_W, UI_QUICK_SWITCH_H);
+        lv_obj_set_pos(s_quick_switch[row],
+                       UI_QUICK_PAD_X + UI_QUICK_TEXT_W - UI_QUICK_SWITCH_W,
+                       UI_QUICK_PAD_Y + (int)row * UI_QUICK_ROW_H +
+                           (UI_QUICK_ROW_H - UI_QUICK_SWITCH_H) / 2);
+        lv_obj_set_style_bg_color(s_quick_switch[row], lv_color_hex(0x546E7A), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(s_quick_switch[row], lv_color_hex(UI_COLOR_ACCENT),
+                                  LV_PART_INDICATOR | LV_STATE_CHECKED);
+        lv_obj_set_style_bg_color(s_quick_switch[row], lv_color_hex(0xECEFF1), LV_PART_KNOB);
+        lv_obj_set_style_bg_color(s_quick_switch[row], lv_color_hex(UI_COLOR_TEXT),
+                                  LV_PART_KNOB | LV_STATE_CHECKED);
+        /* The outline is the edit mark on these rows, the way amber text is on
+         * the others: transparent until the knob has taken this switch. */
+        lv_obj_set_style_border_color(s_quick_switch[row], lv_color_hex(UI_COLOR_ACCENT),
+                                      LV_PART_MAIN);
+        lv_obj_set_style_border_width(s_quick_switch[row], 2, LV_PART_MAIN);
+        lv_obj_set_style_border_opa(s_quick_switch[row], LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_add_flag(s_quick_switch[row], LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -5074,16 +5104,11 @@ static void ui_quick_value_text(ui_quick_item_t item, char *out, size_t size)
         break;
     }
     case UI_QUICK_ITEM_ALARM:
-        if (s_device_settings.alarm.enabled) {
-            snprintf(out, size, "%02u:%02u", (unsigned)s_device_settings.alarm.hour,
-                     (unsigned)s_device_settings.alarm.minute);
-        } else {
-            snprintf(out, size, "%s", ui_text(DEVICE_TEXT_OFF));
-        }
-        break;
     case UI_QUICK_ITEM_BT_OUTPUT:
-        snprintf(out, size, "%s",
-                 ui_text(s_device_settings.bt_output ? DEVICE_TEXT_ON : DEVICE_TEXT_OFF));
+        /* Both are switches, and a switch says it itself. The alarm's hour is
+         * not put here either: there is no room beside the switch on the
+         * narrowest panel, and the strip's bell already says it is armed. */
+        if (size > 0U) out[0] = '\0';
         break;
     case UI_QUICK_ITEM_BRIGHTNESS:
         snprintf(out, size, "%u%%", (unsigned)s_device_settings.brightness);
@@ -5108,13 +5133,25 @@ static void ui_quick_layout_rows(uint8_t rows)
         if (used) {
             lv_obj_remove_flag(s_quick_row[row], LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(s_quick_name[row], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(s_quick_value[row], LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(s_quick_row[row], LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(s_quick_name[row], LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(s_quick_value[row], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_quick_switch[row], LV_OBJ_FLAG_HIDDEN);
         }
+        /* Which of the two the used rows show is the item's business, and
+         * ui_quick_refresh() settles it on the same pass. */
     }
+}
+
+static bool ui_quick_switch_state(ui_quick_item_t item)
+{
+    switch (item) {
+    case UI_QUICK_ITEM_ALARM: return s_device_settings.alarm.enabled;
+    case UI_QUICK_ITEM_BT_OUTPUT: return s_device_settings.bt_output;
+    default: break;
+    }
+    return false;
 }
 
 static void ui_quick_refresh(void)
@@ -5140,20 +5177,45 @@ static void ui_quick_refresh(void)
                                   : ui_quick_item_label(item, s_device_settings.language));
             s_quick_value_shown[row][0] = '\0';
         }
-        char value[sizeof(s_quick_value_shown[0])];
-        ui_quick_value_text(item, value, sizeof(value));
-        if (strcmp(value, s_quick_value_shown[row]) != 0) {
-            snprintf(s_quick_value_shown[row], sizeof(s_quick_value_shown[row]), "%s", value);
-            lv_label_set_text(s_quick_value[row], value);
+        const bool is_switch = item != UI_QUICK_ITEM_COUNT && ui_quick_item_is_switch(item);
+        if (item_moved) {
+            /* One of the two per row, and the other out of the way: they share
+             * the row's right edge. */
+            if (is_switch) {
+                lv_obj_add_flag(s_quick_value[row], LV_OBJ_FLAG_HIDDEN);
+                lv_obj_remove_flag(s_quick_switch[row], LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(s_quick_switch[row], LV_OBJ_FLAG_HIDDEN);
+                if (item != UI_QUICK_ITEM_COUNT) {
+                    lv_obj_remove_flag(s_quick_value[row], LV_OBJ_FLAG_HIDDEN);
+                }
+            }
+        }
+        if (is_switch) {
+            const bool on = ui_quick_switch_state(item);
+            if (item_moved || on != s_quick_switch_shown[row]) {
+                s_quick_switch_shown[row] = on;
+                if (on) lv_obj_add_state(s_quick_switch[row], LV_STATE_CHECKED);
+                else lv_obj_remove_state(s_quick_switch[row], LV_STATE_CHECKED);
+            }
+        } else {
+            char value[sizeof(s_quick_value_shown[0])];
+            ui_quick_value_text(item, value, sizeof(value));
+            if (strcmp(value, s_quick_value_shown[row]) != 0) {
+                snprintf(s_quick_value_shown[row], sizeof(s_quick_value_shown[row]), "%s", value);
+                lv_label_set_text(s_quick_value[row], value);
+            }
         }
         if (!marks_stale && !item_moved) continue;
         const bool is_cursor = (uint8_t)row == cursor && item != UI_QUICK_ITEM_COUNT;
         lv_obj_set_style_bg_opa(s_quick_row[row], is_cursor ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
         lv_obj_set_style_text_color(s_quick_name[row],
                                     lv_color_hex(is_cursor ? UI_COLOR_TEXT : UI_COLOR_MUTED), 0);
-        lv_obj_set_style_text_color(
-            s_quick_value[row],
-            lv_color_hex(is_cursor && s_quick.editing ? UI_COLOR_ACCENT : UI_COLOR_TEXT), 0);
+        const bool taken = is_cursor && s_quick.editing;
+        lv_obj_set_style_text_color(s_quick_value[row],
+                                    lv_color_hex(taken ? UI_COLOR_ACCENT : UI_COLOR_TEXT), 0);
+        lv_obj_set_style_border_opa(s_quick_switch[row],
+                                    taken ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_MAIN);
     }
     s_quick_cursor_shown = cursor;
     s_quick_editing_shown = s_quick.editing;
@@ -5213,6 +5275,13 @@ static void ui_quick_show(void)
      * starts off screen whatever the row count turned out to be. */
     lv_obj_set_y(s_quick_window, -(int32_t)lv_obj_get_height(s_quick_window));
     lv_obj_remove_flag(s_quick_window, LV_OBJ_FLAG_HIDDEN);
+    /* Which rows it came up with, because the one that can be missing is the
+     * Bluetooth row and the reason is never on the screen: the module answers a
+     * good ten seconds after a boot, and until then the panel is one row
+     * shorter. */
+    ESP_LOGI(TAG, "quick panel: %u rows (bluetooth row %s)",
+             (unsigned)s_quick_rows_shown,
+             ui_quick_menu_item_visible(&s_quick, UI_QUICK_ITEM_BT_OUTPUT) ? "yes" : "no");
     ui_quick_slide(true);
 }
 

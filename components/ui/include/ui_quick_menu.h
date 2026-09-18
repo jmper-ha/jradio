@@ -22,11 +22,14 @@
  * The model answers "the knob moved one step up on this row"; the caller knows
  * what that means. */
 
+/* The order is the order of the rows, and the speaker is last on purpose: it is
+ * the row that can be missing, so anything below it would shift up and down as
+ * the module comes and goes - and it is the one somebody reaches for least. */
 typedef enum {
     UI_QUICK_ITEM_SLEEP = 0,
     UI_QUICK_ITEM_ALARM,
-    UI_QUICK_ITEM_BT_OUTPUT,
     UI_QUICK_ITEM_BRIGHTNESS,
+    UI_QUICK_ITEM_BT_OUTPUT,
     UI_QUICK_ITEM_COUNT,
 } ui_quick_item_t;
 
@@ -134,6 +137,12 @@ uint8_t ui_quick_menu_cursor_row(const ui_quick_menu_t *state);
 /* Where the cursor is in the whole list, and how long the list is - what a
  * scrollbar would need, and what the tests check the scrolling against. */
 uint8_t ui_quick_menu_position(const ui_quick_menu_t *state);
+
+/* Whether the row's value is a switch rather than a reading. The panel draws
+ * those as the settings screen does - a real switch, not the words "on" and
+ * "off" - and the knob's detent flips them either way, which is why the model
+ * answers this rather than ui.c deciding by item. */
+bool ui_quick_item_is_switch(ui_quick_item_t item);
 
 /* The panel's own name for a function, which is not always the settings
  * screen's: a row here is a name beside a value in a window that is not the

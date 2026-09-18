@@ -241,6 +241,11 @@ uint16_t ui_quick_sleep_step(uint16_t minutes, int direction)
     return ui_quick_sleep_choices[last];
 }
 
+bool ui_quick_item_is_switch(ui_quick_item_t item)
+{
+    return item == UI_QUICK_ITEM_ALARM || item == UI_QUICK_ITEM_BT_OUTPUT;
+}
+
 const char *ui_quick_item_label(ui_quick_item_t item, device_language_t language)
 {
     switch (item) {

@@ -421,6 +421,14 @@ _Static_assert(UI_QR_CAPTION_X + UI_QR_CAPTION_W <= TFT_WIDTH,
 #ifndef UI_QUICK_TEXT_W
 #define UI_QUICK_TEXT_W (UI_QUICK_W - 2 * UI_QUICK_PAD_X)
 #endif
+/* The switch on a switch row, the same size the settings screen draws, sitting
+ * at the row's right edge where a reading would end. */
+#ifndef UI_QUICK_SWITCH_W
+#define UI_QUICK_SWITCH_W 42
+#endif
+#ifndef UI_QUICK_SWITCH_H
+#define UI_QUICK_SWITCH_H 20
+#endif
 /* The value's column, pinned to the right of the row with the name taking what
  * is left. Two fifths, because the longest value ("120 мин") is about half the
  * length of the longest name and a column sized for the value alone would
@@ -446,6 +454,12 @@ _Static_assert(UI_QUICK_NAME_W >= 6 * UI_FONT_BODY_PX,
                "the quick panel's name column would dot its longest name");
 _Static_assert(UI_QUICK_VALUE_W >= (9 * UI_FONT_BODY_PX) / 2,
                "the quick panel's value column would dot its longest value");
+/* And the switch has to fit in that same column, since the two kinds of row
+ * share the right edge. */
+_Static_assert(UI_QUICK_VALUE_W >= UI_QUICK_SWITCH_W,
+               "the quick panel's switch is wider than the column it sits in");
+_Static_assert(UI_QUICK_SWITCH_H <= UI_QUICK_ROW_H - 4,
+               "the quick panel's switch is taller than its row");
 
 /* The Yandex pairing screen: a status line under the strip and a panel with
  * the code in the display face, the address in the icon face and the

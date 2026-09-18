@@ -41,7 +41,7 @@ the home screen. Details in [Hardware](doc/hardware.en.md).
 | **Volume** | works | The knob, the web player and Settings; remembered |
 | **Autoplay** | works | Starts whatever was playing when the device was switched off: a station, a track off a drive, a Yandex station or a container on a media server |
 | **Deep sleep** | works | Holding the first button puts the device out: playback stops, Bluetooth and Wi-Fi leave properly, and with a power switch wired everything outside the module loses power too. The same button wakes it - [more](doc/usage.en.md#deep-sleep) |
-| **Quick panel** | works | F2 drops a window over the screen: the sleep timer, the alarm, sound over a Bluetooth speaker and the brightness - on the knob, without leaving the player - [more](doc/usage.en.md#the-quick-panel) |
+| **Quick panel** | works | F2 drops a window over the screen: the sleep timer, the alarm, the brightness and the BT speaker - on the knob, without leaving the player - [more](doc/usage.en.md#the-quick-panel) |
 | **Sleep timer** | works | Play for 15 to 120 minutes, then fade the volume away and sleep; set in the web settings, with the countdown on the screen and on the player page - [more](doc/usage.en.md#the-sleep-timer) |
 | **Alarm clock** | works | A station at a set time, on the days you choose and at its own volume. A sleeping device wakes for it by itself: quietly ten minutes early to correct its clock, then a minute before it rings - [more](doc/usage.en.md#the-alarm-clock) |
 | **Cover art** | works | From the file's tag, from `cover.jpg` beside the music, from Yandex |

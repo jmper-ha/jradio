@@ -48,17 +48,17 @@ static void test_the_knob_walks_the_rows_and_wraps(void)
     assert(state.item == UI_QUICK_ITEM_ALARM);
     assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1200U) ==
            UI_QUICK_RESULT_MOVED);
-    assert(state.item == UI_QUICK_ITEM_BT_OUTPUT);
+    assert(state.item == UI_QUICK_ITEM_BRIGHTNESS);
     assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1300U) ==
            UI_QUICK_RESULT_MOVED);
-    assert(state.item == UI_QUICK_ITEM_BRIGHTNESS);
+    assert(state.item == UI_QUICK_ITEM_BT_OUTPUT);
     /* Round the end, so the last row is not a dead stop. */
     assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1400U) ==
            UI_QUICK_RESULT_MOVED);
     assert(state.item == UI_QUICK_ITEM_SLEEP);
     assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_LEFT, 1500U) ==
            UI_QUICK_RESULT_MOVED);
-    assert(state.item == UI_QUICK_ITEM_BRIGHTNESS);
+    assert(state.item == UI_QUICK_ITEM_BT_OUTPUT);
 }
 
 static void test_the_click_hands_the_knob_to_the_value(void)
@@ -200,10 +200,12 @@ static void test_every_function_has_a_row(void)
     assert(ui_quick_menu_visible_count(&state) == 4U);
     assert(ui_quick_menu_visible_count(&state) <= (uint8_t)UI_QUICK_ROWS);
 
+    /* The speaker's row is last: it is the one that can go away, and a row
+       that vanished from the middle would move everything under it. */
     assert(ui_quick_menu_row_item(&state, 0U) == UI_QUICK_ITEM_SLEEP);
     assert(ui_quick_menu_row_item(&state, 1U) == UI_QUICK_ITEM_ALARM);
-    assert(ui_quick_menu_row_item(&state, 2U) == UI_QUICK_ITEM_BT_OUTPUT);
-    assert(ui_quick_menu_row_item(&state, 3U) == UI_QUICK_ITEM_BRIGHTNESS);
+    assert(ui_quick_menu_row_item(&state, 2U) == UI_QUICK_ITEM_BRIGHTNESS);
+    assert(ui_quick_menu_row_item(&state, 3U) == UI_QUICK_ITEM_BT_OUTPUT);
 
     /* Walking the list twice round moves the cursor and nothing else: with
        every function on a row there is nothing to scroll. */
@@ -267,6 +269,20 @@ static void test_a_short_list_leaves_rows_empty(void)
     assert(state.item == UI_QUICK_ITEM_ALARM);
     assert(ui_quick_menu_cursor_row(&state) == 1U);
     assert(ui_quick_menu_row_item(&state, 2U) == UI_QUICK_ITEM_COUNT);
+}
+
+/* Which rows are switches: the two that are, are, and the two that carry a
+   number are not - the panel draws one or the other and they share the row's
+   right edge. */
+static void test_the_switch_rows_are_the_two_switches(void)
+{
+    assert(ui_quick_item_is_switch(UI_QUICK_ITEM_ALARM));
+    assert(ui_quick_item_is_switch(UI_QUICK_ITEM_BT_OUTPUT));
+    assert(!ui_quick_item_is_switch(UI_QUICK_ITEM_SLEEP));
+    assert(!ui_quick_item_is_switch(UI_QUICK_ITEM_BRIGHTNESS));
+    /* Not a row at all, so not a switch either - the window asks this about the
+       empty rows too. */
+    assert(!ui_quick_item_is_switch(UI_QUICK_ITEM_COUNT));
 }
 
 static void test_the_sleep_row_is_a_ring(void)
@@ -337,6 +353,7 @@ int main(void)
     test_the_cursor_is_always_on_a_drawn_row();
     test_a_short_list_leaves_rows_empty();
     test_an_untouched_panel_closes_itself();
+    test_the_switch_rows_are_the_two_switches();
     test_the_sleep_row_is_a_ring();
     test_every_row_is_named_in_both_languages();
     test_null_is_survivable();

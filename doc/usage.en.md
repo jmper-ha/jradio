@@ -76,8 +76,9 @@ which did the same thing everywhere F2 did; it now carries the quick panel.
 
 F2 drops a window from the top of the screen with the four things somebody
 reaches for while the music plays, without leaving the player: the **sleep
-timer**, the **alarm**, **sound over a Bluetooth speaker** and the
-**brightness**. The window is deliberately not the whole width, and it stays
+timer**, the **alarm**, the **brightness** and the **BT speaker**. That last one
+is last because its row is the only one that can disappear - in the middle, it
+would move every row below it as the module comes and goes. The window is deliberately not the whole width, and it stays
 clear of the status strip - the sleep timer's crescent and the alarm's bell are
 in that strip, and they are what the window changes.
 

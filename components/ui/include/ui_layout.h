@@ -73,11 +73,17 @@
 #define UI_STRIP_SLEEP_ICON_X (UI_STRIP_CLOCK_X + UI_STRIP_CLOCK_W + 2)
 #define UI_STRIP_SLEEP_ICON_Y ((UI_STRIP_H - UI_STRIP_SLEEP_ICON_PX) / 2)
 #define UI_STRIP_SLEEP_TEXT_X (UI_STRIP_SLEEP_ICON_X + UI_STRIP_SLEEP_ICON_PX + 2)
-/* Three halves of the body size: two digits and a pixel over, the same way
- * the weather's reading is sized. */
-#define UI_STRIP_SLEEP_TEXT_W (UI_FONT_BODY_PX * 3 / 2)
+/* Twice the body size: three tabular digits and a pixel over. It was three
+ * halves - two digits, the weather's sizing - until a timer set to 120 minutes
+ * showed "12" and half of the "0" for its first twenty-one minutes: the
+ * digits measure 26.8 px at 14 and 34.3 at 18, against 21 and 27 of label.
+ * The air before the bars is two pixels rather than four, because on the
+ * 320 px panel with the 18 px face that is exactly what the third digit
+ * costs - 252 of the 252 there are - and without it the panel would fall
+ * back to the mark alone, which is a worse trade than two pixels of air. */
+#define UI_STRIP_SLEEP_TEXT_W (UI_FONT_BODY_PX * 2)
 #define UI_STRIP_SLEEP_TEXT_FITS \
-    (UI_STRIP_SLEEP_TEXT_X + UI_STRIP_SLEEP_TEXT_W + 4 <= UI_STRIP_BARS_X)
+    (UI_STRIP_SLEEP_TEXT_X + UI_STRIP_SLEEP_TEXT_W + 2 <= UI_STRIP_BARS_X)
 
 /* The weather, when it is on: a picture and a reading at the left edge of the
  * strip, where the screen's name stands otherwise, and the name moves along

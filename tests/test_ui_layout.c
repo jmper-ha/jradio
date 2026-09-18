@@ -232,6 +232,19 @@ static void test_the_strip_slots_stay_in_their_lanes(void)
     assert(UI_STRIP_BARS_X < UI_STRIP_RSSI_X);
     assert(UI_STRIP_RSSI_X < TFT_WIDTH);
     assert(UI_STRIP_CONTEXT_W > 0);
+
+    /* The sleep timer's minutes: three tabular digits, because 120 is a length
+       the timer offers, and a label sized for two showed "12" and half a "0".
+       The digits measure 26.8 px in the 14 px face and 34.3 in the 18 px one. */
+    assert(UI_STRIP_SLEEP_TEXT_W >= (UI_FONT_BODY_PX == 18 ? 35 : 27));
+    /* And where the number is shown at all, it stops short of the bars. The
+       240 px panel is the one that shows the mark alone, by design. */
+#if TFT_WIDTH == 240
+    assert(!UI_STRIP_SLEEP_TEXT_FITS);
+#else
+    assert(UI_STRIP_SLEEP_TEXT_FITS);
+    assert(UI_STRIP_SLEEP_TEXT_X + UI_STRIP_SLEEP_TEXT_W <= UI_STRIP_BARS_X);
+#endif
 }
 
 static void test_the_player_stacks_downwards(void)

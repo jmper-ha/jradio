@@ -53,5 +53,9 @@ img/
 audit/
 release/
 
-# The bench board: what board_options.h says plus board_options.local.h
+# The bench board: what board_options.h says plus board_options.local.h.
+# And any copy of it - a .away moved aside for a release build, a .bak - since
+# `git add -A` swept one of those into a commit once. The file holds one
+# board's pins, and no copy of it belongs in git either.
 board_options.local.h
+board_options.local.h.*

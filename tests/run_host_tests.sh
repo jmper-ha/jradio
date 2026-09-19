@@ -309,5 +309,6 @@ node tests/test_web_i18n.js
 node tests/test_web_settings.js
 node tests/test_web_playlist.js
 node tests/test_web_files.js
+node tests/test_web_hardware.js
 
 printf 'All host tests passed.\n'

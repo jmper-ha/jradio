@@ -1,6 +1,12 @@
 #pragma once
 
-/* Checks that nothing else has taken one of board_options.h's names.
+/* NOTHING TO EDIT HERE. A board's pins and parts go in board_options.h, or -
+ * better, since git ignores it and a pull never touches it - in a
+ * board_options.local.h beside it holding only what differs. This file is a
+ * check, not a setting, and the only reason to open it is that a new option
+ * name was added to board_options.h and has to join the list below.
+ *
+ * Checks that nothing else has taken one of board_options.h's names.
  *
  * Those names are deliberately unprefixed - TFT_CS_GPIO, DISPLAY, AUDIO_DAC -
  * which puts them in the same namespace as ESP-IDF's. Nothing collides today,

@@ -1149,7 +1149,11 @@ static void radio_direct_task(void *arg)
     if (radio->direct_done != NULL) {
         xSemaphoreGive(radio->direct_done);
     }
-    vTaskDelete(NULL);
+    /* The WithCaps pair of the create above: a plain vTaskDelete() would leave
+     * the PSRAM stack allocated for ever, since the idle task frees only what
+     * it allocated. Self-deletion is supported - IDF spawns a short-lived
+     * cleaner at this task's priority to free the stack after it is gone. */
+    vTaskDeleteWithCaps(NULL);
 }
 
 static esp_err_t radio_http_event(esp_http_client_event_t *event)
@@ -2381,9 +2385,18 @@ static bool radio_start_stream(const char *url, const char *name, size_t station
      * within a frame of being named - a reboot loop, because the device comes
      * back up on the station it was playing. FLAC leaves about 4.9 KB free of
      * the 10, so the extra 6 KB is what Opus needs on top of the deepest path
-     * anything else here takes. */
-    if (xTaskCreatePinnedToCore(radio_direct_task, "radio_decode", 16384, &s_radio, 6,
-                                &direct_task_handle, 1) != pdPASS) {
+     * anything else here takes.
+     *
+     * In PSRAM, like the cover decoder's stack, since 2026-09-19: on the
+     * ILI9488 the panel driver's RGB666 band buffer leaves the largest free
+     * internal block at 11 KB, and a 16 KB stack that has to be one piece of
+     * internal RAM failed here on every station - "failed to create direct
+     * decoder task", with the HTTP side already connected. Nothing on this task
+     * writes flash (the resume point and the catalogue are written on the
+     * control side), which is the one thing an external stack may not do. */
+    if (xTaskCreatePinnedToCoreWithCaps(radio_direct_task, "radio_decode", 16384, &s_radio,
+                                        6, &direct_task_handle, 1,
+                                        MALLOC_CAP_SPIRAM) != pdPASS) {
         ESP_LOGE(TAG, "failed to create direct decoder task");
         radio_decoder_destroy(s_radio.decoder);
         s_radio.decoder = NULL;

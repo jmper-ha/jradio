@@ -707,6 +707,12 @@ esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloade
                 result = ESP_FAIL;
             }
         }
+        /* The amplifier follows the output here as it does in
+         * board_audio_set_enabled(): this is the path every stream starts
+         * through, and it left the line at the muted level, so a board with
+         * the pin wired played into a muted amplifier. Found with an LED on
+         * the bench, 2026-09-20 - the pin had never had hardware behind it. */
+        board_amp_apply();
     }
     xSemaphoreGive(s_audio_mutex);
     return result;

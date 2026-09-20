@@ -2,322 +2,173 @@
 
 [← README](../README.en.md) · [Русский](hardware.md)
 
-ESP32-S3 in a QFN56 package, 16 MB flash, 8 MB PSRAM; a display over SPI -
-an ILI9341 or ST7789 320x240, or an ILI9488 or ST7796S 480x320, each of them either way
-up, or an ST7789 320x170 (landscape only); a rotary encoder with a push button and four buttons; a
-PCM5102 DAC over I2S with a line output; a USB host port for a FAT-formatted
-drive; a microSD slot over SPI.
+## Parts
 
-The wiring lives in [`board_options.h`](../board_options.h), which is the source
-of truth; the table below is for convenience. Each part is chosen on one line,
-and everything that follows from that choice sits in profiles beside the
-driver:
+| Part | What fits | Required |
+|---|---|---|
+| Processor | an ESP32-S3 module with 16 MB flash and 8 MB PSRAM (e.g. ESP32-S3-WROOM-1 N16R8) | yes |
+| Display | over SPI: ILI9341 or ST7789 320×240, ILI9488 or ST7796S 480×320, ST7789 320×170 | yes |
+| Encoder | rotary, with a push button | yes |
+| DAC | PCM5102 (a module with line out) | yes |
+| Buttons | four tactile: sleep, quick panel, previous, next | no |
+| USB stick | a USB-A socket on the D−/D+ pins | no |
+| microSD | a slot over SPI | no |
+| IR receiver | a three-pin 38 kHz one: TSOP38238, VS1838B, HX1838 | no |
+| Bluetooth | a second ESP32 module (WROOM-32) running [jradio-bt](https://github.com/jmper-ha/jradio-bt) | no |
+| Amplifier | any with a MUTE / SD input - the firmware mutes it on pause | no |
+| Peripheral power switch | a load switch or a P-MOSFET - cuts the periphery in sleep | no |
+
+Everything optional is up to you: what is not on the board is not in the menu
+nor in the web interface.
+
+## board_options.h
+
+The board is described in [`board_options.h`](../board_options.h) at the
+project root - the only file to edit for your own wiring. A part is chosen
+with one line, the pinout with one line per pin:
 
 ```c
-#define DISPLAY   DISPLAY_ILI9341_320_240
+#define DISPLAY   DISPLAY_ST7796S_480_320
 #define AUDIO_DAC DAC_PCM5102
+#define TFT_CS_GPIO 10
+...
 ```
 
-The parts with drivers are listed in
-[`board_parts.h`](../components/board/include/board_parts.h). A typo fails the
-build rather than producing a device that misbehaves.
+The valid part names are listed in
+[`board_parts.h`](../components/board/include/board_parts.h). A typo stops the
+build instead of giving a silent device.
 
-Which way up the panel stands is part of its name too: `DISPLAY_ILI9341_240_320`
-is the same module on its end. The orientation decides the layout of all six
-screens and cannot be derived from the wiring - the same reason the resolution
-was already in the name.
+**An optional part is enabled by its block of lines and disabled by removing
+it** (or commenting it out): no microSD block - no card in the menu; no
+`BUTTON_*_GPIO` lines - the firmware builds with the encoder alone. Features
+without hardware - Yandex Music and DLNA - are switched with the
+`YANDEX_MUSIC` and `DLNA` lines set to `FEATURE_ON` or `FEATURE_OFF`.
 
-In portrait the station list shows seven rows instead of five, Settings nine
-instead of six, the home carousel three tiles instead of five, and on the
-player screen the cover art and the three stream readings stand side by side
-above the names rather than beside them. This is a
-build option and not a setting: each screen's geometry is compiled for one
-shape, and a box is mounted one way round once. The boot splash has a version
-for each panel shape and all of them are compiled in, so nothing needs regenerating.
+## The default pinout
 
-The panel does not have to be an ILI9341. Each controller has a profile of its
-own in
-[`components/board/include/display/`](../components/board/include/display/) and a
-driver file in `components/board/display/`; `board.c` does not know which one
-was selected - it calls `board_panel_create()` and works through the common
-esp_lcd interface from there. Besides the ILI9341 the catalogue carries the
-ST7789 320x240, in two orientations as well; its driver ships inside ESP-IDF,
-so it needs no dependency of its own. The landscape profile was taken off a
-panel: RGB colour order, inversion off - against the usual advice for an
-ST7789, which with INVON renders the whole screen as a negative - and one
-horizontal mirror. Portrait has not been built yet and
-[`st7789.h`](../components/board/include/display/st7789.h) marks it as derived
-rather than measured. The driver that was not selected costs no flash at all.
-
-The same controller sits in the 1.9" 320x170 module - `DISPLAY_ST7789_320_170`,
-landscape only. Same wires, same driver, one difference: the controller's
-memory is 240x320 and the glass shows the middle 170 columns, so the profile
-sets `TFT_Y_GAP 35` - the offset esp_lcd adds to every window it addresses
-(`esp_lcd_panel_set_gap`). The margin is symmetric, so the user's mirrors do
-not move it. Taken off the panel 2026-09-12: IPS glass, inversion on, and both
-mirrors the other way round from the 2" module (the ribbon leaves from the
-other end). The screen is 70 rows shorter than the first one, and every
-screen has its own shape file,
-[`layout_320x170.h`](../components/ui/include/layout/layout_320x170.h): the
-player puts the cover on the left and everything else in a column beside it;
-the settings and the lists show three rows; the QR code has its caption at
-its side.
-
-The third panel in the catalogue is an ILI9488 480x320, measured on the board
-on 2026-09-04. It takes the same six wires as the ILI9341 but differs in one
-place, and the difference is not a detail: over SPI this controller accepts
-18-bit colour only. Three bytes per pixel instead of two, with the RGB565 to
-RGB666 conversion done by the driver (`atanisoft/esp_lcd_ili9488` from the
-registry - ESP-IDF carries no ILI9488 driver of its own), and the profile
-declares `TFT_PIXEL_WIRE_BYTES` and `TFT_PIXEL_BYTE_SWAP`, from which `board.c`
-sizes the SPI transfer and decides whether to swap the bytes. Firmware built
-for an ILI9341 will not drive this panel at all - not because the resolution
-differs but because of those three bytes. A frame costs 460 800 bytes here
-against 153 600, and that is the whole reason this panel's bus runs at 40 MHz
-where the others run at 20: 92 ms a frame instead of 184. A full repaint of
-the screen measures 249 ms, of which 157 is the flush. 40 MHz is above the
-ILI9488's own datasheet figure of 20; it holds because the SPI2 pins here are
-the ESP32-S3's IOMUX ones, and the check is the picture itself, since nothing
-ever reads this bus. The band was narrowed to ten rows so the buffers cost the
-same internal memory as they do on the narrow panel. The portrait
-`DISPLAY_ILI9488_320_480` builds too: the 320x480 layout exists and has been
-seen on the panel.
-
-The fourth panel is an ST7796S 480x320, fitted in the ILI9488's place on
-2026-09-11. The same module footprint, the same glass, the same six wires - and
-it came up on firmware built for the ILI9488: both controllers answer the
-standard MIPI DCS commands a picture is actually made of, and the ILI-specific
-rest of that sequence the ST7796S either survives or ignores, its extended
-command set being locked until `0xF0` opens it and the ILI9488 driver never
-sending that. What it needs a profile for is the colour: this controller takes
-RGB565 over SPI, so two bytes per pixel instead of three, a frame of 307 200
-bytes instead of 460 800, and no 14 400-byte conversion buffer out of
-`MALLOC_CAP_DMA` - which on this chip means the internal SRAM. The driver here
-is Espressif's own, `esp_lcd_st7796`, and it is also what finally sends this
-panel Sitronix's gamma from behind the `0xF0` unlock. The bus is left at 40 MHz:
-that is what this board's wiring was proven good at, and this controller is the
-faster of the two. The mirrors were derived rather than measured: atanisoft's
-ILI9488 driver inverts the sense of `mirror_x` - it clears MX where every other
-driver sets it - so the half turn the panel visibly showed works out to the pair
-1/1 for a driver that means the flag literally. The picture came up right the
-first time. The portrait `DISPLAY_ST7796S_320_480` has not been built and
-[`st7796s.h`](../components/board/include/display/st7796s.h) marks it as
-derived.
-
-The "clock" screensaver moves its block not by redrawing it but with the
-controller's hardware scroll - `VSCRDEF`/`VSCRSAD`, which all four controllers
-in the catalogue understand. Rewriting the 128 KB block takes the bus 33 ms and
-the panel's own scan crosses it every time; on the thin strokes of the text
-that read as a blink at each step. A shift through the register the panel
-applies at its next frame, tear-free and without a byte over SPI. The panel
-offers one scroll axis - its long one, horizontal in landscape and vertical in
-portrait. The sign of the shift depends on how the memory is mirrored, and on
-the ST7796S it is the reverse (`TFT_SCROLL_REVERSED 1`, checked on the glass);
-the default on the other panels is unchecked - a clock that leaves by one edge
-and comes back in at the other is that. DMA straight from PSRAM at 80 MHz
-underruns (`DMA TX underflow`), which is the second reason the bus stays at 40.
-
-The screen layout lives in [`ui_layout.h`](../components/ui/include/ui_layout.h)
-and is checked by a host test. Everything that follows from the panel's size -
-how many rows the list and Settings hold, how wide the level meter's blocks are,
-how many tiles the carousel shows - is computed from `TFT_WIDTH` and
-`TFT_HEIGHT` rather than picked per orientation. The numbers that were placed by
-eye on a screen (the carousel axis, the player's rows, the footer) sit in one
-file per panel shape under [`layout/`](../components/ui/include/layout/): deriving
-them was tried and does not work - centring the carousel misses the two measured
-positions by 7 px and 3 px, in opposite directions.
-
-A panel of a new size is a copy of that file and one line in the dispatcher; a
-shape with no file fails the build with a message saying what to create. That is
-how both ILI9488 shapes came about. The numbers follow the faces a shape asks
-for rather than its resolution: 480x320 asks for 18 and 26 px instead of 14 and
-20 and gets the same 5 list rows and 6 settings rows the narrow panel gets,
-while portrait 320x480 at those same faces gets 9 and 10.
-
-Fonts are part of the shape too. Screens ask for a role rather than a size -
-body, title, icon, display
-([`ui_fonts.h`](../components/ui/include/ui_fonts.h)) - and which size each role
-gets is the shape file's decision. The Cyrillic faces are made by
-[`tools/gen_ui_fonts.sh`](../tools/gen_ui_fonts.sh) from DejaVu Sans, because
-LVGL's built-in Montserrat is Latin only; the icon faces are Montserrat
-precisely because what is drawn with them is not text but the symbol block
-bundled into it, and a missing `CONFIG_LV_FONT_MONTSERRAT_<size>` fails the
-build with a message instead of failing at the link.
-
-The faces cover more than the interface's own language. The UI is Russian, but
-file names, ICY titles and tags arrive as whoever wrote them wrote them, so
-accented Latin reaches the screen as readily as Cyrillic - and a character with
-no glyph is drawn by LVGL as a box, which makes an album read as damaged rather
-than as unsupported. So the faces carry Latin-1 Supplement, Latin Extended-A,
-the punctuation a tagger reaches for, and the combining marks 0x0300-0x030F.
-The last of those because a name can arrive decomposed - "u" followed by a
-separate diaeresis - and FATFS hands it over exactly as it was written. The
-converter gives such a mark zero advance and a negative offset, so LVGL draws it
-back over the letter before it and nothing has to be composed. The Cyrillic
-bound is the one thing left where it was: the 14 px and 20 px faces do not agree
-on it, and 0x0460-0x048F by itself raises the 20 px line height from 23 to 26.
-
-Each face's line height is copied into
-[`ui_font_metrics.h`](../components/ui/include/ui_font_metrics.h): the layout has
-to be computed before there is a program, and a font knows its own metrics only
-once LVGL is up. `ui.c` checks the copy against the font at start-up and logs
-the disagreement. Checked both ways: a face no layout selects is dropped by the
-linker - a build carrying a spare 18 px face came out the same size to the byte
-- and pointing the panel at that face instead moves the line height to 24 and
-every row spacing with it. It earned its keep at once: widening the character
-set moved the 20 px face from 23 to 24, and the row spacings followed on their
-own.
-
-The same file names the parts this board does not carry: an FM tuner and
-Bluetooth. Their blocks are commented out rather than deleted - the file should
-answer "can this firmware drive one" with a no as well as with a yes. For
-Bluetooth on the chip itself the answer is final: the ESP32-S3 has no classic
-Bluetooth, only BLE, and A2DP is a classic-Bluetooth profile. So Bluetooth here
-is a module of its own - see [below](#bluetooth-the-jradio-bt-module).
-
-| Signal | GPIO | | Signal | GPIO |
+| Part | GPIO | | Part | GPIO |
 |---|---:|---|---|---:|
 | TFT CS | 10 | | Encoder button | 6 |
-| TFT DC | 47 | | F1 | 21 |
-| TFT MOSI | 11 | | Quick_menu, the quick panel | 45 |
-| TFT SCLK | 12 | | F3 | 46 |
-| Backlight | 2 | | F4 | 9 |
-| Encoder right | 5 | | PCM5102 DOUT | 16 |
-| Encoder left | 7 | | PCM5102 BCLK | 18 |
-| USB D- | 19 | | PCM5102 LRCK | 17 |
-| USB D+ | 20 | | microSD CS | 1 |
-| microSD SCK | 41 | | microSD MISO | 40 |
+| TFT DC | 47 | | Encoder A | 5 |
+| TFT MOSI | 11 | | Encoder B | 7 |
+| TFT SCLK | 12 | | Sleep button (F1) | 21 |
+| Backlight | 2 | | Quick_menu button | 45 |
+| PCM5102 DOUT | 16 | | Prev button (F3) | 46 |
+| PCM5102 BCLK | 18 | | Next button (F4) | 9 |
+| PCM5102 LRCK | 17 | | USB D− | 19 |
+| microSD CS | 1 | | USB D+ | 20 |
+| microSD SCK | 41 | | IR receiver (optional) | 4 |
+| microSD MISO | 40 | | UART for flashing | 43, 44 |
 | microSD MOSI | 42 | | | |
 
-The display's RST is tied to the ESP32's reset and takes no GPIO. On modules
-that bring RST out separately the pin is declared by a `TFT_RESET_GPIO` line;
-`board_options.h` carries one, commented out. The ST7789 tried here did not
-need one, though these boards are known to.
+What matters when wiring:
 
-The four buttons F1-F4 are optional: a board with only the encoder leaves
-their `BUTTON_*_GPIO` lines (and `BUTTONS_USE_INTERNAL_PULLUPS`) out, the
-firmware still builds, and a button that is not declared is never configured,
-never polled and never fires. The encoder is required - without it the device
-cannot be driven.
+- **Flashing goes through UART (GPIO 43, 44), not the USB connector.** USB
+  belongs to the stick, and the built-in USB-Serial-JTAG sits on the same pins
+  19/20. A USB-UART bridge is needed - most dev modules already have one.
+- **The sleep button must be on GPIO 0-21**: only those pins can wake the chip
+  from deep sleep. The same goes for the IR receiver if the remote is to wake
+  the device.
+- The display's RST is tied to the module's reset. If your module brings RST
+  out separately, name it with `TFT_RESET_GPIO` (the line is in the file,
+  commented out).
+- microSD has its own SPI3 bus: the display has no MISO wired, and the card
+  cannot work without one. No card-detect is wired - the card is found on
+  entering the source.
+- Internal pull-ups are on for the buttons (`BUTTONS_USE_INTERNAL_PULLUPS 1`)
+  and off for the encoder, where external ones suffice.
 
-The first button carries a requirement the others do not: held, it puts the
-board to sleep, and only an RTC-capable pin can wake the chip - on the
-ESP32-S3, GPIO 0-21. So it sits on 21 - and is named `BUTTON_SLEEP_GPIO` in
-the options rather than after the silkscreen - while Quick_menu took its former 45.
-Putting it on a pin without RTC is allowed: the firmware still builds and the
-button still works, but sleep is not offered.
+## The display
 
-### Cutting the peripherals during sleep
+The panel and its orientation are one name: `DISPLAY_ILI9341_320_240` is
+landscape, `DISPLAY_ILI9341_240_320` the same module standing on end. The
+screens are laid out for each shape separately: portrait lists show more rows,
+and the cover stands above the titles rather than beside them.
 
-The optional `PERIPHERAL_POWER_GPIO` line (38, 39 and 48 are free) drives the
-switch that feeds everything outside the module: the panel, the DAC, the card,
-the Bluetooth module, the USB port. `PERIPHERAL_POWER_ON_LEVEL` says which
-level opens it - 1 for an ordinary load switch, 0 for a high-side P-channel
-MOSFET. The firmware raises the pin first thing in `board_init()` and gives it
-50 ms to settle, and in deep sleep it lowers and holds it (`gpio_hold_en` plus
-the deep-sleep hold) - otherwise the level would be lost the instant the chip
-sleeps and everything would come back up in the dark. Size the switch for the
-whole load with margin: the panel with its backlight and the Bluetooth module
-peak well above their average draw.
+| Panel | Names | Notes |
+|---|---|---|
+| ILI9341 320×240 | `DISPLAY_ILI9341_320_240`, `DISPLAY_ILI9341_240_320` | the most common one; both orientations verified |
+| ST7789 320×240 | `DISPLAY_ST7789_320_240`, `DISPLAY_ST7789_240_320` | landscape verified, portrait derived |
+| ST7789 320×170 (1.9") | `DISPLAY_ST7789_320_170` | landscape only; its own compact layout |
+| ILI9488 480×320 | `DISPLAY_ILI9488_480_320`, `DISPLAY_ILI9488_320_480` | 18-bit colour over SPI; the driver from the component registry installs itself; both orientations verified |
+| ST7796S 480×320 | `DISPLAY_ST7796S_480_320`, `DISPLAY_ST7796S_320_480` | the project default; landscape verified |
 
-Without that line only the chip sleeps - the peripherals stay fed, and the
-backlight, the DAC and the module keep drawing current.
+All panels connect with the same six wires (CS, DC, MOSI, SCLK, backlight,
+power). Drivers that are not selected do not go into the firmware.
 
-Worth knowing if you build the board:
+**Power the panel from its own regulator**, e.g. an AMS1117-3.3 fed from +5 V,
+not from the ESP32-S3 module's 3V3 pin: the module's LDO cannot carry the panel
+along with everything else, and the picture flickers - worse on midtones and
+at high brightness. Capacitors on the module's pins do not help; that was
+tested.
 
-- **the panel gets a regulator of its own, not the module's 3V3 pin.** An
-  AMS1117-3.3 fed from USB +5 V. Powered from the module the picture flickers:
-  its LDO will not carry the panel along with everything else, and how badly
-  depends on the individual module. Capacitors at the module's pins do not fix
-  it - that was tried; the details and everything that was ruled out are in
-  [Diagnostics](diagnostics.en.md#screen-flicker-the-panel-needs-a-supply-of-its-own);
-- there is no MISO to the display, the bus is one-way; the panel wants BGR
-  order;
-- the PCM5102 runs without MCLK, I2S slots are 16-bit stereo, BCLK = 32 x Fs.
-  The DMA ring of 8 x 512 frames (~93 ms) was chosen to stop clicking and must
-  not be shrunk;
-- **tie the PCM5102 module's SCK to ground and XSMT to 3.3 V.** Left floating
-  they produce rare dropouts with a perfectly healthy digital path. If XSMT is
-  given to the mute line instead (`AUDIO_DAC_MUTE_GPIO`, see the
-  [module section](#bluetooth-the-jradio-bt-module)), an S3 pin holds it, and
-  the factory bridge to 3.3 V has to be cut - a pin cannot out-pull it;
-- debouncing is done in software. Internal pull-ups are enabled for the buttons
-  (GPIO 45, 46 and 21 are unstable without them) and disabled for the encoder,
-  where the external ones suffice;
-- USB VBUS is permanently powered; a drive left on the bus across a reboot is
-  re-enumerated by a logical power cycle of the root port;
-- **the board is flashed over UART only.** The USB connector is given to the
-  host role, and with GPIO 19 and 20 goes the built-in USB-Serial-JTAG, so
-  esptool and the log run through a USB-UART bridge on UART0 (GPIO 43 and 44);
-- the microSD slot has an SPI bus of its own, SPI3: the display has no MISO
-  wired, which a card cannot work without. GPIO 40, 41 and 42 are the external
-  JTAG pins, and the card takes them over;
-- the slot has no card-detect line, so an inserted card can only be found by
-  trying to mount it - which is also why the card is not held mounted, see
-  [Limits](diagnostics.en.md#limits). FAT16/FAT32 only, no exFAT.
+If the panel stands differently from what was expected, the picture can be
+mirrored vertically and horizontally in the device's settings - no rebuild.
 
-### The amplifier's MUTE pin
+## Audio
 
-If the board drives speakers through an amplifier rather than only a line
-output, its MUTE / SD / standby input can be handed to the firmware:
+The **PCM5102** runs over I2S without MCLK: 16-bit stereo slots, BCLK = 32 × Fs.
+On the module:
+
+- **Tie SCK to ground and XSMT to 3.3 V.** Left floating, they cause rare
+  audio dropouts with a perfectly healthy digital path.
+- If XSMT is handed to the firmware (`AUDIO_DAC_MUTE_GPIO`, below), the
+  factory jumper to 3.3 V must be cut.
+
+### The amplifier: the MUTE pin
+
+If a speaker amplifier is fitted, hand its MUTE / SD / standby input to the
+firmware:
 
 ```c
 #define AUDIO_AMP_GPIO 39
-#define AUDIO_AMP_ON_LEVEL 1
+#define AUDIO_AMP_ON_LEVEL 1     // the level at which the amplifier plays
 ```
 
-`AUDIO_AMP_ON_LEVEL` is the level at which the amplifier plays; the other
-polarity is a zero, so no inverter is needed. The firmware holds that level
-for exactly as long as sound is actually being produced: while the S3 itself
-plays, and while the I2S bus is in the Bluetooth module's hands (receiving
-from a phone, the module clocks the DAC and the amplifier is needed just the
-same). Stopped, paused, or with the sound sent to a Bluetooth speaker
-(`AUDIO_DAC_MUTE_GPIO`), the pin takes the other level, so a stopped player is
-not a warm amplifier hissing into the speakers.
+The firmware opens the amplifier only while sound is actually produced - on
+pause, on stop and while the sound goes to a Bluetooth speaker it is muted and
+does not hiss into the speakers. Two rules against clicks:
 
-Two things, both about clicks:
+- pull the pin with a resistor to the "quiet" side: during reset and the
+  first milliseconds of boot nobody drives it;
+- the firmware mutes before stopping I2S itself, so a DAC that lost its clock
+  does not thump into the speakers.
 
-- **at rest the pin has to sit at the quiet level.** Through reset and the
-  first milliseconds of boot nothing drives it - pull it with a resistor
-  towards the side that mutes the amplifier, or the speakers get whatever the
-  DAC puts out as its supply comes up;
-- muting happens **before** the I2S clock stops, not after: a DAC whose BCLK
-  disappears under it thumps, and not hearing that is the whole point of the
-  pin.
+### Powering the periphery down in sleep
 
-This is not the same as `AUDIO_DAC_MUTE_GPIO` below: that one is the DAC's own
-soft mute, asserted when the sound goes to a Bluetooth speaker. Both can be
-wired at once, and then a muted DAC mutes the amplifier too.
+The optional `PERIPHERAL_POWER_GPIO` pin (38, 39 and 48 are free) drives a
+switch that feeds everything outside the module: the panel, the DAC, the card,
+the Bluetooth module, USB. `PERIPHERAL_POWER_ON_LEVEL` is the level that
+opens the switch (1 for a load switch, 0 for a P-channel MOSFET in the
+positive rail). In deep sleep the firmware closes the switch and holds it
+closed; without this line only the chip sleeps, while the backlight and the
+DAC keep drawing.
 
-### The infrared receiver: a remote control
+The switch must carry the whole periphery with margin: the panel with its
+backlight and the Bluetooth module draw noticeably more at their peaks than on
+average.
 
-Any three-pin 38 kHz receiver - TSOP38238, VS1838B, HX1838 and the like -
-gives the device a remote control (see
-[The remote control](usage.en.md#the-remote-control)):
+## The IR receiver: the remote
+
+Any three-pin 38 kHz receiver gives a full remote control - how to use it is in
+[The remote control](usage.en.md#the-remote-control):
 
 ```c
 #define IR_RECEIVER_GPIO 4
 ```
 
-The receiver's output is the carrier's envelope: high at rest, low during a
-burst; the firmware enables its own pull-up. Any pin does - the RMT
-peripheral reads it through the matrix - but for the remote to **wake** the
-device from deep sleep the receiver has to sit on an RTC-domain pin, GPIO
-0-21, like the sleep button. And be fed from the board's always-on 3.3 V: on
-the peripheral rail (`PERIPHERAL_POWER_GPIO`) it is unpowered in sleep and
-can wake nothing. It draws a fraction of a milliampere, so the sleep budget
-hardly notices it.
-
-Left undefined there is no remote: no page on the web, no button to it, no
-receiver task.
+Any pin will do, but for the remote to **wake** the device from deep sleep the
+receiver must be on GPIO 0-21 and be fed from the board's permanent 3.3 V, not
+from the peripheral rail that sleep switches off. It draws a fraction of a
+milliamp. Without this line there is no remote - no web page, no receiver
+task.
 
 ## Bluetooth: the jradio-bt module
 
-Playing from a phone (and, later, sending to headphones) is done by a second
-ESP32 - a classic WROOM-32, which does have Bluetooth Classic - running its
-own firmware, [jradio-bt](https://github.com/jmper-ha/jradio-bt). It sits on
-the same I2S bus as the PCM5102 and takes orders over a UART. Off by default;
-three lines in `board_options.h` turn it on:
+The ESP32-S3 has no Bluetooth Classic, and A2DP is a Classic profile. So
+Bluetooth is done by a second module - an ordinary ESP32-WROOM-32 running
+[jradio-bt](https://github.com/jmper-ha/jradio-bt). It sits on the same I2S
+bus as the DAC and is driven over UART. Three lines enable it:
 
 ```c
 #define BLUETOOTH BLUETOOTH_JRADIO_BT
@@ -327,59 +178,38 @@ three lines in `board_options.h` turn it on:
 
 | S3 (jRadio) | WROOM (jradio-bt) | What |
 |---|---|---|
-| GPIO 13 | GPIO 16 (RX) | UART 921600 8N1, commands and answers |
+| GPIO 13 | GPIO 16 (RX) | UART 921600 8N1 |
 | GPIO 14 | GPIO 17 (TX) | |
-| GPIO 18 (BCLK) | GPIO 26 | the shared I2S bus, through 33-47 ohm at each end |
+| GPIO 18 (BCLK) | GPIO 26 | the shared I2S bus, through 33-47 Ω on each side |
 | GPIO 17 (LRCK) | GPIO 25 | |
-| GPIO 16 (DOUT) | GPIO 22 | the same wire also feeds the DAC's DIN |
-| 3V3, GND | 3V3, GND | up to 200 mA peaks for the module |
+| GPIO 16 (DOUT) | GPIO 22 | the same wire also goes to the DAC's DIN |
+| 3V3, GND | 3V3, GND | the module draws up to 200 mA at peaks |
 
-Who clocks the bus depends on what is playing. Normally the S3 does and the
-module keeps its three pins as inputs. When the "Bluetooth" source is chosen
-the S3 deletes its I2S channel and turns its pins into inputs, then asks the
-module to take over and waits for its acknowledgement; leaving the source runs
-the same in reverse. The 33-47 ohm resistors are for the instant of the
-hand-over, when both ends could be outputs. The module is offered as a source
-only while it answers on the UART: one that is unplugged or being flashed is
-not offered, rather than failing to open.
+The resistors on the I2S lines are needed: when the bus master changes (the
+S3 or the module), both sides can be outputs for an instant. The module
+appears in the menu only while it answers over UART - a disconnected or
+reflashing module is simply not offered.
 
-The other way round - the sound going to a Bluetooth speaker - the S3 stays
-the master, the module listens on the bus, and the built-in DAC plays the same
-thing. To keep it quiet while the speaker plays, wire its soft-mute to a free
-GPIO and name it in `board_options.h`:
+For the built-in DAC to stay silent while the sound goes to a Bluetooth
+speaker, wire its XSMT pin to a free GPIO:
 
 ```c
 #define AUDIO_DAC_MUTE_GPIO 15
 ```
 
-On the PCM5102A that is XSMT (low is silence; the chip ramps the output down
-and up itself, so there is no click). The purple modules bring it out as the
-XMT pad, tied to 3.3 V right there - by a solder bridge or a pull-up. Open the
-bridge (a resistor may stay), connect the pad to the GPIO, 1 kOhm in series if
-you like. The S3 must drive it, not the module: only it knows whether the
-speaker is connected, and it needs the DAC playing again when the phone plays.
-Without the line the DAC simply plays always.
+On the purple PCM5102 modules this is the XMT pad, pulled to 3.3 V by a jumper
+- cut the jumper and connect the pad to the GPIO (1 kΩ in series is fine).
+Without this line the DAC simply always plays.
 
 ## What the home screen shows
 
-The home screen shows exactly what the firmware can make use of, and nothing
-else. `board_options.h` decides, in two different ways:
+The home screen shows exactly what is on the board and enabled in the build:
 
-- **hardware**, by its wiring. USB, microSD, an FM tuner: a block of pins is
-  there, so the source is there. Comment the block out or delete it, and the
-  entry disappears from the device's screen, from the web interface and from
-  autoplay;
-- **features**, by a `FEATURE_ON` / `FEATURE_OFF` line. That is how
-  `YANDEX_MUSIC` and `DLNA` are declared; a missing line means `FEATURE_OFF`.
+- **hardware** - by the wiring: a USB or microSD block in `board_options.h`
+  means a source;
+- **features** - by the `YANDEX_MUSIC` and `DLNA` lines.
 
-Internet radio and Settings are always there: the first needs nothing beyond
-the Wi-Fi already on the chip, and without the second there would be no way to
-configure the device. Yandex Music has a second step as well - the switch in
-Settings, which hides the source in a firmware that was built with it.
-
-One case is its own: a build with nothing left but the radio and Settings. A
-home screen of two rows offers no choice, so there is none at all - the device
-starts straight into the station list, and a long press switches
-between the list and Settings. Going into Settings stops the radio, exactly as
-a long press on the player screen does. The "Home screen" row in Settings is
-hidden in such a build too: there is nothing to choose between.
+Internet radio and Settings are always there. If nothing but those two is left
+in a build, the home screen is not shown at all: the device boots straight
+into the station list, and a long press of the encoder switches between the
+list and the settings.

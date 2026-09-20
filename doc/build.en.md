@@ -1,168 +1,235 @@
-# Building, flashing and tests
+# Building and flashing
 
 [← README](../README.en.md) · [Русский](build.md)
 
-## Building and flashing
+There are two ways. The **quick** one is to write a ready-made image from a
+release: nothing to install, one command. The **full** one is to build the
+firmware from source for your own board: it needs the ESP-IDF toolchain, but
+the display, the pinout and the set of features will be yours.
 
-ESP-IDF 5.5.x, target `esp32s3`. Built and verified on 5.5.5; the version it
-was built with is recorded in [`dependencies.lock`](../dependencies.lock).
-Setting the environment up from scratch has [a page of its own](toolchain.en.md).
+What to know in either case:
 
-### Versions
+- **The board is flashed through its UART port, not its USB connector.** The
+  USB connector on the board belongs to the stick (USB Host), so flashing and
+  the log go through a USB-UART bridge. It shows up as `/dev/ttyUSB0` or
+  `/dev/ttyACM0` (Linux), `/dev/cu.usbserial-*` (macOS) or `COMn` (Windows). On
+  a module with two connectors, take the one labelled UART or COM.
+- **The cable must carry data.** A charge-only cable powers the board but no
+  port appears - the most common reason for "it won't flash".
+- **The flash holds two independent partitions: the app and the data.** The
+  app is the firmware itself. The data is the web pages, the station list, the
+  settings, the Wi-Fi networks. Updating the app leaves the data alone;
+  rewriting the data erases everything the device has remembered. This is
+  repeated below wherever it matters.
 
-The firmware version is not typed in anywhere: ESP-IDF runs `git describe
---always --tags --dirty` and puts the result in the app header, which is where
-both the boot log and the About screen read it from. It refreshes on a commit by
-itself - CMake watches the branch's ref file and re-reads the version when it
-moves.
+## The quick way: a ready-made image
 
-**Use tags.** Without them the version is a short hash, and no hash tells you
-which build is newer. With `git tag v1.0.0` it becomes `v1.0.0-3-gabc1234`: the
-release, how many commits followed it, and the hash.
+1. Download `jradio-<version>-full.bin` from a
+   [release](https://github.com/jmper-ha/jradio/releases) - it is the whole
+   flash: the bootloader, the firmware and the data partition.
+2. Install `esptool`: `pip install esptool` (Python 3 required).
+3. Connect the board's UART port to the computer and write the image:
 
-```bash
-git tag -a v1.1.0 -m "what is in this release"
-git push origin v1.1.0        # a plain git push does not carry tags
-```
+   ```bash
+   esptool.py --chip esp32s3 -p /dev/ttyUSB0 -b 460800 write_flash 0x0 jradio-v1.3.0-full.bin
+   ```
 
-**A new tag is not picked up on its own.** The version is read when CMake
-configures, and what it watches is the branch's ref file - a commit moves that,
-a tag does not. So the first build after `git tag` still reports the old string.
-Any reconfigure fixes it, `touch CMakeLists.txt` being the shortest; in ordinary
-use it does not arise, because a tag is put on a commit that has just been
-made.
+   On Windows the port is `COM3` or similar. If esptool cannot connect, hold
+   BOOT, tap RESET, release BOOT and try again.
 
-**A release** is the tag plus the files to download. On a clean tree at the
-tag: `touch CMakeLists.txt`, `idf.py build`, then
-[`bash tools/release.sh`](../tools/release.sh) - it collects the app, the
-bootloader, the partition table, the data image and all of them merged into
-one file for offset 0 into `release/<version>/`, with checksums and a note on
-flashing. The data image it makes afresh, without `wifi.json`, `yandex.json`
-and `weather.json`: what the build stages from a developer's machine must not
-end up in a file for somebody else's board - such a board opens its own setup
-access point on the first boot. The script refuses a dirty tree, and a
-`build/jradio.bin` whose version is not the tag's. A release is built from
-`board_options.h` as it is in the repository - the default panel and parts,
-not anybody's bench wiring.
+4. After the write the board reboots and opens the `jradio-XXXX` access point -
+   see [First boot](usage.en.md#first-boot).
 
-The `-dirty` suffix can go stale. It is computed at configure time, and editing
-a file does not move the branch ref, so a build from a dirty tree may report a
-version without it. For a build made from a commit this does not arise.
+The ready-made image is built for the default configuration in
+`board_options.h`: an ST7796S 480×320 display and the pinout from
+[Hardware](hardware.en.md). If your display or pins differ, take the full way.
 
-**The web interface has a version of its own**, because it and the firmware are
-written by different commands. [`tools/stamp_version.py`](../tools/stamp_version.py)
-writes it to `config/version.json` inside the data image on every build, from the
-same `PROJECT_VER`. The device shows both side by side and says so when they
-differ. The generated file lives only in the build directory, never in `data/`.
-
-To build with another version without touching git:
+**Updating to a new version** without losing the settings - the app only:
 
 ```bash
-idf.py -DPROJECT_VER=v1.2.3-test build
+esptool.py --chip esp32s3 -p /dev/ttyUSB0 -b 460800 write_flash 0x20000 jradio-v1.3.0-app.bin
 ```
 
-That value sticks in the CMake cache - to go back to git, delete the
-`PROJECT_VER` line from `build/CMakeCache.txt` (an empty `-DPROJECT_VER=` gives
-you version `1`, which is not what you wanted).
+The data partition stays yours. If the release also changed the web interface,
+the device says so on its About screen - then also write
+`jradio-<version>-littlefs.bin` at offset `0x620000`, after taking a backup
+(see [The data on the device](#the-data-on-the-device)).
 
-The shortest way in is VS Code: open the project folder and it offers the
-recommended extensions - ESP-IDF and C/C++. Since 2.0 the extension installs
-nothing itself and no longer has a "Configure ESP-IDF Extension" command:
-`Ctrl+Shift+P` -> **ESP-IDF: Open ESP-IDF Installation Manager** downloads and
-opens the EIM installer; pick 5.5.5 there and it installs the framework, the
-toolchain and the Python environment. Then `Ctrl+Shift+P` -> **ESP-IDF: Select
-Current ESP-IDF Version** and choose the one just installed; **ESP-IDF: Doctor
-Command** checks the result. An ESP-IDF installed by hand earlier does not
-appear in that list - reinstalling it through EIM is the easy way. After that
-`Ctrl+Shift+B` builds, and the rest is under
-Terminal - Run Task: flashing, the device log, the host tests. For a blank
-board there is "ESP-IDF: First flash (app + data)", which writes the firmware
-and the data partition both. The message "File .../build/project_description.json
-cannot be found" on first opening the folder is not an error: CMake writes that
-file on the first build, and until then the extension has nothing to read;
-after `Ctrl+Shift+B` it does not come back.
+## The full way: a build from source
 
-The tasks go through [`tools/idf.sh`](../tools/idf.sh), or
-[`tools/idf.ps1`](../tools/idf.ps1) on Windows, which finds an installed ESP-IDF -
-through the EIM installer's manifest (`eim_idf.json`, which records where each
-version went, on whatever drive) and the usual folders - and activates it, so
-`export.sh` never has to be sourced by hand. The port is detected when the machine has one board on it;
-with several attached, name the right one in `ESPPORT`.
+### 1. Install the toolchain
 
-What it looks for is **5.5.5 exactly**, not "something from 5.5". On a machine
-that has ever upgraded two versions sit side by side, and taking the first one
-found meant the VS Code tasks built on one while a terminal that had sourced
-`export.sh` built on the other - and a build on the wrong one rewrites
-`dependencies.lock`. With 5.5.5 absent any 5.5.x is used and the script says so.
+ESP-IDF 5.5.x, target `esp32s3`. The project is verified on 5.5.5. How to set
+up VS Code with the ESP-IDF extension, or a bare ESP-IDF in a terminal, is in
+[Installing the toolchain](toolchain.en.md). From here on the toolchain is
+assumed to be in place.
 
-`IDF_PATH` does **not** override that, and the omission is deliberate: inside
-VS Code that variable is not set by a person but by the ESP-IDF extension,
-which exports whatever `idf.currentSetup` names into the task's environment.
-To build with another version on purpose, point `JRADIO_IDF` at it - nothing
-else sets that one. When `IDF_PATH` names something other than what the script
-picked, it says so on the first line of the build.
+### 2. Describe your board
 
-Every task works on Windows except "Host tests": those want a POSIX shell and a
-gcc with sanitizers, so Linux, macOS or WSL.
+Open [`board_options.h`](../board_options.h) at the project root. It is the
+only file to edit: it says which parts are fitted and on which pins.
 
-**The first build reaches the internet,** and not only for the framework. The
-component manager fetches what `idf_component.yml` names - LVGL, the codecs,
-the panel drivers - and the littlefs component builds a virtualenv of its own
-and installs `littlefs-python` from PyPI into it, which is what turns `data/`
-into a partition image. After that everything lives in `managed_components/`
-and `build/` and is not fetched again.
+```c
+#define DISPLAY   DISPLAY_ST7796S_480_320   // which panel and how it stands
+#define AUDIO_DAC DAC_PCM5102
 
-A network hiccup during that step ends the build like this:
-
-```
-ERROR: Could not find a version that satisfies the requirement littlefs-python==0.15.0
-ninja: build stopped: subcommand failed.
+#define TFT_CS_GPIO 10                        // and then the pins
+...
 ```
 
-The message misleads - you are building firmware and not thinking about a data
-image - but running `idf.py build` again is the whole fix: what compiled is
-kept and only the missing piece is fetched. Where PyPI is permanently out of
-reach (a corporate network, a proxy), pip's ordinary settings apply to this
-virtualenv too - `PIP_INDEX_URL` and `PIP_PROXY`.
+- **The display** is one of the names in
+  [`board_parts.h`](../components/board/include/board_parts.h):
+  `DISPLAY_ILI9341_320_240`, `DISPLAY_ST7789_240_320`,
+  `DISPLAY_ILI9488_480_320`, `DISPLAY_ST7796S_320_480`,
+  `DISPLAY_ST7789_320_170` and so on. The order of the numbers is the
+  orientation: `480_320` is landscape, `320_480` portrait.
+- **What is not on the board, comment out.** No microSD slot - remove its
+  block, and the card is gone from the menu and the web interface. No buttons -
+  remove the `BUTTON_*_GPIO` lines. The optional parts are enabled the same
+  way: the IR receiver, the Bluetooth module, the amplifier's MUTE pin, the
+  peripheral power switch.
+- **Features without hardware** - `YANDEX_MUSIC` and `DLNA` - are switched with
+  `FEATURE_ON` / `FEATURE_OFF`.
 
-So does pip's cache, if the package has ever been installed: it lives in
-`~/.cache/pip` and survives the `fullclean` that removes the virtualenv itself.
-The build then needs no network at all - `PIP_NO_INDEX=1` with `PIP_FIND_LINKS`
-pointing at a directory holding the wheel. Used on 2026-09-06, when `pypi.org`
-answered over neither IPv4 nor IPv6 while `files.pythonhosted.org` was fine.
+A typo in a part name stops the build with a clear error - a device with a wrong
+option does not build, rather than staying silent. Every block is explained in
+[Hardware](hardware.en.md).
 
-One more network step exists but only when regenerating fonts:
-[`tools/gen_ui_fonts.sh`](../tools/gen_ui_fonts.sh) calls `npx lv_font_conv` from
-npm. An ordinary build needs none of it - the generated faces are in the
-repository.
+### 3. Build
 
-The same from a terminal:
+In VS Code: `Ctrl+Shift+B`. In a terminal with ESP-IDF activated:
 
 ```bash
-idf.py set-target esp32s3
 idf.py build
-idf.py -p PORT flash              # application only, leaves LittleFS alone
-idf.py -p PORT littlefs-flash     # overwrites the whole data partition
-idf.py -p PORT monitor
 ```
 
-`PORT` is the board's **UART port, not its USB one**. The USB connector is
-wired for the host role (D- and D+ sit on GPIO 19 and 20, where the drive
-goes), the built-in USB-Serial-JTAG is on those same pins and cannot be used
-for flashing, so both the write and the log go through a USB-UART bridge on
-UART0. It shows up as `/dev/ttyUSB0` or `/dev/ttyACM0` depending on the
-bridge, and as `COMn` on Windows; on a module with two connectors it is the
-one marked UART or COM.
+The first build takes a few minutes and **goes online**: the component
+manager downloads LVGL, the codecs and the panel drivers, and the littlefs
+component installs `littlefs-python` for itself to build the data image. After
+that everything lives in `managed_components/` and `build/`, and no network is
+needed.
 
-`littlefs-flash` **destroys user data** - playlist edits, saved networks,
-device settings and the Yandex Music account link: all of it lives on that one
-partition. Take a copy first - `curl -O -J http://<ip>/api/backup` - and put it
-back afterwards:
-`curl -X POST --data-binary @jradio-*.zip "http://<ip>/api/restore?name=backup.zip"`,
-which is what the two buttons on the settings page do. The playlist is not in
-that copy, so compare it separately: `curl http://<ip>/api/playlist`. Without a
-copy the settings return to their defaults after the flash, and the account has
-to be linked again.
+If the network blinks, the build fails with something like
+`Could not find a version that satisfies the requirement littlefs-python` -
+just run `idf.py build` again; only what is missing is fetched. A proxy is set
+with the usual pip variables: `PIP_INDEX_URL`, `PIP_PROXY`.
+
+The result is `build/jradio.bin` (the app) and `build/littlefs.bin` (the data
+image).
+
+### 4. Flash for the first time: the app and the data
+
+A new board has no data partition yet, so the first flash writes both. In
+VS Code: **Terminal → Run Task → ESP-IDF: First flash (app + data)**. In a
+terminal:
+
+```bash
+idf.py -p /dev/ttyUSB0 flash            # the bootloader, the partition table, the app
+idf.py -p /dev/ttyUSB0 littlefs-flash   # the data partition
+```
+
+The port is the board's UART one (see the top of the page). With one board on
+the system the VS Code tasks find it themselves; with several, name it in the
+`ESPPORT` variable.
+
+Flashed only the app, without the data? The device boots, but the screen
+shows nothing and the web interface does not open. Add the data with
+`littlefs-flash`.
+
+### 5. Watch the log
+
+```bash
+idf.py -p /dev/ttyUSB0 monitor          # exit: Ctrl+]
+```
+
+or the **ESP-IDF: Monitor** task. What to look for and how to read the lines
+about audio and memory health is in [Diagnostics](diagnostics.en.md).
+
+The port belongs to whoever opened it first: if a flash does not start and the
+log is empty, a monitor is almost certainly open in another window.
+
+### 6. Update the app only
+
+Changed the code, built it - flash the app:
+
+```bash
+idf.py -p /dev/ttyUSB0 flash
+```
+
+The data partition is untouched: the station list, the networks, the settings,
+the Yandex link and the learned remote live on. This is the normal working
+cycle.
+
+The data partition is rewritten only when it changed itself - the web pages
+in `data/www/` or the default station list. Then it is `littlefs-flash`, but a
+backup first, see below.
+
+## The data on the device
+
+The `littlefs` partition holds together:
+
+- the web interface - from `data/www/` (gzipped at build time);
+- the default station list `data/config/stations.csv` and the station
+  pictures `data/radio_img/`;
+- the default settings `data/config/settings.csv`;
+- what the device itself creates: the Wi-Fi networks `wifi.json`, the Yandex
+  token `yandex.json`, the weather key `weather.json`, the remote's table
+  `remote.csv`, the edits to the station list and the settings.
+
+`littlefs-flash` **rewrites the whole partition** - everything in the last
+item is gone, and the device comes up after the flash with its setup access
+point, as if new. So the order is:
+
+1. **Download a backup:** the settings page → Backup → "Download archive", or
+   `curl -O -J http://<ip>/api/backup`. The archive holds the networks, the
+   settings, the Yandex token and the weather key.
+2. **Save the station list separately:** the playlist page → Export, or
+   `curl http://<ip>/api/playlist > stations.csv`. It is not in the archive.
+3. Flash: `idf.py -p PORT littlefs-flash`.
+4. **Restore:** Backup → Restore, or
+   `curl -X POST --data-binary @jradio-*.zip "http://<ip>/api/restore?name=backup.zip"`.
+   The device reboots with its networks and settings back.
+5. Bring the station list back with Import on the playlist page.
+
+The remote's table is not in the backup - the learned keys have to be taught
+again.
+
+Everything under `data/` goes into the image and onto every board you flash -
+keep passwords, tokens and keys out of it. The device's own files (`wifi.json`,
+`yandex.json`, `weather.json`) are not in Git.
+
+## Versions and releases
+
+The firmware version is not typed in by hand: it comes from `git describe` at
+build time and shows in the boot log and on the About screen. Tag your
+commits - without tags the version is a short hash that says nothing about
+which build is newer:
+
+```bash
+git tag -a v1.4.0 -m "what is new"
+git push origin v1.4.0        # a plain git push does not send tags
+```
+
+A new tag is picked up at the next reconfiguration - after `git tag`, run
+`touch CMakeLists.txt` and build again.
+
+The web interface has a version of its own: it lives in the data partition and
+is written by a different command. The device shows both on the About screen
+and warns when they differ - time to update the data partition.
+
+**To build a release** - the downloadable files in `release/<version>/`:
+
+```bash
+touch CMakeLists.txt && idf.py build
+bash tools/release.sh
+```
+
+The script collects the app, the bootloader, the partition table, the data
+image and all of them merged into one file for offset 0, with checksums and a
+short instruction. It builds the data image afresh without `wifi.json`,
+`yandex.json` and `weather.json` - somebody else's board must not get your
+passwords. On a dirty tree, or when the version in the binary does not match
+the tag, the script refuses.
 
 ## Tests
 
@@ -170,20 +237,21 @@ to be linked again.
 bash tests/run_host_tests.sh
 ```
 
-90 suites, no ESP-IDF activation needed. They compile the real component
-sources rather than mocks, with `-Werror` and the address and undefined
-behaviour sanitizers. That is why format parsing, state machines and view
-derivation live in files with no ESP-IDF dependencies - new logic belongs
-there. Browser JavaScript runs under Node against a hand-written fake DOM, with
-no npm and no bundler.
+Runs on Linux, macOS or WSL; ESP-IDF need not be activated (the script finds
+its cJSON sources itself). The tests compile the real component files with
+`-Werror` and sanitizers: format parsing, state machines, screen derivation.
+The browser JavaScript is tested under Node without npm or bundlers. One test
+runs by its own line from the script, or directly:
+`node tests/test_web_playlist.js`.
 
-## Data on the device
+## If something goes wrong
 
-The `littlefs` partition holds both the web assets and user data: `data/www/`
-(gzipped at build time), `data/config/stations.csv`,
-`data/config/settings.csv`, `data/radio_img/` with the station pictures, and
-`wifi.json` and `yandex.json`, which the device creates itself and which are not
-in Git. Everything under `data/` goes into the image, so station pictures survive
-`littlefs-flash` - one uploaded through the browser and never put in the
-repository will not. Do not commit passwords, tokens or
-keys.
+| What you see | Cause | What to do |
+|---|---|---|
+| `Failed to connect to ESP32-S3` | a charge-only cable, a busy port, or the board is not in bootloader mode | change the cable; close the monitor; hold BOOT, tap RESET, release BOOT |
+| `Permission denied: '/dev/ttyUSB0'` (Linux) | the user is not in the port's group | `sudo usermod -aG dialout $USER` and log in again |
+| `Could not find a version that satisfies the requirement littlefs-python` | the network blinked while building the data image | run `idf.py build` again |
+| Blank screen, no web interface, yet the device boots | only the app was flashed | `idf.py littlefs-flash` or the "First flash" task |
+| Black screen or garbage | the wrong panel or orientation in `board_options.h` | check `DISPLAY` and the TFT pins |
+| The About screen says the versions differ | the app was updated, the data was not | backup → `littlefs-flash` → restore |
+| `idf.py: command not found` | the toolchain is not activated in this terminal | `source <idf>/export.sh` or the VS Code tasks - see [Installing](toolchain.en.md) |

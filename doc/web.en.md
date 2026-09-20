@@ -2,336 +2,108 @@
 
 [← README](../README.en.md) · [Русский](web.md)
 
+Opens in a browser at the device's address (shown at the bottom of the
+settings screen) from a phone or a computer on the same network. Nothing to
+install. Russian and English, a dark and a light theme.
+
+**There is no authentication and `Origin` is not checked. The interface is
+meant for a trusted home network - do not expose it.**
+
+## Pages
+
+| Page | What is on it |
+|---|---|
+| **Player** (`/`) | What is playing, the cover, volume, position, buttons; source choice and the lists of stations, files and server folders; the sleep timer and the alarm |
+| **Playlist** (`/playlist`) | The station list editor: name, address, picture, order by dragging; trying an address by ear right on the device; import and export |
+| **Settings** (`/settings`) | Everything the device has, plus Wi-Fi networks, the name, time and zone, weather, the alarm, the sleep timer, Yandex Music, Bluetooth speakers, the backup, About |
+| **Remote** (`/remote`) | Learning the IR remote's keys; opened by a button in the settings when the build has a receiver |
+
+On a phone the settings sections fold: one open, the rest as headers. Live
+data (the player state, the lists, the settings) comes over a WebSocket, so an
+open tab always shows what the device's screen shows - including the volume
+turned on the encoder.
+
+## The station list
+
+A line is `name<TAB>url<TAB>letter`, with an optional fourth column - the
+picture's file name. The letter says which name to show: `S` - the one the
+stream announces, `L` - the one written in the list. Foreign playlists that
+keep a volume correction in the third column are read too: the name and the
+address are taken.
+
+A station's picture is chosen in the browser, shrunk to 96 pixels and stored
+on the device. Export gives `playlist.csv`, or `playlist.zip` with the
+pictures when there are any; import takes either. The order is changed by
+dragging the handle left of the name (or with the arrow keys). Everything
+goes to the device on Save. Up to 99 stations.
+
+## The remote
+
+A table of functions with Learn and Forget buttons. While the page is open, a
+pressed remote key lights its row, and an unlearned key is named by its code -
+that is how a new remote's codes are found out. Learning waits 30 seconds for
+a key; if none came, the page says so. More in
+[The remote control](usage.en.md#the-remote-control).
+
+## Backup
+
+`GET /api/backup` gives a zip with four files: `wifi.json` (the networks),
+`settings.csv` (the settings), `yandex.json` (the token), `weather.json` (the
+OpenWeatherMap key). `POST /api/restore` takes the whole archive or one file;
+the device checks all files before writing, writes them and reboots. The
+station list is not in the archive - it has its own export on the playlist
+page.
+
+**The archive holds the Wi-Fi password, the token and the key in clear
+text.** The device gives it to anyone on the local network. Keep the file as
+you would a password.
+
+## API
+
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/status` | Wi-Fi and player state in one snapshot |
-| `GET /api/playlist` | Station list as CSV |
-| `POST /api/playlist` | Replaces the station list wholesale |
-| `GET /api/files` | Contents of the current directory on the active medium |
-| `GET /api/dlna` | Contents of the container open on the media server; `searching` means it is still being looked for |
-| `GET /api/about` | The firmware and web versions, ESP-IDF, the author's address |
-| `GET /api/settings` | The device settings, the same ones its own screen has |
-| `POST /api/settings` | Changes one setting: `{"field":…,"value":…}`, `timezone`, `ntp_server`, `weather`, `weather_latitude`, `weather_longitude`, `openweathermap_key`, `screensaver`, `screensaver_seconds`, `screensaver_brightness` and the alarm's five - `alarm_enabled`, `alarm_time` (`"07:30"`), `alarm_days` (a 1-127 mask), `alarm_station` (numbered from one), `alarm_volume` - included |
-| `GET /api/backup` | The device configuration as one zip: `wifi.json`, `settings.csv`, `yandex.json`, `weather.json` |
-| `POST /api/restore` | Restores it: the whole archive or a single file, named by `?name=` |
-| `GET /api/progress` | Track position, buffer fill, cover signature, what the sleep timer has left |
-| `POST /api/sleep-timer` | The sleep timer: `{"minutes":45}`, zero turns it off. Set in the settings, shown on the player page |
-| `GET /api/cover` | The current cover, 96x96, as a BMP |
-| `GET /api/stations` | The station names of the active source; `?source=internet_radio` asks for the radio's own list whatever the device is doing |
-| `POST /api/station-test` | Plays an address on the device without touching the playlist |
-| `GET /api/station-icon` | An uploaded station picture, by file name |
-| `POST /api/station-icon` | Uploads a station picture; the device names the file |
-| `GET /api/yandex` | Link state and the account's stations (never the token) |
-| `POST /api/yandex` | Link, cancel, unlink, refresh the stations |
-| `GET /api/remote` | The remote's table: `available`, `learning`, `revision`, `keys` - a code per function or `null`, `last` - the key seen last |
-| `GET /api/remote/last` | The same without the table: `revision`, `learning`, `last` - what the remote page asks four times a second |
-| `POST /api/remote/learn` | Arm a function for learning: `{"function":"volume_up"}`; the next key on the remote is its |
-| `POST /api/remote/forget` | Forget a function's key: `{"function":"volume_up"}` |
-| `POST /api/wifi` | Saves a network |
-| `POST /api/wifi-scan` | Starts a scan for nearby networks (only with no connection) |
-| `GET /api/wifi-scan` | What it found: `scanning`, `done` with the list, or `idle` |
+| `GET /api/playlist` | The station list as CSV |
+| `POST /api/playlist` | Replace the whole list |
+| `GET /api/stations` | The names of the active source's stations; `?source=internet_radio` - always the radio |
+| `GET /api/files` | The current folder of the drive |
+| `GET /api/dlna` | The open folder of the media server; `searching` - the server is still being looked for |
+| `GET /api/progress` | Position in the track, the buffer, the cover's signature, the sleep timer's remainder |
+| `GET /api/cover` | The current cover, 96×96, BMP |
+| `GET /api/settings` | The device's settings, the time zone list, the time server |
+| `POST /api/settings` | One setting: `{"field":…,"value":…}` - including `timezone`, `ntp_server`, `weather*`, `screensaver*`, `alarm_*` |
+| `POST /api/sleep-timer` | `{"minutes":45}`, zero switches it off |
+| `GET /api/about` | The firmware, web interface and ESP-IDF versions |
+| `GET /api/backup`, `POST /api/restore` | The backup, see above |
+| `POST /api/station-test` | Play an address on the device without touching the playlist |
+| `POST /api/station-icon`, `GET /api/station-icon` | Upload / fetch a station's picture |
+| `GET /api/yandex`, `POST /api/yandex` | Link state and the account's stations; link, unlink, refresh |
+| `GET /api/remote`, `GET /api/remote/last` | The remote's table; the last key received |
+| `POST /api/remote/learn`, `POST /api/remote/forget` | `{"function":"volume_up"}` - learn / forget |
+| `POST /api/wifi` | Save a network |
+| `POST /api/wifi-scan`, `GET /api/wifi-scan` | Scan for networks (only while unconnected) and its result |
 | `/ws` | Commands and live updates |
 
-WebSocket commands: `player.play`, `player.pause`, `player.toggle`,
-`player.next`, `player.previous_item`, `player.next_item`, `player.seek`,
-`player.like`, `player.dislike`, `source.select`, `list.select`, `browse.up`,
-`wifi.save`, `wifi.forget`, `wifi.prioritize`, `wifi.disconnect`. Live
-state arrives as diffs - `player`, `list`, `wifi`, `settings`; anything large -
-the playlist, media directories - goes over REST, because it does not fit in a
-frame and must not spend internal SRAM.
+**WebSocket commands:** `player.play`, `player.pause`, `player.toggle`,
+`player.next`, `player.previous_item`, `player.next_item`, `player.seek` (a
+second), `player.like`, `player.dislike`, `source.select`, `list.select`,
+`browse.up`, `wifi.save`, `wifi.forget`, `wifi.prioritize`, `wifi.disconnect`.
+Back come diffs of the `player`, `list`, `wifi` and `settings` sections. Big
+things - the playlist, folders, the position, the cover - go over REST so as
+not to load the socket.
 
-The sleep timer is cut along that same line, and is a good illustration of
-where it runs: **how long is set** is a change, so it arrives over the socket
-beside the settings (`"sleep":{"minutes":45}`), while **how long is left** is a
-ticking number and rides on the position poll. So a tab left open on a stopped
-player stays quiet while there is no timer, and starts asking once a second the
-moment one appears - set from another browser, or on the device itself.
+Remote codes are written as `nec:<address>:<command>` (`nec:4:08`) or
+`raw:<hash>` for a protocol the decoder does not know.
 
-The alarm, unlike the timer, is a setting, and it travels whole in the settings
-diff: five flat members named the way they are posted back (`alarm_enabled`,
-`alarm_time`, `alarm_days`, `alarm_station`, `alarm_volume`). The page's field
-table then needs one line for each, and the player's indicator reads the two it
-cares about straight out of the frame. There is nothing to poll for: an alarm
-is a time, not a countdown.
+The alarm in the settings is five fields: `alarm_enabled`, `alarm_time`
+(`"07:30"`), `alarm_days` (a mask, bit 0 is Sunday, zero is refused),
+`alarm_station` (a number counting from one), `alarm_volume`.
 
-The days are a mask where bit 0 is Sunday, the way `struct tm` counts. Zero is
-refused the whole way down - by the request parser and by the setter - because
-an alarm switched on with no day to ring on looks armed and never goes off. The
-page will not let the last day be unticked, for the same reason.
+## How it works
 
-The alarm's station number is a row of the list
-`GET /api/stations?source=internet_radio` answers with. The parameter exists
-for it: without one the endpoint describes the active source, and a station for
-the morning has to be picked while anything at all is playing. Counting lines
-of the playlist file in the browser would be one malformed line worse - the
-device is what numbers the rows.
-
-`GET /api/settings` carries two things the live socket updates do not: the name
-of the time server (`ntp_server`) and the list of time zones to choose from
-(`timezones`, each an `id` and a label). The list lives in the firmware and
-reaches the page from there, so there are not two copies to drift apart; the
-server name is typed once in a device's life and is not worth comparing on
-every broadcast pass. The zone itself (`timezone`) is in the diff - it is one
-byte.
-
-The player's three lines - what is being listened to, the performer, the track -
-come to the page and to the screen from one function
-([`ui_now_playing.h`](../components/ui/include/ui_now_playing.h)) rather than being
-worked out twice. Worked out twice, they drifted: on files the page showed the
-file's name where the screen read its tags, and it named a station by whatever
-the stream called itself while the screen obeyed the playlist's third column -
-"Радио Шоколад" marked `L` is named from the list on the screen, and was named
-`DB91-TX` on the page, which is what the stream calls itself. Each also had its
-own way of splitting the ICY line into a performer and a track: the page knew
-about the en dash and repaired broken UTF-8, the screen did neither.
-
-The tags themselves still stay out of the snapshot: it is copied onto the stack
-of every task that polls it, and three more strings would cost 384 bytes on each
-of them. What travels is `track_tag_revision` - the tags are read after the
-track has already started, and without a counter the page would go on showing
-the file name until the track ended.
-
-`player.seek` carries a second rather than a percentage: seconds are what the
-device turns into a byte offset, and a percentage would have to be turned back
-into seconds using a length the browser only has an estimate of.
-
-The track position and the cover go over REST too, for a different reason: the
-snapshot is diffed and broadcast on every change, and a counter that ticks
-would push a frame a second to every open browser. The page polls
-`/api/progress` once a second while something is playing and rarely otherwise.
-The cover is served as a BMP - the device holds it already decoded to RGB565
-and no longer has the original bytes, so anything compressed would mean a PNG
-encoder in firmware for a picture that travels over a LAN; 27 KB uncompressed
-is the cheaper answer. The URL carries the cover's signature - a checksum of the
-bytes it was decoded from - and the answer itself is marked `no-store`.
-
-The URL used to carry the generation instead, and the answer was cached for a
-day. The generation counts from zero at every boot, so `?g=1` meant one picture
-on Tuesday and another on Wednesday, and three browsers showed three different
-covers for one track, each the one it had cached first. A signature cannot do
-that: one picture, one URL; different pictures, different URLs.
-
-The rotor's covers do not come from the device at all. `/api/progress` hands the
-page the picture's address on `avatars.yandex.net` at 400x400 and the browser
-fetches it itself: the device pays nothing - only the address travels - and the
-page draws something four times as detailed as the 96 pixels the panel decodes
-it into.
-
-A station's own picture is the playlist's fourth column, after the letter and a
-tab; the column is optional. A picture chosen in the browser is scaled there to
-96 pixels on its longer side and re-encoded as PNG - kilobytes travel to the
-device, not a photograph - and the device names the file itself: a name that
-comes from a client is a name that can turn out to be a path. The extension
-comes from the first bytes rather than from the request's header, so PNG and
-JPEG are each stored under their own: the picture is handed back over HTTP
-afterwards, and a JPEG served as `image/png` is a broken picture in the browser.
-It doubles as the only check that a picture arrived at all. The files live in
-`/littlefs/radio_img/`, and saving the playlist deletes the ones nothing refers
-to any more - that is the one moment when the full list of names in use is
-known.
-
-## The remote control
-
-The page `/remote` is the table of functions with a Learn and a Forget beside
-each; the settings page carries a button to it, shown only when the device
-answers `available.remote = true` - that is, the build has `IR_RECEIVER_GPIO`.
-The table is a document of its own, `GET /api/remote`, not a part of the
-settings frame: thirty-odd codes would double that frame for data that
-changes a few times in the device's life. The settings frame carries only
-`remote_revision` - a number that moves on every change to the table or to
-what is armed - and `remote_learning`.
-
-While the page is open it reads `GET /api/remote/last` four times a second -
-a hundred bytes: the key seen last (`function` - what it is learned as,
-`null` for none; `code`; `age_ms` - how long ago), to light its row for as
-long as the key is held, and `revision`, on which the whole table is fetched
-again. The page opens no socket: a WebSocket slot for a page open a few
-minutes a year is not worth it. In a background tab the polling stops.
-
-Learning: `POST /api/remote/learn` arms a function for thirty seconds, and
-the next real key (not a repeat frame) is bound to it - and acts on nothing,
-or learning the Sleep key would put the device to sleep. An arming that no
-key answered clears itself; the page reads a moved revision and an unchanged
-code as "No key came". Codes are written as `nec:<address>:<command>` in
-hex (`nec:4:08`, an extended address as `nec:bf00:43`), or `raw:<hash>` for
-a protocol the decoder does not know: an FNV-1a hash of the pulse durations
-rounded to 200 us, which survives a receiver's jitter and still tells keys
-apart.
-
-## Folding sections
-
-The settings page on a phone is five screens in a row, four of them scrolled
-past. So every card folds: the heading stays, the contents go away, and exactly
-one section stands open - open another and the previous one folds itself.
-Tapping the open one folds it too: "none of these" is an answer as well.
-
-Which section was open is remembered in `localStorage` rather than on the
-device: it is the shape of the page, not a setting of the box. The markup
-arrives folded - otherwise a phone paints the whole page first and folds it up
-in front of the reader.
-
-The status ("Ready", "Connected", the Yandex countdown) stays outside the
-heading's button: it is worth reading with the section folded, and a live region
-inside a button is read out to a screen reader as part of the button's own name.
-
-Folding stops at 780 px - the width where the page goes to two columns and fits
-whole, as it always did. The number is written twice, in `style.css` and in
-`settings.js`: a media query cannot be read from a script.
-
-## Language
-
-The pages are translated by `i18n.js` - one dictionary for all three, with the
-keys in the markup (`data-i18n`, `data-i18n-aria`, `data-i18n-placeholder`,
-`data-i18n-title`). The Russian text stays in the markup itself, so a page that
-somehow renders before the script has loaded reads correctly rather than showing
-bare keys.
-
-The device owns the setting, and it travels in the same settings section as the
-volume and the brightness. So the picker on the settings page and the row on the
-device's own screen are one switch: an open tab relabels itself within a poll,
-whichever end it was moved from. The playlist page opens no socket and asks
-once, at load, from `/api/settings`.
-
-The chosen language is remembered in `localStorage` - not as the source of truth
-but so a reload does not show the wrong language for a second and then swap it
-under the reader. A browser that refuses to answer (a private window) is not an
-error: the page simply starts in Russian.
-
-Strings the device sends are not in the dictionary: source names, playback
-states, its error lines and the time-zone labels arrive already translated, out
-of the same table the panel reads. Otherwise the two faces would word the same
-thing differently.
-
-## Backup and restore
-
-Four files make a device this device: `wifi.json` for the networks it knows,
-`settings.csv` for how it is set up, `yandex.json` for the Yandex token,
-`weather.json` for the OpenWeatherMap key.
-`GET /api/backup` hands them over as one zip and `POST /api/restore` takes them
-back - the whole archive, or one file out of it. The playlist is not in there:
-it has its own export on the playlist page, and that one carries more, the
-station pictures included.
-
-**The archive holds the Wi-Fi password, the Yandex token and the weather key in clear text.**
-Anything else would not restore the thing that matters most, the network. The
-device hands the archive to anyone on the local network - the same place the
-rest of the interface lives, and there is no password on any of it. The answer
-is marked `no-store` so no copy settles on the way.
-
-What the device writes is stored, never deflated: the files are a few kilobytes
-each, so there is nothing to compress, and every unpacker opens a stored entry.
-It reads deflate as well - which is what comes back if the archive is unpacked,
-edited and repacked by Windows Explorer or Finder. Inflating is `tinfl` out of
-the chip's ROM, so it costs no flash; the output is bounded by the size the
-archive declared and checked against its CRC. Just not through
-`tinfl_decompress_mem_to_mem()`: that helper keeps eleven kilobytes of tables on
-the stack and the HTTP task's stack is six, so the first compressed archive
-ended in `StoreProhibited`.
-
-Anything that is not ours is walked over: a folder inside the archive
-(`config/wifi.json` arrives at the same place), foreign files beside ours, a
-name longer than ours ever are. Before anything is written every file is checked
-for shape - JSON starts with `{`, ends with `}` and carries `"version"`; the CSV
-is text with a comma and no control characters - and **all** of them are checked
-before **any** of them is written: a restore that stops halfway would leave
-somebody else's networks with this device's own token, a state neither backup
-describes. Each file is written beside its target and renamed over it, the way
-every other writer of these files does.
-
-After writing, the device reads the file back through the same code that reads
-it at boot, and says so in the answer (`warnings`) if that code refused it.
-Otherwise the only sign would be a device on the setup access point after the
-reboot, with nothing said about why.
-
-The reboot is part of the deal: the settings are cached by three tasks, the
-network list is read once at startup, and the token is held by the Yandex
-client. A restart is the one path where all of that is guaranteed to come from
-the files that were just written.
-
-A refusal answers with a code rather than a sentence: `size`, `incomplete`,
-`memory`, `compressed`, `damaged`, `malformed`, `empty`, `unknown-file`,
-`contents`, `write`. The page says it in Russian; matching on an English
-sentence would mean a blank screen the day one of them is reworded in a log.
-
-What it will not take: a zip whose sizes live in a descriptor after the data
-rather than in the header, which is how a streaming packer writes them. That is
-refused as `malformed`.
-
-## The playlist format
-
-A line is `name<TAB>address<TAB>letter`, plus an optional fourth column naming
-the picture file. The letter says which name to show: `S` for the one the
-stream announces, `L` for the one kept in the list.
-
-The letter sits where playlists written for other devices - and there are many
-of those about - keep a volume correction: a signed integer, almost always
-zero. Those lines are read too, but only for their name and address: the volume
-here is one setting and there is no per-station gain in the model. The
-correction is dropped, the stream gets to announce the name, and nothing in
-that dialect could name a picture. Lists of two columns, with no third at all,
-read the same way.
-
-The letter is what makes the two tellable apart. The column used to hold 0 or
-1 - exactly what a correction of 0 or +1 dB is written with - so a foreign 1
-read as "name from the list", and every other correction took the whole line
-down as malformed.
-
-The order is changed by dragging a row by the grip left of its name. The grip
-is what moves, not the whole row: the list is scrolled with a finger, and a row
-that followed it would take away the only way to scroll at all. It is built on
-pointer events rather than the drag and drop built into HTML, which a finger
-cannot start at all - and a list of 99 stations is exactly what gets sorted on
-a phone. The up and down arrows on that same grip move a row from the keyboard,
-and the order, like any other edit, reaches the device on Save.
-
-Export hands over `playlist.csv` while no station has a picture, which is a
-file anything can read. Once one does, it hands over `playlist.zip`: the same
-`playlist.csv` with a `radio_img/` folder beside it. Import takes either,
-telling them apart by the file's signature. The archive is built and read
-entirely in the browser - the device needs neither an unpacker nor a buffer of
-several megabytes - and it is written stored, since PNG and JPEG are already
-compressed, but read with deflate too, because an archive assembled by anything
-else will be compressed.
-
-Imported pictures travel to the device when Save is pressed rather than when
-the file is opened: an import that is then abandoned would otherwise leave up
-to 99 unwanted files there, and the only thing that ever deletes them is the
-next save.
-
-The picture is published through the same `album_art` that carries file and
-rotor covers, so the panel's tile and the browser's both draw it without a line
-of new UI code. The key is the file name rather than the station index: replace
-the picture of the station that is playing and it updates.
-
-The device settings are written by both the panel and the web, through the same
-setters, serialised at the file level. A write from the browser raises a flag,
-and the UI task re-reads `settings.csv` and re-applies the brightness, the
-panel rotation, the volume and the Yandex row - a stored value does none of
-that by itself.
-
-The rotation is the one exception: there is no way to turn the boot splash over
-once it has been drawn. MADCTL decides where *arriving* pixels land and moves
-nothing already on the glass, and the splash is drawn at the end of
-`board_init()`, long before the UI task exists. So `app_main()` mounts LittleFS
-and reads the two flip flags before the board, and passes them into
-`board_init()` - the only settings it needs. If they cannot be read the flips
-are off, which is the panel's own baseline. It costs the screen nothing: the
-backlight sits at zero until the splash is on the glass.
-
-They come back as a `settings` section on the socket rather than by polling:
-the encoder changes the volume without telling anyone, and `settings.csv` is
-eleven consecutive reads - far too much to ask on a timer. The UI task
-publishes a copy in memory, the broadcaster reads it every 250 ms and sends a
-diff only when something has moved. That section grew the complete snapshot by
-270 bytes and pushed it past 4096, so the frame limit is now 4608;
-`test_web_server.c` builds the worst case - 32 stations named in nothing but
-quotes and backslashes - and asserts the margin is still there.
-
-Static assets are served with `Cache-Control: no-cache` and an `ETag` over the
-file's bytes: the browser keeps them but asks before showing them. An unchanged
-file costs one `304` with no body, and after `littlefs-flash` an ordinary reload
-picks up the new styles and scripts. They were cached for an hour before that,
-and that hour meant a page running against a device that had already moved on.
-
-**There is no authentication and `Origin` is not checked. Do not expose the
-device.**
+The static files live in the data partition and are served gzipped, with an
+`ETag`: after a data update an ordinary page reload is enough. Settings
+changed in the browser apply on the device at once; ones changed on the
+device reach the page within a quarter of a second. The language is stored by
+the device, so the switch on the page and the row on the screen are one
+switch.

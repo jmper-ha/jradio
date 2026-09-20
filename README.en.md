@@ -1,97 +1,116 @@
 # jRadio
 
-A desktop audio player: internet radio, music from a USB drive, an SD card and
-a media server on the home network, Yandex Music. Driven by an encoder and four
-buttons on the device itself, or from a browser on a phone or a computer.
+An audio player on the ESP32-S3: internet radio, music from a USB stick
+and an SD card, a media server on the home network, Yandex Music and
+Bluetooth. Driven by the encoder and buttons on the box, by an infrared remote,
+or from a browser - a phone or a computer on the same network.
 
 *[Русская версия](README.md)*
 
 ---
 
-## Specifications
+## Features
+
+- **Everything in one box.** Radio, files, DLNA, Yandex Music, Bluetooth both
+  ways - one player instead of several devices.
+- **Built from ordinary parts.** An ESP32-S3 module, an SPI display, a PCM5102
+  DAC, an encoder and buttons. No custom board needed - a breadboard or a
+  simple PCB will do.
+- **Fits your board with one line per part.** The display, the DAC, the pinout,
+  what is fitted and what is not - all in [`board_options.h`](board_options.h).
+  What is not on the board is not in the menu.
+- **A web interface out of the box.** The player, a station-list editor with
+  pictures, settings, files, remote learning - all from a phone, no app.
+- **Made for every day.** Resumes what was playing, deep sleep, an alarm
+  clock, a sleep timer, a clock and the weather on screen, a screensaver.
+- **Open source with a straightforward build.** ESP-IDF, VS Code, one build
+  key. Ready-made firmware files are in the
+  [releases](https://github.com/jmper-ha/jradio/releases).
+
+## What it is made of
 
 | | |
 |---|---|
-| SoC | ESP32-S3 in a QFN56 package, 16 MB flash, 8 MB PSRAM |
-| Display | over SPI: ILI9341 or ST7789 320x240, ILI9488 or ST7796S 480x320 - each of them either way up; ST7789 320x170 (the 1.9" module) - landscape only |
-| Audio | PCM5102 DAC over I2S, line output; 16-bit stereo; an optional amplifier MUTE line |
-| Media | USB host for a flash drive and a microSD slot, FAT16 or FAT32 |
-| Network | 2.4 GHz Wi-Fi, up to five saved networks, a web interface on the LAN |
-| Controls | a rotary encoder with a push button and four buttons |
+| Processor | an ESP32-S3 module, 16 MB flash, 8 MB PSRAM |
+| Display | over SPI: ILI9341 or ST7789 320×240, ILI9488 or ST7796S 480×320 - landscape or portrait; ST7789 320×170 (the 1.9" module) |
+| Audio | PCM5102 DAC over I2S, line out, 16-bit stereo; optional control of an amplifier's MUTE |
+| Media | a USB stick (USB Host) and microSD; FAT16/FAT32 |
+| Network | 2.4 GHz Wi-Fi, up to five saved networks |
+| Controls | an encoder with a button, four buttons, an IR remote (any, learned) |
+| Bluetooth | through the [jradio-bt](https://github.com/jmper-ha/jradio-bt) module on a second ESP32 |
 | Firmware | ESP-IDF 5.5.x, target `esp32s3` |
 
-Which parts are fitted and how they are wired is one line each in
-[`board_options.h`](board_options.h), and that file also decides what ends up on
-the home screen. Details in [Hardware](doc/hardware.en.md).
+The full pinout and the choice of parts are in [Hardware](doc/hardware.en.md).
 
 ## What it does
 
-| Feature | State | More |
-|---|---|---|
-| **Internet radio** | works | Your own station list, the track name straight off the air, reconnects when a stream drops |
-| **Music from a USB drive** | works | Folders, tags, cover art, seeking, automatic advance to the next track |
-| **Music from an SD card** | works | The same; the card is found when the source is opened |
-| **Playlists on the media** | works | `.m3u`, `.m3u8` and `.pls` files open as a folder - [more](doc/usage.en.md#playlists-on-the-media) |
-| **Yandex Music** | works | "My Wave" and the account's stations, cover art, like and dislike - [more](doc/yandex.en.md) |
-| **Media server (DLNA)** | works | Finds a server on the network by itself, walks its tree, tags and cover - [more](doc/dlna.en.md) |
-| **Web interface** | works | Player, device settings, station list editor, file browser, Wi-Fi - [more](doc/web.en.md) |
-| **Clock** | works | Time from the internet, on every screen |
-| **Weather** | works | Temperature and an icon beside the clock; Open-Meteo, wttr.in or OpenWeatherMap to choose from, coordinates in the web settings — [more](doc/usage.en.md#weather) |
-| **Screensaver** | works | Dim, dark, or a clock floating across the dark panel with the date, the weather and the track; after 15 s to 10 min untouched — [more](doc/usage.en.md#settings) |
-| **Volume** | works | The encoder, the web player and Settings; remembered |
-| **Autoplay** | works | Starts whatever was playing when the device was switched off: a station, a track off a drive, a Yandex station or a container on a media server; for Bluetooth it brings back the screen that waits for a phone |
-| **Deep sleep** | works | Holding the first button puts the device out: playback stops, Bluetooth and Wi-Fi leave properly, and with a power switch wired everything outside the module loses power too. The same button wakes it - [more](doc/usage.en.md#deep-sleep) |
-| **Quick panel** | works | Quick_menu drops a window over the screen: the sleep timer, the alarm, the brightness and the BT speaker - on the encoder, without leaving the player - [more](doc/usage.en.md#the-quick-panel) |
-| **Sleep timer** | works | Play for 15 to 120 minutes, then fade the volume away and sleep; set in the web settings, with the countdown on the screen and on the player page - [more](doc/usage.en.md#the-sleep-timer) |
-| **Remote control** | works | Any infrared remote through a one-pin receiver: the keys are learned on a page of the web interface, the digits dial a station by number, and the key learned as Sleep wakes the device from deep sleep on the first press - [more](doc/usage.en.md#the-remote-control) |
-| **Alarm clock** | works | A station at a set time, on the days you choose and at its own volume. A sleeping device wakes for it by itself: quietly ten minutes early to correct its clock, then a minute before it rings - [more](doc/usage.en.md#the-alarm-clock) |
-| **Cover art** | works | From the file's tag, from `cover.jpg` beside the music, from Yandex |
-| **Interface language** | works | Russian and English; the switch moves both the device screen and the web interface |
-| **Yandex categories** | not done | Only the account's own stations; there is no catalogue of genres and moods |
-| **Bluetooth** | works | Through the [jradio-bt](https://github.com/jmper-ha/jradio-bt) module on the same I2S bus, both ways: playing from a phone (track, cover, keys, volume) and sound to a Bluetooth speaker with its keys - [more](doc/usage.en.md#bluetooth). Without the module there is no menu entry |
-| **FM** | not done | No menu entry: the device shows only what it can actually do |
+| | |
+|---|---|
+| **Internet radio** | Your own station list (up to 99), the track title from the stream, HTTP and HTTPS, reconnects after a drop |
+| **Music from USB and SD** | Folders, tags (including Russian ones in legacy encodings), covers, seeking, auto-advance to the next track. `.m3u`, `.m3u8` and `.pls` playlists open as folders |
+| **Yandex Music** | "My Wave" and the account's stations, covers, like / dislike - [more](doc/yandex.en.md) |
+| **Media server (DLNA)** | Finds the server on the network itself, walks the library, tags and covers - [more](doc/dlna.en.md) |
+| **Bluetooth** | Receives from a phone (track, cover, buttons, volume) and plays out to a Bluetooth speaker or headphones - [more](doc/usage.en.md#bluetooth) |
+| **Web interface** | The player, settings, the station editor, files, Wi-Fi, the remote, a backup - [more](doc/web.en.md) |
+| **Remote control** | Any IR remote: keys are learned in the browser, digits dial a station number, a learned key wakes the device from sleep - [more](doc/usage.en.md#the-remote-control) |
+| **Clock and weather** | Time from the internet, the temperature and a sky icon next to the clock (Open-Meteo, wttr.in or OpenWeatherMap) |
+| **Screensaver** | Dimming, a black screen, or a drifting clock with the date, the weather and the track title |
+| **Quick panel** | A window over the player: the sleep timer, the alarm, the brightness, the BT speaker - without leaving the screen |
+| **Alarm clock** | A station at a set time on chosen weekdays at its own volume; a sleeping device wakes itself |
+| **Sleep timer** | 15-120 minutes, then a fade-out and sleep |
+| **Deep sleep** | Holding a button shuts the device down; the same button or the remote wakes it. With a power switch the whole periphery goes dark |
+| **Resume** | After power-on continues what was playing: the station, the track, the server folder |
+| **Two languages** | Russian and English - on the screen and in the browser, switched on the fly |
+
+Not there yet: FM radio and the general Yandex Music catalogue of genres (only
+the account's stations).
 
 ### Formats
 
 | Format | Radio | Files | Notes |
 |---|:---:|:---:|---|
 | MP3 | yes | `.mp3` | |
-| AAC | yes | `.aac`, `.adts` | Raw ADTS only. `.m4a` is AAC in an MP4 container and is not read |
-| FLAC | yes | `.flac` | Plays at 24 bits too |
-| Ogg | yes | `.ogg`, `.oga` | May hold FLAC, Vorbis or Opus - which one is read from the stream |
+| AAC | yes | `.aac`, `.adts` | ADTS only; `.m4a` (an MP4 container) is not read |
+| FLAC | yes | `.flac` | 24-bit included |
+| Ogg | yes | `.ogg`, `.oga` | FLAC, Vorbis or Opus inside |
 | WAV | - | `.wav` | 16-bit, mono or stereo |
-| HLS (`.m3u8`) | yes | - | Segments in MP3 or AAC. A stream wrapped in MPEG-TS is not parsed |
+| HLS (`.m3u8`) | yes | - | MP3 or AAC segments; MPEG-TS is not parsed |
 
-Radio works over both HTTP and HTTPS. Seeking is files-only: neither a radio
-stream nor a Yandex station has a length or a position to jump to. The details
-and the caveats are in [Formats in detail](doc/usage.en.md#formats-in-detail).
+## Getting started
 
-## Where the project stands
+1. **Build the board** after [Hardware](doc/hardware.en.md) - or start with the
+   minimum: the module, a display, the DAC and an encoder.
+2. **Flash it.** The quick way is a ready-made image from a
+   [release](https://github.com/jmper-ha/jradio/releases) with one `esptool.py`
+   command; the full way is a build from source for your own board. Both are in
+   [Building and flashing](doc/build.en.md); setting up the tools is in
+   [Installing the toolchain](doc/toolchain.en.md).
+3. **Connect it to Wi-Fi.** On the first boot the device opens its own access
+   point, `jradio-XXXX`: join it from a phone, open `http://192.168.4.1` and
+   pick your home network. Then see [How to use it](doc/usage.en.md).
 
-The device is built and in daily use; everything marked "works" above has been
-checked on live hardware, not only in tests.
+## Worth knowing up front
 
-Limits worth knowing about in advance:
+- **The web interface is meant for a trusted home network.** There is no
+  password; do not expose it to the internet.
+- **At most 99 stations** in the list and **256 files** in one folder of a
+  drive.
+- **exFAT is not supported.** Sticks and cards of 64 GB and up usually come
+  formatted that way - reformat to FAT32.
+- **Flashing goes through UART**, not through the board's USB connector: USB
+  belongs to the stick.
 
-- **The web interface assumes a trusted LAN.** There is no authentication and
-  `Origin` is not checked. Do not expose it to the internet.
-- **At most 99 stations** in the playlist and **256 entries** in one directory
-  on the media; anything past that is dropped with a warning.
-- **exFAT is not supported** - drives of 64 GB and up usually ship formatted
-  that way and have to be reformatted.
-
-The full list of limits, with numbers, is in
-[Diagnostics and limits](doc/diagnostics.en.md).
+The full list of limits is in [Diagnostics and limits](doc/diagnostics.en.md).
 
 ## Documentation
 
 | Page | About |
 |---|---|
-| [Using the device](doc/usage.en.md) | First run and Wi-Fi, buttons and gestures, the screens, settings, playlists on the media |
-| [Yandex Music](doc/yandex.en.md) | Linking an account, stations, the marks, what the device reports back |
-| [Media server (DLNA)](doc/dlna.en.md) | Finding a server, walking its tree, what plays and what is missing |
-| [Web interface](doc/web.en.md) | Pages, API endpoints, the station list format |
-| [Hardware](doc/hardware.en.md) | Pinout, choosing parts, panels and screen layouts, fonts |
-| [Setting up the development environment](doc/toolchain.en.md) | VS Code, the ESP-IDF extension, Python and everything else to install |
-| [Building, flashing and tests](doc/build.en.md) | Building, flashing, host tests, data on the device |
-| [Diagnostics and limits](doc/diagnostics.en.md) | What the log says and how to read it, the full list of limits |
+| [How to use it](doc/usage.en.md) | First boot, controls, screens, sources, settings, sleep and the alarm |
+| [Building and flashing](doc/build.en.md) | A ready image or a build from source, the first flash, updates, the data on the device, tests |
+| [Installing the toolchain](doc/toolchain.en.md) | VS Code, the ESP-IDF extension, Python, the board's port |
+| [Hardware](doc/hardware.en.md) | Parts, pinout, `board_options.h`, displays, the amplifier, the remote, the Bluetooth module |
+| [Web interface](doc/web.en.md) | Pages, the API, the station list format, the backup |
+| [Yandex Music](doc/yandex.en.md) | Linking the account, stations, likes |
+| [Media server (DLNA)](doc/dlna.en.md) | Finding the server, walking the library, resume |
+| [Diagnostics and limits](doc/diagnostics.en.md) | What the log says, how to read it, the limits |

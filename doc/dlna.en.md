@@ -2,135 +2,56 @@
 
 [← README](../README.en.md) · [Русский](dlna.md)
 
-The device finds a media server on the home network by itself and plays what is
-on it. Nothing needs setting up: no server address to type, no folders to
-declare.
+The device finds a media server on the home network by itself and plays what
+is on it. Nothing to set up: no address to type, no folders to configure.
 
-**Which servers.** Any DLNA/UPnP media server on the same network: a NAS, Plex,
-Jellyfin, miniDLNA, a media server on a PC. Tested against Plex Media Server
-1.42 (Platinum stack) on a NAS.
+**Which servers work.** Any DLNA/UPnP media server on the same network: a
+NAS, Plex, Jellyfin, miniDLNA, Home Media Server. Verified with Plex Media
+Server on a NAS.
 
-**Finding one.** Pick the DLNA source on the device, or press the DLNA tab in
-the web interface. The device sends a query across the network and waits for
-answers, saying "Поиск медиасервера" while it does. Usually about a second: the
-wait ends when the network goes quiet rather than when the whole window
-expires. The server that replies opens at its top level, with its name as the
-heading of the list.
+## How it works
 
-While the search runs the list is empty and says nothing about it - the bar at
-the foot sweeps instead. "Медиасервер не найден в сети" appears only once the
-search has finished and found nothing.
+1. Choose the Media server source on the device, or the DLNA tab in the web
+   interface. The screen says "Looking for a media server" - usually about a
+   second.
+2. The server found opens at its top level; its name is in the list header.
+   With several servers, their list is shown first.
+3. Then it is like a flash drive: the encoder scrolls, a press opens a folder
+   or plays a track, `..` at the top goes up a level, a long press leaves the
+   source. While a folder loads, a bar runs at the bottom.
 
-**What the rest costs.** Opening a folder is one request to the server, or
-several for a large one. Measured on this network: a small folder about 0.1 s,
-a 52-row folder 0.6 s. While a request is out, the bar under the list - the slot
-the player screen gives the buffer - sweeps a segment back and forth; in the web
-interface the rows dim, since they are still correct but there is no point
-pressing them. The movement is the point: a caption that sits still looks
-exactly like a device that has hung, which is why there is no caption, only the
-bar.
+The search runs on every entry into the source - the server may have been
+switched off, moved, or appeared later. If nothing is found, the list says so:
+"No media server found on the network".
 
-A folder that will not open says so - "Папка не открылась" - rather than
-leaving the wait to run out.
+At the top level only the music sections are shown: `Video`, `Photos` and the
+like are hidden. Rows that cannot be played (video, a format without a
+decoder) stay in the list but are marked and do not respond.
 
-The search runs every time the source is entered rather than once at start-up.
-That is deliberate: a server may be switched off, may move to another address,
-or may appear after the device has already booted.
+**What plays:** MP3, AAC, FLAC, Ogg - with the same decoder as internet
+radio. WAV does not play from a server (it does from a stick). The performer,
+the title and the cover come from the tags the server sends. When a track
+ends, the next one in the folder starts; F3/F4 and the web buttons step
+through.
 
-**When there is more than one server.** If two or more answer the search, the
-device opens none of them and shows the list instead: one row per server, named
-as the server names itself. The one chosen opens at its top level, and the `..`
-row at that top level goes back to the list, so switching is always one step
-away.
+## Resume
 
-Opening whichever answered first was not good enough precisely because "first"
-means "quickest to reply to a multicast" - a different server from one power-up
-to the next. With a single server nothing changes: there is no extra screen, it
-opens straight away.
+With resume on, the device remembers the server, the folder and the track,
+and after power-on goes back there: finds the server, opens the folder and
+starts the track. The first sound comes about four and a half seconds after
+power is applied.
 
-At most four servers are taken, and one that replies more than 600 ms after the
-previous one will not be in the list - the search has stopped listening by then.
-
-**Walking the server.** Exactly like a flash drive. The encoder scrolls, a press
-opens a folder or starts a track, and the `..` row at the top goes back up. A
-long press leaves the source.
-
-Every server lays its tree out differently. On Plex it is `Music → your library
-→ By Album / By Folder / All Artists → …`.
-
-At the very top level the device shows only the music sections: `Video`,
-`Photos` and their like are hidden - they can be walked into, but there is
-nothing to listen to in them. The name is all there is to tell them apart: a
-server marks every section the same way and says nothing about what is inside.
-So only what is recognised for certain is hidden, an unfamiliar section stays
-where it is - and if everything were hidden the listing would come back whole
-rather than empty.
-
-**What plays.** MP3, AAC, FLAC, Ogg. The server hands out an ordinary HTTP
-link and from there the same decoder runs as for internet radio - which, unlike
-the file player, has no WAV decoder at all. So a WAV row from a server is
-marked unplayable even though the same file plays from a drive: there the
-format comes from the file name, here from the type the server declared.
-
-Rows that cannot be played - a video, or a format with no decoder - stay on the
-list, marked and unclickable. They are not hidden on purpose: a list without
-them would look like a server with files missing.
-
-**What is shown.** The performer and the title come from the tags the server
-sent, not from the file name. The cover comes from there too. When a server
-offers two pictures the device takes the smaller one: only 160 pixels reach the
-panel, and the rest would be bytes fetched to be thrown away.
-
-**Through the album.** When a track ends the next one in the same listing
-starts, as on a flash drive. F3 and F4 step to the neighbouring track, and so
-do the back and forward buttons in the web interface.
+If something changed - the server did not answer, the folder vanished after a
+library rescan, the track is not in it - the device steps back: opens the
+server's root, plays the folder's first track, or shows a list to choose
+from. There is no silent screen.
 
 ## Limits
 
-**The first 64 rows of a container.** Libraries get large - "By Album" on the
-test server holds 769 of them - and no amount of them can be scrolled with a
-encoder anyway. Go in through folders or artists.
-
-**No search on the server.** The device only walks the tree; the search box in
-the web interface filters what is already on screen.
-
-**No seeking inside a track.** The server allows it, but the device plays the
-stream from start to end, the way it plays radio.
-
-**The place in the tree is not remembered - except by autoplay.** Choosing the
-source by hand starts the next visit at the top level again. Autoplay does come
-back to where playback stopped; see below.
-
-**Plain HTTP only.** A media server on a home network does not encrypt, and the
-device does not expect it to.
-
-## Autoplay
-
-With autoplay on, the device remembers what was playing from the media server
-and comes back to it at the next power-on: it searches for the server, opens
-the same container and starts the same track. First sound is about four and a
-half seconds after power, of which one second is Wi-Fi and another is the
-search.
-
-Three things are remembered: the server's UUID, the container's object id and
-the track's - all in `settings.csv` under `last_dlna`, with the container's
-title beside it under `last_dlna_title`. Not the row in the listing: a listing
-is fetched fresh on every open and a server is free to renumber its rows, so
-yesterday's seventh row is a different album today. And not the server's
-address, which comes from DHCP, where the UUID is what the server announces
-about itself.
-
-Object ids are opaque and a re-scanned library can drop them, so every failure
-falls back one step instead of failing the whole start:
-
-- the server did not answer the search: the source opens as usual, at the top;
-- the container no longer opens (UPnP 701): the server's root does;
-- the track is gone: the first playable row of that container plays.
-
-If there is nothing to play after all that, the screen goes to the browser a
-second and a half later - which says either "медиасервер не найден в сети" or
-shows a tree to choose from. A silent player screen would say neither.
-
-Going up from a resumed container lands at the server's root: the levels in
-between are not restored, because each would cost a request and the way down is
-known only to the server.
+- The first 64 rows of a folder are taken - browse big libraries through
+  folders or artists.
+- No server-side search; the search box in the web interface filters what is
+  shown.
+- No seeking inside a track.
+- The place in the tree is not remembered, except by resume.
+- Plain HTTP only.

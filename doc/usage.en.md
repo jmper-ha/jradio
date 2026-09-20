@@ -1,598 +1,310 @@
-# Using the device
+# How to use it
 
 [← README](../README.en.md) · [Русский](usage.md)
 
-## First run
+## First boot
 
-The device needs Wi-Fi. On its first start it brings up an access point of its
-own, named after the device - `jradio-XXXX`, the XXXX from the board's serial
-number, until the settings give it another name: connect to it from a phone,
-open `http://192.168.4.1` and pick your network. While the device is joined to no network at all, the settings page
-shows the networks around it with their signal levels - pick one and type the
-password. Up to five networks are remembered, and after that it connects on its
-own.
+The device needs Wi-Fi. While it knows no network, it opens its own access
+point named `jradio-XXXX` (XXXX comes from the board's serial number):
 
-Looking around is offered only in that mode. A scan takes the radio off its
-channel for a few seconds, which with a network already up would break the
-stream - so a connected device takes a new network by name, typed in behind the
-"Добавить сеть" button. The list keeps what is no weaker than -80 dBm: below
-that a network will associate and will not carry a stream, and a list padded
-with them buries the two or three that are really there. A hidden network never
-appears in it at all - the "Другая сеть…" row at the bottom is for those.
+1. Join it from a phone or a computer.
+2. Open `http://192.168.4.1`.
+3. Pick your network from the list (networks no weaker than −80 dBm are
+   shown; a hidden one is added through "Other network…") and enter the
+   password.
 
-### Saved networks
+The device connects and keeps doing so on its own. Up to five networks are
+remembered and tried in list order. On a connected device a new network is
+added by hand, with "Add network" - no scan runs then, so the stream is not
+interrupted.
 
-Every remembered network on the settings page carries its own buttons:
+Every saved network on the settings page has its buttons: **Forget**,
+**Disconnect** (the network stays saved, but the device will not return to it
+until a reboot - that is how you move to another one without losing the
+password) and **Make first**.
 
-- **Забыть** (forget) - erases the network from `wifi.json`. It asks first, and
-  when it is the network this very page is reachable over the question says so:
-  the device disconnects with it, and the page stops answering.
-- **Отключиться** (disconnect, on the active one only) - the network stays
-  saved, but the device will not return to it until the next reboot. It moves
-  on to the next saved network, and to its own access point when there is none
-  left to try. This is how a network is changed without losing its password.
-- **Сделать первой** (make it first) - the order of the list is the priority:
-  the device walks it from the top. It takes effect on the next connection and
-  never interrupts a playing stream.
+**The web interface's address** is shown at the bottom of the device's
+settings screen. Scroll down to that bar and press the encoder for a QR code:
+in normal mode a link to the web interface, in setup mode an invitation to
+join the access point. Press again or wait 30 seconds to dismiss it.
 
-The device shows the address of its web interface at the bottom of the settings
-screen - that is the only place it can be read. That band is the last stop the
-cursor reaches on the screen: turn down to it and press the encoder, and the
-device puts the address up as a QR code. On a joined network that is a link to
-the web interface; in setup mode it is an invitation to join the device's own
-access point instead. There the band names only that network: `192.168.4.1` is
-useless until the phone is on it, and once the phone is, the QR has already
-opened it. Another press takes the code down, and so does 30 seconds of
-nothing.
-
-The page opens dark, whatever the phone or the computer is set to. The sun in
-the header switches it to light; the choice is remembered by the browser and
-holds until it is changed back.
-
-On a portrait panel the band shows the address without the `http://`: seven
-characters that tell the reader nothing, on a band 240 px wide that also has to
-carry the QR hint. The code itself keeps the scheme - without it a camera opens
-nothing.
+The web page opens dark; the sun in the header switches it to light, and the
+choice is remembered in the browser.
 
 ## Controls
 
-| Gesture | What it does |
+### The encoder and the buttons
+
+| Action | What it does |
 |---|---|
 | Turn the encoder | Volume on the player screen, selection in lists |
-| Press | Play and pause |
-| Double press | Open the station or file list; the music keeps playing |
-| Triple press | Scrub: the encoder picks a position, a press applies it |
-| Long press | Home screen; playback stops |
+| Press | Pause / resume |
+| Double press | Open the station or file list (the music keeps playing) |
+| Triple press | Scrub: turn to pick a position, press to apply |
+| Long press | Home screen (or back); playback stops |
 | Hold F1 | Deep sleep |
-| Quick_menu | The quick panel - a window over whatever is on screen |
-| F3 | Previous track or station |
-| F4 | Next track or station |
+| Quick_menu | The quick panel - a window over the screen |
+| F3 / F4 | Previous / next track or station |
 
-A short press on F1 does nothing at the moment; it is kept for whatever comes
-next. Quick_menu used to mean "back" and lost the job to the encoder's long press,
-which did the same thing everywhere Quick_menu did; it now carries the quick panel.
+A single press acts with a small delay - otherwise it could not be told from
+the start of a double one. A short press of F1 does nothing yet.
 
 ### The remote control
 
-Any infrared remote drives the device - a television's, a set-top box's, the
-one from a parts kit - once the board has a receiver (`IR_RECEIVER_GPIO` in
-`board_options.h`, see [Hardware](hardware.en.md)). Which key does what the
-device does not know in advance: it is taught on the web interface's
-"Remote control" page, reached by a "Set up the remote" button in the
-settings that appears only when the build has a receiver. Beside each
-function press "Learn", then the key on the remote; the code is stored and
-the row lights up. One key, one function: a key learned for a second
-function is taken away from the first. The table lives on the device as
-`remote.csv`; it survives an update of the app but not a rewrite of the data
-partition.
+With an IR receiver on the board, the device takes any infrared remote - from
+a TV, a set-top box or a parts kit. Keys are learned on the Remote page of the
+web interface (the "Set up the remote" button in the settings): press Learn
+next to a function, then the key on the remote. The row lights up, the code is
+stored. One key - one function.
 
-While the page is open it shows what is pressed: a function's row stays lit
-for as long as its key is held, and a key nobody has learned is named by its
-code in the status line - which is how a new remote's codes are found
-without the log.
-
-The functions are the encoder's and the buttons', plus a few of their own:
+While the page is open it shows what was pressed: the row of a learned
+function lights while the key is held, and a key nobody taught is named by
+its code.
 
 | Function | What it does |
 |---|---|
-| Volume up / down | The volume; ramps while held |
-| Mute | Silence, and back to the previous volume |
-| Play / pause | As a press on the encoder |
+| Volume up / down | Volume; ramps while held |
+| Mute | Silence and back to the previous volume |
+| Play / pause, OK | As a press of the encoder |
 | Previous / Next | As F3 / F4 |
 | Up / Down | As turning the encoder in a list |
-| OK | As a press on the encoder |
-| Back, Menu | As a long press on the encoder |
+| Back, Menu | As a long press of the encoder |
 | Quick panel | As Quick_menu |
 | Station list | Open the station or file list |
-| Sleep timer | The next step of the sleep timer, round and round |
-| Like / Dislike | Rate a Yandex Music track |
-| 0-9 | A station's number, see below |
-| Radio, USB, SD, Bluetooth, Ya.Music, Media server | Switch the source |
+| Sleep timer | The next step of the timer, round-robin |
+| Like / Dislike | Rate the Yandex Music track |
+| 0-9 | An internet-radio station number |
+| Radio, USB, SD, Bluetooth, Yandex, Media server | Switch the source |
 | Sleep / wake | As holding F1 - sleep; and wake |
 
-The digits dial a station by its number in the list: two digits in a row
-start it at once; one digit and a pause of a second and a half starts that
-number, or at once when no two-digit number in the list begins with it. Only
-while the internet radio plays: on files, Bluetooth or Yandex Music the
-digits do nothing and never switch the source.
+**Digits** dial a station by its list number: two digits in a row select at
+once; one digit selects after a second and a half, or at once when no
+two-digit number starts with it. Works only while internet radio is playing.
 
-The remote also wakes the device from deep sleep, with the key learned as
-"Sleep / wake". Other remotes in the room wake the chip too - there is no
-avoiding it, the receiver sees only a flash - but such a boot stops before
-the screen lights, listens for whose code it is, and goes back to sleep. The
-frame of the press is read by a small routine that starts two or three
-milliseconds after the flash, so the device wakes on the first press; when
-it did not get a whole frame (a remote with an unusual protocol), a second
-press within three seconds does it. For this the receiver has to sit on a
-pin that can wake the chip (GPIO 0-21) and be fed from the always-on 3.3 V,
-not from the peripheral rail, which sleep switches off.
+**Waking.** The key learned as "Sleep / wake" wakes the device from deep
+sleep on the first press. Other remotes in the room wake the chip too - that
+cannot be avoided - but such a boot leaves the screen dark, checks the code
+and goes back to sleep. For this the receiver must be on a GPIO 0-21 pin and
+be fed from permanent 3.3 V (see [Hardware](hardware.en.md#the-ir-receiver-the-remote)).
 
-### The quick panel
+The remote's table is stored on the device and survives a firmware update,
+but not a rewrite of the data partition.
 
-Quick_menu drops a window from the top of the screen with the four things somebody
-reaches for while the music plays, without leaving the player: the **sleep
-timer**, the **alarm**, the **brightness** and the **BT speaker**. That last one
-is last because its row is the only one that can disappear - in the middle, it
-would move every row below it as the module comes and goes. The window is deliberately not the whole width, and it stays
-clear of the status strip - the sleep timer's crescent and the alarm's bell are
-in that strip, and they are what the window changes.
+## Screens
 
-Every function at once, a row each: the name on the left, the value on the
-right. The row under the cursor is filled, and on that row the value turns amber
-once the encoder has taken it. There is nothing to scroll - the window is exactly
-as tall as the rows it has, so without a Bluetooth module it is one row shorter
-rather than one row empty.
+### The home screen
 
-The values are short because they share the row with the name: the alarm's is
-the time itself (`07:00`), or "off"; the sleep timer's is "45 min"; the speaker
-and the brightness read "on"/"off" and "75%".
+A list of sources or a carousel of large icons - your choice in the settings:
+radio, the stick, the card, Yandex Music, the media server, Bluetooth,
+settings. Only what is on the board and enabled is shown.
 
-| Gesture | What it does |
-|---|---|
-| Turn the encoder | The next function |
-| Press the encoder | Take the value - its outline turns amber |
-| Turn it then | Move the value |
-| Press again | Give the value back, browse the functions again |
-| Quick_menu, hold the encoder | Close the window |
-| F1, F3, F4 | Close it too, and do nothing else |
+No stick or card inserted - instead of an empty list, a screen with a hint:
+insert the drive, it cannot be read, or there is no music on it. Without a
+network the radio and Yandex Music stay in the list, but a press answers "No
+network - see Settings". If the network is lost for good while playing, the
+device returns to the home screen by itself.
 
-The "sound over Bluetooth" row is there only while the module answers and the
-player is not itself listening to a phone: sending the sound to a speaker while
-the same module is taking a stream from a phone is the one thing it cannot do.
-The sleep timer cycles - off, 15, 30, 45, 60, 90, 120 minutes - which is the
-list the settings page offers.
+### Lists
 
-The window closes itself after ten seconds without a press. That is not
-decoration: while it is up the encoder belongs to it rather than to the volume, so
-one left open would look like an encoder that had stopped working. The screensaver
-coming up closes it as well.
+Stations are numbered in playlist order - the number the remote's digits dial
+and the alarm refers to. Files are not numbered; the first row in a folder
+goes up, folders and playlists carry icons. The cursor stays in the middle
+and the list moves under it; the bar below shows where you are.
 
-The values are the same ones the web page has: the alarm, the brightness and
-the speaker switch are written to `settings.csv`, while the sleep timer is a
-deadline and is never saved (see [the sleep timer](#the-sleep-timer)). A change
-made from a browser shows up in the open window at once.
+### The player screen
 
-### Deep sleep
+The clock and the Wi-Fi level on top, then the cover, the station or album
+name, the track and the performer in large type, and at the bottom the volume
+scale, the position in the track and a level meter. Beside them the codec, the
+bitrate and the sample rate.
 
-Hold F1 for a second and the device goes to sleep: the screen goes dark at
-once, then playback stops, the settings that were waiting out their second of
-quiet are written (volume, brightness), the Bluetooth module lets go of the
-speaker, and Wi-Fi leaves the network properly. It works from every screen,
-the screensaver included.
+The cover comes from the file's tag, from `cover.jpg` / `cover.png` next to
+the music, or from the service. Titles are read from tags, including Russian
+ones in legacy encodings; what the tags lack is replaced by the folder and the
+file name.
 
-The same F1 wakes it - or the remote's "Sleep / wake" key, once it is
-learned (see [The remote control](#the-remote-control)). Waking is an
-ordinary boot with all of its seconds - sleep saves no state. What plays afterwards is decided by the **Autoplay**
-setting: on, and the device returns to what was being listened to; off, and it
-comes up on the home screen.
+**Seeking** is a triple press of the encoder: turn to pick a position, press
+to apply, any other button leaves without a change. In the web interface it is
+an ordinary slider under the track title.
 
-Bluetooth is the one case where autoplay brings back a **screen** rather than
-sound: the phone is what plays, so there is nothing for the device to resume - it
-comes back waiting for a phone, which is what that screen is. The module answers
-about ten seconds after power-on and autoplay waits those seconds out; if it
-never answers, the home screen opens instead.
+## Sources
 
-The sleep button has to sit on a pin that can wake the chip - on the ESP32-S3
-that is GPIO 0-21 - which is why `BUTTON_SLEEP_GPIO` in `board_options.h` is
-21. If it ended up elsewhere on your board, sleep is simply not offered:
-falling asleep with no way to wake means the RESET button is the only way
-back.
+### Internet radio
 
-If `board_options.h` defines `PERIPHERAL_POWER_GPIO`, everything outside the
-module loses power for the duration - the panel, the DAC, the card, the
-Bluetooth module, USB; without it only the chip sleeps and the peripherals stay
-fed and drawing current.
+The station list is edited in the web interface (the Playlist page): name,
+address, picture, order by dragging. Up to 99 stations, HTTP and HTTPS, the
+track title comes from the stream. After a drop the device reconnects itself.
 
-### The sleep timer
+### The stick and the card
 
-Play for so long, then sleep. It is set in the web interface, in the settings
-under "Time", beside the time zone and the time server: a menu of 15, 30, 45,
-60, 90, 120 minutes, or off. The timer lives in the device and not in the tab:
-close the browser and it still runs, and one set from a phone shows up at once
-in any other tab that is open.
+Folders, playlists and tracks. `.m3u`, `.m3u8` and `.pls` files on the drive
+open as folders: inside are the tracks in file order, auto-advance and the
+buttons follow the playlist, "up" returns to the folder the file is in. Paths
+in a playlist are taken relative to its own folder, backslashes are understood;
+lines that cannot be opened (links, drive letters, formats without a decoder)
+are skipped.
 
-It is shown on the player page: a crescent, "Sleep timer" and the countdown,
-under the volume. While no timer is running there is no row there at all -
-nobody should have to read a line to find out it says nothing.
-
-When the time is up the volume **fades to nothing over ten seconds** and only
-then does the device go to sleep, by the same route as holding F1. Waking to
-the last half-minute of a track at full volume is exactly what a sleep timer
-is for. Touching any button or the encoder during those ten seconds calls the
-sleep off and puts the volume back: whoever pressed it is plainly awake. The
-saved volume is never touched by the fade - the device wakes at the level you
-were listening to.
-
-On the device's own screen a running timer is a crescent beside the clock with
-the minutes left (on the narrow 240 px panel only the crescent fits there). On
-the clock screensaver it is a small line above the digits: the crescent and
-what is left. No crescent, no timer.
-
-The timer is not saved: it lives until it fires or until a reboot. Saving it
-would mean saving a moment in time, and a device that switches itself off some
-minutes after coming back is the least explicable thing it could do.
-
-### The alarm clock
-
-Radio at a set time. It is configured in the web interface, in the settings, in
-the "Alarm clock" group under "Time": the switch, the time, the days of the
-week, the station and the volume. At least one day is always ticked - the last
-one cannot be turned off, because an alarm that is on and never rings looks
-armed and is not.
-
-The station is picked by the number the device itself uses, so after editing
-the playlist it is worth checking that the row you wanted has not moved. The
-volume is applied for the ringing and is **not written** to the card: a quiet
-morning level must not overwrite the evening's.
-
-At the minute it is set for, the device brings the backlight up, leaves the
-screensaver, applies its volume and starts the station. There is no automatic
-stop - it plays until you stop it.
-
-**If the device is asleep**, it wakes for it by itself, and more than once. The
-sleep is taken in hops: the first wake-up is ten minutes before the alarm, and
-it is a quiet one. The panel is not lit, the peripheral rail (where
-`PERIPHERAL_POWER_GPIO` is wired) stays off, and only Wi-Fi comes up - to ask a
-time server what the hour really is. A sleeping board counts time on an
-internal RC oscillator and drifts by minutes over a night; that check takes the
-minutes back off. Then it sleeps on until a minute before the alarm and only
-then boots properly - with the network, the catalogue and a buffer, so the
-sound starts on the minute rather than a boot after it.
-
-That last boot runs **with the panel dark**: nobody asked to have the room lit
-a minute before the alarm. The backlight comes up with the ringing, or earlier
-if somebody presses a key. Autoplay is skipped on that boot: what should play
-is the alarm's station, not whatever was on last night.
-
-The sleep button wakes the device as usual even while it is sleeping towards an
-alarm - the timer and the button are armed together.
-
-On the device's own screen an armed alarm is a bell beside the clock, in the
-place the sleep timer's crescent uses, and the timer wins when both are set: it
-is the one about to act, while the alarm will still be there tomorrow. There is
-no time beside the bell - two characters fit there - and when it rings is on
-the settings page. The clock screensaver does not show the alarm at all.
-
-On the player page there is a row with the bell, the time and the days: "every
-day", "weekdays", "weekends", or the short day names. No alarm, no row.
-
-A single press lands after a short delay - before that it cannot be told from
-the beginning of a double press.
-
-While scrubbing, the encoder and the press are busy choosing a position, so the
-volume does not change there. Any other button leaves the mode without changing
-anything. The music plays on throughout.
-
-Scrubbing in the web interface is simpler: the position bar under the track
-name is an ordinary slider - drag it, or move it with the arrow keys. It does
-not twitch under the pointer while the position is being polled; let go and the
-device jumps and answers.
-
-## Home screen
-
-Two looks, chosen in the settings: a list of entries or a carousel of large
-icons. Every source - radio, drive, card, Yandex Music, media server, settings
-- has an icon of its own.
-
-Choosing the drive or the card when neither is there opens an explanation
-rather than an empty list: insert the medium, it cannot be read, or it holds no
-music - these are different things, and the advice differs.
-
-With no network, internet radio and Yandex Music go dim: the rows stay where
-they are and the cursor still lands on them, but a press answers "Нет сети -
-см. Настройки" instead of starting anything. They are not taken off the screen,
-or everything below them would shuffle up and back every time the Wi-Fi
-dropped. The player page shows the same two sources the same way, and hides
-their station list with them - there is nothing to play it with.
-
-When the network goes away entirely while the radio or Yandex Music is
-playing, the device returns to the home screen on its own and stops the source:
-waiting on a screen for a stream that is not coming back serves no one.
-"Entirely" means it has come to the setup access point; a short break the
-device rides out by reconnecting does not throw anyone out of the player.
-
-## Lists
-
-Stations are numbered - `01`, `02` and on, in playlist order. The number stays
-where it is even while a long name under the cursor travels as a marquee: it
-belongs to the row, not to the name.
-
-Files are not numbered. The first row of the browser is the way out of the
-folder, and directories and playlists carry a mark each of their own; neither
-is an nth of anything.
-
-The cursor stays on the middle row and the list moves under it. The bar below
-the list says where in it you are.
-
-## Player screen
-
-The clock and the Wi-Fi level are at the top. Below them the cover, the station
-name, and the track and performer in large type. At the bottom, the volume
-scale, the position bar and a level meter.
-
-The codec, the bitrate and the sample rate are shown beside them: as a line
-under the performer on the wide panel, and as a column next to the cover on the
-tall one, where that line would not fit.
-
-Cover art comes from the file itself, and where the file has none, from a
-`cover.jpg`, `cover.jpeg` or `cover.png` beside the music. For Yandex Music the
-service provides it. With no picture anywhere, an icon stays in its place.
-
-Names for files are read from their tags, including Russian ones in older
-encodings. Whatever the tags do not say is replaced by what is known: the
-folder in place of the album, the file name in place of the title.
+Drives are FAT16/FAT32, up to 256 entries per folder. The card is found on
+entering the source.
 
 ### Bluetooth
 
-On a board with the [jradio-bt module](hardware.en.md#bluetooth-the-jradio-bt-module)
-the menu has a "Bluetooth" source - while the module answers; an unplugged
-module leaves the menu. It has no list: choosing the source opens the player
-screen at once, and until a phone connects the state line says where to look
-for us - the device shows in the phone's Bluetooth under its own name
-(`jradio-XXXX`, or whatever the settings say) for about two minutes after the
-source is chosen (and again after a press of the encoder). A phone that knows
-us connects on its own.
+With the [jradio-bt](hardware.en.md#bluetooth-the-jradio-bt-module) module the
+menu has a Bluetooth source. Choosing it opens the player screen, and the
+device is visible in the phone's Bluetooth under its name (`jradio-XXXX` or
+the one set in the settings) for about two minutes; a known phone connects by
+itself. Then it is like the radio: the phone's name in place of the station,
+the track and the cover from the phone, F3/F4 walk its queue, the encoder is
+the volume both ways.
 
-From there it is the radio's screen: the phone's name where a station's goes,
-performer, track and cover from the phone, the back/forward keys move through
-its queue, a press of the encoder pauses and resumes, the encoder sets the volume
-and the phone's slider follows it (and the other way round). The position bar
-appears when the phone reports the track's length.
+**Sound to a Bluetooth speaker.** Everything the device plays can go to a
+speaker or headphones: web settings, "Sound over Bluetooth" → "Find speakers"
+→ tap the one found. The device calls it three times (at once, after 10 and
+after 20 seconds), then waits for the speaker to connect by itself - a paired
+speaker does that when switched on. Every speaker that ever received sound
+stays in the list (up to five) and is switched to with one tap; Forget removes
+it. The speaker's buttons work: pause, next and previous track, volume.
 
-#### Sound to a Bluetooth speaker
+### Yandex Music and the media server
 
-The same module works the other way too: whatever the device plays - radio,
-files, Yandex, DLNA - goes to a Bluetooth speaker or headphones. It is switched
-on from the settings page of the web interface, in "Sound over Bluetooth":
-"Find speakers" lists what is around (the search takes about five seconds, and
-the Wi-Fi stream may stumble meanwhile - the module's antenna sits next to the
-board's), a tap on a result saves the choice, and the device calls the speaker -
-three times: at once, ten and twenty seconds later. Then it keeps quiet and
-waits for the speaker to call (a paired speaker connects to its last source when
-switched on): each call is five seconds of transmitting on every channel, and a
-speaker that is off and called without end is a radio that stutters. To call
-again, tap the speaker in the list once more. Every speaker the device has
-ever sent to stays in the list (up to five, newest first) - a speaker and a
-pair of headphones are swapped with one tap, no scan; "Forget" beside each
-takes it out and unpairs it on the module. A paired speaker connects on its own
-when switched on - and then becomes the chosen one, whatever was chosen before:
-it is the one playing. The device's screen has the same
-switch - "Sound over Bluetooth" among the general settings; a speaker cannot be
-chosen from the screen.
+They have pages of their own: [Yandex Music](yandex.en.md) and
+[Media server (DLNA)](dlna.en.md).
 
-The speaker's buttons work: pause and play, next and previous station (or
-track), its volume wheel turns the device's volume, and the device's encoder sets
-the speaker's. While the sound goes to the speaker the built-in DAC plays too -
-the module listens on the same bus.
+## The quick panel
+
+Quick_menu drops a window over the player with what is needed right now: the
+**sleep timer**, the **alarm**, the **brightness** and the **BT speaker**.
+Without leaving the screen:
+
+| Action | What it does |
+|---|---|
+| Turn the encoder | The next row |
+| Press | Take the value - it turns amber |
+| Turn in this mode | Change the value |
+| Press again | Release the value |
+| Quick_menu, a long press of the encoder | Close the window |
+
+The window closes by itself after ten seconds without a press. The "Sound
+over Bluetooth" row is there only while the module answers; the sleep timer
+cycles - off, 15, 30, 45, 60, 90, 120 minutes. A change made in the browser
+shows in the window at once.
+
+## Sleep, the timer, the alarm
+
+### Deep sleep
+
+Hold F1 for a second and the device goes to sleep: the screen goes dark,
+playback stops, pending settings are written, Bluetooth and Wi-Fi leave
+cleanly. With a peripheral power switch fitted, the whole periphery is
+powered down too.
+
+The same F1, or a learned key on the remote, wakes it. Waking is an ordinary
+boot; what plays is decided by the Resume setting. For Bluetooth, resume
+brings back the waiting-for-the-phone screen - the sound comes from the phone,
+there is nothing to resume.
+
+### The sleep timer
+
+"Play for so long, then sleep": 15, 30, 45, 60, 90 or 120 minutes. Set in the
+web settings (the Time section), in the quick panel or with a remote key. The
+countdown shows on the player page and as a crescent next to the clock.
+
+When the time is up, the volume fades to zero over ten seconds, and only then
+the device goes to sleep. Any press in those ten seconds cancels the sleep and
+brings the volume back. The timer does not survive a reboot.
+
+### The alarm clock
+
+Play a station at a set time: the switch, the time, the weekdays, the station
+(by its list number) and the volume - in the web settings, the Alarm section.
+The alarm's volume applies to the ring only and does not overwrite yours. At
+least one day is always selected.
+
+At the appointed minute the device raises the backlight, leaves the
+screensaver and starts the station. There is no auto-off - it plays until you
+stop it.
+
+**A sleeping device wakes itself.** First ten minutes before the ring,
+quietly, with the screen dark: only to check the clock against the time server
+(over a night the internal clock drifts by minutes). Then a minute before the
+ring, for real, with the screen still dark, so that the sound starts exactly
+on its minute. The backlight comes on with the ring.
+
+On the screen an armed alarm shows as a bell next to the clock; on the player
+page as a line with the time and the days.
 
 ## Settings
 
-Language, the look of the home screen, how long lines scroll, how the buffer
-reading is shown, autoplay, Yandex Music, DLNA, screen brightness, flipping the
-picture vertically and horizontally, volume. They apply at once and are saved.
+On the device: language, home screen style, scrolling of long lines, the
+buffer readout, resume, Yandex Music, DLNA, weather, brightness, picture
+mirroring, screensaver, sound over Bluetooth, volume. They apply at once and
+are saved. The same settings are in the web interface, in the same words;
+changes either way show at once.
 
-In the web interface only - "Device name": what the device is called over
-Bluetooth and as the Wi-Fi network during first setup. An empty field is the
-built-in `jradio-XXXX`, shown in the field as its placeholder. Up to 32
-characters, no commas. A phone that already knows the device remembers the
-old name - to see the new one, forget the device in the phone's Bluetooth and
-find it again.
+Only in the web interface: the device name, time and time zone, the weather in
+detail, the alarm, the sleep timer, the backup.
 
-The "Яндекс Музыка" and "DLNA" switches take the source away everywhere: the
-list on the screen, the carousel, and the web interface. A source switched off
-cannot be started either - the device stops declaring that it has it.
-
-What is already playing keeps playing: the switch takes the source out of the
-choice, it does not mute anything. Stop playback first if that is what you
-want.
-
-"Buffer" picks what the footer's left corner holds on the player screen: a
-number ("Буфер 88%") or a strip. The strip is the same percentage, taken every
-0.7 s and stood up as a bar; a new bar arrives at the left and the older ones
-walk right, and about twenty seconds fit on it. The number answers how much is
-held right now, the strip answers whether it has been holding - a dropout is
-the number falling, and a fall is what a single figure cannot show, because by
-the time anyone looks it is back.
-
-Scrolling is about lines that do not fit: the track name on the player screen,
-and the list row the cursor is on. "Left-right" runs the line out to its end
-and back again; "Left" runs it out, holds for a second, and shows it whole from
-the start. Either way the pause before the next pass is 3 seconds.
-
-Brightness is a number from 10 to 100 rather than a switch: click the row, the
-number is taken into angle brackets, and turning the encoder then changes it. The
-panel follows on every detent. Clicking again releases the encoder, and it moves
-through the list as before.
-
-The screensaver is what the panel does once nobody has touched the encoder or the
-buttons for a set number of seconds. Four choices: **none**; **dim** - the
-backlight goes down to the "idle brightness"; **blank** - the backlight goes
-off; **clock** - the panel goes dark and the time floats across it in large
-seven-segment digits, with the date and the weather (when it is on) under it
-and what is playing under that. The device chooses only the mode; the wait -
-one for every mode, from the list 15, 30, 60, 120, 300 and 600 seconds - and
-the idle brightness, 5 to 50, are set on the web page under "Display". Off by
-default. Any action on the device wakes the panel; in the two dark modes the
-first press only wakes it - nobody can see what they are pressing on a dark
-panel - while the dimmed panel is still readable and a press does what it
-always does. The music takes no notice of the screensaver.
-
-"Weather" under "General" is one switch. Off takes the weather out of the
-status strip and off the screensaver; on brings it back on the service the
-web page chose last (Open-Meteo, which needs no key, until one has been
-chosen). The service, the coordinates and the key are on the web page under
-"Weather".
-
-The language is Russian or English, and one switch moves all of it: the
-device's screens and the web interface alike, at once and without a reload. A
-browser tab left open relabels itself whichever way it was switched - from the
-encoder on the device or with the mouse on the page.
-
-What is not translated is what is not ours: station names, track and folder
-names, the stations of a Yandex account. The two language names in the picker
-also stay each in its own language - otherwise somebody who cannot read the
-current one has no way back.
+- **Device name** - how it is called in Bluetooth and as the setup access
+  point. An empty field is the built-in `jradio-XXXX`.
+- **Yandex Music**, **DLNA** - the switches remove the source everywhere; a
+  playback already running is not stopped.
+- **Buffer** - the left corner of the player's footer: a number ("Buffer 88%")
+  or a strip chart of the last twenty seconds.
+- **Scrolling** - how long lines move: "left-right", or "left" with a jump
+  back to the start.
+- **Brightness** - 10 to 100, changed with the encoder right on the row.
+- **Screensaver** - what the screen does when untouched: none, dimming (to
+  the "idle brightness"), a black screen, or the **clock** - the time drifting
+  over a black screen with the date, the weather and the track title. The
+  delay (15 s - 10 min) and the idle brightness are set on the web. Any action
+  wakes the screen; in the dark modes the first press only wakes.
+- **Weather** - a switch on the device; the service, the coordinates and the
+  key are on the web.
+- **Language** - Russian or English, one switch for the screen and the
+  browser, no reboot.
 
 ### Time
 
-In the web interface only, as the "Время" group: a time zone from a list and
-the address of a time server. The device has no battery-backed clock, so after
-a power cut it knows nothing about the time until there is a network and a
-server answers - usually a couple of seconds after Wi-Fi comes up.
-
-The zone applies at once and the clock on the panel moves on the next second.
-The list is Russia's zones plus a few others; a list rather than a text field
-because what the C library wants is a rule like `MSK-3` or
-`CET-1CEST,M3.5.0,M10.5.0/3`, where the sign of the offset is the opposite of
-what people mean and the summer-time rule is a small language of its own. The
-list lives in the firmware and is sent to the page from there, so adding a zone
-is one line of firmware.
-
-The server defaults to `pool.ntp.org`. The field can be cleared, which puts
-that back. A server on the local network works too - it is a host name, not a
-URL with a scheme. Changing it restarts the polling straight away; no reboot.
+The time zone from a list and the time server's address (`pool.ntp.org` by
+default). There is no battery-backed clock: after power-on the time arrives
+from the network a couple of seconds after Wi-Fi connects.
 
 ### Weather
 
-Set up on the web page under "Weather"; the device has only the switch under
-"General". The temperature and a picture of the sky
-stand in the status strip to the left of the clock, on every screen that has a
-clock, in the place of the screen's name ("jRadio"), which goes while they are
-up; while the weather is off or nothing has answered yet the strip looks as it
-always did.
-
-The source is a choice: **Open-Meteo** (no key), **wttr.in** (no key) or
-**OpenWeatherMap** (an account key). Three rather than one because they fail
-differently, and which of them is reachable from a given network is not
-something the firmware can know. All three are asked over plain HTTP, and that
-is a condition rather than a convenience: TLS on this board wants AES in the
-internal memory everything else is short of. The OpenWeatherMap key is kept on
-the device in a file of its own, `weather.json`, like the Yandex token: it is
-never sent back to the page, which only knows whether one is set. An empty
-field removes it.
-
-The device does not know where it stands - the coordinates are typed in: a
-latitude and a longitude in degrees, as a map writes them, to six decimals.
-Moscow by default, like the time zone. City names are refused on purpose: the
-free geocoder answers several hits per name and airports instead of cities,
-and there is nowhere on the device to pick from a list.
-
-The picture knows day from night: a sun and a moon for a clear sky, a sun and
-a moon behind a cloud for partly cloudy. Open-Meteo and OpenWeatherMap say so
-themselves; wttr.in does not, so it is asked for sunrise, sunset and the local
-time and the night is worked out from those.
-
-Polled every fifteen minutes; after a failure, in a minute and then every four.
-The last answer stays on the screen for two hours without the service, then the
-strip goes empty. Under the source picker the page shows what the panel shows,
-or the reason there is nothing: no key, the key refused, the service answered
-such-and-such a code.
+The temperature and a sky icon next to the clock on every screen and on the
+screensaver. The source is your choice: **Open-Meteo** (no key), **wttr.in**
+(no key) or **OpenWeatherMap** (a key is needed). The coordinates are typed
+in - latitude and longitude in degrees, as a map writes them; Moscow by
+default. The icon tells day from night. Polled every fifteen minutes; under
+the source choice the page shows what the panel shows, or the reason nothing
+is there.
 
 ### About
 
-The last item in the list. It opens a page naming the firmware version and the
-date it was built, the web interface's version, the ESP-IDF version and an
-address to write to; any button closes it, or it closes itself after 30 seconds.
+The last item in the settings: the firmware version, its build date, the web
+interface's version and ESP-IDF's. There are two versions because the firmware
+and the web interface live in different partitions and are updated by
+different commands; when they differ the screen says so - time to update the
+data partition (see [Building](build.en.md)).
 
-There are two versions, and that is not pedantry: the firmware and the web
-interface live in different partitions and are written by different commands -
-`idf.py flash` does not touch the pages and `littlefs-flash` does not touch the
-firmware. So they drift apart easily, and before this screen existed the only
-way to notice was a log on the serial port. When they differ the page says so;
-the cure is `littlefs-flash`, see [Building and flashing](build.en.md).
+### Backup
 
-"unknown" in place of the web version means the data partition was written by a
-build too old to stamp its version there. That is not a mismatch, and the screen
-does not raise the alarm about it.
+Web interface only. "Download archive" gives a zip with the Wi-Fi networks,
+the settings, the Yandex token and the weather key - everything the device
+knows about itself. The station list is exported separately, on the playlist
+page. Restore takes the whole archive or one file from it and reboots the
+device.
 
-The same card is at the bottom of the web interface's Settings page.
+It is for rewriting the data partition: download → flash → restore. **The
+Wi-Fi password is in the archive in clear text** - keep the file as you would
+a password.
 
-The same settings are in the web interface, on its Settings page, in the same
-words and the same order - except the volume, which has an encoder on the device and
-a slider in the player itself; a third place to set it only confused matters. It
-works both ways: a change made in the browser
-takes effect at once, as if it had been made on the encoder, and a volume or
-brightness turned on the device reaches an open page within a quarter of a
-second. A slider being held with the pointer does not jump - the update is
-dropped until it is let go.
+## Formats: the details
 
-On a phone the cards there fold: tapping a heading opens that section and folds
-the previous one, so one stands open at a time. On a wide screen the page shows
-everything at once, as it always has.
-
-### Backup and restore
-
-Only in the web interface, as a card under the device settings. "Скачать архив"
-hands over a zip of four files: the Wi-Fi networks, the settings, the Yandex
-token and the weather key - everything the device knows about itself that is
-not in the repository.
-The playlist is not in there; it has its own export button on the playlist page.
-
-Restoring takes either the whole archive or one file out of it - `wifi.json`,
-`settings.csv`, `yandex.json` or `weather.json`. The page sends whatever was picked and the
-device works out the rest. It reboots afterwards: that is the only way the
-settings, the networks and the token are certain to be re-read from the new
-files. It takes a few seconds, and the page does not need closing - the
-connection comes back on its own.
-
-The point of all this is `littlefs-flash`: it rewrites the whole data partition
-and takes the saved networks and settings with it. So: download the archive,
-flash, restore the archive. The device comes back exactly where it was, playing
-the station it was playing.
-
-**The Wi-Fi password is in the archive in clear text**, or there would be
-nothing worth restoring. The downloaded file is a key to the network: keep it
-the way you would keep a password.
-
-## Formats in detail
-
-FLAC plays at 24 bits too. The I2S slots are 16-bit and are not reconfigured on
-the fly, so the sample is narrowed to 16 bits as it leaves the decoder; a frame
-of such a stream is 24 KB rather than 16, and the output buffer grows to fit it
-by itself.
-
-Only files can be scrubbed: neither a radio stream nor a Yandex station has a
-length or a position to move to. Track length is worked out from the file size
-and the bitrate - exact for WAV and for constant bitrate, taken from the header
-for FLAC, and drifting a little on a variable-bitrate file.
-
-### Playlists on the media
-
-Besides the audio the device reads playlist files on a drive and on a card -
-`.m3u`, `.m3u8` and `.pls`. They have nothing to do with the station list:
-they are ordinary files beside the music, written by whatever player put the
-media together.
-
-A playlist is not played but opened, the way a folder is. Its tracks are what
-the list then shows, in the order the file writes them in, and from there
-everything works as it does in a folder: the track keys and auto-advance move
-along the playlist, and browsing up lands in the folder the file sits in. The
-tracks themselves may be anywhere on the media, across as many folders as they
-like.
-
-Paths inside a playlist are read relative to the folder the file itself is in:
-an `.m3u` in the root of a drive writes `Music/Album/1.mp3`, while a `.pls`
-inside `Music` writes `Album/1.mp3`. Backslashes, as Windows writes them, are
-understood as separators too. Lines the device cannot open - `http://` links,
-drive letters, paths with `..`, formats with no decoder - are skipped, and how
-many there were is in the log.
+- FLAC plays in 24 bits too (truncated to 16 on the output).
+- Seeking exists for files only: radio and Yandex stations have neither a
+  length nor a position. A track's length is computed from size and bitrate -
+  it drifts a little on variable bitrate.
+- `.m4a` (AAC in an MP4 container) is not read - raw ADTS only.
+- HLS: MP3 or AAC segments; MPEG-TS is not parsed.
+- WAV - from drives only, 16-bit; it does not play from a media server.

@@ -37,7 +37,7 @@ Every remembered network on the settings page carries its own buttons:
 
 The device shows the address of its web interface at the bottom of the settings
 screen - that is the only place it can be read. That band is the last stop the
-cursor reaches on the screen: turn down to it and press the knob, and the
+cursor reaches on the screen: turn down to it and press the encoder, and the
 device puts the address up as a QR code. On a joined network that is a link to
 the web interface; in setup mode it is an invitation to join the device's own
 access point instead. There the band names only that network: `192.168.4.1` is
@@ -58,19 +58,19 @@ nothing.
 
 | Gesture | What it does |
 |---|---|
-| Turn the knob | Volume on the player screen, selection in lists |
+| Turn the encoder | Volume on the player screen, selection in lists |
 | Press | Play and pause |
 | Double press | Open the station or file list; the music keeps playing |
-| Triple press | Scrub: the knob picks a position, a press applies it |
+| Triple press | Scrub: the encoder picks a position, a press applies it |
 | Long press | Home screen; playback stops |
 | Hold F1 | Deep sleep |
-| F2 | The quick panel - a window over whatever is on screen |
+| Quick_menu | The quick panel - a window over whatever is on screen |
 | F3 | Previous track or station |
 | F4 | Next track or station |
 
 A short press on F1 does nothing at the moment; it is kept for whatever comes
-next. F2 used to mean "back" and lost the job to the encoder's long press,
-which did the same thing everywhere F2 did; it now carries the quick panel.
+next. Quick_menu used to mean "back" and lost the job to the encoder's long press,
+which did the same thing everywhere Quick_menu did; it now carries the quick panel.
 
 ### The remote control
 
@@ -91,18 +91,18 @@ for as long as its key is held, and a key nobody has learned is named by its
 code in the status line - which is how a new remote's codes are found
 without the log.
 
-The functions are the knob's and the buttons', plus a few of their own:
+The functions are the encoder's and the buttons', plus a few of their own:
 
 | Function | What it does |
 |---|---|
 | Volume up / down | The volume; ramps while held |
 | Mute | Silence, and back to the previous volume |
-| Play / pause | As a press on the knob |
+| Play / pause | As a press on the encoder |
 | Previous / Next | As F3 / F4 |
-| Up / Down | As turning the knob in a list |
-| OK | As a press on the knob |
-| Back, Menu | As a long press on the knob |
-| Quick panel | As F2 |
+| Up / Down | As turning the encoder in a list |
+| OK | As a press on the encoder |
+| Back, Menu | As a long press on the encoder |
+| Quick panel | As Quick_menu |
 | Station list | Open the station or file list |
 | Sleep timer | The next step of the sleep timer, round and round |
 | Like / Dislike | Rate a Yandex Music track |
@@ -129,7 +129,7 @@ not from the peripheral rail, which sleep switches off.
 
 ### The quick panel
 
-F2 drops a window from the top of the screen with the four things somebody
+Quick_menu drops a window from the top of the screen with the four things somebody
 reaches for while the music plays, without leaving the player: the **sleep
 timer**, the **alarm**, the **brightness** and the **BT speaker**. That last one
 is last because its row is the only one that can disappear - in the middle, it
@@ -139,7 +139,7 @@ in that strip, and they are what the window changes.
 
 Every function at once, a row each: the name on the left, the value on the
 right. The row under the cursor is filled, and on that row the value turns amber
-once the knob has taken it. There is nothing to scroll - the window is exactly
+once the encoder has taken it. There is nothing to scroll - the window is exactly
 as tall as the rows it has, so without a Bluetooth module it is one row shorter
 rather than one row empty.
 
@@ -149,11 +149,11 @@ and the brightness read "on"/"off" and "75%".
 
 | Gesture | What it does |
 |---|---|
-| Turn the knob | The next function |
-| Press the knob | Take the value - its outline turns amber |
+| Turn the encoder | The next function |
+| Press the encoder | Take the value - its outline turns amber |
 | Turn it then | Move the value |
 | Press again | Give the value back, browse the functions again |
-| F2, hold the knob | Close the window |
+| Quick_menu, hold the encoder | Close the window |
 | F1, F3, F4 | Close it too, and do nothing else |
 
 The "sound over Bluetooth" row is there only while the module answers and the
@@ -163,8 +163,8 @@ The sleep timer cycles - off, 15, 30, 45, 60, 90, 120 minutes - which is the
 list the settings page offers.
 
 The window closes itself after ten seconds without a press. That is not
-decoration: while it is up the knob belongs to it rather than to the volume, so
-one left open would look like a knob that had stopped working. The screensaver
+decoration: while it is up the encoder belongs to it rather than to the volume, so
+one left open would look like an encoder that had stopped working. The screensaver
 coming up closes it as well.
 
 The values are the same ones the web page has: the alarm, the brightness and
@@ -218,7 +218,7 @@ nobody should have to read a line to find out it says nothing.
 When the time is up the volume **fades to nothing over ten seconds** and only
 then does the device go to sleep, by the same route as holding F1. Waking to
 the last half-minute of a track at full volume is exactly what a sleep timer
-is for. Touching any button or the knob during those ten seconds calls the
+is for. Touching any button or the encoder during those ten seconds calls the
 sleep off and puts the volume back: whoever pressed it is plainly awake. The
 saved volume is never touched by the fade - the device wakes at the level you
 were listening to.
@@ -279,7 +279,7 @@ day", "weekdays", "weekends", or the short day names. No alarm, no row.
 A single press lands after a short delay - before that it cannot be told from
 the beginning of a double press.
 
-While scrubbing, the knob and the press are busy choosing a position, so the
+While scrubbing, the encoder and the press are busy choosing a position, so the
 volume does not change there. Any other button leaves the mode without changing
 anything. The music plays on throughout.
 
@@ -355,7 +355,7 @@ us connects on its own.
 
 From there it is the radio's screen: the phone's name where a station's goes,
 performer, track and cover from the phone, the back/forward keys move through
-its queue, a press of the encoder pauses and resumes, the knob sets the volume
+its queue, a press of the encoder pauses and resumes, the encoder sets the volume
 and the phone's slider follows it (and the other way round). The position bar
 appears when the phone reports the track's length.
 
@@ -381,7 +381,7 @@ switch - "Sound over Bluetooth" among the general settings; a speaker cannot be
 chosen from the screen.
 
 The speaker's buttons work: pause and play, next and previous station (or
-track), its volume wheel turns the device's volume, and the device's knob sets
+track), its volume wheel turns the device's volume, and the device's encoder sets
 the speaker's. While the sound goes to the speaker the built-in DAC plays too -
 the module listens on the same bus.
 
@@ -420,11 +420,11 @@ and back again; "Left" runs it out, holds for a second, and shows it whole from
 the start. Either way the pause before the next pass is 3 seconds.
 
 Brightness is a number from 10 to 100 rather than a switch: click the row, the
-number is taken into angle brackets, and turning the knob then changes it. The
-panel follows on every detent. Clicking again releases the knob, and it moves
+number is taken into angle brackets, and turning the encoder then changes it. The
+panel follows on every detent. Clicking again releases the encoder, and it moves
 through the list as before.
 
-The screensaver is what the panel does once nobody has touched the knob or the
+The screensaver is what the panel does once nobody has touched the encoder or the
 buttons for a set number of seconds. Four choices: **none**; **dim** - the
 backlight goes down to the "idle brightness"; **blank** - the backlight goes
 off; **clock** - the panel goes dark and the time floats across it in large
@@ -446,7 +446,7 @@ chosen). The service, the coordinates and the key are on the web page under
 The language is Russian or English, and one switch moves all of it: the
 device's screens and the web interface alike, at once and without a reload. A
 browser tab left open relabels itself whichever way it was switched - from the
-knob on the device or with the mouse on the page.
+encoder on the device or with the mouse on the page.
 
 What is not translated is what is not ours: station names, track and folder
 names, the stations of a Yandex account. The two language names in the picker
@@ -528,10 +528,10 @@ does not raise the alarm about it.
 The same card is at the bottom of the web interface's Settings page.
 
 The same settings are in the web interface, on its Settings page, in the same
-words and the same order - except the volume, which has a knob on the device and
+words and the same order - except the volume, which has an encoder on the device and
 a slider in the player itself; a third place to set it only confused matters. It
 works both ways: a change made in the browser
-takes effect at once, as if it had been made on the knob, and a volume or
+takes effect at once, as if it had been made on the encoder, and a volume or
 brightness turned on the device reaches an open page within a quarter of a
 second. A slider being held with the pointer does not jump - the update is
 dropped until it is let go.

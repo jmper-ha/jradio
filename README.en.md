@@ -1,7 +1,7 @@
 # jRadio
 
 A desktop audio player: internet radio, music from a USB drive, an SD card and
-a media server on the home network, Yandex Music. Driven by a knob and four
+a media server on the home network, Yandex Music. Driven by an encoder and four
 buttons on the device itself, or from a browser on a phone or a computer.
 
 *[Русская версия](README.md)*
@@ -38,10 +38,10 @@ the home screen. Details in [Hardware](doc/hardware.en.md).
 | **Clock** | works | Time from the internet, on every screen |
 | **Weather** | works | Temperature and an icon beside the clock; Open-Meteo, wttr.in or OpenWeatherMap to choose from, coordinates in the web settings — [more](doc/usage.en.md#weather) |
 | **Screensaver** | works | Dim, dark, or a clock floating across the dark panel with the date, the weather and the track; after 15 s to 10 min untouched — [more](doc/usage.en.md#settings) |
-| **Volume** | works | The knob, the web player and Settings; remembered |
+| **Volume** | works | The encoder, the web player and Settings; remembered |
 | **Autoplay** | works | Starts whatever was playing when the device was switched off: a station, a track off a drive, a Yandex station or a container on a media server; for Bluetooth it brings back the screen that waits for a phone |
 | **Deep sleep** | works | Holding the first button puts the device out: playback stops, Bluetooth and Wi-Fi leave properly, and with a power switch wired everything outside the module loses power too. The same button wakes it - [more](doc/usage.en.md#deep-sleep) |
-| **Quick panel** | works | F2 drops a window over the screen: the sleep timer, the alarm, the brightness and the BT speaker - on the knob, without leaving the player - [more](doc/usage.en.md#the-quick-panel) |
+| **Quick panel** | works | Quick_menu drops a window over the screen: the sleep timer, the alarm, the brightness and the BT speaker - on the encoder, without leaving the player - [more](doc/usage.en.md#the-quick-panel) |
 | **Sleep timer** | works | Play for 15 to 120 minutes, then fade the volume away and sleep; set in the web settings, with the countdown on the screen and on the player page - [more](doc/usage.en.md#the-sleep-timer) |
 | **Remote control** | works | Any infrared remote through a one-pin receiver: the keys are learned on a page of the web interface, the digits dial a station by number, and the key learned as Sleep wakes the device from deep sleep on the first press - [more](doc/usage.en.md#the-remote-control) |
 | **Alarm clock** | works | A station at a set time, on the days you choose and at its own volume. A sleeping device wakes for it by itself: quietly ten minutes early to correct its clock, then a minute before it rings - [more](doc/usage.en.md#the-alarm-clock) |

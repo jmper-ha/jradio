@@ -51,7 +51,7 @@ opens straight away.
 At most four servers are taken, and one that replies more than 600 ms after the
 previous one will not be in the list - the search has stopped listening by then.
 
-**Walking the server.** Exactly like a flash drive. The knob scrolls, a press
+**Walking the server.** Exactly like a flash drive. The encoder scrolls, a press
 opens a folder or starts a track, and the `..` row at the top goes back up. A
 long press leaves the source.
 
@@ -89,7 +89,7 @@ do the back and forward buttons in the web interface.
 
 **The first 64 rows of a container.** Libraries get large - "By Album" on the
 test server holds 769 of them - and no amount of them can be scrolled with a
-knob anyway. Go in through folders or artists.
+encoder anyway. Go in through folders or artists.
 
 **No search on the server.** The device only walks the tree; the search box in
 the web interface filters what is already on screen.

@@ -319,7 +319,7 @@ are off, which is the panel's own baseline. It costs the screen nothing: the
 backlight sits at zero until the splash is on the glass.
 
 They come back as a `settings` section on the socket rather than by polling:
-the knob changes the volume without telling anyone, and `settings.csv` is
+the encoder changes the volume without telling anyone, and `settings.csv` is
 eleven consecutive reads - far too much to ask on a timer. The UI task
 publishes a copy in memory, the broadcaster reads it every 250 ms and sends a
 diff only when something has moved. That section grew the complete snapshot by

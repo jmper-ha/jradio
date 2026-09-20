@@ -179,7 +179,7 @@ is a module of its own - see [below](#bluetooth-the-jradio-bt-module).
 |---|---:|---|---|---:|
 | TFT CS | 10 | | Encoder button | 6 |
 | TFT DC | 47 | | F1 | 21 |
-| TFT MOSI | 11 | | F2, the quick panel | 45 |
+| TFT MOSI | 11 | | Quick_menu, the quick panel | 45 |
 | TFT SCLK | 12 | | F3 | 46 |
 | Backlight | 2 | | F4 | 9 |
 | Encoder right | 5 | | PCM5102 DOUT | 16 |
@@ -203,7 +203,7 @@ cannot be driven.
 The first button carries a requirement the others do not: held, it puts the
 board to sleep, and only an RTC-capable pin can wake the chip - on the
 ESP32-S3, GPIO 0-21. So it sits on 21 - and is named `BUTTON_SLEEP_GPIO` in
-the options rather than after the silkscreen - while F2 took its former 45.
+the options rather than after the silkscreen - while Quick_menu took its former 45.
 Putting it on a pin without RTC is allowed: the firmware still builds and the
 button still works, but sleep is not offered.
 

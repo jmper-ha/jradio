@@ -13,6 +13,7 @@ class ClassList {
     if (enabled) this.values.add(name); else this.values.delete(name);
     return enabled;
   }
+  contains(name) { return this.values.has(name); }
 }
 
 class Element {
@@ -54,7 +55,7 @@ class Element {
 
 /* The five folding sections of the settings page, as the markup builds them:
    a card holding the heading's button and the body that folds away. */
-const SECTION_NAMES = ['device', 'backup', 'wifi', 'yandex', 'about'];
+const SECTION_NAMES = ['device', 'remote', 'backup', 'wifi', 'yandex', 'about'];
 const sectionCards = SECTION_NAMES.map((name) => {
   const card = new Element();
   card.dataset.section = name;
@@ -102,6 +103,7 @@ const ids = [
   'device-weather-key', 'device-weather-key-row', 'device-weather-now-row',
   'device-weather-now',
   'backup-status', 'backup-file', 'backup-restore',
+  'remote-card',
 ];
 const elements = Object.fromEntries(ids.map((id) => [`#${id}`, new Element()]));
 /* The alarm's seven day buttons, in the order the markup puts them and each
@@ -159,6 +161,14 @@ let yandexReply = {
   seconds_left: 0,
 };
 let yandexFetchFails = false;
+/* The remote's table as the device answers it: the kit remote's keys, nothing
+   armed. */
+let remoteReply = {
+  available: true, learning: null, revision: 0,
+  keys: {power: 'nec:0:45', volume_up: 'nec:0:15', volume_down: null, ok: 'nec:0:09'},
+};
+const remoteLearns = [];
+let remoteFetches = 0;
 // What GET /api/settings would answer. Deliberately not the defaults: a page
 // that ignored the document entirely would still look right against them.
 let settingsReply = {
@@ -287,6 +297,22 @@ const context = {
                            known: body.address ? known : speakersReply.known};
         }
         return Promise.resolve({ok: true, json: () => Promise.resolve(speakersReply)});
+      }
+      if (String(url).startsWith('/api/remote/learn')) {
+        const body = JSON.parse(options.body);
+        remoteLearns.push(body.function);
+        remoteReply = {...remoteReply, learning: body.function, revision: remoteReply.revision + 1};
+        return Promise.resolve({ok: true, json: () => Promise.resolve({ok: true})});
+      }
+      if (String(url).startsWith('/api/remote/forget')) {
+        const body = JSON.parse(options.body);
+        remoteReply = {...remoteReply, keys: {...remoteReply.keys, [body.function]: null},
+                       revision: remoteReply.revision + 1};
+        return Promise.resolve({ok: true, json: () => Promise.resolve({ok: true})});
+      }
+      if (String(url).startsWith('/api/remote')) {
+        remoteFetches += 1;
+        return Promise.resolve({ok: true, json: () => Promise.resolve(remoteReply)});
       }
       if (String(url).startsWith('/api/stations')) {
         return Promise.resolve({ok: true, json: () => Promise.resolve(stationsReply)});
@@ -1457,6 +1483,27 @@ function lastYandexTimer() {
   resize(true);
   assert.equal(SECTION_NAMES.filter((name) => !section[name].body.hidden).join(), 'about');
   assert.equal(section.about.toggle.getAttribute('tabindex'), '0');
+
+  /* The remote's card is a doorway to its own page, and only a board with a
+     receiver has one: the card stays hidden until a frame says so, and the
+     table itself is never fetched here. */
+  const remoteCard = elements['#remote-card'];
+  assert.equal(remoteCard.hidden, true);
+  const remoteFetchesBefore = remoteFetches;
+  sendEvent(second, {
+    type: 'settings.update', revision: 120,
+    settings: {...settingsReply, available: {...settingsReply.available, remote: true},
+               remote_learning: null, remote_revision: 0},
+  });
+  await settle();
+  assert.equal(remoteCard.hidden, false);
+  assert.equal(remoteFetches, remoteFetchesBefore);
+  sendEvent(second, {
+    type: 'settings.update', revision: 121,
+    settings: {...settingsReply, available: {...settingsReply.available, remote: false}},
+  });
+  assert.equal(remoteCard.hidden, true);
+  assert.equal(remoteLearns.length, 0);
 
   /* And the choice outlives the load, so a device that reboots after a restore
      comes back with the section that was being worked in. */

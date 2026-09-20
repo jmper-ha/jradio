@@ -29,7 +29,7 @@
     defined(ENCODER_LEFT_GPIO) || defined(TFT_BACKLIGHT_GPIO) ||              \
     defined(BUTTON_SLEEP_GPIO) || defined(DISPLAY) || defined(AUDIO_DAC) ||      \
     defined(SDC_CS_GPIO) || defined(YANDEX_MUSIC) || defined(FM_TUNER) ||     \
-    defined(BLUETOOTH) || defined(DLNA)
+    defined(BLUETOOTH) || defined(DLNA) || defined(IR_RECEIVER_GPIO)
 #error "board_options.h: a name here is already defined elsewhere - most likely \
 an ESP-IDF header now uses it. Re-prefix the affected option in this file and \
 at its use sites."

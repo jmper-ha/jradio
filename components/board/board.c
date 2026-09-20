@@ -30,6 +30,10 @@
 #include "boot_splash.h"
 #include "board_options.h"
 #include "board_input.h"
+#include "ir_wake_stub.h"
+#include "board_features.h"
+#include "ir_receiver.h"
+#include "remote_control.h"
 #include "pcm_diagnostics.h"
 
 /* Parts this file has code for. Selecting anything else in board_options.h
@@ -1194,6 +1198,11 @@ void board_peripheral_power(bool on)
 #if BUTTON_SLEEP_GPIO >= 0 && BUTTON_SLEEP_GPIO < SOC_RTCIO_PIN_COUNT
 #define BOARD_CAN_SLEEP 1
 #endif
+/* The remote can wake the board only when its receiver is on an RTC pin too
+ * - and on the always-on 3.3 V, which no header can check. */
+#if defined(IR_RECEIVER_GPIO) && IR_RECEIVER_GPIO >= 0 && IR_RECEIVER_GPIO < SOC_RTCIO_PIN_COUNT
+#define BOARD_REMOTE_WAKES 1
+#endif
 
 bool board_deep_sleep_supported(void)
 {
@@ -1213,8 +1222,19 @@ static void board_arm_wake_sources(uint32_t wake_after_seconds)
 {
     (void)rtc_gpio_pullup_en(BUTTON_SLEEP_GPIO);
     (void)rtc_gpio_pulldown_dis(BUTTON_SLEEP_GPIO);
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_sleep_enable_ext1_wakeup_io(
-        1ULL << BUTTON_SLEEP_GPIO, ESP_EXT1_WAKEUP_ANY_LOW));
+    uint64_t mask = 1ULL << BUTTON_SLEEP_GPIO;
+#ifdef BOARD_REMOTE_WAKES
+    /* The receiver's output idles high and drops for every mark, so the first
+     * mark of any frame from any remote wakes the chip; whether it was our
+     * Power key is settled by the boot that follows, in
+     * remote_control_wake_check(). */
+    (void)rtc_gpio_pullup_en(IR_RECEIVER_GPIO);
+    (void)rtc_gpio_pulldown_dis(IR_RECEIVER_GPIO);
+    mask |= 1ULL << IR_RECEIVER_GPIO;
+    /* And the stub that reads the rest of that frame before the boot. */
+    ir_wake_stub_arm();
+#endif
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_sleep_enable_ext1_wakeup_io(mask, ESP_EXT1_WAKEUP_ANY_LOW));
     if (wake_after_seconds > 0U) {
         ESP_ERROR_CHECK_WITHOUT_ABORT(
             esp_sleep_enable_timer_wakeup((uint64_t)wake_after_seconds * 1000000ULL));
@@ -1222,6 +1242,20 @@ static void board_arm_wake_sources(uint32_t wake_after_seconds)
     }
 }
 #endif
+
+bool board_woke_by_remote(void)
+{
+#ifdef BOARD_REMOTE_WAKES
+    if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_EXT1) return false;
+    const uint64_t pins = esp_sleep_get_ext1_wakeup_status();
+    /* The button wins a tie: a finger on it is a wish to wake, whatever the
+     * receiver saw at the same moment. */
+    if (pins & (1ULL << BUTTON_SLEEP_GPIO)) return false;
+    return (pins & (1ULL << IR_RECEIVER_GPIO)) != 0U;
+#else
+    return false;
+#endif
+}
 
 void board_deep_sleep_again(uint32_t wake_after_seconds)
 {
@@ -1283,6 +1317,14 @@ esp_err_t board_init(bool flip_vertical, bool flip_horizontal, bool dark)
      * deep sleep would keep them dark. */
     board_peripheral_power(true);
     ESP_RETURN_ON_ERROR(board_input_init(), TAG, "configure input GPIOs failed");
+#if BOARD_HAS_IR
+    /* Not fatal: a receiver that will not come up costs the remote, not the
+     * radio. The table is loaded before the receiver is listening, so the
+     * first key after boot is already a key. */
+    if (remote_control_init() != ESP_OK || ir_receiver_init() != ESP_OK) {
+        ESP_LOGW(TAG, "the infrared receiver did not start");
+    }
+#endif
     ESP_RETURN_ON_ERROR(board_backlight_init(), TAG, "initialize backlight failed");
     ESP_RETURN_ON_ERROR(board_audio_init(), TAG, "initialize PCM5102 I2S output failed");
     ESP_RETURN_ON_ERROR(board_display_init(flip_vertical, flip_horizontal), TAG,

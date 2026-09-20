@@ -597,6 +597,7 @@ static void capture_settings_state(web_socket_settings_state_t *output)
                                                             settings.dlna),
                            web_server_yandex_available(), web_server_dlna_available(),
                            web_server_bt_available());
+    web_server_fill_remote(&output->view);
     output->known = true;
     /* Read here and not from the page, so that a timer armed on one browser
      * reaches the others - and so that the page knows to start asking for the

@@ -112,7 +112,7 @@ bool web_settings_apply(device_settings_t *settings,
  * The `*_available` flags say whether this build has the rows at all, so the
  * page can hide what the device screen hides instead of offering a switch that
  * changes nothing. */
-typedef struct {
+typedef struct web_settings_view {
     uint8_t language;
     uint8_t home_screen;
     uint8_t scroll;
@@ -150,6 +150,14 @@ typedef struct {
     /* The module is on the board and answering: the output switch and the
      * speaker list mean something. */
     bool bt_available;
+    /* The remote control: whether a receiver is on this board, which function
+     * is waiting to learn a key (-1 for none), and a number that moves on
+     * every change to the table - the table itself is GET /api/remote, and
+     * the page fetches it again when this moves. Filled by the caller after
+     * make_view, which knows nothing of the receiver. */
+    bool remote_available;
+    int remote_learning;
+    uint32_t remote_revision;
 } web_settings_view_t;
 
 void web_settings_make_view(web_settings_view_t *view,

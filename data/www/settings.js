@@ -656,6 +656,16 @@
 
   btScanButton.addEventListener('click', startSpeakerScan);
 
+  /* The remote control has a page of its own - learning thirty keys is not a
+     card's worth of rows - and this page only says whether there is one to
+     go to: the receiver is a part of the board, and a board without it has
+     nothing to learn. */
+  const remoteCard = document.querySelector('#remote-card');
+  function applyRemote(payload) {
+    const available = isObject(payload.available) ? payload.available : {};
+    remoteCard.hidden = available.remote !== true;
+  }
+
   function applyWifiMode(wifi) {
     const wasApMode = apMode;
     /* The setup AP exactly, not merely "not connected": while an attempt is
@@ -1146,6 +1156,7 @@
       btLoaded = true;
       loadSpeakers();
     }
+    applyRemote(payload);
     /* Neither fits the field table above: the days are seven buttons, and
        the station's options come from their own request and may not be here
        yet. */

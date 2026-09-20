@@ -23,6 +23,10 @@ void device_clock_init(const char *server, const char *timezone_id);
  * clock; a new server costs SNTP a restart, so it is only restarted when the
  * name actually changed. */
 void device_clock_apply(const char *server, const char *timezone_id);
+/* The zone alone, for a boot that reads the clock the RTC kept through a deep
+ * sleep and must not bring up SNTP - it has no network and is about to go
+ * back down. */
+void device_clock_set_timezone(const char *timezone_id);
 
 /* Local hour and minute. False until the first synchronisation, and it stays
  * true afterwards even if the network goes away - the oscillator keeps

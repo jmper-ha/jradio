@@ -292,6 +292,23 @@
           </div>
         </section>
 
+        <section class="card is-collapsed" data-section="remote" id="remote-card" aria-labelledby="remote-title" hidden>
+          <div class="card-head">
+            <button class="card-toggle" type="button" aria-expanded="false" aria-controls="remote-body">
+              <svg class="card-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7"/></svg>
+              <h2 id="remote-title" data-i18n="remote.title">Пульт</h2>
+            </button>
+            <span id="remote-status" class="settings-status" role="status" aria-live="polite"></span>
+          </div>
+
+          <div class="card-body" id="remote-body" hidden>
+            <p class="field-note" data-i18n="note.remote">Любой инфракрасный пульт: на отдельной странице у каждой функции нажимаете «Обучить», затем кнопку на пульте. Таблица хранится на устройстве в remote.csv.</p>
+            <div class="settings-actions">
+              <a class="primary-button" href="/remote" data-i18n="remote.open">Настроить пульт</a>
+            </div>
+          </div>
+        </section>
+
         <section class="card is-collapsed" data-section="backup" aria-labelledby="backup-title">
           <div class="card-head">
             <button class="card-toggle" type="button" aria-expanded="false" aria-controls="backup-body">

@@ -31,6 +31,12 @@
 #define BOARD_HAS_SD_CARD 0
 #endif
 
+#if defined(IR_RECEIVER_GPIO)
+#define BOARD_HAS_IR 1
+#else
+#define BOARD_HAS_IR 0
+#endif
+
 #if defined(FM_TUNER) && FM_TUNER != FM_TUNER_NONE
 #define BOARD_HAS_FM_RADIO 1
 #else

@@ -137,3 +137,11 @@ CONFIG_LWIP_TCP_OOSEQ_MAX_PBUFS=12
 # internal RAM is what the decoder task and TLS need, and on the ILI9488 the
 # link's stack was the difference between Yandex Music playing and not.
 CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
+
+# Waking by remote: the boot after a deep sleep either lights the screen for
+# our Power key or goes straight back down for anybody else's remote, and
+# both are felt as the delay after the press. Verifying the 2.6 MB image costs
+# 0.6 s and the PSRAM memory test 0.4 s, on every boot; neither buys anything
+# a board that ran fine a moment ago needs.
+CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP=y
+# CONFIG_SPIRAM_MEMTEST is not set

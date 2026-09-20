@@ -15,6 +15,7 @@
 #include "device_settings.h"
 #include "internet_radio.h"
 #include "player_control.h"
+#include "remote_control.h"
 #include "sd_storage.h"
 #include "settings_csv.h"
 #include "system_report.h"
@@ -114,6 +115,35 @@ static bool alarm_quiet_wake(const device_settings_t *settings, bool settings_re
     return true;
 }
 
+/* The other quiet wake: the infrared receiver's pin. Any remote in the room
+ * wakes the chip - the television's, pointed elsewhere - so the boot stops
+ * here, listens for a moment, and goes back down unless what came was our
+ * Power key. Nothing is lit and nothing is started; the timer for the alarm
+ * is re-armed from the clock the RTC kept through the sleep, drift and all,
+ * because the ten-minutes-early hop corrects that anyway. Like the alarm's
+ * check, this either does not return or lets the boot carry on. */
+static void remote_quiet_wake(const device_settings_t *settings, bool settings_read)
+{
+    if (!board_woke_by_remote()) return;
+    if (remote_control_wake_check()) {
+        ESP_LOGI(TAG, "woken by the remote's Power key");
+        return;
+    }
+    ESP_LOGI(TAG, "woken by the receiver, but not by our Power key; sleeping on");
+    uint32_t wake_after = 0U;
+    if (settings_read) {
+        device_clock_set_timezone(settings->timezone);
+        int weekday = 0;
+        int hour = 0;
+        int minute = 0;
+        int second = 0;
+        const bool clock_valid = device_clock_moment(&weekday, &hour, &minute, &second);
+        wake_after = alarm_sleep_wake_after_seconds(&settings->alarm, clock_valid, weekday, hour,
+                                                    minute, second);
+    }
+    board_deep_sleep_again(wake_after);  /* does not return */
+}
+
 static void input_log_task(void *arg)
 {
     (void)arg;
@@ -130,6 +160,10 @@ void app_main(void)
     // First, so the reset reason is the first thing in the log after a crash,
     // and before anything allocates, so the boot heap figure means something.
     system_report_boot();
+    /* Before everything else, when it was the receiver that woke the chip:
+     * every millisecond the receiver is not listening is a millisecond of the
+     * second press of Power it can miss. */
+    if (board_woke_by_remote()) remote_control_wake_listen();
     // Before anything that could write settings: the lock it creates has to
     // exist by the time player_control and ui are running, and app_main is
     // still the only task at this point.
@@ -153,6 +187,7 @@ void app_main(void)
      * failed at being quiet. It either does not return or leaves the ordinary
      * boot to carry on below. */
     const bool network_started = alarm_quiet_wake(&boot_settings, settings_read);
+    remote_quiet_wake(&boot_settings, settings_read);
     // Fatal on purpose: without the board there is no screen, no sound and no
     // controls, and without player_control and the UI there is nothing to
     // drive them with. A reboot loop is at least an honest signal there.

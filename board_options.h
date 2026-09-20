@@ -245,6 +245,14 @@
  * when not wired: the output then plays on regardless. */
 /* #define AUDIO_DAC_MUTE_GPIO 15 */
 
+/* An infrared receiver (TSOP38238, VS1838B and the like) for a remote
+ * control: its output pin, idle high, low for the carrier. Any GPIO does -
+ * the RMT peripheral reads it through the matrix - but one of the RTC pins,
+ * 0-21, lets a remote wake the board from deep sleep. Feed the receiver from
+ * the always-on 3.3 V rather than the switched peripheral rail, or it cannot
+ * wake anything. Leave undefined and there is no remote. */
+/* #define IR_RECEIVER_GPIO 4 */
+
 /* ======================================================================
  * Optional features - what is built into this firmware
  * ====================================================================== */

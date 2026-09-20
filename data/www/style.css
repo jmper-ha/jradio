@@ -1982,3 +1982,18 @@ a.secondary-button { text-decoration: none; color: inherit; }
 }
 .hw-import-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
 .field-note.is-error { color: var(--bad); }
+
+/* ---- the remote's table ----------------------------------------------- */
+/* A grid, not the flex row: Learn and Forget sit in columns of their own, so
+   a row without a Forget keeps its Learn where every other row has it
+   instead of sliding to the edge. */
+.remote-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 12rem) 6rem 6rem; }
+.remote-row .remote-code { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remote-row .secondary-button { min-width: 0; padding-inline: .4rem; text-align: center; }
+.remote-row .secondary-button[hidden] { display: block; visibility: hidden; }
+@media (max-width: 560px) {
+  .remote-row { grid-template-columns: minmax(0, 1fr) minmax(0, 6.5rem) 5rem 5rem; gap: .4rem; }
+}
+.remote-row.is-learning { background: var(--accent-soft); }
+.remote-row.is-pressed { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent-2); }
+.remote-row.is-learning .remote-code { color: var(--accent-2); font-family: inherit; }

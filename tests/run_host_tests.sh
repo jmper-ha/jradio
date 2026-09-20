@@ -157,6 +157,11 @@ run_test ui_layout tests/test_ui_layout.c
 # decisions, and the reason the screen exists is the one where they disagree.
 run_test ui_about tests/test_ui_about.c components/ui/ui_about.c components/settings/device_text.c
 run_test board_input tests/test_board_input.c components/board/board_input.c
+# The remote control: what the receiver saw, which key it is, and the digits
+# dialled into a station number - none of it needs the receiver.
+run_test ir_decode tests/test_ir_decode.c components/board/ir_decode.c
+run_test remote_map tests/test_remote_map.c components/board/remote_map.c components/board/ir_decode.c
+run_test ui_station_dial tests/test_ui_station_dial.c components/ui/ui_station_dial.c
 # The sleep timer's arithmetic, which is all of it that can be wrong: the
 # rounding the panel shows and the millisecond counter wrapping mid-countdown.
 run_test sleep_timer tests/test_sleep_timer.c components/ui/sleep_timer.c
@@ -310,5 +315,6 @@ node tests/test_web_settings.js
 node tests/test_web_playlist.js
 node tests/test_web_files.js
 node tests/test_web_hardware.js
+node tests/test_web_remote.js
 
 printf 'All host tests passed.\n'

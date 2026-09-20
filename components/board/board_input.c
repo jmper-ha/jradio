@@ -318,6 +318,12 @@ esp_err_t board_input_init(void)
     return ESP_OK;
 }
 
+bool board_input_inject(board_input_action_t action)
+{
+    if (s_event_queue == NULL || action == BOARD_INPUT_ACTION_NONE) return false;
+    return xQueueSend(s_event_queue, &action, 0) == pdTRUE;
+}
+
 bool board_input_read(board_input_action_t *action, TickType_t timeout)
 {
     return s_event_queue != NULL && action != NULL &&

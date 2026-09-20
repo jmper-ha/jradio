@@ -290,6 +290,11 @@ void web_settings_make_view(web_settings_view_t *view,
         .yandex_available = yandex_available,
         .dlna_available = dlna_available,
         .bt_available = bt_available,
+        /* Nothing armed until the caller says otherwise: zero would be the
+         * first function. */
+        .remote_available = false,
+        .remote_learning = -1,
+        .remote_revision = 0U,
     };
 }
 
@@ -324,7 +329,10 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->home_screen_available == right->home_screen_available &&
            left->yandex_available == right->yandex_available &&
            left->dlna_available == right->dlna_available &&
-           left->bt_available == right->bt_available;
+           left->bt_available == right->bt_available &&
+           left->remote_available == right->remote_available &&
+           left->remote_learning == right->remote_learning &&
+           left->remote_revision == right->remote_revision;
 }
 
 /* The id of the zone a view carries, or the default's when the card names one
@@ -400,7 +408,17 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_literal(writer, view->dlna_available ? "true" : "false");
     web_json_literal(writer, ",\"bt_output\":");
     web_json_literal(writer, view->bt_available ? "true" : "false");
-    web_json_literal(writer, "},\"brightness_min\":");
+    web_json_literal(writer, ",\"remote\":");
+    web_json_literal(writer, view->remote_available ? "true" : "false");
+    web_json_literal(writer, "},\"remote_learning\":");
+    if (view->remote_learning < 0) {
+        web_json_literal(writer, "null");
+    } else {
+        web_json_format(writer, "%d", view->remote_learning);
+    }
+    web_json_literal(writer, ",\"remote_revision\":");
+    web_json_format(writer, "%u", (unsigned)view->remote_revision);
+    web_json_literal(writer, ",\"brightness_min\":");
     web_json_format(writer, "%d", WEB_SETTINGS_BRIGHTNESS_MIN);
     web_json_literal(writer, ",\"brightness_max\":");
     web_json_format(writer, "%d", WEB_SETTINGS_BRIGHTNESS_MAX);

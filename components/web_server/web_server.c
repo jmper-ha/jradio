@@ -46,6 +46,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include <unistd.h>
 #include "board_features.h"
 #include "bt_link.h"
+#include "remote_control.h"
 #include "ui_menu.h"
 #include "web_backup.h"
 #include "web_cover.h"
@@ -407,6 +408,18 @@ static esp_err_t web_server_settings_get(httpd_req_t *request)
 static esp_err_t web_server_settings_js_get(httpd_req_t *request)
 {
     return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/settings.js",
+                                "application/javascript; charset=utf-8");
+}
+
+static esp_err_t web_server_remote_page_get(httpd_req_t *request)
+{
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/remote.html",
+                                "text/html; charset=utf-8");
+}
+
+static esp_err_t web_server_remote_js_get(httpd_req_t *request)
+{
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/remote.js",
                                 "application/javascript; charset=utf-8");
 }
 
@@ -1281,6 +1294,178 @@ bool web_server_bt_available(void)
     return BOARD_HAS_BLUETOOTH && bt_link_alive();
 }
 
+void web_server_fill_remote(struct web_settings_view *view)
+{
+    if (view == NULL) return;
+    view->remote_available = BOARD_HAS_IR;
+    remote_function_t learning = REMOTE_FUNCTION_COUNT;
+    if (BOARD_HAS_IR) remote_control_snapshot(NULL, &learning);
+    view->remote_learning = learning == REMOTE_FUNCTION_COUNT ? -1 : (int)learning;
+    view->remote_revision = remote_control_revision();
+}
+
+/* The last key the receiver saw, for the page to light its row: null before
+ * any, else the function it meant (null for a key nobody learned), the code
+ * and how long ago. */
+static void web_server_remote_write_last(web_json_writer_t *writer)
+{
+    remote_last_key_t last;
+    remote_control_last_key(&last);
+    if (!last.seen) {
+        web_json_literal(writer, "null");
+        return;
+    }
+    char code[24];
+    ir_code_format(&last.code, code, sizeof(code));
+    web_json_literal(writer, "{\"function\":");
+    if (last.function == REMOTE_FUNCTION_COUNT) {
+        web_json_literal(writer, "null");
+    } else {
+        web_json_literal(writer, "\"");
+        web_json_literal(writer, remote_function_name(last.function));
+        web_json_literal(writer, "\"");
+    }
+    web_json_literal(writer, ",\"code\":\"");
+    web_json_literal(writer, code);
+    web_json_format(writer, "\",\"age_ms\":%u}", (unsigned)last.age_ms);
+}
+
+/* The remote's table, whole: a function per row, the key bound to it or null.
+ * Its own document rather than a part of the settings frame - thirty-odd
+ * codes would double that frame for a table that changes a few times in the
+ * device's life, and the frame carries a revision that says when to ask. */
+static esp_err_t web_server_remote_get(httpd_req_t *request)
+{
+    static char body[2048];
+    web_json_writer_t writer;
+    web_json_init(&writer, body, sizeof(body), sizeof(body));
+    web_json_literal(&writer, "{\"available\":");
+    web_json_literal(&writer, BOARD_HAS_IR ? "true" : "false");
+    remote_map_t map;
+    remote_function_t learning = REMOTE_FUNCTION_COUNT;
+    remote_control_snapshot(&map, &learning);
+    web_json_literal(&writer, ",\"learning\":");
+    if (learning == REMOTE_FUNCTION_COUNT) {
+        web_json_literal(&writer, "null");
+    } else {
+        web_json_literal(&writer, "\"");
+        web_json_literal(&writer, remote_function_name(learning));
+        web_json_literal(&writer, "\"");
+    }
+    web_json_literal(&writer, ",\"revision\":");
+    web_json_format(&writer, "%u", (unsigned)remote_control_revision());
+    web_json_literal(&writer, ",\"keys\":{");
+    for (unsigned index = 0U; index < (unsigned)REMOTE_FUNCTION_COUNT; ++index) {
+        if (index > 0U) web_json_literal(&writer, ",");
+        web_json_literal(&writer, "\"");
+        web_json_literal(&writer, remote_function_name((remote_function_t)index));
+        web_json_literal(&writer, "\":");
+        if (map.bound[index]) {
+            char code[24];
+            ir_code_format(&map.code[index], code, sizeof(code));
+            web_json_literal(&writer, "\"");
+            web_json_literal(&writer, code);
+            web_json_literal(&writer, "\"");
+        } else {
+            web_json_literal(&writer, "null");
+        }
+    }
+    web_json_literal(&writer, "}");
+    web_json_literal(&writer, ",\"last\":");
+    web_server_remote_write_last(&writer);
+    web_json_literal(&writer, "}");
+    if (!web_json_valid(&writer)) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Table too large");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(request, "application/json");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(request, body);
+}
+
+/* {"revision":N,"learning":...,"last":...} - what the page asks four times a
+ * second while it is open, small enough for that: the key just pressed, to
+ * light its row for as long as the key is held, and the two numbers that say
+ * when the whole table is worth fetching again. */
+static esp_err_t web_server_remote_last_get(httpd_req_t *request)
+{
+    char body[160];
+    web_json_writer_t writer;
+    web_json_init(&writer, body, sizeof(body), sizeof(body));
+    remote_function_t learning = REMOTE_FUNCTION_COUNT;
+    remote_control_snapshot(NULL, &learning);
+    web_json_literal(&writer, "{\"revision\":");
+    web_json_format(&writer, "%u", (unsigned)remote_control_revision());
+    web_json_literal(&writer, ",\"learning\":");
+    if (learning == REMOTE_FUNCTION_COUNT) {
+        web_json_literal(&writer, "null");
+    } else {
+        web_json_literal(&writer, "\"");
+        web_json_literal(&writer, remote_function_name(learning));
+        web_json_literal(&writer, "\"");
+    }
+    web_json_literal(&writer, ",\"last\":");
+    web_server_remote_write_last(&writer);
+    web_json_literal(&writer, "}");
+    if (!web_json_valid(&writer)) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Reply too large");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(request, "application/json");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(request, body);
+}
+
+/* {"function":"volume_up"} - arm it, or forget it. One small body, the way
+ * the settings endpoint takes one field. */
+static esp_err_t web_server_remote_function_post(httpd_req_t *request, bool learn)
+{
+    if (!BOARD_HAS_IR) {
+        httpd_resp_send_err(request, HTTPD_404_NOT_FOUND, "No receiver on this board");
+        return ESP_FAIL;
+    }
+    if (request->content_len <= 0 || request->content_len >= WEB_SERVER_REQUEST_MAX_LEN) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Invalid request");
+        return ESP_FAIL;
+    }
+    char body[WEB_SERVER_REQUEST_MAX_LEN] = {0};
+    int received = 0;
+    while (received < request->content_len) {
+        const int read = httpd_req_recv(request, body + received, request->content_len - received);
+        if (read <= 0) {
+            httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Incomplete request");
+            return ESP_FAIL;
+        }
+        received += read;
+    }
+    cJSON *root = cJSON_ParseWithLength(body, (size_t)received);
+    const cJSON *name = root == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(root, "function");
+    remote_function_t function;
+    const bool known = cJSON_IsString(name) && remote_function_from_name(name->valuestring, &function);
+    cJSON_Delete(root);
+    if (!known) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Unknown function");
+        return ESP_FAIL;
+    }
+    const bool done = learn ? remote_control_learn(function) : remote_control_forget(function);
+    if (!done) {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Could not save the table");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(request, "application/json");
+    return httpd_resp_sendstr(request, "{\"ok\":true}");
+}
+
+static esp_err_t web_server_remote_learn_post(httpd_req_t *request)
+{
+    return web_server_remote_function_post(request, true);
+}
+
+static esp_err_t web_server_remote_forget_post(httpd_req_t *request)
+{
+    return web_server_remote_function_post(request, false);
+}
+
 /* Whether the page should offer the home-screen choice, which depends on how
  * many rows would be left once the switches have had their say - so it is
  * asked with the settings as they are, not with everything on. */
@@ -1310,6 +1495,7 @@ static esp_err_t web_server_settings_api_get(httpd_req_t *request)
                                                             s_settings_scratch.dlna),
                            web_server_yandex_available(), web_server_dlna_available(),
                            web_server_bt_available());
+    web_server_fill_remote(&view);
     /* What the weather task last said, so the page can say beside the picker
      * whether the chosen service is answering - the panel shows a reading or
      * nothing, and nothing is not an explanation. */
@@ -2004,10 +2190,10 @@ esp_err_t web_server_start(void)
         // The HTTP worker is network-bound; keep it on core 0 with Wi-Fi and
         // lwIP so it cannot preempt the audio decoder pinned to core 1.
         config.core_id = 0;
-        // Thirty-two are registered below plus /ws; the spare ones exist
+        // Thirty-seven are registered below plus /ws; the spare ones exist
         // because running out is not a build error - httpd_register_uri_handler
         // fails at startup and takes the whole web server down with it.
-        config.max_uri_handlers = 37;
+        config.max_uri_handlers = 42;
         config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
         config.send_wait_timeout = 1;
         config.lru_purge_enable = false;
@@ -2020,6 +2206,8 @@ esp_err_t web_server_start(void)
             {.uri = "/style.css", .method = HTTP_GET, .handler = web_server_style_get},
             {.uri = "/settings", .method = HTTP_GET, .handler = web_server_settings_get},
             {.uri = "/settings.js", .method = HTTP_GET, .handler = web_server_settings_js_get},
+            {.uri = "/remote", .method = HTTP_GET, .handler = web_server_remote_page_get},
+            {.uri = "/remote.js", .method = HTTP_GET, .handler = web_server_remote_js_get},
             {.uri = "/playlist", .method = HTTP_GET, .handler = web_server_playlist_page_get},
             {.uri = "/playlist.js", .method = HTTP_GET, .handler = web_server_playlist_js_get},
             {.uri = "/api/status", .method = HTTP_GET, .handler = web_server_status_get},
@@ -2046,6 +2234,10 @@ esp_err_t web_server_start(void)
             {.uri = "/api/bt/speaker", .method = HTTP_POST, .handler = web_server_bt_speaker_post},
             {.uri = "/api/bt/forget", .method = HTTP_POST, .handler = web_server_bt_forget_post},
             {.uri = "/api/cover", .method = HTTP_GET, .handler = web_server_cover_get},
+            {.uri = "/api/remote", .method = HTTP_GET, .handler = web_server_remote_get},
+            {.uri = "/api/remote/last", .method = HTTP_GET, .handler = web_server_remote_last_get},
+            {.uri = "/api/remote/learn", .method = HTTP_POST, .handler = web_server_remote_learn_post},
+            {.uri = "/api/remote/forget", .method = HTTP_POST, .handler = web_server_remote_forget_post},
             {.uri = "/api/backup", .method = HTTP_GET, .handler = web_backup_get},
             {.uri = "/api/restore", .method = HTTP_POST, .handler = web_backup_restore_post},
         };

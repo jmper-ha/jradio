@@ -33,6 +33,7 @@
 #include "ui_feed_model.h"
 #include "ui_player_state.h"
 #include "ui_quick_menu.h"
+#include "ui_station_dial.h"
 #include "ui_now_playing.h"
 #include "ui_radio_text.h"
 #include "ui_seek.h"
@@ -519,6 +520,12 @@ static audio_source_t s_files_unavailable_source = AUDIO_SOURCE_NONE;
 #define UI_AUTOPLAY_BT_RETRY_MS 1500U
 #define UI_AUTOPLAY_BT_ATTEMPTS 4U
 static bool s_autoplay_pending;
+/* The remote's Mute: the level it took the sound down from, so Mute again
+ * or any volume key puts it back. Not a setting - a muted board comes back
+ * from a power cut at the level it was muted at, not silent. */
+static bool s_muted;
+static uint8_t s_muted_level;
+static ui_station_dial_t s_dial;
 static uint8_t s_autoplay_bt_attempts;
 static uint32_t s_autoplay_bt_asked_ms;
 static uint32_t s_autoplay_started_ms;
@@ -5379,6 +5386,170 @@ static void ui_quick_poll(uint32_t now_ms)
     ui_quick_refresh();
 }
 
+/* One step of volume, from the knob on the player or from the remote's key
+ * anywhere. Reaches the audio path at once - it is one atomic store, and the
+ * next PCM block is already attenuated. Saving is what has to wait: writing
+ * settings.csv per click stalled this task long enough that clicks queued up
+ * and then arrived in a burst. */
+static void ui_volume_step(int step)
+{
+    if (s_muted) {
+        /* A volume key while muted is "sound, please": the level comes back
+         * first and the step lands on it. */
+        s_muted = false;
+        board_audio_set_volume(s_muted_level);
+    }
+    const uint8_t volume = audio_volume_step(board_audio_volume(), step);
+    board_audio_set_volume(volume);
+    s_device_settings.volume = volume;
+    s_volume_save_pending = true;
+    s_volume_changed_ms = ui_tick_get_ms();
+    /* Per detent, not per save: the web slider has to follow the knob while
+     * it is being turned, and the save is a second and a half behind on
+     * purpose. */
+    device_settings_publish(&s_device_settings);
+    ui_update_footer();
+}
+
+static void ui_mute_toggle(void)
+{
+    if (s_muted) {
+        s_muted = false;
+        board_audio_set_volume(s_muted_level);
+        ESP_LOGI(TAG, "remote: unmuted, back to %u", (unsigned)s_muted_level);
+    } else {
+        s_muted_level = board_audio_volume();
+        s_muted = true;
+        board_audio_set_volume(0U);
+        ESP_LOGI(TAG, "remote: muted from %u", (unsigned)s_muted_level);
+    }
+    ui_update_footer();
+}
+
+/* A station by its row, both commands straight to the controller - the
+ * alarm's route, and for the alarm's reason: ui_submit_player_command()
+ * refuses a second command while the first is unconfirmed, and the source
+ * and the row are inseparable. The queue keeps the order, and a command is
+ * decided when it is dequeued, so the row is read with the radio active. */
+static bool ui_start_station_index(size_t index)
+{
+    if (player_control_station_at(index) == NULL) return false;
+    (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_INTERNET_RADIO);
+    const player_command_t select = {
+        .kind = PLAYER_COMMAND_SELECT_SOURCE,
+        .source = AUDIO_SOURCE_INTERNET_RADIO,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    if (!player_control_post(&select)) {
+        ESP_LOGW(TAG, "the player queue is full");
+        return false;
+    }
+    const player_command_t start = {
+        .kind = PLAYER_COMMAND_SELECT_ITEM,
+        .source = AUDIO_SOURCE_INTERNET_RADIO,
+        .item_index = index,
+    };
+    (void)player_control_post(&start);
+    return true;
+}
+
+static unsigned ui_station_count(void)
+{
+    unsigned count = 0U;
+    while (count < UI_DIAL_MAX && player_control_station_at(count) != NULL) ++count;
+    return count;
+}
+
+static void ui_dial_station(unsigned number)
+{
+    if (number == 0U) return;
+    ESP_LOGI(TAG, "remote: station %u", number);
+    if (!ui_start_station_index(number - 1U)) return;
+    s_autoplay_pending = false;
+    if (lv_screen_active() != s_source_screen) ui_load_source_screen(AUDIO_SOURCE_INTERNET_RADIO);
+    s_waiting_for_source_item = false;
+}
+
+static audio_source_t ui_source_of_action(board_input_action_t action)
+{
+    switch (action) {
+    case BOARD_INPUT_ACTION_SOURCE_RADIO: return AUDIO_SOURCE_INTERNET_RADIO;
+    case BOARD_INPUT_ACTION_SOURCE_USB: return AUDIO_SOURCE_USB;
+    case BOARD_INPUT_ACTION_SOURCE_SD: return AUDIO_SOURCE_SD;
+    case BOARD_INPUT_ACTION_SOURCE_BLUETOOTH: return AUDIO_SOURCE_BLUETOOTH;
+    case BOARD_INPUT_ACTION_SOURCE_YANDEX: return AUDIO_SOURCE_YANDEX;
+    case BOARD_INPUT_ACTION_SOURCE_DLNA: return AUDIO_SOURCE_DLNA;
+    default: return AUDIO_SOURCE_NONE;
+    }
+}
+
+/* The keys a remote has and the case does not. True when the action was one
+ * of them, whatever it did: they are handled here, before any screen, because
+ * Vol+ has to be volume on every screen and a digit a station from anywhere.
+ * The exception is Settings, whose knob is spoken for row by row: there only
+ * the sound keys act. */
+static bool ui_handle_remote_action(board_input_action_t action)
+{
+    switch (action) {
+    case BOARD_INPUT_ACTION_VOLUME_UP:
+        ui_volume_step(UI_VOLUME_STEP_PERCENT);
+        return true;
+    case BOARD_INPUT_ACTION_VOLUME_DOWN:
+        ui_volume_step(-UI_VOLUME_STEP_PERCENT);
+        return true;
+    case BOARD_INPUT_ACTION_MUTE:
+        ui_mute_toggle();
+        return true;
+    case BOARD_INPUT_ACTION_PLAY_PAUSE:
+        ui_toggle_playback();
+        return true;
+    case BOARD_INPUT_ACTION_SLEEP_CYCLE: {
+        const uint16_t next = ui_quick_sleep_step(sleep_timer_service_minutes(), 1);
+        sleep_timer_service_set(next);
+        ESP_LOGI(TAG, "remote: sleep timer %u min", (unsigned)next);
+        return true;
+    }
+    case BOARD_INPUT_ACTION_LIKE:
+        ui_submit_like_press(false);
+        return true;
+    case BOARD_INPUT_ACTION_DISLIKE:
+        ui_submit_like_press(true);
+        return true;
+    default:
+        break;
+    }
+    if (s_settings_open) {
+        /* The rest would work the screens under the settings list. */
+        return action == BOARD_INPUT_ACTION_LIST ||
+               (action >= BOARD_INPUT_ACTION_DIGIT_0 && action <= BOARD_INPUT_ACTION_DIGIT_9) ||
+               ui_source_of_action(action) != AUDIO_SOURCE_NONE;
+    }
+    if (action >= BOARD_INPUT_ACTION_DIGIT_0 && action <= BOARD_INPUT_ACTION_DIGIT_9) {
+        /* A station number is the radio's: dialled while a file or a Yandex
+         * station plays, the digits do nothing rather than switch the source
+         * under the listener. */
+        player_snapshot_t snapshot;
+        player_control_get_snapshot(&snapshot);
+        if (snapshot.active_source != AUDIO_SOURCE_INTERNET_RADIO) return true;
+        const unsigned digit = (unsigned)(action - BOARD_INPUT_ACTION_DIGIT_0);
+        ui_dial_station(ui_station_dial_press(&s_dial, digit, ui_station_count(), ui_tick_get_ms()));
+        return true;
+    }
+    if (action == BOARD_INPUT_ACTION_LIST) {
+        ui_show_station_list();
+        return true;
+    }
+    const audio_source_t source = ui_source_of_action(action);
+    if (source != AUDIO_SOURCE_NONE) {
+        /* Through the home screen's own path, which is what knows whether the
+         * source is on this board, has its network, and how it opens. A
+         * source not on the menu is a key that does nothing, quietly. */
+        if (ui_menu_select_source(&s_menu, source)) ui_show_source();
+        return true;
+    }
+    return false;
+}
+
 static void ui_handle_input(board_input_action_t action)
 {
     /* Before the screensaver, and from every screen: holding F1 means sleep
@@ -5402,6 +5573,8 @@ static void ui_handle_input(board_input_action_t action)
     if (ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms())) {
         return;
     }
+
+    if (ui_handle_remote_action(action)) return;
 
     /* The quick panel owns the knob while it is up, so it is asked before any
      * screen's own handler. The settings screen is the exception: there the
@@ -5721,23 +5894,8 @@ static void ui_handle_input(board_input_action_t action)
                    action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
             // The encoder was unused on this screen, which is why volume gets
             // it: no gesture has to be given up to make room.
-            const int step = action == BOARD_INPUT_ACTION_ENCODER_RIGHT
-                                 ? UI_VOLUME_STEP_PERCENT
-                                 : -UI_VOLUME_STEP_PERCENT;
-            const uint8_t volume = audio_volume_step(board_audio_volume(), step);
-            // Reaches the audio path at once - it is one atomic store, and the
-            // next PCM block is already attenuated. Saving is what has to wait:
-            // writing settings.csv per click stalled this task long enough that
-            // clicks queued up and then arrived in a burst.
-            board_audio_set_volume(volume);
-            s_device_settings.volume = volume;
-            s_volume_save_pending = true;
-            s_volume_changed_ms = ui_tick_get_ms();
-            /* Per detent, not per save: the web slider has to follow the knob
-             * while it is being turned, and the save is a second and a half
-             * behind on purpose. */
-            device_settings_publish(&s_device_settings);
-            ui_update_footer();
+            ui_volume_step(action == BOARD_INPUT_ACTION_ENCODER_RIGHT ? UI_VOLUME_STEP_PERCENT
+                                                                       : -UI_VOLUME_STEP_PERCENT);
         } else if (action == BOARD_INPUT_ACTION_BTN_PREV ||
                    action == BOARD_INPUT_ACTION_BTN_NEXT) {
             const bool forward = action == BOARD_INPUT_ACTION_BTN_NEXT;
@@ -6416,39 +6574,20 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
                  (unsigned int)s_device_settings.alarm.station);
         return;
     }
-    (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_INTERNET_RADIO);
-    /* Both posted straight to the controller, past ui_submit_player_command:
+    /* Both commands straight to the controller, past ui_submit_player_command:
      * its view machine refuses a second command while the first is still
      * unconfirmed by a snapshot, and these two are inseparable - the source,
      * then the row inside it. Sent through the gate, the select went and the
      * row was answered with "player command rejected: busy or invalid; kind=5",
      * which on the bench was a device that switched to the radio at the right
-     * minute and then sat there silent.
-     *
-     * This is the route the browser's own "play station N" already takes, and
-     * the panel has followed a source it did not choose since acc3bf7.
-     *
-     * The order matters and the queue keeps it: a command is decided when it
-     * is dequeued, so by the time the row is read the radio is the active
-     * source. Decided any earlier - with the rotor still active - the same
-     * number would have named a Yandex station. */
-    const player_command_t select = {
-        .kind = PLAYER_COMMAND_SELECT_SOURCE,
-        .source = AUDIO_SOURCE_INTERNET_RADIO,
-        .item_index = PLAYER_ITEM_NONE,
-    };
-    if (!player_control_post(&select)) {
+     * minute and then sat there silent. The remote's digits take the same
+     * route, so it lives in ui_start_station_index(). The station by its row,
+     * not PLAYER_COMMAND_PLAY: play resumes whatever was last on, and the
+     * alarm names its own. */
+    if (!ui_start_station_index(index)) {
         ESP_LOGW(TAG, "alarm: the player queue is full");
         return;
     }
-    /* The station by its row, not PLAYER_COMMAND_PLAY: play resumes whatever
-     * was last on, and the alarm names its own. */
-    const player_command_t start = {
-        .kind = PLAYER_COMMAND_SELECT_ITEM,
-        .source = AUDIO_SOURCE_INTERNET_RADIO,
-        .item_index = index,
-    };
-    (void)player_control_post(&start);
     ui_load_source_screen(AUDIO_SOURCE_INTERNET_RADIO);
     /* That screen arms the "no station to play" fallback, which opens the list
      * after a moment; the alarm has a station. */
@@ -6543,7 +6682,8 @@ static void ui_task(void *arg)
         if (s_alarm_volume_held && board_audio_volume() != s_alarm_volume) {
             s_alarm_volume_held = false;
         }
-        if (!s_volume_save_pending && !s_sleep_fading && !s_alarm_volume_held &&
+        ui_dial_station(ui_station_dial_poll(&s_dial, ui_station_count(), ui_tick_get_ms()));
+        if (!s_volume_save_pending && !s_sleep_fading && !s_alarm_volume_held && !s_muted &&
             board_audio_volume() != s_device_settings.volume) {
             s_device_settings.volume = board_audio_volume();
             s_volume_save_pending = true;

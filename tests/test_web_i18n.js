@@ -26,7 +26,7 @@ vm.createContext(context);
 vm.runInContext(fs.readFileSync('data/www/i18n.js', 'utf8'), context);
 const i18n = context.window.jradioI18n;
 
-const PAGES = ['index.html', 'playlist.html', 'settings.html', 'hardware.html'];
+const PAGES = ['index.html', 'playlist.html', 'settings.html', 'hardware.html', 'remote.html'];
 const MARKERS = ['data-i18n', 'data-i18n-aria', 'data-i18n-placeholder', 'data-i18n-title',
                  'data-i18n-page', 'data-i18n-attr'];
 

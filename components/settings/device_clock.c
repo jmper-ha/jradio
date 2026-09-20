@@ -78,6 +78,11 @@ void device_clock_apply(const char *server, const char *timezone_id)
     device_clock_start_sntp(server);
 }
 
+void device_clock_set_timezone(const char *timezone_id)
+{
+    device_clock_set_zone(timezone_id);
+}
+
 bool device_clock_now(int *hour, int *minute)
 {
     if (hour == NULL || minute == NULL) return false;
@@ -153,6 +158,11 @@ bool device_clock_today(int *day, int *month, int *weekday)
 void device_clock_init(const char *server, const char *timezone_id)
 {
     (void)server;
+    (void)timezone_id;
+}
+
+void device_clock_set_timezone(const char *timezone_id)
+{
     (void)timezone_id;
 }
 

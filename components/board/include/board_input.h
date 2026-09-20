@@ -60,6 +60,35 @@ typedef enum {
     BOARD_INPUT_ACTION_BTN_PREV,
     BOARD_INPUT_ACTION_BTN_NEXT,
     BOARD_INPUT_ACTION_ENCODER_LONG,
+    /* What a remote control adds. None of these has a key on the case: the
+     * knob's turn is volume on one screen and the cursor on another, and a
+     * remote's Vol+ has to be volume wherever the device is. They travel the
+     * same queue as the keys, so every screen handles them in one place. */
+    BOARD_INPUT_ACTION_VOLUME_UP,
+    BOARD_INPUT_ACTION_VOLUME_DOWN,
+    BOARD_INPUT_ACTION_MUTE,
+    BOARD_INPUT_ACTION_PLAY_PAUSE,
+    BOARD_INPUT_ACTION_LIST,
+    BOARD_INPUT_ACTION_SLEEP_CYCLE,
+    BOARD_INPUT_ACTION_LIKE,
+    BOARD_INPUT_ACTION_DISLIKE,
+    /* Ten in a row, so a digit is the action less the first. */
+    BOARD_INPUT_ACTION_DIGIT_0,
+    BOARD_INPUT_ACTION_DIGIT_1,
+    BOARD_INPUT_ACTION_DIGIT_2,
+    BOARD_INPUT_ACTION_DIGIT_3,
+    BOARD_INPUT_ACTION_DIGIT_4,
+    BOARD_INPUT_ACTION_DIGIT_5,
+    BOARD_INPUT_ACTION_DIGIT_6,
+    BOARD_INPUT_ACTION_DIGIT_7,
+    BOARD_INPUT_ACTION_DIGIT_8,
+    BOARD_INPUT_ACTION_DIGIT_9,
+    BOARD_INPUT_ACTION_SOURCE_RADIO,
+    BOARD_INPUT_ACTION_SOURCE_USB,
+    BOARD_INPUT_ACTION_SOURCE_SD,
+    BOARD_INPUT_ACTION_SOURCE_BLUETOOTH,
+    BOARD_INPUT_ACTION_SOURCE_YANDEX,
+    BOARD_INPUT_ACTION_SOURCE_DLNA,
 } board_input_action_t;
 
 typedef struct {
@@ -105,4 +134,8 @@ board_input_action_t board_button_gesture_update(board_button_gesture_t *gesture
 
 esp_err_t board_input_init(void);
 bool board_input_read(board_input_action_t *action, TickType_t timeout);
+/* An action from somewhere other than the pins - the remote control - put on
+ * the same queue, so it reaches the screen the way a key does. False when the
+ * queue is full or not yet there. */
+bool board_input_inject(board_input_action_t action);
 #endif

@@ -38,4 +38,7 @@ bool web_server_yandex_available(void);
 bool web_server_dlna_available(void);
 bool web_server_bt_available(void);
 bool web_server_home_screen_available(bool yandex_enabled, bool dlna_enabled);
+/* The remote's three members of the settings view, from the receiver. */
+struct web_settings_view;
+void web_server_fill_remote(struct web_settings_view *view);
 #endif

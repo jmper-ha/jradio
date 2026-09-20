@@ -72,6 +72,61 @@ A short press on F1 does nothing at the moment; it is kept for whatever comes
 next. F2 used to mean "back" and lost the job to the encoder's long press,
 which did the same thing everywhere F2 did; it now carries the quick panel.
 
+### The remote control
+
+Any infrared remote drives the device - a television's, a set-top box's, the
+one from a parts kit - once the board has a receiver (`IR_RECEIVER_GPIO` in
+`board_options.h`, see [Hardware](hardware.en.md)). Which key does what the
+device does not know in advance: it is taught on the web interface's
+"Remote control" page, reached by a "Set up the remote" button in the
+settings that appears only when the build has a receiver. Beside each
+function press "Learn", then the key on the remote; the code is stored and
+the row lights up. One key, one function: a key learned for a second
+function is taken away from the first. The table lives on the device as
+`remote.csv`; it survives an update of the app but not a rewrite of the data
+partition.
+
+While the page is open it shows what is pressed: a function's row stays lit
+for as long as its key is held, and a key nobody has learned is named by its
+code in the status line - which is how a new remote's codes are found
+without the log.
+
+The functions are the knob's and the buttons', plus a few of their own:
+
+| Function | What it does |
+|---|---|
+| Volume up / down | The volume; ramps while held |
+| Mute | Silence, and back to the previous volume |
+| Play / pause | As a press on the knob |
+| Previous / Next | As F3 / F4 |
+| Up / Down | As turning the knob in a list |
+| OK | As a press on the knob |
+| Back, Menu | As a long press on the knob |
+| Quick panel | As F2 |
+| Station list | Open the station or file list |
+| Sleep timer | The next step of the sleep timer, round and round |
+| Like / Dislike | Rate a Yandex Music track |
+| 0-9 | A station's number, see below |
+| Radio, USB, SD, Bluetooth, Ya.Music, Media server | Switch the source |
+| Sleep / wake | As holding F1 - sleep; and wake |
+
+The digits dial a station by its number in the list: two digits in a row
+start it at once; one digit and a pause of a second and a half starts that
+number, or at once when no two-digit number in the list begins with it. Only
+while the internet radio plays: on files, Bluetooth or Yandex Music the
+digits do nothing and never switch the source.
+
+The remote also wakes the device from deep sleep, with the key learned as
+"Sleep / wake". Other remotes in the room wake the chip too - there is no
+avoiding it, the receiver sees only a flash - but such a boot stops before
+the screen lights, listens for whose code it is, and goes back to sleep. The
+frame of the press is read by a small routine that starts two or three
+milliseconds after the flash, so the device wakes on the first press; when
+it did not get a whole frame (a remote with an unusual protocol), a second
+press within three seconds does it. For this the receiver has to sit on a
+pin that can wake the chip (GPIO 0-21) and be fed from the always-on 3.3 V,
+not from the peripheral rail, which sleep switches off.
+
 ### The quick panel
 
 F2 drops a window from the top of the screen with the four things somebody
@@ -125,8 +180,9 @@ quiet are written (volume, brightness), the Bluetooth module lets go of the
 speaker, and Wi-Fi leaves the network properly. It works from every screen,
 the screensaver included.
 
-The same F1 wakes it. Waking is an ordinary boot with all of its seconds -
-sleep saves no state. What plays afterwards is decided by the **Autoplay**
+The same F1 wakes it - or the remote's "Sleep / wake" key, once it is
+learned (see [The remote control](#the-remote-control)). Waking is an
+ordinary boot with all of its seconds - sleep saves no state. What plays afterwards is decided by the **Autoplay**
 setting: on, and the device returns to what was being listened to; off, and it
 comes up on the home screen.
 

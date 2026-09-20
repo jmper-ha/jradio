@@ -289,6 +289,28 @@ This is not the same as `AUDIO_DAC_MUTE_GPIO` below: that one is the DAC's own
 soft mute, asserted when the sound goes to a Bluetooth speaker. Both can be
 wired at once, and then a muted DAC mutes the amplifier too.
 
+### The infrared receiver: a remote control
+
+Any three-pin 38 kHz receiver - TSOP38238, VS1838B, HX1838 and the like -
+gives the device a remote control (see
+[The remote control](usage.en.md#the-remote-control)):
+
+```c
+#define IR_RECEIVER_GPIO 4
+```
+
+The receiver's output is the carrier's envelope: high at rest, low during a
+burst; the firmware enables its own pull-up. Any pin does - the RMT
+peripheral reads it through the matrix - but for the remote to **wake** the
+device from deep sleep the receiver has to sit on an RTC-domain pin, GPIO
+0-21, like the sleep button. And be fed from the board's always-on 3.3 V: on
+the peripheral rail (`PERIPHERAL_POWER_GPIO`) it is unpowered in sleep and
+can wake nothing. It draws a fraction of a milliampere, so the sleep budget
+hardly notices it.
+
+Left undefined there is no remote: no page on the web, no button to it, no
+receiver task.
+
 ## Bluetooth: the jradio-bt module
 
 Playing from a phone (and, later, sending to headphones) is done by a second

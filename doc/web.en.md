@@ -23,6 +23,10 @@
 | `POST /api/station-icon` | Uploads a station picture; the device names the file |
 | `GET /api/yandex` | Link state and the account's stations (never the token) |
 | `POST /api/yandex` | Link, cancel, unlink, refresh the stations |
+| `GET /api/remote` | The remote's table: `available`, `learning`, `revision`, `keys` - a code per function or `null`, `last` - the key seen last |
+| `GET /api/remote/last` | The same without the table: `revision`, `learning`, `last` - what the remote page asks four times a second |
+| `POST /api/remote/learn` | Arm a function for learning: `{"function":"volume_up"}`; the next key on the remote is its |
+| `POST /api/remote/forget` | Forget a function's key: `{"function":"volume_up"}` |
 | `POST /api/wifi` | Saves a network |
 | `POST /api/wifi-scan` | Starts a scan for nearby networks (only with no connection) |
 | `GET /api/wifi-scan` | What it found: `scanning`, `done` with the list, or `idle` |
@@ -125,6 +129,34 @@ It doubles as the only check that a picture arrived at all. The files live in
 `/littlefs/radio_img/`, and saving the playlist deletes the ones nothing refers
 to any more - that is the one moment when the full list of names in use is
 known.
+
+## The remote control
+
+The page `/remote` is the table of functions with a Learn and a Forget beside
+each; the settings page carries a button to it, shown only when the device
+answers `available.remote = true` - that is, the build has `IR_RECEIVER_GPIO`.
+The table is a document of its own, `GET /api/remote`, not a part of the
+settings frame: thirty-odd codes would double that frame for data that
+changes a few times in the device's life. The settings frame carries only
+`remote_revision` - a number that moves on every change to the table or to
+what is armed - and `remote_learning`.
+
+While the page is open it reads `GET /api/remote/last` four times a second -
+a hundred bytes: the key seen last (`function` - what it is learned as,
+`null` for none; `code`; `age_ms` - how long ago), to light its row for as
+long as the key is held, and `revision`, on which the whole table is fetched
+again. The page opens no socket: a WebSocket slot for a page open a few
+minutes a year is not worth it. In a background tab the polling stops.
+
+Learning: `POST /api/remote/learn` arms a function for thirty seconds, and
+the next real key (not a repeat frame) is bound to it - and acts on nothing,
+or learning the Sleep key would put the device to sleep. An arming that no
+key answered clears itself; the page reads a moved revision and an unchanged
+code as "No key came". Codes are written as `nec:<address>:<command>` in
+hex (`nec:4:08`, an extended address as `nec:bf00:43`), or `raw:<hash>` for
+a protocol the decoder does not know: an FNV-1a hash of the pulse durations
+rounded to 200 us, which survives a receiver's jitter and still tells keys
+apart.
 
 ## Folding sections
 

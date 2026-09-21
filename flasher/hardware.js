@@ -33,6 +33,7 @@
 
   let values = hw.defaults();
   let picking = null;  /* the signal key armed for a click on the picture */
+  let resetNode = null;  /* the module's RST pad on the picture */
   const controls = {};  /* key -> the input/select that edits it */
   const rows = {};      /* key -> its row, for the arming highlight */
   const groups = {};    /* device -> {section, toggle} */
@@ -69,7 +70,10 @@
   function pinOptions(field) {
     const options = [];
     if (field.kind !== 'pin') options.push({value: hw.NONE, label: '—'});
-    for (const gpio of hw.headerGpios()) {
+    if (field.resetOk) options.push({value: hw.RESET, label: t('hw.opt.rst')});
+    /* By number, not by the header's order: a list is scanned for a
+       number, the picture for a place. */
+    for (const gpio of [...hw.headerGpios()].sort((a, b) => a - b)) {
       options.push({value: String(gpio), label: `GPIO ${gpio}`});
     }
     return options;
@@ -100,9 +104,23 @@
       }
       select.addEventListener('change', () => {
         const raw = select.value;
-        setValue(field.key, raw === hw.NONE ? hw.NONE : Number(raw));
+        setValue(field.key, raw === hw.NONE || raw === hw.RESET ? raw : Number(raw));
       });
       return select;
+    }
+    if (field.kind === 'choice' && field.bus && field.options.length === 1) {
+      /* A device that can sit on one bus only gets no drop-down of one item:
+         it names the bus and points at the card where the bus's pins live -
+         the question people asked was "where do I change the I2S pins". */
+      const span = document.createElement('span');
+      span.className = 'row-value';
+      const link = document.createElement('a');
+      link.href = `#hw-dev-${field.bus}${field.options[0]}`;
+      link.textContent = OPTION_LABEL(field.options[0]);
+      const tail = document.createElement('span');
+      tail.textContent = ` ${t('hw.bus_card')}`;
+      span.append(link, tail);
+      return span;
     }
     if (field.kind === 'choice') {
       const select = document.createElement('select');
@@ -129,6 +147,12 @@
     input.type = field.kind === 'int' ? 'number' : 'text';
     input.id = `hw-${field.key}`;
     input.dataset.key = field.key;
+    if (field.hint) {
+      /* A free-text field says what it is for in its own placeholder: the
+         label alone ("Board name") left people asking what to put there. */
+      input.dataset.i18nPlaceholder = `hw.hint.${field.key}`;
+      input.placeholder = t(`hw.hint.${field.key}`);
+    }
     input.addEventListener('change', () => {
       setValue(field.key, field.kind === 'int' ? Number(input.value) : input.value);
     });
@@ -142,6 +166,7 @@
     const label = document.createElement('label');
     label.setAttribute('for', `hw-${field.key}`);
     label.textContent = FIELD_LABEL(field.key);
+    if (field.define) label.title = field.define;
     row.append(label);
     const control = buildControl(field);
     controls[field.key] = control;
@@ -174,6 +199,7 @@
       const section = document.createElement('div');
       section.className = `device-group hw-group hw-dev-${device}`;
       section.dataset.device = device;
+      section.id = `hw-dev-${device}`;
       const heading = document.createElement('h3');
       const swatch = document.createElement('span');
       swatch.className = 'hw-swatch';
@@ -258,6 +284,17 @@
       group.append(name);
       if (pin.gpio === undefined) {
         group.classList.add(`hw-pin-${pin.kind}`);
+        if (pin.kind === 'reset') {
+          /* The RST pad takes a signal too - the display's reset - so it is
+             drawn and clicked like a GPIO, only without a number. */
+          const assignment = svgElement('text', {
+            x: left ? BODY_X - 20 : BODY_X + BODY_W + 20, y: 4, class: 'hw-pin-signal',
+            'text-anchor': left ? 'end' : 'start',
+          });
+          group.append(assignment);
+          group.addEventListener('click', onResetClick);
+          resetNode = {group, assignment};
+        }
       } else {
         group.dataset.gpio = String(pin.gpio);
         group.classList.add('hw-gpio');
@@ -273,6 +310,17 @@
       }
       svg.append(group);
     }
+  }
+
+  function onResetClick() {
+    if (picking === null) {
+      const users = hw.signals(values).filter((signal) => signal.reset).map((signal) => signal.key);
+      if (users.length > 0) { picking = users[0]; sync(); }
+      return;
+    }
+    if (!hw.FIELD_BY_KEY[picking].resetOk) return;
+    setValue(picking, hw.RESET);
+    picking = null;
   }
 
   function onPinClick(gpio) {
@@ -333,9 +381,12 @@
       section.classList.toggle('is-off', !enabled);
       for (const row of section.querySelectorAll('.hw-row')) {
         const field = hw.FIELD_BY_KEY[row.dataset.key];
-        /* The enabling field itself stays live, so the type can be chosen
-           before the rest of the rows appear. */
-        row.hidden = !enabled && !field.enables;
+        /* An enabling field that is a type (the clock's chip, the Bluetooth
+           module) stays live, so it can be chosen before the rest of the rows
+           appear; one that is a pin has nothing to say while the switch is
+           off - the switch is the whole answer. */
+        row.hidden = (!enabled && !(field.enables && field.kind === 'choice')) ||
+                     Boolean(field.when && !field.when(values));
       }
     }
   }
@@ -345,6 +396,14 @@
     const conflicts = new Set();
     for (const [gpio, keys] of Object.entries(map)) if (keys.length > 1) conflicts.add(Number(gpio));
     const pickingDevice = picking ? hw.FIELD_BY_KEY[picking].device : null;
+    if (resetNode) {
+      const users = hw.signals(values).filter((signal) => signal.reset).map((signal) => signal.key);
+      resetNode.group.setAttribute('class', 'hw-pin hw-pin-reset');
+      if (users.length > 0) resetNode.group.classList.add('is-used', `hw-dev-${hw.FIELD_BY_KEY[users[0]].device}`);
+      if (picking) resetNode.group.classList.add(hw.FIELD_BY_KEY[picking].resetOk ? 'is-target' : 'is-blocked');
+      if (picking && users.includes(picking)) resetNode.group.classList.add('is-picking');
+      resetNode.assignment.textContent = users.map(shortSignal).join(' / ');
+    }
     for (const [gpioText, node] of Object.entries(pinNodes)) {
       const gpio = Number(gpioText);
       const users = map[gpio] || [];
@@ -365,10 +424,12 @@
       if (users.length > 0) notes.push(users.map(FIELD_LABEL).join(', '));
       node.note.textContent = notes.join('\n');
     }
-    const hint = $('hw-hint');
-    hint.textContent = picking
-      ? t('hw.hint.picking', {signal: FIELD_LABEL(picking)})
-      : t('hw.hint.idle');
+    /* Both hints stay in the flow, stacked in one grid cell, and only the
+       visible one changes: the idle text is three lines and the armed one
+       two, and swapping them moved the whole picture up and down. */
+    $('hw-hint').textContent = t('hw.hint.idle');
+    $('hw-hint-picking').textContent = picking ? t('hw.hint.picking', {signal: FIELD_LABEL(picking)}) : '';
+    $('hw-hint-stack').classList.toggle('is-picking', picking !== null);
   }
 
   function syncLegend() {

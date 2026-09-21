@@ -7,9 +7,9 @@
   <meta name="theme-color" content="#0c0f13">
   <title>jRadio — оборудование</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3CradialGradient id='g' cx='50%25' cy='45%25' r='55%25'%3E%3Cstop offset='0%25' stop-color='%237bffb0'/%3E%3Cstop offset='55%25' stop-color='%2322e06a'/%3E%3Cstop offset='100%25' stop-color='%230a8f3c'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='7' fill='%23121417'/%3E%3Ccircle cx='16' cy='16' r='11' fill='url(%23g)'/%3E%3Cpath d='M16 16 12.9 5.6a11 11 0 0 1 6.2 0Z' fill='%23103a22'/%3E%3Ccircle cx='16' cy='16' r='3.7' fill='%230d1a12'/%3E%3Ccircle cx='16' cy='16' r='12.3' fill='none' stroke='%238c96a3' stroke-width='1.4'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/style.css">
-  <script src="/theme.js"></script>
-  <script src="/i18n.js"></script>
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+  <script src="i18n.js"></script>
 </head>
 <body data-i18n-page="title.hardware">
   <header class="site-header">
@@ -35,10 +35,7 @@
       </a>
 
       <nav class="source-tabs" data-i18n-aria="nav.sections" aria-label="Разделы">
-        <a class="source-tab" href="/" data-i18n="nav.player">Плеер</a>
-        <a class="source-tab" href="/playlist" data-i18n="nav.playlist">Плейлист</a>
-        <a class="source-tab" href="/settings" data-i18n="nav.settings">Настройки</a>
-        <a class="source-tab is-active" href="/hardware" aria-current="page" data-i18n="nav.hardware">Оборудование</a>
+        <a class="source-tab is-active" href="hardware.html" aria-current="page" data-i18n="nav.hardware">Оборудование</a>
       </nav>
 
       <div class="header-actions">
@@ -76,10 +73,13 @@
       <div class="hw-module-column">
         <section class="card" aria-labelledby="hw-module-title">
           <div class="card-head">
-            <h2 id="hw-module-title" data-i18n="hw.module">Модуль ESP32-S3-WROOM-1</h2>
+            <h2 id="hw-module-title" data-i18n="hw.module">Модуль ESP32-S3-WROOM-1 N16R8</h2>
           </div>
           <div class="card-body hw-module-body">
-            <p class="field-note" id="hw-hint" data-i18n="hw.hint.idle">Нажмите на сигнал слева, затем на вывод — или выберите вывод из списка.</p>
+            <div class="hw-hint-stack" id="hw-hint-stack">
+              <p class="field-note" id="hw-hint" data-i18n="hw.hint.idle">Нажмите на сигнал слева, затем на вывод — или выберите вывод из списка.</p>
+              <p class="field-note" id="hw-hint-picking" aria-live="polite"></p>
+            </div>
             <svg id="hw-svg" class="hw-svg" viewBox="0 0 400 540" role="img" data-i18n-aria="hw.svg" aria-label="Схема выводов модуля"></svg>
             <ul class="hw-legend" id="hw-legend"></ul>
           </div>
@@ -118,7 +118,7 @@
   </main>
 
   <noscript><p class="noscript-message">Для редактора требуется JavaScript. / JavaScript is required for the hardware editor.</p></noscript>
-  <script src="/hardware_core.js"></script>
-  <script src="/hardware.js"></script>
+  <script src="hardware_core.js"></script>
+  <script src="hardware.js"></script>
 </body>
 </html>

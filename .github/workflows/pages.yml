@@ -1,0 +1,56 @@
+# The flasher site at https://<owner>.github.io/jradio/: the pages under
+# flasher/ plus the stylesheet, the theme switch and the dictionary they share
+# with the device's own web interface. Those three stay in data/www/ - one
+# copy in git - and are copied here at publish time.
+#
+# Today the site is the wiring editor alone. The flasher page and the
+# firmware it writes (one build per panel shape, in Espressif's image of the
+# pinned ESP-IDF, as jradio-bt does it) come next and slot into this job.
+name: flasher site
+
+on:
+  push:
+    branches: ['main']
+    paths:
+      - 'flasher/**'
+      - 'data/www/style.css'
+      - 'data/www/theme.js'
+      - 'data/www/i18n.js'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the site
+        run: |
+          mkdir -p site
+          cp flasher/* site/
+          cp data/www/style.css data/www/theme.js data/www/i18n.js site/
+          # Until the flasher page exists, the site opens on the editor.
+          [ -f site/index.html ] || cp site/hardware.html site/index.html
+          ls -l site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

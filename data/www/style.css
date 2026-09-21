@@ -1840,6 +1840,16 @@ a.secondary-button { text-decoration: none; color: inherit; }
 }
 @media (min-width: 900px) {
   .hw-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  /* The picture follows the reader down the long list of parts and stops
+     where the list ends: a signal is armed on the left and lands on the
+     right, and the two must be on screen together. Below the header, and
+     scrolling on its own if the window is shorter than the module card. */
+  .hw-module-column {
+    position: sticky;
+    top: calc(var(--bar) + 1rem);
+    max-height: calc(100vh - var(--bar) - 2rem);
+    overflow-y: auto;
+  }
 }
 .hw-parts-column, .hw-module-column { display: grid; gap: 1rem; align-content: start; }
 
@@ -1854,11 +1864,9 @@ a.secondary-button { text-decoration: none; color: inherit; }
 .hw-dev-usb { --dev: #2ec4b6; }
 .hw-dev-sd { --dev: #9bd53a; }
 .hw-dev-bluetooth { --dev: #3d9bff; }
-.hw-dev-fm { --dev: #ff5d8f; }
-.hw-dev-rtc { --dev: #b8b8ff; }
+.hw-dev-ir { --dev: #ff5d8f; }
 .hw-dev-spi2 { --dev: #ff9f43; }
 .hw-dev-spi3 { --dev: #7bd389; }
-.hw-dev-i2c0 { --dev: #f7c948; }
 .hw-dev-i2s0 { --dev: #d08cff; }
 .hw-dev-uart1 { --dev: #38bdf8; }
 .hw-dev-board { --dev: var(--muted); }
@@ -1906,6 +1914,12 @@ a.secondary-button { text-decoration: none; color: inherit; }
 .hw-row.is-picking .hw-arm { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
 
 .hw-module-body { display: grid; gap: .6rem; padding: .8rem; }
+/* The two hints above the picture share one grid cell, so the taller one
+   sets the height whichever is showing and the module never jumps. */
+.hw-hint-stack { display: grid; }
+.hw-hint-stack > .field-note { grid-area: 1 / 1; margin: 0; }
+.hw-hint-stack > #hw-hint-picking, .hw-hint-stack.is-picking > #hw-hint { visibility: hidden; }
+.hw-hint-stack.is-picking > #hw-hint-picking { visibility: visible; }
 .hw-svg {
   width: 100%;
   height: auto;
@@ -1921,17 +1935,17 @@ a.secondary-button { text-decoration: none; color: inherit; }
 .hw-pin-name { fill: var(--text-2); font-size: 10px; }
 .hw-pin-signal { fill: var(--dev, var(--text)); font-size: 10px; font-weight: 600; }
 .hw-pin-power .hw-pin-name, .hw-pin-ground .hw-pin-name, .hw-pin-reset .hw-pin-name { fill: var(--muted); }
-.hw-gpio { cursor: pointer; }
-.hw-gpio.is-used .hw-pad { fill: var(--dev); stroke: var(--dev); }
-.hw-gpio.is-used .hw-pin-name { fill: var(--text); }
+.hw-gpio, .hw-pin-reset { cursor: pointer; }
+.hw-gpio.is-used .hw-pad, .hw-pin-reset.is-used .hw-pad { fill: var(--dev); stroke: var(--dev); }
+.hw-gpio.is-used .hw-pin-name, .hw-pin-reset.is-used .hw-pin-name { fill: var(--text); }
 .hw-gpio.is-noted .hw-pin-name { text-decoration: underline dotted; }
 .hw-gpio.is-reserved { cursor: not-allowed; opacity: .45; }
 .hw-gpio.is-reserved .hw-pad { fill: var(--surface); stroke-dasharray: 2 2; }
 .hw-gpio.is-reserved .hw-pin-name { fill: var(--muted); text-decoration: line-through; }
-.hw-gpio.is-target .hw-pad { stroke: var(--accent); }
-.hw-gpio.is-blocked { opacity: .4; }
+.hw-gpio.is-target .hw-pad, .hw-pin-reset.is-target .hw-pad { stroke: var(--accent); }
+.hw-gpio.is-blocked, .hw-pin-reset.is-blocked { opacity: .4; }
 .hw-gpio.is-picking .hw-pad, .hw-gpio.is-conflict .hw-pad { stroke-width: 2; }
-.hw-gpio.is-picking .hw-pad { stroke: var(--accent); }
+.hw-gpio.is-picking .hw-pad, .hw-pin-reset.is-picking .hw-pad { stroke: var(--accent); stroke-width: 2; }
 .hw-gpio.is-conflict .hw-pad { stroke: var(--bad); }
 .hw-gpio.is-conflict .hw-pin-signal { fill: var(--bad); }
 

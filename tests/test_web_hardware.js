@@ -10,7 +10,11 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const hw = require(path.join(__dirname, '..', 'data', 'www', 'hardware_core.js'));
+/* The editor lives on the flasher site, not on the device; only the
+   dictionary is the device's. */
+const FLASHER = path.join(__dirname, '..', 'flasher');
+const WWW = path.join(__dirname, '..', 'data', 'www');
+const hw = require(path.join(FLASHER, 'hardware_core.js'));
 
 /* ---- the model --------------------------------------------------------- */
 
@@ -26,8 +30,10 @@ function test_the_readme_board_is_clean() {
   assert.strictEqual(values.button_sleep, 21);
   assert.strictEqual(values.sd_spi, '3');
   assert.strictEqual(values.bluetooth, hw.NONE);
-  assert.strictEqual(values.rtc, hw.NONE);
-  assert.strictEqual(values.fm_tuner, hw.NONE);
+  /* SPI2 is on the chip's own pins and nowhere else. */
+  assert.strictEqual(values.spi2_sclk, 12);
+  assert.strictEqual(values.spi2_mosi, 11);
+  assert.strictEqual(values.spi2_miso, 13);
 }
 
 function test_the_file_round_trips() {
@@ -68,12 +74,17 @@ function test_two_signals_on_one_pin_is_a_conflict_but_a_shared_bus_is_not() {
   const report = hw.validate(values);
   assert.deepStrictEqual(report.errors, [{code: 'pin_conflict', gpio: 5, keys: ['tft_dc', 'encoder_right']}]);
 
-  /* The tuner and the clock on the same I2C pins: one bus, no conflict. */
-  let shared = hw.setDeviceEnabled(hw.defaults(), 'fm', true);
-  shared = hw.setDeviceEnabled(shared, 'rtc', true);
-  assert.strictEqual(shared.i2c0_sda, 8);
+  /* The DAC and the Bluetooth module on the same I2S pins: one bus, no
+     conflict. */
+  const shared = hw.setDeviceEnabled(hw.defaults(), 'bluetooth', true);
   assert.deepStrictEqual(hw.validate(shared).errors, []);
-  assert.deepStrictEqual(hw.pinMap(shared)[8], ['i2c0_sda']);
+  assert.deepStrictEqual(hw.pinMap(shared)[18], ['i2s0_bclk']);
+  /* SPI2's MISO is the bus's only while the card shares the bus: on its
+     own SPI3 the card leaves 13 free, on SPI2 it takes it. */
+  assert.strictEqual(hw.pinMap(hw.defaults())[13], undefined);
+  assert.deepStrictEqual(hw.pinMap({...hw.defaults(), sd_spi: '2'})[13], ['spi2_miso']);
+  /* And SPI2's pins are not the file's to move. */
+  assert.strictEqual(hw.parseCsv('spi2_sclk,4\n').values.spi2_sclk, 12);
 }
 
 function test_the_pins_the_chip_keeps_for_itself() {
@@ -82,8 +93,16 @@ function test_the_pins_the_chip_keeps_for_itself() {
                          [{code: 'pin_console', key: 'encoder_left', gpio: 43}]);
   assert.deepStrictEqual(hw.validate({...base, encoder_left: 36}).errors,
                          [{code: 'pin_psram', key: 'encoder_left', gpio: 36}]);
-  /* The quad-PSRAM module has those pins free. */
-  assert.deepStrictEqual(hw.validate({...base, encoder_left: 36, module: 'esp32s3_n8r2'}).errors, []);
+  /* The display's RST may sit on the module's own RST pad: that value is
+     the default, round-trips through the file, and no other pin takes it. */
+  assert.strictEqual(base.tft_reset, hw.RESET);
+  assert.ok(hw.toCsv(base).includes('tft_reset,rst\n'));
+  assert.strictEqual(hw.parseCsv('tft_reset,rst\n').values.tft_reset, hw.RESET);
+  assert.strictEqual(hw.parseCsv('spi3_miso,rst\n').bad.length, 1);
+  assert.ok(hw.validate({...base, tft_dc: 'rst'}).errors.some((problem) => problem.code === 'bad_value'));
+  assert.strictEqual(hw.signals(base).find((signal) => signal.key === 'tft_reset').reset, true);
+  /* The module is not a choice: a file naming another one is read as ours. */
+  assert.strictEqual(hw.parseCsv('module,esp32s3_n8r2\n').values.module, 'esp32s3_n16r8');
   /* 19 and 20 are USB's, and USB's alone - but USB itself is fine there. */
   const usbErrors = hw.validate({...base, tft_dc: 20}).errors.map((problem) => problem.code);
   assert.ok(usbErrors.includes('pin_usb'));
@@ -102,12 +121,13 @@ function test_a_device_needs_the_pins_of_its_bus() {
                          [{code: 'bus_unwired', device: 'sd', bus: 'spi3', pin: 'miso'}]);
   /* Off the board, the card no longer cares what SPI3 has. */
   assert.deepStrictEqual(hw.validate({...base, spi3_miso: hw.NONE, sd_cs: hw.NONE}).errors, []);
-  /* The tuner switched on by type alone, with no I2C wired. */
-  const codes = hw.validate({...base, fm_tuner: 'rda5807'}).errors.map((problem) => `${problem.bus}.${problem.pin}`);
-  assert.deepStrictEqual(codes, ['i2c0.sda', 'i2c0.scl']);
-  /* The module needs its UART; the enable helper wires it. */
-  assert.strictEqual(hw.validate({...base, bluetooth: 'jradio_bt'}).errors.length, 2);
+  /* The module switched on by type alone needs its UART; the enable helper
+     wires it. Its sound rides the I2S bus the DAC already has. */
+  const codes = hw.validate({...base, bluetooth: 'jradio_bt'}).errors.map((problem) => `${problem.bus}.${problem.pin}`);
+  assert.deepStrictEqual(codes, ['uart1.tx', 'uart1.rx']);
   assert.deepStrictEqual(hw.validate(hw.setDeviceEnabled(base, 'bluetooth', true)).errors, []);
+  const noClock = {...hw.setDeviceEnabled(base, 'bluetooth', true), i2s0_bclk: hw.NONE};
+  assert.ok(hw.validate(noClock).errors.some((problem) => problem.device === 'bluetooth' && problem.pin === 'bclk'));
 }
 
 function test_switching_a_device_off_and_on() {
@@ -121,13 +141,16 @@ function test_switching_a_device_off_and_on() {
   values = hw.setDeviceEnabled(values, 'sd', true);
   assert.strictEqual(values.sd_cs, 1);
   /* Switching a device on never moves a bus pin that is already wired. */
-  values = {...values, i2c0_sda: 15, i2c0_scl: 47};
-  values = hw.setDeviceEnabled(values, 'rtc', true);
-  assert.strictEqual(values.i2c0_sda, 15);
-  assert.strictEqual(values.rtc, 'ds3231');
-  /* The parts that are always there have no switch. */
-  assert.ok(hw.deviceEnabled(values, 'encoder'));
-  assert.deepStrictEqual(hw.setDeviceEnabled(values, 'encoder', false), values);
+  values = {...values, uart1_tx: 15, uart1_rx: 8};
+  values = hw.setDeviceEnabled(values, 'bluetooth', true);
+  assert.strictEqual(values.uart1_tx, 15);
+  assert.strictEqual(values.bluetooth, 'jradio_bt');
+  /* The parts that are always there have no switch: the display and the
+     encoder, which the firmware does not run without, and the DAC. */
+  for (const device of ['tft', 'encoder', 'dac']) {
+    assert.ok(hw.deviceEnabled(values, device));
+    assert.deepStrictEqual(hw.setDeviceEnabled(values, device, false), values);
+  }
 }
 
 function test_the_warnings_that_do_not_stop_a_file() {
@@ -136,10 +159,18 @@ function test_the_warnings_that_do_not_stop_a_file() {
                          [{code: 'sleep_not_rtc', key: 'button_sleep', gpio: 38}]);
   assert.deepStrictEqual(hw.validate({...base, tft_cs: 4}).warnings,
                          [{code: 'spi_not_iomux', key: 'tft_cs', gpio: 4}]);
-  /* Only while the panel is on SPI2: SPI3 has no IOMUX pins to prefer. */
-  assert.deepStrictEqual(hw.validate({...base, tft_spi: '3', tft_cs: 4, sd_spi: '2'}).warnings, []);
-  const rtc = {...hw.setDeviceEnabled(base, 'rtc', true), rtc_int: 38};
-  assert.deepStrictEqual(hw.validate(rtc).warnings, [{code: 'rtc_int_not_rtc', key: 'rtc_int', gpio: 38}]);
+  /* The display's bus is SPI2 and not a choice: a file putting it on SPI3
+     is read back onto SPI2, and the IOMUX advice stays. */
+  assert.strictEqual(hw.parseCsv('tft_spi,3\n').values.tft_spi, '2');
+  assert.deepStrictEqual(hw.validate({...base, tft_cs: 4, sd_spi: '2'}).warnings,
+                         [{code: 'spi_not_iomux', key: 'tft_cs', gpio: 4}]);
+  /* The receiver, switched on, lands on a wake-capable pin; moved off one,
+     the page says the remote will not wake the board. */
+  const ir = hw.setDeviceEnabled(base, 'ir', true);
+  assert.strictEqual(ir.ir_receiver, 4);
+  assert.deepStrictEqual(hw.validate(ir).warnings, []);
+  assert.deepStrictEqual(hw.validate({...ir, ir_receiver: 38}).warnings,
+                         [{code: 'ir_not_rtc', key: 'ir_receiver', gpio: 38}]);
   /* The README's buttons sit on strapping pins and its card on the JTAG
      pins: notes on the picture, never a report. */
   assert.deepStrictEqual(hw.validate(base).warnings, []);
@@ -219,7 +250,7 @@ class Element {
 function makeDocument() {
   const body = new Element('body');
   body.setAttribute('data-i18n-page', 'title.hardware');
-  const ids = ['hw-parts', 'hw-svg', 'hw-hint', 'hw-legend', 'hw-report', 'hw-csv', 'hw-status',
+  const ids = ['hw-parts', 'hw-svg', 'hw-hint', 'hw-hint-stack', 'hw-hint-picking', 'hw-legend', 'hw-report', 'hw-csv', 'hw-status',
                'hw-download', 'hw-copy', 'hw-import', 'hw-import-apply', 'hw-reset', 'hw-import-status'];
   for (const id of ids) {
     const element = new Element(id === 'hw-svg' ? 'svg' : 'div');
@@ -257,9 +288,8 @@ function loadPage() {
   window.self = window;
   const context = vm.createContext({window, document, self: window, navigator: window.navigator,
                                     URL: window.URL, Blob: window.Blob, console});
-  for (const file of ['i18n.js', 'hardware_core.js', 'hardware.js']) {
-    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'data', 'www', file), 'utf8'), context,
-                    {filename: file});
+  for (const [dir, file] of [[WWW, 'i18n.js'], [FLASHER, 'hardware_core.js'], [FLASHER, 'hardware.js']]) {
+    vm.runInContext(fs.readFileSync(path.join(dir, file), 'utf8'), context, {filename: file});
   }
   return {document, window, storage};
 }
@@ -274,20 +304,48 @@ function test_the_page_builds_every_part_and_follows_the_clicks() {
   /* The parts that can be absent have a switch; the ones always there do not. */
   const sd = sections.find((section) => section.dataset.device === 'sd');
   const encoder = sections.find((section) => section.dataset.device === 'encoder');
+  const tft = sections.find((section) => section.dataset.device === 'tft');
+  const dac = sections.find((section) => section.dataset.device === 'dac');
   assert.ok(sd.querySelector('.hw-group-toggle'));
   assert.strictEqual(encoder.querySelector('.hw-group-toggle'), null);
-  /* The tuner and the clock are there from the start, switched off. */
-  const rtc = sections.find((section) => section.dataset.device === 'rtc');
-  assert.ok(rtc.classList.contains('is-off'));
-  assert.ok(rtc.querySelectorAll('.hw-row').some((row) => row.dataset.key === 'rtc_int' && row.hidden));
+  assert.strictEqual(tft.querySelector('.hw-group-toggle'), null);
+  assert.strictEqual(dac.querySelector('.hw-group-toggle'), null);
+  /* A device with one possible bus names it and points at the bus's card
+     instead of offering a drop-down of one item. */
+  const dacBus = parts.querySelectorAll('.hw-row').find((row) => row.dataset.key === 'dac_i2s');
+  const busLink = dacBus.querySelector('a');
+  assert.strictEqual(busLink.href, '#hw-dev-i2s0');
+  assert.ok(sections.some((section) => section.id === 'hw-dev-i2s0'));
+  assert.strictEqual(dacBus.querySelector('select'), null);
+  /* The module is there from the start, switched off: its type row stays
+     live, its bus rows are hidden. */
+  const bt = sections.find((section) => section.dataset.device === 'bluetooth');
+  assert.ok(bt.classList.contains('is-off'));
+  assert.ok(bt.querySelectorAll('.hw-row').some((row) => row.dataset.key === 'bluetooth' && !row.hidden));
+  assert.ok(bt.querySelectorAll('.hw-row').some((row) => row.dataset.key === 'bt_i2s' && row.hidden));
+  /* SPI2 sits right under the display, shown and not edited; its MISO row
+     appears only once the card shares the bus. */
+  const spi2 = sections.find((section) => section.dataset.device === 'spi2');
+  assert.strictEqual(devices.indexOf('spi2'), devices.indexOf('tft') + 1);
+  assert.strictEqual(spi2.querySelector('select'), null);
+  const miso = spi2.querySelectorAll('.hw-row').find((row) => row.dataset.key === 'spi2_miso');
+  assert.ok(miso.hidden);
 
   /* The file under the editor is the README board. */
   const csv = document.getElementById('hw-csv');
   assert.ok(csv.textContent.includes('\ntft_cs,10\n'));
-  assert.ok(csv.textContent.includes('\nrtc,none\n'));
+  assert.ok(csv.textContent.includes('\nbluetooth,none\n'));
+  assert.ok(!csv.textContent.includes('usb_vbus'));
+
+  /* The list runs by number, and the row's label carries the header's name
+     for the same setting. */
+  const select = document.getElementById('hw-tft_dc');
+  const numbers = select.children.map((option) => Number(option.value)).filter((value) => !Number.isNaN(value));
+  assert.deepStrictEqual(numbers, [...numbers].sort((a, b) => a - b));
+  const dcRow = parts.querySelectorAll('.hw-row').find((row) => row.dataset.key === 'tft_dc');
+  assert.strictEqual(dcRow.querySelector('label').title, 'TFT_DC_GPIO');
 
   /* A pin picked from the list reaches the file and the picture. */
-  const select = document.getElementById('hw-tft_dc');
   select.value = '4';
   select.emit('change');
   assert.ok(csv.textContent.includes('\ntft_dc,4\n'));
@@ -308,6 +366,17 @@ function test_the_page_builds_every_part_and_follows_the_clicks() {
   assert.ok(csv.textContent.includes('\nencoder_left,8\n'));
   /* The armed state is spent by the click. */
   assert.ok(!pin8.classList.contains('is-target'));
+
+  /* The display's RST moves between a GPIO and the module's RST pad from
+     the list as well as from the picture; the CSV follows. */
+  const reset = document.getElementById('hw-tft_reset');
+  assert.ok(reset.children.some((option) => option.value === 'rst'));
+  reset.value = '8';
+  reset.emit('change');
+  assert.ok(document.getElementById('hw-csv').textContent.includes('tft_reset,8\n'));
+  reset.value = 'rst';
+  reset.emit('change');
+  assert.ok(document.getElementById('hw-csv').textContent.includes('tft_reset,rst\n'));
 
   /* A conflict shows on both pins and in the report, and blocks the download. */
   const cs = document.getElementById('hw-tft_cs');
@@ -362,7 +431,7 @@ function test_every_label_the_page_needs_is_in_the_dictionary() {
     assert.notStrictEqual(t(`hw.dev.${device}`), `hw.dev.${device}`, `device ${device}`);
   }
   for (const code of ['pin_conflict', 'pin_missing', 'pin_not_on_header', 'pin_psram', 'pin_console', 'pin_usb',
-                      'usb_pin_fixed', 'bus_unwired', 'bad_value', 'sleep_not_rtc', 'rtc_int_not_rtc', 'spi_not_iomux']) {
+                      'usb_pin_fixed', 'bus_unwired', 'bad_value', 'sleep_not_rtc', 'ir_not_rtc', 'spi_not_iomux']) {
     assert.notStrictEqual(t(`hw.err.${code}`), `hw.err.${code}`, `report ${code}`);
   }
   for (const code of ['pin_psram', 'pin_console', 'pin_usb', 'pin_strapping', 'pin_jtag']) {

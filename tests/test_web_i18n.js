@@ -26,7 +26,10 @@ vm.createContext(context);
 vm.runInContext(fs.readFileSync('data/www/i18n.js', 'utf8'), context);
 const i18n = context.window.jradioI18n;
 
-const PAGES = ['index.html', 'playlist.html', 'settings.html', 'hardware.html', 'remote.html'];
+/* The device's pages, plus the wiring editor, which ships on the flasher
+   site (flasher/) and shares the device's dictionary. */
+const PAGES = ['index.html', 'playlist.html', 'settings.html', 'remote.html', 'flasher/hardware.html'];
+const pagePath = (page) => (page.startsWith('flasher/') ? page : `data/www/${page}`);
 const MARKERS = ['data-i18n', 'data-i18n-aria', 'data-i18n-placeholder', 'data-i18n-title',
                  'data-i18n-page', 'data-i18n-attr'];
 
@@ -46,7 +49,7 @@ function keysIn(html) {
 // Every key the markup names has to be in the dictionary, in both languages.
 let checked = 0;
 for (const page of PAGES) {
-  const html = fs.readFileSync(`data/www/${page}`, 'utf8');
+  const html = fs.readFileSync(pagePath(page), 'utf8');
   for (const key of keysIn(html)) {
     const ru = i18n.t(key);
     i18n.setLanguage('en');
@@ -98,14 +101,14 @@ const ALLOWED_UNTAGGED = [
    it became a title attribute on the body, a hint following the cursor over
    the whole page. */
 for (const page of PAGES) {
-  const html = fs.readFileSync(`data/www/${page}`, 'utf8');
+  const html = fs.readFileSync(pagePath(page), 'utf8');
   const body = html.match(/<body[^>]*>/)[0];
   assert.ok(!body.includes('data-i18n-title'), `${page}: <body> carries a tooltip marker`);
   assert.ok(body.includes('data-i18n-page='), `${page}: <body> names no page title`);
 }
 
 for (const page of PAGES) {
-  const html = fs.readFileSync(`data/www/${page}`, 'utf8');
+  const html = fs.readFileSync(pagePath(page), 'utf8');
   const pattern = /<[^<>]*>([^<>]*?[А-Яа-яЁё][^<>]*?)</gs;
   let match = pattern.exec(html);
   while (match !== null) {

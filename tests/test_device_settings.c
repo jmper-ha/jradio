@@ -25,6 +25,9 @@ static void test_defaults_and_load(void)
     assert(settings.language == DEVICE_LANGUAGE_RU);
     assert(settings.home_screen == DEVICE_HOME_SCREEN_TEXT);
     assert(!settings.flip_vertical && !settings.flip_horizontal);
+    /* Off by default: the profile's measured inversion is the baseline, and
+     * this switch is for the other kind of glass. */
+    assert(!settings.invert_colors);
     /* On by default: a device whose firmware has Yandex Music should show it
      * without the user first going to find a switch. */
     assert(settings.yandex_music);
@@ -47,6 +50,7 @@ static void test_values_and_unknown_lines_are_saved(void)
     assert(device_settings_set_home_screen(&settings, DEVICE_HOME_SCREEN_FEED));
     assert(device_settings_set_flip_vertical(&settings, true));
     assert(device_settings_set_flip_horizontal(&settings, true));
+    assert(device_settings_set_invert_colors(&settings, true));
     assert(device_settings_set_buffer_view(&settings, DEVICE_BUFFER_VIEW_GRAPH));
 
     char value[32];
@@ -57,6 +61,8 @@ static void test_values_and_unknown_lines_are_saved(void)
     assert(settings_csv_get(test_path, "home_screen", value, sizeof(value)));
     assert(strcmp(value, "feed") == 0);
     assert(settings_csv_get(test_path, "display_flip_vertical", value, sizeof(value)));
+    assert(strcmp(value, "1") == 0);
+    assert(settings_csv_get(test_path, "display_invert_colors", value, sizeof(value)));
     assert(strcmp(value, "1") == 0);
     assert(settings_csv_get(test_path, "buffer_view", value, sizeof(value)));
     assert(strcmp(value, "graph") == 0);

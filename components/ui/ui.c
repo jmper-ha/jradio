@@ -327,7 +327,7 @@ static lv_obj_t *s_settings_more_above;
 static lv_obj_t *s_settings_more_below;
 /* One per boolean setting, not per row on screen: only one group is open at
  * a time, so at most three are ever visible, but each keeps its own object. */
-#define UI_SETTINGS_SWITCH_COUNT 7U
+#define UI_SETTINGS_SWITCH_COUNT 8U
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
@@ -2956,6 +2956,10 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_FLIP_HORIZONTAL,
                                  s_device_settings.flip_horizontal);
         break;
+    case UI_SETTINGS_ROW_INVERT_COLORS_FIELD:
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_INVERT_COLORS,
+                                 s_device_settings.invert_colors);
+        break;
     case UI_SETTINGS_ROW_ABOUT:
         /* No indent and no value: it is not a field inside a group, and there
          * is nothing beside it to show - a press opens something instead. */
@@ -3001,6 +3005,10 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     case UI_SETTINGS_ROW_BT_OUTPUT_FIELD:
         *index = 6U;
         *value = s_device_settings.bt_output;
+        return true;
+    case UI_SETTINGS_ROW_INVERT_COLORS_FIELD:
+        *index = 7U;
+        *value = s_device_settings.invert_colors;
         return true;
     default:
         return false;
@@ -3232,6 +3240,10 @@ static void ui_apply_display_rotation(void)
 {
     (void)board_display_set_rotation(s_device_settings.flip_vertical,
                                      s_device_settings.flip_horizontal);
+    /* The inversion rides along: it is the third switch for a module that is
+     * not the author's, and every caller here is re-applying "how the panel
+     * is set up" after the settings were read or rewritten. */
+    (void)board_display_set_invert(s_device_settings.invert_colors);
     lv_obj_t *screen = lv_screen_active();
     if (screen != NULL) lv_obj_invalidate(screen);
 }
@@ -3814,6 +3826,13 @@ static void ui_settings_change_selected(void)
         changed = device_settings_set_flip_horizontal(&s_device_settings,
                                                       !s_device_settings.flip_horizontal);
         if (changed) ui_apply_display_rotation();
+        break;
+    case UI_SETTINGS_ROW_INVERT_COLORS_FIELD:
+        changed = device_settings_set_invert_colors(&s_device_settings,
+                                                    !s_device_settings.invert_colors);
+        /* Unlike a mirror this reaches the glass whole and at once: nothing
+         * to invalidate. */
+        if (changed) (void)board_display_set_invert(s_device_settings.invert_colors);
         break;
     default:
         return;

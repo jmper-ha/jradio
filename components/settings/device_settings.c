@@ -254,6 +254,9 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     if (read_value(path, "display_flip_horizontal", value, sizeof(value))) {
         (void)parse_bool(value, &settings->flip_horizontal);
     }
+    if (read_value(path, "display_invert_colors", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->invert_colors);
+    }
     if (read_value(path, "autoplay", value, sizeof(value))) {
         (void)parse_bool(value, &settings->autoplay);
     }
@@ -461,6 +464,18 @@ bool device_settings_set_flip_horizontal(device_settings_t *settings, bool enabl
     if (!save_value(settings, "display_flip_horizontal", enabled ? "1" : "0")) return false;
     settings->flip_horizontal = enabled;
     return true;
+}
+
+bool device_settings_set_invert_colors(device_settings_t *settings, bool enabled)
+{
+    if (!save_value(settings, "display_invert_colors", enabled ? "1" : "0")) return false;
+    settings->invert_colors = enabled;
+    return true;
+}
+
+bool device_settings_set_invert_colors_value(device_settings_t *settings, int value)
+{
+    return value == 0 || value == 1 ? device_settings_set_invert_colors(settings, value != 0) : false;
 }
 
 bool device_settings_set_flip_vertical_value(device_settings_t *settings, int value)

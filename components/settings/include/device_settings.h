@@ -191,6 +191,12 @@ typedef struct {
     device_buffer_view_t buffer_view;
     bool flip_vertical;
     bool flip_horizontal;
+    /* The panel's colour inversion, on top of what the display profile
+     * measured: IPS and TN glass on the same controller want INVON the other
+     * way round, and a module bought elsewhere shows a negative until this is
+     * flipped. A setting rather than a build option so a ready-made image
+     * fits either glass. */
+    bool invert_colors;
     /* Resume what was playing at power-off instead of opening the home
      * screen. What "what was playing" means is the two fields below: the
      * radio's own last-station URL is stored separately by station_resume. */
@@ -271,6 +277,8 @@ bool device_settings_set_flip_vertical(device_settings_t *settings, bool enabled
 bool device_settings_set_flip_horizontal(device_settings_t *settings, bool enabled);
 bool device_settings_set_flip_vertical_value(device_settings_t *settings, int value);
 bool device_settings_set_flip_horizontal_value(device_settings_t *settings, int value);
+bool device_settings_set_invert_colors(device_settings_t *settings, bool enabled);
+bool device_settings_set_invert_colors_value(device_settings_t *settings, int value);
 bool device_settings_set_autoplay(device_settings_t *settings, bool enabled);
 bool device_settings_set_yandex_music(device_settings_t *settings, bool enabled);
 bool device_settings_set_dlna(device_settings_t *settings, bool enabled);

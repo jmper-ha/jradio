@@ -94,6 +94,11 @@ static const ui_settings_row_t s_field_rows[] = {
         .group = UI_SETTINGS_GROUP_DISPLAY,
         .kind = UI_SETTINGS_ROW_FIELD,
     },
+    {
+        .id = UI_SETTINGS_ROW_INVERT_COLORS_FIELD,
+        .group = UI_SETTINGS_GROUP_DISPLAY,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
 };
 
 #define UI_SETTINGS_FIELD_ROW_COUNT (sizeof(s_field_rows) / sizeof(s_field_rows[0]))

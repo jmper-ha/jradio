@@ -41,6 +41,9 @@ typedef enum {
     UI_SETTINGS_ROW_SCREENSAVER_FIELD,
     UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD,
     UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD,
+    /* Next to the flips because it answers the same complaint - a module
+     * that is not the author's: IPS and TN glass invert the other way round. */
+    UI_SETTINGS_ROW_INVERT_COLORS_FIELD,
     /* The last row of the list, and in no group: what it opens is not a
      * setting and has nothing to change. It sits after the groups rather than
      * inside one because it is about the device as a whole - the versions it

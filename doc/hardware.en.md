@@ -51,10 +51,10 @@ without hardware - Yandex Music and DLNA - are switched with the
 | TFT CS | 10 | | Encoder button | 6 |
 | TFT DC | 47 | | Encoder A | 5 |
 | TFT MOSI | 11 | | Encoder B | 7 |
-| TFT SCLK | 12 | | Sleep button (F1) | 21 |
+| TFT SCLK | 12 | | Sleep button | 21 |
 | Backlight | 2 | | Quick_menu button | 45 |
-| PCM5102 DOUT | 16 | | Prev button (F3) | 46 |
-| PCM5102 BCLK | 18 | | Next button (F4) | 9 |
+| PCM5102 DOUT | 16 | | Prev button | 46 |
+| PCM5102 BCLK | 18 | | Next button | 9 |
 | PCM5102 LRCK | 17 | | USB D− | 19 |
 | microSD CS | 1 | | USB D+ | 20 |
 | microSD SCK | 41 | | IR receiver (optional) | 4 |

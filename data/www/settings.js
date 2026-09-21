@@ -125,6 +125,7 @@
     {field: 'flip_vertical', kind: 'switch', node: document.querySelector('#device-flip-vertical')},
     {field: 'flip_horizontal', kind: 'switch',
      node: document.querySelector('#device-flip-horizontal')},
+    {field: 'invert_colors', kind: 'switch', node: document.querySelector('#device-invert-colors')},
   ];
 
   const reconnectDelays = Object.freeze([500, 1000, 2000, 4000, 8000]);

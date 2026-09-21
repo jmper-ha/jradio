@@ -1038,7 +1038,7 @@ static esp_err_t board_display_splash(void)
     return ESP_OK;
 }
 
-static esp_err_t board_display_init(bool flip_vertical, bool flip_horizontal)
+static esp_err_t board_display_init(bool flip_vertical, bool flip_horizontal, bool invert_colors)
 {
     s_lcd_transfer_done = xSemaphoreCreateBinary();
     if (s_lcd_transfer_done == NULL) {
@@ -1113,6 +1113,7 @@ static esp_err_t board_display_init(bool flip_vertical, bool flip_horizontal)
      * board_display_set_rotation(). */
     ESP_RETURN_ON_ERROR(board_display_set_rotation(flip_vertical, flip_horizontal), TAG,
                         "set LCD mirror failed");
+    ESP_RETURN_ON_ERROR(board_display_set_invert(invert_colors), TAG, "set LCD inversion failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(panel, true), TAG, "turn LCD on failed");
     return board_display_splash();
 }
@@ -1142,6 +1143,14 @@ esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal)
     s_scroll_flipped = TFT_WIDTH > TFT_HEIGHT ? flip_horizontal : flip_vertical;
     return esp_lcd_panel_mirror(s_panel, flip_horizontal != (bool)TFT_MIRROR_X,
                                 flip_vertical != (bool)TFT_MIRROR_Y);
+}
+
+/* XOR with the profile's baseline for the same reason as the mirrors: the
+ * switch must be able to undo a baseline INVON as well as add one. */
+esp_err_t board_display_set_invert(bool invert_colors)
+{
+    if (s_panel == NULL) return ESP_ERR_INVALID_STATE;
+    return esp_lcd_panel_invert_color(s_panel, invert_colors != (TFT_INVERT_COLOR != 0));
 }
 
 esp_err_t board_display_scroll(int offset)
@@ -1310,7 +1319,7 @@ void board_deep_sleep(uint32_t wake_after_seconds)
 #endif
 }
 
-esp_err_t board_init(bool flip_vertical, bool flip_horizontal, bool dark)
+esp_err_t board_init(bool flip_vertical, bool flip_horizontal, bool invert_colors, bool dark)
 {
     ESP_LOGI(TAG, "initializing input, PWM backlight, I2S and " BOARD_PANEL_NAME);
     /* Before any of them is addressed, and before the hold from a previous
@@ -1327,7 +1336,7 @@ esp_err_t board_init(bool flip_vertical, bool flip_horizontal, bool dark)
 #endif
     ESP_RETURN_ON_ERROR(board_backlight_init(), TAG, "initialize backlight failed");
     ESP_RETURN_ON_ERROR(board_audio_init(), TAG, "initialize PCM5102 I2S output failed");
-    ESP_RETURN_ON_ERROR(board_display_init(flip_vertical, flip_horizontal), TAG,
+    ESP_RETURN_ON_ERROR(board_display_init(flip_vertical, flip_horizontal, invert_colors), TAG,
                         "initialize " BOARD_PANEL_NAME " failed");
     ESP_RETURN_ON_ERROR(board_backlight_set(dark ? 0 : 50), TAG,
                         "set initial backlight failed");

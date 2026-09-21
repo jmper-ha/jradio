@@ -71,6 +71,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_SCREENSAVER_CLOCK] = {"Часы", "Clock"},
     [DEVICE_TEXT_ROW_FLIP_VERTICAL] = {"Поворот по вертикали", "Flip vertically"},
     [DEVICE_TEXT_ROW_FLIP_HORIZONTAL] = {"Поворот по горизонтали", "Flip horizontally"},
+    [DEVICE_TEXT_ROW_INVERT_COLORS] = {"Инверсия цветов", "Invert colours"},
     [DEVICE_TEXT_ROW_WEB_ADDRESS] = {"QR по нажатию", "QR on press"},
     [DEVICE_TEXT_ROW_ABOUT] = {"Об устройстве", "About"},
     [DEVICE_TEXT_ON] = {"вкл", "on"},

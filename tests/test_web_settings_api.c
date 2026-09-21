@@ -119,6 +119,10 @@ static void test_switches_take_booleans_only(void)
     assert(change.field == WEB_SETTINGS_FIELD_FLIP_HORIZONTAL);
     assert(change.value == 0);
 
+    assert(parse_one("{\"field\":\"invert_colors\",\"value\":true}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_INVERT_COLORS);
+    assert(change.value == 1);
+
     assert(!parse_one("{\"field\":\"autoplay\",\"value\":1}", &change));
     assert(!parse_one("{\"field\":\"autoplay\",\"value\":\"on\"}", &change));
 }
@@ -426,6 +430,9 @@ static void test_view_comparison_notices_every_field(void)
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.flip_horizontal = !base.flip_horizontal;
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.invert_colors = !base.invert_colors;
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.weather = DEVICE_WEATHER_OPEN_METEO;

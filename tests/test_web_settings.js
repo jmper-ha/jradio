@@ -91,7 +91,7 @@ const ids = [
   'bt-output-block', 'device-bt-output', 'bt-speakers', 'bt-speakers-empty',
   'bt-chosen', 'bt-chosen-name', 'bt-chosen-state', 'bt-scan',
   'device-brightness',
-  'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal',
+  'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal', 'device-invert-colors',
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
   'device-idle-brightness-value', 'device-screensaver-after-row',
   'device-idle-brightness-row',
@@ -175,6 +175,7 @@ let settingsReply = {
   language: 'ru', home_screen: 'text', scroll: 'bounce', buffer_view: 'graph',
   autoplay: false,
   yandex_music: true, dlna: false, flip_vertical: false, flip_horizontal: true,
+  invert_colors: true,
   brightness: 45, volume: 62,
   available: {home_screen: true, yandex_music: false, dlna: true, bt_output: true},
   brightness_min: 10, brightness_max: 90,
@@ -661,6 +662,7 @@ function lastYandexTimer() {
   assert.equal(elements['#device-buffer-view'].value, 'graph');
   assert.equal(elements['#device-autoplay'].checked, false);
   assert.equal(elements['#device-flip-horizontal'].checked, true);
+  assert.equal(elements['#device-invert-colors'].checked, true);
   assert.equal(elements['#device-brightness'].value, '45');
   assert.equal(elements['#device-brightness-value'].textContent, '45');
   // The slider stops where the encoder does, and the device says where.

@@ -31,7 +31,7 @@ decoder) stay in the list but are marked and do not respond.
 **What plays:** MP3, AAC, FLAC, Ogg - with the same decoder as internet
 radio. WAV does not play from a server (it does from a stick). The performer,
 the title and the cover come from the tags the server sends. When a track
-ends, the next one in the folder starts; F3/F4 and the web buttons step
+ends, the next one in the folder starts; Prev/Next and the web buttons step
 through.
 
 ## Resume

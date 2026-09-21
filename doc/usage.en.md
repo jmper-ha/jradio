@@ -42,12 +42,12 @@ choice is remembered in the browser.
 | Double press | Open the station or file list (the music keeps playing) |
 | Triple press | Scrub: turn to pick a position, press to apply |
 | Long press | Home screen (or back); playback stops |
-| Hold F1 | Deep sleep |
+| Hold Sleep | Deep sleep |
 | Quick_menu | The quick panel - a window over the screen |
-| F3 / F4 | Previous / next track or station |
+| Prev / Next | Previous / next track or station |
 
 A single press acts with a small delay - otherwise it could not be told from
-the start of a double one. A short press of F1 does nothing yet.
+the start of a double one. A short press of Sleep does nothing yet.
 
 ### The remote control
 
@@ -66,7 +66,7 @@ its code.
 | Volume up / down | Volume; ramps while held |
 | Mute | Silence and back to the previous volume |
 | Play / pause, OK | As a press of the encoder |
-| Previous / Next | As F3 / F4 |
+| Previous / Next | As Prev / Next |
 | Up / Down | As turning the encoder in a list |
 | Back, Menu | As a long press of the encoder |
 | Quick panel | As Quick_menu |
@@ -75,7 +75,7 @@ its code.
 | Like / Dislike | Rate the Yandex Music track |
 | 0-9 | An internet-radio station number |
 | Radio, USB, SD, Bluetooth, Yandex, Media server | Switch the source |
-| Sleep / wake | As holding F1 - sleep; and wake |
+| Sleep / wake | As holding Sleep - sleep; and wake |
 
 **Digits** dial a station by its list number: two digits in a row select at
 once; one digit selects after a second and a half, or at once when no
@@ -154,7 +154,7 @@ menu has a Bluetooth source. Choosing it opens the player screen, and the
 device is visible in the phone's Bluetooth under its name (`jradio-XXXX` or
 the one set in the settings) for about two minutes; a known phone connects by
 itself. Then it is like the radio: the phone's name in place of the station,
-the track and the cover from the phone, F3/F4 walk its queue, the encoder is
+the track and the cover from the phone, Prev/Next walk its queue, the encoder is
 the volume both ways.
 
 **Sound to a Bluetooth speaker.** Everything the device plays can go to a
@@ -193,12 +193,12 @@ shows in the window at once.
 
 ### Deep sleep
 
-Hold F1 for a second and the device goes to sleep: the screen goes dark,
+Hold Sleep for a second and the device goes to sleep: the screen goes dark,
 playback stops, pending settings are written, Bluetooth and Wi-Fi leave
 cleanly. With a peripheral power switch fitted, the whole periphery is
 powered down too.
 
-The same F1, or a learned key on the remote, wakes it. Waking is an ordinary
+The same Sleep, or a learned key on the remote, wakes it. Waking is an ordinary
 boot; what plays is decided by the Resume setting. For Bluetooth, resume
 brings back the waiting-for-the-phone screen - the sound comes from the phone,
 there is nothing to resume.

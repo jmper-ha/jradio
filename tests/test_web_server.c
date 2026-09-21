@@ -75,6 +75,7 @@ static web_socket_settings_state_t sample_settings(void)
             .yandex_music = true,
             .flip_vertical = false,
             .flip_horizontal = true,
+            .invert_colors = true,
             .home_screen_available = true,
             .yandex_available = true,
         },
@@ -215,6 +216,8 @@ static void test_snapshot_has_exact_public_sections_and_no_secrets(void)
                   "feed") == 0);
     assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(settings_json,
                                                         "flip_horizontal")));
+    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(settings_json,
+                                                        "invert_colors")));
     cJSON_Delete(root);
 
     /* Nothing published yet: the key is left out entirely rather than filled

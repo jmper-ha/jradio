@@ -215,11 +215,12 @@ static void test_the_display_group_holds_a_number_the_knob_edits(void)
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DISPLAY_GROUP);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_row_count(&model) == 8U);
+    assert(ui_settings_model_row_count(&model) == 9U);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD);
     assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_SCREENSAVER_FIELD);
     assert(ui_settings_model_row_at(&model, 5U).id == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD);
     assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD);
+    assert(ui_settings_model_row_at(&model, 7U).id == UI_SETTINGS_ROW_INVERT_COLORS_FIELD);
 
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_BRIGHTNESS_FIELD);
@@ -297,13 +298,13 @@ static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
     assert(!ui_settings_model_has_rows_above(&model));
     assert(!ui_settings_model_has_rows_below(&model, visible));
 
-    /* Open Display, a group that overflows five rows: 3 headings + 4 fields
+    /* Open Display, a group that overflows five rows: 3 headings + 5 fields
      * + About. */
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
     const size_t count = ui_settings_model_row_count(&model);
-    assert(count == 8U);
+    assert(count == 9U);
     /* The furthest the cursor goes: the last field of the open group. About
      * is the row after it and belongs to no group, so an open group cannot
      * reach it - hence "count - 2" rather than "count - 1". */

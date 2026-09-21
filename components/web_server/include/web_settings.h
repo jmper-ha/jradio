@@ -46,6 +46,7 @@ typedef enum {
     WEB_SETTINGS_FIELD_BT_OUTPUT,
     WEB_SETTINGS_FIELD_FLIP_VERTICAL,
     WEB_SETTINGS_FIELD_FLIP_HORIZONTAL,
+    WEB_SETTINGS_FIELD_INVERT_COLORS,
     WEB_SETTINGS_FIELD_BRIGHTNESS,
     WEB_SETTINGS_FIELD_VOLUME,
     WEB_SETTINGS_FIELD_TIMEZONE,
@@ -125,6 +126,7 @@ typedef struct web_settings_view {
     bool bt_output;
     bool flip_vertical;
     bool flip_horizontal;
+    bool invert_colors;
     /* The zone as its row in device_timezone.h rather than its id: this view
      * is kept per queued WebSocket frame and compared on every pass, and a
      * string here would cost every frame the whole id. Past the end means the

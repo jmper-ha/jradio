@@ -51,10 +51,10 @@
 | TFT CS | 10 | | Кнопка энкодера | 6 |
 | TFT DC | 47 | | Энкодер A | 5 |
 | TFT MOSI | 11 | | Энкодер B | 7 |
-| TFT SCLK | 12 | | Кнопка Sleep (F1) | 21 |
+| TFT SCLK | 12 | | Кнопка Sleep | 21 |
 | Подсветка | 2 | | Кнопка Quick_menu | 45 |
-| PCM5102 DOUT | 16 | | Кнопка Prev (F3) | 46 |
-| PCM5102 BCLK | 18 | | Кнопка Next (F4) | 9 |
+| PCM5102 DOUT | 16 | | Кнопка Prev | 46 |
+| PCM5102 BCLK | 18 | | Кнопка Next | 9 |
 | PCM5102 LRCK | 17 | | USB D− | 19 |
 | microSD CS | 1 | | USB D+ | 20 |
 | microSD SCK | 41 | | ИК-приёмник (по желанию) | 4 |

@@ -12,18 +12,18 @@ anywhere. The account is unlinked in the same place.
 **Stations.** The ones Yandex offers your account: "My Wave" and a few to your
 taste. The list is the same as in the phone app.
 
-**Controls.** Play, pause, next track - F4 on the device or the button in the
+**Controls.** Play, pause, next track - Next on the device or the button in the
 web interface. There is no "previous track": a station only goes forward.
 
-**Like.** F3 sets and clears the mark - the track joins your favourites or
+**Like.** Prev sets and clears the mark - the track joins your favourites or
 leaves them, as in the app. On the player screen it is the heart next to the
 volume: outlined without a mark, filled with one. What was liked before,
 Yandex reports itself, so the heart is filled for songs marked from the phone
 too.
 
-**Dislike.** A double press of F3: the track goes to the rejected ones, the
+**Dislike.** A double press of Prev: the track goes to the rejected ones, the
 station stops offering it, the heart becomes crossed out. Any next press of
-F3 clears the mark. In the web interface dislike has its own button next to
+Prev clears the mark. In the web interface dislike has its own button next to
 the heart. The two marks exclude each other.
 
 **The device tells Yandex what you listened to** - what was started, what

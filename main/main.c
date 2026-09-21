@@ -168,9 +168,10 @@ void app_main(void)
     // exist by the time player_control and ui are running, and app_main is
     // still the only task at this point.
     settings_csv_init();
-    /* The settings are read here, before the board, for two of them: the boot
-     * splash is drawn at the end of board_init(), and the panel's flip is the
-     * one thing that cannot be applied to a picture after it has been drawn.
+    /* The settings are read here, before the board, for three of them: the
+     * boot splash is drawn at the end of board_init(), the panel's flip is the
+     * one thing that cannot be applied to a picture after it has been drawn,
+     * and its colour inversion would show the splash as a negative first.
      * The mount is what settings.csv lives on and happens anyway a moment
      * later, inside Wi-Fi; asking for it early is free, it is idempotent, and
      * the screen is still black at this point - the backlight comes up only
@@ -193,6 +194,7 @@ void app_main(void)
     // drive them with. A reboot loop is at least an honest signal there.
     ESP_ERROR_CHECK(board_init(settings_read && boot_settings.flip_vertical,
                                settings_read && boot_settings.flip_horizontal,
+                               settings_read && boot_settings.invert_colors,
                                alarm_boot_pending()));
     /* Both may already be up: the alarm check above needs the network and the
      * clock before the board exists, and neither is started twice. */

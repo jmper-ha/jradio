@@ -6,17 +6,19 @@
 
 #include "esp_err.h"
 
-/* The display's two flip settings are arguments, and no other setting is,
- * because this ends by drawing the boot splash: MADCTL steers where arriving
- * pixels land and moves nothing already on the glass, so a splash drawn before
- * the switches are known stays the way it was written. Everything else the
- * settings decide - brightness, volume - is applied later by the UI, which is
- * why only these two have to be here. */
+/* The display's two flip settings are arguments, and so is the colour
+ * inversion, because this ends by drawing the boot splash: MADCTL steers where
+ * arriving pixels land and moves nothing already on the glass, so a splash
+ * drawn before the switches are known stays the way it was written. Inversion
+ * would take effect on the glass at once, but a splash that flashes up as a
+ * negative and then corrects itself is not a boot anyone should watch.
+ * Everything else the settings decide - brightness, volume - is applied later
+ * by the UI, which is why only these three have to be here. */
 /* `dark` leaves the backlight at zero when the board comes up: the alarm's
  * last hop boots a minute before it rings, and a panel that lights the bedroom
  * at 6:59 is not what the alarm was set for. The splash is still drawn - the
  * UI raises the backlight when the alarm goes off, or at the first press. */
-esp_err_t board_init(bool flip_vertical, bool flip_horizontal, bool dark);
+esp_err_t board_init(bool flip_vertical, bool flip_horizontal, bool invert_colors, bool dark);
 esp_err_t board_backlight_set(uint8_t percent);
 /* The switch feeding everything outside the module - the panel, the DAC, the
  * card, the Bluetooth module, the USB port - on boards that wire
@@ -91,6 +93,11 @@ esp_err_t board_display_scroll(int offset);
  * wire - a byte swap on the 16-bit panels, nothing on the converting ones. */
 void board_display_to_wire(uint16_t *pixels, size_t count);
 esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal);
+/* The user's inversion switch on top of the profile's measured baseline: IPS
+ * and TN glass on the same controller read the same memory the other way
+ * round, and a module from another shop shows a negative until this is
+ * flipped. Takes effect on the glass at once. */
+esp_err_t board_display_set_invert(bool invert_colors);
 
 /* Loudest sample per channel since the previous call, then resets. Taking
  * rather than reading matters: PCM arrives a block at a time - 26 ms of MP3,

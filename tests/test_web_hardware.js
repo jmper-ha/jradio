@@ -49,6 +49,34 @@ function test_the_file_round_trips() {
   assert.deepStrictEqual(keys, hw.FIELDS.map((field) => field.key));
 }
 
+function test_the_header_round_trips_and_names_every_option() {
+  const values = {...hw.defaults(), board_name: 'bench', dlna: 0, tft_reset: 8};
+  const header = hw.toHeader(values);
+  /* Every #define the repository's own header carries is here too. */
+  for (const name of ['DISPLAY', 'DISPLAY_SPI_PERIPHERAL', 'TFT_CS_GPIO', 'TFT_DC_GPIO', 'TFT_MOSI_GPIO',
+                      'TFT_SCLK_GPIO', 'TFT_BACKLIGHT_GPIO', 'ENCODER_RIGHT_GPIO', 'ENCODER_LEFT_GPIO',
+                      'ENCODER_BUTTON_GPIO', 'BUTTON_SLEEP_GPIO', 'BUTTON_QUICK_MENU_GPIO', 'BUTTON_PREV_GPIO',
+                      'BUTTON_NEXT_GPIO', 'ENCODER_USE_INTERNAL_PULLUPS', 'BUTTONS_USE_INTERNAL_PULLUPS',
+                      'AUDIO_DAC', 'I2S_DOUT_GPIO', 'I2S_BCLK_GPIO', 'I2S_LRCK_GPIO', 'AUDIO_DAC_HAS_MCLK',
+                      'USB_DM_GPIO', 'USB_DP_GPIO', 'USB_VBUS_SWITCHED', 'SDC_SPI_PERIPHERAL', 'SDC_CS_GPIO',
+                      'SDC_SCK_GPIO', 'SDC_MISO_GPIO', 'SDC_MOSI_GPIO', 'SDC_HAS_CARD_DETECT', 'YANDEX_MUSIC',
+                      'DLNA', 'TFT_RESET_GPIO']) {
+    assert.ok(new RegExp(`^#define ${name} `, 'm').test(header), name);
+  }
+  assert.ok(header.includes('#define DLNA FEATURE_OFF'));
+  const back = hw.parseHeader(header);
+  assert.deepStrictEqual(back.values, values);
+  assert.deepStrictEqual(back.unknown, []);
+  /* The module's RST pad is no #define; it reads back as itself. */
+  const tied = hw.toHeader(hw.defaults());
+  assert.ok(!/^#define TFT_RESET_GPIO/m.test(tied));
+  assert.strictEqual(hw.parseHeader(tied).values.tft_reset, hw.RESET);
+  /* A part switched on writes its block; off, a comment in its place. */
+  const bt = hw.setDeviceEnabled(hw.defaults(), 'bluetooth', true);
+  assert.ok(hw.toHeader(bt).includes('#define BT_UART_TX_GPIO 13'));
+  assert.strictEqual(hw.parseHeader(hw.toHeader(bt)).values.bluetooth, 'jradio_bt');
+}
+
 function test_a_partial_file_means_the_defaults_for_the_rest() {
   const parsed = hw.parseCsv('bluetooth,jradio_bt\nuart1_tx,13\nuart1_rx,14\n');
   assert.strictEqual(parsed.values.bluetooth, 'jradio_bt');
@@ -342,11 +370,13 @@ function test_the_page_builds_every_part_and_follows_the_clicks() {
   const miso = spi2.querySelectorAll('.hw-row').find((row) => row.dataset.key === 'spi2_miso');
   assert.ok(miso.hidden);
 
-  /* The file under the editor is the README board. */
+  /* The file under the editor is the README board, as the header the
+     firmware is built from - the CSV is the draft's, not the reader's. */
   const csv = document.getElementById('hw-csv');
-  assert.ok(csv.textContent.includes('\ntft_cs,10\n'));
-  assert.ok(csv.textContent.includes('\nbluetooth,none\n'));
-  assert.ok(!csv.textContent.includes('usb_vbus'));
+  assert.ok(csv.textContent.includes('\n#define TFT_CS_GPIO 10\n'));
+  assert.ok(csv.textContent.includes('No Bluetooth module'));
+  assert.ok(!csv.textContent.includes('BLUETOOTH BLUETOOTH_'));
+  assert.ok(csv.textContent.includes('#define DLNA FEATURE_ON'));
 
   /* The list runs by number, and the row's label carries the header's name
      for the same setting. */
@@ -359,7 +389,7 @@ function test_the_page_builds_every_part_and_follows_the_clicks() {
   /* A pin picked from the list reaches the file and the picture. */
   select.value = '4';
   select.emit('change');
-  assert.ok(csv.textContent.includes('\ntft_dc,4\n'));
+  assert.ok(csv.textContent.includes('\n#define TFT_DC_GPIO 4\n'));
   const svg = document.getElementById('hw-svg');
   const pin4 = svg.querySelectorAll('.hw-gpio').find((node) => node.dataset.gpio === '4');
   assert.ok(pin4.classList.contains('is-used'));
@@ -374,7 +404,7 @@ function test_the_page_builds_every_part_and_follows_the_clicks() {
   const pin8 = svg.querySelectorAll('.hw-gpio').find((node) => node.dataset.gpio === '8');
   assert.ok(pin8.classList.contains('is-target'));
   pin8.click();
-  assert.ok(csv.textContent.includes('\nencoder_left,8\n'));
+  assert.ok(csv.textContent.includes('\n#define ENCODER_LEFT_GPIO 8\n'));
   /* The armed state is spent by the click. */
   assert.ok(!pin8.classList.contains('is-target'));
 
@@ -384,10 +414,10 @@ function test_the_page_builds_every_part_and_follows_the_clicks() {
   assert.ok(reset.children.some((option) => option.value === 'rst'));
   reset.value = '8';
   reset.emit('change');
-  assert.ok(document.getElementById('hw-csv').textContent.includes('tft_reset,8\n'));
+  assert.ok(document.getElementById('hw-csv').textContent.includes('#define TFT_RESET_GPIO 8\n'));
   reset.value = 'rst';
   reset.emit('change');
-  assert.ok(document.getElementById('hw-csv').textContent.includes('tft_reset,rst\n'));
+  assert.ok(document.getElementById('hw-csv').textContent.includes("tied to the module's RST"));
 
   /* A conflict shows on both pins and in the report, and blocks the download. */
   const cs = document.getElementById('hw-tft_cs');
@@ -403,27 +433,35 @@ function test_the_page_builds_every_part_and_follows_the_clicks() {
   const pin43 = svg.querySelectorAll('.hw-gpio').find((node) => node.dataset.gpio === '43');
   assert.ok(pin43.classList.contains('is-blocked'));
   pin43.click();
-  assert.ok(!csv.textContent.includes('encoder_left,43'));
+  assert.ok(!csv.textContent.includes('ENCODER_LEFT_GPIO 43'));
   assert.ok(document.getElementById('hw-status').classList.contains('is-error'));
 
   /* Switching the module on wires its UART and colours the pins. */
   const btToggle = sections.find((section) => section.dataset.device === 'bluetooth').querySelector('.hw-group-toggle');
   btToggle.checked = true;
   btToggle.emit('change');
-  assert.ok(csv.textContent.includes('\nbluetooth,jradio_bt\n'));
+  assert.ok(csv.textContent.includes('\n#define BLUETOOTH BLUETOOTH_JRADIO_BT\n'));
   const pin13 = svg.querySelectorAll('.hw-gpio').find((node) => node.dataset.gpio === '13');
   assert.ok(pin13.classList.contains('hw-dev-uart1'));
 
-  /* Pasting a file replaces the board. */
-  document.getElementById('hw-import').value = 'tft_cs,10\ntft_dc,47\nencoder_left,7\nfuture,1\n';
+  /* Pasting a header replaces the board: a line the editor does not know
+     is reported, a commented-out part is off, the software switches follow. */
+  document.getElementById('hw-import').value =
+    '#define TFT_CS_GPIO 10\n#define TFT_DC_GPIO 47\n#define ENCODER_LEFT_GPIO 7\n' +
+    '/* #define SDC_CS_GPIO 1 */\n#define DLNA FEATURE_OFF\n#define FUTURE_GPIO 1\n';
   document.getElementById('hw-import-apply').click();
-  assert.ok(csv.textContent.includes('\ntft_dc,47\n'));
-  assert.ok(document.getElementById('hw-import-status').textContent.includes('future'));
-  assert.ok(!document.getElementById('hw-download').disabled);
+  assert.ok(csv.textContent.includes('\n#define TFT_DC_GPIO 47\n'));
+  assert.ok(csv.textContent.includes('No microSD slot'));
+  assert.ok(csv.textContent.includes('#define DLNA FEATURE_OFF'));
+  assert.ok(document.getElementById('hw-import-status').textContent.includes('FUTURE_GPIO'));
+  /* The CSV still pastes, for the flasher's own files. */
+  document.getElementById('hw-import').value = 'tft_dc,4\n';
+  document.getElementById('hw-import-apply').click();
+  assert.ok(csv.textContent.includes('\n#define TFT_DC_GPIO 4\n'));
 
   /* And the reset button is the README board again. */
   document.getElementById('hw-reset').click();
-  assert.strictEqual(csv.textContent, hw.toCsv(hw.defaults()));
+  assert.strictEqual(csv.textContent, hw.toHeader(hw.defaults()));
 }
 
 function test_every_label_the_page_needs_is_in_the_dictionary() {
@@ -452,6 +490,7 @@ function test_every_label_the_page_needs_is_in_the_dictionary() {
 
 test_the_readme_board_is_clean();
 test_the_file_round_trips();
+test_the_header_round_trips_and_names_every_option();
 test_a_partial_file_means_the_defaults_for_the_rest();
 test_unknown_keys_and_bad_lines_are_reported_not_dropped_silently();
 test_two_signals_on_one_pin_is_a_conflict_but_a_shared_bus_is_not();

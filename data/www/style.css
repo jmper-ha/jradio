@@ -1869,6 +1869,7 @@ a.secondary-button { text-decoration: none; color: inherit; }
 .hw-dev-spi3 { --dev: #7bd389; }
 .hw-dev-i2s0 { --dev: #d08cff; }
 .hw-dev-uart1 { --dev: #38bdf8; }
+.hw-dev-features { --dev: var(--muted); }
 .hw-dev-board { --dev: var(--muted); }
 
 .hw-group > h3 {

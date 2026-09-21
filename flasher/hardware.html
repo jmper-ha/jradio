@@ -56,7 +56,7 @@
   <main class="page-shell">
     <div class="page-heading">
       <h1 data-i18n="nav.hardware">Оборудование</h1>
-      <p data-i18n="hw.lead">Что подключено к модулю и на какие выводы. Результат — файл board.csv.</p>
+      <p data-i18n="hw.lead">Что подключено к модулю и на какие выводы. Результат — файл board_options.h для сборки прошивки.</p>
     </div>
 
     <div class="hw-layout">
@@ -96,7 +96,7 @@
 
     <section class="card" aria-labelledby="hw-csv-title">
       <div class="card-head hw-csv-head">
-        <h2 id="hw-csv-title">board.csv</h2>
+        <h2 id="hw-csv-title">board_options.h</h2>
         <div class="hw-csv-actions">
           <button class="secondary-button" id="hw-copy" type="button" data-i18n="hw.copy">Скопировать</button>
           <button class="primary-button" id="hw-download" type="button" data-i18n="hw.download">Скачать</button>
@@ -105,8 +105,8 @@
       <div class="card-body">
         <pre class="hw-csv" id="hw-csv"></pre>
         <details class="hw-import">
-          <summary data-i18n="hw.import">Вставить свой board.csv</summary>
-          <textarea id="hw-import" rows="8" spellcheck="false" data-i18n-placeholder="hw.import_placeholder" placeholder="# key,value"></textarea>
+          <summary data-i18n="hw.import">Вставить свой board_options.h</summary>
+          <textarea id="hw-import" rows="8" spellcheck="false" data-i18n-placeholder="hw.import_placeholder" placeholder="#define TFT_CS_GPIO 10"></textarea>
           <div class="hw-import-actions">
             <button class="secondary-button" id="hw-import-apply" type="button" data-i18n="hw.import_apply">Применить</button>
             <button class="secondary-button" id="hw-reset" type="button" data-i18n="hw.reset">Сбросить к плате из README</button>

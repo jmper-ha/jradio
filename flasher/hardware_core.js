@@ -155,6 +155,11 @@
     /* The module's audio goes over the DAC's I2S bus - both directions - so
        the card names that bus as its "sound". */
     {key: 'bt_i2s', kind: 'choice', device: 'bluetooth', options: ['0'], dflt: '0', bus: 'i2s'},
+
+    /* Software sources, built in or left out: no pins, but a line in the
+       header each. Both are on in the README board. */
+    {key: 'yandex_music', kind: 'bool', device: 'features', dflt: 1, define: 'YANDEX_MUSIC'},
+    {key: 'dlna', kind: 'bool', device: 'features', dflt: 1, define: 'DLNA'},
   ];
 
   const FIELD_BY_KEY = Object.fromEntries(FIELDS.map((field) => [field.key, field]));
@@ -164,7 +169,7 @@
      UART - so the wires sit next to what they serve. */
   const DEVICES = [
     'board', 'tft', 'spi2', 'encoder', 'buttons', 'ir', 'dac', 'i2s0', 'amp', 'power',
-    'usb', 'sd', 'spi3', 'bluetooth', 'uart1',
+    'usb', 'sd', 'spi3', 'bluetooth', 'uart1', 'features',
   ];
   const BUSES = ['spi2', 'spi3', 'i2s0', 'uart1'];
 
@@ -393,6 +398,189 @@
     return lines.join('\n') + '\n';
   }
 
+  /* ---- board_options.h -------------------------------------------------- */
+
+  /* The same board as the header the firmware is built from: what a person
+     downloads today, while the CSV above is what the flasher will write to
+     the board partition once the firmware reads one. Every option the header
+     in the repository carries is here, in its order and with its spelling,
+     so the file drops into the project root as it is. A part that is not on
+     the board leaves a comment where its block would be, not a #define. */
+  const HEADER_DISPLAY = (values) => `DISPLAY_${String(values.display).toUpperCase()}`;
+
+  function toHeader(values) {
+    const pin = (key) => pinValue(values[key]);
+    const gpio = (name, key) => (pin(key) === null ? [] : [`#define ${name} ${pin(key)}`]);
+    const on = (key) => (isNone(values[key]) ? 0 : Number(values[key]) === 1 ? 1 : 0);
+    const spi = busOf(values, 'sd', 'spi') || 'spi3';
+    const name = String(values.board_name || '').trim();
+    const lines = [
+      '#pragma once',
+      '/* board_options.h - the wiring of one board, for the jRadio firmware.',
+      ` * Written by the wiring editor${name ? ` for "${name}"` : ''}; module ESP32-S3-WROOM-1 N16R8.`,
+      ' * Put it at the root of the project in place of the one there and build. */',
+      '#include "board_parts.h"',
+      '#include "board_options_guard.h"',
+      '',
+      '/* The display: which panel, how it stands, and its SPI2 pins. */',
+      `#define DISPLAY ${HEADER_DISPLAY(values)}`,
+      `#define DISPLAY_SPI_PERIPHERAL ${values.tft_spi}`,
+      ...gpio('TFT_CS_GPIO', 'tft_cs'),
+      ...gpio('TFT_DC_GPIO', 'tft_dc'),
+      ...(pin('tft_reset') === null
+        ? ["/* TFT_RESET_GPIO: the panel's RST is tied to the module's RST pad. */"]
+        : gpio('TFT_RESET_GPIO', 'tft_reset')),
+      ...gpio('TFT_MOSI_GPIO', 'spi2_mosi'),
+      ...gpio('TFT_SCLK_GPIO', 'spi2_sclk'),
+      ...gpio('TFT_BACKLIGHT_GPIO', 'tft_backlight'),
+      '',
+      '/* The encoder and the buttons. A button that is not wired has no line. */',
+      ...gpio('ENCODER_RIGHT_GPIO', 'encoder_right'),
+      ...gpio('ENCODER_LEFT_GPIO', 'encoder_left'),
+      ...gpio('ENCODER_BUTTON_GPIO', 'encoder_button'),
+      ...gpio('BUTTON_SLEEP_GPIO', 'button_sleep'),
+      ...gpio('BUTTON_QUICK_MENU_GPIO', 'button_quick_menu'),
+      ...gpio('BUTTON_PREV_GPIO', 'button_prev'),
+      ...gpio('BUTTON_NEXT_GPIO', 'button_next'),
+      `#define ENCODER_USE_INTERNAL_PULLUPS ${on('encoder_pullups')}`,
+      `#define BUTTONS_USE_INTERNAL_PULLUPS ${on('buttons_pullups')}`,
+      '',
+      ...(deviceEnabled(values, 'ir')
+        ? ['/* The infrared receiver, for the remote. */', ...gpio('IR_RECEIVER_GPIO', 'ir_receiver')]
+        : ['/* No infrared receiver: IR_RECEIVER_GPIO would go here. */']),
+      '',
+      '/* The DAC on I2S0. */',
+      `#define AUDIO_DAC DAC_${String(values.dac).toUpperCase()}`,
+      ...gpio('I2S_DOUT_GPIO', 'i2s0_dout'),
+      ...gpio('I2S_BCLK_GPIO', 'i2s0_bclk'),
+      ...gpio('I2S_LRCK_GPIO', 'i2s0_lrck'),
+      '#define AUDIO_DAC_HAS_MCLK 0',
+      ...(pin('dac_mute') === null ? [] : gpio('AUDIO_DAC_MUTE_GPIO', 'dac_mute')),
+      ...(deviceEnabled(values, 'amp')
+        ? ['', "/* The amplifier's MUTE / SD input, and the level that lets it play. */",
+           ...gpio('AUDIO_AMP_GPIO', 'amp_enable'), `#define AUDIO_AMP_ON_LEVEL ${on('amp_on_level')}`]
+        : []),
+      ...(deviceEnabled(values, 'power')
+        ? ['', '/* The switch feeding everything outside the module, cut in deep sleep. */',
+           ...gpio('PERIPHERAL_POWER_GPIO', 'peripheral_power'),
+           `#define PERIPHERAL_POWER_ON_LEVEL ${on('peripheral_power_on_level')}`]
+        : []),
+      '',
+      ...(deviceEnabled(values, 'usb')
+        ? ['/* USB Host for a flash drive: the pins are the chip\'s own. */',
+           `#define USB_DM_GPIO ${USB_PINS.usb_dm}`, `#define USB_DP_GPIO ${USB_PINS.usb_dp}`,
+           '#define USB_VBUS_SWITCHED 0']
+        : ['/* No USB port: USB_DM_GPIO and USB_DP_GPIO would go here. */']),
+      '',
+      ...(deviceEnabled(values, 'sd')
+        ? [`/* microSD over ${spi.toUpperCase()}. */`,
+           `#define SDC_SPI_PERIPHERAL ${values.sd_spi}`,
+           ...gpio('SDC_CS_GPIO', 'sd_cs'),
+           ...gpio('SDC_SCK_GPIO', `${spi}_sclk`),
+           ...gpio('SDC_MISO_GPIO', `${spi}_miso`),
+           ...gpio('SDC_MOSI_GPIO', `${spi}_mosi`),
+           '#define SDC_HAS_CARD_DETECT 0']
+        : ['/* No microSD slot: the SDC_* lines would go here. */']),
+      '',
+      ...(deviceEnabled(values, 'bluetooth')
+        ? ['/* The jradio-bt module: commands over UART1, sound over the same I2S. */',
+           `#define BLUETOOTH BLUETOOTH_${String(values.bluetooth).toUpperCase()}`,
+           ...gpio('BT_UART_TX_GPIO', 'uart1_tx'),
+           ...gpio('BT_UART_RX_GPIO', 'uart1_rx')]
+        : ['/* No Bluetooth module: BLUETOOTH and the BT_UART_* lines would go here. */']),
+      '',
+      '/* Sources that need no wiring; a built-in one also has a switch in the settings. */',
+      `#define YANDEX_MUSIC ${on('yandex_music') ? 'FEATURE_ON' : 'FEATURE_OFF'}`,
+      `#define DLNA ${on('dlna') ? 'FEATURE_ON' : 'FEATURE_OFF'}`,
+    ];
+    return lines.join('\n') + '\n';
+  }
+
+  /* The header back into a board, so a file downloaded earlier can be
+     pasted in and carried on with. Only lines that begin with #define count:
+     a commented-out one is a part that is not there. Names this editor does
+     not know are reported, never dropped silently. */
+  function parseHeader(text) {
+    const defined = {};
+    const unknown = [];
+    for (const raw of String(text).split(/\r?\n/)) {
+      const match = /^\s*#define\s+([A-Z0-9_]+)(?:\s+(\S+))?/.exec(raw);
+      if (match) defined[match[1]] = match[2] === undefined ? '' : match[2];
+    }
+    const values = defaults();
+    const named = /wiring editor for "([^"]*)"/.exec(String(text));
+    if (named) values.board_name = named[1];
+    const take = (name) => {
+      const value = defined[name];
+      delete defined[name];
+      return value;
+    };
+    const asPin = (key, name) => {
+      const value = take(name);
+      if (value === undefined) values[key] = FIELD_BY_KEY[key].resetOk ? RESET : NONE;
+      else if (Number.isInteger(Number(value))) values[key] = Number(value);
+      else unknown.push({key: name, value});
+    };
+    const asBool = (key, name) => {
+      const value = take(name);
+      if (value !== undefined) values[key] = value === '1' ? 1 : 0;
+    };
+    const display = take('DISPLAY');
+    if (display !== undefined) {
+      const id = display.replace(/^DISPLAY_/, '').toLowerCase();
+      if (DISPLAYS.includes(id)) values.display = id; else unknown.push({key: 'DISPLAY', value: display});
+    }
+    take('DISPLAY_SPI_PERIPHERAL');  /* always 2 here */
+    take('TFT_MOSI_GPIO'); take('TFT_SCLK_GPIO');  /* SPI2's own pins */
+    asPin('tft_cs', 'TFT_CS_GPIO'); asPin('tft_dc', 'TFT_DC_GPIO');
+    asPin('tft_reset', 'TFT_RESET_GPIO'); asPin('tft_backlight', 'TFT_BACKLIGHT_GPIO');
+    asPin('encoder_right', 'ENCODER_RIGHT_GPIO'); asPin('encoder_left', 'ENCODER_LEFT_GPIO');
+    asPin('encoder_button', 'ENCODER_BUTTON_GPIO');
+    asPin('button_sleep', 'BUTTON_SLEEP_GPIO'); asPin('button_quick_menu', 'BUTTON_QUICK_MENU_GPIO');
+    asPin('button_prev', 'BUTTON_PREV_GPIO'); asPin('button_next', 'BUTTON_NEXT_GPIO');
+    asBool('encoder_pullups', 'ENCODER_USE_INTERNAL_PULLUPS');
+    asBool('buttons_pullups', 'BUTTONS_USE_INTERNAL_PULLUPS');
+    asPin('ir_receiver', 'IR_RECEIVER_GPIO');
+    const dac = take('AUDIO_DAC');
+    if (dac !== undefined) {
+      const id = dac.replace(/^DAC_/, '').toLowerCase();
+      if (FIELD_BY_KEY.dac.options.includes(id)) values.dac = id; else unknown.push({key: 'AUDIO_DAC', value: dac});
+    }
+    asPin('i2s0_dout', 'I2S_DOUT_GPIO'); asPin('i2s0_bclk', 'I2S_BCLK_GPIO'); asPin('i2s0_lrck', 'I2S_LRCK_GPIO');
+    take('AUDIO_DAC_HAS_MCLK');
+    asPin('dac_mute', 'AUDIO_DAC_MUTE_GPIO');
+    asPin('amp_enable', 'AUDIO_AMP_GPIO'); asBool('amp_on_level', 'AUDIO_AMP_ON_LEVEL');
+    asPin('peripheral_power', 'PERIPHERAL_POWER_GPIO'); asBool('peripheral_power_on_level', 'PERIPHERAL_POWER_ON_LEVEL');
+    /* USB is on or off by its pins being named; the numbers are fixed. */
+    const usb = take('USB_DP_GPIO') !== undefined;
+    take('USB_DM_GPIO'); take('USB_VBUS_SWITCHED');
+    if (!usb) values.usb_dp = NONE;
+    const sdBus = take('SDC_SPI_PERIPHERAL');
+    asPin('sd_cs', 'SDC_CS_GPIO');
+    if (sdBus === '2' || sdBus === '3') values.sd_spi = sdBus;
+    if (values.sd_spi === '3') {
+      asPin('spi3_sclk', 'SDC_SCK_GPIO'); asPin('spi3_miso', 'SDC_MISO_GPIO'); asPin('spi3_mosi', 'SDC_MOSI_GPIO');
+    } else {
+      take('SDC_SCK_GPIO'); take('SDC_MISO_GPIO'); take('SDC_MOSI_GPIO');
+    }
+    take('SDC_HAS_CARD_DETECT');
+    const bluetooth = take('BLUETOOTH');
+    if (bluetooth === undefined) values.bluetooth = NONE;
+    else {
+      const id = bluetooth.replace(/^BLUETOOTH_/, '').toLowerCase();
+      if (FIELD_BY_KEY.bluetooth.options.includes(id)) values.bluetooth = id;
+      else unknown.push({key: 'BLUETOOTH', value: bluetooth});
+    }
+    asPin('uart1_tx', 'BT_UART_TX_GPIO'); asPin('uart1_rx', 'BT_UART_RX_GPIO');
+    const asFeature = (key, name) => {
+      const value = take(name);
+      if (value !== undefined) values[key] = value === 'FEATURE_ON' ? 1 : 0;
+    };
+    asFeature('yandex_music', 'YANDEX_MUSIC'); asFeature('dlna', 'DLNA');
+    for (const [key, value] of Object.entries(defined)) unknown.push({key, value});
+    return {values, unknown};
+  }
+
   /* The file back into a board. Keys the editor does not know are kept aside
      rather than dropped, so a file from a newer firmware survives a round trip
      through an older page; lines that are not "key,value" are reported. */
@@ -429,6 +617,6 @@
     NONE, RESET, FORMAT, FIELDS, FIELD_BY_KEY, DEVICES, BUSES, HEADER, MODULES, DISPLAYS,
     RTC_GPIO_MAX, USB_PINS,
     defaults, headerPins, headerGpios, pinNote, deviceEnabled, setDeviceEnabled,
-    busOf, busUsed, signals, pinMap, validate, toCsv, parseCsv, isNone, pinValue,
+    busOf, busUsed, signals, pinMap, validate, toCsv, parseCsv, toHeader, parseHeader, isNone, pinValue,
   };
 });

@@ -1,5 +1,5 @@
 /* The wiring editor's page: the parts list on the left, the module's header
-   on the right, and board.csv underneath - all drawn from the model in
+   on the right, and board_options.h underneath - all drawn from the model in
    hardware_core.js, which is where every rule lives. This file only puts the
    model on screen and puts the clicks back into it.
 
@@ -498,18 +498,20 @@
     syncSvg();
     syncLegend();
     syncReport();
-    $('hw-csv').textContent = hw.toCsv(values);
+    /* What the person sees and takes away is the header the firmware builds
+       from; the CSV stays the draft's and, later, the flasher's. */
+    $('hw-csv').textContent = hw.toHeader(values);
   }
 
   /* ---- the file --------------------------------------------------------- */
 
   function download() {
-    const text = hw.toCsv(values);
-    const blob = new Blob([text], {type: 'text/csv;charset=utf-8'});
+    const text = hw.toHeader(values);
+    const blob = new Blob([text], {type: 'text/x-c;charset=utf-8'});
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'board.csv';
+    link.download = 'board_options.h';
     document.body.append(link);
     link.click();
     link.remove();
@@ -518,7 +520,7 @@
   }
 
   function copy() {
-    const text = hw.toCsv(values);
+    const text = hw.toHeader(values);
     if (!navigator.clipboard) {
       flash(t('hw.copy_failed'), true);
       return;
@@ -531,8 +533,10 @@
 
   function applyImport() {
     const status = $('hw-import-status');
-    const parsed = hw.parseCsv($('hw-import').value);
-    if (parsed.bad.length > 0) {
+    const text = $('hw-import').value;
+    /* A header pasted back, or - for the flasher's own files - the CSV. */
+    const parsed = /#define\s/.test(text) ? hw.parseHeader(text) : hw.parseCsv(text);
+    if (parsed.bad && parsed.bad.length > 0) {
       status.textContent = t('hw.import_bad', {line: parsed.bad[0].line, text: parsed.bad[0].text});
       status.classList.add('is-error');
       return;

@@ -237,7 +237,7 @@ page as a line with the time and the days.
 
 On the device: language, home screen style, scrolling of long lines, the
 buffer readout, resume, Yandex Music, DLNA, weather, brightness, picture
-mirroring, screensaver, sound over Bluetooth, volume. They apply at once and
+mirroring, colour inversion, screensaver, sound over Bluetooth, volume. They apply at once and
 are saved. The same settings are in the web interface, in the same words;
 changes either way show at once.
 
@@ -253,6 +253,11 @@ detail, the alarm, the sleep timer, the backup.
 - **Scrolling** - how long lines move: "left-right", or "left" with a jump
   back to the start.
 - **Brightness** - 10 to 100, changed with the encoder right on the row.
+- **Invert colours** - if the picture looks like a negative (a dark
+  background gone light, colours turned inside out), your display has the
+  other kind of glass from the author's: IPS and TN on the same controller
+  want the opposite setting. Switch it on and the picture is right, at once
+  and for good, with no rebuild. Next to the flips, in the Display group.
 - **Screensaver** - what the screen does when untouched: none, dimming (to
   the "idle brightness"), a black screen, or the **clock** - the time drifting
   over a black screen with the date, the weather and the track title. The

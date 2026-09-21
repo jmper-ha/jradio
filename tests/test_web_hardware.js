@@ -33,7 +33,7 @@ function test_the_readme_board_is_clean() {
   /* SPI2 is on the chip's own pins and nowhere else. */
   assert.strictEqual(values.spi2_sclk, 12);
   assert.strictEqual(values.spi2_mosi, 11);
-  assert.strictEqual(values.spi2_miso, 13);
+  assert.strictEqual(values.spi2_miso, undefined);
 }
 
 function test_the_file_round_trips() {
@@ -107,10 +107,13 @@ function test_two_signals_on_one_pin_is_a_conflict_but_a_shared_bus_is_not() {
   const shared = hw.setDeviceEnabled(hw.defaults(), 'bluetooth', true);
   assert.deepStrictEqual(hw.validate(shared).errors, []);
   assert.deepStrictEqual(hw.pinMap(shared)[18], ['i2s0_bclk']);
-  /* SPI2's MISO is the bus's only while the card shares the bus: on its
-     own SPI3 the card leaves 13 free, on SPI2 it takes it. */
+  /* The card cannot share the display's SPI2 - the firmware brings that
+     bus up without MISO - so 13 stays free and a file asking for it is a
+     bad value. */
   assert.strictEqual(hw.pinMap(hw.defaults())[13], undefined);
-  assert.deepStrictEqual(hw.pinMap({...hw.defaults(), sd_spi: '2'})[13], ['spi2_miso']);
+  assert.ok(hw.validate({...hw.defaults(), sd_spi: '2'}).errors.some((problem) => problem.code === 'bad_value'));
+  assert.deepStrictEqual(hw.parseHeader('#define SDC_SPI_PERIPHERAL 2\n').unknown,
+                         [{key: 'SDC_SPI_PERIPHERAL', value: '2'}]);
   /* And SPI2's pins are not the file's to move. */
   assert.strictEqual(hw.parseCsv('spi2_sclk,4\n').values.spi2_sclk, 12);
 }
@@ -197,7 +200,7 @@ function test_the_warnings_that_do_not_stop_a_file() {
   /* The display's bus is SPI2 and not a choice: a file putting it on SPI3
      is read back onto SPI2, and the IOMUX advice stays. */
   assert.strictEqual(hw.parseCsv('tft_spi,3\n').values.tft_spi, '2');
-  assert.deepStrictEqual(hw.validate({...base, tft_cs: 4, sd_spi: '2'}).warnings,
+  assert.deepStrictEqual(hw.validate({...base, tft_cs: 4}).warnings,
                          [{code: 'spi_not_iomux', key: 'tft_cs', gpio: 4}]);
   /* The receiver, switched on, lands on a wake-capable pin; moved off one,
      the page says the remote will not wake the board. */
@@ -362,13 +365,12 @@ function test_the_page_builds_every_part_and_follows_the_clicks() {
   const uart = sections.find((section) => section.dataset.device === 'uart1');
   assert.ok(uart.classList.contains('is-off'));
   assert.ok(uart.querySelectorAll('.hw-row').every((row) => row.hidden));
-  /* SPI2 sits right under the display, shown and not edited; its MISO row
-     appears only once the card shares the bus. */
+  /* SPI2 sits right under the display, shown and not edited, and has no
+     MISO row: the card cannot share it. */
   const spi2 = sections.find((section) => section.dataset.device === 'spi2');
   assert.strictEqual(devices.indexOf('spi2'), devices.indexOf('tft') + 1);
   assert.strictEqual(spi2.querySelector('select'), null);
-  const miso = spi2.querySelectorAll('.hw-row').find((row) => row.dataset.key === 'spi2_miso');
-  assert.ok(miso.hidden);
+  assert.ok(!spi2.querySelectorAll('.hw-row').some((row) => row.dataset.key === 'spi2_miso'));
 
   /* The file under the editor is the README board, as the header the
      firmware is built from - the CSV is the draft's, not the reader's. */

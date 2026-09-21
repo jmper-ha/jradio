@@ -198,7 +198,7 @@
 
     'hw.f.board_name': ['Название платы', 'Board name'],
     'hw.f.display': ['Дисплей', 'Display'],
-    'hw.f.spi2_sclk': ['SCLK', 'SCLK'], 'hw.f.spi2_mosi': ['MOSI', 'MOSI'], 'hw.f.spi2_miso': ['MISO', 'MISO'],
+    'hw.f.spi2_sclk': ['SCLK', 'SCLK'], 'hw.f.spi2_mosi': ['MOSI', 'MOSI'],
     'hw.f.spi3_sclk': ['SCLK', 'SCLK'], 'hw.f.spi3_mosi': ['MOSI', 'MOSI'], 'hw.f.spi3_miso': ['MISO', 'MISO'],
     'hw.f.i2s0_bclk': ['BCLK', 'BCLK'], 'hw.f.i2s0_lrck': ['LRCK', 'LRCK'],
     'hw.f.i2s0_dout': ['DOUT (к ЦАП)', 'DOUT (to the DAC)'],
@@ -219,7 +219,7 @@
     'hw.f.bluetooth': ['Модуль', 'Module'], 'hw.f.bt_uart': ['Управление', 'Control'], 'hw.f.bt_i2s': ['Звук', 'Audio'],
 
     /* The short names the picture writes beside a pin. */
-    'hw.s.spi2_sclk': ['SPI2 SCLK', 'SPI2 SCLK'], 'hw.s.spi2_mosi': ['SPI2 MOSI', 'SPI2 MOSI'], 'hw.s.spi2_miso': ['SPI2 MISO', 'SPI2 MISO'],
+    'hw.s.spi2_sclk': ['SPI2 SCLK', 'SPI2 SCLK'], 'hw.s.spi2_mosi': ['SPI2 MOSI', 'SPI2 MOSI'],
     'hw.s.spi3_sclk': ['SPI3 SCLK', 'SPI3 SCLK'], 'hw.s.spi3_mosi': ['SPI3 MOSI', 'SPI3 MOSI'], 'hw.s.spi3_miso': ['SPI3 MISO', 'SPI3 MISO'],
     'hw.s.i2s0_bclk': ['I2S BCLK', 'I2S BCLK'], 'hw.s.i2s0_lrck': ['I2S LRCK', 'I2S LRCK'],
     'hw.s.i2s0_dout': ['I2S DOUT', 'I2S DOUT'],
@@ -241,7 +241,7 @@
     'hw.opt.ili9341_320_240': ['ILI9341 320×240', 'ILI9341 320×240'], 'hw.opt.ili9341_240_320': ['ILI9341 240×320 (портрет)', 'ILI9341 240×320 (portrait)'],
     'hw.opt.st7789_320_240': ['ST7789 320×240', 'ST7789 320×240'], 'hw.opt.st7789_240_320': ['ST7789 240×320 (портрет)', 'ST7789 240×320 (portrait)'],
     'hw.opt.st7789_320_170': ['ST7789 320×170', 'ST7789 320×170'],
-    'hw.opt.rst': ['RST модуля', 'The module\'s RST'], 'hw.opt.0': ['I2S0', 'I2S0'], 'hw.opt.1': ['UART1', 'UART1'], 'hw.opt.2': ['SPI2 — шина дисплея', 'SPI2 - the display\'s bus'], 'hw.opt.3': ['SPI3 — своя', 'SPI3 - its own'],
+    'hw.opt.rst': ['RST модуля', 'The module\'s RST'], 'hw.opt.0': ['I2S0', 'I2S0'], 'hw.opt.1': ['UART1', 'UART1'], 'hw.opt.2': ['SPI2', 'SPI2'], 'hw.opt.3': ['SPI3', 'SPI3'],
 
     /* Why a pin is greyed or underlined on the picture. */
     'hw.note.pin_psram': ['Занят octal-PSRAM модуля N16R8', 'Taken by the N16R8 module\'s octal PSRAM'],

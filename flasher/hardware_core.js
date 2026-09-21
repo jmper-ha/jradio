@@ -61,7 +61,7 @@
   /* SPI2's IOMUX pins, the ones a 40 MHz panel bus is measured on; anything
      else goes through the GPIO matrix and may not hold that clock. SPI3 on the
      S3 has no IOMUX pins at all, so it is never warned about. */
-  const SPI2_IOMUX = {sclk: 12, mosi: 11, miso: 13, cs: 10};
+  const SPI2_IOMUX = {sclk: 12, mosi: 11, cs: 10};
 
   const DISPLAYS = [
     'st7796s_480_320', 'st7796s_320_480', 'ili9488_480_320', 'ili9488_320_480',
@@ -89,12 +89,11 @@
 
     /* SPI2's pins are the chip's own (IOMUX) and are not chosen: the display
        bus runs at 40 MHz on them and nowhere else. They are shown, not
-       edited; a file saying otherwise is read as these. MISO belongs to the
-       bus only while the card shares it. */
+       edited; a file saying otherwise is read as these. No MISO: the display
+       only listens, and the firmware brings the bus up without one - which
+       is why the card cannot share it. */
     {key: 'spi2_sclk', kind: 'fixed', device: 'spi2', dflt: SPI2_IOMUX.sclk, locked: true, define: 'TFT_SCLK_GPIO'},
     {key: 'spi2_mosi', kind: 'fixed', device: 'spi2', dflt: SPI2_IOMUX.mosi, locked: true, define: 'TFT_MOSI_GPIO'},
-    {key: 'spi2_miso', kind: 'fixed', device: 'spi2', dflt: SPI2_IOMUX.miso, locked: true,
-     when: (values) => busOf(values, 'sd', 'spi') === 'spi2' && deviceEnabled(values, 'sd')},
     {key: 'spi3_sclk', kind: 'opt_pin', device: 'spi3', dflt: 41, define: 'SDC_SCK_GPIO'},
     {key: 'spi3_mosi', kind: 'opt_pin', device: 'spi3', dflt: 42, define: 'SDC_MOSI_GPIO'},
     {key: 'spi3_miso', kind: 'opt_pin', device: 'spi3', dflt: 40, define: 'SDC_MISO_GPIO'},
@@ -147,7 +146,9 @@
     {key: 'usb_dp', kind: 'fixed', device: 'usb', dflt: USB_PINS.usb_dp, enables: true, define: 'USB_DP_GPIO'},
     {key: 'usb_dm', kind: 'fixed', device: 'usb', dflt: USB_PINS.usb_dm, define: 'USB_DM_GPIO'},
 
-    {key: 'sd_spi', kind: 'choice', device: 'sd', options: ['2', '3'], dflt: '3', bus: 'spi', define: 'SDC_SPI_PERIPHERAL'},
+    /* The card's bus is SPI3 and no choice: the display's SPI2 has no MISO
+       in the firmware, so a card there would build and never mount. */
+    {key: 'sd_spi', kind: 'choice', device: 'sd', options: ['3'], dflt: '3', bus: 'spi', define: 'SDC_SPI_PERIPHERAL'},
     {key: 'sd_cs', kind: 'opt_pin', device: 'sd', dflt: 1, enables: true, define: 'SDC_CS_GPIO'},
 
     {key: 'bluetooth', kind: 'choice', device: 'bluetooth', options: [NONE, 'jradio_bt'], dflt: NONE, enables: true, define: 'BLUETOOTH'},
@@ -412,7 +413,6 @@
     const pin = (key) => pinValue(values[key]);
     const gpio = (name, key) => (pin(key) === null ? [] : [`#define ${name} ${pin(key)}`]);
     const on = (key) => (isNone(values[key]) ? 0 : Number(values[key]) === 1 ? 1 : 0);
-    const spi = busOf(values, 'sd', 'spi') || 'spi3';
     const name = String(values.board_name || '').trim();
     const lines = [
       '#pragma once',
@@ -473,12 +473,12 @@
         : ['/* No USB port: USB_DM_GPIO and USB_DP_GPIO would go here. */']),
       '',
       ...(deviceEnabled(values, 'sd')
-        ? [`/* microSD over ${spi.toUpperCase()}. */`,
-           `#define SDC_SPI_PERIPHERAL ${values.sd_spi}`,
+        ? ['/* microSD over SPI3. */',
+           '#define SDC_SPI_PERIPHERAL 3',
            ...gpio('SDC_CS_GPIO', 'sd_cs'),
-           ...gpio('SDC_SCK_GPIO', `${spi}_sclk`),
-           ...gpio('SDC_MISO_GPIO', `${spi}_miso`),
-           ...gpio('SDC_MOSI_GPIO', `${spi}_mosi`),
+           ...gpio('SDC_SCK_GPIO', 'spi3_sclk'),
+           ...gpio('SDC_MISO_GPIO', 'spi3_miso'),
+           ...gpio('SDC_MOSI_GPIO', 'spi3_mosi'),
            '#define SDC_HAS_CARD_DETECT 0']
         : ['/* No microSD slot: the SDC_* lines would go here. */']),
       '',
@@ -556,13 +556,9 @@
     take('USB_DM_GPIO'); take('USB_VBUS_SWITCHED');
     if (!usb) values.usb_dp = NONE;
     const sdBus = take('SDC_SPI_PERIPHERAL');
+    if (sdBus !== undefined && sdBus !== '3') unknown.push({key: 'SDC_SPI_PERIPHERAL', value: sdBus});
     asPin('sd_cs', 'SDC_CS_GPIO');
-    if (sdBus === '2' || sdBus === '3') values.sd_spi = sdBus;
-    if (values.sd_spi === '3') {
-      asPin('spi3_sclk', 'SDC_SCK_GPIO'); asPin('spi3_miso', 'SDC_MISO_GPIO'); asPin('spi3_mosi', 'SDC_MOSI_GPIO');
-    } else {
-      take('SDC_SCK_GPIO'); take('SDC_MISO_GPIO'); take('SDC_MOSI_GPIO');
-    }
+    asPin('spi3_sclk', 'SDC_SCK_GPIO'); asPin('spi3_miso', 'SDC_MISO_GPIO'); asPin('spi3_mosi', 'SDC_MOSI_GPIO');
     take('SDC_HAS_CARD_DETECT');
     const bluetooth = take('BLUETOOTH');
     if (bluetooth === undefined) values.bluetooth = NONE;

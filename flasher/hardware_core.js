@@ -272,14 +272,24 @@
     return busKind + value;
   }
 
-  /* Every signal that owns a pin right now: the buses in use, the devices on
-     the board. Bus pins that no device uses are reported too, so a wired but
-     idle bus shows on the picture - it is still soldered. */
+  /* A bus is in use while a device that is on the board names it. A bus
+     nobody is on - the module's UART with the module switched off, the
+     card's SPI3 without the card - holds no pins: its numbers stay in the
+     file for the day the device comes back, but on the picture and in the
+     conflict check they are free. */
+  function busUsed(values, bus) {
+    return FIELDS.some((field) => field.bus && deviceEnabled(values, field.device) &&
+                                  busOf(values, field.device, field.bus) === bus);
+  }
+
+  /* Every signal that owns a pin right now: the devices on the board and
+     the buses they are on. */
   function signals(values) {
     const list = [];
     for (const field of FIELDS) {
       if (!['pin', 'opt_pin', 'fixed'].includes(field.kind)) continue;
       if (!deviceEnabled(values, field.device)) continue;
+      if (BUSES.includes(field.device) && !busUsed(values, field.device)) continue;
       if (field.when && !field.when(values)) continue;
       const gpio = pinValue(values[field.key]);
       list.push({key: field.key, device: field.device, gpio, required: field.kind === 'pin',
@@ -419,6 +429,6 @@
     NONE, RESET, FORMAT, FIELDS, FIELD_BY_KEY, DEVICES, BUSES, HEADER, MODULES, DISPLAYS,
     RTC_GPIO_MAX, USB_PINS,
     defaults, headerPins, headerGpios, pinNote, deviceEnabled, setDeviceEnabled,
-    busOf, signals, pinMap, validate, toCsv, parseCsv, isNone, pinValue,
+    busOf, busUsed, signals, pinMap, validate, toCsv, parseCsv, isNone, pinValue,
   };
 });

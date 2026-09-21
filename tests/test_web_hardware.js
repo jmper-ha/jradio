@@ -136,8 +136,15 @@ function test_switching_a_device_off_and_on() {
   values = hw.setDeviceEnabled(values, 'sd', false);
   assert.ok(!hw.deviceEnabled(values, 'sd'));
   assert.strictEqual(values.sd_cs, hw.NONE);
-  /* Its pins leave the map, so the picture shows them free. */
+  /* Its pins leave the map, so the picture shows them free - and so do the
+     pins of SPI3, which nothing else is on; the numbers stay in the file. */
   assert.strictEqual(hw.pinMap(values)[1], undefined);
+  assert.strictEqual(hw.pinMap(values)[41], undefined);
+  assert.strictEqual(values.spi3_sclk, 41);
+  assert.ok(!hw.busUsed(values, 'spi3'));
+  /* The same for the module's UART: off by default, its pins are nobody's. */
+  assert.ok(!hw.busUsed(values, 'uart1'));
+  assert.deepStrictEqual(hw.validate({...values, tft_dc: 41}).errors, []);
   values = hw.setDeviceEnabled(values, 'sd', true);
   assert.strictEqual(values.sd_cs, 1);
   /* Switching a device on never moves a bus pin that is already wired. */
@@ -323,6 +330,10 @@ function test_the_page_builds_every_part_and_follows_the_clicks() {
   assert.ok(bt.classList.contains('is-off'));
   assert.ok(bt.querySelectorAll('.hw-row').some((row) => row.dataset.key === 'bluetooth' && !row.hidden));
   assert.ok(bt.querySelectorAll('.hw-row').some((row) => row.dataset.key === 'bt_i2s' && row.hidden));
+  /* A bus nobody is on reads as off: UART1 with the module absent. */
+  const uart = sections.find((section) => section.dataset.device === 'uart1');
+  assert.ok(uart.classList.contains('is-off'));
+  assert.ok(uart.querySelectorAll('.hw-row').every((row) => row.hidden));
   /* SPI2 sits right under the display, shown and not edited; its MISO row
      appears only once the card shares the bus. */
   const spi2 = sections.find((section) => section.dataset.device === 'spi2');

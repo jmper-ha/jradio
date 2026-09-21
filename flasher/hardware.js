@@ -376,7 +376,10 @@
     }
     for (const device of Object.keys(groups)) {
       const {section, toggle} = groups[device];
-      const enabled = hw.deviceEnabled(values, device);
+      /* A bus with nobody on it reads as switched off, rows and all: its
+         pins are not taken, so there is nothing to set on it. */
+      const enabled = hw.deviceEnabled(values, device) &&
+                      (!hw.BUSES.includes(device) || hw.busUsed(values, device));
       if (toggle) toggle.checked = enabled;
       section.classList.toggle('is-off', !enabled);
       for (const row of section.querySelectorAll('.hw-row')) {

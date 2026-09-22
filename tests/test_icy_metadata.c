@@ -96,8 +96,9 @@ static void test_a_json_title_is_no_title(void)
     icy_metadata_init(&parser, 1, capture_title, &capture);
     assert(icy_metadata_feed(&parser, input, sizeof(input), audio, sizeof(audio),
                              &audio_length) == ICY_METADATA_OK);
-    assert(capture.calls == 1);
-    assert(capture.title[0] == '\0');
+    /* Not published at all: whatever was on the screen is better than
+     * nothing, and the screen is cleared when the station changes. */
+    assert(capture.calls == 0);
 
     /* A real title with a stray line end keeps its words. */
     static const char ok[] = "StreamTitle='Artist - Track\r\n';";
@@ -112,11 +113,91 @@ static void test_a_json_title_is_no_title(void)
     assert(strcmp(capture.title, "Artist - Track") == 0);
 }
 
+/* Two things a station does that used to cost the listener the song title:
+   an apostrophe in the name, and empty metadata between the real blocks. */
+static void test_an_apostrophe_belongs_to_the_song(void)
+{
+    icy_metadata_t parser;
+    title_capture_t capture = {0};
+    uint8_t audio[16] = {0};
+    size_t audio_length = 0;
+    static const char block[] =
+        "StreamTitle='Status Quo - I Know You're Leaving';StreamUrl='http://x/';";
+    uint8_t input[2 + 5 * 16];
+    memset(input, 0, sizeof(input));
+    input[0] = 0xAA;
+    input[1] = 5;
+    memcpy(&input[2], block, sizeof(block) - 1U);
+
+    icy_metadata_init(&parser, 1, capture_title, &capture);
+    assert(icy_metadata_feed(&parser, input, sizeof(input), audio, sizeof(audio),
+                             &audio_length) == ICY_METADATA_OK);
+    assert(strcmp(capture.title, "Status Quo - I Know You're Leaving") == 0);
+
+    /* The same title as the block's last field, with no semicolon after it:
+       the closing quote is then the last one in the block. */
+    static const char tail[] = "StreamTitle='Rock'n'Roll';";
+    uint8_t input2[2 + 2 * 16];
+    memset(input2, 0, sizeof(input2));
+    input2[0] = 0xAA;
+    input2[1] = 2;
+    memcpy(&input2[2], tail, sizeof(tail) - 1U);
+    icy_metadata_init(&parser, 1, capture_title, &capture);
+    assert(icy_metadata_feed(&parser, input2, sizeof(input2), audio, sizeof(audio),
+                             &audio_length) == ICY_METADATA_OK);
+    assert(strcmp(capture.title, "Rock'n'Roll") == 0);
+}
+
+/* hostingradio.ru sends an empty StreamTitle every few seconds between the
+   real ones. Publishing it wiped the track a second after it appeared. */
+static void test_an_empty_title_is_not_an_update(void)
+{
+    icy_metadata_t parser;
+    title_capture_t capture = {0};
+    uint8_t audio[16] = {0};
+    size_t audio_length = 0;
+    static const char song[] = "StreamTitle='Artist - Track';";
+    static const char nothing[] = "StreamTitle='';";
+    uint8_t input[2 + 2 * 16];
+
+    memset(input, 0, sizeof(input));
+    input[0] = 0xAA;
+    input[1] = 2;
+    memcpy(&input[2], song, sizeof(song) - 1U);
+    icy_metadata_init(&parser, 1, capture_title, &capture);
+    assert(icy_metadata_feed(&parser, input, sizeof(input), audio, sizeof(audio),
+                             &audio_length) == ICY_METADATA_OK);
+    assert(capture.calls == 1);
+    assert(strcmp(capture.title, "Artist - Track") == 0);
+
+    memset(input, 0, sizeof(input));
+    input[0] = 0xAA;
+    input[1] = 2;
+    memcpy(&input[2], nothing, sizeof(nothing) - 1U);
+    assert(icy_metadata_feed(&parser, input, sizeof(input), audio, sizeof(audio),
+                             &audio_length) == ICY_METADATA_OK);
+    assert(capture.calls == 1);
+    assert(strcmp(capture.title, "Artist - Track") == 0);
+
+    /* And the next real one still gets through. */
+    static const char next[] = "StreamTitle='Artist - Other';";
+    memset(input, 0, sizeof(input));
+    input[0] = 0xAA;
+    input[1] = 2;
+    memcpy(&input[2], next, sizeof(next) - 1U);
+    assert(icy_metadata_feed(&parser, input, sizeof(input), audio, sizeof(audio),
+                             &audio_length) == ICY_METADATA_OK);
+    assert(capture.calls == 2);
+    assert(strcmp(capture.title, "Artist - Other") == 0);
+}
+
 int main(void)
 {
     test_passthrough_without_metadata();
     test_extracts_title_across_network_chunks();
     test_a_json_title_is_no_title();
+    test_an_apostrophe_belongs_to_the_song();
+    test_an_empty_title_is_not_an_update();
     test_empty_metadata_keeps_audio_alignment();
     puts("icy_metadata tests passed");
     return 0;

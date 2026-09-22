@@ -17,9 +17,18 @@ static void icy_metadata_publish_title(icy_metadata_t *parser)
         return;
     }
     value += sizeof(prefix) - 1U;
-    end = strchr(value, '\'');
+    /* The value ends at the apostrophe that closes it - the one the next
+     * field's semicolon follows - and not at the first apostrophe in the
+     * song's own name: strchr() here turned "I Know You're Leaving" into
+     * "I Know You". A block whose StreamTitle is last carries no semicolon,
+     * so the closing quote is then the last one in it; a title that itself
+     * contains "';" is the one case this still cuts short. */
+    end = strstr(value, "';");
     if (end == NULL) {
-        return;
+        end = strrchr(value, '\'');
+    }
+    if (end == NULL) {
+        end = value + strlen(value);
     }
 
     length = (size_t)(end - value);
@@ -28,7 +37,7 @@ static void icy_metadata_publish_title(icy_metadata_t *parser)
     }
     memcpy(title, value, length);
     title[length] = '\0';
-    /* Trimmed of the line ends a broken server leaves in it, and emptied
+    /* Trimmed of the line ends a broken server leaves in it, and dropped
      * when what is left is not a title at all: 101.ru sends
      * StreamTitle='{"status":1,"message":"Ok",...}\r\n0\r\n\r\n' - its
      * backend's own reply and a chunked terminator where the song should
@@ -40,7 +49,14 @@ static void icy_metadata_publish_title(icy_metadata_t *parser)
     }
     const char *start = title;
     while (*start == ' ' || *start == '\r' || *start == '\n') ++start;
-    if (*start == '{' || *start == '[') start = "";
+    if (*start == '{' || *start == '[') return;
+    /* Nothing to say is not the same as "no song": hostingradio.ru sends an
+     * empty StreamTitle every few seconds between the real ones, and
+     * publishing it wiped the track off the screen a second after it
+     * appeared, leaving the station's name. The last title stands until a
+     * real one replaces it; the screen is cleared where it should be, when
+     * a station starts or stops. */
+    if (*start == '\0') return;
     if (parser->title_callback != NULL) {
         parser->title_callback(parser->title_context, start);
     }

@@ -133,15 +133,18 @@ static size_t s_audio_gain_scratch_size;
 /* Frames clocked out since output was last enabled, counted only as far as the
  * fade needs. Guarded by s_audio_mutex like the scratch. */
 static uint32_t s_audio_fade_frames;
+#if AUDIO_DAC_STOP_DECAY
 /* The last frame handed to I2S, and the buffer the stop decays it to zero in:
  * a stop that just disables the channel leaves the DAC holding that level.
- * Both guarded by s_audio_mutex, like the fade and the scratch above. */
+ * Both guarded by s_audio_mutex, like the fade and the scratch above. Only on
+ * a DAC that needs it - see AUDIO_DAC_STOP_DECAY in board_audio_format.h. */
 static int16_t s_audio_last_left;
 static int16_t s_audio_last_right;
 static uint8_t *s_audio_tail;
 #define BOARD_AUDIO_TAIL_BYTES (AUDIO_VOLUME_FADE_FRAMES * AUDIO_VOLUME_FRAME_BYTES)
+#endif
 /* Defined with the rest of the audio block below, called from the stop paths
- * above it. */
+ * above it. Both compile to nothing on a DAC that mutes itself. */
 static void board_audio_remember_tail(const void *pcm, size_t pcm_length);
 static void board_audio_flush_tail(void);
 
@@ -323,9 +326,10 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
 
     i2s_std_config_t std_config = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate),
-        /* PCM5102 uses the Philips I2S timing: audio data is delayed by one
-         * BCLK after the LRCK edge.  MSB/left-justified timing shifts every
-         * sample by one bit and is not the interface selected on this board. */
+        /* Both DACs here take the Philips I2S timing: audio data is delayed
+         * by one BCLK after the LRCK edge. MSB/left-justified timing shifts
+         * every sample by one bit and is not the interface selected on this
+         * board - a UDA1334A module strapped for it plays noise. */
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
                                                          I2S_SLOT_MODE_STEREO),
         .gpio_cfg = {
@@ -341,7 +345,7 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
             },
         },
     };
-    /* PCM5102 supports a 32 x Fs BCLK with 16-bit stereo I2S. Keeping the
+    /* Both DACs take a 32 x Fs BCLK with 16-bit stereo I2S. Keeping the
      * slot equal to the decoded sample width avoids padding and halves the
      * BCLK edge rate compared with 32-bit slots. */
     std_config.slot_cfg.slot_bit_width = (i2s_slot_bit_width_t)I2S_SLOT_BIT_WIDTH;
@@ -354,7 +358,7 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     ESP_RETURN_ON_ERROR(gpio_input_enable(I2S_LRCK_GPIO), TAG,
                         "enable I2S LRCK pad observation failed");
     ESP_LOGI(TAG,
-             "PCM5102 I2S: Philips, 16-bit stereo in %u-bit slots, BCLK=%uxFs, "
+             BOARD_DAC_NAME " I2S: Philips, 16-bit stereo in %u-bit slots, BCLK=%uxFs, "
              "DMA=%ux%u frames (%lu ms)",
              I2S_SLOT_BIT_WIDTH, I2S_SLOT_BIT_WIDTH * AUDIO_CHANNEL_COUNT,
              I2S_DMA_DESC_NUM, I2S_DMA_FRAME_NUM,
@@ -575,10 +579,15 @@ static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
  * the wire, after the volume, which is the value the DAC actually sees. */
 static void board_audio_remember_tail(const void *pcm, size_t pcm_length)
 {
+#if !AUDIO_DAC_STOP_DECAY
+    (void)pcm;
+    (void)pcm_length;
+#else
     if (pcm == NULL || pcm_length < AUDIO_VOLUME_FRAME_BYTES) return;
     const uint8_t *frame = (const uint8_t *)pcm + pcm_length - AUDIO_VOLUME_FRAME_BYTES;
     s_audio_last_left = (int16_t)((uint16_t)frame[0] | ((uint16_t)frame[1] << 8U));
     s_audio_last_right = (int16_t)((uint16_t)frame[2] | ((uint16_t)frame[3] << 8U));
+#endif
 }
 
 /* Decays the output to zero and waits for the DMA to clock it out, so the
@@ -592,6 +601,7 @@ static void board_audio_remember_tail(const void *pcm, size_t pcm_length)
  * and no click on a DAC that does not mute itself. */
 static void board_audio_flush_tail(void)
 {
+#if AUDIO_DAC_STOP_DECAY
     if (!s_audio_enabled || s_i2s_tx == NULL) return;
     if (s_audio_tail == NULL) {
         /* PSRAM first like every other buffer here; a board without it falls
@@ -617,6 +627,7 @@ static void board_audio_flush_tail(void)
     /* The write above only queues: this is the wait for the queue - the tail
      * included - to reach the pins. */
     vTaskDelay(pdMS_TO_TICKS(((I2S_DMA_DESC_NUM * I2S_DMA_FRAME_NUM * 1000U) / rate) + 2U));
+#endif
 }
 
 esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
@@ -722,8 +733,9 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
     }
     if (mark_mute) {
         ESP_LOGW(TAG,
-                 "audio zero-run: %u consecutive zero frames - past the PCM5102 "
-                 "zero-data detect at %u, so the DAC has muted its analog output",
+                 "audio zero-run: %u consecutive zero frames - past a "
+                 "zero-data detect at %u, so a DAC that has one has muted its "
+                 "analog output",
                  (unsigned int)mute_run, (unsigned int)AUDIO_ZERO_DETECT_FRAMES);
     }
     if (report) {
@@ -768,7 +780,7 @@ esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloade
         }
         if (result == ESP_OK && *preloaded == pcm_length) {
             ESP_LOGI(TAG,
-                     "PCM5102 I2S output enabled after %u-byte silent clock pre-roll",
+                     BOARD_DAC_NAME " I2S output enabled after %u-byte silent clock pre-roll",
                      (unsigned int)board_audio_startup_silence_bytes(
                          I2S_DMA_DESC_NUM, sizeof(s_i2s_silence)));
         } else if (s_audio_enabled) {
@@ -818,7 +830,7 @@ esp_err_t board_audio_set_enabled(bool enabled)
                 board_audio_health_rearm();
                 s_audio_fade_frames = 0U;
             }
-            ESP_LOGI(TAG, "PCM5102 I2S output %s", enabled ? "enabled" : "disabled");
+            ESP_LOGI(TAG, BOARD_DAC_NAME " I2S output %s", enabled ? "enabled" : "disabled");
         }
         /* After the state is settled - including when the disable above
          * failed, which leaves the channel running and the amplifier is put
@@ -897,7 +909,7 @@ esp_err_t board_audio_self_test(uint32_t duration_ms)
     if (duration_ms == 0U || s_i2s_tx == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    ESP_LOGW(TAG, "starting PCM5102 self-test: 1000 Hz, %lu ms",
+    ESP_LOGW(TAG, "starting " BOARD_DAC_NAME " self-test: 1000 Hz, %lu ms",
              (unsigned long)duration_ms);
     if (xTaskCreatePinnedToCore(board_audio_probe_task, "i2s_probe", 2048, &probe, 10, NULL, 1) !=
         pdPASS) {
@@ -935,7 +947,7 @@ esp_err_t board_audio_self_test(uint32_t duration_ms)
              (unsigned long)probe.transitions[0], probe.saw_low[0], probe.saw_high[0],
              (unsigned long)probe.transitions[1], probe.saw_low[1], probe.saw_high[1],
              (unsigned long)probe.transitions[2], probe.saw_low[2], probe.saw_high[2]);
-    ESP_LOGW(TAG, "PCM5102 self-test complete");
+    ESP_LOGW(TAG, BOARD_DAC_NAME " self-test complete");
     result = ESP_OK;
 
 cleanup:
@@ -1406,7 +1418,7 @@ esp_err_t board_init(bool flip_vertical, bool flip_horizontal, bool invert_color
     }
 #endif
     ESP_RETURN_ON_ERROR(board_backlight_init(), TAG, "initialize backlight failed");
-    ESP_RETURN_ON_ERROR(board_audio_init(), TAG, "initialize PCM5102 I2S output failed");
+    ESP_RETURN_ON_ERROR(board_audio_init(), TAG, "initialize " BOARD_DAC_NAME " I2S output failed");
     ESP_RETURN_ON_ERROR(board_display_init(flip_vertical, flip_horizontal, invert_colors), TAG,
                         "initialize " BOARD_PANEL_NAME " failed");
     ESP_RETURN_ON_ERROR(board_backlight_set(dark ? 0 : 50), TAG,

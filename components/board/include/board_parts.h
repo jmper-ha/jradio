@@ -78,6 +78,13 @@
 #define DAC_NONE 0
 /* PCM5102 / PCM5102A I2S stereo DAC, no MCLK input, line level out. */
 #define DAC_PCM5102 1
+/* UDA1334A I2S stereo DAC, no MCLK input, line level out. Same three wires
+ * and the same fixed format as the PCM5102; the module has to be strapped for
+ * Philips I2S rather than the LSB-justified mode some breakouts default to.
+ * What differs is the stop: this chip does not mute itself when the clock
+ * stops under it, so the firmware decays the output first - see
+ * AUDIO_DAC_STOP_DECAY in board_audio_format.h. */
+#define DAC_UDA1334A 2
 
 #define FM_TUNER_NONE 0
 /* RDA5807M receiver module: FM band, I2C control, line level out into the

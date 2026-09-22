@@ -215,6 +215,13 @@ static void test_control_pins_are_distinct(void)
 static void test_audio_group_matches_the_fixed_i2s_slots(void)
 {
     assert(AUDIO_DAC == DAC_PCM5102);
+    /* Every DAC in the catalogue resolves to the same fixed format and to a
+     * name and a stop policy: the decay before the clock stops is only for
+     * the DAC that needs it, and the PCM5102 keeps the stop it always had. */
+    assert(AUDIO_BITS_PER_SAMPLE == 16 && AUDIO_CHANNEL_COUNT == 2);
+    assert(I2S_SLOT_BIT_WIDTH == AUDIO_BITS_PER_SAMPLE);
+    assert(AUDIO_DAC_STOP_DECAY == 0);
+    assert(BOARD_DAC_NAME[0] != '\0');
     assert(I2S_DOUT_GPIO == 16);
     assert(I2S_BCLK_GPIO == 18);
     assert(I2S_LRCK_GPIO == 17);

@@ -10,6 +10,7 @@ static const char WIFI_JSON[] =
 static const char SETTINGS_CSV[] = "language,ru\nbrightness,45\nlast_station_url,http://a\n";
 static const char YANDEX_JSON[] = "{\"version\":1,\"token\":\"abc\",\"device_id\":\"d1\"}";
 static const char WEATHER_JSON[] = "{\"version\":1,\"openweathermap_key\":\"0123456789abcdef\"}";
+static const char REMOTE_CSV[] = "# function,code\npower,nec:bf00:43\nvolume_up,nec:bf00:52\n";
 
 static void test_member_names_map_both_ways(void)
 {
@@ -17,6 +18,7 @@ static void test_member_names_map_both_ways(void)
     assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_SETTINGS), "settings.csv") == 0);
     assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_YANDEX), "yandex.json") == 0);
     assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_WEATHER), "weather.json") == 0);
+    assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_REMOTE), "remote.csv") == 0);
     assert(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_UNKNOWN) == NULL);
     /* Every member has a name and a place in the archive, and the range the
      * loops walk covers all of them. */
@@ -35,6 +37,7 @@ static void test_member_names_map_both_ways(void)
     assert(config_archive_member_from_file("littlefs\\config\\Yandex.JSON") ==
            CONFIG_ARCHIVE_MEMBER_YANDEX);
     assert(config_archive_member_from_file("weather.json") == CONFIG_ARCHIVE_MEMBER_WEATHER);
+    assert(config_archive_member_from_file("config/remote.csv") == CONFIG_ARCHIVE_MEMBER_REMOTE);
     assert(config_archive_member_from_file("stations.csv") == CONFIG_ARCHIVE_MEMBER_UNKNOWN);
     assert(config_archive_member_from_file("wifi.json.bak") == CONFIG_ARCHIVE_MEMBER_UNKNOWN);
     assert(config_archive_member_from_file("config/") == CONFIG_ARCHIVE_MEMBER_UNKNOWN);
@@ -53,6 +56,14 @@ static void test_plausibility_gates_the_obvious_wrong_file(void)
                                               sizeof(WEATHER_JSON) - 1U));
     assert(!config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_WEATHER, SETTINGS_CSV,
                                                sizeof(SETTINGS_CSV) - 1U));
+    /* The remote's table, header line and all - the file a data flash used to
+     * cost somebody a full remote to re-teach. */
+    assert(config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_REMOTE, REMOTE_CSV,
+                                              sizeof(REMOTE_CSV) - 1U));
+    /* Like settings.csv, the gate in front of it only says "text with a
+       separator": another comma-separated file passes, and the loader that
+       reads it at boot leaves an unreadable line unbound. A binary under the
+       name is what this refuses - see the picture below. */
     /* Leading and trailing whitespace is what a hand-edited file has. */
     static const char padded[] = "\n  {\"version\":1,\"networks\":[]}\n";
     assert(config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_WIFI, padded,
@@ -62,6 +73,7 @@ static void test_plausibility_gates_the_obvious_wrong_file(void)
     static const unsigned char png[] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
     assert(!config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_WIFI, png, sizeof(png)));
     assert(!config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_SETTINGS, png, sizeof(png)));
+    assert(!config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_REMOTE, png, sizeof(png)));
     /* JSON, but somebody else's: the loader would read it as no networks at
      * all and the device would come up on the setup access point. */
     static const char foreign[] = "{\"networks\":[]}";
@@ -111,6 +123,8 @@ static size_t build_full_archive(uint8_t *buffer, size_t capacity)
                                      sizeof(SETTINGS_CSV) - 1U));
     assert(config_archive_writer_add(&writer, "yandex.json", YANDEX_JSON,
                                      sizeof(YANDEX_JSON) - 1U));
+    assert(config_archive_writer_add(&writer, "remote.csv", REMOTE_CSV,
+                                     sizeof(REMOTE_CSV) - 1U));
     size_t length = 0U;
     assert(config_archive_writer_finish(&writer, &length));
     return length;
@@ -119,17 +133,17 @@ static size_t build_full_archive(uint8_t *buffer, size_t capacity)
 static void test_round_trip_returns_every_member_unchanged(void)
 {
     uint8_t buffer[CONFIG_ARCHIVE_CAPACITY(sizeof(WIFI_JSON) + sizeof(SETTINGS_CSV) +
-                                           sizeof(YANDEX_JSON))];
+                                           sizeof(YANDEX_JSON) + sizeof(REMOTE_CSV))];
     const size_t length = build_full_archive(buffer, sizeof(buffer));
     assert(config_archive_looks_like_zip(buffer, length));
 
     config_archive_reader_t reader;
     config_archive_reader_init(&reader, buffer, length);
-    const char *expected_names[] = {"wifi.json", "settings.csv", "yandex.json"};
-    const char *expected_data[] = {WIFI_JSON, SETTINGS_CSV, YANDEX_JSON};
+    const char *expected_names[] = {"wifi.json", "settings.csv", "yandex.json", "remote.csv"};
+    const char *expected_data[] = {WIFI_JSON, SETTINGS_CSV, YANDEX_JSON, REMOTE_CSV};
     const size_t expected_sizes[] = {sizeof(WIFI_JSON) - 1U, sizeof(SETTINGS_CSV) - 1U,
-                                     sizeof(YANDEX_JSON) - 1U};
-    for (size_t index = 0U; index < 3U; ++index) {
+                                     sizeof(YANDEX_JSON) - 1U, sizeof(REMOTE_CSV) - 1U};
+    for (size_t index = 0U; index < 4U; ++index) {
         config_archive_entry_t entry;
         assert(config_archive_reader_next(&reader, &entry) == CONFIG_ARCHIVE_READ_OK);
         assert(strcmp(entry.name, expected_names[index]) == 0);
@@ -150,14 +164,14 @@ static void test_round_trip_returns_every_member_unchanged(void)
 static void test_archive_carries_a_readable_central_directory(void)
 {
     uint8_t buffer[CONFIG_ARCHIVE_CAPACITY(sizeof(WIFI_JSON) + sizeof(SETTINGS_CSV) +
-                                           sizeof(YANDEX_JSON))];
+                                           sizeof(YANDEX_JSON) + sizeof(REMOTE_CSV))];
     const size_t length = build_full_archive(buffer, sizeof(buffer));
     /* The end record is what a zip tool looks for first: without it the file
      * downloads and then refuses to open, which is the failure that is only
      * noticed on the day the backup is needed. */
     const uint8_t *end = buffer + length - 22U;
     assert(memcmp(end, "PK\x05\x06", 4U) == 0);
-    assert(end[8] == 3U && end[9] == 0U);
+    assert(end[8] == 4U && end[9] == 0U);
     const uint32_t directory_size = (uint32_t)end[12] | ((uint32_t)end[13] << 8) |
                                     ((uint32_t)end[14] << 16) | ((uint32_t)end[15] << 24);
     const uint32_t directory_offset = (uint32_t)end[16] | ((uint32_t)end[17] << 8) |

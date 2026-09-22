@@ -87,8 +87,9 @@ cannot be avoided - but such a boot leaves the screen dark, checks the code
 and goes back to sleep. For this the receiver must be on a GPIO 0-21 pin and
 be fed from permanent 3.3 V (see [Hardware](hardware.en.md#the-ir-receiver-the-remote)).
 
-The remote's table is stored on the device and survives a firmware update,
-but not a rewrite of the data partition.
+The remote's table is stored on the device and survives a firmware update. A
+rewrite of the data partition erases it - but it is in the backup, so taking
+one before the flash and restoring it afterwards brings the keys back.
 
 ## Screens
 
@@ -295,10 +296,10 @@ data partition (see [Building](build.en.md)).
 ### Backup
 
 Web interface only. "Download archive" gives a zip with the Wi-Fi networks,
-the settings, the Yandex token and the weather key - everything the device
-knows about itself. The station list is exported separately, on the playlist
-page. Restore takes the whole archive or one file from it and reboots the
-device.
+the settings, the Yandex token, the weather key and the table of keys the
+remote was taught - everything the device knows about itself. The station
+list is exported separately, on the playlist page. Restore takes the whole
+archive or one file from it and reboots the device.
 
 It is for rewriting the data partition: download → flash → restore. **The
 Wi-Fi password is in the archive in clear text** - keep the file as you would

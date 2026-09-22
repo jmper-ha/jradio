@@ -21,15 +21,17 @@
 #include "yandex_token_store.h"
 
 #define WEB_BACKUP_CONFIG_DIR "/littlefs/config"
-/* One file at a time is held in RAM. wifi.json is the largest of the four at
- * about 3.3 KB with five networks, so this is headroom rather than a limit
- * anything real approaches - it is here to stop an upload, not a backup. */
+/* One file at a time is held in RAM. wifi.json is the largest of the five at
+ * about 3.3 KB with five networks - the remote's table is about 1 KB with
+ * every function bound - so this is headroom rather than a limit anything
+ * real approaches: it is here to stop an upload, not a backup. */
 #define WEB_BACKUP_MEMBER_MAX_LEN 8192U
 #define WEB_BACKUP_UPLOAD_MAX_LEN \
     CONFIG_ARCHIVE_CAPACITY(CONFIG_ARCHIVE_MEMBER_MAX * WEB_BACKUP_MEMBER_MAX_LEN)
 /* Long enough for the directory and the longest member name. */
 #define WEB_BACKUP_PATH_MAX 64
-/* Enough for the answer with all four names in both lists. */
+/* Enough for the answer with all five names in both lists: the names are 57
+ * characters together, and each appears quoted and comma-separated. */
 #define WEB_BACKUP_REPLY_MAX 256
 /* The browser has to receive the answer before the device goes away, and the
  * socket is closed by the restart, not by a handshake. */
@@ -283,7 +285,9 @@ static bool web_backup_member_loads(config_archive_member_t member)
     /* settings.csv has no loader that can fail: every key it does not
      * understand is skipped and every key it wants has a default. weather.json
      * degrades the same way - a key it cannot read is a key it has not got,
-     * and the page says so. */
+     * and the page says so. remote.csv is read at the next boot, which this
+     * restore is about to cause, and a line it cannot parse is one key left
+     * unbound rather than a table refused. */
     return true;
 }
 
@@ -399,7 +403,8 @@ esp_err_t web_backup_restore_post(httpd_req_t *request)
         }
         if (refusal == NULL && count == 0U) {
             refusal = "empty";
-            refusal_reason = "no wifi.json, settings.csv, yandex.json or weather.json inside";
+            refusal_reason =
+                "no wifi.json, settings.csv, yandex.json, weather.json or remote.csv inside";
         }
     } else {
         const config_archive_member_t member = config_archive_member_from_file(name);

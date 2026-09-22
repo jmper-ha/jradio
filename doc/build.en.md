@@ -182,7 +182,8 @@ point, as if new. So the order is:
 
 1. **Download a backup:** the settings page → Backup → "Download archive", or
    `curl -O -J http://<ip>/api/backup`. The archive holds the networks, the
-   settings, the Yandex token and the weather key.
+   settings, the Yandex token, the weather key and the keys the remote was
+   taught.
 2. **Save the station list separately:** the playlist page → Export, or
    `curl http://<ip>/api/playlist > stations.csv`. It is not in the archive.
 3. Flash: `idf.py -p PORT littlefs-flash`.
@@ -191,8 +192,7 @@ point, as if new. So the order is:
    The device reboots with its networks and settings back.
 5. Bring the station list back with Import on the playlist page.
 
-The remote's table is not in the backup - the learned keys have to be taught
-again.
+The keys the remote was taught are in the backup and come back with it.
 
 Everything under `data/` goes into the image and onto every board you flash -
 keep passwords, tokens and keys out of it. The device's own files (`wifi.json`,

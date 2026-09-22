@@ -1,7 +1,8 @@
 #pragma once
 
 /* Download and restore of the three files that make a device this device -
- * wifi.json, settings.csv and yandex.json - as one zip or one file at a time.
+ * wifi.json, settings.csv, yandex.json, weather.json and remote.csv - as one
+ * zip or one file at a time.
  * See config_archive.h for the archive itself; everything here is the device
  * side of it: the filesystem, the HTTP body, and the reboot that makes a
  * restored configuration take effect.

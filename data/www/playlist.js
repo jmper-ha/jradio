@@ -385,6 +385,12 @@
      kilobytes, so sending the ceiling costs the flash almost nothing. */
   const ICON_SIZE = 160;
   const ICON_MAX_BYTES = 32768;
+  /* Why a picture was refused, because the two answers call for different
+     things from the reader: a picture that will not fit wants a smaller or a
+     plainer one, and a file that will not decode at all wants another file.
+     Saying "could not prepare it" to both sent a user looking for a fault in
+     a picture that was merely too detailed. */
+  const ICON_TOO_LARGE = 'too large';
 
   /* The encodings a scaled picture is offered to the device in, in order.
      PNG first: a station logo is flat colour, and lossless keeps its edges
@@ -404,7 +410,7 @@
      none of them does. `encode` is canvas.toBlob's signature. */
   function encodeWithinLimit(encode, limit, index) {
     const step = index || 0;
-    if (step >= ICON_ENCODINGS.length) return Promise.reject(new Error('too large'));
+    if (step >= ICON_ENCODINGS.length) return Promise.reject(new Error(ICON_TOO_LARGE));
     const {type, quality} = ICON_ENCODINGS[step];
     return new Promise((resolve, reject) => {
       encode((blob) => {
@@ -744,8 +750,10 @@
         updateSaveAvailability();
         setRowNotice(item,
           t('playlist.icon_ready'), false);
-      }).catch(() => {
-        setRowNotice(item, t('playlist.icon_failed'), true);
+      }).catch((error) => {
+        const key = error && error.message === ICON_TOO_LARGE
+          ? 'playlist.icon_too_large' : 'playlist.icon_failed';
+        setRowNotice(item, t(key, {kb: Math.round(ICON_MAX_BYTES / 1024)}), true);
       }).then(() => {
         // Cleared so that choosing the same file again is a change.
         iconInput.value = '';
@@ -1167,6 +1175,6 @@
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {parseCatalogText, serializeCatalog, rowError, buildZip, readZip,
-                      encodeWithinLimit, ICON_MAX_BYTES};
+                      encodeWithinLimit, ICON_MAX_BYTES, ICON_TOO_LARGE};
   }
 })();

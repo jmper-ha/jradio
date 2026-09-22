@@ -124,7 +124,7 @@ vm.createContext(context);
 vm.runInContext(fs.readFileSync('data/www/i18n.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('data/www/playlist.js', 'utf8'), context);
 const {parseCatalogText, serializeCatalog, rowError, buildZip, readZip,
-       encodeWithinLimit, ICON_MAX_BYTES} =
+       encodeWithinLimit, ICON_MAX_BYTES, ICON_TOO_LARGE} =
   context.module.exports;
 
 /* A zip with one deflated entry, which is what any other tool writes: the page
@@ -409,8 +409,15 @@ function zipWithDeflatedEntry(name, bytes) {
     assert.equal(small.size, 30000);
     assert.deepEqual(asked.splice(0),
       ['image/png', 'image/jpeg@0.85', 'image/jpeg@0.7', 'image/jpeg@0.55']);
-    await assert.rejects(() => encodeWithinLimit(encode([99, 98, 97, 96].map(() => 40000)),
-                                                 ICON_MAX_BYTES));
+    /* And the refusal says which of the two things went wrong: a picture
+       that will not fit asks for a smaller one, a file that will not decode
+       asks for another file, and the row says so rather than "could not
+       prepare it" to both. */
+    await assert.rejects(() => encodeWithinLimit(encode([40000, 40000, 40000, 40000]),
+                                                 ICON_MAX_BYTES),
+                         (error) => error.message === ICON_TOO_LARGE);
+    await assert.rejects(() => encodeWithinLimit((callback) => callback(null), ICON_MAX_BYTES),
+                         (error) => error.message !== ICON_TOO_LARGE);
   }
 
   console.log('web playlist tests passed');

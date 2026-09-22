@@ -344,6 +344,8 @@
     'playlist.icon_will_go': ['Иконка снимется при сохранении',
                               'The icon is removed when the list is saved'],
     'playlist.icon_failed': ['Не удалось подготовить иконку', 'Could not prepare the icon'],
+    'playlist.icon_too_large': ['Картинка слишком велика: не укладывается в {kb} КБ даже после сжатия. Возьмите поменьше или попроще.',
+                                'The picture is too large: it will not fit in {kb} KB even compressed. Try a smaller or a plainer one.'],
     'playlist.icon_missing': ['картинка не отдалась', 'the picture did not come back'],
     'playlist.reorder': ['Переставить станцию', 'Move the station'],
     'playlist.reorder_hint': ['Перетащите, чтобы переставить; стрелки вверх и вниз — то же с клавиатуры',

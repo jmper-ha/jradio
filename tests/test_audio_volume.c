@@ -197,6 +197,43 @@ static void test_a_ramp_moves_within_the_block_not_between_blocks(void)
     assert(memcmp(flat, source, sizeof(source)) == 0);
 }
 
+/* The tail written before the clock stops: it starts where the DAC is and
+   ends at zero, on both channels, without a step anywhere along it. */
+static void test_the_decay_tail_ends_at_silence(void)
+{
+    uint8_t tail[8 * AUDIO_VOLUME_FRAME_BYTES];
+    memset(tail, 0xAA, sizeof(tail));
+    audio_volume_fill_decay(tail, 8U, 8000, -4000);
+
+    int16_t left[8];
+    int16_t right[8];
+    for (size_t frame = 0U; frame < 8U; ++frame) {
+        left[frame] = (int16_t)((uint16_t)tail[frame * 4U] |
+                                ((uint16_t)tail[frame * 4U + 1U] << 8U));
+        right[frame] = (int16_t)((uint16_t)tail[frame * 4U + 2U] |
+                                 ((uint16_t)tail[frame * 4U + 3U] << 8U));
+    }
+    /* The first frame is within one step of the level being left, and the
+       last is exactly zero - that is the frame the clock stops under. */
+    assert(left[0] > 8000 - 8000 / 8 - 1 && left[0] <= 8000);
+    assert(right[0] < -4000 + 4000 / 8 + 1 && right[0] >= -4000);
+    assert(left[7] == 0 && right[7] == 0);
+    /* Monotonic towards zero on both channels: a decay with a step in it is
+       the click it exists to remove. */
+    for (size_t frame = 1U; frame < 8U; ++frame) {
+        assert(left[frame] <= left[frame - 1U]);
+        assert(right[frame] >= right[frame - 1U]);
+    }
+    /* Already silent, still silent - and a zero-length tail writes nothing. */
+    audio_volume_fill_decay(tail, 4U, 0, 0);
+    for (size_t index = 0U; index < 4U * AUDIO_VOLUME_FRAME_BYTES; ++index) {
+        assert(tail[index] == 0U);
+    }
+    uint8_t untouched[AUDIO_VOLUME_FRAME_BYTES] = {1U, 2U, 3U, 4U};
+    audio_volume_fill_decay(untouched, 0U, 1000, 1000);
+    assert(untouched[0] == 1U && untouched[3] == 4U);
+}
+
 int main(void)
 {
     test_full_volume_is_bit_exact();
@@ -210,6 +247,7 @@ int main(void)
     test_stepping_stops_at_the_ends();
     test_the_fade_starts_at_silence_and_ends_at_the_setting();
     test_a_ramp_moves_within_the_block_not_between_blocks();
+    test_the_decay_tail_ends_at_silence();
     puts("audio_volume tests passed");
     return 0;
 }

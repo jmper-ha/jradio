@@ -57,6 +57,20 @@ uint16_t audio_volume_fade_gain(uint16_t gain, uint32_t frames_done, uint32_t fa
 void audio_volume_apply_ramp(const uint8_t *source, uint8_t *destination, size_t length,
                              uint16_t gain_start, uint16_t gain_end);
 
+/* Writes `frames` frames that start at the level the DAC is holding - the last
+ * frame handed to it - and reach zero on the last one.
+ *
+ * This is the other end of the fade above, and the one the listener hears on
+ * somebody else's DAC. Output used to stop by disabling the I2S channel
+ * outright: the queued music was dropped mid-waveform and BCLK vanished, so
+ * the DAC was left holding a step. A PCM5102 hides that - it soft-mutes when
+ * the clock errs or stops - and a UDA1334A does not, which is why two users
+ * heard a click on every station and every track change while the bench heard
+ * none. Written as the last thing before the clock stops, this tail leaves the
+ * output at zero, and a clock that stops under silence is silent. */
+void audio_volume_fill_decay(uint8_t *destination, size_t frames, int16_t left,
+                             int16_t right);
+
 /* Scales interleaved 16-bit samples from `source` into `destination`.
  *
  * Separate buffers on purpose: the caller's block belongs to the decoder, and

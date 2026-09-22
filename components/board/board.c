@@ -133,6 +133,17 @@ static size_t s_audio_gain_scratch_size;
 /* Frames clocked out since output was last enabled, counted only as far as the
  * fade needs. Guarded by s_audio_mutex like the scratch. */
 static uint32_t s_audio_fade_frames;
+/* The last frame handed to I2S, and the buffer the stop decays it to zero in:
+ * a stop that just disables the channel leaves the DAC holding that level.
+ * Both guarded by s_audio_mutex, like the fade and the scratch above. */
+static int16_t s_audio_last_left;
+static int16_t s_audio_last_right;
+static uint8_t *s_audio_tail;
+#define BOARD_AUDIO_TAIL_BYTES (AUDIO_VOLUME_FADE_FRAMES * AUDIO_VOLUME_FRAME_BYTES)
+/* Defined with the rest of the audio block below, called from the stop paths
+ * above it. */
+static void board_audio_remember_tail(const void *pcm, size_t pcm_length);
+static void board_audio_flush_tail(void);
 
 static void board_audio_level_note(unsigned int value, atomic_uint *slot)
 {
@@ -439,6 +450,7 @@ esp_err_t board_audio_release_bus(void)
         s_bus_released = true;
         board_amp_apply();
         if (s_audio_enabled) {
+            board_audio_flush_tail();
             (void)i2s_channel_disable(s_i2s_tx);
             s_audio_enabled = false;
         }
@@ -505,6 +517,7 @@ static esp_err_t board_audio_preload_silence(void)
 _Static_assert(AUDIO_VOLUME_FRAME_BYTES == I2S_BYTES_PER_FRAME,
                "volume ramp and I2S disagree about the size of a frame");
 
+
 /* Returns the block to hand I2S: `pcm` itself when it needs no change, or the
  * scratch holding an attenuated copy. Advances the fade.
  *
@@ -528,6 +541,7 @@ static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
     }
     if (gain_start == AUDIO_VOLUME_UNITY && gain_end == AUDIO_VOLUME_UNITY) {
         // Full volume, fade over: bit-exact, and no copy.
+        board_audio_remember_tail(pcm, pcm_length);
         return pcm;
     }
     if (s_audio_gain_scratch == NULL || s_audio_gain_scratch_size < pcm_length) {
@@ -547,9 +561,62 @@ static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
     /* No scratch means no attenuation this block. Playing one block at full
      * volume is wrong but recoverable; refusing to write would starve the
      * DAC. */
-    if (s_audio_gain_scratch == NULL) return pcm;
+    if (s_audio_gain_scratch == NULL) {
+        board_audio_remember_tail(pcm, pcm_length);
+        return pcm;
+    }
     audio_volume_apply_ramp(pcm, s_audio_gain_scratch, pcm_length, gain_start, gain_end);
+    board_audio_remember_tail(s_audio_gain_scratch, pcm_length);
     return s_audio_gain_scratch;
+}
+
+/* The level the DAC will be holding once this block has been clocked out, so a
+ * stop can decay from it instead of dropping it. Reads the block that goes on
+ * the wire, after the volume, which is the value the DAC actually sees. */
+static void board_audio_remember_tail(const void *pcm, size_t pcm_length)
+{
+    if (pcm == NULL || pcm_length < AUDIO_VOLUME_FRAME_BYTES) return;
+    const uint8_t *frame = (const uint8_t *)pcm + pcm_length - AUDIO_VOLUME_FRAME_BYTES;
+    s_audio_last_left = (int16_t)((uint16_t)frame[0] | ((uint16_t)frame[1] << 8U));
+    s_audio_last_right = (int16_t)((uint16_t)frame[2] | ((uint16_t)frame[3] << 8U));
+}
+
+/* Decays the output to zero and waits for the DMA to clock it out, so the
+ * channel can be disabled under silence. Call with s_audio_mutex held and the
+ * channel still enabled; the amplifier stays open until this returns, because
+ * what it plays is the tail of the music.
+ *
+ * Costs the depth of the DMA - the queued audio has to reach the pins before
+ * the clock may stop - which is about 90 ms at 44.1 kHz. Nobody hears that at
+ * a pause or a track boundary, and it is the whole difference between a click
+ * and no click on a DAC that does not mute itself. */
+static void board_audio_flush_tail(void)
+{
+    if (!s_audio_enabled || s_i2s_tx == NULL) return;
+    if (s_audio_tail == NULL) {
+        /* PSRAM first like every other buffer here; a board without it falls
+         * back to internal memory, and a board with neither stops the way it
+         * always did. */
+        s_audio_tail = heap_caps_malloc(BOARD_AUDIO_TAIL_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (s_audio_tail == NULL) {
+            s_audio_tail = heap_caps_malloc(BOARD_AUDIO_TAIL_BYTES,
+                                            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        }
+    }
+    const uint32_t rate = s_audio_sample_rate > 0U ? s_audio_sample_rate
+                                                   : AUDIO_DEFAULT_SAMPLE_RATE;
+    if (s_audio_tail != NULL) {
+        audio_volume_fill_decay(s_audio_tail, AUDIO_VOLUME_FADE_FRAMES, s_audio_last_left,
+                                s_audio_last_right);
+        size_t written = 0U;
+        (void)i2s_channel_write(s_i2s_tx, s_audio_tail, BOARD_AUDIO_TAIL_BYTES, &written,
+                                pdMS_TO_TICKS(200));
+    }
+    s_audio_last_left = 0;
+    s_audio_last_right = 0;
+    /* The write above only queues: this is the wait for the queue - the tail
+     * included - to reach the pins. */
+    vTaskDelay(pdMS_TO_TICKS(((I2S_DMA_DESC_NUM * I2S_DMA_FRAME_NUM * 1000U) / rate) + 2U));
 }
 
 esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
@@ -736,6 +803,9 @@ esp_err_t board_audio_set_enabled(bool enabled)
                 result = i2s_channel_enable(s_i2s_tx);
             }
         } else {
+            /* Decayed to zero and clocked out first: the DAC is then holding
+             * silence, and a clock that stops under silence is silent. */
+            board_audio_flush_tail();
             /* The amplifier goes quiet before the clock stops rather than
              * after it: a DAC whose BCLK disappears under it thumps, and not
              * hearing that is the whole point of the pin. */
@@ -783,6 +853,7 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
     const bool was_enabled = s_audio_enabled;
     esp_err_t result = ESP_OK;
     if (was_enabled) {
+        board_audio_flush_tail();
         result = i2s_channel_disable(s_i2s_tx);
         if (result == ESP_OK) {
             s_audio_enabled = false;

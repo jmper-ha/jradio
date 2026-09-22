@@ -89,6 +89,28 @@ void audio_volume_apply_ramp(const uint8_t *source, uint8_t *destination, size_t
     if (offset < length) destination[offset] = source[offset];
 }
 
+void audio_volume_fill_decay(uint8_t *destination, size_t frames, int16_t left,
+                             int16_t right)
+{
+    if (destination == NULL || frames == 0U) return;
+
+    for (size_t frame = 0U; frame < frames; ++frame) {
+        /* Counts down rather than up, so the last frame is exactly zero: that
+         * is the frame the clock stops under. */
+        const int32_t remaining = (int32_t)(frames - frame - 1U);
+        const int16_t samples[2] = {
+            (int16_t)(((int32_t)left * remaining) / (int32_t)frames),
+            (int16_t)(((int32_t)right * remaining) / (int32_t)frames),
+        };
+        for (size_t channel = 0U; channel < 2U; ++channel) {
+            const uint16_t encoded = (uint16_t)samples[channel];
+            destination[frame * AUDIO_VOLUME_FRAME_BYTES + channel * 2U] = (uint8_t)encoded;
+            destination[frame * AUDIO_VOLUME_FRAME_BYTES + channel * 2U + 1U] =
+                (uint8_t)(encoded >> 8U);
+        }
+    }
+}
+
 void audio_volume_apply(const uint8_t *source, uint8_t *destination, size_t length,
                         uint16_t gain)
 {

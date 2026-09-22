@@ -386,6 +386,34 @@
   const ICON_SIZE = 160;
   const ICON_MAX_BYTES = 32768;
 
+  /* The encodings a scaled picture is offered to the device in, in order.
+     PNG first: a station logo is flat colour, and lossless keeps its edges
+     crisp at a few kilobytes. But a photograph the same size is 38 KB as
+     PNG - measured, on the picture a user could not attach - and the device
+     takes 32, so the page used to give up and say the file was no good. JPEG
+     carries that same picture in six. The quality steps are there for the
+     rare picture even JPEG cannot fit at 0.85. */
+  const ICON_ENCODINGS = [
+    {type: 'image/png', quality: undefined},
+    {type: 'image/jpeg', quality: 0.85},
+    {type: 'image/jpeg', quality: 0.7},
+    {type: 'image/jpeg', quality: 0.55},
+  ];
+
+  /* Encodes the canvas as the first of those that fits, and rejects only when
+     none of them does. `encode` is canvas.toBlob's signature. */
+  function encodeWithinLimit(encode, limit, index) {
+    const step = index || 0;
+    if (step >= ICON_ENCODINGS.length) return Promise.reject(new Error('too large'));
+    const {type, quality} = ICON_ENCODINGS[step];
+    return new Promise((resolve, reject) => {
+      encode((blob) => {
+        if (blob === null) reject(new Error('encode failed'));
+        else resolve(blob);
+      }, type, quality);
+    }).then((blob) => (blob.size <= limit ? blob : encodeWithinLimit(encode, limit, step + 1)));
+  }
+
   function scaleImage(file) {
     return new Promise((resolve, reject) => {
       const image = new Image();
@@ -403,10 +431,8 @@
         context.fillStyle = '#000000';
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob((blob) => {
-          if (blob === null) reject(new Error('encode failed'));
-          else resolve(blob);
-        }, 'image/png');
+        encodeWithinLimit((callback, type, quality) => canvas.toBlob(callback, type, quality),
+                          ICON_MAX_BYTES).then(resolve, reject);
       };
       image.onerror = () => {
         URL.revokeObjectURL(objectUrl);
@@ -449,10 +475,9 @@
   function fitPicture(blob) {
     const known = blob.type === 'image/png' || blob.type === 'image/jpeg';
     if (known && blob.size <= ICON_MAX_BYTES) return Promise.resolve(makePicture(blob));
-    return scaleImage(blob).then((scaled) => {
-      if (scaled.size > ICON_MAX_BYTES) throw new Error('too large');
-      return makePicture(scaled);
-    });
+    /* Whatever comes back from here already fits - that is what
+       encodeWithinLimit() is for - or the promise has been rejected. */
+    return scaleImage(blob).then(makePicture);
   }
 
   function uploadPicture(picture) {
@@ -712,7 +737,6 @@
       if (!file) return;
       setRowNotice(item, t('playlist.icon_preparing'), false);
       scaleImage(file).then((blob) => {
-        if (blob.size > ICON_MAX_BYTES) throw new Error('too large');
         dropPicture(row);
         row.picture = makePicture(blob);
         row.icon = '';
@@ -1142,6 +1166,7 @@
   loadLanguage();
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {parseCatalogText, serializeCatalog, rowError, buildZip, readZip};
+    module.exports = {parseCatalogText, serializeCatalog, rowError, buildZip, readZip,
+                      encodeWithinLimit, ICON_MAX_BYTES};
   }
 })();

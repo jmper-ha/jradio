@@ -123,7 +123,8 @@ function flush() {
 vm.createContext(context);
 vm.runInContext(fs.readFileSync('data/www/i18n.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('data/www/playlist.js', 'utf8'), context);
-const {parseCatalogText, serializeCatalog, rowError, buildZip, readZip} =
+const {parseCatalogText, serializeCatalog, rowError, buildZip, readZip,
+       encodeWithinLimit, ICON_MAX_BYTES} =
   context.module.exports;
 
 /* A zip with one deflated entry, which is what any other tool writes: the page
@@ -383,6 +384,34 @@ function zipWithDeflatedEntry(name, bytes) {
   await flush();
   assert.equal(fetchCalls[fetchCalls.length - 1].options.body,
     'Y\thttp://y\tS\nZ\thttp://z\tS\nX\thttp://x\tS\n');
+
+  /* A picture the page could not attach: a 130x130 photograph is 38 KB as a
+     canvas PNG and the device takes 32, so PNG alone meant "no good file".
+     The page now offers JPEG next and only gives up when nothing fits. */
+  {
+    const asked = [];
+    const encode = (sizes) => (callback, type, quality) => {
+      asked.push(quality === undefined ? type : `${type}@${quality}`);
+      callback({size: sizes.shift(), type});
+    };
+    const png = await encodeWithinLimit(encode([4096]), ICON_MAX_BYTES);
+    assert.equal(png.type, 'image/png');
+    assert.deepEqual(asked.splice(0), ['image/png']);
+
+    const jpeg = await encodeWithinLimit(encode([38102, 6499]), ICON_MAX_BYTES);
+    assert.equal(jpeg.type, 'image/jpeg');
+    assert.equal(jpeg.size, 6499);
+    assert.deepEqual(asked.splice(0), ['image/png', 'image/jpeg@0.85']);
+
+    /* Down the quality steps, and a rejection when even the last one is too
+       big - the row then says the picture could not be prepared. */
+    const small = await encodeWithinLimit(encode([40000, 39000, 38000, 30000]), ICON_MAX_BYTES);
+    assert.equal(small.size, 30000);
+    assert.deepEqual(asked.splice(0),
+      ['image/png', 'image/jpeg@0.85', 'image/jpeg@0.7', 'image/jpeg@0.55']);
+    await assert.rejects(() => encodeWithinLimit(encode([99, 98, 97, 96].map(() => 40000)),
+                                                 ICON_MAX_BYTES));
+  }
 
   console.log('web playlist tests passed');
 })().catch((error) => {

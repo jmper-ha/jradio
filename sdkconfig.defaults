@@ -145,3 +145,11 @@ CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
 # a board that ran fine a moment ago needs.
 CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP=y
 # CONFIG_SPIRAM_MEMTEST is not set
+
+# Software AES, on purpose. The hardware one goes through DMA and wants a
+# contiguous internal block the size of a TLS record - up to 16 KB - and a
+# fully fitted board does not have one: with the USB host up the largest DMA
+# block measured 8 KB, and every HTTPS request died with
+# "esp-aes: Failed to allocate memory". Software AES needs no DMA memory at
+# all; a 320 kbps stream is 40 KB/s, which this chip does several times over.
+# CONFIG_MBEDTLS_HARDWARE_AES is not set

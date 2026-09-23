@@ -66,7 +66,14 @@
 #define UI_SRC_ART_NOTE_(px) ui_feed_icon_music_note_##px
 #define UI_SRC_ART_NOTE(px) UI_SRC_ART_NOTE_(px)
 
-#define UI_DRAW_BUFFER_LINES 20
+/* One LVGL band is one transfer to the panel, and no wider: board.c hands the
+ * bus LCD_DRAW_LINES rows at a time, so a band twice that deep was split in
+ * two anyway - the same SPI traffic for twice the internal DMA memory. On the
+ * 480 px panels that memory is 19 200 bytes against 9 600, and this firmware
+ * is short of exactly that kind: a Yandex track starting with the USB host up
+ * left 11 KB internal and a 2 KB largest DMA block, and connections stopped
+ * opening. */
+#define UI_DRAW_BUFFER_LINES LCD_DRAW_LINES
 #define UI_DRAW_BUFFER_SIZE ui_rgb565_draw_buffer_size(TFT_WIDTH, UI_DRAW_BUFFER_LINES)
 #define UI_INPUT_QUEUE_LENGTH 16
 /* Measured, not guessed: at 6144 the periodic health report found this task

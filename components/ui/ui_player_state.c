@@ -392,9 +392,17 @@ bool ui_player_state_pending_item(const ui_player_state_t *state, size_t *item_i
 }
 
 bool ui_player_state_list_is_the_only_screen(audio_source_t source, size_t active_item_index,
-                                             player_playback_state_t playback)
+                                             player_playback_state_t playback, bool pending)
 {
     if (source != AUDIO_SOURCE_INTERNET_RADIO && source != AUDIO_SOURCE_YANDEX) return false;
+    /* A command of our own is on its way: the screen it asked for is the one
+     * to stay on. The snapshot still reads "nothing chosen, stopped" until
+     * the player has resolved a first track, which the rotor can spend seconds
+     * on - and a station picked here bounced the panel straight back to the
+     * list while the music it had just started came through the speakers. The
+     * pending command carries its own timeout, so a start that never happens
+     * still reports itself on the player screen. */
+    if (pending) return false;
     if (active_item_index != PLAYER_ITEM_NONE) return false;
     /* Stopped and nothing else: an error has a message on the player screen
      * worth reading, and paused means a station is loaded and waiting. */

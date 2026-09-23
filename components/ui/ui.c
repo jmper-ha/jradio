@@ -6238,7 +6238,8 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     if (s_waiting_for_source_item &&
         ui_player_state_list_is_the_only_screen(snapshot->active_source,
                                                 snapshot->active_item_index,
-                                                snapshot->playback_state) &&
+                                                snapshot->playback_state,
+                                                ui_player_state_is_pending(&s_player_ui)) &&
         (uint32_t)(ui_tick_get_ms() - s_source_item_wait_started_ms) >=
             UI_RADIO_EMPTY_LIST_DELAY_MS) {
         s_waiting_for_source_item = false;

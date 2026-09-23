@@ -777,23 +777,32 @@ static void test_a_chosen_source_with_nothing_playing_wants_its_list(void)
 {
     assert(ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_INTERNET_RADIO,
                                                    PLAYER_ITEM_NONE,
-                                                   PLAYER_PLAYBACK_STOPPED));
+                                                   PLAYER_PLAYBACK_STOPPED, false));
     assert(ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_YANDEX, PLAYER_ITEM_NONE,
-                                                   PLAYER_PLAYBACK_STOPPED));
+                                                   PLAYER_PLAYBACK_STOPPED, false));
     /* A start on its way, or one that has arrived, is the player's screen. */
     assert(!ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_YANDEX, PLAYER_ITEM_NONE,
-                                                    PLAYER_PLAYBACK_CONNECTING));
+                                                    PLAYER_PLAYBACK_CONNECTING, false));
     assert(!ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_YANDEX, PLAYER_ITEM_NONE,
-                                                    PLAYER_PLAYBACK_PLAYING));
+                                                    PLAYER_PLAYBACK_PLAYING, false));
+    /* And a command of this panel's own, still in flight: the rotor spends
+       seconds resolving its first track, during which the snapshot says
+       "nothing chosen, stopped" - and the station the user had just picked
+       took the screen back to the list while it started playing. */
+    assert(!ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_YANDEX, PLAYER_ITEM_NONE,
+                                                    PLAYER_PLAYBACK_STOPPED, true));
+    assert(!ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_INTERNET_RADIO,
+                                                    PLAYER_ITEM_NONE,
+                                                    PLAYER_PLAYBACK_STOPPED, true));
     /* A station is chosen: it is paused or it failed, and either is worth
      * reading on the player screen. */
     assert(!ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_INTERNET_RADIO, 3U,
-                                                    PLAYER_PLAYBACK_STOPPED));
+                                                    PLAYER_PLAYBACK_STOPPED, false));
     /* The volumes and the media server have a listing to wait for first. */
     assert(!ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_USB, PLAYER_ITEM_NONE,
-                                                    PLAYER_PLAYBACK_STOPPED));
+                                                    PLAYER_PLAYBACK_STOPPED, false));
     assert(!ui_player_state_list_is_the_only_screen(AUDIO_SOURCE_DLNA, PLAYER_ITEM_NONE,
-                                                    PLAYER_PLAYBACK_STOPPED));
+                                                    PLAYER_PLAYBACK_STOPPED, false));
 }
 
 int main(void)

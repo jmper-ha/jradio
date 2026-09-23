@@ -74,4 +74,4 @@ bool ui_player_state_pending_item(const ui_player_state_t *state, size_t *item_i
  * Only the two station lists. A file volume and the media server look the same
  * here but have a listing to wait for first, and their own waits above it. */
 bool ui_player_state_list_is_the_only_screen(audio_source_t source, size_t active_item_index,
-                                             player_playback_state_t playback);
+                                             player_playback_state_t playback, bool pending);

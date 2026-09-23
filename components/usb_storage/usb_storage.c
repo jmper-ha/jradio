@@ -52,8 +52,15 @@ file_browser_media_t usb_storage_media(void)
 static void usb_lib_task(void *arg)
 {
     (void)arg;
-    const esp_err_t err = usb_host_install(
-        &(usb_host_config_t){.intr_flags = ESP_INTR_FLAG_LEVEL1});
+    /* No level asked for, on purpose. This said ESP_INTR_FLAG_LEVEL1 - the
+     * value ESP-IDF's own example carries - and that pins the allocator to
+     * level 1, which a full board has none of left by the time the host is
+     * installed: Wi-Fi, the panel's SPI with its DMA, I2S, the card's SPI3,
+     * the module's UART and the remote's RMT channel are all there first. The
+     * bench came up with "No free interrupt inputs for USB interrupt" and no
+     * USB source at all, while levels 2 and 3 sat free. Nothing about USB
+     * wants the lowest priority; it wants a slot. */
+    const esp_err_t err = usb_host_install(&(usb_host_config_t){.intr_flags = 0});
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "USB host install failed: %s", esp_err_to_name(err));
         xEventGroupSetBits(s_events, USB_HOST_FAILED_BIT);

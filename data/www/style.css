@@ -333,6 +333,12 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .player-page {
   height: 100vh;
   height: 100dvh;
+  /* body's min-height: 100vh would outrank the height above, and on Android
+     Chrome 100vh is the viewport with the address bar hidden - taller than
+     the one on screen while the bar shows. The page then ran that much past
+     the bottom edge with overflow hidden, and the last row of the list could
+     not be scrolled to. iOS Safari never showed it. */
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -489,7 +495,12 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 
 .list-item:hover:not(:disabled) { background: var(--surface-2); }
 
-.list-item.is-active { background: var(--accent-soft); }
+/* The :hover arm is not decoration: Android Chrome leaves a tapped row hovered,
+   and the hover rule above outranks a bare .is-active, so the row just chosen
+   lost its highlight to the plain hover grey. Safari on the iPhone does not
+   keep the hover and always showed it. */
+.list-item.is-active,
+.list-item.is-active:hover:not(:disabled) { background: var(--accent-soft); }
 .list-item.is-active::before { color: var(--accent); }
 
 .list-item-label {

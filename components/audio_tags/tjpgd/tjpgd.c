@@ -886,6 +886,63 @@ JRESULT jd_mcu_output(
                 }
             }
         }
+
+        /* Descale the MCU rectangular if needed.
+         *
+         * This block and the 1/8 branch below are ChaN's R0.03, put back: the
+         * copy this file came from is LVGL's, which only ever decodes at 1/1
+         * and had cut both out. With JD_USE_SCALE on and nothing here, an MCU
+         * decoded at 1/2 or 1/4 was handed out as the top-left rows of the
+         * full-size block, so every cover large enough to be descaled - a
+         * phone's, a media server's, a folder's - came out as horizontal
+         * streaks, rows sliding against each other. 100 px Yandex covers are
+         * decoded at 1/1 and never showed it. */
+        if(JD_USE_SCALE && jd->scale) {
+            unsigned int sx, sy, r, g, b, s, w, a;
+            uint8_t * op;
+
+            s = jd->scale * 2;          /* Number of shifts for averaging */
+            w = 1 << jd->scale;         /* Width of the square averaged into one pixel */
+            a = (mx - w) * 3;           /* Bytes to skip to the next line of the square */
+            op = (uint8_t *)jd->workbuf;
+            for(iy = 0; iy < my; iy += w) {
+                for(ix = 0; ix < mx; ix += w) {
+                    pix = (uint8_t *)jd->workbuf + (iy * mx + ix) * 3;
+                    r = g = b = 0;
+                    for(sy = 0; sy < w; sy++) {
+                        for(sx = 0; sx < w; sx++) {
+                            r += *pix++;
+                            g += *pix++;
+                            b += *pix++;
+                        }
+                        pix += a;
+                    }
+                    /* In place is safe: the output never overtakes the input,
+                     * since each output pixel is written after its square is read. */
+                    *op++ = (uint8_t)(r >> s);
+                    *op++ = (uint8_t)(g >> s);
+                    *op++ = (uint8_t)(b >> s);
+                }
+            }
+        }
+    }
+    else {    /* 1/8 scaling: each block's DC value is its one pixel */
+        pix = (uint8_t *)jd->workbuf;
+        pc = jd->mcubuf + mx * my;
+        cb = pc[0] - 128;
+        cr = pc[64] - 128;
+        for(iy = 0; iy < my; iy += 8) {
+            py = jd->mcubuf;
+            if(iy == 8) py += 64 * 2;
+            for(ix = 0; ix < mx; ix += 8) {
+                yy = *py;
+                py += 64;
+                /* B, G, R - the order the full-size path above builds in. */
+                *pix++ = /*B*/ BYTECLIP(yy + ((int)(1.772 * CVACC) * cb) / CVACC);
+                *pix++ = /*G*/ BYTECLIP(yy - ((int)(0.344 * CVACC) * cb + (int)(0.714 * CVACC) * cr) / CVACC);
+                *pix++ = /*R*/ BYTECLIP(yy + ((int)(1.402 * CVACC) * cr) / CVACC);
+            }
+        }
     }
 
     /* Squeeze up pixel table if a part of MCU is to be truncated */

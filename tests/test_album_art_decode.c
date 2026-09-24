@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "tjpgd.h"
+#include "fixtures/jpeg_40x40_420.h"
 
 /* A solid red 16x16 baseline JPEG. Red is the one colour that tells RGB from
  * BGR without reading a single bit. */
@@ -100,6 +101,99 @@ static int collect(JDEC *decoder, void *bitmap, JRECT *rect)
     return 1;
 }
 
+/* Descaling. The decoder is asked for 1/2, 1/4 or 1/8 of a large cover, and
+ * the copy of tjpgd this came from (LVGL's) had the code that does it cut out:
+ * an MCU decoded at 1/2 went out as the top-left rows of the full block, and
+ * every cover big enough to be descaled - a phone's, a media server's - came
+ * out in streaks. So each scale is held against the full-size decode, averaged
+ * over the same squares: they must agree to within JPEG's own rounding. */
+enum { FIXTURE_SIDE = 40 };
+
+typedef struct {
+    const uint8_t *data;
+    size_t length;
+    size_t offset;
+    uint16_t *pixels;
+    unsigned width;
+    unsigned height;
+} frame_t;
+
+static size_t feed_frame(JDEC *decoder, uint8_t *buffer, size_t length)
+{
+    frame_t *frame = (frame_t *)decoder->device;
+    const size_t left = frame->length - frame->offset;
+    const size_t take = length < left ? length : left;
+    if (buffer != NULL) memcpy(buffer, frame->data + frame->offset, take);
+    frame->offset += take;
+    return take;
+}
+
+static int store_frame(JDEC *decoder, void *bitmap, JRECT *rect)
+{
+    frame_t *frame = (frame_t *)decoder->device;
+    const uint16_t *source = bitmap;
+    const unsigned row = (unsigned)(rect->right - rect->left) + 1U;
+    for (unsigned y = rect->top; y <= rect->bottom; ++y) {
+        assert(y < frame->height && rect->right < frame->width);
+        memcpy(frame->pixels + y * frame->width + rect->left, source + (y - rect->top) * row,
+               row * sizeof(uint16_t));
+    }
+    return 1;
+}
+
+static void decode_fixture(uint8_t scale, uint16_t *pixels)
+{
+    static uint8_t work[4096];
+    const unsigned side = FIXTURE_SIDE >> scale;
+    frame_t frame = {jpeg_40x40_420, sizeof(jpeg_40x40_420), 0U, pixels, side, side};
+    JDEC decoder;
+    assert(jd_prepare(&decoder, feed_frame, work, sizeof(work), &frame) == JDR_OK);
+    assert(decoder.width == FIXTURE_SIDE && decoder.height == FIXTURE_SIDE);
+    assert(jd_decomp(&decoder, store_frame, scale) == JDR_OK);
+}
+
+static unsigned distance(unsigned a, unsigned b) { return a > b ? a - b : b - a; }
+
+static void test_every_scale_matches_the_full_decode_averaged(void)
+{
+    static uint16_t full[FIXTURE_SIDE * FIXTURE_SIDE];
+    static uint16_t scaled[FIXTURE_SIDE * FIXTURE_SIDE];
+    decode_fixture(0U, full);
+
+    for (uint8_t scale = 1U; scale <= 3U; ++scale) {
+        const unsigned side = FIXTURE_SIDE >> scale;
+        const unsigned square = 1U << scale;
+        /* 1/2 and 1/4 average the very pixels a full decode gives and land
+         * within a step (measured: 1 on every channel). 1/8 takes each block's
+         * DC and, at 4:2:0, one colour for the whole 16x16 MCU, so on this
+         * fixture's steep blue gradient it is up to 9 steps off (measured) -
+         * the resolution the file has at that scale, not a fault. */
+        const unsigned slack_rb = scale == 3U ? 10U : 1U;
+        const unsigned slack_g = scale == 3U ? 10U : 1U;
+        memset(scaled, 0, sizeof(scaled));
+        decode_fixture(scale, scaled);
+
+        for (unsigned y = 0U; y < side; ++y) {
+            for (unsigned x = 0U; x < side; ++x) {
+                unsigned red = 0U, green = 0U, blue = 0U;
+                for (unsigned sy = 0U; sy < square; ++sy) {
+                    for (unsigned sx = 0U; sx < square; ++sx) {
+                        const uint16_t pixel = full[(y * square + sy) * FIXTURE_SIDE + x * square + sx];
+                        red += (pixel >> 11) & 0x1FU;
+                        green += (pixel >> 5) & 0x3FU;
+                        blue += pixel & 0x1FU;
+                    }
+                }
+                const unsigned count = square * square;
+                const uint16_t got = scaled[y * side + x];
+                assert(distance((got >> 11) & 0x1FU, (red + count / 2U) / count) <= slack_rb);
+                assert(distance((got >> 5) & 0x3FU, (green + count / 2U) / count) <= slack_g);
+                assert(distance(got & 0x1FU, (blue + count / 2U) / count) <= slack_rb);
+            }
+        }
+    }
+}
+
 int main(void)
 {
     static uint8_t work[4096];
@@ -117,6 +211,8 @@ int main(void)
     assert(red >= 28U);
     assert(blue <= 3U);
     assert(green <= 8U);
+
+    test_every_scale_matches_the_full_decode_averaged();
 
     printf("album art decode tests passed\n");
     return 0;

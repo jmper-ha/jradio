@@ -20,10 +20,15 @@ static const char *TAG = "album_art";
  * the spare one costs nothing where it is allocated. */
 #define ALBUM_ART_WORK_POOL 4096U
 /* The decoder descales by halves, so it stops one halving above the tile and
- * the intermediate is normally under 192 pixels a side. A source large enough
- * to exceed this even after 1/8 is refused rather than decoded: the answer
- * would still be 96 pixels across, and the track's first sample is waiting. */
-#define ALBUM_ART_DECODED_PIXELS_MAX (256U * 256U)
+ * the intermediate is under twice the tile a side - unless even 1/8 leaves it
+ * larger, and such a source is refused rather than decoded: the answer would
+ * still be one tile across, and the track's first sample is waiting.
+ *
+ * Derived from the largest tile, not written as a number. It was 256 x 256
+ * while every panel had a 96 px tile; the 480x320 panels brought a 160 px one,
+ * where an ordinary 540x520 folder cover decodes at 1/2 to 270x260 and was
+ * refused for being 70 200 pixels. At 320 x 320 this is 200 KB of PSRAM. */
+#define ALBUM_ART_DECODED_PIXELS_MAX ((2U * ALBUM_ART_MAX_SIZE) * (2U * ALBUM_ART_MAX_SIZE))
 
 static uint16_t *s_cover;
 static SemaphoreHandle_t s_lock;

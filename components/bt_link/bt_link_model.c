@@ -314,3 +314,11 @@ bool bt_link_model_level(const jbt_frame_t *frame, uint16_t *left, uint16_t *rig
     *right = r > 32768U ? 32768U : r;
     return true;
 }
+
+bool bt_link_model_ping_due(int64_t now_us, int64_t last_ping_us, int64_t last_heard_us,
+                            bool version_known, uint32_t ping_ms)
+{
+    const int64_t period_us = (int64_t)ping_ms * 1000;
+    if (now_us - last_ping_us <= period_us) return false;
+    return !version_known || now_us - last_heard_us > period_us;
+}

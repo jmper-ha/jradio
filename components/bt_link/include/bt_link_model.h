@@ -139,6 +139,16 @@ bool bt_link_model_log(const jbt_frame_t *frame, uint8_t *level, char *text, siz
  * to the meter without taking the state lock. */
 bool bt_link_model_level(const jbt_frame_t *frame, uint16_t *left, uint16_t *right);
 
+/* Whether to PING now. Normally only after `ping_ms` of silence - a module
+ * that is talking is plainly there. But the firmware version only ever
+ * arrives in the PONG, and while a phone plays the module never falls
+ * silent for that long (position, track, twenty LEVELs a second), so after a
+ * reboot of this board the version stayed unknown and the About page said
+ * the module was missing. Until it is known, a PING goes out every
+ * `ping_ms` regardless. Times in microseconds. */
+bool bt_link_model_ping_due(int64_t now_us, int64_t last_ping_us, int64_t last_heard_us,
+                            bool version_known, uint32_t ping_ms);
+
 /* The 0..100 volume the board keeps and the 0..127 the module speaks,
  * each way, rounded so a value survives the round trip. */
 uint8_t bt_link_volume_to_module(uint8_t percent);

@@ -398,8 +398,8 @@ static void bt_link_task(void *arg)
             bt_link_model_init(&s_state);
             xSemaphoreGive(s_state_lock);
         }
-        if (now - s_last_ping_us > (int64_t)BT_LINK_PING_MS * 1000 &&
-            now - s_last_heard_us > (int64_t)BT_LINK_PING_MS * 1000) {
+        if (bt_link_model_ping_due(now, s_last_ping_us, s_last_heard_us, s_state.protocol != 0U,
+                                   BT_LINK_PING_MS)) {
             s_last_ping_us = now;
             (void)bt_link_send(JBT_MSG_PING, 0U, NULL, 0U);
         }

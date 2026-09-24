@@ -359,6 +359,23 @@ static void test_a_level_frame_gives_the_meter_two_readings(void)
     assert(strcmp(jbt_msg_name(JBT_MSG_LEVEL), "LEVEL") == 0);
 }
 
+/* A talking module is not pinged - until its version is unknown, which is the
+ * state after this board reboots while a phone plays and the module never
+ * falls silent: then a PING goes out on the beat regardless, and no faster. */
+static void test_a_ping_goes_out_while_the_version_is_unknown(void)
+{
+    const uint32_t beat = 2000U;
+    const int64_t s = 1000000;
+    // Heard 100 ms ago, version known: no PING however long since the last.
+    assert(!bt_link_model_ping_due(10 * s, 0, 10 * s - s / 10, true, beat));
+    // Silent for 3 s: PING.
+    assert(bt_link_model_ping_due(10 * s, 0, 7 * s, true, beat));
+    // Version unknown, module chatty: PING anyway...
+    assert(bt_link_model_ping_due(10 * s, 7 * s, 10 * s - s / 10, false, beat));
+    // ...but not twice inside the beat.
+    assert(!bt_link_model_ping_due(10 * s, 9 * s, 10 * s - s / 10, false, beat));
+}
+
 int main(void)
 {
     test_a_scan_lists_each_speaker_once_and_keeps_its_name();
@@ -369,6 +386,7 @@ int main(void)
     test_a_log_frame_is_read_for_printing();
     test_the_volume_scales_round_trip();
     test_a_level_frame_gives_the_meter_two_readings();
+    test_a_ping_goes_out_while_the_version_is_unknown();
     puts("bt_link_model tests passed");
     return 0;
 }

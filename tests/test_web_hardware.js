@@ -289,12 +289,17 @@ function makeDocument() {
   const body = new Element('body');
   body.setAttribute('data-i18n-page', 'title.hardware');
   const ids = ['hw-parts', 'hw-svg', 'hw-hint', 'hw-hint-stack', 'hw-hint-picking', 'hw-legend', 'hw-report', 'hw-csv', 'hw-status',
-               'hw-download', 'hw-copy', 'hw-import', 'hw-import-apply', 'hw-reset', 'hw-import-status'];
+               'hw-download', 'hw-copy', 'hw-import', 'hw-import-apply', 'hw-reset', 'hw-import-status',
+               'hw-language'];
   for (const id of ids) {
     const element = new Element(id === 'hw-svg' ? 'svg' : 'div');
     element.id = id;
     body.append(element);
   }
+  // The markup's own keys, for the two elements the language test reads.
+  body.querySelector('#hw-language').setAttribute('data-i18n', 'lang.other');
+  body.querySelector('#hw-language').setAttribute('data-i18n-aria', 'lang.toggle');
+  body.querySelector('#hw-download').setAttribute('data-i18n', 'hw.download');
   const document = {
     body,
     documentElement: new Element('html'),
@@ -309,7 +314,7 @@ function makeDocument() {
   return document;
 }
 
-function loadPage() {
+function loadPage(browserLanguage) {
   const document = makeDocument();
   const storage = {};
   const window = {
@@ -318,7 +323,7 @@ function loadPage() {
       setItem: (key, value) => { storage[key] = String(value); },
     },
     document,
-    navigator: {},
+    navigator: browserLanguage === undefined ? {} : {language: browserLanguage},
     URL: {createObjectURL: () => 'blob:x', revokeObjectURL: () => {}},
     Blob: function Blob() {},
   };
@@ -491,6 +496,31 @@ function test_every_label_the_page_needs_is_in_the_dictionary() {
 }
 
 test_the_readme_board_is_clean();
+/* The site has no device to take a language from: a switch, and on a first
+ * visit the browser's language, which a press then overrides for good. */
+function test_the_language_switch_and_the_first_visit() {
+  {
+    const {document, window, storage} = loadPage();
+    const button = document.getElementById('hw-language');
+    assert.equal(window.jradioI18n.language(), 'ru');
+    assert.equal(button.textContent, 'EN');
+    assert.equal(document.getElementById('hw-download').textContent, 'Скачать');
+    button.click();
+    assert.equal(window.jradioI18n.language(), 'en');
+    assert.equal(document.documentElement.lang, 'en');
+    assert.equal(button.textContent, 'RU');
+    assert.equal(button.getAttribute('aria-label'), 'Переключить на русский');
+    assert.equal(document.getElementById('hw-download').textContent, 'Download');
+    assert.equal(storage['jradio.language'], 'en');
+    button.click();
+    assert.equal(window.jradioI18n.language(), 'ru');
+  }
+  // A browser in English opens the page in English...
+  assert.equal(loadPage('en-US').window.jradioI18n.language(), 'en');
+  // ...a Russian one in Russian.
+  assert.equal(loadPage('ru-RU').window.jradioI18n.language(), 'ru');
+}
+
 test_the_file_round_trips();
 test_the_header_round_trips_and_names_every_option();
 test_a_partial_file_means_the_defaults_for_the_rest();
@@ -503,4 +533,5 @@ test_the_warnings_that_do_not_stop_a_file();
 test_the_header_is_the_devkit();
 test_the_page_builds_every_part_and_follows_the_clicks();
 test_every_label_the_page_needs_is_in_the_dictionary();
+test_the_language_switch_and_the_first_visit();
 console.log('web hardware tests passed');

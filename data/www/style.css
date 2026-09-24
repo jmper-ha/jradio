@@ -261,6 +261,17 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 
 .icon-button:hover { color: var(--text); background: var(--surface-2); }
 
+/* Two letters where the other buttons carry an icon: the flasher site's
+   language switch, which names the language it goes to. */
+.language-toggle {
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  background: none;
+  cursor: pointer;
+}
+
 .icon-button svg {
   width: 16px;
   height: 16px;

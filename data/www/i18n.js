@@ -32,6 +32,10 @@
     'nav.back_to_player': ['Вернуться к плееру', 'Back to the player'],
     'nav.sections': ['Разделы', 'Sections'],
     'theme.toggle': ['Сменить тему', 'Switch theme'],
+    /* The flasher site's switch names the language it goes to, each in that
+       language, so a reader who cannot read the current one still finds it. */
+    'lang.other': ['EN', 'RU'],
+    'lang.toggle': ['Switch to English', 'Переключить на русский'],
     'socket.connecting': ['Подключение…', 'Connecting…'],
     'socket.online': ['Подключено', 'Connected'],
     'socket.offline': ['Нет связи', 'No connection'],

@@ -583,4 +583,25 @@
   /* The labels are built here, not in the markup, so a language change has
      to rebuild them. */
   window.jradioI18n.onChange(() => build());
+
+  /* The site has no device to take a language from, so it has a switch - and
+     on a first visit, before anyone has pressed it, the browser's own language
+     decides: this page is found from outside Russia too, and a reader who
+     cannot read the Russian would not know which button to look for. */
+  const languageButton = $('hw-language');
+  if (languageButton !== null) {
+    languageButton.addEventListener('click', () => {
+      window.jradioI18n.setLanguage(window.jradioI18n.language() === 'ru' ? 'en' : 'ru');
+    });
+  }
+  let chosen = null;
+  try {
+    chosen = window.localStorage.getItem('jradio.language');
+  } catch (error) {
+    chosen = null;
+  }
+  const browser = String((window.navigator && window.navigator.language) || '').toLowerCase();
+  if (chosen === null && browser !== '' && !browser.startsWith('ru')) {
+    window.jradioI18n.setLanguage('en');
+  }
 })();

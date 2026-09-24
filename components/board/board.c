@@ -171,6 +171,13 @@ uint8_t board_audio_volume(void)
     return (uint8_t)atomic_load_explicit(&s_audio_volume, memory_order_relaxed);
 }
 
+void board_audio_level_put(uint16_t left, uint16_t right)
+{
+    board_audio_level_note(left, &s_audio_level_left);
+    board_audio_level_note(right, &s_audio_level_right);
+    atomic_store_explicit(&s_audio_level_fresh, true, memory_order_relaxed);
+}
+
 bool board_audio_level_take(uint16_t *left, uint16_t *right)
 {
     /* Cleared before the levels are read, so a block landing in between is

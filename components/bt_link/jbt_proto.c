@@ -332,6 +332,7 @@ const char *jbt_msg_name(uint8_t type)
     case JBT_MSG_LOG: return "LOG";
     case JBT_MSG_PONG: return "PONG";
     case JBT_MSG_KEY: return "KEY";
+    case JBT_MSG_LEVEL: return "LEVEL";
     case JBT_MSG_ACK: return "ACK";
     case JBT_MSG_NONE: break;
     }

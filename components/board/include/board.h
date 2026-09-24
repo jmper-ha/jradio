@@ -110,6 +110,11 @@ esp_err_t board_display_set_invert(bool invert_colors);
  * between two blocks, and on FLAC eight of every nine do. */
 bool board_audio_level_take(uint16_t *left, uint16_t *right);
 
+/* Hands the meter a reading taken somewhere else - the Bluetooth module's, while
+ * a phone plays through it and no PCM passes this board. Merged exactly like a
+ * block written here: the loudest since the last take, and marked fresh. */
+void board_audio_level_put(uint16_t left, uint16_t right);
+
 /* Playback volume, 0..100. The PCM5102 has no volume control, so this scales
  * the samples on their way to I2S - see audio_volume.h for what that costs.
  * 100 is bit-exact: the scaling is skipped rather than multiplied by one. */

@@ -84,6 +84,11 @@ typedef enum {
     JBT_MSG_LOG = 0x8A,         /* u8 level, TLV: TEXT */
     JBT_MSG_PONG = 0x8B,        /* u8 protocol, u8 fw_major, u8 fw_minor, u16 fw_build */
     JBT_MSG_KEY = 0x8C,         /* u8 jbt_key_t: a button pressed on the speaker (source mode) */
+    /* u16 left, u16 right: RMS (0..32768) of what the module clocks to the DAC,
+     * taken before its own volume and the loudest since the previous LEVEL.
+     * About 20 a second while a phone plays (sink mode): the audio never
+     * passes through the host then, and this is what its level meter reads. */
+    JBT_MSG_LEVEL = 0x8D,
     /* either direction */
     JBT_MSG_ACK = 0xFE,         /* u8 seq acknowledged, u8 jbt_result_t */
 } jbt_msg_t;

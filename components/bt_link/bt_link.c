@@ -257,6 +257,14 @@ static void bt_link_on_frame(const jbt_frame_t *frame)
         bt_link_cover_piece(frame);
         return;
     }
+    if (frame->type == JBT_MSG_LEVEL) {
+        /* The phone's audio goes module -> DAC and never through the board, so
+         * this is the only level the meter has in that mode. */
+        uint16_t left;
+        uint16_t right;
+        if (bt_link_model_level(frame, &left, &right)) board_audio_level_put(left, right);
+        return;
+    }
     if (frame->type == JBT_MSG_SCAN_RESULT) {
         xSemaphoreTake(s_state_lock, portMAX_DELAY);
         (void)bt_link_scan_apply(&s_scan, frame);
@@ -357,7 +365,22 @@ static void bt_link_task(void *arg)
     (void)arg;
     uint8_t chunk[256];
     while (true) {
-        const int n = uart_read_bytes(BT_LINK_UART, chunk, sizeof(chunk), pdMS_TO_TICKS(200));
+        /* Wait for the first byte, then take whatever else has arrived.
+         * Asking for the whole chunk in one call waits until 256 bytes are in
+         * or the 200 ms are up, and the module's LEVEL frames are twelve
+         * bytes twenty times a second: they reached the meter five times a
+         * second, in batches, up to 200 ms late - a meter that swayed at a
+         * steady height and not with the music. */
+        int n = uart_read_bytes(BT_LINK_UART, chunk, 1U, pdMS_TO_TICKS(200));
+        if (n > 0) {
+            size_t waiting = 0U;
+            (void)uart_get_buffered_data_len(BT_LINK_UART, &waiting);
+            if (waiting > sizeof(chunk) - 1U) waiting = sizeof(chunk) - 1U;
+            if (waiting > 0U) {
+                const int more = uart_read_bytes(BT_LINK_UART, chunk + 1, waiting, 0);
+                if (more > 0) n += more;
+            }
+        }
         for (int i = 0; i < n; ++i) {
             jbt_frame_t frame;
             if (jbt_decoder_feed(&s_decoder, chunk[i], &frame)) bt_link_on_frame(&frame);

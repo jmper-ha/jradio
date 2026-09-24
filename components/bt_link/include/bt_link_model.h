@@ -132,6 +132,13 @@ bool bt_link_model_cover_data(bt_link_state_t *state, const jbt_frame_t *frame, 
 /* A LOG frame's level and text. False for any other frame. */
 bool bt_link_model_log(const jbt_frame_t *frame, uint8_t *level, char *text, size_t text_size);
 
+/* A LEVEL frame's two readings, RMS 0..32768, clamped there: the host's meter
+ * treats 32768 as full scale and a larger number would run it off the end.
+ * Not part of the model on purpose - it arrives twenty times a second and
+ * changes nothing a reader of the state needs, so the link hands it straight
+ * to the meter without taking the state lock. */
+bool bt_link_model_level(const jbt_frame_t *frame, uint16_t *left, uint16_t *right);
+
 /* The 0..100 volume the board keeps and the 0..127 the module speaks,
  * each way, rounded so a value survives the round trip. */
 uint8_t bt_link_volume_to_module(uint8_t percent);

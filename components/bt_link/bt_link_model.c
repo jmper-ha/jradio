@@ -301,3 +301,16 @@ bool bt_link_address_from_text(const char *text, uint8_t out[6])
     for (int i = 0; i < 6; ++i) out[i] = (uint8_t)bytes[i];
     return true;
 }
+
+bool bt_link_model_level(const jbt_frame_t *frame, uint16_t *left, uint16_t *right)
+{
+    if (frame == NULL || frame->type != JBT_MSG_LEVEL || left == NULL || right == NULL) return false;
+    jbt_reader_t reader;
+    jbt_reader_init(&reader, frame->payload, frame->len);
+    uint16_t l;
+    uint16_t r;
+    if (!jbt_get_u16(&reader, &l) || !jbt_get_u16(&reader, &r)) return false;
+    *left = l > 32768U ? 32768U : l;
+    *right = r > 32768U ? 32768U : r;
+    return true;
+}

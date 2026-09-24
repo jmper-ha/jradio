@@ -333,6 +333,32 @@ static void test_a_scan_lists_each_speaker_once_and_keeps_its_name(void)
     assert(!bt_link_address_from_text("", back));
 }
 
+/* The phone's level, for the meter: two little-endian words, held to the
+ * meter's full scale, and nothing for a frame that is not one or is short. */
+static void test_a_level_frame_gives_the_meter_two_readings(void)
+{
+    uint8_t payload[4];
+    jbt_writer_t writer;
+    jbt_writer_init(&writer, payload, sizeof(payload));
+    assert(jbt_put_u16(&writer, 1234U) && jbt_put_u16(&writer, 32768U));
+    const jbt_frame_t frame = frame_of(JBT_MSG_LEVEL, payload, writer.length);
+    uint16_t left = 0U;
+    uint16_t right = 0U;
+    assert(bt_link_model_level(&frame, &left, &right));
+    assert(left == 1234U && right == 32768U);
+
+    const uint8_t loud[4] = {0xFF, 0xFF, 0x01, 0x00};
+    const jbt_frame_t over = frame_of(JBT_MSG_LEVEL, loud, sizeof(loud));
+    assert(bt_link_model_level(&over, &left, &right));
+    assert(left == 32768U && right == 1U);
+
+    const jbt_frame_t shorter = frame_of(JBT_MSG_LEVEL, payload, 3U);
+    assert(!bt_link_model_level(&shorter, &left, &right));
+    const jbt_frame_t other = frame_of(JBT_MSG_POSITION, payload, 4U);
+    assert(!bt_link_model_level(&other, &left, &right));
+    assert(strcmp(jbt_msg_name(JBT_MSG_LEVEL), "LEVEL") == 0);
+}
+
 int main(void)
 {
     test_a_scan_lists_each_speaker_once_and_keeps_its_name();
@@ -342,6 +368,7 @@ int main(void)
     test_the_small_frames_move_one_field_each();
     test_a_log_frame_is_read_for_printing();
     test_the_volume_scales_round_trip();
+    test_a_level_frame_gives_the_meter_two_readings();
     puts("bt_link_model tests passed");
     return 0;
 }

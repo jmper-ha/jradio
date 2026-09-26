@@ -5,6 +5,7 @@
 
 #include "esp_sleep.h"
 
+#include "album_art.h"
 #include "alarm_schedule.h"
 #include "board.h"
 #include "board_config.h"
@@ -234,6 +235,12 @@ void app_main(void)
          * tomorrow does not start where it started today. */
         start_optional("Yandex Music feedback", yandex_feedback_init());
     }
+    /* The cover store, whoever fills it: station pictures, Yandex, DLNA and
+     * the phone draw through it as well as files. It used to be started by
+     * the file player alone, which was always there when the build decided
+     * the parts; with the wiring deciding, a board without a drive or a card
+     * had no file player, and every station picture was refused. */
+    start_optional("album art", album_art_init());
     if (board_has_sd_card()) {
         // Before the UI and the radio, deliberately: sd_storage_init()
         // explains what the internal-SRAM heap does if the mount lands after

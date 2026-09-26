@@ -85,7 +85,7 @@ const ids = [
   'yandex-refresh', 'yandex-stations-block', 'yandex-stations',
   'yandex-stations-empty',
   'device-status', 'device-language', 'device-home-screen', 'device-home-screen-row',
-  'device-scroll', 'device-buffer-view',
+  'device-scroll', 'device-buffer-view', 'device-files-end',
   'device-autoplay', 'device-yandex', 'device-yandex-row',
   'device-dlna', 'device-dlna-row',
   'bt-output-block', 'device-bt-output', 'bt-speakers', 'bt-speakers-empty',
@@ -173,7 +173,7 @@ let remoteFetches = 0;
 // that ignored the document entirely would still look right against them.
 let settingsReply = {
   language: 'ru', home_screen: 'text', scroll: 'bounce', buffer_view: 'graph',
-  autoplay: false,
+  autoplay: false, files_end: 'repeat',
   yandex_music: true, dlna: false, flip_vertical: false, flip_horizontal: true,
   invert_colors: true,
   brightness: 45, volume: 62,
@@ -661,6 +661,7 @@ function lastYandexTimer() {
   assert.equal(elements['#device-scroll'].value, 'bounce');
   assert.equal(elements['#device-buffer-view'].value, 'graph');
   assert.equal(elements['#device-autoplay'].checked, false);
+  assert.equal(elements['#device-files-end'].value, 'repeat');
   assert.equal(elements['#device-flip-horizontal'].checked, true);
   assert.equal(elements['#device-invert-colors'].checked, true);
   assert.equal(elements['#device-brightness'].value, '45');

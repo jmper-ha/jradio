@@ -28,6 +28,15 @@ typedef enum {
     DEVICE_BUFFER_VIEW_GRAPH,
 } device_buffer_view_t;
 
+/* What the file player does when the last track of a folder has played:
+ * stop there, or go round to the first one again. Stop is what it always did,
+ * and stays the default - a device that goes quiet at the end of an album is
+ * the one nobody is surprised by. */
+typedef enum {
+    DEVICE_FILES_END_STOP = 0,
+    DEVICE_FILES_END_REPEAT,
+} device_files_end_t;
+
 /* Where the panel's weather comes from, if anywhere. Three services rather
  * than one because they fail differently: Open-Meteo needs no key and answers
  * over plain HTTP, wttr.in is a proxy that answers 503 under load, and
@@ -189,6 +198,7 @@ typedef struct {
     device_home_screen_t home_screen;
     device_scroll_t scroll;
     device_buffer_view_t buffer_view;
+    device_files_end_t files_end;
     bool flip_vertical;
     bool flip_horizontal;
     /* The panel's colour inversion, on top of what the display profile
@@ -273,6 +283,7 @@ bool device_settings_set_home_screen(device_settings_t *settings,
 bool device_settings_set_scroll(device_settings_t *settings, device_scroll_t scroll);
 bool device_settings_set_buffer_view(device_settings_t *settings,
                                      device_buffer_view_t buffer_view);
+bool device_settings_set_files_end(device_settings_t *settings, device_files_end_t files_end);
 bool device_settings_set_flip_vertical(device_settings_t *settings, bool enabled);
 bool device_settings_set_flip_horizontal(device_settings_t *settings, bool enabled);
 bool device_settings_set_flip_vertical_value(device_settings_t *settings, int value);

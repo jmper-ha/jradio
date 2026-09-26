@@ -74,6 +74,12 @@ bool player_control_input_fill(uint8_t *percent);
  * would push a frame a second for something only the local screen shows. */
 bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_seconds);
 
+/* What the file player does when the last track of a folder has played: go
+ * round to the first one (true) or stop (false, the default). The setting is
+ * the UI task's; it hands the value over at boot and whenever it may have
+ * changed. */
+void player_control_set_files_repeat(bool repeat);
+
 /* Title, performer and album of the playing file, as its own tags gave them.
  * False for a source that has no such thing: a stream carries one ICY line and
  * no performer field at all.

@@ -248,7 +248,7 @@ page as a line with the time and the days.
 ## Settings
 
 On the device: language, home screen style, scrolling of long lines, the
-buffer readout, resume, Yandex Music, DLNA, weather, brightness, picture
+buffer readout, resume, end of folder, Yandex Music, DLNA, weather, brightness, picture
 mirroring, colour inversion, screensaver, sound over Bluetooth, volume. They apply at once and
 are saved. The same settings are in the web interface, in the same words;
 changes either way show at once.
@@ -262,6 +262,9 @@ detail, the alarm, the sleep timer, the backup.
   playback already running is not stopped.
 - **Buffer** - the left corner of the player's footer: a number ("Buffer 88%")
   or a strip chart of the last twenty seconds.
+- **End of folder** - what the file player does after the last track of a
+  folder or playlist: "Stop" stops there (as it always did), "Start over"
+  begins again from the first track of the same folder.
 - **Scrolling** - how long lines move: "left-right", or "left" with a jump
   back to the start.
 - **Brightness** - 10 to 100, changed with the encoder right on the row.

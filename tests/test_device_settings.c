@@ -38,6 +38,8 @@ static void test_defaults_and_load(void)
     /* And a number is what the buffer reading was before it could be a strip:
      * a card written by an older build gets the screen it used to have. */
     assert(settings.buffer_view == DEVICE_BUFFER_VIEW_TEXT);
+    // Stopping at the end of a folder is what the player always did.
+    assert(settings.files_end == DEVICE_FILES_END_STOP);
     assert(strcmp(settings.storage_path, test_path) == 0);
 }
 
@@ -52,6 +54,7 @@ static void test_values_and_unknown_lines_are_saved(void)
     assert(device_settings_set_flip_horizontal(&settings, true));
     assert(device_settings_set_invert_colors(&settings, true));
     assert(device_settings_set_buffer_view(&settings, DEVICE_BUFFER_VIEW_GRAPH));
+    assert(device_settings_set_files_end(&settings, DEVICE_FILES_END_REPEAT));
 
     char value[32];
     assert(settings_csv_get(test_path, "unknown", value, sizeof(value)));
@@ -70,6 +73,9 @@ static void test_values_and_unknown_lines_are_saved(void)
     device_settings_t reloaded;
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.buffer_view == DEVICE_BUFFER_VIEW_GRAPH);
+    assert(settings_csv_get(test_path, "files_end", value, sizeof(value)));
+    assert(strcmp(value, "repeat") == 0);
+    assert(reloaded.files_end == DEVICE_FILES_END_REPEAT);
 }
 
 static void test_invalid_values_do_not_change_model(void)
@@ -81,6 +87,8 @@ static void test_invalid_values_do_not_change_model(void)
     assert(!device_settings_set_home_screen(&settings, (device_home_screen_t)99));
     assert(!device_settings_set_flip_vertical_value(&settings, 2));
     assert(!device_settings_set_buffer_view(&settings, (device_buffer_view_t)99));
+    assert(!device_settings_set_files_end(&settings, (device_files_end_t)99));
+    assert(settings.files_end == DEVICE_FILES_END_STOP);
     assert(settings.language == DEVICE_LANGUAGE_RU);
     assert(settings.home_screen == DEVICE_HOME_SCREEN_TEXT);
     assert(!settings.flip_vertical);

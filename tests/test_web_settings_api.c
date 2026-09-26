@@ -50,6 +50,13 @@ static void test_choices_are_named_not_numbered(void)
     assert(parse_one("{\"field\":\"buffer_view\",\"value\":\"text\"}", &change));
     assert(change.value == DEVICE_BUFFER_VIEW_TEXT);
 
+    assert(parse_one("{\"field\":\"files_end\",\"value\":\"repeat\"}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_FILES_END);
+    assert(change.value == DEVICE_FILES_END_REPEAT);
+    assert(parse_one("{\"field\":\"files_end\",\"value\":\"stop\"}", &change));
+    assert(change.value == DEVICE_FILES_END_STOP);
+    assert(!parse_one("{\"field\":\"files_end\",\"value\":\"shuffle\"}", &change));
+
     /* Four choices, not two: the weather service. Named as settings.csv
      * names them. */
     assert(parse_one("{\"field\":\"weather\",\"value\":\"off\"}", &change));
@@ -304,6 +311,7 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"scroll\":\"bounce\"") != NULL);
     assert(strstr(document, "\"buffer_view\":\"text\"") != NULL);
     assert(strstr(document, "\"autoplay\":true") != NULL);
+    assert(strstr(document, "\"files_end\":\"stop\"") != NULL);
     assert(strstr(document, "\"volume\":42") != NULL);
     assert(strstr(document, "\"brightness\":50") != NULL);
     // A build without Yandex Music or a media server says so, so the page

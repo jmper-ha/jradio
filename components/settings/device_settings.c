@@ -204,6 +204,9 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         if (strcmp(value, "graph") == 0) settings->buffer_view = DEVICE_BUFFER_VIEW_GRAPH;
         else if (strcmp(value, "text") != 0) settings->buffer_view = DEVICE_BUFFER_VIEW_TEXT;
     }
+    if (read_value(path, "files_end", value, sizeof(value)) && strcmp(value, "repeat") == 0) {
+        settings->files_end = DEVICE_FILES_END_REPEAT;
+    }
     /* A zone this build does not have leaves the default standing rather than
      * an empty string: an unset TZ is UTC, and a clock three hours out with no
      * explanation is worse than one that ignored a line in a file. */
@@ -449,6 +452,17 @@ bool device_settings_set_buffer_view(device_settings_t *settings,
         return false;
     }
     settings->buffer_view = buffer_view;
+    return true;
+}
+
+bool device_settings_set_files_end(device_settings_t *settings, device_files_end_t files_end)
+{
+    if (settings == NULL || files_end > DEVICE_FILES_END_REPEAT) return false;
+    if (!save_value(settings, "files_end",
+                    files_end == DEVICE_FILES_END_REPEAT ? "repeat" : "stop")) {
+        return false;
+    }
+    settings->files_end = files_end;
     return true;
 }
 

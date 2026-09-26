@@ -2923,6 +2923,12 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_AUTOPLAY,
                                  s_device_settings.autoplay);
         break;
+    case UI_SETTINGS_ROW_FILES_END_FIELD:
+        ui_settings_field(text, text_size, DEVICE_TEXT_ROW_FILES_END,
+                          s_device_settings.files_end == DEVICE_FILES_END_REPEAT
+                              ? DEVICE_TEXT_FILES_END_REPEAT
+                              : DEVICE_TEXT_FILES_END_STOP);
+        break;
     case UI_SETTINGS_ROW_WEATHER_FIELD:
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_WEATHER,
                                  s_device_settings.weather_provider != DEVICE_WEATHER_OFF);
@@ -3339,6 +3345,13 @@ static void ui_adopt_speaker(void)
     ui_apply_bt_output();
 }
 
+/* The player owns what happens at the end of a folder; the setting is ours,
+ * so it is handed over whenever it may have moved. */
+static void ui_apply_files_end(void)
+{
+    player_control_set_files_repeat(s_device_settings.files_end == DEVICE_FILES_END_REPEAT);
+}
+
 static void ui_reload_settings(void)
 {
     /* A knob being turned right now has not reached the file yet - the write
@@ -3369,6 +3382,7 @@ static void ui_reload_settings(void)
     weather_apply(&s_device_settings);
     ui_apply_bt_output();
     ui_apply_source_visibility();
+    ui_apply_files_end();
     /* The model is left alone while the settings screen is open: re-initialising
      * it moves the cursor back to the top, and someone standing at the device
      * has not asked for that. Its idea of whether a home screen exists can then
@@ -3796,6 +3810,13 @@ static void ui_settings_change_selected(void)
     case UI_SETTINGS_ROW_AUTOPLAY_FIELD:
         changed = device_settings_set_autoplay(&s_device_settings,
                                                !s_device_settings.autoplay);
+        break;
+    case UI_SETTINGS_ROW_FILES_END_FIELD:
+        changed = device_settings_set_files_end(
+            &s_device_settings, s_device_settings.files_end == DEVICE_FILES_END_REPEAT
+                                    ? DEVICE_FILES_END_STOP
+                                    : DEVICE_FILES_END_REPEAT);
+        if (changed) ui_apply_files_end();
         break;
     case UI_SETTINGS_ROW_YANDEX_FIELD:
         changed = device_settings_set_yandex_music(&s_device_settings,
@@ -6998,6 +7019,7 @@ esp_err_t ui_init(void)
     } else {
         ui_apply_display_rotation();
         ui_backlight_apply(s_device_settings.brightness);
+        ui_apply_files_end();
     }
     /* After the settings are read and the visibility they decide is applied:
      * the model asks how many rows the home screen would have, and before this

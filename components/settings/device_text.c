@@ -56,6 +56,10 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_BUFFER_VIEW_TEXT] = {"Текст", "Text"},
     [DEVICE_TEXT_BUFFER_VIEW_GRAPH] = {"График", "Graph"},
     [DEVICE_TEXT_ROW_AUTOPLAY] = {"Автовоспроизведение", "Autoplay"},
+    // What the file player does after the last track of a folder.
+    [DEVICE_TEXT_ROW_FILES_END] = {"Конец папки", "End of folder"},
+    [DEVICE_TEXT_FILES_END_STOP] = {"Стоп", "Stop"},
+    [DEVICE_TEXT_FILES_END_REPEAT] = {"Сначала", "Start over"},
     [DEVICE_TEXT_ROW_YANDEX] = {"Яндекс Музыка", "Yandex Music"},
     [DEVICE_TEXT_ROW_WEATHER] = {"Погода", "Weather"},
     [DEVICE_TEXT_ROW_BT_OUTPUT] = {"Звук на Bluetooth", "Sound over Bluetooth"},

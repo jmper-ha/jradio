@@ -155,12 +155,12 @@ static void test_each_group_has_expected_fields(void)
     ui_settings_model_init(&model, true);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    /* General holds home screen, scrolling, the buffer reading, autoplay and
-     * the weather switch, plus the Yandex Music and DLNA switches in a build
+    /* General holds home screen, scrolling, the buffer reading, autoplay, what
+     * the file player does at the end of a folder and the weather switch, plus the Yandex Music and DLNA switches in a build
      * that has those features - the rows here that a board option can take
      * away. */
     assert(ui_settings_model_row_count(&model) ==
-           9U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
+           10U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
     assert(ui_settings_model_row_at(&model, 2U).id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_SCROLL_FIELD);
     assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_BUFFER_FIELD);
@@ -174,26 +174,31 @@ static void test_each_group_has_expected_fields(void)
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_BUFFER_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_AUTOPLAY_FIELD);
+    // Two values the press flips between, like the buffer reading.
+    assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_FILES_END_FIELD);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_FILES_END_FIELD);
+    assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_FILES_END_FIELD));
     /* The weather is one switch here; the service and the pin are the page's.
      * A choice, not a number - the knob never captures it. */
-    assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_WEATHER_FIELD);
+    assert(ui_settings_model_row_at(&model, 7U).id == UI_SETTINGS_ROW_WEATHER_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_WEATHER_FIELD);
     assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_WEATHER_FIELD));
 #if BOARD_HAS_YANDEX_MUSIC
-    assert(ui_settings_model_row_at(&model, 7U).id == UI_SETTINGS_ROW_YANDEX_FIELD);
+    assert(ui_settings_model_row_at(&model, 8U).id == UI_SETTINGS_ROW_YANDEX_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_YANDEX_FIELD);
 #endif
 #if BOARD_HAS_DLNA
-    assert(ui_settings_model_row_at(&model, 7U + BOARD_HAS_YANDEX_MUSIC).id ==
+    assert(ui_settings_model_row_at(&model, 8U + BOARD_HAS_YANDEX_MUSIC).id ==
            UI_SETTINGS_ROW_DLNA_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DLNA_FIELD);
 #endif
 #if BOARD_HAS_BLUETOOTH
     /* The module as an output: a switch here, the speaker on the page. */
-    assert(ui_settings_model_row_at(&model, 7U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA).id ==
+    assert(ui_settings_model_row_at(&model, 8U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA).id ==
            UI_SETTINGS_ROW_BT_OUTPUT_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_BT_OUTPUT_FIELD);
@@ -424,7 +429,7 @@ static void test_the_longest_list_needs_the_window(void)
         if (count > longest) longest = count;
     }
     /* Three headings, the deepest group's fields, and About. */
-    assert(longest == 9U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
+    assert(longest == 10U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
     /* Whatever the longest is, every row of it is reachable with the window. */
     ui_settings_model_init(&model, true);
     model.expanded_group = (int)UI_SETTINGS_GROUP_GENERAL;

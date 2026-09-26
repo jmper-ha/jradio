@@ -49,6 +49,11 @@ static const ui_settings_row_t s_field_rows[] = {
         .kind = UI_SETTINGS_ROW_FIELD,
     },
     {
+        .id = UI_SETTINGS_ROW_FILES_END_FIELD,
+        .group = UI_SETTINGS_GROUP_GENERAL,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
         .id = UI_SETTINGS_ROW_WEATHER_FIELD,
         .group = UI_SETTINGS_GROUP_GENERAL,
         .kind = UI_SETTINGS_ROW_FIELD,

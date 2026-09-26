@@ -39,6 +39,7 @@ static const field_descriptor_t k_fields[] = {
     {"scroll", WEB_SETTINGS_FIELD_SCROLL, {"bounce", "left"}, false, false},
     {"buffer_view", WEB_SETTINGS_FIELD_BUFFER_VIEW, {"text", "graph"}, false, false},
     {"autoplay", WEB_SETTINGS_FIELD_AUTOPLAY, {NULL}, false, false},
+    {"files_end", WEB_SETTINGS_FIELD_FILES_END, {"stop", "repeat"}, false, false},
     {"yandex_music", WEB_SETTINGS_FIELD_YANDEX_MUSIC, {NULL}, false, false},
     {"dlna", WEB_SETTINGS_FIELD_DLNA, {NULL}, false, false},
     {"bt_output", WEB_SETTINGS_FIELD_BT_OUTPUT, {NULL}, false, false},
@@ -202,6 +203,8 @@ bool web_settings_apply(device_settings_t *settings,
                                                (device_buffer_view_t)change->value);
     case WEB_SETTINGS_FIELD_AUTOPLAY:
         return device_settings_set_autoplay(settings, change->value != 0);
+    case WEB_SETTINGS_FIELD_FILES_END:
+        return device_settings_set_files_end(settings, (device_files_end_t)change->value);
     case WEB_SETTINGS_FIELD_YANDEX_MUSIC:
         return device_settings_set_yandex_music(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_DLNA:
@@ -275,6 +278,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .home_screen = (uint8_t)settings->home_screen,
         .scroll = (uint8_t)settings->scroll,
         .buffer_view = (uint8_t)settings->buffer_view,
+        .files_end = (uint8_t)settings->files_end,
         .volume = settings->volume,
         .brightness = settings->brightness,
         .autoplay = settings->autoplay,
@@ -313,7 +317,8 @@ bool web_settings_view_equal(const web_settings_view_t *left,
     return left->language == right->language &&
            left->home_screen == right->home_screen &&
            left->scroll == right->scroll &&
-           left->buffer_view == right->buffer_view && left->volume == right->volume &&
+           left->buffer_view == right->buffer_view && left->files_end == right->files_end &&
+           left->volume == right->volume &&
            left->brightness == right->brightness &&
            left->autoplay == right->autoplay &&
            left->yandex_music == right->yandex_music &&
@@ -363,6 +368,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
                     view->buffer_view == DEVICE_BUFFER_VIEW_GRAPH ? "graph" : "text");
     web_json_literal(writer, ",\"autoplay\":");
     web_json_literal(writer, view->autoplay ? "true" : "false");
+    web_json_literal(writer, ",\"files_end\":");
+    web_json_string(writer, view->files_end == DEVICE_FILES_END_REPEAT ? "repeat" : "stop");
     web_json_literal(writer, ",\"yandex_music\":");
     web_json_literal(writer, view->yandex_music ? "true" : "false");
     web_json_literal(writer, ",\"dlna\":");

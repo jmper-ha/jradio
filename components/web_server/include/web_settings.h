@@ -41,6 +41,7 @@ typedef enum {
     WEB_SETTINGS_FIELD_SCROLL,
     WEB_SETTINGS_FIELD_BUFFER_VIEW,
     WEB_SETTINGS_FIELD_AUTOPLAY,
+    WEB_SETTINGS_FIELD_FILES_END,
     WEB_SETTINGS_FIELD_YANDEX_MUSIC,
     WEB_SETTINGS_FIELD_DLNA,
     WEB_SETTINGS_FIELD_BT_OUTPUT,
@@ -118,6 +119,7 @@ typedef struct web_settings_view {
     uint8_t home_screen;
     uint8_t scroll;
     uint8_t buffer_view;
+    uint8_t files_end;
     uint8_t volume;
     uint8_t brightness;
     bool autoplay;

@@ -20,6 +20,7 @@ typedef enum {
     UI_SETTINGS_ROW_SCROLL_FIELD,
     UI_SETTINGS_ROW_BUFFER_FIELD,
     UI_SETTINGS_ROW_AUTOPLAY_FIELD,
+    UI_SETTINGS_ROW_FILES_END_FIELD,
     /* One switch, not the service and the pin: those are the page's. Off is
      * off, and on is whichever service the page last chose. */
     UI_SETTINGS_ROW_WEATHER_FIELD,

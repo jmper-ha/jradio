@@ -452,16 +452,52 @@ static bool player_file_start_first(void)
     return true;
 }
 
+/* See player_control_set_files_repeat(). Read on this task when a track
+ * ends, written by the UI task. */
+static atomic_bool s_files_repeat = ATOMIC_VAR_INIT(false);
+/* When the folder last went round, in ticks. A folder whose every track ends
+ * the moment it starts - nothing but files that decode to no sound - would
+ * otherwise go round for ever with nothing to hear; a round shorter than this
+ * stops instead. Only this task touches it. */
+#define PLAYER_FILES_ROUND_MIN_MS 5000U
+static TickType_t s_files_round_tick;
+static bool s_files_round_seen;
+
+void player_control_set_files_repeat(bool repeat)
+{
+    atomic_store_explicit(&s_files_repeat, repeat, memory_order_relaxed);
+}
+
 static void player_file_advance(void)
 {
     const size_t played = atomic_load_explicit(&s_files_item_index, memory_order_acquire);
     // A track that was started before the listing changed leaves no usable
     // position to advance from, so stop rather than guess.
     if (played == PLAYER_ITEM_NONE) return;
-    const size_t next = file_storage_next_file(played + 1U);
+    size_t next = file_storage_next_file(played + 1U);
+    /* Round to the first track when asked to - of this listing, which is the
+     * folder or playlist the track was chosen from, the same thing "the end"
+     * was the end of. A folder of one track plays it again. */
+    if (next >= file_storage_entry_count() &&
+        atomic_load_explicit(&s_files_repeat, memory_order_relaxed)) {
+        const TickType_t now = xTaskGetTickCount();
+        const bool too_soon = s_files_round_seen && (now - s_files_round_tick) <
+                                                        pdMS_TO_TICKS(PLAYER_FILES_ROUND_MIN_MS);
+        s_files_round_tick = now;
+        s_files_round_seen = true;
+        if (too_soon) {
+            ESP_LOGW(TAG, "files: the whole directory played in under %u ms; not going round",
+                     (unsigned)PLAYER_FILES_ROUND_MIN_MS);
+        } else {
+            next = file_storage_next_file(0U);
+            if (next < file_storage_entry_count()) {
+                ESP_LOGI(TAG, "files: last track in the directory, starting over");
+            }
+        }
+    }
     if (next >= file_storage_entry_count()) {
-        /* The end of the directory: nothing wraps and nothing crosses into the
-         * next folder. The row and the path stay as they are, which is what
+        /* The end of the directory, with the setting at "stop": nothing
+         * wraps and nothing crosses into the next folder. The row and the path stay as they are, which is what
          * the radio and the rotor do when they stop - the screen goes on
          * naming the track that just ended, the list goes on marking its row,
          * and pressing play starts it again.

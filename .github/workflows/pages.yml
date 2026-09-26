@@ -16,13 +16,22 @@ on:
   push:
     tags: ['v*']
     branches: ['main']
+    # Everything the site carries: its own pages, the files it shares with
+    # the device, and the firmware - a fix in main/ used to reach the site
+    # only with the next change to flasher/, and a board flashed from the web
+    # in between got the old build.
     paths:
       - 'flasher/**'
-      - 'data/www/style.css'
-      - 'data/www/theme.js'
-      - 'data/www/i18n.js'
+      - 'data/**'
+      - 'components/**'
+      - 'main/**'
+      - 'tools/**'
+      - 'board_options.h'
+      - 'partitions.csv'
+      - 'sdkconfig.defaults'
+      - 'CMakeLists.txt'
+      - 'dependencies.lock'
       - '.github/workflows/pages.yml'
-      - 'tools/flasher_manifest.py'
   workflow_dispatch:
 
 permissions:

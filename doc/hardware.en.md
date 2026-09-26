@@ -206,7 +206,7 @@ bus as the DAC and is driven over UART. Three lines enable it:
 | GPIO 18 (BCLK) | GPIO 26 | the shared I2S bus, through 33-47 Ω on each side |
 | GPIO 17 (LRCK) | GPIO 25 | |
 | GPIO 16 (DOUT) | GPIO 22 | the same wire also goes to the DAC's DIN |
-| 3V3, GND | 3V3, GND | the module draws up to 200 mA at peaks |
+| GND | GND | |
 
 On an **ESP32-WROVER** module pins 16 and 17 belong to the PSRAM, and its
 firmware runs the UART on others: S3 GPIO 13 to WROVER GPIO 33 (RX), S3 GPIO 14

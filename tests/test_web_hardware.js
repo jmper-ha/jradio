@@ -18,6 +18,29 @@ const hw = require(path.join(FLASHER, 'hardware_core.js'));
 
 /* ---- the model --------------------------------------------------------- */
 
+/* The same cases tests/test_board_config.c runs against the firmware's
+   reader: one board, one answer, whichever of the two reads it. */
+function normalisedIssue(issue) {
+  if (issue.code === 'pin_conflict') return `pin_conflict ${issue.gpio}`;
+  if (issue.code === 'bus_unwired') return `bus_unwired ${issue.device} ${issue.bus}_${issue.pin}`;
+  if (issue.code === 'bad_value' || issue.code === 'pin_missing') return `${issue.code} ${issue.key}`;
+  return `${issue.code} ${issue.key} ${issue.gpio}`;
+}
+
+function test_the_cases_shared_with_the_firmware() {
+  const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'board_cases.json'), 'utf8'));
+  // The base is the README board, written the way this model writes it.
+  assert.strictEqual(fixture.base, hw.toCsv(hw.defaults()));
+  for (const item of fixture.cases) {
+    const parsed = hw.parseCsv(fixture.base + item.csv);
+    const report = hw.validate(parsed.values);
+    assert.deepStrictEqual(report.errors.map(normalisedIssue).sort(), item.errors, item.name);
+    assert.deepStrictEqual(report.warnings.map(normalisedIssue).sort(), item.warnings, item.name);
+    assert.strictEqual(parsed.unknown.length, item.unknown_keys, item.name);
+    assert.strictEqual(parsed.bad.length, item.bad_lines, item.name);
+  }
+}
+
 function test_the_readme_board_is_clean() {
   const values = hw.defaults();
   const report = hw.validate(values);
@@ -521,6 +544,7 @@ function test_the_language_switch_and_the_first_visit() {
   assert.equal(loadPage('ru-RU').window.jradioI18n.language(), 'ru');
 }
 
+test_the_cases_shared_with_the_firmware();
 test_the_file_round_trips();
 test_the_header_round_trips_and_names_every_option();
 test_a_partial_file_means_the_defaults_for_the_rest();

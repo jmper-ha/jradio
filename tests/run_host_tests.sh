@@ -141,6 +141,8 @@ run_test image_scale tests/test_image_scale.c components/audio_tags/image_scale.
 # cover path that is not device-specific, and the fixtures are under 1.5 KB.
 run_test image_decode tests/test_image_decode.c components/audio_tags/image_decode.c
 run_test cover_file tests/test_cover_file.c components/audio_tags/cover_file.c
+run_test board_config -I"${cjson_include}" tests/test_board_config.c \
+    components/board/board_config.c components/board/board_config_compiled.c "${cjson_source}"
 run_test board_audio_health tests/test_board_audio_health.c \
     components/board/board_audio_health.c
 run_test board_audio_startup tests/test_board_audio_startup.c \

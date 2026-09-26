@@ -7,6 +7,7 @@
 
 #include "alarm_schedule.h"
 #include "board.h"
+#include "board_config.h"
 #include "board_features.h"
 #include "bt_link.h"
 #include "board_input.h"
@@ -160,6 +161,10 @@ void app_main(void)
     // First, so the reset reason is the first thing in the log after a crash,
     // and before anything allocates, so the boot heap figure means something.
     system_report_boot();
+    /* The wiring out of the `board` partition, or the compiled one. Read
+     * here, first, because every driver will ask for it; nothing does yet,
+     * so for now it only says in the log which board it would be. */
+    board_config_load();
     /* Before everything else, when it was the receiver that woke the chip:
      * every millisecond the receiver is not listening is a millisecond of the
      * second press of Power it can miss. */

@@ -1,0 +1,198 @@
+{
+  "comment": [
+    "Shared by tests/test_board_config.c and tests/test_web_hardware.js, so the",
+    "firmware and the wiring editor give one board the same answer. Each case",
+    "is base with csv read over it; errors and warnings are the rules answers,",
+    "normalised as in both tests and sorted. Written by hand: a changed answer",
+    "is a decision, made here, not a regeneration."
+  ],
+  "base": "# key,value\nboard_format,1\nboard_name,\nmodule,esp32s3_n16r8\ndisplay,st7796s_480_320\nspi2_sclk,12\nspi2_mosi,11\nspi3_sclk,41\nspi3_mosi,42\nspi3_miso,40\ni2s0_bclk,18\ni2s0_lrck,17\ni2s0_dout,16\nuart1_tx,none\nuart1_rx,none\ntft_spi,2\ntft_cs,10\ntft_dc,47\ntft_reset,rst\ntft_backlight,2\nencoder_right,5\nencoder_left,7\nencoder_button,6\nencoder_pullups,0\nbutton_sleep,21\nbutton_quick_menu,45\nbutton_prev,46\nbutton_next,9\nbuttons_pullups,1\nir_receiver,none\ndac,pcm5102\ndac_i2s,0\ndac_mute,none\namp_enable,none\namp_on_level,1\nperipheral_power,none\nperipheral_power_on_level,1\nusb_dp,20\nusb_dm,19\nsd_spi,3\nsd_cs,1\nbluetooth,none\nbt_uart,1\nbt_i2s,0\nyandex_music,1\ndlna,1\n",
+  "cases": [
+    {
+      "name": "the README board as it is",
+      "csv": "",
+      "errors": [],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "the author's board: module, mute, amplifier, power switch, receiver",
+      "csv": "display,ili9488_480_320\nbluetooth,jradio_bt\nuart1_tx,13\nuart1_rx,14\ndac_mute,15\namp_enable,39\nperipheral_power,38\nir_receiver,4",
+      "errors": [],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "a button on the display's chip select",
+      "csv": "button_next,10",
+      "errors": [
+        "pin_conflict 10"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "a card select on a pin of its own bus",
+      "csv": "sd_cs,41",
+      "errors": [
+        "pin_conflict 41"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "a pin the octal PSRAM drives",
+      "csv": "button_prev,36",
+      "errors": [
+        "pin_psram button_prev 36"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "a pin of the console",
+      "csv": "dac_mute,43",
+      "errors": [
+        "pin_console dac_mute 43"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "a USB pin taken for something else",
+      "csv": "amp_enable,20",
+      "errors": [
+        "pin_conflict 20",
+        "pin_usb amp_enable 20"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "the USB pair moved",
+      "csv": "usb_dp,21",
+      "errors": [
+        "pin_conflict 21",
+        "usb_pin_fixed usb_dp 21"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "a pin that is not on the header",
+      "csv": "encoder_left,30",
+      "errors": [
+        "pin_not_on_header encoder_left 30"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "a required pin left out",
+      "csv": "tft_dc,none",
+      "errors": [
+        "pin_missing tft_dc"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "the card without its MISO",
+      "csv": "spi3_miso,none",
+      "errors": [
+        "bus_unwired sd spi3_miso"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "a bus nobody is on holds no pins",
+      "csv": "sd_cs,none\nbutton_next,41",
+      "errors": [],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "the module switched on with its UART unwired",
+      "csv": "bluetooth,jradio_bt",
+      "errors": [
+        "bus_unwired bluetooth uart1_rx",
+        "bus_unwired bluetooth uart1_tx"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "values that are not of their kind",
+      "csv": "dac,tda1543\nbuttons_pullups,2",
+      "errors": [
+        "bad_value buttons_pullups",
+        "bad_value dac"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "the notes: no wake from 38 or 48, a select off IOMUX",
+      "csv": "button_sleep,38\nir_receiver,48\ntft_cs,4",
+      "errors": [],
+      "warnings": [
+        "ir_not_rtc ir_receiver 48",
+        "sleep_not_rtc button_sleep 38",
+        "spi_not_iomux tft_cs 4"
+      ],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "rst only where the reset pad is meant",
+      "csv": "tft_reset,rst\nencoder_button,rst",
+      "errors": [],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 1
+    },
+    {
+      "name": "keys the chip decides are read past, unknown ones kept aside",
+      "csv": "fm_tuner,rda5807\nspi2_sclk,5\nmodule,esp32s3_n8r2",
+      "errors": [],
+      "warnings": [],
+      "unknown_keys": 1,
+      "bad_lines": 0
+    },
+    {
+      "name": "a DAC not offered yet: the UDA1334A has a driver but no board has tried it",
+      "csv": "dac,uda1334a",
+      "errors": [
+        "bad_value dac"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "comments, spaces and CRLF",
+      "csv": "# a comment\r\n  button_next , 10 \r\n\r\n",
+      "errors": [
+        "pin_conflict 10"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    }
+  ]
+}

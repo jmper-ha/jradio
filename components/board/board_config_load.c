@@ -87,15 +87,17 @@ void board_config_load(void)
 
     board_config_report_t report;
     board_config_validate(&candidate, &report);
-    // The layouts are compiled for one panel shape; a file for another is
-    // for another binary.
+    /* The layouts are compiled for one panel shape, and the I2S format for
+     * one DAC: a file for another is for another binary. */
     board_config_t compiled;
     board_config_compiled(&compiled);
     const bool display_matches = candidate.display == compiled.display;
-    if (report.error_count > 0U || !display_matches) {
-        ESP_LOGE(TAG, "board.csv refused (%u error%s%s); the compiled board",
+    const bool dac_matches = candidate.dac == compiled.dac;
+    if (report.error_count > 0U || !display_matches || !dac_matches) {
+        ESP_LOGE(TAG, "board.csv refused (%u error%s%s%s); the compiled board",
                  (unsigned)report.error_count, report.error_count == 1U ? "" : "s",
-                 display_matches ? "" : ", built for another display");
+                 display_matches ? "" : ", built for another display",
+                 dac_matches ? "" : ", built for another DAC");
         log_issues(&report);
         return;
     }

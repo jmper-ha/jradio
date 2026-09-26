@@ -29,7 +29,7 @@ esp_err_t board_panel_create(esp_lcd_panel_io_handle_t io,
                              esp_lcd_panel_handle_t *out_panel)
 {
     const esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = TFT_RESET_GPIO,
+        .reset_gpio_num = board_panel_reset_gpio(),
         .rgb_ele_order = TFT_RGB_ORDER_BGR ? LCD_RGB_ELEMENT_ORDER_BGR :
                                              LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = 16,

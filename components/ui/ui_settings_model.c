@@ -72,13 +72,12 @@ static const ui_settings_row_t s_field_rows[] = {
         .kind = UI_SETTINGS_ROW_FIELD,
     },
 #endif
-#if BOARD_HAS_BLUETOOTH
+    // In every build; field_is_present() asks whether the module is fitted.
     {
         .id = UI_SETTINGS_ROW_BT_OUTPUT_FIELD,
         .group = UI_SETTINGS_GROUP_GENERAL,
         .kind = UI_SETTINGS_ROW_FIELD,
     },
-#endif
     {
         .id = UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
         .group = UI_SETTINGS_GROUP_DISPLAY,
@@ -130,9 +129,20 @@ static const ui_settings_row_t s_band_row = {
  * took its rows out of the table; this is the one that also depends on how the
  * device is running - with no home screen there is nothing for "Главный экран"
  * to choose between, so the row would set a value nobody could ever see. */
+/* Whether the board has the Bluetooth module - the wiring's answer, handed
+ * in once at boot. The compiled board's until then, which is also what the
+ * host tests see. */
+static bool s_bluetooth_fitted = BOARD_HAS_BLUETOOTH;
+
+void ui_settings_model_set_bluetooth(bool fitted)
+{
+    s_bluetooth_fitted = fitted;
+}
+
 static bool field_is_present(const ui_settings_model_t *model, ui_settings_row_id_t id)
 {
     if (id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD) return model->home_screen;
+    if (id == UI_SETTINGS_ROW_BT_OUTPUT_FIELD) return s_bluetooth_fitted;
     return true;
 }
 

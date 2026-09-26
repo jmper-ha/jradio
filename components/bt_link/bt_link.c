@@ -5,7 +5,6 @@
 
 #include "album_art.h"
 #include "board.h"
-#include "board_features.h"
 #include "board_config.h"
 #include "board_options.h"
 #include "device_settings.h"
@@ -14,7 +13,6 @@
 
 static const char *TAG = "bt_link";
 
-#if BOARD_HAS_BLUETOOTH
 
 #include "driver/uart.h"
 #include "esp_check.h"
@@ -454,6 +452,13 @@ static void bt_link_task(void *arg)
 esp_err_t bt_link_init(void)
 {
     if (s_started) return ESP_OK;
+    /* No module in the wiring: nothing is started, and every call below
+     * answers as for a module that is not there - no lock, no UART, never
+     * alive. */
+    if (!board_has_bluetooth()) {
+        ESP_LOGD(TAG, "no module on this board");
+        return ESP_OK;
+    }
     s_state_lock = xSemaphoreCreateMutex();
     s_send_lock = xSemaphoreCreateMutex();
     s_mode_ack = xSemaphoreCreateBinary();
@@ -582,6 +587,7 @@ void bt_link_module_version(char *out, size_t out_size)
 
 esp_err_t bt_link_set_output(bool enabled, const char *address)
 {
+    if (!board_has_bluetooth()) return ESP_ERR_NOT_SUPPORTED;
     uint8_t speaker[6];
     const bool has_speaker = bt_link_address_from_text(address, speaker);
     const bool changed = enabled != s_output_enabled || has_speaker != s_output_has_speaker ||
@@ -765,145 +771,3 @@ esp_err_t bt_link_forget(const uint8_t address[6])
     if (address == NULL) return ESP_ERR_INVALID_ARG;
     return bt_link_send(JBT_MSG_FORGET, 0U, address, 6U);
 }
-
-#else /* !BOARD_HAS_BLUETOOTH */
-
-void bt_link_brief(bt_link_brief_t *out)
-{
-    if (out != NULL) memset(out, 0, sizeof(*out));
-}
-
-void bt_link_track_text(char *title, size_t title_size, char *artist, size_t artist_size,
-                        char *album, size_t album_size)
-{
-    if (title != NULL && title_size > 0U) title[0] = '\0';
-    if (artist != NULL && artist_size > 0U) artist[0] = '\0';
-    if (album != NULL && album_size > 0U) album[0] = '\0';
-}
-
-void bt_link_peer_name(char *out, size_t out_size)
-{
-    if (out != NULL && out_size > 0U) out[0] = '\0';
-}
-
-bool bt_link_output_peer(char *address, size_t address_size, char *name, size_t name_size)
-{
-    if (address != NULL && address_size > 0U) address[0] = '\0';
-    if (name != NULL && name_size > 0U) name[0] = '\0';
-    return false;
-}
-
-void bt_link_module_version(char *out, size_t out_size)
-{
-    if (out != NULL && out_size > 0U) out[0] = '\0';
-}
-
-esp_err_t bt_link_init(void)
-{
-    ESP_LOGD(TAG, "no module on this board");
-    return ESP_OK;
-}
-
-bool bt_link_alive(void)
-{
-    return false;
-}
-
-void bt_link_snapshot(bt_link_state_t *out)
-{
-    if (out != NULL) bt_link_model_init(out);
-}
-
-esp_err_t bt_link_set_output(bool enabled, const char *address)
-{
-    (void)enabled;
-    (void)address;
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-void bt_link_output_call_again(void)
-{
-}
-
-bool bt_link_output_held_by_phone(void)
-{
-    return false;
-}
-
-bool bt_link_output_connected(void)
-{
-    return false;
-}
-
-esp_err_t bt_link_scan(bool on)
-{
-    (void)on;
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-void bt_link_scan_snapshot(bt_link_scan_t *out)
-{
-    if (out != NULL) bt_link_scan_init(out);
-}
-
-bool bt_link_scanning(void)
-{
-    return false;
-}
-
-esp_err_t bt_link_i2s_format(uint32_t sample_rate, uint8_t bits, uint8_t channels)
-{
-    (void)sample_rate;
-    (void)bits;
-    (void)channels;
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-esp_err_t bt_link_set_mode(jbt_mode_t mode, uint32_t timeout_ms)
-{
-    (void)mode;
-    (void)timeout_ms;
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-void bt_link_set_key_listener(bt_link_key_listener_t listener)
-{
-    (void)listener;
-}
-
-esp_err_t bt_link_pairing(bool on)
-{
-    (void)on;
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-esp_err_t bt_link_passthrough(jbt_key_t key)
-{
-    (void)key;
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-esp_err_t bt_link_set_volume(uint8_t volume)
-{
-    (void)volume;
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-esp_err_t bt_link_set_name(const char *name)
-{
-    (void)name;
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-esp_err_t bt_link_disconnect(void)
-{
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-esp_err_t bt_link_forget(const uint8_t address[6])
-{
-    (void)address;
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-#endif

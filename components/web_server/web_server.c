@@ -44,6 +44,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include <errno.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "board_config.h"
 #include "board_features.h"
 #include "bt_link.h"
 #include "remote_control.h"
@@ -1294,15 +1295,15 @@ bool web_server_dlna_available(void)
  * speaker to offer. */
 bool web_server_bt_available(void)
 {
-    return BOARD_HAS_BLUETOOTH && bt_link_alive();
+    return board_has_bluetooth() && bt_link_alive();
 }
 
 void web_server_fill_remote(struct web_settings_view *view)
 {
     if (view == NULL) return;
-    view->remote_available = BOARD_HAS_IR;
+    view->remote_available = board_has_ir();
     remote_function_t learning = REMOTE_FUNCTION_COUNT;
-    if (BOARD_HAS_IR) remote_control_snapshot(NULL, &learning);
+    if (board_has_ir()) remote_control_snapshot(NULL, &learning);
     view->remote_learning = learning == REMOTE_FUNCTION_COUNT ? -1 : (int)learning;
     view->remote_revision = remote_control_revision();
 }
@@ -1343,7 +1344,7 @@ static esp_err_t web_server_remote_get(httpd_req_t *request)
     web_json_writer_t writer;
     web_json_init(&writer, body, sizeof(body), sizeof(body));
     web_json_literal(&writer, "{\"available\":");
-    web_json_literal(&writer, BOARD_HAS_IR ? "true" : "false");
+    web_json_literal(&writer, board_has_ir() ? "true" : "false");
     remote_map_t map;
     remote_function_t learning = REMOTE_FUNCTION_COUNT;
     remote_control_snapshot(&map, &learning);
@@ -1423,7 +1424,7 @@ static esp_err_t web_server_remote_last_get(httpd_req_t *request)
  * the settings endpoint takes one field. */
 static esp_err_t web_server_remote_function_post(httpd_req_t *request, bool learn)
 {
-    if (!BOARD_HAS_IR) {
+    if (!board_has_ir()) {
         httpd_resp_send_err(request, HTTPD_404_NOT_FOUND, "No receiver on this board");
         return ESP_FAIL;
     }

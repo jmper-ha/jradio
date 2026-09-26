@@ -30,16 +30,12 @@ static const ui_menu_item_config_t s_items[UI_MENU_ITEM_COUNT] = {
 
 /* What this firmware was built with. Internet radio and Settings answer yes
  * unconditionally: the radio needs no part beyond the Wi-Fi that is on the
- * chip, and a device with no way into Settings could not be configured. */
+ * chip, and a device with no way into Settings could not be configured. The
+ * drive, the card and the Bluetooth module are in every build too; whether
+ * this board has them is the wiring's to say, through the visible mask. */
 static bool ui_menu_item_is_built(ui_menu_item_t item)
 {
     switch (item) {
-    case UI_MENU_ITEM_USB_FILES:
-        return BOARD_HAS_USB;
-    case UI_MENU_ITEM_SD_CARD:
-        return BOARD_HAS_SD_CARD;
-    case UI_MENU_ITEM_BLUETOOTH:
-        return BOARD_HAS_BLUETOOTH;
     case UI_MENU_ITEM_FM_RADIO:
         return BOARD_HAS_FM_RADIO;
     case UI_MENU_ITEM_DLNA:
@@ -57,9 +53,12 @@ bool ui_menu_item_is_visible(ui_menu_item_t item, ui_menu_visible_mask_t visible
     /* The build decides first: with the feature out, the flag saved in
      * settings.csv is stale data about a source this firmware does not have. */
     if (!ui_menu_item_is_built(item)) return false;
-    /* Only these two can be taken away from Settings. Everything else is the
-     * build's answer alone, so its bit is not consulted at all. */
-    if (item == UI_MENU_ITEM_YANDEX_MUSIC || item == UI_MENU_ITEM_DLNA) {
+    /* These two can be taken away from Settings, and the three parts are
+     * there or not by the wiring. Everything else is the build's answer
+     * alone, so its bit is not consulted at all. */
+    if (item == UI_MENU_ITEM_YANDEX_MUSIC || item == UI_MENU_ITEM_DLNA ||
+        item == UI_MENU_ITEM_USB_FILES || item == UI_MENU_ITEM_SD_CARD ||
+        item == UI_MENU_ITEM_BLUETOOTH) {
         return (visible & UI_MENU_VISIBLE(item)) != 0U;
     }
     return true;

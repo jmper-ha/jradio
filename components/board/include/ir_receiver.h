@@ -6,7 +6,7 @@
 #include "esp_err.h"
 #include "ir_decode.h"
 
-/* The infrared receiver on IR_RECEIVER_GPIO: the RMT peripheral catches the
+/* The infrared receiver on the wiring's ir_receiver pin: the RMT peripheral catches the
  * pulse train in the background, a small task decodes it and hands the key
  * to whoever registered for it. On a board without the pin every call here
  * is a no-op that says so. */

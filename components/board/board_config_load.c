@@ -6,6 +6,8 @@
 #include "esp_log.h"
 #include "esp_partition.h"
 
+#include "board_parts.h"
+
 static const char *TAG = "board_config";
 
 static board_config_t s_config;
@@ -112,4 +114,24 @@ const board_config_t *board_config_get(void)
 board_config_source_t board_config_source(void)
 {
     return s_source;
+}
+
+bool board_has_usb(void)
+{
+    return board_config_get()->usb_dp >= 0;
+}
+
+bool board_has_sd_card(void)
+{
+    return board_config_get()->sd_cs >= 0;
+}
+
+bool board_has_ir(void)
+{
+    return board_config_get()->ir_receiver >= 0;
+}
+
+bool board_has_bluetooth(void)
+{
+    return board_config_get()->bluetooth == BLUETOOTH_JRADIO_BT;
 }

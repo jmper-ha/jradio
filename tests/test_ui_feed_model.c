@@ -93,10 +93,8 @@ static void test_the_cursor_follows_the_source_that_started(void)
      * icon of what was playing - not on whatever the cursor last touched. */
     ui_feed_model_t model;
     ui_feed_model_init(&model, UI_FEED_INTERNET_RADIO);
-#if BOARD_HAS_USB
     assert(ui_feed_model_select_source(&model, AUDIO_SOURCE_USB));
     assert(ui_feed_model_selected(&model) == UI_FEED_USB);
-#endif
     assert(ui_feed_model_select_source(&model, AUDIO_SOURCE_INTERNET_RADIO));
     assert(ui_feed_model_selected(&model) == UI_FEED_INTERNET_RADIO);
 

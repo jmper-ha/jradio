@@ -234,20 +234,20 @@ void app_main(void)
          * tomorrow does not start where it started today. */
         start_optional("Yandex Music feedback", yandex_feedback_init());
     }
-    if (BOARD_HAS_SD_CARD) {
+    if (board_has_sd_card()) {
         // Before the UI and the radio, deliberately: sd_storage_init()
         // explains what the internal-SRAM heap does if the mount lands after
         // them.
         start_optional("SD card", sd_storage_init());
     }
-    if (BOARD_HAS_USB) {
+    if (board_has_usb()) {
         start_optional("USB storage", usb_storage_init());
     }
-    if (BOARD_HAS_USB || BOARD_HAS_SD_CARD) {
+    if (board_has_usb() || board_has_sd_card()) {
         // One player for both volumes, so it is wanted if either is fitted.
         start_optional("file player", file_player_init());
     }
-    if (BOARD_HAS_BLUETOOTH) {
+    if (board_has_bluetooth()) {
         /* Before the player, which asks the link whether the module is
          * there every time it builds a snapshot; the module itself may be
          * booting still, and shows up in the source list when it answers. */

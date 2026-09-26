@@ -15,6 +15,7 @@
 #include "system_report.h"
 
 #include "board.h"
+#include "board_config.h"
 #include "board_display_profile.h"
 #include "device_settings.h"
 #include "file_storage.h"
@@ -2089,6 +2090,14 @@ static const char *ui_feed_item_title(ui_feed_item_t item)
  * away, which is a change, not a query. */
 static void ui_apply_source_visibility(void)
 {
+    // The parts first: the wiring says which are on this board.
+    ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_USB_FILES, board_has_usb());
+    ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_USB_FILES, board_has_usb());
+    ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_SD_CARD, board_has_sd_card());
+    ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_SD_CARD, board_has_sd_card());
+    ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_BLUETOOTH, board_has_bluetooth());
+    ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_BLUETOOTH,
+                                     board_has_bluetooth());
     ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_YANDEX_MUSIC,
                                s_device_settings.yandex_music);
     ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_YANDEX_MUSIC,
@@ -5408,12 +5417,8 @@ static void ui_quick_apply_step(int direction)
  * feeding it is the one combination the module cannot do. */
 static void ui_quick_sync_rows(void)
 {
-#if BOARD_HAS_BLUETOOTH
-    const bool bluetooth = bt_link_alive() &&
+    const bool bluetooth = board_has_bluetooth() && bt_link_alive() &&
                            ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_BLUETOOTH;
-#else
-    const bool bluetooth = false;
-#endif
     ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_BT_OUTPUT, bluetooth);
 }
 
@@ -6398,7 +6403,7 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
     if (!s_autoplay_pending) return;
     const ui_autoplay_action_t action =
         ui_autoplay_decide(&s_device_settings, snapshot->usb_media, snapshot->sd_media, false,
-                           BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, BOARD_HAS_BLUETOOTH);
+                           BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth());
     const bool waited =
         (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_WAIT_MS;
     // Hold off only while the answer could still change: a drive that has not
@@ -7025,6 +7030,7 @@ esp_err_t ui_init(void)
      * the model asks how many rows the home screen would have, and before this
      * point the answer counts a Yandex row the switch may have turned off. */
     ui_apply_source_visibility();
+    ui_settings_model_set_bluetooth(board_has_bluetooth());
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
     // Before anything can play: the board defaults to full volume, and coming
     // back from a power cut at full blast when the user had it at 20 is the
@@ -7045,7 +7051,7 @@ esp_err_t ui_init(void)
                          ui_autoplay_decide(&s_device_settings, FILE_BROWSER_MEDIA_READY,
                                             FILE_BROWSER_MEDIA_READY, true,
                                             BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA,
-                                            BOARD_HAS_BLUETOOTH) != UI_AUTOPLAY_HOME;
+                                            board_has_bluetooth()) != UI_AUTOPLAY_HOME;
     s_autoplay_started_ms = ui_tick_get_ms();
     /* Through the same call the rest of the firmware uses, so a device with no
      * home screen boots straight into the radio instead of onto a screen it

@@ -47,14 +47,12 @@ static void test_select_source_moves_menu_cursor(void)
     ui_menu_state_t state;
 
     ui_menu_init(&state);
-#if BOARD_HAS_USB
     assert(ui_menu_select_source(&state, AUDIO_SOURCE_USB));
     assert(ui_menu_activate(&state) == AUDIO_SOURCE_USB);
-#else
     /* No row for a part that is not on the board, so the cursor has nowhere to
      * go - which is also what stops the web from starting it. */
+    ui_menu_set_source_visible(&state, UI_MENU_ITEM_USB_FILES, false);
     assert(!ui_menu_select_source(&state, AUDIO_SOURCE_USB));
-#endif
     assert(!ui_menu_select_source(&state, AUDIO_SOURCE_NONE));
 
 #if BOARD_HAS_YANDEX_MUSIC
@@ -100,13 +98,18 @@ static void test_settings_is_the_last_row_and_is_not_a_source(void)
 static void test_only_the_parts_this_build_has_get_a_row(void)
 {
     /* The device must not offer what it cannot do. A source whose part is not
-     * wired in board_options.h, or whose feature is FEATURE_OFF, has no row -
-     * not a greyed one, none - because the press would land on nothing. */
+     * in the wiring, or whose feature is FEATURE_OFF, has no row - not a
+     * greyed one, none - because the press would land on nothing. The parts
+     * are in every build and come and go by their bit, which the UI sets
+     * from the wiring. */
     assert(ui_menu_item_is_visible(UI_MENU_ITEM_INTERNET_RADIO, ALL));
     assert(ui_menu_item_is_visible(UI_MENU_ITEM_SETTINGS, ALL));
-    assert(ui_menu_item_is_visible(UI_MENU_ITEM_USB_FILES, ALL) == (bool)BOARD_HAS_USB);
-    assert(ui_menu_item_is_visible(UI_MENU_ITEM_SD_CARD, ALL) == (bool)BOARD_HAS_SD_CARD);
-    assert(ui_menu_item_is_visible(UI_MENU_ITEM_BLUETOOTH, ALL) == (bool)BOARD_HAS_BLUETOOTH);
+    const ui_menu_item_t parts[] = {UI_MENU_ITEM_USB_FILES, UI_MENU_ITEM_SD_CARD,
+                                    UI_MENU_ITEM_BLUETOOTH};
+    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); ++i) {
+        assert(ui_menu_item_is_visible(parts[i], ALL));
+        assert(!ui_menu_item_is_visible(parts[i], ALL & ~UI_MENU_VISIBLE(parts[i])));
+    }
     assert(ui_menu_item_is_visible(UI_MENU_ITEM_FM_RADIO, ALL) == (bool)BOARD_HAS_FM_RADIO);
     assert(ui_menu_item_is_visible(UI_MENU_ITEM_DLNA, ALL) == (bool)BOARD_HAS_DLNA);
     assert(ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, ALL) ==

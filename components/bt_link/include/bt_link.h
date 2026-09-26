@@ -4,9 +4,8 @@
  * of what the module last said. Device-only; the frame parsing behind it is
  * bt_link_model.c, which the host tests cover.
  *
- * A build without the module (BOARD_HAS_BLUETOOTH 0) compiles all of this
- * to stubs: init does nothing, alive is false, every send fails. Callers
- * need no #if of their own. */
+ * On a board whose wiring has no module, init starts nothing, alive is
+ * false and every send fails. Callers need no test of their own. */
 
 #include <stdbool.h>
 #include <stddef.h>

@@ -1,9 +1,5 @@
 #include "sd_storage.h"
 
-#include "board_features.h"
-
-#if BOARD_HAS_SD_CARD
-
 #include <stdint.h>
 
 #include "driver/gpio.h"
@@ -18,19 +14,13 @@
 #include "sdmmc_cmd.h"
 
 #include "board_config.h"
-#include "board_options.h"
 
 static const char *TAG = "sd";
 
-/* The driver's host enum is not numbered by the peripheral, so the board's
- * plain number is mapped here - the same way board.c maps the display's. */
-#if SDC_SPI_PERIPHERAL == 2
-#define SD_SPI_HOST SPI2_HOST
-#elif SDC_SPI_PERIPHERAL == 3
+/* The card is on SPI3 and nowhere else: the display's SPI2 is brought up
+ * without a MISO, so a card there would never answer (board.csv's sd_spi
+ * has the one value). */
 #define SD_SPI_HOST SPI3_HOST
-#else
-#error "SDC_SPI_PERIPHERAL must select SPI2 or SPI3"
-#endif
 
 static sdmmc_card_t *s_card;
 static bool s_bus_ready;
@@ -143,8 +133,14 @@ static void log_mount_failure(esp_err_t err)
     }
 }
 
+/* A board with no socket in its wiring has no bus to bring up and no pins to
+ * name; the card is also absent from the home screen and the web interface,
+ * so nothing should reach these. Unmount succeeds there: letting go of
+ * something never held is not a failure, and the player calls it on every
+ * source change. */
 esp_err_t sd_storage_mount(void)
 {
+    if (!board_has_sd_card()) return ESP_ERR_NOT_SUPPORTED;
     if (!s_bus_ready || s_lock == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -172,6 +168,7 @@ esp_err_t sd_storage_mount(void)
 
 esp_err_t sd_storage_unmount(void)
 {
+    if (!board_has_sd_card()) return ESP_OK;
     if (s_lock == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -203,6 +200,7 @@ esp_err_t sd_storage_unmount(void)
 
 esp_err_t sd_storage_init(void)
 {
+    if (!board_has_sd_card()) return ESP_ERR_NOT_SUPPORTED;
     // Guarded on the bus, not on the card: the card comes and goes now, and
     // initializing the same SPI host twice fails.
     if (s_bus_ready) {
@@ -259,42 +257,3 @@ esp_err_t sd_storage_init(void)
     // The mount is a feature; the bus being up is what this call promises.
     return ESP_OK;
 }
-
-#else /* !BOARD_HAS_SD_CARD */
-
-/* No socket wired on this board, so there is no bus to bring up and no pins to
- * name - SDC_CS_GPIO and the rest are absent from board_options.h, which is
- * exactly what BOARD_HAS_SD_CARD is reading. The card is also absent from the
- * home screen and from the web interface, so nothing should reach these at
- * all; they exist so that removing a part stays a one-file edit rather than a
- * link error.
- *
- * Unmount succeeds: letting go of something never held is not a failure, and
- * the player calls it on every source change. */
-
-esp_err_t sd_storage_init(void)
-{
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-esp_err_t sd_storage_mount(void)
-{
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-esp_err_t sd_storage_unmount(void)
-{
-    return ESP_OK;
-}
-
-bool sd_storage_is_mounted(void)
-{
-    return false;
-}
-
-file_browser_media_t sd_storage_media(void)
-{
-    return FILE_BROWSER_MEDIA_ABSENT;
-}
-
-#endif /* BOARD_HAS_SD_CARD */

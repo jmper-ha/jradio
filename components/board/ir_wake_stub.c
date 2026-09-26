@@ -1,11 +1,12 @@
 #include "ir_wake_stub.h"
 
-#include "board_options.h"
 #include "soc/soc_caps.h"
 
-#if defined(IR_RECEIVER_GPIO) && IR_RECEIVER_GPIO >= 0 && IR_RECEIVER_GPIO < SOC_RTCIO_PIN_COUNT
-
 #include <string.h>
+
+#include "board_config.h"
+#include "driver/rtc_io.h"
+#include "soc/gpio_periph.h"
 
 #include "esp_attr.h"
 #include "esp_cpu.h"
@@ -19,15 +20,6 @@
 
 static const char *TAG = "ir_wake";
 
-/* The RTC channel of the pin, which is what the RTC GPIO registers index by.
- * A token paste, because the map from GPIO to channel is a table in flash and
- * the stub cannot read flash. */
-#define IR_RTC_CHANNEL_OF_(gpio) RTCIO_GPIO##gpio##_CHANNEL
-#define IR_RTC_CHANNEL_OF(gpio) IR_RTC_CHANNEL_OF_(gpio)
-#define IR_RTC_CHANNEL IR_RTC_CHANNEL_OF(IR_RECEIVER_GPIO)
-#define IR_IO_MUX_REG_OF_(gpio) IO_MUX_GPIO##gpio##_REG
-#define IR_IO_MUX_REG_OF(gpio) IR_IO_MUX_REG_OF_(gpio)
-#define IR_IO_MUX_REG IR_IO_MUX_REG_OF(IR_RECEIVER_GPIO)
 
 #define IR_WAKE_MAGIC 0x4952574BU /* "IRWK" */
 #define IR_WAKE_BITS 32U
@@ -52,6 +44,13 @@ static RTC_DATA_ATTR uint32_t s_kind;
 static RTC_DATA_ATTR uint32_t s_bits;
 static RTC_DATA_ATTR uint32_t s_leader_space_us;
 static RTC_DATA_ATTR uint32_t s_stub_at_us;
+/* The receiver's pin, its RTC channel - what the RTC GPIO registers index
+ * by - and its IO_MUX register, worked out by ir_wake_stub_arm() out of the
+ * wiring. The stub cannot do that itself: the map from GPIO to channel and
+ * to register is a table in flash, and flash is not up while it runs. */
+static RTC_DATA_ATTR uint32_t s_pin;
+static RTC_DATA_ATTR uint32_t s_rtc_channel;
+static RTC_DATA_ATTR uint32_t s_io_mux_reg;
 
 /* Read through the digital GPIO, not the RTC one: sampled side by side on
  * the bench, the RTC pad read high for the whole of a frame - the ROM hands
@@ -59,7 +58,7 @@ static RTC_DATA_ATTR uint32_t s_stub_at_us;
  * its input enable is set here, followed the line exactly. */
 static RTC_IRAM_ATTR bool pin_high(void)
 {
-    return (REG_READ(GPIO_IN_REG) >> IR_RECEIVER_GPIO) & 1U;
+    return (REG_READ(GPIO_IN_REG) >> s_pin) & 1U;
 }
 
 /* Spins until the line reads `high`, and answers how long that took, or the
@@ -88,7 +87,7 @@ static RTC_IRAM_ATTR void ir_wake_stub(void)
     /* Only the receiver's wake is worth the wait; the button's and the
      * timer's boot on at once. */
     const uint32_t woke = REG_GET_FIELD(RTC_CNTL_EXT_WAKEUP1_STATUS_REG, RTC_CNTL_EXT_WAKEUP1_STATUS);
-    if ((woke & (1U << IR_RTC_CHANNEL)) == 0U) {
+    if ((woke & (1U << s_rtc_channel)) == 0U) {
         esp_default_wake_deep_sleep();
         return;
     }
@@ -96,7 +95,7 @@ static RTC_IRAM_ATTR void ir_wake_stub(void)
     /* The pad as a plain input. The stub arrives about 3 ms into the 9 ms
      * leader mark (measured), so what follows is the rest of that mark, then
      * its space: 4.5 ms before a frame, 2.25 ms before a repeat. */
-    REG_SET_BIT(IR_IO_MUX_REG, FUN_IE);
+    REG_SET_BIT(s_io_mux_reg, FUN_IE);
     (void)wait_for(true, IR_WAKE_LEADER_MAX_US, ticks_per_us);
     const uint32_t space = wait_for(false, IR_WAKE_SPACE_MAX_US, ticks_per_us);
     s_leader_space_us = space;
@@ -133,6 +132,12 @@ void ir_wake_stub_arm(void)
 {
     s_magic = 0U;
     s_kind = IR_WAKE_NOTHING;
+    const int8_t pin = board_config_get()->ir_receiver;
+    const int channel = pin >= 0 ? rtc_io_number_get((gpio_num_t)pin) : -1;
+    if (channel < 0) return;  // not on an RTC pin: nothing can wake the chip from it
+    s_pin = (uint32_t)pin;
+    s_rtc_channel = (uint32_t)channel;
+    s_io_mux_reg = GPIO_PIN_MUX_REG[pin];
     /* The ROM prints its banner on the console before it runs the stub, and
      * ninety characters at 115200 baud are 7.7 ms - measured, and most of the
      * 9 ms leader the stub was meant to arrive inside of. Silenced for every
@@ -165,17 +170,3 @@ bool ir_wake_stub_take(ir_code_t *code)
     *code = ir_decode(pulses, 2U + IR_WAKE_BITS);
     return code->kind != IR_CODE_NONE;
 }
-
-#else
-
-void ir_wake_stub_arm(void)
-{
-}
-
-bool ir_wake_stub_take(ir_code_t *code)
-{
-    (void)code;
-    return false;
-}
-
-#endif

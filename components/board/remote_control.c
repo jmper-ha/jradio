@@ -1,9 +1,5 @@
 #include "remote_control.h"
 
-#include "board_features.h"
-
-#if BOARD_HAS_IR
-
 #include <stdio.h>
 #include <string.h>
 
@@ -12,6 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+#include "board_config.h"
 #include "board_input.h"
 #include "ir_receiver.h"
 #include "ir_wake_stub.h"
@@ -218,8 +215,12 @@ static esp_err_t load_once(void)
     return ESP_OK;
 }
 
+/* On a board with no receiver in its wiring nothing here starts: no table is
+ * read and no lock made, and every call below answers as for an empty
+ * table - see the NULL tests on s_lock. */
 esp_err_t remote_control_init(void)
 {
+    if (!board_has_ir()) return ESP_ERR_NOT_SUPPORTED;
     const esp_err_t result = load_once();
     if (result != ESP_OK) return result;
     ir_receiver_set_listener(on_key, NULL);
@@ -254,6 +255,7 @@ static void on_wake_key(const ir_code_t *code, void *context)
 
 void remote_control_wake_listen(void)
 {
+    if (!board_has_ir()) return;
     s_wake_seen = xSemaphoreCreateBinary();
     if (s_wake_seen == NULL) return;
     s_wake_started_ms = now_ms();
@@ -285,6 +287,7 @@ static bool wake_keys_had_power(void)
 
 bool remote_control_wake_check(void)
 {
+    if (!board_has_ir()) return false;
     if (!s_wake_listening) remote_control_wake_listen();
     if (!s_wake_listening || load_once() != ESP_OK) return false;
     /* The frame that woke the chip, if the stub caught it: that is the first
@@ -377,50 +380,3 @@ void remote_control_last_key(remote_last_key_t *last)
     last->age_ms = s_last.seen ? (uint32_t)(now_ms() - s_last_ms) : 0U;
     xSemaphoreGive(s_lock);
 }
-
-#else
-
-esp_err_t remote_control_init(void)
-{
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-bool remote_control_learn(remote_function_t function)
-{
-    (void)function;
-    return false;
-}
-
-bool remote_control_forget(remote_function_t function)
-{
-    (void)function;
-    return false;
-}
-
-void remote_control_snapshot(remote_map_t *map, remote_function_t *learning)
-{
-    if (map != NULL) remote_map_clear(map);
-    if (learning != NULL) *learning = REMOTE_FUNCTION_COUNT;
-}
-
-uint32_t remote_control_revision(void)
-{
-    return 0U;
-}
-
-void remote_control_wake_listen(void)
-{
-}
-
-bool remote_control_wake_check(void)
-{
-    return false;
-}
-
-void remote_control_last_key(remote_last_key_t *last)
-{
-    if (last == NULL) return;
-    *last = (remote_last_key_t){.function = REMOTE_FUNCTION_COUNT};
-}
-
-#endif

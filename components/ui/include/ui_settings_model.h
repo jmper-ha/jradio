@@ -109,6 +109,9 @@ typedef struct {
 /* `home_screen` is what ui_menu_home_screen_needed() says for the device as it
  * is running right now - see the field it sets. */
 void ui_settings_model_init(ui_settings_model_t *model, bool home_screen);
+/* Whether the Bluetooth module is on this board, from the wiring. Once, at
+ * boot, before the settings screen is first built. */
+void ui_settings_model_set_bluetooth(bool fitted);
 ui_settings_model_result_t ui_settings_model_move(ui_settings_model_t *model, int direction);
 ui_settings_model_result_t ui_settings_model_activate(ui_settings_model_t *model);
 ui_settings_row_id_t ui_settings_model_selected(const ui_settings_model_t *model);

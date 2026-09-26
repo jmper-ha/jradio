@@ -214,6 +214,14 @@ void board_config_load(void);
 const board_config_t *board_config_get(void);
 board_config_source_t board_config_source(void);
 
+/* Whether the part is on this board, by the wiring. The code for each is in
+ * every build; these decide whether it is started, and whether the menus and
+ * the page offer it. */
+bool board_has_usb(void);
+bool board_has_sd_card(void);
+bool board_has_ir(void);
+bool board_has_bluetooth(void);
+
 #ifdef __cplusplus
 }
 #endif

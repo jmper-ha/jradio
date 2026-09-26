@@ -19,6 +19,7 @@
 #include "album_art.h"
 #include "audio_source.h"
 #include "board.h"
+#include "board_config.h"
 #include "board_features.h"
 #include "bt_link.h"
 #include "bt_link_model.h"
@@ -1512,12 +1513,12 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     snapshot->listing_revision =
         player_control_listing_revision() + yandex_catalog_revision();
     snapshot->files_entry_count = file_storage_entry_count();
-    if (BOARD_HAS_USB && usb_storage_is_mounted()) {
+    if (board_has_usb() && usb_storage_is_mounted()) {
         snapshot->capabilities |= PLAYER_CAP_USB;
     }
     // Always, when the socket exists: see PLAYER_CAP_SD. What is actually in
     // the slot is sd_media.
-    if (BOARD_HAS_SD_CARD) {
+    if (board_has_sd_card()) {
         snapshot->capabilities |= PLAYER_CAP_SD;
     }
     /* The two sources Settings can switch off, and the switch is honoured
@@ -1543,7 +1544,7 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     if (BOARD_HAS_DLNA && dlna_enabled) {
         snapshot->capabilities |= PLAYER_CAP_DLNA;
     }
-    if (BOARD_HAS_BLUETOOTH && bt_link_alive()) {
+    if (board_has_bluetooth() && bt_link_alive()) {
         snapshot->capabilities |= PLAYER_CAP_BLUETOOTH;
     }
     snapshot->active_source =

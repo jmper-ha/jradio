@@ -1,10 +1,8 @@
 #include "ir_receiver.h"
 
-#include "board_options.h"
-
-#ifdef IR_RECEIVER_GPIO
-
 #include <string.h>
+
+#include "board_config.h"
 
 #include "driver/gpio.h"
 #include "driver/rmt_rx.h"
@@ -105,16 +103,18 @@ esp_err_t ir_receiver_init(void)
     /* Started once: the remote's wake check runs it before the board exists,
      * and board_init() asks again a moment later. */
     if (s_channel != NULL) return ESP_OK;
+    if (!board_has_ir()) return ESP_ERR_NOT_SUPPORTED;
+    const int pin = board_config_get()->ir_receiver;
     const rmt_rx_channel_config_t config = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = IR_RESOLUTION_HZ,
         .mem_block_symbols = IR_SYMBOLS,
-        .gpio_num = IR_RECEIVER_GPIO,
+        .gpio_num = pin,
         .flags = {.invert_in = false, .with_dma = false, .io_loop_back = false},
     };
     esp_err_t result = rmt_new_rx_channel(&config, &s_channel);
     if (result != ESP_OK) {
-        ESP_LOGE(TAG, "RMT channel on GPIO %d: %s", IR_RECEIVER_GPIO, esp_err_to_name(result));
+        ESP_LOGE(TAG, "RMT channel on GPIO %d: %s", pin, esp_err_to_name(result));
         return result;
     }
     s_frames = xQueueCreate(4, sizeof(rmt_rx_done_event_data_t));
@@ -130,9 +130,8 @@ esp_err_t ir_receiver_init(void)
     }
     /* A bare receiver's output is open-collector on some parts, and a module
      * may or may not carry its own pull-up; the chip's costs nothing. */
-    (void)gpio_pullup_en(IR_RECEIVER_GPIO);
-    ESP_LOGI(TAG, "receiver on GPIO %d, idle level %d", IR_RECEIVER_GPIO,
-             gpio_get_level(IR_RECEIVER_GPIO));
+    (void)gpio_pullup_en(pin);
+    ESP_LOGI(TAG, "receiver on GPIO %d, idle level %d", pin, gpio_get_level(pin));
     return ESP_OK;
 }
 
@@ -141,18 +140,3 @@ void ir_receiver_set_listener(ir_receiver_listener_t listener, void *context)
     s_listener_context = context;
     s_listener = listener;
 }
-
-#else
-
-esp_err_t ir_receiver_init(void)
-{
-    return ESP_ERR_NOT_SUPPORTED;
-}
-
-void ir_receiver_set_listener(ir_receiver_listener_t listener, void *context)
-{
-    (void)listener;
-    (void)context;
-}
-
-#endif

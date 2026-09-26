@@ -35,6 +35,18 @@ static const char *TAG = "file_player";
 // worst-case compressed frame plus slack; FLAC frames are the large ones.
 #define FILE_PLAYER_INPUT_SIZE 32768U
 #define FILE_PLAYER_READ_CHUNK 4096U
+/* The stdio buffer of the track being played. newlib as ESP-IDF builds it
+ * refills a FILE from its buffer's size and nothing larger: the default 128
+ * bytes made every sector its own USB command, and the drive gave 420 KB/s
+ * whatever fread was asked for - short of what a 96 kHz/24-bit FLAC needs
+ * (340 KB/s) with time left to decode it. In 4 KB pieces it gave 1000 KB/s.
+ * Unbuffered is worse still: it reads a byte at a time.
+ *
+ * Not larger, though 16 KB measured a little faster: usb_host_msc grows its
+ * transfer buffer to the largest read it has been asked for and keeps it,
+ * in internal DMA memory. 16 KB there left the largest internal block at
+ * 7 KB, below what TLS needs. */
+#define FILE_PLAYER_STDIO_BUFFER 4096U
 /* Where the output buffer starts, not where it stays: enough for a 4096-sample
  * stereo frame, which is what most files decode to, and grown to fit when a
  * header asks for more - see grow_pcm_buffer(). */
@@ -143,6 +155,7 @@ static uint8_t *alloc_buffer(size_t size)
 
 typedef struct {
     FILE *file;
+    char *stdio_buffer;
     uint8_t *compressed;
     uint8_t *pcm;
     /* Not a constant, because a FLAC frame is not: the encoder chooses the
@@ -990,6 +1003,16 @@ static void file_player_run_track(void)
         ctx.pcm = alloc_buffer(FILE_PLAYER_PCM_SIZE);
         ctx.pcm_capacity = ctx.pcm != NULL ? FILE_PLAYER_PCM_SIZE : 0U;
         ctx.file = fopen(s_request.path, "rb");
+        // Before any read, which is the only time setvbuf may be called.
+        // PSRAM only: without it the file still reads, just slower.
+        ctx.stdio_buffer = ctx.file != NULL ? heap_caps_malloc(FILE_PLAYER_STDIO_BUFFER,
+                                                               MALLOC_CAP_SPIRAM)
+                                            : NULL;
+        if (ctx.stdio_buffer != NULL &&
+            setvbuf(ctx.file, ctx.stdio_buffer, _IOFBF, FILE_PLAYER_STDIO_BUFFER) != 0) {
+            free(ctx.stdio_buffer);
+            ctx.stdio_buffer = NULL;
+        }
         if (ctx.file != NULL && fseek(ctx.file, 0, SEEK_END) == 0) {
             const long end = ftell(ctx.file);
             if (end > 0) ctx.file_bytes = (uint64_t)end;
@@ -1111,6 +1134,8 @@ static void file_player_run_track(void)
     atomic_store_explicit(&s_input_fill_percent, 0U, memory_order_relaxed);
     if (decoder != NULL) radio_decoder_destroy(decoder);
     if (ctx.file != NULL) fclose(ctx.file);
+    // Only after the fclose: the FILE reads into it until then.
+    free(ctx.stdio_buffer);
     free(ctx.compressed);
     free(ctx.pcm);
 

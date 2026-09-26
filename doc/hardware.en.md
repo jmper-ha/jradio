@@ -208,6 +208,12 @@ bus as the DAC and is driven over UART. Three lines enable it:
 | GPIO 16 (DOUT) | GPIO 22 | the same wire also goes to the DAC's DIN |
 | 3V3, GND | 3V3, GND | the module draws up to 200 mA at peaks |
 
+On an **ESP32-WROVER** module pins 16 and 17 belong to the PSRAM, and its
+firmware runs the UART on others: S3 GPIO 13 to WROVER GPIO 33 (RX), S3 GPIO 14
+to WROVER GPIO 32 (TX). The [module's flasher
+page](https://jmper-ha.github.io/jradio-bt/) has a WROOM/WROVER switch for it.
+The I2S bus is the same.
+
 The resistors on the I2S lines are needed: when the bus master changes (the
 S3 or the module), both sides can be outputs for an instant. The module
 appears in the menu only while it answers over UART - a disconnected or

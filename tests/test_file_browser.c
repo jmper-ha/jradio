@@ -292,8 +292,97 @@ static void test_playlists_in_a_directory(void)
     assert(file_browser_dir_previous_file(&dir, 3U) == file_browser_dir_count(&dir));
 }
 
+/* A .cue sheet lists tracks as places in files: the row carries which track
+ * and where, several rows may share a file, and a track in a format nothing
+ * here plays is counted rather than listed. */
+static void test_cue_tracks_are_rows_with_a_place_in_their_file(void)
+{
+    file_browser_entry_t storage[4];
+    file_browser_dir_t dir;
+    file_browser_dir_init_playlist(&dir, storage, 4U, "/usb0/Music/LP/album.cue");
+    assert(playlist_file_kind_from_name("album.CUE") == PLAYLIST_FILE_CUE);
+    assert(strcmp(playlist_file_kind_name(PLAYLIST_FILE_CUE), "CUE") == 0);
+    assert(file_browser_dir_add_cue_track(&dir, "01. Side 1.flac", 1U, 0U, 12700U));
+    assert(file_browser_dir_add_cue_track(&dir, "01. Side 1.flac", 2U, 12700U, 0U));
+    assert(!file_browser_dir_add_cue_track(&dir, "side 2.ape", 3U, 0U, 0U));
+    assert(dir.count == 2U && dir.dropped_unplayable == 1U);
+    assert(storage[1].cue_track == 2U && storage[1].cue_start_frames == 12700U);
+    assert(storage[1].cue_end_frames == 0U && storage[1].format == FILE_BROWSER_FORMAT_FLAC);
+    char path[FILE_BROWSER_PATH_MAX_LEN];
+    assert(file_browser_dir_path_for(&dir, storage[0].name, path, sizeof(path)));
+    assert(strcmp(path, "/usb0/Music/LP/01. Side 1.flac") == 0);
+    // An ordinary row carries no cue place.
+    file_browser_dir_init(&dir, storage, 4U, "/usb0");
+    assert(file_browser_dir_add(&dir, "a.mp3", FILE_BROWSER_ENTRY_FILE));
+    assert(storage[0].cue_track == 0U && storage[0].cue_start_frames == 0U);
+}
+
+static cue_sheet_t s_sheet;
+
+static void add_sheet_track(uint8_t number, uint8_t file, uint32_t start, const char *title)
+{
+    cue_sheet_track_t *track = &s_sheet.tracks[s_sheet.track_count++];
+    track->number = number;
+    track->file = file;
+    track->start_frames = start;
+    snprintf(track->title, sizeof(track->title), "%s", title);
+}
+
+/* In a folder, a sheet's tracks stand in for the sheet and the files it cuts
+ * up: the folder reads like a disc ripped to tracks. A FILE the sheet wrote as
+ * .wav is found as the .flac it was packed into, and loose tracks stay. */
+static void test_a_sheet_in_a_folder_becomes_its_tracks(void)
+{
+    file_browser_entry_t storage[8];
+    file_browser_dir_t dir;
+    file_browser_dir_init(&dir, storage, 8U, "/usb0/LP");
+    assert(file_browser_dir_add(&dir, "Side A.flac", FILE_BROWSER_ENTRY_FILE));
+    assert(file_browser_dir_add(&dir, "side b.flac", FILE_BROWSER_ENTRY_FILE));
+    assert(file_browser_dir_add(&dir, "bonus.mp3", FILE_BROWSER_ENTRY_FILE));
+    assert(file_browser_dir_add(&dir, "album.cue", FILE_BROWSER_ENTRY_FILE));
+    assert(file_browser_dir_add(&dir, "Scans", FILE_BROWSER_ENTRY_DIRECTORY));
+    file_browser_dir_sort(&dir);
+    assert(storage[1].kind == FILE_BROWSER_ENTRY_PLAYLIST);
+
+    memset(&s_sheet, 0, sizeof(s_sheet));
+    snprintf(s_sheet.files[0], sizeof(s_sheet.files[0]), "side a.flac");
+    snprintf(s_sheet.files[1], sizeof(s_sheet.files[1]), "Side B.wav");
+    snprintf(s_sheet.files[2], sizeof(s_sheet.files[2]), "Side C.flac");
+    s_sheet.file_count = 3U;
+    add_sheet_track(1U, 0U, 0U, "One");
+    add_sheet_track(2U, 0U, 12700U, "Two");
+    add_sheet_track(3U, 1U, 0U, "Three");
+    add_sheet_track(4U, 2U, 0U, "Missing");
+
+    assert(file_browser_dir_expand_cue(&dir, 1U, &s_sheet, 1U) == 3U);
+    assert(dir.count == 5U && dir.dropped_unplayable == 1U);
+    assert(strcmp(storage[0].name, "Scans") == 0);
+    assert(strcmp(storage[1].name, "bonus.mp3") == 0 && storage[1].cue_track == 0U);
+    assert(strcmp(storage[2].name, "Side A.flac") == 0 && storage[2].cue_track == 1U);
+    assert(storage[2].cue_sheet == 1U && storage[2].cue_end_frames == 12700U);
+    assert(storage[3].cue_track == 2U && storage[3].cue_start_frames == 12700U);
+    assert(storage[3].cue_end_frames == 0U);
+    // The row names the file the folder has, in the format it really is.
+    assert(strcmp(storage[4].name, "side b.flac") == 0 && storage[4].cue_track == 3U);
+    assert(storage[4].format == FILE_BROWSER_FORMAT_FLAC);
+    char path[FILE_BROWSER_PATH_MAX_LEN];
+    assert(file_browser_dir_path_for(&dir, storage[4].name, path, sizeof(path)));
+    assert(strcmp(path, "/usb0/LP/side b.flac") == 0);
+    assert(file_browser_dir_next_file(&dir, 3U) == 3U);
+
+    // A sheet whose files are not here keeps its row and changes nothing.
+    file_browser_dir_init(&dir, storage, 8U, "/usb0/LP");
+    assert(file_browser_dir_add(&dir, "other.cue", FILE_BROWSER_ENTRY_FILE));
+    assert(file_browser_dir_add(&dir, "bonus.mp3", FILE_BROWSER_ENTRY_FILE));
+    assert(file_browser_dir_expand_cue(&dir, 0U, &s_sheet, 1U) == 0U);
+    assert(dir.count == 2U && dir.dropped_unplayable == 0U);
+    assert(storage[0].kind == FILE_BROWSER_ENTRY_PLAYLIST);
+}
+
 int main(void)
 {
+    test_a_sheet_in_a_folder_becomes_its_tracks();
+    test_cue_tracks_are_rows_with_a_place_in_their_file();
     test_format_from_name();
     test_hidden_names();
     test_add_and_filter();

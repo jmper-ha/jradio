@@ -912,8 +912,11 @@ static esp_err_t web_server_files_get(httpd_req_t *request)
         web_json_format(&writer, "%u", (unsigned)index);
         web_json_literal(&writer, ",\"name\":");
         // The same short name the device's own row shows: inside a playlist
-        // the entry name is the path the file wrote.
-        web_json_string(&writer, file_browser_display_name(entry.name));
+        // the entry name is the path the file wrote, and a .cue row is named
+        // by its sheet.
+        char label[FILE_BROWSER_NAME_MAX_LEN];
+        file_storage_entry_label(index, &entry, label, sizeof(label));
+        web_json_string(&writer, label);
         web_json_literal(&writer, ",\"kind\":");
         // A playlist is its own kind rather than a directory, because the page
         // shows the type ("M3U") beside it and a directory has none.

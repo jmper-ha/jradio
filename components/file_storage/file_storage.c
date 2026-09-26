@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "cue_sheet.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -32,7 +33,34 @@ typedef struct {
     file_storage_mounted_fn mounted;
 } file_storage_volume_t;
 
+/* A sheet is text and small - the one it was written for is 1 KB - so the
+ * whole file is read at once; anything past this is not a cue sheet. */
+#define FILE_STORAGE_CUE_MAX_BYTES (64U * 1024U)
+
 static file_browser_entry_t *s_entries;
+/* The titles of the .cue tracks in the listing, beside it rather than in it:
+ * file_browser_entry_t is copied onto the stacks of the player task, the UI
+ * and the web server, and two more strings would cost each of them 256 bytes
+ * for something only a cue track has. Found by sheet and track number, not
+ * by row, so the rows can move under them. PSRAM, like the listing. */
+typedef struct {
+    uint8_t sheet;
+    uint8_t number;
+    char title[CUE_SHEET_TEXT_MAX];
+    char performer[CUE_SHEET_TEXT_MAX];
+} file_storage_cue_text_t;
+static file_storage_cue_text_t *s_cue_text;
+static size_t s_cue_text_count;
+/* The sheets the listing's cue tracks came from, by entry.cue_sheet - 1: the
+ * path a resume point names the track by, and the album. A folder with more
+ * sheets than this shows the rest as CUE rows. */
+#define FILE_STORAGE_CUE_SHEETS_MAX 8U
+typedef struct {
+    char path[FILE_BROWSER_PATH_MAX_LEN];
+    char album[CUE_SHEET_TEXT_MAX];
+} file_storage_cue_sheet_t;
+static file_storage_cue_sheet_t *s_cue_sheets;
+static size_t s_cue_sheet_count;
 static file_browser_dir_t s_listing;
 static SemaphoreHandle_t s_listing_lock;
 static file_storage_volume_t s_volumes[FILE_STORAGE_MAX_VOLUMES];
@@ -66,6 +94,14 @@ esp_err_t file_storage_init(void)
         s_listing_lock = NULL;
         return ESP_ERR_NO_MEM;
     }
+    const size_t text_bytes = FILE_STORAGE_MAX_ENTRIES * sizeof(file_storage_cue_text_t);
+    s_cue_text = heap_caps_calloc(1U, text_bytes, MALLOC_CAP_SPIRAM);
+    if (s_cue_text == NULL) s_cue_text = heap_caps_calloc(1U, text_bytes, MALLOC_CAP_INTERNAL);
+    // Not fatal: a .cue then lists without titles, the tracks still play.
+    if (s_cue_text == NULL) ESP_LOGW(TAG, "no memory for .cue titles");
+    // PSRAM only, 9 KB: without it a folder shows its .cue as a CUE row.
+    s_cue_sheets = heap_caps_calloc(FILE_STORAGE_CUE_SHEETS_MAX, sizeof(*s_cue_sheets),
+                                    MALLOC_CAP_SPIRAM);
     file_browser_dir_init(&s_listing, s_entries, FILE_STORAGE_MAX_ENTRIES, "");
     return ESP_OK;
 }
@@ -109,6 +145,119 @@ static file_browser_entry_kind_t entry_kind(const char *path, const struct diren
     return FILE_BROWSER_ENTRY_FILE;
 }
 
+/* Reads and parses the sheet at `path` into a PSRAM block the caller frees;
+ * NULL when it is not a sheet with a playable track. The sheet alone is
+ * ~30 KB and every caller runs on the player task. */
+static cue_sheet_t *cue_sheet_load(const char *path)
+{
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        ESP_LOGE(TAG, "cannot open %s", path);
+        return NULL;
+    }
+    long size = -1;
+    if (fseek(file, 0, SEEK_END) == 0) size = ftell(file);
+    if (size <= 0 || (unsigned long)size > FILE_STORAGE_CUE_MAX_BYTES ||
+        fseek(file, 0, SEEK_SET) != 0) {
+        ESP_LOGW(TAG, "%s: %ld bytes is not a cue sheet", path, size);
+        fclose(file);
+        return NULL;
+    }
+    uint8_t *text = heap_caps_malloc((size_t)size, MALLOC_CAP_SPIRAM);
+    cue_sheet_t *sheet = heap_caps_malloc(sizeof(*sheet), MALLOC_CAP_SPIRAM);
+    if (text == NULL || sheet == NULL) {
+        free(text);
+        free(sheet);
+        fclose(file);
+        return NULL;
+    }
+    const size_t read = fread(text, 1U, (size_t)size, file);
+    fclose(file);
+    const bool parsed = read == (size_t)size && cue_sheet_parse(text, read, sheet);
+    free(text);
+    if (!parsed) {
+        ESP_LOGW(TAG, "%s: no playable track in the sheet", path);
+        free(sheet);
+        return NULL;
+    }
+    return sheet;
+}
+
+// Forgets the sheets of the listing before it is read again. Under the lock.
+static void cue_sheets_clear(void)
+{
+    s_cue_sheet_count = 0U;
+    s_cue_text_count = 0U;
+}
+
+/* Keeps a sheet's path, album and titles as sheet `id`. Under the lock. A
+ * title that does not fit only costs its row the name. */
+static void cue_sheet_remember(uint8_t id, const char *path, const cue_sheet_t *sheet)
+{
+    if (s_cue_sheets != NULL && id >= 1U && id <= FILE_STORAGE_CUE_SHEETS_MAX) {
+        file_storage_cue_sheet_t *kept = &s_cue_sheets[id - 1U];
+        snprintf(kept->path, sizeof(kept->path), "%s", path);
+        snprintf(kept->album, sizeof(kept->album), "%s", sheet->title);
+    }
+    if (s_cue_text == NULL) return;
+    for (size_t i = 0U; i < sheet->track_count && s_cue_text_count < FILE_STORAGE_MAX_ENTRIES;
+         ++i) {
+        const cue_sheet_track_t *track = &sheet->tracks[i];
+        file_storage_cue_text_t *row = &s_cue_text[s_cue_text_count++];
+        row->sheet = id;
+        row->number = track->number;
+        snprintf(row->title, sizeof(row->title), "%s", track->title);
+        // A track without a performer of its own is the album's.
+        snprintf(row->performer, sizeof(row->performer), "%s",
+                 track->performer[0] != '\0' ? track->performer : sheet->performer);
+    }
+}
+
+/* Puts the tracks of every .cue in the directory in place of the sheet and
+ * the files it cuts up - see file_browser_dir_expand_cue(). The sheets are
+ * read without the lock held, since a read is a USB transfer; the listing is
+ * only this task's to change meanwhile. */
+static void file_storage_expand_cue_sheets(const char *path)
+{
+    if (s_cue_sheets == NULL) return;
+    char *sheet_path = heap_caps_malloc(FILE_BROWSER_PATH_MAX_LEN, MALLOC_CAP_SPIRAM);
+    if (sheet_path == NULL) return;
+    size_t row = 0U;
+    while (s_cue_sheet_count < FILE_STORAGE_CUE_SHEETS_MAX) {
+        file_browser_entry_t entry;
+        bool is_sheet = false;
+        if (!listing_lock()) break;
+        const file_browser_entry_t *found = file_browser_dir_entry(&s_listing, row);
+        if (found != NULL) {
+            entry = *found;
+            is_sheet = entry.kind == FILE_BROWSER_ENTRY_PLAYLIST &&
+                       playlist_file_kind_from_name(entry.name) == PLAYLIST_FILE_CUE;
+        }
+        listing_unlock();
+        if (found == NULL) break;
+        cue_sheet_t *sheet = NULL;
+        if (is_sheet &&
+            file_browser_path_child(path, entry.name, sheet_path, FILE_BROWSER_PATH_MAX_LEN)) {
+            sheet = cue_sheet_load(sheet_path);
+        }
+        size_t added = 0U;
+        if (sheet != NULL && listing_lock()) {
+            const uint8_t id = (uint8_t)(s_cue_sheet_count + 1U);
+            added = file_browser_dir_expand_cue(&s_listing, row, sheet, id);
+            if (added > 0U) {
+                ++s_cue_sheet_count;
+                cue_sheet_remember(id, sheet_path, sheet);
+            }
+            listing_unlock();
+            ESP_LOGI(TAG, "%s: %u tracks in the folder", entry.name, (unsigned)added);
+        }
+        free(sheet);
+        // The sheet's row is gone when it was expanded; what follows moved up.
+        if (added == 0U) ++row;
+    }
+    free(sheet_path);
+}
+
 esp_err_t file_storage_read_directory(const char *path)
 {
     if (path == NULL || s_entries == NULL) return ESP_ERR_INVALID_ARG;
@@ -127,22 +276,57 @@ esp_err_t file_storage_read_directory(const char *path)
         return ESP_ERR_TIMEOUT;
     }
     file_browser_dir_init(&s_listing, s_entries, FILE_STORAGE_MAX_ENTRIES, path);
+    cue_sheets_clear();
     const struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
         file_browser_dir_add(&s_listing, entry->d_name, entry_kind(path, entry));
     }
     file_browser_dir_sort(&s_listing);
+    listing_unlock();
+    closedir(dir);
+    file_storage_expand_cue_sheets(path);
+    if (!listing_lock()) return ESP_ERR_TIMEOUT;
     const size_t count = s_listing.count;
     const size_t dropped_full = s_listing.dropped_full;
     const size_t dropped_long = s_listing.dropped_long_name;
     listing_unlock();
-    closedir(dir);
     if (dropped_full > 0U || dropped_long > 0U) {
         ESP_LOGW(TAG, "%s: %u entries dropped (listing full=%u, name too long=%u)", path,
                  (unsigned)(dropped_full + dropped_long), (unsigned)dropped_full,
                  (unsigned)dropped_long);
     }
     ESP_LOGI(TAG, "%s: %u entries", path, (unsigned)count);
+    return ESP_OK;
+}
+
+/* A .cue sheet as a listing: one row per track, each pointing at the file the
+ * track lies in, with where it starts and ends there. Rows keep the sheet's
+ * order - it is the playing order - and several rows name the same file. */
+static esp_err_t file_storage_read_cue(const char *path)
+{
+    cue_sheet_t *sheet = cue_sheet_load(path);
+    if (sheet == NULL) return ESP_FAIL;
+    if (!listing_lock()) {
+        free(sheet);
+        return ESP_ERR_TIMEOUT;
+    }
+    file_browser_dir_init_playlist(&s_listing, s_entries, FILE_STORAGE_MAX_ENTRIES, path);
+    cue_sheets_clear();
+    for (size_t i = 0U; i < sheet->track_count; ++i) {
+        const cue_sheet_track_t *track = &sheet->tracks[i];
+        (void)file_browser_dir_add_cue_track(&s_listing, sheet->files[track->file], track->number,
+                                             track->start_frames,
+                                             cue_sheet_track_end_frames(sheet, i));
+    }
+    s_cue_sheet_count = 1U;
+    cue_sheet_remember(1U, path, sheet);
+    const size_t count = s_listing.count;
+    const size_t dropped = s_listing.dropped_full + s_listing.dropped_long_name +
+                           s_listing.dropped_unplayable + sheet->dropped;
+    listing_unlock();
+    free(sheet);
+    if (dropped > 0U) ESP_LOGW(TAG, "%s: %u tracks dropped", path, (unsigned)dropped);
+    ESP_LOGI(TAG, "%s: %u tracks", path, (unsigned)count);
     return ESP_OK;
 }
 
@@ -153,6 +337,7 @@ esp_err_t file_storage_read_playlist(const char *path)
     if (kind == PLAYLIST_FILE_NONE) return ESP_ERR_INVALID_ARG;
     // Asked before the open, for the reason read_directory gives.
     if (!file_storage_path_mounted(path)) return ESP_ERR_INVALID_STATE;
+    if (kind == PLAYLIST_FILE_CUE) return file_storage_read_cue(path);
     /* The line buffer is a kilobyte, so it is allocated rather than put on the
      * stack: every caller of this is the player_control task, whose stack is
      * the tightest on the device. PSRAM first like every other large block,
@@ -173,6 +358,7 @@ esp_err_t file_storage_read_playlist(const char *path)
         return ESP_ERR_TIMEOUT;
     }
     file_browser_dir_init_playlist(&s_listing, s_entries, FILE_STORAGE_MAX_ENTRIES, path);
+    cue_sheets_clear();
     while (fgets(line, FILE_STORAGE_LINE_MAX, file) != NULL) {
         const bool whole_line = strchr(line, '\n') != NULL || feof(file);
         const char *reference = NULL;
@@ -269,6 +455,91 @@ size_t file_storage_find_entry(const char *name)
     const size_t index = file_browser_dir_find(&s_listing, name);
     listing_unlock();
     return index;
+}
+
+// Under the lock.
+static const file_storage_cue_text_t *cue_text_for(const file_browser_entry_t *entry)
+{
+    if (s_cue_text == NULL || entry == NULL || entry->cue_track == 0U) return NULL;
+    for (size_t i = 0U; i < s_cue_text_count; ++i) {
+        if (s_cue_text[i].sheet == entry->cue_sheet && s_cue_text[i].number == entry->cue_track) {
+            return &s_cue_text[i];
+        }
+    }
+    return NULL;
+}
+
+// Under the lock.
+static const file_storage_cue_sheet_t *cue_sheet_of(uint8_t id)
+{
+    if (s_cue_sheets == NULL || id == 0U || id > s_cue_sheet_count) return NULL;
+    return &s_cue_sheets[id - 1U];
+}
+
+bool file_storage_entry_title(size_t index, char *title, size_t title_size, char *performer,
+                              size_t performer_size)
+{
+    if (title != NULL && title_size > 0U) title[0] = '\0';
+    if (performer != NULL && performer_size > 0U) performer[0] = '\0';
+    if (!listing_lock()) return false;
+    const file_storage_cue_text_t *text = cue_text_for(file_browser_dir_entry(&s_listing, index));
+    if (text != NULL) {
+        if (title != NULL && title_size > 0U) snprintf(title, title_size, "%s", text->title);
+        if (performer != NULL && performer_size > 0U) {
+            snprintf(performer, performer_size, "%s", text->performer);
+        }
+    }
+    listing_unlock();
+    return text != NULL;
+}
+
+void file_storage_entry_label(size_t index, const file_browser_entry_t *entry, char *out,
+                              size_t out_size)
+{
+    if (out == NULL || out_size == 0U) return;
+    out[0] = '\0';
+    if (entry == NULL) return;
+    if (entry->cue_track != 0U &&
+        file_storage_entry_title(index, out, out_size, NULL, 0U) && out[0] != '\0') {
+        return;
+    }
+    if (entry->cue_track != 0U) {
+        snprintf(out, out_size, "%02u - %s", (unsigned)entry->cue_track,
+                 file_browser_display_name(entry->name));
+        return;
+    }
+    snprintf(out, out_size, "%s", file_browser_display_name(entry->name));
+}
+
+bool file_storage_cue_sheet(uint8_t sheet, char *path, size_t path_size, char *album,
+                            size_t album_size)
+{
+    if (path != NULL && path_size > 0U) path[0] = '\0';
+    if (album != NULL && album_size > 0U) album[0] = '\0';
+    if (!listing_lock()) return false;
+    const file_storage_cue_sheet_t *kept = cue_sheet_of(sheet);
+    if (kept != NULL) {
+        if (path != NULL && path_size > 0U) snprintf(path, path_size, "%s", kept->path);
+        if (album != NULL && album_size > 0U) snprintf(album, album_size, "%s", kept->album);
+    }
+    listing_unlock();
+    return kept != NULL;
+}
+
+size_t file_storage_find_cue_track(const char *sheet_path, uint8_t number)
+{
+    if (sheet_path == NULL || number == 0U || !listing_lock()) return SIZE_MAX;
+    size_t found = SIZE_MAX;
+    for (size_t i = 0U; i < s_listing.count; ++i) {
+        const file_browser_entry_t *entry = &s_listing.entries[i];
+        const file_storage_cue_sheet_t *kept = cue_sheet_of(entry->cue_sheet);
+        if (entry->cue_track == number && kept != NULL && strcmp(kept->path, sheet_path) == 0) {
+            found = i;
+            break;
+        }
+    }
+    listing_unlock();
+    return found;
 }
 
 size_t file_storage_next_file(size_t from)

@@ -88,3 +88,40 @@ uint64_t file_track_pcm_bytes(uint32_t seconds, uint32_t sample_rate_hz,
 /* "2:41", or "1:02:03" once a track passes the hour. Minutes are not padded
  * below ten but seconds always are, which is how every player writes it. */
 void file_track_time_text(char *text, size_t text_size, uint32_t seconds);
+
+/* ---- tracks of a .cue sheet inside one file -------------------------------
+ *
+ * A sheet says where each track starts in CD frames (75 to the second); the
+ * player counts samples. These turn one into the other and say which track a
+ * position is in, so the player can play a whole disc side straight through
+ * and still name the track on the air. */
+
+// CD frames to samples at `sample_rate_hz`, exactly: 1/75 s is a whole number
+// of samples at 44.1 and 48 kHz, and the rounding is down otherwise.
+uint64_t file_track_cd_frames_to_samples(uint32_t cd_frames, uint32_t sample_rate_hz);
+
+/* Which track `position_samples` falls in: the last whose start it has
+ * reached. `starts_frames` is ascending. 0 before the first start, which is
+ * where the first track's pregap is. */
+size_t file_track_cue_track_at(const uint32_t *starts_frames, size_t count,
+                               uint64_t position_samples, uint32_t sample_rate_hz);
+
+/* ---- landing a FLAC jump on a sample --------------------------------------
+ *
+ * A jump by bitrate lands within a couple of seconds - fine for a scrub bar,
+ * not for the start of a track, where it means hearing the tail of the one
+ * before. FLAC frame headers say which sample they start at, so the jump can
+ * aim by the file's own sample count, see where it landed, step back if it
+ * went too far, and drop the samples between the frame and the target. */
+
+/* Where sample `target` should be, by the average over the audio bytes. Never
+ * before `audio_start` or past the end. */
+uint64_t file_track_flac_aim(uint64_t audio_start, uint64_t file_bytes, uint64_t total_samples,
+                             uint64_t target);
+
+/* Where to aim again after landing on a frame that starts `overshoot` samples
+ * past the target: back by that many samples' worth of bytes and one block
+ * more, since a frame header only follows the offset. */
+uint64_t file_track_flac_back_off(uint64_t offset, uint64_t audio_start, uint64_t file_bytes,
+                                  uint64_t total_samples, uint64_t overshoot,
+                                  uint32_t block_samples);

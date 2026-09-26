@@ -234,6 +234,47 @@ static void test_a_pattern_that_only_looks_like_a_header_is_refused(void)
     assert(!flac_frame_header_parse(spoiled, sizeof(spoiled), &header));
 }
 
+/* Where a frame is in the stream, which is what makes a .cue track start
+ * land on its sample: a fixed-size stream numbers frames, a variable one
+ * numbers samples. The headers are built here with their own CRC-8. */
+static uint8_t test_crc8(const uint8_t *data, size_t length)
+{
+    uint8_t crc = 0U;
+    for (size_t i = 0U; i < length; ++i) {
+        crc ^= data[i];
+        for (int bit = 0; bit < 8; ++bit) {
+            const unsigned shifted = (unsigned)crc << 1;
+            crc = (uint8_t)((crc & 0x80U) != 0U ? (shifted ^ 0x07U) : shifted);
+        }
+    }
+    return crc;
+}
+
+static void test_a_frame_says_where_it_starts(void)
+{
+    flac_streaminfo_t info = {.sample_rate_hz = 44100U, .channels = 2U, .bits_per_sample = 16U,
+                              .min_block_size = 4096U, .max_block_size = 4096U};
+    // The real header's fields, with frame number 1000 (two coded bytes).
+    uint8_t fixed[8] = {0xFF, 0xF8, 0xC9, 0x18, 0xCF, 0xA8, 0x00, 0x00};
+    fixed[6] = test_crc8(fixed, 6U);
+    flac_frame_header_t header;
+    assert(flac_frame_header_parse(fixed, sizeof(fixed), &header));
+    assert(!header.variable_block_size && header.number == 1000U && header.header_bytes == 7U);
+    assert(flac_frame_first_sample(&header, &info) == 1000U * 4096U);
+
+    // Variable block size: the number is the sample itself (123456, four bytes).
+    uint8_t variable[10] = {0xFF, 0xF9, 0xC9, 0x18, 0xF0, 0x9E, 0x89, 0x80, 0x00, 0x00};
+    variable[8] = test_crc8(variable, 8U);
+    assert(flac_frame_header_parse(variable, sizeof(variable), &header));
+    assert(header.variable_block_size && header.number == 123456U);
+    assert(flac_frame_first_sample(&header, &info) == 123456U);
+
+    // A broken continuation byte is not a number.
+    variable[5] = 0x1E;
+    variable[8] = test_crc8(variable, 8U);
+    assert(!flac_frame_header_parse(variable, sizeof(variable), &header));
+}
+
 static void test_the_sync_is_found_where_a_jump_lands(void)
 {
     /* What a jump does: read a window from wherever the estimate landed, and
@@ -288,6 +329,7 @@ static void test_a_block_that_is_not_streaminfo_is_refused(void)
 
 int main(void)
 {
+    test_a_frame_says_where_it_starts();
     test_the_block_header_splits_into_three_parts();
     test_vorbis_comments_are_named_fields();
     test_a_truncated_comment_block_stops_rather_than_reads_on();

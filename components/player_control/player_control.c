@@ -5,6 +5,8 @@
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
+#include <stdlib.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -91,6 +93,28 @@ static SemaphoreHandle_t s_playing_path_lock;
 static char s_files_playing_list[FILE_BROWSER_PATH_MAX_LEN];
 static char s_files_playing_name[FILE_BROWSER_NAME_MAX_LEN];
 
+/* The file playing is a disc side played from a .cue sheet: what was handed
+ * to the player, and for each of its tracks the listing row and the sheet's
+ * own number. PSRAM, allocated once - 26 KB of titles. The rows are only good
+ * while the listing is the one they were read from, which the revision says.
+ *
+ * `number` is the sheet's number of the track on the air, 0 when the file is
+ * not played from a sheet. It is what the resume point and a return to the
+ * listing find the track by: several rows share the file name. Atomic, since
+ * the UI task reads it to write the resume point down.
+ *
+ * `sheet_path` is the .cue the side is played from, under s_playing_path_lock:
+ * the listing is the folder the sheet is in, which does not say which sheet. */
+typedef struct {
+    file_player_cue_t cue;
+    size_t rows[FILE_PLAYER_CUE_TRACKS_MAX];
+    uint8_t numbers[FILE_PLAYER_CUE_TRACKS_MAX];
+    unsigned int listing_revision;
+    char sheet_path[FILE_BROWSER_PATH_MAX_LEN];
+} player_cue_state_t;
+static player_cue_state_t *s_cue_state;
+static atomic_uint s_cue_playing_number = ATOMIC_VAR_INIT(0U);
+
 /* `name` is the name the track has in the listing it came from, and the
  * listing itself is read back out of file_storage rather than passed in: it
  * goes straight into its static, because a second kilobyte of path on this
@@ -100,25 +124,36 @@ static void player_set_playing_file(const char *path, const char *name)
     const bool playing = path != NULL && path[0] != '\0';
     snprintf(s_files_playing_name, sizeof(s_files_playing_name), "%s",
              playing && name != NULL ? name : "");
+    if (s_playing_path_lock == NULL) return;
+    // The list is under the lock too now: a .cue track's resume point is the
+    // sheet's path, and the UI task reads it to write the point down.
+    xSemaphoreTake(s_playing_path_lock, portMAX_DELAY);
     if (!playing || !file_storage_current_path(s_files_playing_list,
                                                sizeof(s_files_playing_list))) {
         s_files_playing_list[0] = '\0';
     }
-    if (s_playing_path_lock == NULL) return;
-    xSemaphoreTake(s_playing_path_lock, portMAX_DELAY);
     snprintf(s_files_playing_path, sizeof(s_files_playing_path), "%s", playing ? path : "");
     xSemaphoreGive(s_playing_path_lock);
+    if (!playing) atomic_store_explicit(&s_cue_playing_number, 0U, memory_order_release);
 }
 
 bool player_control_playing_file_path(char *out, size_t out_size)
 {
     if (out == NULL || out_size == 0U || s_playing_path_lock == NULL) return false;
     xSemaphoreTake(s_playing_path_lock, portMAX_DELAY);
-    const size_t length = strlen(s_files_playing_path);
-    const bool fits = length < out_size;
-    if (fits) memcpy(out, s_files_playing_path, length + 1U);
+    /* A .cue track is remembered as the sheet and the track's number in it -
+     * "/usb0/LP/album.cue#7" - since the file it lies in is a whole disc side
+     * and says nothing about which song was on. No audio file ends that way,
+     * so the resume point needs no second setting to tell the two apart. */
+    const unsigned int number = atomic_load_explicit(&s_cue_playing_number, memory_order_acquire);
+    int length;
+    if (number != 0U && s_cue_state != NULL && s_cue_state->sheet_path[0] != '\0') {
+        length = snprintf(out, out_size, "%s#%u", s_cue_state->sheet_path, number);
+    } else {
+        length = snprintf(out, out_size, "%s", s_files_playing_path);
+    }
     xSemaphoreGive(s_playing_path_lock);
-    return fits && length > 0U;
+    return length > 0 && (size_t)length < out_size;
 }
 /* When the last "play" found nothing at all to start, in milliseconds of the
  * device clock; zero until it happens.
@@ -166,6 +201,105 @@ static void player_refresh_rssi_if_due(void)
     atomic_flag_clear_explicit(&s_rssi_refreshing, memory_order_release);
 }
 
+/* Starts track `index` of an open .cue listing, or jumps to it when it is in
+ * the file already playing.
+ *
+ * The player is handed the whole disc side: every row of the listing that
+ * names the same file, with its start and title, so it can play straight
+ * through from this track to the end of the file and say which track is on
+ * as it goes. A jump within the file is exactly that - no reopen, no gap -
+ * which is also what "next" and "previous" come down to between two tracks
+ * of one side. */
+static void player_file_select_cue(size_t index, const file_browser_entry_t *entry,
+                                   const char *path, player_playback_state_t playback_state)
+{
+    player_cue_state_t *state = s_cue_state;
+    if (state == NULL) {
+        // No room for the sheet: the file still plays, from its start.
+        if (file_player_play(path, file_browser_display_name(entry->name), entry->format) ==
+            ESP_OK) {
+            player_set_playing_file(path, entry->name);
+            atomic_store_explicit(&s_files_item_index, index, memory_order_release);
+        }
+        return;
+    }
+
+    /* Read afresh every time, the jump included: the rows move whenever the
+     * listing is read again, and coming back to the sheet from the browser
+     * is exactly that. The player keeps a copy of its own, so this does not
+     * pull anything from under the file that is playing. */
+    file_player_cue_t *cue = &state->cue;
+    memset(cue, 0, sizeof(*cue));
+    const size_t count = file_storage_entry_count();
+    for (size_t row = 0U; row < count && cue->count < FILE_PLAYER_CUE_TRACKS_MAX; ++row) {
+        file_browser_entry_t other;
+        if (!file_storage_entry_at(row, &other) || other.cue_track == 0U ||
+            other.cue_sheet != entry->cue_sheet || strcmp(other.name, entry->name) != 0) {
+            continue;
+        }
+        const size_t track = cue->count++;
+        cue->start_frames[track] = other.cue_start_frames;
+        state->rows[track] = row;
+        state->numbers[track] = other.cue_track;
+        (void)file_storage_entry_title(row, cue->title[track], sizeof(cue->title[track]),
+                                       cue->performer[track], sizeof(cue->performer[track]));
+        if (row == index) cue->first = track;
+    }
+    // Lock order as in player_set_playing_file: this one, then the listing's.
+    xSemaphoreTake(s_playing_path_lock, portMAX_DELAY);
+    (void)file_storage_cue_sheet(entry->cue_sheet, state->sheet_path, sizeof(state->sheet_path),
+                                 cue->album, sizeof(cue->album));
+    xSemaphoreGive(s_playing_path_lock);
+    state->listing_revision = atomic_load_explicit(&s_listing_revision, memory_order_acquire);
+
+    /* Asked of the player itself, not of `playback_state`: the track keys
+     * pass "stopped" on purpose (see player_file_step), and a jump between
+     * two tracks of the side that is playing is exactly what they are for. */
+    file_player_status_t status;
+    file_player_get_status(&status);
+    (void)playback_state;
+    const bool side_playing =
+        atomic_load_explicit(&s_cue_playing_number, memory_order_acquire) != 0U &&
+        status.cue_track >= 0 &&
+        (status.state == FILE_PLAYER_STATE_PLAYING || status.state == FILE_PLAYER_STATE_PAUSED ||
+         status.state == FILE_PLAYER_STATE_STARTING) &&
+        strcmp(path, s_files_playing_path) == 0;
+    if (side_playing) {
+        // The row that is already on is the way back to the player screen.
+        if (status.cue_track != (int16_t)cue->first) {
+            (void)file_player_seek_cue_track(cue->first);
+        }
+    } else {
+        const esp_err_t result =
+            file_player_play_cue(path, cue->title[cue->first], entry->format, cue);
+        if (result != ESP_OK) {
+            ESP_LOGW(TAG, "cannot play %s: %s", path, esp_err_to_name(result));
+            player_set_playing_file(NULL, NULL);
+            return;
+        }
+        player_set_playing_file(path, entry->name);
+    }
+    atomic_store_explicit(&s_cue_playing_number, entry->cue_track, memory_order_release);
+    atomic_store_explicit(&s_files_item_index, index, memory_order_release);
+}
+
+/* The player has moved on to another track of the side it is playing. The
+ * row follows it - the list marks what is on, and "next" steps from there -
+ * but only while the listing is still the one the rows were read from. */
+static void player_file_cue_track(size_t track)
+{
+    player_cue_state_t *state = s_cue_state;
+    if (state == NULL || track >= state->cue.count ||
+        atomic_load_explicit(&s_cue_playing_number, memory_order_acquire) == 0U) {
+        return;
+    }
+    atomic_store_explicit(&s_cue_playing_number, state->numbers[track], memory_order_release);
+    if (state->listing_revision ==
+        atomic_load_explicit(&s_listing_revision, memory_order_acquire)) {
+        atomic_store_explicit(&s_files_item_index, state->rows[track], memory_order_release);
+    }
+}
+
 // Selecting a directory browses into it instead of playing; selecting a file
 // starts it. Both arrive as PLAYER_COMMAND_SELECT_ITEM because the cursor does
 // not know which kind of entry it is on until the listing is consulted.
@@ -202,6 +336,10 @@ static void player_file_select_item(size_t index, player_playback_state_t playba
         atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
         return;
     }
+    if (entry.cue_track != 0U) {
+        player_file_select_cue(index, &entry, path, playback_state);
+        return;
+    }
     /* Choosing the file that is already playing is how the user gets back to
      * the player screen from the browser, so it must not start the track over.
      * The row is remembered again on the way out: browsing clears it, and
@@ -221,6 +359,7 @@ static void player_file_select_item(size_t index, player_playback_state_t playba
         return;
     }
     player_set_playing_file(path, entry.name);
+    atomic_store_explicit(&s_cue_playing_number, 0U, memory_order_release);
     atomic_store_explicit(&s_files_item_index, index, memory_order_release);
 }
 
@@ -248,7 +387,12 @@ static void player_file_reveal_playing(void)
         ESP_LOGW(TAG, "cannot reopen %s", s_files_playing_list);
         return;
     }
-    const size_t index = file_storage_find_entry(s_files_playing_name);
+    // Rows of a sheet share the file's name; the track's number tells them apart.
+    const unsigned int number = atomic_load_explicit(&s_cue_playing_number, memory_order_acquire);
+    const size_t index = number != 0U && s_cue_state != NULL
+                             ? file_storage_find_cue_track(s_cue_state->sheet_path,
+                                                           (uint8_t)number)
+                             : file_storage_find_entry(s_files_playing_name);
     // The file can have been deleted from another machine since it was opened;
     // the directory is still the right one to show, just without a cursor to
     // put on the playing row.
@@ -275,6 +419,19 @@ static void player_file_reveal_playing(void)
 static bool player_file_start_saved(void)
 {
     if (s_files_playing_path[0] == '\0') return false;
+    /* A .cue track is started again from its sheet, which is what knows where
+     * in the side it begins; the file alone would start from the side's
+     * first track. */
+    const unsigned int number = atomic_load_explicit(&s_cue_playing_number, memory_order_acquire);
+    if (number != 0U && s_cue_state != NULL && s_files_playing_list[0] != '\0' &&
+        file_storage_open(s_files_playing_list) == ESP_OK) {
+        atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
+        const size_t row = file_storage_find_cue_track(s_cue_state->sheet_path, (uint8_t)number);
+        if (row < file_storage_entry_count()) {
+            player_file_select_item(row, PLAYER_PLAYBACK_STOPPED);
+            return true;
+        }
+    }
     const char *name = file_browser_display_name(s_files_playing_name);
     const esp_err_t result = file_player_play(s_files_playing_path, name,
                                               file_browser_format_from_name(name));
@@ -364,6 +521,15 @@ static void player_file_track_finished(void)
     const player_command_t command = {.kind = PLAYER_COMMAND_TRACK_FINISHED};
     if (!player_control_post(&command)) {
         ESP_LOGW(TAG, "track finished but the command queue is full");
+    }
+}
+
+// Runs on the playback task, like the one above: hand it to the queue.
+static void player_file_cue_track_changed(size_t track)
+{
+    const player_command_t command = {.kind = PLAYER_COMMAND_CUE_TRACK, .item_index = track};
+    if (!player_control_post(&command)) {
+        ESP_LOGW(TAG, "cue track %u began but the command queue is full", (unsigned int)track);
     }
 }
 
@@ -1055,6 +1221,9 @@ static void player_control_task(void *arg)
         case PLAYER_OPERATION_ADVANCE_ITEM:
             player_file_advance();
             break;
+        case PLAYER_OPERATION_CUE_TRACK:
+            player_file_cue_track(command.item_index);
+            break;
         case PLAYER_OPERATION_PREVIOUS_ITEM:
         case PLAYER_OPERATION_NEXT_ITEM: {
             const bool forward = operation == PLAYER_OPERATION_NEXT_ITEM;
@@ -1215,6 +1384,10 @@ esp_err_t player_control_init(void)
         return ESP_ERR_NO_MEM;
     }
     file_player_set_finished_callback(player_file_track_finished);
+    file_player_set_cue_track_callback(player_file_cue_track_changed);
+    // PSRAM only: without it a .cue track plays its file from the start.
+    s_cue_state = heap_caps_calloc(1U, sizeof(*s_cue_state), MALLOC_CAP_SPIRAM);
+    if (s_cue_state == NULL) ESP_LOGW(TAG, "no memory for .cue playback");
     usb_storage_set_media_removing_callback(player_file_media_removing);
     return ESP_OK;
 }
@@ -1628,10 +1801,55 @@ void player_control_set_yandex_station(const char *id, const char *name, const c
     player_yandex_remember(&station);
 }
 
+/* "/usb0/LP/album.cue#7": the sheet and the track's number in it - see
+ * player_control_playing_file_path(). Opens the folder the sheet is in, where
+ * its tracks are listed, and starts the track - or the sheet itself, when the
+ * folder does not list them (its files are not beside it). False when the
+ * sheet or the track is not there any more. */
+static bool player_file_resume_cue(const char *path)
+{
+    const char *hash = strrchr(path, '#');
+    if (hash == NULL || hash - path < 4 || strncasecmp(hash - 4, ".cue", 4) != 0) return false;
+    char *end = NULL;
+    const unsigned long number = strtoul(hash + 1, &end, 10);
+    if (end == hash + 1 || *end != '\0' || number == 0UL || number > 99UL) return false;
+    char sheet[FILE_BROWSER_PATH_MAX_LEN];
+    const size_t length = (size_t)(hash - path);
+    if (length >= sizeof(sheet)) return false;
+    memcpy(sheet, path, length);
+    sheet[length] = '\0';
+    if (strncmp(sheet, SD_STORAGE_ROOT_PATH "/", sizeof(SD_STORAGE_ROOT_PATH)) == 0) {
+        (void)sd_storage_mount();
+    }
+    if (!file_storage_path_mounted(sheet)) return false;
+    // The folder is the sheet's path cut at its last slash, in place: a second
+    // kilobyte of path is more than this stack should carry.
+    char *slash = strrchr(sheet, '/');
+    size_t row = SIZE_MAX;
+    if (slash != NULL && slash != sheet) {
+        *slash = '\0';
+        const esp_err_t read = file_storage_read_directory(sheet);
+        *slash = '/';
+        if (read == ESP_OK) row = file_storage_find_cue_track(sheet, (uint8_t)number);
+    }
+    if (row == SIZE_MAX) {
+        if (file_storage_read_playlist(sheet) != ESP_OK) return false;
+        row = file_storage_find_cue_track(sheet, (uint8_t)number);
+    }
+    atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
+    if (row >= file_storage_entry_count()) return false;
+    player_file_select_item(row, PLAYER_PLAYBACK_STOPPED);
+    return true;
+}
+
 bool player_control_file_resume_path(const char *path)
 {
     char parent[FILE_BROWSER_PATH_MAX_LEN];
     if (path == NULL || path[0] == '\0') return false;
+    const char *hash = strrchr(path, '#');
+    if (hash != NULL && hash - path >= 4 && strncasecmp(hash - 4, ".cue", 4) == 0) {
+        return player_file_resume_cue(path);
+    }
     if (!file_browser_path_parent(path, parent, sizeof(parent))) return false;
     /* Which volume the remembered path is on is in the path itself. The card
      * has to be mounted before it can be searched, and this is the one caller

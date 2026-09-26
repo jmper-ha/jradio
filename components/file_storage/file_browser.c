@@ -142,8 +142,122 @@ bool file_browser_dir_add(file_browser_dir_t *dir, const char *name,
     memcpy(entry->name, name, length + 1U);
     entry->kind = kind;
     entry->format = format;
+    entry->cue_track = 0U;
+    entry->cue_sheet = 0U;
+    entry->cue_start_frames = 0U;
+    entry->cue_end_frames = 0U;
     ++dir->count;
     return true;
+}
+
+bool file_browser_dir_add_cue_track(file_browser_dir_t *dir, const char *reference,
+                                    uint8_t number, uint32_t start_frames, uint32_t end_frames)
+{
+    if (dir == NULL || reference == NULL) return false;
+    /* A sheet names an .ape or a .wv as readily as a .flac; neither plays
+     * here, and the track is one the user asked for and will not get. */
+    if (file_browser_format_from_name(reference) == FILE_BROWSER_FORMAT_NONE) {
+        ++dir->dropped_unplayable;
+        return false;
+    }
+    if (!file_browser_dir_add(dir, reference, FILE_BROWSER_ENTRY_FILE)) return false;
+    file_browser_entry_t *entry = &dir->entries[dir->count - 1U];
+    entry->cue_track = number;
+    entry->cue_sheet = 1U;
+    entry->cue_start_frames = start_frames;
+    entry->cue_end_frames = end_frames;
+    return true;
+}
+
+// Compares up to the extension's dot, ASCII case folded: FAT names are.
+static bool same_stem(const char *left, const char *right)
+{
+    const char *left_dot = strrchr(left, '.');
+    const char *right_dot = strrchr(right, '.');
+    const size_t left_length = left_dot != NULL ? (size_t)(left_dot - left) : strlen(left);
+    const size_t right_length = right_dot != NULL ? (size_t)(right_dot - right) : strlen(right);
+    if (left_length != right_length) return false;
+    for (size_t i = 0U; i < left_length; ++i) {
+        if (ascii_lower(left[i]) != ascii_lower(right[i])) return false;
+    }
+    return true;
+}
+
+static size_t find_cue_file(const file_browser_dir_t *dir, const char *reference)
+{
+    // A directory row is a bare name; a reference through folders is left
+    // for the sheet's own listing to open.
+    if (strchr(reference, '/') != NULL) return dir->count;
+    size_t stem_match = dir->count;
+    for (size_t i = 0U; i < dir->count; ++i) {
+        const file_browser_entry_t *entry = &dir->entries[i];
+        if (entry->kind != FILE_BROWSER_ENTRY_FILE || entry->cue_track != 0U) continue;
+        if (compare_names(entry->name, reference) == 0) return i;
+        if (stem_match == dir->count && same_stem(entry->name, reference)) stem_match = i;
+    }
+    return stem_match;
+}
+
+size_t file_browser_dir_expand_cue(file_browser_dir_t *dir, size_t cue_index,
+                                   const cue_sheet_t *sheet, uint8_t sheet_id)
+{
+    if (dir == NULL || dir->entries == NULL || sheet == NULL || sheet_id == 0U ||
+        dir->listing != FILE_BROWSER_LISTING_DIRECTORY || cue_index >= dir->count ||
+        dir->entries[cue_index].kind != FILE_BROWSER_ENTRY_PLAYLIST) {
+        return 0U;
+    }
+    const size_t old_count = dir->count;
+    size_t files[CUE_SHEET_FILES_MAX];
+    bool found = false;
+    for (size_t f = 0U; f < CUE_SHEET_FILES_MAX; ++f) {
+        files[f] = f < sheet->file_count ? find_cue_file(dir, sheet->files[f]) : old_count;
+        found = found || files[f] < old_count;
+    }
+    if (!found) return 0U;
+
+    size_t added = 0U;
+    size_t unplayable = 0U;
+    size_t full = 0U;
+    for (size_t t = 0U; t < sheet->track_count; ++t) {
+        const cue_sheet_track_t *track = &sheet->tracks[t];
+        const size_t file = track->file < CUE_SHEET_FILES_MAX ? files[track->file] : old_count;
+        if (file >= old_count) {
+            ++unplayable;
+            continue;
+        }
+        if (dir->count >= dir->capacity) {
+            ++full;
+            continue;
+        }
+        // The row takes the file's name as the directory has it, and its
+        // format, not the sheet's idea of either.
+        file_browser_entry_t *entry = &dir->entries[dir->count++];
+        *entry = dir->entries[file];
+        entry->cue_track = track->number;
+        entry->cue_sheet = sheet_id;
+        entry->cue_start_frames = track->start_frames;
+        entry->cue_end_frames = cue_sheet_track_end_frames(sheet, t);
+        ++added;
+    }
+    if (added == 0U) {
+        dir->count = old_count;
+        return 0U;
+    }
+    dir->dropped_unplayable += unplayable;
+    dir->dropped_full += full;
+
+    size_t kept = 0U;
+    for (size_t row = 0U; row < dir->count; ++row) {
+        bool drop = row == cue_index;
+        for (size_t f = 0U; !drop && row < old_count && f < CUE_SHEET_FILES_MAX; ++f) {
+            drop = files[f] == row;
+        }
+        if (drop) continue;
+        if (kept != row) dir->entries[kept] = dir->entries[row];
+        ++kept;
+    }
+    dir->count = kept;
+    return added;
 }
 
 /* Directories, then playlists, then tracks: the two kinds that open something

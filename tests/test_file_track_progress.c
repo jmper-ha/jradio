@@ -195,8 +195,36 @@ static void test_the_position_carries_on_from_where_the_seek_landed(void)
     assert(file_track_pcm_bytes(90U, 44100U, 2U, 4U) == 0U);
 }
 
+/* A .cue sheet's starts against a playing position, and the aim of a jump
+ * onto a track's first sample. */
+static void test_cue_tracks_and_the_flac_aim(void)
+{
+    // 44.1 kHz: 1/75 s is exactly 588 samples.
+    assert(file_track_cd_frames_to_samples(1U, 44100U) == 588U);
+    assert(file_track_cd_frames_to_samples(75U, 48000U) == 48000U);
+    const uint32_t starts[3] = {0U, 12700U, 27468U};  // 00:00:00, 02:49:25, 06:06:18
+    assert(file_track_cue_track_at(starts, 3U, 0U, 44100U) == 0U);
+    assert(file_track_cue_track_at(starts, 3U, 12700U * 588U - 1U, 44100U) == 0U);
+    assert(file_track_cue_track_at(starts, 3U, 12700U * 588U, 44100U) == 1U);
+    assert(file_track_cue_track_at(starts, 3U, 99999999U, 44100U) == 2U);
+    assert(file_track_cue_track_at(NULL, 0U, 5U, 44100U) == 0U);
+
+    // A file of 1000 bytes of header and 10 MB of audio holding 10 M samples.
+    const uint64_t start = 1000U;
+    const uint64_t end = start + 10000000U;
+    assert(file_track_flac_aim(start, end, 10000000U, 0U) == start);
+    assert(file_track_flac_aim(start, end, 10000000U, 5000000U) == start + 5000000U);
+    assert(file_track_flac_aim(start, end, 10000000U, 20000000U) == end - 1U);
+    assert(file_track_flac_aim(start, end, 0U, 5U) == start);
+    // Landed 2000 samples late: back by 2000 samples and a 4096 block.
+    assert(file_track_flac_back_off(start + 5000000U, start, end, 10000000U, 2000U, 4096U) ==
+           start + 5000000U - 6097U);
+    assert(file_track_flac_back_off(start + 10U, start, end, 10000000U, 2000U, 4096U) == start);
+}
+
 int main(void)
 {
+    test_cue_tracks_and_the_flac_aim();
     test_elapsed_counts_what_was_played_not_what_was_read();
     test_elapsed_follows_the_format_not_a_fixed_rate();
     test_elapsed_is_zero_until_the_format_is_known();

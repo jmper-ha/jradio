@@ -118,6 +118,11 @@ typedef enum {
      * its own through player_control_post_stream_test(). Appended, like the
      * ones above, because these values travel through a queue. */
     PLAYER_COMMAND_TEST_STREAM,
+    /* Posted by the file player, like TRACK_FINISHED: the playing file is a
+     * disc side played from a .cue sheet, and track `item_index` of it has
+     * just begun - with no break, since the file plays on. Appended, for the
+     * reason the ones above were. */
+    PLAYER_COMMAND_CUE_TRACK,
 } player_command_kind_t;
 
 typedef struct {
@@ -218,6 +223,7 @@ typedef enum {
     PLAYER_OPERATION_TOGGLE_LIKE,
     PLAYER_OPERATION_TOGGLE_DISLIKE,
     PLAYER_OPERATION_TEST_STREAM,
+    PLAYER_OPERATION_CUE_TRACK,
 } player_operation_t;
 
 /* Whether a drive being pulled out should take the picture on screen with it.

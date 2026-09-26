@@ -50,6 +50,20 @@ static size_t coded_number_length(uint8_t first)
     return 0U;
 }
 
+// The value of that run: the first byte's low bits, then six from each byte
+// after it. False when a continuation byte is not one.
+static bool coded_number_value(const uint8_t *data, size_t length, uint64_t *value)
+{
+    static const uint8_t first_mask[8] = {0x00U, 0x7FU, 0x1FU, 0x0FU, 0x07U, 0x03U, 0x01U, 0x00U};
+    uint64_t result = data[0] & first_mask[length];
+    for (size_t i = 1U; i < length; ++i) {
+        if ((data[i] & 0xC0U) != 0x80U) return false;
+        result = (result << 6) | (data[i] & 0x3FU);
+    }
+    *value = result;
+    return true;
+}
+
 static uint32_t block_size_for(uint8_t code)
 {
     if (code == 1U) return 192U;
@@ -87,7 +101,9 @@ bool flac_frame_header_parse(const uint8_t *data, size_t length, flac_frame_head
     }
 
     const size_t number_length = coded_number_length(data[4]);
-    if (number_length == 0U) return false;
+    if (number_length == 0U || 4U + number_length > length) return false;
+    uint64_t number = 0U;
+    if (!coded_number_value(data + 4, number_length, &number)) return false;
     size_t offset = 4U + number_length;
     uint32_t block_size = block_size_for(block_code);
     uint32_t sample_rate = sample_rate_for(rate_code);
@@ -118,7 +134,22 @@ bool flac_frame_header_parse(const uint8_t *data, size_t length, flac_frame_head
     // 0-7 are that many channels plus one; 8, 9 and 10 are the stereo
     // decorrelations, all of which are two channels.
     out->channels = channel_code < 8U ? (uint8_t)(channel_code + 1U) : 2U;
+    out->variable_block_size = (data[1] & 0x01U) != 0U;
+    out->number = number;
     return true;
+}
+
+uint64_t flac_frame_first_sample(const flac_frame_header_t *header,
+                                 const flac_streaminfo_t *info)
+{
+    if (header == NULL) return 0U;
+    if (header->variable_block_size) return header->number;
+    /* Fixed: every block but the last is the stated size, so the frame's
+     * number times that size is where it starts. The frame's own size is the
+     * wrong one to multiply by - the last frame is shorter than the rest. */
+    const uint32_t block = info != NULL && info->max_block_size != 0U ? info->max_block_size
+                                                                      : header->block_size;
+    return header->number * block;
 }
 
 // Whether a header that parsed could belong to this stream.

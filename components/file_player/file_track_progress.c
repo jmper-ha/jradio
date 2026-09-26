@@ -81,3 +81,45 @@ void file_track_time_text(char *text, size_t text_size, uint32_t seconds)
         snprintf(text, text_size, "%u:%02u", (unsigned int)minutes, (unsigned int)remainder);
     }
 }
+
+uint64_t file_track_cd_frames_to_samples(uint32_t cd_frames, uint32_t sample_rate_hz)
+{
+    return (uint64_t)cd_frames * sample_rate_hz / 75U;
+}
+
+size_t file_track_cue_track_at(const uint32_t *starts_frames, size_t count,
+                               uint64_t position_samples, uint32_t sample_rate_hz)
+{
+    size_t track = 0U;
+    if (starts_frames == NULL) return 0U;
+    for (size_t i = 1U; i < count; ++i) {
+        if (position_samples >= file_track_cd_frames_to_samples(starts_frames[i], sample_rate_hz)) {
+            track = i;
+        } else {
+            break;
+        }
+    }
+    return track;
+}
+
+uint64_t file_track_flac_aim(uint64_t audio_start, uint64_t file_bytes, uint64_t total_samples,
+                             uint64_t target)
+{
+    if (file_bytes <= audio_start || total_samples == 0U) return audio_start;
+    const uint64_t audio_bytes = file_bytes - audio_start;
+    if (target >= total_samples) return file_bytes - 1U;
+    // In floating point: bytes times samples overflows 64 bits on a long
+    // hi-res file, and this is an aim - the frame header says where it landed.
+    const uint64_t offset = (uint64_t)((double)audio_bytes * (double)target / (double)total_samples);
+    return audio_start + offset;
+}
+
+uint64_t file_track_flac_back_off(uint64_t offset, uint64_t audio_start, uint64_t file_bytes,
+                                  uint64_t total_samples, uint64_t overshoot,
+                                  uint32_t block_samples)
+{
+    if (file_bytes <= audio_start || total_samples == 0U) return audio_start;
+    const double bytes_per_sample = (double)(file_bytes - audio_start) / (double)total_samples;
+    const uint64_t back = (uint64_t)(bytes_per_sample * (double)(overshoot + block_samples)) + 1U;
+    return offset > audio_start + back ? offset - back : audio_start;
+}

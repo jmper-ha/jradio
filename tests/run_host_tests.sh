@@ -217,6 +217,7 @@ run_test station_resume tests/test_station_resume.c components/internet_radio/st
 run_test system_health tests/test_system_health.c components/diagnostics/system_health.c
 run_test ui_autoplay tests/test_ui_autoplay.c components/ui/ui_autoplay.c \
     components/file_storage/file_browser.c components/file_storage/playlist_file.c \
+    components/file_storage/cue_sheet.c \
     components/settings/device_settings.c components/settings/alarm_schedule.c components/settings/device_timezone.c components/settings/settings_csv.c
 run_test ui_click_gesture tests/test_ui_click_gesture.c components/ui/ui_click_gesture.c
 run_test ui_deferred_start tests/test_ui_deferred_start.c components/ui/ui_deferred_start.c
@@ -243,9 +244,10 @@ run_test ui_vu_meter tests/test_ui_vu_meter.c components/ui/ui_vu_meter.c
 run_test ui_files_notice tests/test_ui_files_notice.c components/ui/ui_files_notice.c components/settings/device_text.c
 run_test ui_yandex_screen tests/test_ui_yandex_screen.c components/ui/ui_yandex_screen.c components/settings/device_text.c
 run_test file_browser tests/test_file_browser.c components/file_storage/file_browser.c \
-    components/file_storage/playlist_file.c
+    components/file_storage/playlist_file.c components/file_storage/cue_sheet.c
 run_test playlist_file tests/test_playlist_file.c components/file_storage/playlist_file.c \
-    components/file_storage/file_browser.c
+    components/file_storage/file_browser.c components/file_storage/cue_sheet.c
+run_test cue_sheet tests/test_cue_sheet.c components/file_storage/cue_sheet.c
 run_test file_track_progress tests/test_file_track_progress.c \
     components/file_player/file_track_progress.c
 run_test file_wav tests/test_file_wav.c components/file_player/file_wav.c
@@ -260,6 +262,7 @@ run_test web_server -I"${cjson_include}" tests/test_web_server.c \
     components/web_server/web_settings.c components/settings/device_settings.c components/settings/alarm_schedule.c components/settings/device_timezone.c \
     components/settings/settings_csv.c components/settings/wifi_settings.c \
     components/file_storage/file_browser.c components/file_storage/playlist_file.c \
+    components/file_storage/cue_sheet.c \
     "${cjson_source}"
 run_test web_json tests/test_web_json.c components/web_server/web_json.c
 run_test web_protocol -I"${cjson_include}" tests/test_web_protocol.c \

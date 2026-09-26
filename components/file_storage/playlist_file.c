@@ -27,6 +27,7 @@ playlist_file_kind_t playlist_file_kind_from_name(const char *name)
     if (name == NULL) return PLAYLIST_FILE_NONE;
     if (ends_with_ci(name, ".m3u") || ends_with_ci(name, ".m3u8")) return PLAYLIST_FILE_M3U;
     if (ends_with_ci(name, ".pls")) return PLAYLIST_FILE_PLS;
+    if (ends_with_ci(name, ".cue")) return PLAYLIST_FILE_CUE;
     return PLAYLIST_FILE_NONE;
 }
 
@@ -35,6 +36,7 @@ const char *playlist_file_kind_name(playlist_file_kind_t kind)
     switch (kind) {
     case PLAYLIST_FILE_M3U: return "M3U";
     case PLAYLIST_FILE_PLS: return "PLS";
+    case PLAYLIST_FILE_CUE: return "CUE";
     case PLAYLIST_FILE_NONE:
     default: return "";
     }

@@ -21,13 +21,16 @@ typedef enum {
     PLAYLIST_FILE_NONE = 0,
     PLAYLIST_FILE_M3U,
     PLAYLIST_FILE_PLS,
+    /* A .cue sheet: tracks as places inside one or more files rather than
+     * files of their own. Read by cue_sheet.c, not line by line here. */
+    PLAYLIST_FILE_CUE,
 } playlist_file_kind_t;
 
 // By extension: .m3u and .m3u8 are M3U, .pls is PLS. ".m3u8" is not a separate
 // format - it is an M3U that promises to be UTF-8, which is the only encoding
 // this reads anyway.
 playlist_file_kind_t playlist_file_kind_from_name(const char *name);
-// "M3U" / "PLS" / "", for the type column on the browser row.
+// "M3U" / "PLS" / "CUE" / "", for the type column on the browser row.
 const char *playlist_file_kind_name(playlist_file_kind_t kind);
 
 typedef enum {

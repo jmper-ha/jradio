@@ -47,7 +47,7 @@ The full pinout and the choice of parts are in [Hardware](doc/hardware.en.md).
 | | |
 |---|---|
 | **Internet radio** | Your own station list (up to 99), the track title from the stream, HTTP and HTTPS, reconnects after a drop |
-| **Music from USB and SD** | Folders, tags (including Russian ones in legacy encodings), covers, seeking, auto-advance to the next track. `.m3u`, `.m3u8` and `.pls` playlists open as folders |
+| **Music from USB and SD** | Folders, tags (including Russian ones in legacy encodings), covers, seeking, auto-advance to the next track. `.m3u`, `.m3u8` and `.pls` playlists open as folders, albums with a `.cue` - track by track |
 | **Yandex Music** | "My Wave" and the account's stations, covers, like / dislike - [more](doc/yandex.en.md) |
 | **Media server (DLNA)** | Finds the server on the network itself, walks the library, tags and covers - [more](doc/dlna.en.md) |
 | **Bluetooth** | Receives from a phone (track, cover, buttons, volume) and plays out to a Bluetooth speaker or headphones - [more](doc/usage.en.md#bluetooth) |

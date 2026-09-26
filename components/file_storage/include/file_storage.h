@@ -90,6 +90,25 @@ bool file_storage_entry_path(size_t index, file_browser_entry_t *entry, char *pa
 // Index of `name` in the current listing, or the entry count when it is absent
 // or unreadable. Used to find a remembered track after a restart.
 size_t file_storage_find_entry(const char *name);
+/* For a .cue track: the row's title and performer as the sheet wrote them
+ * (the album's performer when the track names none). False, with both empty,
+ * for a row that is not a cue track. */
+bool file_storage_entry_title(size_t index, char *title, size_t title_size, char *performer,
+                              size_t performer_size);
+/* What a browser row calls entry `index`: the short name for a file or a
+ * folder, and for a .cue track its title - or, when the sheet gives none, its
+ * number and the file it is in. `entry` is the row as already read. */
+void file_storage_entry_label(size_t index, const file_browser_entry_t *entry, char *out,
+                              size_t out_size);
+/* Sheet `sheet` (an entry's cue_sheet) of the open listing: the .cue's full
+ * path and its own TITLE, the album. False when the listing has no such
+ * sheet. */
+bool file_storage_cue_sheet(uint8_t sheet, char *path, size_t path_size, char *album,
+                            size_t album_size);
+/* The row of track `number` of the sheet at `sheet_path` in the open listing,
+ * or SIZE_MAX. Rows of a sheet share file names, so find_entry() cannot tell
+ * them apart. */
+size_t file_storage_find_cue_track(const char *sheet_path, uint8_t number);
 bool file_storage_current_path(char *out, size_t out_size);
 
 // Index of the next playable file at or after `from`. Returns a value past the

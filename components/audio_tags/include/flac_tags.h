@@ -57,6 +57,13 @@ typedef struct {
     // Zero when the frame defers to STREAMINFO, which is the usual case.
     uint32_t sample_rate_hz;
     uint8_t channels;
+    /* Where the frame is in the stream: its own number when every block is
+     * the same size (the usual case), or the number of its first sample when
+     * the encoder varied them. flac_frame_first_sample() turns either into a
+     * sample. This is what lets a jump know where it landed rather than guess
+     * from a byte offset, which a .cue track start needs to be exact. */
+    bool variable_block_size;
+    uint64_t number;
 } flac_frame_header_t;
 
 /* Reads a frame header, and answers whether `data` really begins with one.
@@ -77,6 +84,12 @@ bool flac_frame_header_parse(const uint8_t *data, size_t length, flac_frame_head
  */
 bool flac_frame_find_sync(const uint8_t *data, size_t length,
                           const flac_streaminfo_t *info, size_t *offset);
+
+/* The first sample of a parsed frame, counted from the start of the stream.
+ * A fixed-block-size stream numbers its frames, so the number is multiplied
+ * by the block size STREAMINFO states; a variable one numbers its samples. */
+uint64_t flac_frame_first_sample(const flac_frame_header_t *header,
+                                 const flac_streaminfo_t *info);
 
 bool flac_signature_matches(const uint8_t *bytes, size_t length);
 

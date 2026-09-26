@@ -86,10 +86,30 @@ typedef struct {
 
 static file_player_request_t s_request;
 static file_player_finished_cb_t s_finished_callback;
+static file_player_cue_track_cb_t s_cue_track_callback;
+
+/* The .cue tracks of the file playing, copied in by file_player_play_cue()
+ * while no playback task runs and only read after that. PSRAM: 26 KB of
+ * titles has no business in internal SRAM. */
+static file_player_cue_t *s_cue;
+static atomic_bool s_cue_active = ATOMIC_VAR_INIT(false);
+static atomic_int s_cue_track = ATOMIC_VAR_INIT(-1);
+/* Where the output has got to in the file, in CD frames - the unit a sheet
+ * writes its starts in - so the status can say how far into the track on the
+ * air it is, not only into the file. */
+static atomic_uint s_position_frames = ATOMIC_VAR_INIT(0);
+
+// What one sample of output takes: the slot is fixed 16-bit stereo.
+#define FILE_PLAYER_FRAME_BYTES ((size_t)AUDIO_CHANNEL_COUNT * AUDIO_BITS_PER_SAMPLE / 8U)
 
 void file_player_set_finished_callback(file_player_finished_cb_t callback)
 {
     s_finished_callback = callback;
+}
+
+void file_player_set_cue_track_callback(file_player_cue_track_cb_t callback)
+{
+    s_cue_track_callback = callback;
 }
 
 static void status_set_state(file_player_state_t state)
@@ -162,6 +182,14 @@ typedef struct {
     flac_streaminfo_t flac_info;
     uint8_t flac_priming[FLAC_SIGNATURE_SIZE + FLAC_BLOCK_HEADER_SIZE + FLAC_STREAMINFO_SIZE];
     bool flac_ready;
+    /* Output samples to drop before the next one is played: a jump lands on
+     * the frame that contains the target sample, and the samples of that
+     * frame before it belong to the track before. */
+    uint64_t discard_frames;
+    /* Set while the jump to a .cue track's start has not happened yet. An
+     * MP3 is aimed by its bitrate, which only the first frame reveals, and
+     * that frame is the start of the file - the track before, not this one. */
+    bool holding_for_start;
 } file_player_context_t;
 
 /* How large a folder cover this will read off the drive.
@@ -500,6 +528,52 @@ static esp_err_t apply_info(file_player_context_t *ctx, const radio_decoder_info
     return result;
 }
 
+/* The rate positions are counted at. Before the first frame has set up the
+ * output that is the file's own, which only a FLAC states up front. */
+static uint32_t position_rate(const file_player_context_t *ctx)
+{
+    if (ctx->output_sample_rate != 0U) return ctx->output_sample_rate;
+    return ctx->flac_ready ? ctx->flac_info.sample_rate_hz : 0U;
+}
+
+/* A .cue track's text in place of the file's tags: a disc side ripped as one
+ * file is tagged, if at all, as the side - the sheet is what knows the song. */
+static void publish_cue_tags(size_t track)
+{
+    if (s_cue == NULL || track >= s_cue->count) return;
+    taskENTER_CRITICAL(&s_status_lock);
+    snprintf(s_tags.title, sizeof(s_tags.title), "%s", s_cue->title[track]);
+    snprintf(s_tags.artist, sizeof(s_tags.artist), "%s", s_cue->performer[track]);
+    snprintf(s_tags.album, sizeof(s_tags.album), "%s", s_cue->album);
+    taskEXIT_CRITICAL(&s_status_lock);
+    atomic_fetch_add_explicit(&s_tags_revision, 1U, memory_order_release);
+}
+
+/* Publishes where the output is and, on a .cue file, which track that is -
+ * and when it has become another one, says so. The file goes on playing
+ * underneath: this is how a disc side is played straight through, with no
+ * gap at a track boundary, and still named track by track. */
+static void track_position(file_player_context_t *ctx)
+{
+    const uint32_t rate = position_rate(ctx);
+    if (rate == 0U) return;
+    const uint64_t samples = ctx->pcm_bytes / FILE_PLAYER_FRAME_BYTES;
+    atomic_store_explicit(&s_elapsed_seconds, (uint32_t)(samples / rate), memory_order_relaxed);
+    atomic_store_explicit(&s_position_frames, (uint32_t)(samples * 75U / rate),
+                          memory_order_relaxed);
+    if (!atomic_load_explicit(&s_cue_active, memory_order_acquire) || ctx->holding_for_start) {
+        return;
+    }
+    const int track =
+        (int)file_track_cue_track_at(s_cue->start_frames, s_cue->count, samples, rate);
+    const int previous = atomic_exchange_explicit(&s_cue_track, track, memory_order_acq_rel);
+    if (previous == track) return;
+    publish_cue_tags((size_t)track);
+    ESP_LOGI(TAG, "cue track %d: \"%s\"", track + 1, s_cue->title[track]);
+    const file_player_cue_track_cb_t callback = s_cue_track_callback;
+    if (callback != NULL) callback((size_t)track);
+}
+
 static esp_err_t write_pcm(file_player_context_t *ctx, const uint8_t *pcm, size_t length)
 {
     /* A pause that arrives between the decoder producing this block and the
@@ -508,6 +582,21 @@ static esp_err_t write_pcm(file_player_context_t *ctx, const uint8_t *pcm, size_
      * pause flag on its next pass. Dropping the block costs 26 ms that nobody
      * was going to hear - the user has just pressed pause. */
     if (atomic_load_explicit(&s_paused, memory_order_acquire)) return ESP_OK;
+    // The start of the file, while the jump to the track's start waits for a
+    // bitrate to aim with: not the track that was asked for.
+    if (ctx->holding_for_start) return ESP_OK;
+    if (ctx->discard_frames > 0U) {
+        const size_t frames = length / FILE_PLAYER_FRAME_BYTES;
+        const size_t drop =
+            ctx->discard_frames < frames ? (size_t)ctx->discard_frames : frames;
+        ctx->discard_frames -= drop;
+        /* Not counted: the jump already set the position to the target, and
+         * these are the samples before it. Setting it to where the frame
+         * started instead would name the track before for a frame's time. */
+        pcm += drop * FILE_PLAYER_FRAME_BYTES;
+        length -= drop * FILE_PLAYER_FRAME_BYTES;
+        if (length == 0U) return ESP_OK;
+    }
 
     size_t written = 0U;
     esp_err_t result;
@@ -534,11 +623,8 @@ static esp_err_t write_pcm(file_player_context_t *ctx, const uint8_t *pcm, size_
     }
     ctx->pcm_bytes += written;
     // The output slot is fixed 16-bit stereo whatever the file was, so the
-    // board's own format converts these bytes to seconds - not the file's.
-    atomic_store_explicit(&s_elapsed_seconds,
-                          file_track_elapsed_seconds(ctx->pcm_bytes, ctx->output_sample_rate,
-                                                    AUDIO_CHANNEL_COUNT, AUDIO_BITS_PER_SAMPLE),
-                          memory_order_relaxed);
+    // board's own format converts these bytes to time - not the file's.
+    track_position(ctx);
     return ESP_OK;
 }
 
@@ -565,28 +651,16 @@ static uint32_t take_seek_request(void)
                                     memory_order_acq_rel);
 }
 
-/* Moves the position counters to `target_seconds` after the file has been
+/* Moves the position counters to sample `samples` after the file has been
  * repositioned. The elapsed reading is published here rather than waiting for
  * the next block, so the screen shows the new position from the moment the
  * jump lands instead of falling back to the old one for a poll or two. */
-static void seek_reset_position(file_player_context_t *ctx, uint32_t target_seconds)
+static void seek_reset_position(file_player_context_t *ctx, uint64_t samples)
 {
-    ctx->pcm_bytes = file_track_pcm_bytes(target_seconds, ctx->output_sample_rate,
-                                         AUDIO_CHANNEL_COUNT, AUDIO_BITS_PER_SAMPLE);
-    atomic_store_explicit(&s_elapsed_seconds, target_seconds, memory_order_relaxed);
+    ctx->pcm_bytes = samples * FILE_PLAYER_FRAME_BYTES;
+    track_position(ctx);
 }
 
-/* Applies a pending jump on the compressed path.
- *
- * The decoder has to be reset, not just fed from the new offset: landing
- * mid-frame leaves it holding a partial frame and, for MP3, a bit reservoir
- * that refers to bytes that are now behind the read head - the same state that
- * produced the silent stall this player was already taught to recover from.
- * After the reset it resyncs on the first frame header it finds, which costs
- * at most one frame of audio.
- *
- * A failed seek is not a failed track: the file is left where it was and
- * playback carries on from there. */
 /* How far past the estimate to look for a frame to start on.
  *
  * The estimate comes from an average bitrate, so it lands inside a frame
@@ -595,12 +669,13 @@ static void seek_reset_position(file_player_context_t *ctx, uint32_t target_seco
  * worth of room, and it has never needed a tenth of it. */
 #define FILE_PLAYER_FLAC_SYNC_WINDOW 32768U
 
-/* Turns a byte offset that landed anywhere into one that lands on a frame.
+/* Finds the first frame at or after `*offset`, moves `*offset` onto it and
+ * says which sample it starts at.
  *
  * Returns the file to where it was and reports failure if there is no frame
  * header to be found, which leaves the caller free to abandon the jump rather
  * than feed the decoder a position it cannot start from. */
-static bool align_to_flac_frame(file_player_context_t *ctx, uint64_t *offset)
+static bool flac_frame_at(file_player_context_t *ctx, uint64_t *offset, uint64_t *first_sample)
 {
     const long previous = ftell(ctx->file);
     if (*offset > LONG_MAX || fseek(ctx->file, (long)*offset, SEEK_SET) != 0) return false;
@@ -611,35 +686,137 @@ static bool align_to_flac_frame(file_player_context_t *ctx, uint64_t *offset)
     // emptied for the jump anyway.
     const size_t read = fread(ctx->compressed, 1U, window, ctx->file);
     size_t found = 0U;
+    flac_frame_header_t header;
     const bool aligned =
-        read > 0U && flac_frame_find_sync(ctx->compressed, read, &ctx->flac_info, &found);
+        read > 0U && flac_frame_find_sync(ctx->compressed, read, &ctx->flac_info, &found) &&
+        flac_frame_header_parse(ctx->compressed + found, read - found, &header);
     if (aligned) {
         *offset += found;
+        *first_sample = flac_frame_first_sample(&header, &ctx->flac_info);
     } else if (previous >= 0) {
         (void)fseek(ctx->file, previous, SEEK_SET);
     }
     return aligned;
 }
 
+/* Lands a FLAC jump on the frame that holds sample `target`.
+ *
+ * Aimed by the file's own sample count, then corrected by what the frame
+ * header says: a frame past the target means stepping back, one far short of
+ * it stepping on, so what is left to drop before the target is under a few
+ * frames. Six tries; in practice the second lands. `*landed` is the first
+ * sample of the frame chosen. */
+#define FILE_PLAYER_FLAC_AIM_TRIES 6U
+static bool flac_aim(file_player_context_t *ctx, uint64_t target, uint16_t bitrate_kbps,
+                     uint64_t *offset, uint64_t *landed)
+{
+    const flac_streaminfo_t *info = &ctx->flac_info;
+    const uint32_t block = info->max_block_size != 0U ? info->max_block_size : 4096U;
+    uint64_t aim =
+        info->total_samples != 0U
+            ? file_track_flac_aim(ctx->header_bytes, ctx->file_bytes, info->total_samples, target)
+            : file_track_seek_offset(ctx->file_bytes, ctx->header_bytes, bitrate_kbps,
+                                     (uint32_t)(target / info->sample_rate_hz));
+    bool found = false;
+    for (unsigned int attempt = 0U; attempt < FILE_PLAYER_FLAC_AIM_TRIES; ++attempt) {
+        uint64_t at = aim;
+        uint64_t first = 0U;
+        if (!flac_frame_at(ctx, &at, &first)) break;
+        found = true;
+        *offset = at;
+        *landed = first;
+        if (info->total_samples == 0U) break;  // nothing to correct by
+        if (first > target) {
+            aim = file_track_flac_back_off(at, ctx->header_bytes, ctx->file_bytes,
+                                           info->total_samples, first - target, block);
+        } else if (target - first > 4U * (uint64_t)block) {
+            // Short by more than a few frames: step on by the gap, less a block.
+            aim = at + (file_track_flac_aim(0U, ctx->file_bytes - ctx->header_bytes,
+                                            info->total_samples, target - first - block));
+        } else {
+            break;
+        }
+    }
+    return found && *landed <= target;
+}
+
+/* Applies a pending jump on the compressed path. The target is in CD frames
+ * from the start of the file - the unit a .cue sheet writes, fine enough for
+ * a scrub bar too.
+ *
+ * The decoder has to be reset, not just fed from the new offset: landing
+ * mid-frame leaves it holding a partial frame and, for MP3, a bit reservoir
+ * that refers to bytes that are now behind the read head - the same state that
+ * produced the silent stall this player was already taught to recover from.
+ * After the reset it resyncs on the first frame header it finds, which costs
+ * at most one frame of audio.
+ *
+ * A failed seek is not a failed track: the file is left where it was and
+ * playback carries on from there. */
 static void apply_seek(file_player_context_t *ctx, radio_decoder_t *decoder)
 {
-    const uint32_t target = take_seek_request();
-    if (target == FILE_PLAYER_SEEK_NONE) return;
-
+    if (atomic_load_explicit(&s_seek_request, memory_order_acquire) == FILE_PLAYER_SEEK_NONE) {
+        return;
+    }
     uint16_t bitrate_kbps;
     taskENTER_CRITICAL(&s_status_lock);
     bitrate_kbps = s_status.bitrate_kbps;
     taskEXIT_CRITICAL(&s_status_lock);
-    uint64_t offset = file_track_seek_offset(ctx->file_bytes, ctx->header_bytes,
-                                            bitrate_kbps, target);
-    if (ctx->flac_ready && !align_to_flac_frame(ctx, &offset)) {
-        ESP_LOGW(TAG, "no frame to start from near %llu; staying put",
-                 (unsigned long long)offset);
-        return;
+    const uint32_t rate = position_rate(ctx);
+    /* Anything but a FLAC is aimed by its bitrate, which the first frame is
+     * what reveals: a jump asked for before then - the start of a .cue track,
+     * set before the first byte was read - waits for it. */
+    if (!ctx->flac_ready && (bitrate_kbps == 0U || rate == 0U)) return;
+    const uint32_t target = take_seek_request();
+    if (target == FILE_PLAYER_SEEK_NONE) return;
+
+    const uint64_t samples = file_track_cd_frames_to_samples(target, rate);
+    const long previous = ftell(ctx->file);
+    uint64_t offset = 0U;
+    uint64_t landed = samples;
+    // Where the output is to stand after the jump: the target, or - when the
+    // jump could not be made - the frame the decoder carries on from.
+    uint64_t goal = samples;
+    if (ctx->flac_ready) {
+        // Past the last sample: the track is over, and ends the way it would
+        // have - a .cue side then goes on to the next one.
+        if (ctx->flac_info.total_samples != 0U && samples >= ctx->flac_info.total_samples) {
+            ctx->available = 0U;
+            ctx->offset = 0U;
+            ctx->eof = true;
+            ctx->holding_for_start = false;
+            ESP_LOGI(TAG, "seek past the end of the file; ending the track");
+            return;
+        }
+        if (!flac_aim(ctx, samples, bitrate_kbps, &offset, &landed)) {
+            /* Staying put is not free: the search read its windows into the
+             * input buffer, so what the decoder had there is gone. It starts
+             * again from the frame at the first byte it had not consumed. */
+            const uint64_t unread =
+                previous >= 0 && (uint64_t)previous > ctx->available
+                    ? (uint64_t)previous - ctx->available
+                    : ctx->header_bytes;
+            offset = unread;
+            if (!flac_frame_at(ctx, &offset, &landed)) {
+                ESP_LOGW(TAG, "lost the stream after a failed jump; ending the track");
+                ctx->available = 0U;
+                ctx->offset = 0U;
+                ctx->eof = true;
+                ctx->holding_for_start = false;
+                return;
+            }
+            ESP_LOGW(TAG, "no frame to start from before sample %llu; staying put",
+                     (unsigned long long)samples);
+            goal = landed;
+        }
+    } else {
+        offset = file_track_seek_offset(ctx->file_bytes, ctx->header_bytes, bitrate_kbps,
+                                        target / 75U);
     }
     if (offset > LONG_MAX || fseek(ctx->file, (long)offset, SEEK_SET) != 0) {
-        ESP_LOGW(TAG, "cannot seek to %us (offset %llu)", (unsigned int)target,
+        ESP_LOGW(TAG, "cannot seek to frame %u (offset %llu)", (unsigned int)target,
                  (unsigned long long)offset);
+        ctx->holding_for_start = false;
         return;
     }
     // Everything already read belongs to the old position, including the
@@ -654,10 +831,13 @@ static void apply_seek(file_player_context_t *ctx, radio_decoder_t *decoder)
         memcpy(ctx->compressed, ctx->flac_priming, sizeof(ctx->flac_priming));
         ctx->available = sizeof(ctx->flac_priming);
     }
-    seek_reset_position(ctx, target);
-    ESP_LOGI(TAG, "seek to %us: offset=%llu of %llu at %ukbps", (unsigned int)target,
-             (unsigned long long)offset, (unsigned long long)ctx->file_bytes,
-             (unsigned int)bitrate_kbps);
+    ctx->discard_frames = goal - landed;
+    ctx->holding_for_start = false;
+    seek_reset_position(ctx, goal);
+    ESP_LOGI(TAG, "seek to %.2fs: offset=%llu of %llu, frame at sample %llu, dropping %llu",
+             (double)target / 75.0, (unsigned long long)offset,
+             (unsigned long long)ctx->file_bytes, (unsigned long long)landed,
+             (unsigned long long)ctx->discard_frames);
 }
 
 // WAV carries finished PCM, so there is no decoder in this path at all - only
@@ -701,25 +881,25 @@ static bool play_wav(file_player_context_t *ctx, unsigned int *pcm_blocks)
     // play to the end of the file instead of stopping immediately.
     size_t remaining = wav.data_length > 0U ? wav.data_length : SIZE_MAX;
     // Exact here, unlike the compressed path: PCM has a fixed number of bytes
-    // per second, so a WAV seek lands on the sample that was asked for.
-    const uint64_t bytes_per_second = (uint64_t)wav.sample_rate * frame_bytes;
+    // per sample, so a WAV seek lands on the sample that was asked for.
     for (;;) {
         if (should_stop()) return false;
         if (wait_while_paused()) continue;
 
         const uint32_t target = take_seek_request();
         if (target != FILE_PLAYER_SEEK_NONE) {
-            uint64_t skip = (uint64_t)target * bytes_per_second;
+            const uint64_t sample = file_track_cd_frames_to_samples(target, wav.sample_rate);
+            uint64_t skip = sample * frame_bytes;
             const uint64_t audio_bytes =
                 wav.data_length > 0U ? (uint64_t)wav.data_length : ctx->file_bytes;
             if (skip > audio_bytes) skip = audio_bytes - (audio_bytes % frame_bytes);
             const uint64_t offset = (uint64_t)wav.data_offset + skip;
             if (offset > LONG_MAX || fseek(ctx->file, (long)offset, SEEK_SET) != 0) {
-                ESP_LOGW(TAG, "cannot seek to %us in the WAV data", (unsigned int)target);
+                ESP_LOGW(TAG, "cannot seek to frame %u in the WAV data", (unsigned int)target);
             } else {
                 remaining = wav.data_length > 0U ? (size_t)(audio_bytes - skip) : SIZE_MAX;
-                seek_reset_position(ctx, target);
-                ESP_LOGI(TAG, "seek to %us: offset=%llu", (unsigned int)target,
+                seek_reset_position(ctx, skip / frame_bytes);
+                ESP_LOGI(TAG, "seek to %.2fs: offset=%llu", (double)target / 75.0,
                          (unsigned long long)offset);
             }
         }
@@ -785,6 +965,16 @@ static void file_player_run_track(void)
     // A jump asked for a moment before the track changed belongs to the track
     // that is gone; applying it to this one would open it in the middle.
     atomic_store_explicit(&s_seek_request, FILE_PLAYER_SEEK_NONE, memory_order_relaxed);
+    atomic_store_explicit(&s_position_frames, 0U, memory_order_relaxed);
+    const bool cue = atomic_load_explicit(&s_cue_active, memory_order_acquire);
+    atomic_store_explicit(&s_cue_track, cue ? (int)s_cue->first : -1, memory_order_release);
+    /* A .cue track that does not start the file is reached by a jump before
+     * the first sample is played, the same jump the scrub bar makes. */
+    if (cue && s_cue->start_frames[s_cue->first] > 0U) {
+        atomic_store_explicit(&s_seek_request, s_cue->start_frames[s_cue->first],
+                              memory_order_release);
+        ctx.holding_for_start = true;
+    }
     radio_decoder_t *decoder = NULL;
     radio_stream_format_t stream_format = RADIO_STREAM_FORMAT_MP3;
     const bool is_wav = s_request.format == FILE_BROWSER_FORMAT_WAV;
@@ -821,6 +1011,8 @@ static void file_player_run_track(void)
                  is_wav ? "WAV" : radio_stream_format_codec_name(stream_format));
         taskEXIT_CRITICAL(&s_status_lock);
         load_tags(&ctx);
+        // The sheet names the track; the file's own tags name the side.
+        if (cue) publish_cue_tags(s_cue->first);
         if (s_request.format == FILE_BROWSER_FORMAT_FLAC) read_flac_layout(&ctx);
         // Whatever the reads above left behind: the decoder starts at zero.
         rewind(ctx.file);
@@ -974,11 +1166,14 @@ esp_err_t file_player_init(void)
     const esp_err_t art = album_art_init();
     if (art != ESP_OK) return art;
     memset(&s_status, 0, sizeof(s_status));
+    // PSRAM only - it is 26 KB of titles; without it a sheet plays as files.
+    s_cue = heap_caps_calloc(1U, sizeof(*s_cue), MALLOC_CAP_SPIRAM);
+    if (s_cue == NULL) ESP_LOGW(TAG, "no memory for .cue playback");
     return ESP_OK;
 }
 
-esp_err_t file_player_play(const char *path, const char *display_name,
-                          file_browser_format_t format)
+static esp_err_t start_track(const char *path, const char *display_name,
+                             file_browser_format_t format, const file_player_cue_t *cue)
 {
     if (path == NULL || s_control_lock == NULL) return ESP_ERR_INVALID_ARG;
     if (strlen(path) >= sizeof(s_request.path)) return ESP_ERR_INVALID_SIZE;
@@ -1005,6 +1200,14 @@ esp_err_t file_player_play(const char *path, const char *display_name,
 
     snprintf(s_request.path, sizeof(s_request.path), "%s", path);
     s_request.format = format;
+    /* The previous task is gone; the status getter still reads the sheet, so
+     * it is marked unused before it is overwritten. */
+    atomic_store_explicit(&s_cue_active, false, memory_order_release);
+    atomic_store_explicit(&s_cue_track, -1, memory_order_release);
+    if (cue != NULL) {
+        *s_cue = *cue;
+        atomic_store_explicit(&s_cue_active, true, memory_order_release);
+    }
     taskENTER_CRITICAL(&s_status_lock);
     memset(&s_status, 0, sizeof(s_status));
     // Cleared here rather than when the previous track ended, so nothing ever
@@ -1044,6 +1247,23 @@ esp_err_t file_player_play(const char *path, const char *display_name,
     return ESP_OK;
 }
 
+esp_err_t file_player_play(const char *path, const char *display_name,
+                          file_browser_format_t format)
+{
+    return start_track(path, display_name, format, NULL);
+}
+
+esp_err_t file_player_play_cue(const char *path, const char *display_name,
+                               file_browser_format_t format, const file_player_cue_t *cue)
+{
+    if (cue == NULL || cue->count == 0U || cue->count > FILE_PLAYER_CUE_TRACKS_MAX ||
+        cue->first >= cue->count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_cue == NULL) return ESP_ERR_NO_MEM;
+    return start_track(path, display_name, format, cue);
+}
+
 esp_err_t file_player_stop(void)
 {
     if (s_control_lock == NULL) return ESP_ERR_INVALID_STATE;
@@ -1074,8 +1294,27 @@ esp_err_t file_player_seek(uint32_t seconds)
     if (!atomic_load_explicit(&s_task_running, memory_order_acquire)) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (seconds == FILE_PLAYER_SEEK_NONE) return ESP_ERR_INVALID_ARG;
-    atomic_store_explicit(&s_seek_request, seconds, memory_order_release);
+    if (seconds >= FILE_PLAYER_SEEK_NONE / 75U) return ESP_ERR_INVALID_ARG;
+    uint32_t frames = seconds * 75U;
+    // Within the .cue track on the air, like the time the bar shows.
+    const int track = atomic_load_explicit(&s_cue_track, memory_order_acquire);
+    if (atomic_load_explicit(&s_cue_active, memory_order_acquire) && track >= 0 &&
+        (size_t)track < s_cue->count) {
+        frames += s_cue->start_frames[track];
+    }
+    atomic_store_explicit(&s_seek_request, frames, memory_order_release);
+    return ESP_OK;
+}
+
+esp_err_t file_player_seek_cue_track(size_t track)
+{
+    if (!atomic_load_explicit(&s_task_running, memory_order_acquire)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!atomic_load_explicit(&s_cue_active, memory_order_acquire) || track >= s_cue->count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    atomic_store_explicit(&s_seek_request, s_cue->start_frames[track], memory_order_release);
     return ESP_OK;
 }
 
@@ -1110,4 +1349,23 @@ void file_player_get_status(file_player_status_t *status)
     status->elapsed_seconds = atomic_load_explicit(&s_elapsed_seconds, memory_order_relaxed);
     status->total_seconds = atomic_load_explicit(&s_total_seconds, memory_order_relaxed);
     status->tags_revision = atomic_load_explicit(&s_tags_revision, memory_order_acquire);
+    status->cue_track = -1;
+    const int track = atomic_load_explicit(&s_cue_track, memory_order_acquire);
+    if (!atomic_load_explicit(&s_cue_active, memory_order_acquire) || track < 0 ||
+        (size_t)track >= s_cue->count) {
+        return;
+    }
+    /* The track's own time and length, so the bar runs from its start to its
+     * end rather than across the whole side. The last one runs to the end of
+     * the file, whose length is only as good as the file's own. */
+    status->cue_track = (int16_t)track;
+    const uint32_t start = s_cue->start_frames[track];
+    const uint32_t position = atomic_load_explicit(&s_position_frames, memory_order_relaxed);
+    status->elapsed_seconds = position > start ? (position - start) / 75U : 0U;
+    if ((size_t)track + 1U < s_cue->count) {
+        status->total_seconds = (s_cue->start_frames[track + 1] - start) / 75U;
+    } else {
+        const uint64_t file_frames = (uint64_t)status->total_seconds * 75U;
+        status->total_seconds = file_frames > start ? (uint32_t)((file_frames - start) / 75U) : 0U;
+    }
 }

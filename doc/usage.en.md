@@ -145,6 +145,17 @@ in a playlist are taken relative to its own folder, backslashes are understood;
 lines that cannot be opened (links, drive letters, formats without a decoder)
 are skipped.
 
+An album ripped as one file per side or per disc, with a `.cue` beside it,
+shows in its folder like an album ripped to tracks: in place of the `.cue`
+and the big files, the tracks, named from the `.cue`. When the `.cue` names a
+`.wav` and a `.flac` of the same name lies there instead, that is found. A side plays
+straight through with no gap at a track boundary, while the screen shows the
+track on the air, its performer and the time from its own start. "Next" and
+"previous" step through the tracks, and after the last track of a side the
+next side begins. On FLAC and WAV a track starts exactly where the `.cue`
+says; on MP3, to within about a second. A `.cue` in UTF-8, Windows-1251 or
+Windows-1252 reads the same.
+
 Drives are FAT16/FAT32, up to 256 entries per folder. The card is found on
 entering the source.
 

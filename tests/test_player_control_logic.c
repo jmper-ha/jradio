@@ -199,6 +199,19 @@ static void test_track_finished_advances_only_on_usb(void)
     assert(player_control_decide(&idle, &command) == PLAYER_OPERATION_NONE);
 }
 
+/* A .cue track beginning inside the playing file is news only while a file
+ * source is still the one playing - posted a moment before the source was
+ * changed, it is stale and changes nothing. */
+static void test_a_cue_track_moves_the_row_only_on_a_file_source(void)
+{
+    player_command_t command = {.kind = PLAYER_COMMAND_CUE_TRACK, .item_index = 3};
+    player_snapshot_t sd = {.wifi_connected = true, .active_source = AUDIO_SOURCE_SD,
+                            .playback_state = PLAYER_PLAYBACK_PLAYING, .item_count = 12};
+    assert(player_control_decide(&sd, &command) == PLAYER_OPERATION_CUE_TRACK);
+    player_snapshot_t radio = {.wifi_connected = true, .active_source = AUDIO_SOURCE_INTERNET_RADIO};
+    assert(player_control_decide(&radio, &command) == PLAYER_OPERATION_NONE);
+}
+
 static void test_reveal_needs_files_with_something_playing(void)
 {
     /* Opening the browser asks for the playing file's directory. Paused counts
@@ -813,6 +826,7 @@ int main(void)
     test_usb_source_requires_a_mounted_drive();
     test_usb_reselecting_the_same_entry_still_acts();
     test_track_finished_advances_only_on_usb();
+    test_a_cue_track_moves_the_row_only_on_a_file_source();
     test_reveal_needs_files_with_something_playing();
     test_seek_belongs_to_a_file_that_is_running();
     test_choosing_the_playing_file_again_does_not_restart_it();

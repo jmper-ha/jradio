@@ -17,6 +17,7 @@
 #include "board.h"
 #include "board_display_profile.h"
 #include "device_settings.h"
+#include "file_storage.h"
 #include "player_control.h"
 #include "wifi_provisioning.h"
 #include "ui_about.h"
@@ -2430,8 +2431,9 @@ static bool ui_list_row_text(size_t list_index, char *text, size_t text_size,
         *mark = LV_SYMBOL_LIST;
     }
     // Inside a playlist the name is the path the file wrote; the row has room
-    // for the track, not for the folders above it.
-    snprintf(text, text_size, "%s", file_browser_display_name(entry.name));
+    // for the track, not for the folders above it. A .cue row is named by
+    // the sheet - its rows all share the one file's name.
+    file_storage_entry_label(list_index - ui_browser_row_offset(), &entry, text, text_size);
     *active = list_index == station_list_active_index(&s_station_list);
     return true;
 }
@@ -5823,7 +5825,9 @@ static void ui_handle_input(board_input_action_t action)
                                                      : UI_MENU_ITEM_USB_FILES,
                                                  s_device_settings.language));
             ui_set_state_line(ui_text(DEVICE_TEXT_OPENING_FILE), "", false);
-            ui_scroller_set_text(&s_source_detail, file_browser_display_name(entry.name));
+            char label[FILE_BROWSER_NAME_MAX_LEN];
+            file_storage_entry_label(index, &entry, label, sizeof(label));
+            ui_scroller_set_text(&s_source_detail, label);
             ui_set_label_text_if_changed(s_source_stream,
                                          file_browser_entry_type_label(&entry));
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {

@@ -321,6 +321,11 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
         // and must not silently jump to another station.
         return audio_source_is_files(state->active_source) ? PLAYER_OPERATION_ADVANCE_ITEM
                                                         : PLAYER_OPERATION_NONE;
+    case PLAYER_COMMAND_CUE_TRACK:
+        // News from the file player about a file it is still playing; the
+        // source may have moved on since it was posted, and then it is stale.
+        return audio_source_is_files(state->active_source) ? PLAYER_OPERATION_CUE_TRACK
+                                                        : PLAYER_OPERATION_NONE;
     default:
         return PLAYER_OPERATION_INVALID;
     }

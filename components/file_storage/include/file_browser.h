@@ -2,7 +2,9 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
+#include "cue_sheet.h"
 #include "playlist_file.h"
 
 #ifdef __cplusplus
@@ -75,6 +77,17 @@ typedef struct {
     file_browser_entry_kind_t kind;
     // FILE_BROWSER_FORMAT_NONE for directories.
     file_browser_format_t format;
+    /* A track of a .cue sheet: its number and where it lies in the file the
+     * name leads to, in CD frames (75 to the second); the end is 0 when it
+     * runs to the end of the file. All three are 0 everywhere else. Its title
+     * is not here - see file_storage_entry_title() - because this structure
+     * is copied onto the stack of the tightest task on the device. */
+    uint8_t cue_track;
+    /* Which sheet of the listing the track is from, counted from 1: a folder
+     * can hold one .cue per disc, and their track numbers repeat. */
+    uint8_t cue_sheet;
+    uint32_t cue_start_frames;
+    uint32_t cue_end_frames;
 } file_browser_entry_t;
 
 typedef struct {
@@ -139,8 +152,32 @@ void file_browser_dir_init_playlist(file_browser_dir_t *dir, file_browser_entry_
 // Returns true when the entry was stored. Filtered-out entries (hidden names,
 // files in no supported format) return false without touching the counters:
 // they are not something the user lost.
+/* Adds track `number` of a .cue sheet opened with
+ * file_browser_dir_init_playlist(): `reference` is the FILE it lies in,
+ * relative to the sheet, and the frames say where. False, and counted as
+ * unplayable, when the file is in a format nothing here decodes. */
+bool file_browser_dir_add_cue_track(file_browser_dir_t *dir, const char *reference,
+                                    uint8_t number, uint32_t start_frames, uint32_t end_frames);
+
 bool file_browser_dir_add(file_browser_dir_t *dir, const char *name,
                          file_browser_entry_kind_t kind);
+
+/* Shows a .cue sheet's tracks in the directory in place of the sheet and the
+ * files it cuts up: a disc ripped to one file is browsed the way a disc
+ * ripped to tracks is, rather than as a CUE row beside an hour-long file.
+ *
+ * `cue_index` is the sheet's own row in a sorted directory listing. Each FILE
+ * of the sheet is looked for among the directory's tracks by name, and
+ * failing that by name without the extension: sheets are commonly written
+ * for a .wav that was later packed into a .flac. The tracks go to the end of
+ * the listing, in the sheet's order, which is the playing order; the sheet's
+ * row and the files it found are removed. Tracks in a file that is not there
+ * are counted as unplayable.
+ *
+ * Returns the tracks added. 0 leaves the listing as it was, the sheet's row
+ * included - it still opens as a list, which says what is wrong with it. */
+size_t file_browser_dir_expand_cue(file_browser_dir_t *dir, size_t cue_index,
+                                   const cue_sheet_t *sheet, uint8_t sheet_id);
 
 // Directories first, then names, case-insensitive for ASCII. Non-ASCII bytes
 // compare bytewise, which orders UTF-8 Cyrillic self-consistently (though not

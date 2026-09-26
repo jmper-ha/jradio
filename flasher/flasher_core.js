@@ -85,10 +85,28 @@
     return [{path: 'firmware/littlefs.bin', address: manifest.offsets.littlefs}];
   }
 
+  /* A file cut into pieces written one after another, each at its own
+     offset. The loader sends compressed data faster than the chip writes
+     it, then asks the chip to finish with a short timeout: the 10 MB file
+     system, almost all of it empty, went over in 28 s while the chip was
+     still writing, and the finish timed out on a write that had worked.
+     Half a megabyte leaves it little enough to catch up on. */
+  const PIECE = 512 * 1024;
+
+  function pieces(file, size = PIECE) {
+    const out = [];
+    for (let at = 0; at < file.data.length; at += size) {
+      out.push({data: file.data.subarray(at, Math.min(at + size, file.data.length)),
+                address: file.address + at});
+    }
+    return out;
+  }
+
   /* Where the wiring comes from: the editor's draft on this site when there
      is one, the README board otherwise. The draft is the editor's own
      localStorage entry, read as it is. */
   const DRAFT_KEY = 'jradio.board.csv';
 
-  return {BLOB_HEADER, BLOB_MAX, DRAFT_KEY, crc32, boardBlob, buildFor, firmwareParts, littlefsParts};
+  return {BLOB_HEADER, BLOB_MAX, DRAFT_KEY, PIECE, crc32, boardBlob, buildFor, firmwareParts,
+          littlefsParts, pieces};
 });

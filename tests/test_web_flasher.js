@@ -98,7 +98,23 @@ function test_every_message_is_in_the_dictionary() {
   }
 }
 
+/* A file goes over in pieces, each at its own offset, together covering it
+   exactly - see pieces() for why. */
+function test_a_file_is_written_in_pieces() {
+  const data = new Uint8Array(fl.PIECE * 2 + 100).map((_, i) => i & 0xff);
+  const parts = fl.pieces({data, address: 0x620000});
+  assert.deepStrictEqual(parts.map((p) => p.address),
+                         [0x620000, 0x620000 + fl.PIECE, 0x620000 + 2 * fl.PIECE]);
+  assert.deepStrictEqual(parts.map((p) => p.data.length), [fl.PIECE, fl.PIECE, 100]);
+  assert.strictEqual(parts[2].data[99], data[data.length - 1]);
+  // A small file is one piece, as it was.
+  const small = fl.pieces({data: new Uint8Array(676), address: 0x12000});
+  assert.strictEqual(small.length, 1);
+  assert.strictEqual(small[0].address, 0x12000);
+}
+
 test_every_message_is_in_the_dictionary();
+test_a_file_is_written_in_pieces();
 test_the_crc_is_zlibs();
 test_the_board_image_is_what_the_firmware_reads();
 test_the_firmware_button_never_touches_the_data();

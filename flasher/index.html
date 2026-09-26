@@ -114,7 +114,7 @@
         <p id="fl-status" class="field-note" role="status" aria-live="polite" data-i18n="fl.idle">Подключите плату к компьютеру кабелем к её UART-порту и нажмите одну из кнопок.</p>
         <progress id="fl-progress" max="100" value="0" hidden></progress>
         <details id="fl-log-box" hidden><summary class="field-note" data-i18n="fl.log">Журнал</summary><pre id="fl-log" class="hw-csv"></pre></details>
-        <p class="field-note" data-i18n="fl.port_help">Порт не появляется — поставьте драйвер CP210x или CH340; плата не отвечает — зажмите BOOT, коротко нажмите RESET, отпустите BOOT и попробуйте снова.</p>
+        <p class="field-note" data-i18n="fl.port_help">Порт не появляется — поставьте драйвер CP210x или CH340; плата не отвечает — зажмите BOOT, коротко нажмите RESET, отпустите BOOT и попробуйте снова. На Linux, если перед этим порт открывали idf.py, esptool или монитор порта, переподключите кабель: они оставляют порт в настройке, на которой Chrome сразу его теряет.</p>
       </div>
     </section>
   </main>

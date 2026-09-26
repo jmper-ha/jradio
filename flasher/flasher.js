@@ -140,6 +140,10 @@ async function write(parts, eraseAll, done) {
     line(`${t('fl.chip')}: ${chip}`);
     if (!/ESP32-S3/i.test(chip)) throw new Error(t('fl.wrong_chip', {chip}));
     const stub = await loader.runStub();
+    /* The ROM talks at 115200, which is 11 KB/s - three minutes for the app.
+       460800 is what the jradio-bt flasher uses, and within what the
+       CP2102, the CH340 and the CH343 all take. */
+    await stub.setBaudrate(460800);
     status(t('fl.downloading'));
     const files = [];
     for (const part of parts) {
@@ -156,14 +160,14 @@ async function write(parts, eraseAll, done) {
     status(t('fl.writing'));
     const total = files.reduce((sum, file) => sum + file.data.length, 0);
     let before = 0;
-    for (const file of files) {
-      // The loader takes an ArrayBuffer of exactly the file, not a view.
-      const buffer = file.data.buffer.slice(file.data.byteOffset,
-                                            file.data.byteOffset + file.data.length);
+    for (const piece of files.flatMap((file) => fl.pieces(file))) {
+      // The loader takes an ArrayBuffer of exactly the piece, not a view.
+      const buffer = piece.data.buffer.slice(piece.data.byteOffset,
+                                             piece.data.byteOffset + piece.data.length);
       await stub.flashData(buffer, (written) => {
-        progress.value = Math.round((before + Math.min(written, file.data.length)) * 100 / total);
-      }, file.address, true);
-      before += file.data.length;
+        progress.value = Math.round((before + Math.min(written, piece.data.length)) * 100 / total);
+      }, piece.address, true);
+      before += piece.data.length;
     }
     progress.value = 100;
     await loader.hardReset(false);

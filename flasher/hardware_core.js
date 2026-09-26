@@ -152,7 +152,7 @@
 
     /* The card's bus is SPI3 and no choice: the display's SPI2 has no MISO
        in the firmware, so a card there would build and never mount. */
-    {key: 'sd_spi', kind: 'choice', device: 'sd', options: ['3'], dflt: '3', bus: 'spi', define: 'SDC_SPI_PERIPHERAL'},
+    {key: 'sd_spi', kind: 'choice', device: 'sd', options: ['3'], dflt: '3', bus: 'spi'},
     {key: 'sd_cs', kind: 'opt_pin', device: 'sd', dflt: 1, enables: true, define: 'SDC_CS_GPIO'},
 
     {key: 'bluetooth', kind: 'choice', device: 'bluetooth', options: [NONE, 'jradio_bt'], dflt: NONE, enables: true, define: 'BLUETOOTH'},
@@ -409,12 +409,14 @@
 
   /* ---- board_options.h -------------------------------------------------- */
 
-  /* The same board as the header the firmware is built from: what a person
-     downloads today, while the CSV above is what the flasher will write to
-     the board partition once the firmware reads one. Every option the header
-     in the repository carries is here, in its order and with its spelling,
-     so the file drops into the project root as it is. A part that is not on
-     the board leaves a comment where its block would be, not a #define. */
+  /* The same board as the header a build from source is made from, while the
+     CSV above is what the flasher writes to the board partition. Every option
+     the firmware reads is here, in the repository header's order and with its
+     spelling, so the file drops into the project root as it is. Options the
+     firmware does not read are left out - MCLK, the card's bus (always SPI3),
+     card detect, a switched VBUS - since a line that changes nothing reads
+     as a setting to get right. A part that is not on the board leaves a
+     comment where its block would be, not a #define. */
   const HEADER_DISPLAY = (values) => `DISPLAY_${String(values.display).toUpperCase()}`;
 
   function toHeader(values) {
@@ -462,7 +464,6 @@
       ...gpio('I2S_DOUT_GPIO', 'i2s0_dout'),
       ...gpio('I2S_BCLK_GPIO', 'i2s0_bclk'),
       ...gpio('I2S_LRCK_GPIO', 'i2s0_lrck'),
-      '#define AUDIO_DAC_HAS_MCLK 0',
       ...(pin('dac_mute') === null ? [] : gpio('AUDIO_DAC_MUTE_GPIO', 'dac_mute')),
       ...(deviceEnabled(values, 'amp')
         ? ['', "/* The amplifier's MUTE / SD input, and the level that lets it play. */",
@@ -476,18 +477,15 @@
       '',
       ...(deviceEnabled(values, 'usb')
         ? ['/* USB Host for a flash drive: the pins are the chip\'s own. */',
-           `#define USB_DM_GPIO ${USB_PINS.usb_dm}`, `#define USB_DP_GPIO ${USB_PINS.usb_dp}`,
-           '#define USB_VBUS_SWITCHED 0']
+           `#define USB_DM_GPIO ${USB_PINS.usb_dm}`, `#define USB_DP_GPIO ${USB_PINS.usb_dp}`]
         : ['/* No USB port: USB_DM_GPIO and USB_DP_GPIO would go here. */']),
       '',
       ...(deviceEnabled(values, 'sd')
         ? ['/* microSD over SPI3. */',
-           '#define SDC_SPI_PERIPHERAL 3',
            ...gpio('SDC_CS_GPIO', 'sd_cs'),
            ...gpio('SDC_SCK_GPIO', 'spi3_sclk'),
            ...gpio('SDC_MISO_GPIO', 'spi3_miso'),
-           ...gpio('SDC_MOSI_GPIO', 'spi3_mosi'),
-           '#define SDC_HAS_CARD_DETECT 0']
+           ...gpio('SDC_MOSI_GPIO', 'spi3_mosi')]
         : ['/* No microSD slot: the SDC_* lines would go here. */']),
       '',
       ...(deviceEnabled(values, 'bluetooth')
@@ -555,6 +553,9 @@
       if (FIELD_BY_KEY.dac.options.includes(id)) values.dac = id; else unknown.push({key: 'AUDIO_DAC', value: dac});
     }
     asPin('i2s0_dout', 'I2S_DOUT_GPIO'); asPin('i2s0_bclk', 'I2S_BCLK_GPIO'); asPin('i2s0_lrck', 'I2S_LRCK_GPIO');
+    /* Lines the editor no longer writes, because the firmware does not read
+       them; a header from before, or the repository's own, still pastes
+       without them showing as unknown. */
     take('AUDIO_DAC_HAS_MCLK');
     asPin('dac_mute', 'AUDIO_DAC_MUTE_GPIO');
     asPin('amp_enable', 'AUDIO_AMP_GPIO'); asBool('amp_on_level', 'AUDIO_AMP_ON_LEVEL');

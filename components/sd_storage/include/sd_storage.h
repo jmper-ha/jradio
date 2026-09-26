@@ -34,7 +34,7 @@ esp_err_t sd_storage_init(void);
  * radio that is not.
  *
  * It is also the only way to notice a card at all. The slot has no card-detect
- * line (SDC_HAS_CARD_DETECT), so a card inserted after boot announces itself
+ * line, so a card inserted after boot announces itself
  * to nothing; trying the mount is the announcement.
  *
  * ESP_FAIL means a card answered but its filesystem would not mount, which is

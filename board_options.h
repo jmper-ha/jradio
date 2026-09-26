@@ -124,8 +124,8 @@
 #define I2S_DOUT_GPIO 16
 #define I2S_BCLK_GPIO 18
 #define I2S_LRCK_GPIO 17
-/* No MCLK pin is wired, so the DAC has to derive its clock from BCLK. */
-#define AUDIO_DAC_HAS_MCLK 0
+/* No MCLK pin: the firmware drives none, and the DAC derives its clock from
+ * BCLK. */
 
 /* The amplifier's MUTE / SD / standby input, for boards that drive speakers
  * instead of (or beside) the line output. The firmware holds it at
@@ -173,21 +173,19 @@
 
 #define USB_DM_GPIO 19
 #define USB_DP_GPIO 20
-/* VBUS is permanently powered and not switched by firmware. A drive left
- * attached across an ESP32 reset is recovered by power-cycling the root port
- * logically (usb_host_lib_set_root_port_power), which toggles the controller's
- * PRTPWR bit and needs no GPIO of its own. */
-#define USB_VBUS_SWITCHED 0
+/* VBUS is permanently powered and not switched by firmware, so there is no
+ * pin for it. A drive left attached across an ESP32 reset is recovered by
+ * power-cycling the root port logically (usb_host_lib_set_root_port_power),
+ * which toggles the controller's PRTPWR bit and needs no GPIO of its own. */
 
 /* ======================================================================
  * SD card - microSD in SPI mode, on its own bus
  * ====================================================================== */
 
-/* A second SPI peripheral rather than a share of the display's. The panel bus
- * has no MISO wired at all, which a card cannot work without, and the display
- * driver owns its bus with its own transactions - a card on it would have to
- * interleave with every frame. SPI2 is the panel's, so this is SPI3. */
-#define SDC_SPI_PERIPHERAL 3
+/* The card is on SPI3, always - not a setting. A second SPI peripheral rather
+ * than a share of the display's: the panel bus has no MISO wired at all, which
+ * a card cannot work without, and the display driver owns its bus with its own
+ * transactions - a card on it would have to interleave with every frame. */
 
 #define SDC_CS_GPIO 1
 #define SDC_SCK_GPIO 41
@@ -197,10 +195,10 @@
  * JTAG header. No loss in practice: the built-in USB Serial/JTAG shares its
  * pins with the USB host port, which is already wired to the drive socket. */
 
-/* No card-detect or write-protect line is wired: the socket's switch pins are
- * unconnected, so a card that appears after boot cannot announce itself the
- * way a USB drive does. Insertion has to be found by trying to mount. */
-#define SDC_HAS_CARD_DETECT 0
+/* No card-detect or write-protect line: the firmware reads none, and the
+ * socket's switch pins are left unconnected. A card that appears after boot
+ * cannot announce itself the way a USB drive does; insertion is found by
+ * trying to mount. */
 
 /* ======================================================================
  * FM radio - tuner module on I2C  (not fitted)

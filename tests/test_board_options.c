@@ -225,9 +225,6 @@ static void test_audio_group_matches_the_fixed_i2s_slots(void)
     assert(I2S_DOUT_GPIO == 16);
     assert(I2S_BCLK_GPIO == 18);
     assert(I2S_LRCK_GPIO == 17);
-    /* The PCM5102 has no MCLK input on this board; enabling it would need a
-     * fourth pin that does not exist. */
-    assert(AUDIO_DAC_HAS_MCLK == 0);
 #ifdef AUDIO_AMP_GPIO
     /* Either polarity is allowed, but only a level: the firmware writes this
      * value straight to the pad and its complement for the other state. */
@@ -263,26 +260,19 @@ static void test_usb_group(void)
     assert(USB_DM_GPIO == 19);
     assert(USB_DP_GPIO == 20);
     assert(USB_DM_GPIO != USB_DP_GPIO);
-    /* VBUS is not switched: recovery goes through the controller's root-port
-     * power bit instead, so no GPIO is reserved for it. */
-    assert(USB_VBUS_SWITCHED == 0);
 #endif
 }
 
 static void test_sd_group(void)
 {
 #if BOARD_HAS_SD_CARD
-    assert(SDC_SPI_PERIPHERAL == 3);
-    /* Not the panel's bus: that one has no MISO wired at all, which a card
-     * cannot work without. */
-    assert(SDC_SPI_PERIPHERAL != DISPLAY_SPI_PERIPHERAL);
+    /* The card is on SPI3 in the code itself, so the panel must not be:
+     * its bus has no MISO wired at all, which a card cannot work without. */
+    assert(DISPLAY_SPI_PERIPHERAL == 2);
     assert(SDC_CS_GPIO == 1);
     assert(SDC_SCK_GPIO == 41);
     assert(SDC_MISO_GPIO == 40);
     assert(SDC_MOSI_GPIO == 42);
-    /* The socket's switch pins are unconnected, so insertion is found by
-     * trying to mount rather than by a line going low. */
-    assert(SDC_HAS_CARD_DETECT == 0);
 #endif
 }
 

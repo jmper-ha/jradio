@@ -75,17 +75,25 @@ function test_the_file_round_trips() {
 function test_the_header_round_trips_and_names_every_option() {
   const values = {...hw.defaults(), board_name: 'bench', dlna: 0, tft_reset: 8};
   const header = hw.toHeader(values);
-  /* Every #define the repository's own header carries is here too. */
+  /* Every #define the firmware reads is here. */
   for (const name of ['DISPLAY', 'DISPLAY_SPI_PERIPHERAL', 'TFT_CS_GPIO', 'TFT_DC_GPIO', 'TFT_MOSI_GPIO',
                       'TFT_SCLK_GPIO', 'TFT_BACKLIGHT_GPIO', 'ENCODER_RIGHT_GPIO', 'ENCODER_LEFT_GPIO',
                       'ENCODER_BUTTON_GPIO', 'BUTTON_SLEEP_GPIO', 'BUTTON_QUICK_MENU_GPIO', 'BUTTON_PREV_GPIO',
                       'BUTTON_NEXT_GPIO', 'ENCODER_USE_INTERNAL_PULLUPS', 'BUTTONS_USE_INTERNAL_PULLUPS',
-                      'AUDIO_DAC', 'I2S_DOUT_GPIO', 'I2S_BCLK_GPIO', 'I2S_LRCK_GPIO', 'AUDIO_DAC_HAS_MCLK',
-                      'USB_DM_GPIO', 'USB_DP_GPIO', 'USB_VBUS_SWITCHED', 'SDC_SPI_PERIPHERAL', 'SDC_CS_GPIO',
-                      'SDC_SCK_GPIO', 'SDC_MISO_GPIO', 'SDC_MOSI_GPIO', 'SDC_HAS_CARD_DETECT', 'YANDEX_MUSIC',
+                      'AUDIO_DAC', 'I2S_DOUT_GPIO', 'I2S_BCLK_GPIO', 'I2S_LRCK_GPIO',
+                      'USB_DM_GPIO', 'USB_DP_GPIO', 'SDC_CS_GPIO',
+                      'SDC_SCK_GPIO', 'SDC_MISO_GPIO', 'SDC_MOSI_GPIO', 'YANDEX_MUSIC',
                       'DLNA', 'TFT_RESET_GPIO']) {
     assert.ok(new RegExp(`^#define ${name} `, 'm').test(header), name);
   }
+  /* And none the firmware does not: they read as settings to get right. */
+  for (const name of ['AUDIO_DAC_HAS_MCLK', 'USB_VBUS_SWITCHED', 'SDC_SPI_PERIPHERAL', 'SDC_HAS_CARD_DETECT']) {
+    assert.ok(!new RegExp(`#define ${name}\\b`).test(header), name);
+  }
+  /* A header written before, with them in, still pastes clean. */
+  const old = `${header}#define AUDIO_DAC_HAS_MCLK 0\n#define USB_VBUS_SWITCHED 0\n` +
+              '#define SDC_SPI_PERIPHERAL 3\n#define SDC_HAS_CARD_DETECT 0\n';
+  assert.deepStrictEqual(hw.parseHeader(old).unknown, []);
   assert.ok(header.includes('#define DLNA FEATURE_OFF'));
   const back = hw.parseHeader(header);
   assert.deepStrictEqual(back.values, values);

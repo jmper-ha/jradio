@@ -21,10 +21,33 @@
 Everything optional is up to you: what is not on the board is not in the menu
 nor in the web interface.
 
+## How to describe the board
+
+The board's description - which display, what is fitted and on which pins -
+is called the wiring. The firmware reads it at every start. There are two
+ways to set it:
+
+- **In the editor on the site** - the Hardware tab at
+  [jmper-ha.github.io/jradio](https://jmper-ha.github.io/jradio/). Pins are
+  picked from a list or by clicking the module's picture, and the checks at
+  the bottom will not let two signals share a pin or a part go without one.
+  The wiring is written to the board together with the firmware, from the same
+  browser - see [Building and flashing](build.en.md#from-the-browser). Nothing
+  to install.
+- **In [`board_options.h`](../board_options.h)** - for a build from source,
+  see below. `idf.py flash` writes the wiring from this file on every flash.
+
+One rule for both: **everything that is wired has to be in the wiring.** The
+firmware drives only the pins it knows about. An amplifier's MUTE or a DAC's
+XSMT wired to a GPIO but left out of the wiring leaves the board silent - the
+level meter moves, the speakers do not. An optional part that is not
+physically there is the opposite: switch it off, and the sound is not
+affected.
+
 ## board_options.h
 
-The board is described in [`board_options.h`](../board_options.h) at the
-project root - the only file to edit for your own wiring. A part is chosen
+For a build from source the board is described in
+[`board_options.h`](../board_options.h) at the project root. A part is chosen
 with one line, the pinout with one line per pin:
 
 ```c

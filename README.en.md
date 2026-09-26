@@ -16,16 +16,20 @@ or from a browser - a phone or a computer on the same network.
 - **Built from ordinary parts.** An ESP32-S3 module, an SPI display, a PCM5102
   DAC, an encoder and buttons. No custom board needed - a breadboard or a
   simple PCB will do.
-- **Fits your board with one line per part.** The display, the DAC, the pinout,
-  what is fitted and what is not - all in [`board_options.h`](board_options.h).
-  What is not on the board is not in the menu.
+- **Flashed from the browser for your board.** The display, the pinout, what
+  is fitted and what is not - set in the
+  [editor on the site](https://jmper-ha.github.io/jradio/) and written with the
+  firmware, nothing to install. For a build from source the same lives in
+  [`board_options.h`](board_options.h). What is not on the board is not in the
+  menu.
 - **A web interface out of the box.** The player, a station-list editor with
   pictures, settings, files, remote learning - all from a phone, no app.
 - **Made for every day.** Resumes what was playing, deep sleep, an alarm
   clock, a sleep timer, a clock and the weather on screen, a screensaver.
 - **Open source with a straightforward build.** ESP-IDF, VS Code, one build
   key. Ready-made firmware files are in the
-  [releases](https://github.com/jmper-ha/jradio/releases).
+  [releases](https://github.com/jmper-ha/jradio/releases) and on the
+  [flasher site](https://jmper-ha.github.io/jradio/).
 
 ## What it is made of
 
@@ -80,9 +84,10 @@ the account's stations).
 
 1. **Build the board** after [Hardware](doc/hardware.en.md) - or start with the
    minimum: the module, a display, the DAC and an encoder.
-2. **Flash it.** The quick way is a ready-made image from a
-   [release](https://github.com/jmper-ha/jradio/releases) with one `esptool.py`
-   command; the full way is a build from source for your own board. Both are in
+2. **Flash it.** The easiest is [from the browser](https://jmper-ha.github.io/jradio/):
+   describe the wiring in the editor and write the firmware - all it takes is
+   Chrome or Edge on a computer. There is also a ready-made image for the
+   README board and a build from source. All three are in
    [Building and flashing](doc/build.en.md); setting up the tools is in
    [Installing the toolchain](doc/toolchain.en.md).
 3. **Connect it to Wi-Fi.** On the first boot the device opens its own access
@@ -107,9 +112,9 @@ The full list of limits is in [Diagnostics and limits](doc/diagnostics.en.md).
 | Page | About |
 |---|---|
 | [How to use it](doc/usage.en.md) | First boot, controls, screens, sources, settings, sleep and the alarm |
-| [Building and flashing](doc/build.en.md) | A ready image or a build from source, the first flash, updates, the data on the device, tests |
+| [Building and flashing](doc/build.en.md) | Flashing from the browser, a ready image or a build from source, the first flash, updates, the data on the device, tests |
 | [Installing the toolchain](doc/toolchain.en.md) | VS Code, the ESP-IDF extension, Python, the board's port |
-| [Hardware](doc/hardware.en.md) | Parts, pinout, `board_options.h`, displays, the amplifier, the remote, the Bluetooth module |
+| [Hardware](doc/hardware.en.md) | Parts, pinout, the wiring editor and `board_options.h`, displays, the amplifier, the remote, the Bluetooth module |
 | [Web interface](doc/web.en.md) | Pages, the API, the station list format, the backup |
 | [Yandex Music](doc/yandex.en.md) | Linking the account, stations, likes |
 | [Media server (DLNA)](doc/dlna.en.md) | Finding the server, walking the library, resume |

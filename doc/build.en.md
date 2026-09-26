@@ -2,10 +2,11 @@
 
 [← README](../README.en.md) · [Русский](build.md)
 
-There are two ways. The **quick** one is to write a ready-made image from a
-release: nothing to install, one command. The **full** one is to build the
-firmware from source for your own board: it needs the ESP-IDF toolchain, but
-the display, the pinout and the set of features will be yours.
+There are three ways. **From the browser** - the flasher on the project's site:
+you describe your board's wiring in the editor, any supported display, nothing
+to install. **A ready-made image** - one `esptool.py` command, but for the
+README board only. **The full way** - a build from source: it needs the ESP-IDF
+toolchain, but anything in the firmware is yours to change.
 
 What to know in either case:
 
@@ -16,13 +17,58 @@ What to know in either case:
   a module with two connectors, take the one labelled UART or COM.
 - **The cable must carry data.** A charge-only cable powers the board but no
   port appears - the most common reason for "it won't flash".
-- **The flash holds two independent partitions: the app and the data.** The
-  app is the firmware itself. The data is the web pages, the station list, the
-  settings, the Wi-Fi networks. Updating the app leaves the data alone;
-  rewriting the data erases everything the device has remembered. This is
-  repeated below wherever it matters.
+- **The flash holds three independent partitions: the app, the wiring and the
+  data.** The app is the firmware itself. The wiring (the `board` partition)
+  says which parts the board has and on which pins; the firmware reads it at
+  every start. The data is the web pages, the station list, the settings, the
+  Wi-Fi networks. Updating the app leaves the data alone; rewriting the data
+  erases everything the device has remembered. This is repeated below wherever
+  it matters.
 
-## The quick way: a ready-made image
+## From the browser
+
+The flasher is the page
+[jmper-ha.github.io/jradio](https://jmper-ha.github.io/jradio/). It needs
+**Chrome or Edge on a computer**: from a phone, Firefox or Safari the browser
+cannot reach a serial port.
+
+1. **Describe the board** on the Hardware tab: the display, which parts are
+   fitted and on which pins. Pins are picked from a list or by clicking the
+   module's picture; the checks at the bottom will not let two signals share a
+   pin or a part go without one. The draft is kept in the browser.
+
+   The one rule: **everything that is wired has to be in the wiring.** The
+   firmware drives only the pins it knows about. If the amplifier's MUTE or the
+   DAC's XSMT is wired to a GPIO and the wiring does not say so, there is no
+   sound: the level meter moves, the speakers stay silent. If XSMT is pulled up
+   on the board itself, leave MUTE empty.
+2. **Open the Flasher tab** and check the summary: the board's name, the
+   display, what is fitted. The firmware is chosen by the display in the
+   wiring.
+3. **Connect the board** by its UART port and press **Write the firmware**.
+   The browser asks for the port; writing takes about a minute, then the board
+   restarts.
+4. **On a first install** write the **file system** too, with the second
+   button. Without it the radio has no web pages. Afterwards the board opens
+   the `jradio-XXXX` access point - see [First boot](usage.en.md#first-boot).
+
+**Updating** is the first button alone: it writes the app and the wiring and
+leaves the Wi-Fi networks, the settings and the playlist alone. The second
+button erases all of that; if a new version changed the web interface and you
+do want it, take a backup first - see
+[The data on the device](#the-data-on-the-device).
+
+If something is wrong:
+
+- **No port shows up** - the bridge needs its driver: CP210x or CH340/CH343.
+- **The board does not answer** - hold BOOT, tap RESET, let go of BOOT and
+  press the button again.
+- **On Linux the port is "lost" at once** ("The device has been lost") - if
+  `idf.py`, esptool or a serial monitor had the port open before, reconnect the
+  cable. Those programs leave the port set up in a way that makes Chrome lose
+  it; reconnecting resets it.
+
+## A ready-made image
 
 1. Download `jradio-<version>-full.bin` from a
    [release](https://github.com/jmper-ha/jradio/releases) - it is the whole
@@ -40,9 +86,9 @@ What to know in either case:
 4. After the write the board reboots and opens the `jradio-XXXX` access point -
    see [First boot](usage.en.md#first-boot).
 
-The ready-made image is built for the default configuration in
-`board_options.h`: an ST7796S 480×320 display and the pinout from
-[Hardware](hardware.en.md). If your display or pins differ, take the full way.
+The ready-made image is built for the README board: an ST7796S 480×320
+display and the pinout from [Hardware](hardware.en.md). If your display or pins
+differ, flash [from the browser](#from-the-browser).
 
 **Updating to a new version** without losing the settings - the app only:
 
@@ -94,6 +140,12 @@ only file to edit: it says which parts are fitted and on which pins.
 A typo in a part name stops the build with a clear error - a device with a wrong
 option does not build, rather than staying silent. Every block is explained in
 [Hardware](hardware.en.md).
+
+The build puts the pinout from `board_options.h` into the `board` partition,
+and `idf.py flash` writes it **on every flash**. That keeps the file the one
+description of your board: wiring written from the browser before is replaced
+by it. The display is built into the firmware itself - each has its own screen
+layouts.
 
 ### 3. Build
 

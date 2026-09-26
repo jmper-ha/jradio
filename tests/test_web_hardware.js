@@ -95,7 +95,7 @@ function test_the_header_round_trips_and_names_every_option() {
   assert.ok(!/^#define TFT_RESET_GPIO/m.test(tied));
   assert.strictEqual(hw.parseHeader(tied).values.tft_reset, hw.RESET);
   /* A part switched on writes its block; off, a comment in its place. */
-  const bt = hw.setDeviceEnabled(hw.defaults(), 'bluetooth', true);
+  const bt = {...hw.setDeviceEnabled(hw.defaults(), 'bluetooth', true), uart1_tx: 13, uart1_rx: 14};
   assert.ok(hw.toHeader(bt).includes('#define BT_UART_TX_GPIO 13'));
   assert.strictEqual(hw.parseHeader(hw.toHeader(bt)).values.bluetooth, 'jradio_bt');
 }
@@ -127,7 +127,7 @@ function test_two_signals_on_one_pin_is_a_conflict_but_a_shared_bus_is_not() {
 
   /* The DAC and the Bluetooth module on the same I2S pins: one bus, no
      conflict. */
-  const shared = hw.setDeviceEnabled(hw.defaults(), 'bluetooth', true);
+  const shared = {...hw.setDeviceEnabled(hw.defaults(), 'bluetooth', true), uart1_tx: 13, uart1_rx: 14};
   assert.deepStrictEqual(hw.validate(shared).errors, []);
   assert.deepStrictEqual(hw.pinMap(shared)[18], ['i2s0_bclk']);
   /* The card cannot share the display's SPI2 - the firmware brings that
@@ -175,12 +175,15 @@ function test_a_device_needs_the_pins_of_its_bus() {
                          [{code: 'bus_unwired', device: 'sd', bus: 'spi3', pin: 'miso'}]);
   /* Off the board, the card no longer cares what SPI3 has. */
   assert.deepStrictEqual(hw.validate({...base, spi3_miso: hw.NONE, sd_cs: hw.NONE}).errors, []);
-  /* The module switched on by type alone needs its UART; the enable helper
-     wires it. Its sound rides the I2S bus the DAC already has. */
-  const codes = hw.validate({...base, bluetooth: 'jradio_bt'}).errors.map((problem) => `${problem.bus}.${problem.pin}`);
+  /* The module switched on needs its UART, and nothing picks it for the
+     user: until both pins are chosen the rules hold the file back. Its sound
+     rides the I2S bus the DAC already has. */
+  const codes = hw.validate(hw.setDeviceEnabled(base, 'bluetooth', true)).errors
+    .map((problem) => `${problem.bus}.${problem.pin}`);
   assert.deepStrictEqual(codes, ['uart1.tx', 'uart1.rx']);
-  assert.deepStrictEqual(hw.validate(hw.setDeviceEnabled(base, 'bluetooth', true)).errors, []);
-  const noClock = {...hw.setDeviceEnabled(base, 'bluetooth', true), i2s0_bclk: hw.NONE};
+  const wired = {...hw.setDeviceEnabled(base, 'bluetooth', true), uart1_tx: 13, uart1_rx: 14};
+  assert.deepStrictEqual(hw.validate(wired).errors, []);
+  const noClock = {...wired, i2s0_bclk: hw.NONE};
   assert.ok(hw.validate(noClock).errors.some((problem) => problem.device === 'bluetooth' && problem.pin === 'bclk'));
 }
 
@@ -199,8 +202,22 @@ function test_switching_a_device_off_and_on() {
   /* The same for the module's UART: off by default, its pins are nobody's. */
   assert.ok(!hw.busUsed(values, 'uart1'));
   assert.deepStrictEqual(hw.validate({...values, tft_dc: 41}).errors, []);
+  /* On again, it is on - and its select is to be chosen, not guessed: the
+     bench board once played into a muted amplifier whose MUTE had been
+     guessed onto 48. Until a pin is picked the file does not pass. */
   values = hw.setDeviceEnabled(values, 'sd', true);
-  assert.strictEqual(values.sd_cs, 1);
+  assert.ok(hw.deviceEnabled(values, 'sd'));
+  assert.strictEqual(values.sd_cs, hw.UNSET);
+  assert.deepStrictEqual(hw.validate(values).errors, [{code: 'pin_missing', key: 'sd_cs'}]);
+  for (const device of ['ir', 'amp', 'power']) {
+    const on = hw.setDeviceEnabled(hw.defaults(), device, true);
+    const key = hw.FIELDS.find((field) => field.device === device && field.enables).key;
+    assert.strictEqual(on[key], hw.UNSET, device);
+    assert.deepStrictEqual(hw.validate(on).errors, [{code: 'pin_missing', key}], device);
+  }
+  // A draft keeps the state: on, pin to choose.
+  assert.strictEqual(hw.parseCsv(hw.toCsv(values)).values.sd_cs, hw.UNSET);
+  values = {...values, sd_cs: 1};
   /* Switching a device on never moves a bus pin that is already wired. */
   values = {...values, uart1_tx: 15, uart1_rx: 8};
   values = hw.setDeviceEnabled(values, 'bluetooth', true);
@@ -227,8 +244,7 @@ function test_the_warnings_that_do_not_stop_a_file() {
                          [{code: 'spi_not_iomux', key: 'tft_cs', gpio: 4}]);
   /* The receiver, switched on, lands on a wake-capable pin; moved off one,
      the page says the remote will not wake the board. */
-  const ir = hw.setDeviceEnabled(base, 'ir', true);
-  assert.strictEqual(ir.ir_receiver, 4);
+  const ir = {...hw.setDeviceEnabled(base, 'ir', true), ir_receiver: 4};
   assert.deepStrictEqual(hw.validate(ir).warnings, []);
   assert.deepStrictEqual(hw.validate({...ir, ir_receiver: 38}).warnings,
                          [{code: 'ir_not_rtc', key: 'ir_receiver', gpio: 38}]);
@@ -466,12 +482,19 @@ function test_the_page_builds_every_part_and_follows_the_clicks() {
   assert.ok(!csv.textContent.includes('ENCODER_LEFT_GPIO 43'));
   assert.ok(document.getElementById('hw-status').classList.contains('is-error'));
 
-  /* Switching the module on wires its UART and colours the pins. */
+  /* Switching the module on leaves its UART to choose; chosen, the pins
+     take the bus's colour. */
   const btToggle = sections.find((section) => section.dataset.device === 'bluetooth').querySelector('.hw-group-toggle');
   btToggle.checked = true;
   btToggle.emit('change');
   assert.ok(csv.textContent.includes('\n#define BLUETOOTH BLUETOOTH_JRADIO_BT\n'));
   const pin13 = svg.querySelectorAll('.hw-gpio').find((node) => node.dataset.gpio === '13');
+  assert.ok(!pin13.classList.contains('hw-dev-uart1'));
+  for (const [key, gpio] of [['uart1_tx', '13'], ['uart1_rx', '14']]) {
+    const select = document.getElementById(`hw-${key}`);
+    select.value = gpio;
+    select.emit('change');
+  }
   assert.ok(pin13.classList.contains('hw-dev-uart1'));
 
   /* Pasting a header replaces the board: a line the editor does not know

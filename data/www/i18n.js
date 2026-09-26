@@ -294,6 +294,7 @@
 
     'hw.opt.none': ['нет', 'none'],
     'hw.opt.pcm5102': ['PCM5102', 'PCM5102'],
+    'hw.opt.unset': ['— выберите вывод —', '— choose a pin —'],
     'hw.opt.jradio_bt': ['jradio-bt (ESP32 по UART)', 'jradio-bt (an ESP32 over UART)'],
     'hw.opt.st7796s_480_320': ['ST7796S 480×320', 'ST7796S 480×320'], 'hw.opt.st7796s_320_480': ['ST7796S 320×480 (портрет)', 'ST7796S 320×480 (portrait)'],
     'hw.opt.ili9488_480_320': ['ILI9488 480×320', 'ILI9488 480×320'], 'hw.opt.ili9488_320_480': ['ILI9488 320×480 (портрет)', 'ILI9488 320×480 (portrait)'],

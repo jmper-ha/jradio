@@ -70,6 +70,8 @@
   function pinOptions(field) {
     const options = [];
     if (field.kind !== 'pin') options.push({value: hw.NONE, label: '—'});
+    // The part is on and its pin still to be chosen; see hw.UNSET.
+    if (field.enables) options.push({value: hw.UNSET, label: t('hw.opt.unset')});
     if (field.resetOk) options.push({value: hw.RESET, label: t('hw.opt.rst')});
     /* By number, not by the header's order: a list is scanned for a
        number, the picture for a place. */
@@ -104,7 +106,7 @@
       }
       select.addEventListener('change', () => {
         const raw = select.value;
-        setValue(field.key, raw === hw.NONE || raw === hw.RESET ? raw : Number(raw));
+        setValue(field.key, raw === hw.NONE || raw === hw.RESET || raw === hw.UNSET ? raw : Number(raw));
       });
       return select;
     }

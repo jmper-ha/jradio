@@ -21,6 +21,10 @@
   'use strict';
 
   const NONE = 'none';
+  /* A part switched on whose pin has not been chosen yet: on the board, so
+     its row is open, but no pin - which the rules report, so it cannot be
+     flashed or downloaded as a guess. */
+  const UNSET = 'unset';
   const FORMAT = '1';
 
   /* The module as it sits on the board: the ESP32-S3-DevKitC-1's two headers,
@@ -182,19 +186,21 @@
     bluetooth: {uart: ['tx', 'rx'], i2s: ['bclk', 'lrck', 'dout']},
   };
 
-  /* When a device is switched on from "none", these are the values it comes
-     up with: the README's own wiring where the README has one (the module on
-     13/14, the card's select on 1), and otherwise a pin the README leaves
-     free that carries no warning of its own - 4, 38 and 48 are the ones
-     left once the strapping and JTAG pins are set aside; the receiver gets
-     4 because it must be able to wake the chip, and only 0-21 can. */
+  /* What a device switched on from "none" comes up with. No pin is guessed:
+     a guess that looks plausible is the one nobody checks, and the bench
+     board was flashed with its amplifier's MUTE on the 48 this used to put
+     there instead of its own 39 - a board that played into a muted amplifier.
+     So the pin starts unset and the rules hold the file back until it is
+     chosen. Only the USB pair is filled in, being the chip's and no choice;
+     the module's UART pins are left as they are, and unwired they are what
+     the rules ask for. */
   const ENABLE_VALUES = {
-    ir: {ir_receiver: 4},
-    amp: {amp_enable: 48},
-    power: {peripheral_power: 38},
+    ir: {ir_receiver: UNSET},
+    amp: {amp_enable: UNSET},
+    power: {peripheral_power: UNSET},
     usb: {usb_dp: USB_PINS.usb_dp, usb_dm: USB_PINS.usb_dm},
-    sd: {sd_cs: 1},
-    bluetooth: {bluetooth: 'jradio_bt', uart1_tx: 13, uart1_rx: 14},
+    sd: {sd_cs: UNSET},
+    bluetooth: {bluetooth: 'jradio_bt'},
   };
 
   function isNone(value) {
@@ -261,11 +267,7 @@
       next[field.key] = NONE;
       return next;
     }
-    for (const [key, value] of Object.entries(ENABLE_VALUES[device] || {})) {
-      /* A bus pin already wired is left alone: switching a device on must
-         not move a bus something else already sits on. */
-      if (FIELD_BY_KEY[key].device === device || isNone(next[key])) next[key] = value;
-    }
+    for (const [key, value] of Object.entries(ENABLE_VALUES[device] || {})) next[key] = value;
     return next;
   }
 
@@ -326,6 +328,11 @@
       if (keys.length > 1) errors.push({code: 'pin_conflict', gpio: Number(gpio), keys});
     }
 
+    /* A part switched on with its pin still to choose. */
+    for (const field of FIELDS) {
+      if (field.enables && values[field.key] === UNSET) errors.push({code: 'pin_missing', key: field.key});
+    }
+
     for (const signal of signals(values)) {
       const {key, gpio} = signal;
       if (gpio === null) {
@@ -382,7 +389,8 @@
       } else if (field.kind === 'int' && !Number.isInteger(Number(value))) {
         errors.push({code: 'bad_value', key: field.key, value});
       } else if (['pin', 'opt_pin'].includes(field.kind) && pinValue(value) === null &&
-                 !isNone(value) && !(field.resetOk && value === RESET)) {
+                 !isNone(value) && !(field.resetOk && value === RESET) &&
+                 !(field.enables && value === UNSET)) {
         errors.push({code: 'bad_value', key: field.key, value});
       }
     }
@@ -597,6 +605,7 @@
       if (['pin', 'opt_pin', 'fixed'].includes(field.kind)) {
         if (isNone(value)) values[key] = NONE;
         else if (field.resetOk && value === RESET) values[key] = RESET;
+        else if (field.enables && value === UNSET) values[key] = UNSET;
         else if (Number.isInteger(Number(value))) values[key] = Number(value);
         else bad.push({line: index + 1, text: line});
       } else if (field.kind === 'int' || field.kind === 'bool') {
@@ -610,7 +619,7 @@
   }
 
   return {
-    NONE, RESET, FORMAT, FIELDS, FIELD_BY_KEY, DEVICES, BUSES, HEADER, MODULES, DISPLAYS,
+    NONE, RESET, UNSET, FORMAT, FIELDS, FIELD_BY_KEY, DEVICES, BUSES, HEADER, MODULES, DISPLAYS,
     RTC_GPIO_MAX, USB_PINS,
     defaults, headerPins, headerGpios, pinNote, deviceEnabled, setDeviceEnabled,
     busOf, busUsed, signals, pinMap, validate, toCsv, parseCsv, toHeader, parseHeader, isNone, pinValue,

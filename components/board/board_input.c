@@ -49,6 +49,7 @@ board_input_action_t board_button_gesture_update(board_button_gesture_t *gesture
 }
 
 #ifdef ESP_PLATFORM
+#include "board_config.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "freertos/queue.h"
@@ -69,15 +70,19 @@ typedef struct {
 
 static const char *TAG = "input";
 static QueueHandle_t s_event_queue;
+/* The pins are filled in by board_input_init() out of the wiring, which is
+ * read at boot and not known to the compiler. */
 static board_input_channel_t s_channels[] = {
-    {.gpio_num = ENCODER_BUTTON_GPIO, .action = BOARD_INPUT_ACTION_ENCODER_BUTTON,
+    {.gpio_num = BOARD_GPIO_NOT_WIRED, .action = BOARD_INPUT_ACTION_ENCODER_BUTTON,
      .hold_action = BOARD_INPUT_ACTION_ENCODER_LONG},
-    {.gpio_num = BUTTON_SLEEP_GPIO, .action = BOARD_INPUT_ACTION_SLEEP_BUTTON,
+    {.gpio_num = BOARD_GPIO_NOT_WIRED, .action = BOARD_INPUT_ACTION_SLEEP_BUTTON,
      .hold_action = BOARD_INPUT_ACTION_SLEEP_LONG},
-    {.gpio_num = BUTTON_QUICK_MENU_GPIO, .action = BOARD_INPUT_ACTION_QUICK_MENU},
-    {.gpio_num = BUTTON_PREV_GPIO, .action = BOARD_INPUT_ACTION_BTN_PREV},
-    {.gpio_num = BUTTON_NEXT_GPIO, .action = BOARD_INPUT_ACTION_BTN_NEXT},
+    {.gpio_num = BOARD_GPIO_NOT_WIRED, .action = BOARD_INPUT_ACTION_QUICK_MENU},
+    {.gpio_num = BOARD_GPIO_NOT_WIRED, .action = BOARD_INPUT_ACTION_BTN_PREV},
+    {.gpio_num = BOARD_GPIO_NOT_WIRED, .action = BOARD_INPUT_ACTION_BTN_NEXT},
 };
+static int s_encoder_left = BOARD_GPIO_NOT_WIRED;
+static int s_encoder_right = BOARD_GPIO_NOT_WIRED;
 static board_encoder_decoder_t s_encoder_decoder;
 
 static void board_input_task(void *arg)
@@ -87,8 +92,8 @@ static void board_input_task(void *arg)
 
     while (true) {
         const board_input_action_t encoder_action =
-            board_encoder_decoder_update(&s_encoder_decoder, gpio_get_level(ENCODER_LEFT_GPIO),
-                                         gpio_get_level(ENCODER_RIGHT_GPIO));
+            board_encoder_decoder_update(&s_encoder_decoder, gpio_get_level(s_encoder_left),
+                                         gpio_get_level(s_encoder_right));
         if (encoder_action != BOARD_INPUT_ACTION_NONE &&
             xQueueSend(s_event_queue, &encoder_action, 0) != pdTRUE) {
             ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)encoder_action);
@@ -256,24 +261,35 @@ static uint64_t board_input_pin_bit(int gpio_num)
 
 esp_err_t board_input_init(void)
 {
+    const board_config_t *wiring = board_config_get();
+    s_encoder_left = wiring->encoder_left;
+    s_encoder_right = wiring->encoder_right;
+    // In s_channels' order.
+    const int8_t buttons[] = {wiring->encoder_button, wiring->button_sleep,
+                              wiring->button_quick_menu, wiring->button_prev,
+                              wiring->button_next};
+    for (size_t index = 0; index < sizeof(s_channels) / sizeof(s_channels[0]); ++index) {
+        s_channels[index].gpio_num = buttons[index] >= 0 ? buttons[index] : BOARD_GPIO_NOT_WIRED;
+    }
     /* Two calls rather than one: the encoder and the buttons want different
      * pull-up settings, and gpio_config() applies one setting to every pin in
      * its mask. The encoder button belongs to the encoder here - it is the
      * same part and the same external pull-up. */
     const gpio_config_t encoder_config = {
-        .pin_bit_mask = (1ULL << ENCODER_RIGHT_GPIO) | (1ULL << ENCODER_LEFT_GPIO) |
-                        (1ULL << ENCODER_BUTTON_GPIO),
+        .pin_bit_mask = (1ULL << wiring->encoder_right) | (1ULL << wiring->encoder_left) |
+                        (1ULL << wiring->encoder_button),
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = ENCODER_USE_INTERNAL_PULLUPS ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+        .pull_up_en = wiring->encoder_pullups ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
     const gpio_config_t button_config = {
-        .pin_bit_mask = board_input_pin_bit(BUTTON_SLEEP_GPIO) | board_input_pin_bit(BUTTON_QUICK_MENU_GPIO) |
-                        board_input_pin_bit(BUTTON_PREV_GPIO) |
-                        board_input_pin_bit(BUTTON_NEXT_GPIO),
+        .pin_bit_mask = board_input_pin_bit(s_channels[1].gpio_num) |
+                        board_input_pin_bit(s_channels[2].gpio_num) |
+                        board_input_pin_bit(s_channels[3].gpio_num) |
+                        board_input_pin_bit(s_channels[4].gpio_num),
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = BUTTONS_USE_INTERNAL_PULLUPS ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+        .pull_up_en = wiring->buttons_pullups ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
@@ -305,8 +321,8 @@ esp_err_t board_input_init(void)
                                               INPUT_DEBOUNCE_SAMPLES);
         board_button_gesture_init(&s_channels[index].gesture);
     }
-    board_encoder_decoder_init(&s_encoder_decoder, gpio_get_level(ENCODER_LEFT_GPIO),
-                               gpio_get_level(ENCODER_RIGHT_GPIO));
+    board_encoder_decoder_init(&s_encoder_decoder, gpio_get_level(s_encoder_left),
+                               gpio_get_level(s_encoder_right));
     if (xTaskCreate(board_input_task, "board_input", 3072, NULL, 5, NULL) != pdPASS) {
         vQueueDelete(s_event_queue);
         s_event_queue = NULL;

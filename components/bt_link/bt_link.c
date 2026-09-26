@@ -6,6 +6,7 @@
 #include "album_art.h"
 #include "board.h"
 #include "board_features.h"
+#include "board_config.h"
 #include "board_options.h"
 #include "device_settings.h"
 #include "esp_heap_caps.h"
@@ -471,7 +472,8 @@ esp_err_t bt_link_init(void)
     ESP_RETURN_ON_ERROR(uart_driver_install(BT_LINK_UART, BT_LINK_RX_RING, BT_LINK_TX_RING, 0, NULL, 0),
                         TAG, "uart driver");
     ESP_RETURN_ON_ERROR(uart_param_config(BT_LINK_UART, &config), TAG, "uart config");
-    ESP_RETURN_ON_ERROR(uart_set_pin(BT_LINK_UART, BT_UART_TX_GPIO, BT_UART_RX_GPIO, UART_PIN_NO_CHANGE,
+    ESP_RETURN_ON_ERROR(uart_set_pin(BT_LINK_UART, board_config_get()->uart1_tx,
+                                     board_config_get()->uart1_rx, UART_PIN_NO_CHANGE,
                                      UART_PIN_NO_CHANGE),
                         TAG, "uart pins");
     s_started = true;
@@ -494,7 +496,8 @@ esp_err_t bt_link_init(void)
         return ESP_ERR_NO_MEM;
     }
     board_audio_set_rate_listener(bt_link_on_rate);
-    ESP_LOGI(TAG, "uart tx %d rx %d at %d", BT_UART_TX_GPIO, BT_UART_RX_GPIO, BT_LINK_BAUD);
+    ESP_LOGI(TAG, "uart tx %d rx %d at %d", board_config_get()->uart1_tx,
+             board_config_get()->uart1_rx, BT_LINK_BAUD);
     return ESP_OK;
 }
 

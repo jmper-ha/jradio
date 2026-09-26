@@ -3,6 +3,9 @@
 #include <stdio.h>
 
 #include "board_options.h"
+// For its defaults: a button left out is "not wired", and BUTTON_F2_GPIO is
+// still read as the quick-menu button's older name.
+#include "board_input.h"
 
 /* The board this firmware was built for, out of board_options.h: what every
  * key a board.csv leaves out falls back to, and what the whole board falls

@@ -17,6 +17,7 @@
 #include "sd_protocol_defs.h"
 #include "sdmmc_cmd.h"
 
+#include "board_config.h"
 #include "board_options.h"
 
 static const char *TAG = "sd";
@@ -100,7 +101,7 @@ static esp_err_t sd_mount(void)
 
     sdspi_device_config_t device = SDSPI_DEVICE_CONFIG_DEFAULT();
     device.host_id = SD_SPI_HOST;
-    device.gpio_cs = SDC_CS_GPIO;
+    device.gpio_cs = board_config_get()->sd_cs;
 
     const esp_vfs_fat_mount_config_t mount = {
         /* Never, under any circumstance. This flag formats the user's card the
@@ -219,9 +220,9 @@ esp_err_t sd_storage_init(void)
     }
     (void)file_storage_register_volume(SD_STORAGE_ROOT_PATH, sd_storage_is_mounted);
     const spi_bus_config_t bus = {
-        .mosi_io_num = SDC_MOSI_GPIO,
-        .miso_io_num = SDC_MISO_GPIO,
-        .sclk_io_num = SDC_SCK_GPIO,
+        .mosi_io_num = board_config_get()->spi3_mosi,
+        .miso_io_num = board_config_get()->spi3_miso,
+        .sclk_io_num = board_config_get()->spi3_sclk,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
         // A FAT sector is 512 bytes and the driver reads a few at a time; this
@@ -240,7 +241,7 @@ esp_err_t sd_storage_init(void)
      * random bytes during identification. The internal pull-up is weak (~45 k)
      * and no substitute for a resistor on the board, but it costs nothing and
      * makes the difference on wiring that has none. */
-    (void)gpio_set_pull_mode(SDC_MISO_GPIO, GPIO_PULLUP_ONLY);
+    (void)gpio_set_pull_mode(board_config_get()->spi3_miso, GPIO_PULLUP_ONLY);
     s_bus_ready = true;
 
     /* One probe, then let it go. Nothing needs the card this early, but a line

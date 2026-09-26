@@ -22,6 +22,7 @@
 #include "audio_volume.h"
 #include "board.h"
 #include "board_amplifier.h"
+#include "board_config.h"
 #include "board_audio_health.h"
 #include "board_audio_startup.h"
 #include "board_audio_format.h"
@@ -68,6 +69,19 @@ _Static_assert(LEDC_TIMER_13_BIT == 13,
 #if defined(PERIPHERAL_POWER_GPIO) && !defined(PERIPHERAL_POWER_ON_LEVEL)
 #error "PERIPHERAL_POWER_GPIO also needs PERIPHERAL_POWER_ON_LEVEL: which level feeds the board"
 #endif
+/* The wiring: out of the `board` partition when it holds one the rules
+ * accept, out of board_options.h otherwise - see board_config_load(). Read
+ * at every use rather than copied, since it never changes after boot. */
+static const board_config_t *wiring(void)
+{
+    return board_config_get();
+}
+
+static gpio_num_t wired(int8_t pin)
+{
+    return pin >= 0 ? (gpio_num_t)pin : GPIO_NUM_NC;
+}
+
 /* How long the rails outside the module are given before anything is
  * addressed: the panel's own reset sequence follows, and the card wants a
  * quiet supply for its first command. */
@@ -206,9 +220,9 @@ static void board_audio_probe_task(void *arg)
 {
     board_audio_probe_t *probe = arg;
     const gpio_num_t pins[] = {
-        I2S_DOUT_GPIO,
-        I2S_BCLK_GPIO,
-        I2S_LRCK_GPIO,
+        wired(wiring()->i2s0_dout),
+        wired(wiring()->i2s0_bclk),
+        wired(wiring()->i2s0_lrck),
     };
     int previous[3];
 
@@ -264,7 +278,7 @@ static esp_err_t board_backlight_init(void)
         .clk_cfg = LEDC_AUTO_CLK,
     };
     const ledc_channel_config_t channel_config = {
-        .gpio_num = TFT_BACKLIGHT_GPIO,
+        .gpio_num = wiring()->tft_backlight,
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .channel = LEDC_CHANNEL_0,
         .intr_type = LEDC_INTR_DISABLE,
@@ -341,9 +355,9 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
                                                          I2S_SLOT_MODE_STEREO),
         .gpio_cfg = {
             .mclk = I2S_GPIO_UNUSED,
-            .bclk = I2S_BCLK_GPIO,
-            .ws = I2S_LRCK_GPIO,
-            .dout = I2S_DOUT_GPIO,
+            .bclk = wired(wiring()->i2s0_bclk),
+            .ws = wired(wiring()->i2s0_lrck),
+            .dout = wired(wiring()->i2s0_dout),
             .din = I2S_GPIO_UNUSED,
             .invert_flags = {
                 .mclk_inv = false,
@@ -358,11 +372,11 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     std_config.slot_cfg.slot_bit_width = (i2s_slot_bit_width_t)I2S_SLOT_BIT_WIDTH;
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_tx, &std_config), TAG,
                         "configure I2S TX failed");
-    ESP_RETURN_ON_ERROR(gpio_input_enable(I2S_DOUT_GPIO), TAG,
+    ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_dout)), TAG,
                         "enable I2S DOUT pad observation failed");
-    ESP_RETURN_ON_ERROR(gpio_input_enable(I2S_BCLK_GPIO), TAG,
+    ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_bclk)), TAG,
                         "enable I2S BCLK pad observation failed");
-    ESP_RETURN_ON_ERROR(gpio_input_enable(I2S_LRCK_GPIO), TAG,
+    ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_lrck)), TAG,
                         "enable I2S LRCK pad observation failed");
     ESP_LOGI(TAG,
              BOARD_DAC_NAME " I2S: Philips, 16-bit stereo in %u-bit slots, BCLK=%uxFs, "
@@ -388,14 +402,16 @@ static bool s_dac_muted;
  * applied rather than at each site. */
 static void board_amp_drive(bool play)
 {
-#ifdef AUDIO_AMP_GPIO
+    const int8_t pin = wiring()->amp_enable;
+    if (pin < 0) {
+        s_amp_playing = play;
+        return;
+    }
     if (play == s_amp_playing) return;
     s_amp_playing = play;
-    (void)gpio_set_level(AUDIO_AMP_GPIO, play ? AUDIO_AMP_ON_LEVEL : !AUDIO_AMP_ON_LEVEL);
+    const int on = wiring()->amp_on_level;
+    (void)gpio_set_level(pin, play ? on : !on);
     ESP_LOGI(TAG, "amplifier %s", play ? "unmuted" : "muted");
-#else
-    s_amp_playing = play;
-#endif
 }
 
 static void board_amp_apply(void)
@@ -407,12 +423,12 @@ void board_audio_set_dac_muted(bool muted)
 {
     s_dac_muted = muted;
     board_amp_apply();
-#ifdef AUDIO_DAC_MUTE_GPIO
+    const int8_t pin = wiring()->dac_mute;
+    if (pin < 0) return;
     /* XSMT on the PCM5102A: low is mute, and the chip ramps the output down
      * and up itself, so there is no click either way. */
-    (void)gpio_set_level(AUDIO_DAC_MUTE_GPIO, muted ? 0 : 1);
+    (void)gpio_set_level(pin, muted ? 0 : 1);
     ESP_LOGI(TAG, "DAC %s", muted ? "muted" : "unmuted");
-#endif
 }
 
 static esp_err_t board_audio_init(void)
@@ -421,31 +437,31 @@ static esp_err_t board_audio_init(void)
     if (s_audio_mutex == NULL) {
         return ESP_ERR_NO_MEM;
     }
-#ifdef AUDIO_AMP_GPIO
-    /* Muted first, before the DAC is given a clock: whatever the pin's
-     * resting state was, from here on it is ours and it is quiet. */
-    const gpio_config_t amp = {
-        .pin_bit_mask = 1ULL << AUDIO_AMP_GPIO,
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    ESP_RETURN_ON_ERROR(gpio_config(&amp), TAG, "configure amplifier mute");
-    (void)gpio_set_level(AUDIO_AMP_GPIO, !AUDIO_AMP_ON_LEVEL);
-    s_amp_playing = false;
-#endif
-#ifdef AUDIO_DAC_MUTE_GPIO
-    const gpio_config_t mute = {
-        .pin_bit_mask = 1ULL << AUDIO_DAC_MUTE_GPIO,
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    ESP_RETURN_ON_ERROR(gpio_config(&mute), TAG, "configure DAC mute");
-    board_audio_set_dac_muted(false);
-#endif
+    if (wiring()->amp_enable >= 0) {
+        /* Muted first, before the DAC is given a clock: whatever the pin's
+         * resting state was, from here on it is ours and it is quiet. */
+        const gpio_config_t amp = {
+            .pin_bit_mask = 1ULL << wiring()->amp_enable,
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        ESP_RETURN_ON_ERROR(gpio_config(&amp), TAG, "configure amplifier mute");
+        (void)gpio_set_level(wiring()->amp_enable, !wiring()->amp_on_level);
+        s_amp_playing = false;
+    }
+    if (wiring()->dac_mute >= 0) {
+        const gpio_config_t mute = {
+            .pin_bit_mask = 1ULL << wiring()->dac_mute,
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        ESP_RETURN_ON_ERROR(gpio_config(&mute), TAG, "configure DAC mute");
+        board_audio_set_dac_muted(false);
+    }
     return board_audio_create_channel(AUDIO_DEFAULT_SAMPLE_RATE);
 }
 
@@ -471,7 +487,8 @@ esp_err_t board_audio_release_bus(void)
          * inputs, no pull - a pull would load the module's edges. */
         result = i2s_del_channel(s_i2s_tx);
         s_i2s_tx = NULL;
-        const gpio_num_t pins[] = {I2S_BCLK_GPIO, I2S_LRCK_GPIO, I2S_DOUT_GPIO};
+        const gpio_num_t pins[] = {wired(wiring()->i2s0_bclk), wired(wiring()->i2s0_lrck),
+                                   wired(wiring()->i2s0_dout)};
         for (size_t i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
             (void)gpio_reset_pin(pins[i]);
             (void)gpio_set_direction(pins[i], GPIO_MODE_INPUT);
@@ -1136,8 +1153,8 @@ static esp_err_t board_display_init(bool flip_vertical, bool flip_horizontal, bo
     }
 
     const spi_bus_config_t bus_config = {
-        .sclk_io_num = TFT_SCLK_GPIO,
-        .mosi_io_num = TFT_MOSI_GPIO,
+        .sclk_io_num = wiring()->spi2_sclk,
+        .mosi_io_num = wiring()->spi2_mosi,
         .miso_io_num = -1,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
@@ -1152,8 +1169,8 @@ static esp_err_t board_display_init(bool flip_vertical, bool flip_horizontal, bo
 
     esp_lcd_panel_io_handle_t io_handle = NULL;
     const esp_lcd_panel_io_spi_config_t io_config = {
-        .dc_gpio_num = TFT_DC_GPIO,
-        .cs_gpio_num = TFT_CS_GPIO,
+        .dc_gpio_num = wiring()->tft_dc,
+        .cs_gpio_num = wiring()->tft_cs,
         .pclk_hz = DISPLAY_PIXEL_CLOCK_HZ,
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
@@ -1259,69 +1276,63 @@ esp_err_t board_display_scroll(int offset)
 }
 
 /* The switch that feeds everything outside the module - see
- * PERIPHERAL_POWER_GPIO in board_options.h. A board without one keeps its
+ * peripheral_power in the wiring. A board without one keeps its
  * peripherals fed and these are no-ops, which is why the calls are
  * unconditional at their sites. */
 void board_peripheral_power(bool on)
 {
-#ifdef PERIPHERAL_POWER_GPIO
-    const int level = on ? PERIPHERAL_POWER_ON_LEVEL : !PERIPHERAL_POWER_ON_LEVEL;
+    const int8_t pin = wiring()->peripheral_power;
+    if (pin < 0) return;
+    const int on_level = wiring()->peripheral_power_on_level;
+    const int level = on ? on_level : !on_level;
     /* A pin held from a previous sleep refuses to change level until the
      * hold is lifted, and coming out of deep sleep is exactly when that
      * matters: the hold survives the wake. */
-    (void)gpio_hold_dis(PERIPHERAL_POWER_GPIO);
+    (void)gpio_hold_dis(pin);
     const gpio_config_t config = {
-        .pin_bit_mask = 1ULL << PERIPHERAL_POWER_GPIO,
+        .pin_bit_mask = 1ULL << pin,
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
     (void)gpio_config(&config);
-    (void)gpio_set_level(PERIPHERAL_POWER_GPIO, level);
+    (void)gpio_set_level(pin, level);
     ESP_LOGI(TAG, "peripheral power %s", on ? "on" : "off");
     if (on) {
         /* Rails settle, and the panel and the card want a moment before
          * their first transaction. */
         vTaskDelay(pdMS_TO_TICKS(PERIPHERAL_POWER_SETTLE_MS));
     }
-#else
-    (void)on;
-#endif
 }
+
+/* The remote can wake the board only when its receiver is on an RTC pin too
+ * - and on the always-on 3.3 V, which no header can check. Still decided at
+ * build time: the wake stub that reads the frame is compiled for its pin. */
+#if defined(IR_RECEIVER_GPIO) && IR_RECEIVER_GPIO >= 0 && IR_RECEIVER_GPIO < SOC_RTCIO_PIN_COUNT
+#define BOARD_REMOTE_WAKES 1
+#endif
 
 /* Only an RTC-capable pad can wake the chip - on the S3 that is GPIO 0-21 -
  * and a board that cannot wake must not sleep, or the only way back is the
  * reset button. F1 - the sleep button on this board - was moved onto such a
  * pin on the bench for exactly that. */
-#if BUTTON_SLEEP_GPIO >= 0 && BUTTON_SLEEP_GPIO < SOC_RTCIO_PIN_COUNT
-#define BOARD_CAN_SLEEP 1
-#endif
-/* The remote can wake the board only when its receiver is on an RTC pin too
- * - and on the always-on 3.3 V, which no header can check. */
-#if defined(IR_RECEIVER_GPIO) && IR_RECEIVER_GPIO >= 0 && IR_RECEIVER_GPIO < SOC_RTCIO_PIN_COUNT
-#define BOARD_REMOTE_WAKES 1
-#endif
-
 bool board_deep_sleep_supported(void)
 {
-#ifdef BOARD_CAN_SLEEP
-    return true;
-#else
-    return false;
-#endif
+    const int8_t pin = wiring()->button_sleep;
+    return pin >= 0 && pin < SOC_RTCIO_PIN_COUNT;
 }
 
 /* The wake sources, armed the same way on both paths into the sleep: the
  * button's pull-up has to be the RTC pad's own - the digital pad's is gone the
  * instant the chip sleeps, and the input would float and wake on noise - and
  * the timer is only armed when the alarm asked for one. */
-#ifdef BOARD_CAN_SLEEP
 static void board_arm_wake_sources(uint32_t wake_after_seconds)
 {
-    (void)rtc_gpio_pullup_en(BUTTON_SLEEP_GPIO);
-    (void)rtc_gpio_pulldown_dis(BUTTON_SLEEP_GPIO);
-    uint64_t mask = 1ULL << BUTTON_SLEEP_GPIO;
+    const gpio_num_t button = (gpio_num_t)wiring()->button_sleep;
+    (void)rtc_gpio_pullup_en(button);
+    (void)rtc_gpio_pulldown_dis(button);
+    uint64_t mask = 1ULL << button;
 #ifdef BOARD_REMOTE_WAKES
     /* The receiver's output idles high and drops for every mark, so the first
      * mark of any frame from any remote wakes the chip; whether it was our
@@ -1340,7 +1351,6 @@ static void board_arm_wake_sources(uint32_t wake_after_seconds)
         ESP_LOGW(TAG, "waking in %u s for the alarm", (unsigned int)wake_after_seconds);
     }
 }
-#endif
 
 bool board_woke_by_remote(void)
 {
@@ -1349,7 +1359,8 @@ bool board_woke_by_remote(void)
     const uint64_t pins = esp_sleep_get_ext1_wakeup_status();
     /* The button wins a tie: a finger on it is a wish to wake, whatever the
      * receiver saw at the same moment. */
-    if (pins & (1ULL << BUTTON_SLEEP_GPIO)) return false;
+    const int8_t button = wiring()->button_sleep;
+    if (button >= 0 && (pins & (1ULL << button))) return false;
     return (pins & (1ULL << IR_RECEIVER_GPIO)) != 0U;
 #else
     return false;
@@ -1358,27 +1369,24 @@ bool board_woke_by_remote(void)
 
 void board_deep_sleep_again(uint32_t wake_after_seconds)
 {
-#ifndef BOARD_CAN_SLEEP
-    (void)wake_after_seconds;
-    ESP_LOGE(TAG, "deep sleep refused: no wake button on an RTC pin");
-    return;
-#else
+    if (!board_deep_sleep_supported()) {
+        ESP_LOGE(TAG, "deep sleep refused: no wake button on an RTC pin");
+        return;
+    }
     /* Nothing to shut down: this is a board that woke on the timer, found the
      * alarm still far off and never initialised anything. The peripheral rail
      * is where the previous sleep left it, held low across the wake. */
     board_arm_wake_sources(wake_after_seconds);
     ESP_LOGW(TAG, "back to deep sleep");
     esp_deep_sleep_start();
-#endif
 }
 
 void board_deep_sleep(uint32_t wake_after_seconds)
 {
-#ifndef BOARD_CAN_SLEEP
-    (void)wake_after_seconds;
-    ESP_LOGE(TAG, "deep sleep refused: no wake button on an RTC pin");
-    return;
-#else
+    if (!board_deep_sleep_supported()) {
+        ESP_LOGE(TAG, "deep sleep refused: no wake button on an RTC pin");
+        return;
+    }
     /* The screen first, because it is the one part of this the user sees:
      * the panel going dark is the acknowledgement that the hold registered,
      * and everything below takes a moment. */
@@ -1387,26 +1395,26 @@ void board_deep_sleep(uint32_t wake_after_seconds)
      * that braces, because the rail under the amplifier is about to go. */
     board_amp_drive(false);
     board_peripheral_power(false);
-#ifdef PERIPHERAL_POWER_GPIO
-    /* Held, or the level is lost the instant the chip sleeps and everything
-     * powers back up in the dark. Both calls are needed: the first pins the
-     * pad, the second keeps digital pads pinned across deep sleep. */
-    (void)gpio_hold_en(PERIPHERAL_POWER_GPIO);
-    gpio_deep_sleep_hold_en();
-#endif
+    if (wiring()->peripheral_power >= 0) {
+        /* Held, or the level is lost the instant the chip sleeps and
+         * everything powers back up in the dark. Both calls are needed: the
+         * first pins the pad, the second keeps digital pads pinned across
+         * deep sleep. */
+        (void)gpio_hold_en(wiring()->peripheral_power);
+        gpio_deep_sleep_hold_en();
+    }
 
     /* Waiting the button out: armed while it is still down, the chip wakes
      * from the very press that sent it to sleep. Bounded, because a button
      * that reads as stuck must not strand the board awake with its screen
      * off - sleeping and waking at once is still better than that. */
     for (int waited_ms = 0; waited_ms < BOARD_SLEEP_RELEASE_WAIT_MS; waited_ms += 20) {
-        if (gpio_get_level(BUTTON_SLEEP_GPIO) != 0) break;
+        if (gpio_get_level(wiring()->button_sleep) != 0) break;
         vTaskDelay(pdMS_TO_TICKS(20));
     }
     board_arm_wake_sources(wake_after_seconds);
     ESP_LOGW(TAG, "entering deep sleep");
     esp_deep_sleep_start();
-#endif
 }
 
 esp_err_t board_init(bool flip_vertical, bool flip_horizontal, bool invert_colors, bool dark)

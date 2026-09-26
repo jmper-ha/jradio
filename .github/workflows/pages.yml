@@ -62,7 +62,7 @@ jobs:
           - st7789_240_320
           - st7789_320_170
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The app descriptor carries `git describe`, which needs the tags.
           fetch-depth: 0
@@ -81,7 +81,7 @@ jobs:
           cp build/jradio.bin build/bootloader/bootloader.bin \
              build/partition_table/partition-table.bin build/ota_data_initial.bin \
              build/littlefs.bin build/flasher_args.json out/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: firmware-${{ matrix.display }}
           path: out/
@@ -90,10 +90,10 @@ jobs:
     needs: firmware
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: builds
           pattern: firmware-*
@@ -123,7 +123,7 @@ jobs:
               --out site/manifest.json
           cat site/manifest.json
           ls -lR site
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
@@ -135,4 +135,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

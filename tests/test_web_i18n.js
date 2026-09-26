@@ -28,8 +28,8 @@ const i18n = context.window.jradioI18n;
 
 /* The device's pages, plus the wiring editor, which ships on the flasher
    site (flasher/) and shares the device's dictionary. */
-const PAGES = ['index.html', 'playlist.html', 'settings.html', 'remote.html', 'flasher/hardware.html',
-               'flasher/index.html'];
+const PAGES = ['index.html', 'playlist.html', 'settings.html', 'remote.html', 'flasher/index.html',
+               'flasher/flasher.html'];
 const pagePath = (page) => (page.startsWith('flasher/') ? page : `data/www/${page}`);
 const MARKERS = ['data-i18n', 'data-i18n-aria', 'data-i18n-placeholder', 'data-i18n-title',
                  'data-i18n-page', 'data-i18n-attr'];

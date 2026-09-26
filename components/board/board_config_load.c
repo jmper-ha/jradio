@@ -103,7 +103,11 @@ void board_config_load(void)
     }
     s_config = candidate;
     s_source = BOARD_CONFIG_SOURCE_PARTITION;
-    ESP_LOGI(TAG, "board.csv from the partition: \"%s\"", s_config.board_name);
+    if (s_config.board_name[0] != '\0') {
+        ESP_LOGI(TAG, "board.csv from the partition: \"%s\"", s_config.board_name);
+    } else {
+        ESP_LOGI(TAG, "board.csv from the partition");
+    }
     log_issues(&report);
 }
 

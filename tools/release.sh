@@ -70,6 +70,9 @@ cp "${build_dir}/jradio.bin" "${out}/jradio-${version}-app.bin"
 cp "${build_dir}/bootloader/bootloader.bin" "${out}/jradio-${version}-bootloader.bin"
 cp "${build_dir}/partition_table/partition-table.bin" "${out}/jradio-${version}-partition-table.bin"
 cp "${build_dir}/ota_data_initial.bin" "${out}/jradio-${version}-ota-data.bin"
+cp "${build_dir}/board.bin" "${out}/jradio-${version}-board.bin"
+board_offset=$(awk -F, '$1 ~ /^board/ {gsub(/ /,"",$4); print $4; exit}' partitions.csv)
+[ -n "${board_offset}" ] || { echo "cannot read the board row of partitions.csv" >&2; exit 1; }
 
 # The offsets are the build's own (build/flash_args), plus the data partition.
 esptool.py --chip esp32s3 merge_bin -o "${out}/jradio-${version}-full.bin" \
@@ -77,6 +80,7 @@ esptool.py --chip esp32s3 merge_bin -o "${out}/jradio-${version}-full.bin" \
     0x0 "${build_dir}/bootloader/bootloader.bin" \
     0x8000 "${build_dir}/partition_table/partition-table.bin" \
     0xf000 "${build_dir}/ota_data_initial.bin" \
+    "${board_offset}" "${build_dir}/board.bin" \
     0x20000 "${build_dir}/jradio.bin" \
     "${fs_offset}" "${out}/jradio-${version}-littlefs.bin" >/dev/null
 

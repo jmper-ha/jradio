@@ -143,6 +143,16 @@ run_test image_decode tests/test_image_decode.c components/audio_tags/image_deco
 run_test cover_file tests/test_cover_file.c components/audio_tags/cover_file.c
 run_test board_config -I"${cjson_include}" tests/test_board_config.c \
     components/board/board_config.c components/board/board_config_compiled.c "${cjson_source}"
+# The build writes board.bin with tools/board_bin.py; the firmware's fallback
+# is board_config_compiled(). Both describe board_options.h, and the text has
+# to be the same or a freshly flashed board would read as changed.
+"${host_cc}" "${common_flags[@]}" "${include_flags[@]}" tests/print_compiled_board.c \
+    components/board/board_config.c components/board/board_config_compiled.c \
+    -o "${test_build_dir}/print_compiled_board"
+diff <(ASAN_OPTIONS=detect_leaks=1 "${test_build_dir}/print_compiled_board") \
+    <(python3 tools/board_bin.py --cc "${host_cc}" -I "${project_dir}" \
+          -I "${project_dir}/components/board/include" --csv)
+echo "board_bin.py matches board_config_compiled()"
 run_test board_audio_health tests/test_board_audio_health.c \
     components/board/board_audio_health.c
 run_test board_audio_startup tests/test_board_audio_startup.c \

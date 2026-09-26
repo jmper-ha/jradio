@@ -80,6 +80,30 @@ add_custom_target(littlefs_stage
 
 littlefs_create_partition_image(littlefs "${littlefs_stage_dir}" DEPENDS littlefs_stage)
 
+# The board partition: board_options.h's board, as the firmware reads it at
+# boot, written by every `idf.py flash`. For someone who builds the firmware
+# the header stays the one description of the board - whatever the partition
+# held before, a file from the web flasher included, is replaced by it.
+#
+# Written by tools/board_bin.py, under ESP-IDF's Python and with the
+# firmware's own compiler as the preprocessor, for the reason the littlefs
+# staging above runs under Python: there is no host compiler on Windows. A
+# target with no OUTPUT, so it runs on every build; the script leaves an
+# unchanged image alone.
+set(board_bin "${CMAKE_BINARY_DIR}/board.bin")
+add_custom_target(board_bin ALL
+    COMMAND ${python} "${CMAKE_SOURCE_DIR}/tools/board_bin.py"
+            --cc "${CMAKE_C_COMPILER}"
+            -I "${CMAKE_SOURCE_DIR}"
+            -I "${CMAKE_SOURCE_DIR}/components/board/include"
+            --out "${board_bin}"
+    BYPRODUCTS "${board_bin}"
+    COMMENT "Writing board.bin from board_options.h"
+    VERBATIM
+)
+partition_table_get_partition_info(board_offset "--partition-name board" "offset")
+esptool_py_flash_target_image(flash board "${board_offset}" "${board_bin}")
+
 # LVGL's heap moves to PSRAM - see components/lvgl_pool/include/lvgl_pool.h for
 # why, and for what it costs. Only the pool's *address* changes; LVGL keeps its
 # own allocator inside it.

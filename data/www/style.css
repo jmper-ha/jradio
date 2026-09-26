@@ -1985,6 +1985,21 @@ a.secondary-button { text-decoration: none; color: inherit; }
 .hw-legend li { display: flex; align-items: center; gap: .4rem; }
 
 .hw-report { margin: 0; padding: .6rem .9rem; list-style: none; display: grid; gap: .35rem; font-size: .85rem; }
+
+/* The flasher page, beside the editor on the flasher site. */
+.fl-version { color: var(--muted); font-size: .55em; font-weight: 400; }
+.fl-summary { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1rem; margin: .4rem 0; }
+.fl-summary dt { color: var(--muted); }
+.fl-summary dd { margin: 0; }
+.fl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem 1.2rem; margin: .8rem 0 .4rem; }
+.fl-warn {
+  margin: .6rem 0;
+  padding: .6rem .8rem;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r);
+  background: var(--accent-soft);
+}
+#fl-progress { width: 100%; }
 .hw-problem.is-error { color: var(--bad); }
 .hw-problem.is-warning { color: var(--accent-2); }
 .hw-problem.is-ok { color: var(--ok); }

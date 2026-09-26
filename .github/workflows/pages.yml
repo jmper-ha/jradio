@@ -1,15 +1,20 @@
-# The flasher site at https://<owner>.github.io/jradio/: the pages under
-# flasher/ plus the stylesheet, the theme switch and the dictionary they share
-# with the device's own web interface. Those three stay in data/www/ - one
-# copy in git - and are copied here at publish time.
+# The flasher site at https://<owner>.github.io/jradio/: the flasher page, the
+# wiring editor beside it, and the firmware they write - one build per
+# display, since the layouts are compiled for one panel shape and everything
+# else about a board is the wiring the page writes into the board partition.
 #
-# Today the site is the wiring editor alone. The flasher page and the
-# firmware it writes (one build per panel shape, in Espressif's image of the
-# pinned ESP-IDF, as jradio-bt does it) come next and slot into this job.
+# The builds run in Espressif's own image of the ESP-IDF this project is
+# pinned to, as jradio-bt's flasher does it. The binaries live in the site
+# rather than in a release: the page fetches them from its own origin, and
+# release assets carry no CORS headers.
+#
+# The stylesheet, the theme switch and the dictionary stay in data/www/ - one
+# copy in git, shared with the device's own pages - and are copied in here.
 name: flasher site
 
 on:
   push:
+    tags: ['v*']
     branches: ['main']
     paths:
       - 'flasher/**'
@@ -17,6 +22,7 @@ on:
       - 'data/www/theme.js'
       - 'data/www/i18n.js'
       - '.github/workflows/pages.yml'
+      - 'tools/flasher_manifest.py'
   workflow_dispatch:
 
 permissions:
@@ -29,24 +35,91 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  firmware:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.5.5
+    strategy:
+      matrix:
+        # In flasher/hardware_core.js's DISPLAYS order.
+        display:
+          - st7796s_480_320
+          - st7796s_320_480
+          - ili9488_480_320
+          - ili9488_320_480
+          - ili9341_320_240
+          - ili9341_240_320
+          - st7789_320_240
+          - st7789_240_320
+          - st7789_320_170
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The app descriptor carries `git describe`, which needs the tags.
+          fetch-depth: 0
+      - name: Build
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # The README board with this display: board_options.h ends by
+          # including board_options.local.h, which is what a board of one's
+          # own is written in anyway.
+          display="$(echo '${{ matrix.display }}' | tr a-z A-Z)"
+          printf '#undef DISPLAY\n#define DISPLAY DISPLAY_%s\n' "$display" > board_options.local.h
+          . "$IDF_PATH/export.sh"
+          idf.py build
+          mkdir -p out
+          cp build/jradio.bin build/bootloader/bootloader.bin \
+             build/partition_table/partition-table.bin build/ota_data_initial.bin \
+             build/littlefs.bin build/flasher_args.json out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.display }}
+          path: out/
+
+  site:
+    needs: firmware
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: builds
+          pattern: firmware-*
       - name: Assemble the site
+        shell: bash
         run: |
-          mkdir -p site
+          version="${GITHUB_REF_NAME}"
+          case "$version" in v*) ;; *) version="$(git describe --tags --always)";; esac
+          mkdir -p site/firmware
           cp flasher/* site/
           cp data/www/style.css data/www/theme.js data/www/i18n.js site/
-          # Until the flasher page exists, the site opens on the editor.
-          [ -f site/index.html ] || cp site/hardware.html site/index.html
-          ls -l site
+          displays=()
+          for dir in builds/firmware-*; do
+            display="${dir#builds/firmware-}"
+            mkdir -p "site/firmware/${display}"
+            cp "${dir}/jradio.bin" "site/firmware/${display}/"
+            displays+=(--display "${display}")
+          done
+          # The rest is the same in every build: the bootloader, the table,
+          # the OTA data and the data partition, which carries no secrets
+          # (wifi.json and the keys are not in git).
+          first="$(ls -d builds/firmware-* | head -n 1)"
+          cp "${first}/bootloader.bin" "${first}/partition-table.bin" "${first}/littlefs.bin" site/firmware/
+          cp "${first}/ota_data_initial.bin" site/firmware/ota-data.bin
+          python3 tools/flasher_manifest.py --flasher-args "${first}/flasher_args.json" \
+              --partitions partitions.csv --version "${version}" "${displays[@]}" \
+              --out site/manifest.json
+          cat site/manifest.json
+          ls -lR site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
   deploy:
-    needs: build
+    needs: site
     runs-on: ubuntu-latest
     environment:
       name: github-pages

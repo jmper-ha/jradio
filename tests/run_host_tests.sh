@@ -330,6 +330,7 @@ node tests/test_web_settings.js
 node tests/test_web_playlist.js
 node tests/test_web_files.js
 node tests/test_web_hardware.js
+node tests/test_web_flasher.js
 node tests/test_web_remote.js
 
 printf 'All host tests passed.\n'

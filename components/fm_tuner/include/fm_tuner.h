@@ -29,6 +29,11 @@ esp_err_t fm_tuner_status(rda5807_status_t *status);
 /* The last RDS group, if a new one is in: `ready` false and nothing read
  * otherwise. The two flags are the chip's word on blocks A and B - it keeps
  * no count for C and D. */
+/* Checks that the I2S output is still set up the way it was written, and
+ * writes it again if not. True when it had to. For the FP on the bench,
+ * whose I2C runs beside its own I2S clock: a spoiled write can land in
+ * another register, and the sound stopped with the output switched off. */
+bool fm_tuner_repair_i2s(void);
 esp_err_t fm_tuner_read_rds(uint16_t blocks[4], bool *ready, bool *block_a_ok, bool *block_b_ok);
 
 #ifdef __cplusplus

@@ -179,6 +179,7 @@ typedef enum {
     DEVICE_TEXT_FM_MONO,
     DEVICE_TEXT_FM_SIGNAL,
     DEVICE_TEXT_FM_SEEKING,
+    DEVICE_TEXT_FM_TUNING,
 
     DEVICE_TEXT_COUNT,
 } device_text_id_t;

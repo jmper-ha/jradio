@@ -847,6 +847,26 @@ static void test_a_preset_is_chosen_without_a_network(void)
     assert(player_control_decide(&state, &row) == PLAYER_OPERATION_INVALID);
 }
 
+static void test_tuning_by_hand_is_the_tuners_alone(void)
+{
+    player_snapshot_t state = {.active_source = AUDIO_SOURCE_FM,
+                               .playback_state = PLAYER_PLAYBACK_PAUSED};
+    player_command_t tune = {.kind = PLAYER_COMMAND_FM_TUNE, .frequency_khz = 101300U};
+    assert(player_control_decide(&state, &tune) == PLAYER_OPERATION_FM_TUNE);
+    tune.frequency_khz = 76000U;
+    assert(player_control_decide(&state, &tune) == PLAYER_OPERATION_INVALID);
+    tune.frequency_khz = 108100U;
+    assert(player_control_decide(&state, &tune) == PLAYER_OPERATION_INVALID);
+    const player_command_t up = {.kind = PLAYER_COMMAND_FM_SEEK_UP};
+    const player_command_t down = {.kind = PLAYER_COMMAND_FM_SEEK_DOWN};
+    assert(player_control_decide(&state, &up) == PLAYER_OPERATION_FM_SEEK_UP);
+    assert(player_control_decide(&state, &down) == PLAYER_OPERATION_FM_SEEK_DOWN);
+    state.active_source = AUDIO_SOURCE_INTERNET_RADIO;
+    tune.frequency_khz = 101300U;
+    assert(player_control_decide(&state, &tune) == PLAYER_OPERATION_INVALID);
+    assert(player_control_decide(&state, &up) == PLAYER_OPERATION_INVALID);
+}
+
 static void test_a_frequency_reads_with_one_decimal(void)
 {
     char text[12];
@@ -906,6 +926,7 @@ int main(void)
 {
     test_the_tuner_is_a_source_while_it_answers_and_seeks_on_the_keys();
     test_a_frequency_reads_with_one_decimal();
+    test_tuning_by_hand_is_the_tuners_alone();
     test_a_preset_is_chosen_without_a_network();
     test_snapshot_equality_notices_the_frequency();
     test_the_signal_is_a_scale_that_does_not_flicker();

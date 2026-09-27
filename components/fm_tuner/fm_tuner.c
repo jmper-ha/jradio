@@ -208,6 +208,33 @@ esp_err_t fm_tuner_status(rda5807_status_t *status)
     LOCKED(read_status(status));
 }
 
+static bool repair_i2s(void)
+{
+    uint16_t options = 0U;
+    uint16_t format = 0U;
+    if (read_register(RDA5807_REG_OPTIONS, &options) != ESP_OK ||
+        read_register(RDA5807_REG_I2S, &format) != ESP_OK) {
+        return false;
+    }
+    const uint16_t want_options = rda5807_options_word(true);
+    const uint16_t want_format = rda5807_i2s_word();
+    if (options == want_options && format == want_format) return false;
+    ESP_LOGW(TAG, "I2S setup lost (04h=%04x 06h=%04x, want %04x %04x); writing it again", options,
+             format, want_options, want_format);
+    (void)write_register(RDA5807_REG_I2S, want_format);
+    (void)write_register(RDA5807_REG_OPTIONS, want_options);
+    return true;
+}
+
+bool fm_tuner_repair_i2s(void)
+{
+    if (s_device == NULL || !s_state.i2s) return false;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const bool repaired = repair_i2s();
+    xSemaphoreGive(s_lock);
+    return repaired;
+}
+
 esp_err_t fm_tuner_read_rds(uint16_t blocks[4], bool *ready, bool *block_a_ok, bool *block_b_ok)
 {
     ESP_RETURN_ON_FALSE(blocks != NULL && ready != NULL && block_a_ok != NULL && block_b_ok != NULL,

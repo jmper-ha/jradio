@@ -126,6 +126,13 @@ typedef enum {
      * just begun - with no break, since the file plays on. Appended, for the
      * reason the ones above were. */
     PLAYER_COMMAND_CUE_TRACK,
+    /* The tuner by hand: straight to `frequency_khz`, and the chip's own
+     * search up or down. Separate from the track keys, which step along the
+     * presets; these are what the knob and the keys mean while tuning.
+     * Appended, for the reason the ones above were. */
+    PLAYER_COMMAND_FM_TUNE,
+    PLAYER_COMMAND_FM_SEEK_UP,
+    PLAYER_COMMAND_FM_SEEK_DOWN,
 } player_command_kind_t;
 
 typedef struct {
@@ -137,6 +144,8 @@ typedef struct {
     // lies about which one it carries is the kind of thing that survives a
     // rename.
     uint32_t position_seconds;
+    // Only PLAYER_COMMAND_FM_TUNE reads this, for the same reason.
+    uint32_t frequency_khz;
 } player_command_t;
 
 typedef struct {
@@ -231,6 +240,9 @@ typedef enum {
     PLAYER_OPERATION_TOGGLE_DISLIKE,
     PLAYER_OPERATION_TEST_STREAM,
     PLAYER_OPERATION_CUE_TRACK,
+    PLAYER_OPERATION_FM_TUNE,
+    PLAYER_OPERATION_FM_SEEK_UP,
+    PLAYER_OPERATION_FM_SEEK_DOWN,
 } player_operation_t;
 
 /* Whether a drive being pulled out should take the picture on screen with it.

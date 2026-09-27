@@ -249,6 +249,7 @@ run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c 
     components/internet_radio/radio_stream_format.c
 run_test ui_now_playing tests/test_ui_now_playing.c components/ui/ui_now_playing.c
 run_test ui_seek tests/test_ui_seek.c components/ui/ui_seek.c
+run_test ui_fm_tune tests/test_ui_fm_tune.c components/ui/ui_fm_tune.c
 run_test ui_web_address tests/test_ui_web_address.c components/ui/ui_web_address.c components/settings/device_text.c
 run_test ui_screensaver tests/test_ui_screensaver.c components/ui/ui_screensaver.c
 run_test ui_settings_model tests/test_ui_settings_model.c components/ui/ui_settings_model.c

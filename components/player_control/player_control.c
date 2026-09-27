@@ -902,6 +902,8 @@ static void player_fm_tune(uint32_t khz)
 #define PLAYER_FM_PIPE_IO_MS 100U
 #define PLAYER_FM_PIPE_IDLE_MS 50U
 #define PLAYER_FM_PIPE_STOP_WAIT_MS 1000U
+// Half a second of stereo 16-bit at the pipe's rate.
+#define PLAYER_FM_PIPE_DEAD_BYTES (AUDIO_DEFAULT_SAMPLE_RATE * 4U / 2U)
 
 static atomic_bool s_fm_pipe_wanted = ATOMIC_VAR_INIT(false);
 // Whether the output is ours right now; the close waits for it to drop.
@@ -924,6 +926,7 @@ static void player_fm_pipe_task(void *arg)
         vTaskDelete(NULL);
         return;
     }
+    size_t silent_bytes = 0U;
     for (;;) {
         const bool play = atomic_load_explicit(&s_fm_pipe_wanted, memory_order_acquire) &&
                           !atomic_load_explicit(&s_fm_muted, memory_order_acquire) &&
@@ -954,6 +957,16 @@ static void player_fm_pipe_task(void *arg)
             read > 0U) {
             size_t written = 0U;
             (void)board_audio_write(block, read, &written, PLAYER_FM_PIPE_IO_MS);
+            /* Even static between stations is never exactly zero, so half a
+             * second of nothing but zeros is the tuner's output gone, not the
+             * air gone quiet: its setup is checked, and put back. */
+            bool silent = true;
+            for (size_t i = 0U; i < read && silent; ++i) silent = block[i] == 0U;
+            silent_bytes = silent ? silent_bytes + read : 0U;
+            if (silent_bytes >= PLAYER_FM_PIPE_DEAD_BYTES) {
+                silent_bytes = 0U;
+                (void)fm_tuner_repair_i2s();
+            }
         }
     }
 }
@@ -1835,6 +1848,13 @@ static void player_control_task(void *arg)
             break;
         case PLAYER_OPERATION_CUE_TRACK:
             player_file_cue_track(command.item_index);
+            break;
+        case PLAYER_OPERATION_FM_TUNE:
+            player_fm_tune(command.frequency_khz);
+            break;
+        case PLAYER_OPERATION_FM_SEEK_UP:
+        case PLAYER_OPERATION_FM_SEEK_DOWN:
+            player_fm_seek(operation == PLAYER_OPERATION_FM_SEEK_UP);
             break;
         case PLAYER_OPERATION_PREVIOUS_ITEM:
         case PLAYER_OPERATION_NEXT_ITEM: {

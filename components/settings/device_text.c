@@ -187,6 +187,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_FM_MONO] = {"Моно", "Mono"},
     [DEVICE_TEXT_FM_SIGNAL] = {"сигнал", "signal"},
     [DEVICE_TEXT_FM_SEEKING] = {"Поиск станции…", "Seeking…"},
+    [DEVICE_TEXT_FM_TUNING] = {"Ручная настройка", "Tuning by hand"},
 };
 
 /* An id added to the enum without a string here does not compile. That is the

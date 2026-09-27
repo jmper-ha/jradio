@@ -58,6 +58,7 @@
 #include "ui_files_notice.h"
 #include "album_art.h"
 #include "ui_vu_meter.h"
+#include "ui_fm_tune.h"
 #include "ui_screensaver.h"
 
 /* The note on an empty cover tile, named at the size the shape file asks for.
@@ -465,6 +466,14 @@ static ui_click_gesture_t s_like_click;
  * screen has to close it - a thick bar left behind would be a mode with no way
  * back into it. */
 static ui_seek_t s_player_seek;
+/* Tuning the FM receiver by hand, and whether the digits are following a seek
+ * asked for from inside the mode - from which frequency, and since when. */
+static ui_fm_tune_t s_fm_tune;
+static bool s_fm_tune_following;
+static uint32_t s_fm_tune_follow_from;
+static uint32_t s_fm_tune_follow_ms;
+// A seek that comes back with no station leaves the digits where they were.
+#define UI_FM_TUNE_FOLLOW_MS 8000U
 /* A source is open with nothing playing and nothing chosen - so its list is
  * what the screen should be showing. Armed when that source's screen is
  * loaded, and read a moment later, because "nothing is playing" is only true
@@ -2036,12 +2045,24 @@ static void ui_update_fm_status(const player_snapshot_t *snapshot)
      * nobody needs read out, and the face has no letters. The seek's
      * moving channel is in the context, so it is taken from there. */
     char digits[12];
-    size_t length = strcspn(snapshot->context, " ");
-    if (length >= sizeof(digits)) length = sizeof(digits) - 1U;
-    memcpy(digits, snapshot->context, length);
-    digits[length] = '\0';
+    /* While tuning by hand the digits are the knob's, ahead of the tuner;
+     * following a seek they are the chip's own, moving as it searches. */
+    if (ui_fm_tune_is_active(&s_fm_tune) && s_fm_tune_following &&
+        (snapshot->fm_khz != s_fm_tune_follow_from ||
+         (uint32_t)(ui_tick_get_ms() - s_fm_tune_follow_ms) >= UI_FM_TUNE_FOLLOW_MS)) {
+        ui_fm_tune_follow(&s_fm_tune, snapshot->fm_khz, ui_tick_get_ms());
+        s_fm_tune_following = false;
+    }
+    if (ui_fm_tune_is_active(&s_fm_tune) && !s_fm_tune_following) {
+        player_fm_frequency_text(ui_fm_tune_khz(&s_fm_tune), digits, sizeof(digits));
+    } else {
+        size_t length = strcspn(snapshot->context, " ");
+        if (length >= sizeof(digits)) length = sizeof(digits) - 1U;
+        memcpy(digits, snapshot->context, length);
+        digits[length] = '\0';
+    }
     ui_set_label_text_if_changed(s_source_fm_digits, digits);
-    const char *state = "";
+    const char *state = ui_fm_tune_is_active(&s_fm_tune) ? ui_text(DEVICE_TEXT_FM_TUNING) : "";
     if (snapshot->playback_state != PLAYER_PLAYBACK_PLAYING &&
         snapshot->playback_state != PLAYER_PLAYBACK_PAUSED) {
         state = ui_radio_state_text(snapshot->playback_state);
@@ -4127,6 +4148,7 @@ static void ui_show_station_list(void);
 // Defined with the rest of the scrubbing mode, below the command helpers it
 // needs; every way off the player screen has to close the mode first.
 static void ui_end_seek(void);
+static void ui_end_fm_tune(bool keep);
 
 
 /* Picks up whatever cover album_art has published.
@@ -4664,6 +4686,7 @@ static void ui_load_menu_screen(void)
 static void ui_show_menu(void)
 {
     ui_end_seek();
+    ui_end_fm_tune(false);
     s_files_unavailable = false;
     s_files_unavailable_source = AUDIO_SOURCE_NONE;
     const ui_player_view_t old_view = ui_player_state_view(&s_player_ui);
@@ -4931,6 +4954,109 @@ static void ui_end_seek(void)
     ui_seek_reset(&s_player_seek);
     ui_apply_seek_visual(false);
     ui_update_footer();
+}
+
+/* ---- Tuning the FM receiver by hand ---------------------------------- */
+
+/* Straight to the queue, past ui_submit_player_command(): its gate refuses a
+ * second command while one is unconfirmed, and a knob turned quickly is a
+ * stream of them that no snapshot confirms one by one. */
+static void ui_fm_tune_post(player_command_kind_t kind, uint32_t khz)
+{
+    const player_command_t command = {
+        .kind = kind,
+        .source = AUDIO_SOURCE_FM,
+        .item_index = PLAYER_ITEM_NONE,
+        .frequency_khz = khz,
+    };
+    (void)player_control_post(&command);
+}
+
+static void ui_fm_tune_paint(bool tuning)
+{
+    lv_obj_set_style_text_color(s_source_fm_digits,
+                                lv_color_hex(tuning ? UI_COLOR_ACCENT : UI_COLOR_TEXT), 0);
+}
+
+static void ui_begin_fm_tune(void)
+{
+    player_snapshot_t snapshot;
+    player_control_get_snapshot(&snapshot);
+    if (snapshot.active_source != AUDIO_SOURCE_FM ||
+        !ui_fm_tune_begin(&s_fm_tune, snapshot.fm_khz, ui_tick_get_ms())) {
+        return;
+    }
+    s_fm_tune_following = false;
+    ui_fm_tune_paint(true);
+}
+
+/* Closes the mode: keeping the frequency reached, or going back to the one
+ * it began on. The tuner is told only when it is not already there. */
+static void ui_end_fm_tune(bool keep)
+{
+    if (!ui_fm_tune_is_active(&s_fm_tune)) return;
+    player_snapshot_t snapshot;
+    player_control_get_snapshot(&snapshot);
+    const uint32_t khz = keep ? ui_fm_tune_keep(&s_fm_tune) : ui_fm_tune_cancel(&s_fm_tune);
+    s_fm_tune_following = false;
+    ui_fm_tune_paint(false);
+    if (snapshot.active_source == AUDIO_SOURCE_FM && khz != 0U && khz != snapshot.fm_khz) {
+        ui_fm_tune_post(PLAYER_COMMAND_FM_TUNE, khz);
+    }
+}
+
+/* Every pass: the frequency the knob has reached goes out at a measured pace,
+ * a seek's result is taken up, and a mode left alone closes. */
+static void ui_fm_tune_tick(void)
+{
+    if (!ui_fm_tune_is_active(&s_fm_tune)) return;
+    const uint32_t now = ui_tick_get_ms();
+    uint32_t khz = 0U;
+    if (ui_fm_tune_due(&s_fm_tune, now, &khz)) ui_fm_tune_post(PLAYER_COMMAND_FM_TUNE, khz);
+    if (ui_fm_tune_idle(&s_fm_tune, now)) ui_end_fm_tune(true);
+}
+
+/* Handles a key while the mode is open. True when the key was the mode's. */
+static bool ui_fm_tune_input(board_input_action_t action)
+{
+    if (!ui_fm_tune_is_active(&s_fm_tune)) return false;
+    const uint32_t now = ui_tick_get_ms();
+    switch (action) {
+    case BOARD_INPUT_ACTION_ENCODER_LEFT:
+    case BOARD_INPUT_ACTION_ENCODER_RIGHT:
+        s_fm_tune_following = false;
+        (void)ui_fm_tune_move(&s_fm_tune, action == BOARD_INPUT_ACTION_ENCODER_RIGHT ? 1 : -1,
+                              now);
+        return true;
+    case BOARD_INPUT_ACTION_ENCODER_BUTTON:
+        ui_end_fm_tune(true);
+        return true;
+    case BOARD_INPUT_ACTION_BTN_PREV:
+    case BOARD_INPUT_ACTION_BTN_NEXT: {
+        /* Inside the mode the keys search the air rather than step along the
+         * presets: what is on it is what tuning by hand is looking for. */
+        player_snapshot_t snapshot;
+        player_control_get_snapshot(&snapshot);
+        s_fm_tune_follow_from = snapshot.fm_khz;
+        s_fm_tune_follow_ms = now;
+        s_fm_tune_following = true;
+        ui_fm_tune_follow(&s_fm_tune, ui_fm_tune_khz(&s_fm_tune), now);
+        ui_fm_tune_post(action == BOARD_INPUT_ACTION_BTN_NEXT ? PLAYER_COMMAND_FM_SEEK_UP
+                                                               : PLAYER_COMMAND_FM_SEEK_DOWN,
+                        0U);
+        return true;
+    }
+    case BOARD_INPUT_ACTION_VOLUME_UP:
+    case BOARD_INPUT_ACTION_VOLUME_DOWN:
+    case BOARD_INPUT_ACTION_MUTE:
+        // The remote's volume is not a way out of anything.
+        return false;
+    default:
+        /* Any other key puts the tuner back where it was and then does its
+         * own job - a mode with only one way out is a trap. */
+        ui_end_fm_tune(false);
+        return false;
+    }
 }
 
 static void ui_commit_seek(void)
@@ -6000,6 +6126,7 @@ static void ui_handle_input(board_input_action_t action)
         const bool has_list = audio_source_is_stations(source) ||
                               audio_source_is_files(source) ||
                               source == AUDIO_SOURCE_DLNA || source == AUDIO_SOURCE_FM;
+        if (ui_fm_tune_input(action)) return;
         if (ui_seek_is_active(&s_player_seek)) {
             // Scrubbing owns the knob and the press while it is open, so the
             // volume and the play/pause click are unreachable and cannot be
@@ -6048,8 +6175,13 @@ static void ui_handle_input(board_input_action_t action)
              * both leave playback alone; the single click that toggles
              * play/pause is delivered later, from the poll loop, once no
              * further press has arrived. */
+            /* The tuner has a third press too: tuning by hand. */
+            const bool tunable = source == AUDIO_SOURCE_FM &&
+                                 (ui_player_state_playback(&s_player_ui) ==
+                                      PLAYER_PLAYBACK_PLAYING ||
+                                  ui_player_state_playback(&s_player_ui) == PLAYER_PLAYBACK_PAUSED);
             switch (ui_click_gesture_press(&s_player_click, ui_tick_get_ms(),
-                                           ui_seek_available())) {
+                                           ui_seek_available() || tunable)) {
             case UI_CLICK_DOUBLE:
                 /* Only where there is one to open. With no source the double
                  * is spent rather than acted on, and the single that follows
@@ -6057,7 +6189,11 @@ static void ui_handle_input(board_input_action_t action)
                 if (has_list) ui_open_source_list(source);
                 break;
             case UI_CLICK_TRIPLE:
-                ui_begin_seek();
+                if (source == AUDIO_SOURCE_FM) {
+                    ui_begin_fm_tune();
+                } else {
+                    ui_begin_seek();
+                }
                 break;
             default:
                 break;
@@ -6197,6 +6333,8 @@ static void ui_scroll_tick(void)
 static void ui_remember_fm(const player_snapshot_t *snapshot)
 {
     if (snapshot->active_source != AUDIO_SOURCE_FM || snapshot->fm_khz == 0U) return;
+    // Not every step of the knob: flash has an erase budget. Kept on closing.
+    if (ui_fm_tune_is_active(&s_fm_tune)) return;
     (void)device_settings_set_fm_frequency(&s_device_settings, snapshot->fm_khz);
 }
 
@@ -6344,6 +6482,13 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
      * pulled - and then there is nothing left to scrub. Paused is not one of
      * those: it can only arrive from the web UI while this screen is open, and
      * the position it stopped at is still worth aiming at. */
+    /* The tuner can go away under the mode - the web chose another source -
+     * and then there is nothing to tune or to put back. */
+    if (ui_fm_tune_is_active(&s_fm_tune) && snapshot->active_source != AUDIO_SOURCE_FM) {
+        ui_fm_tune_reset(&s_fm_tune);
+        s_fm_tune_following = false;
+        ui_fm_tune_paint(false);
+    }
     if (ui_seek_is_active(&s_player_seek) &&
         (!audio_source_is_files(snapshot->active_source) ||
          snapshot->playback_state == PLAYER_PLAYBACK_STOPPED ||
@@ -6861,6 +7006,7 @@ static void ui_task(void *arg)
         if (ui_click_gesture_poll(&s_like_click, ui_tick_get_ms()) == UI_CLICK_SINGLE) {
             ui_submit_like_press(false);
         }
+        ui_fm_tune_tick();
         switch (ui_click_gesture_poll(&s_player_click, ui_tick_get_ms())) {
         case UI_CLICK_SINGLE:
             ui_toggle_playback();

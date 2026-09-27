@@ -333,6 +333,19 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
         // and must not silently jump to another station.
         return audio_source_is_files(state->active_source) ? PLAYER_OPERATION_ADVANCE_ITEM
                                                         : PLAYER_OPERATION_NONE;
+    case PLAYER_COMMAND_FM_TUNE:
+        /* Paused counts: the tuner unmutes on the station it is sent to, as
+         * it does for a preset. The band is the chip's. */
+        if (state->active_source != AUDIO_SOURCE_FM || command->frequency_khz < 87000U ||
+            command->frequency_khz > 108000U) {
+            return PLAYER_OPERATION_INVALID;
+        }
+        return PLAYER_OPERATION_FM_TUNE;
+    case PLAYER_COMMAND_FM_SEEK_UP:
+    case PLAYER_COMMAND_FM_SEEK_DOWN:
+        if (state->active_source != AUDIO_SOURCE_FM) return PLAYER_OPERATION_INVALID;
+        return command->kind == PLAYER_COMMAND_FM_SEEK_UP ? PLAYER_OPERATION_FM_SEEK_UP
+                                                           : PLAYER_OPERATION_FM_SEEK_DOWN;
     case PLAYER_COMMAND_CUE_TRACK:
         // News from the file player about a file it is still playing; the
         // source may have moved on since it was posted, and then it is stale.

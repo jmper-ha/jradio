@@ -913,6 +913,18 @@ static void test_a_name_that_is_only_the_frequency(void)
     assert(!player_fm_name_is_frequency(NULL, 95600U));
 }
 
+static void test_a_station_on_the_next_channel_is_the_same_one(void)
+{
+    // The first stop, and one further up than the next channel, are new.
+    assert(player_fm_scan_merge(0U, 0U, 88300U, 40U) == PLAYER_FM_SCAN_NEW);
+    assert(player_fm_scan_merge(88300U, 40U, 89500U, 30U) == PLAYER_FM_SCAN_NEW);
+    assert(player_fm_scan_merge(104700U, 40U, 105000U, 50U) == PLAYER_FM_SCAN_NEW);
+    // One channel up: the stronger of the two is kept.
+    assert(player_fm_scan_merge(93900U, 30U, 94000U, 45U) == PLAYER_FM_SCAN_REPLACE);
+    assert(player_fm_scan_merge(104100U, 45U, 104200U, 30U) == PLAYER_FM_SCAN_DROP);
+    assert(player_fm_scan_merge(104100U, 45U, 104200U, 45U) == PLAYER_FM_SCAN_DROP);
+}
+
 static void test_snapshot_equality_notices_the_frequency(void)
 {
     player_snapshot_t left = {.active_source = AUDIO_SOURCE_FM, .fm_khz = 101200U};
@@ -931,6 +943,7 @@ int main(void)
     test_snapshot_equality_notices_the_frequency();
     test_the_signal_is_a_scale_that_does_not_flicker();
     test_a_name_that_is_only_the_frequency();
+    test_a_station_on_the_next_channel_is_the_same_one();
     test_the_phone_is_a_source_only_while_the_module_answers();
     test_the_phones_queue_takes_both_keys_and_the_skip();
     test_the_track_keys_stop_at_the_ends_of_the_catalog();

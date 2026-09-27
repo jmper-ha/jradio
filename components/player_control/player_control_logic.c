@@ -413,3 +413,10 @@ bool player_fm_name_is_frequency(const char *name, uint32_t khz)
     snprintf(tenths, sizeof(tenths), "%u", (unsigned)((khz + 50U) / 100U));
     return strcmp(digits, tenths) == 0;
 }
+
+player_fm_scan_step_t player_fm_scan_merge(uint32_t last_khz, uint8_t kept_rssi, uint32_t khz,
+                                           uint8_t rssi)
+{
+    if (last_khz == 0U || khz != last_khz + 100U) return PLAYER_FM_SCAN_NEW;
+    return rssi > kept_rssi ? PLAYER_FM_SCAN_REPLACE : PLAYER_FM_SCAN_DROP;
+}

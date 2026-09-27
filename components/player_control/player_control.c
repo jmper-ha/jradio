@@ -1223,9 +1223,18 @@ static void player_fm_scan_task(void *arg)
     if (err == ESP_OK) err = fm_tuner_tune(RDA5807_BAND_MIN_KHZ);
     vTaskDelay(pdMS_TO_TICKS(FM_SCAN_SETTLE_AFTER_TUNE_MS));
     uint32_t last = RDA5807_BAND_MIN_KHZ;
+    // The last stop, and the level of the station kept for it.
+    uint32_t last_stop = 0U;
+    uint8_t kept_rssi = 0U;
     rda5807_status_t status;
     while (err == ESP_OK && player_fm_scan_step(last, &status)) {
         last = status.khz;
+        const player_fm_scan_step_t step =
+            player_fm_scan_merge(last_stop, kept_rssi, status.khz, status.rssi);
+        last_stop = status.khz;
+        // The weaker half of a pair is not even listened to for a name.
+        if (step == PLAYER_FM_SCAN_DROP) continue;
+        kept_rssi = status.rssi;
         player_fm_found_t found = {
             .khz = status.khz,
             .bars = (uint8_t)player_fm_signal_bars(status.rssi, -1),
@@ -1233,8 +1242,16 @@ static void player_fm_scan_task(void *arg)
         };
         player_fm_scan_name(found.khz, found.name, sizeof(found.name));
         xSemaphoreTake(s_fm_lock, portMAX_DELAY);
-        const bool room = s_fm_found_count < FM_PRESETS_MAX;
-        if (room) s_fm_found[s_fm_found_count++] = found;
+        bool room = true;
+        if (step == PLAYER_FM_SCAN_REPLACE && s_fm_found_count > 0U) {
+            player_fm_found_t *kept = &s_fm_found[s_fm_found_count - 1U];
+            // A name heard on either half is the station's.
+            if (found.name[0] == '\0') memcpy(found.name, kept->name, sizeof(found.name));
+            *kept = found;
+        } else {
+            room = s_fm_found_count < FM_PRESETS_MAX;
+            if (room) s_fm_found[s_fm_found_count++] = found;
+        }
         xSemaphoreGive(s_fm_lock);
         if (!room || status.khz >= RDA5807_BAND_MAX_KHZ) break;
     }

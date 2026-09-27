@@ -274,6 +274,21 @@ int player_fm_signal_bars(uint8_t rssi, int previous);
  * frequency's, in tenths of a MHz. */
 bool player_fm_name_is_frequency(const char *name, uint32_t khz);
 
+/* What a scan does with a station it has just stopped on. A strong station
+ * stops a seek on the channel beside it as well as on its own - 93.9 and
+ * 94.0, 104.1 and 104.2 on the bench - and two stations 100 kHz apart are not
+ * licensed in one place, so a stop one channel above the last is the same
+ * station again: it replaces the one kept if it is stronger and is dropped if
+ * not. A run of three counts as one too, by comparing with the last stop
+ * rather than the one kept. */
+typedef enum {
+    PLAYER_FM_SCAN_NEW,
+    PLAYER_FM_SCAN_REPLACE,
+    PLAYER_FM_SCAN_DROP,
+} player_fm_scan_step_t;
+player_fm_scan_step_t player_fm_scan_merge(uint32_t last_khz, uint8_t kept_rssi, uint32_t khz,
+                                           uint8_t rssi);
+
 player_operation_t player_control_decide(const player_snapshot_t *state,
                                          const player_command_t *command);
 

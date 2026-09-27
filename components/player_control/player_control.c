@@ -811,6 +811,7 @@ static void player_fm_sync_volume(void)
 }
 
 static bool player_fm_scanning(void);
+static void player_fm_rds_reset(void);
 
 static bool player_fm_open(void)
 {
@@ -824,6 +825,7 @@ static bool player_fm_open(void)
         atomic_store_explicit(&s_fm_on, true, memory_order_release);
         return true;
     }
+    player_fm_rds_reset();
     esp_err_t err = fm_tuner_power(true);
     if (err == ESP_OK) err = fm_tuner_set_muted(false);
     if (err == ESP_OK) err = fm_tuner_tune(khz);
@@ -873,12 +875,27 @@ static void player_fm_tune(uint32_t khz)
         atomic_store_explicit(&s_fm_muted, false, memory_order_release);
         return;
     }
+    player_fm_rds_reset();
     if (fm_tuner_tune(khz) == ESP_OK) player_fm_mute(false);
+}
+
+/* RDS for the station on the air, fed by its own task and read by the faces.
+ * Under s_fm_lock. Started again whenever the tuner moves: what was
+ * collected belongs to the station it has left. */
+static rds_decoder_t s_fm_rds;
+
+static void player_fm_rds_reset(void)
+{
+    if (s_fm_lock == NULL) return;
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    rds_decoder_reset(&s_fm_rds);
+    xSemaphoreGive(s_fm_lock);
 }
 
 static void player_fm_seek(bool up)
 {
     if (player_fm_scanning()) return;
+    player_fm_rds_reset();
     if (fm_tuner_seek(up) != ESP_OK) return;
     atomic_store_explicit(&s_fm_seek_started_ms, player_now_ms(), memory_order_release);
     atomic_store_explicit(&s_fm_seeking, true, memory_order_release);
@@ -1001,6 +1018,17 @@ static size_t player_fm_preset_index(uint32_t khz)
 #define PLAYER_FM_SCAN_STEP_MS 6000U
 #define PLAYER_FM_SCAN_POLL_MS 30U
 #define PLAYER_FM_SCAN_MEASURE_MS 250U
+/* How long a station is listened to for its name. A PS takes four groups,
+ * each sent twice to be believed and the whole message twice when the
+ * station rotates several, at about eleven groups a second among the others:
+ * two seconds was not always enough for one that does. A station whose first
+ * name is only its frequency is given longer for the real one it sends in
+ * turn with it. One that sends no RDS at all is left after a second, so the
+ * many that do not cost a pass little. */
+#define PLAYER_FM_SCAN_NAME_MS 4000U
+#define PLAYER_FM_SCAN_BETTER_NAME_MS 8000U
+#define PLAYER_FM_SCAN_NO_RDS_MS 1000U
+#define PLAYER_FM_RDS_POLL_MS 40U
 
 static atomic_bool s_fm_scanning = ATOMIC_VAR_INIT(false);
 static atomic_uint s_fm_scan_khz = ATOMIC_VAR_INIT(0U);
@@ -1040,6 +1068,46 @@ static bool player_fm_scan_step(uint32_t after_khz, rda5807_status_t *found)
     return false;
 }
 
+/* The station's RDS name. The first one heard, unless it only repeats the
+ * frequency: then the wait is stretched for a better one, and the frequency
+ * is what is kept if none comes. */
+static void player_fm_scan_name(uint32_t khz, char *name, size_t size)
+{
+    rds_decoder_t decoder;
+    rds_decoder_reset(&decoder);
+    name[0] = '\0';
+    uint32_t limit = PLAYER_FM_SCAN_NAME_MS;
+    bool heard = false;
+    uint16_t last_pi = 0U;
+    const uint32_t started = player_now_ms();
+    while ((uint32_t)(player_now_ms() - started) < limit) {
+        if (!heard && (uint32_t)(player_now_ms() - started) >= PLAYER_FM_SCAN_NO_RDS_MS) return;
+        uint16_t blocks[4];
+        bool ready = false;
+        bool block_a_ok = false;
+        bool block_b_ok = false;
+        if (fm_tuner_read_rds(blocks, &ready, &block_a_ok, &block_b_ok) != ESP_OK || !ready) {
+            vTaskDelay(pdMS_TO_TICKS(PLAYER_FM_RDS_POLL_MS));
+            continue;
+        }
+        /* The same station code twice running, not merely a group: the noise
+         * of a weak station arrives as groups too, but with a different code
+         * each time. */
+        heard = heard || (block_a_ok && blocks[0] != 0U && blocks[0] == last_pi);
+        if (block_a_ok) last_pi = blocks[0];
+        const bool changed = rds_decoder_feed(&decoder, blocks, block_a_ok, block_b_ok);
+        if (changed && decoder.ps_text[0] != '\0') {
+            if (!player_fm_name_is_frequency(decoder.ps_text, khz)) {
+                snprintf(name, size, "%s", decoder.ps_text);
+                return;
+            }
+            if (name[0] == '\0') snprintf(name, size, "%s", decoder.ps_text);
+            limit = PLAYER_FM_SCAN_BETTER_NAME_MS;
+        }
+        vTaskDelay(pdMS_TO_TICKS(PLAYER_FM_RDS_POLL_MS));
+    }
+}
+
 static void player_fm_scan_task(void *arg)
 {
     (void)arg;
@@ -1052,11 +1120,12 @@ static void player_fm_scan_task(void *arg)
     rda5807_status_t status;
     while (err == ESP_OK && player_fm_scan_step(last, &status)) {
         last = status.khz;
-        const player_fm_found_t found = {
+        player_fm_found_t found = {
             .khz = status.khz,
             .bars = (uint8_t)player_fm_signal_bars(status.rssi, -1),
             .stereo = status.stereo,
         };
+        player_fm_scan_name(found.khz, found.name, sizeof(found.name));
         xSemaphoreTake(s_fm_lock, portMAX_DELAY);
         const bool room = s_fm_found_count < FM_PRESETS_MAX;
         if (room) s_fm_found[s_fm_found_count++] = found;
@@ -1074,6 +1143,54 @@ static void player_fm_scan_task(void *arg)
     ESP_LOGI(TAG, "fm: scan found %u stations", (unsigned)s_fm_found_count);
     atomic_store_explicit(&s_fm_scanning, false, memory_order_release);
     vTaskDelete(NULL);
+}
+
+/* Reads the groups as they come while the tuner plays. A task of its own
+ * because a group lasts 88 ms and the snapshot's status read is five times
+ * slower than that; it sleeps while there is nothing to listen to. */
+#define PLAYER_FM_RDS_STACK 2560
+#define PLAYER_FM_RDS_IDLE_MS 250U
+
+static void player_fm_rds_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        if (!atomic_load_explicit(&s_fm_on, memory_order_acquire) || player_fm_scanning() ||
+            atomic_load_explicit(&s_fm_seeking, memory_order_acquire)) {
+            vTaskDelay(pdMS_TO_TICKS(PLAYER_FM_RDS_IDLE_MS));
+            continue;
+        }
+        uint16_t blocks[4];
+        bool ready = false;
+        bool block_a_ok = false;
+        bool block_b_ok = false;
+        if (fm_tuner_read_rds(blocks, &ready, &block_a_ok, &block_b_ok) == ESP_OK && ready) {
+            xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+            (void)rds_decoder_feed(&s_fm_rds, blocks, block_a_ok, block_b_ok);
+            xSemaphoreGive(s_fm_lock);
+        }
+        vTaskDelay(pdMS_TO_TICKS(PLAYER_FM_RDS_POLL_MS));
+    }
+}
+
+void player_control_fm_rds(char *name, size_t name_size, char *text, size_t text_size)
+{
+    if (name != NULL && name_size > 0U) name[0] = '\0';
+    if (text != NULL && text_size > 0U) text[0] = '\0';
+    if (s_fm_lock == NULL) return;
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    if (name != NULL && name_size > 0U) snprintf(name, name_size, "%s", s_fm_rds.ps_text);
+    if (text != NULL && text_size > 0U) snprintf(text, text_size, "%s", s_fm_rds.rt_text);
+    xSemaphoreGive(s_fm_lock);
+}
+
+static uint32_t player_fm_rds_revision(void)
+{
+    if (s_fm_lock == NULL) return 0U;
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    const uint32_t revision = s_fm_rds.revision;
+    xSemaphoreGive(s_fm_lock);
+    return revision;
 }
 
 bool player_control_fm_scan_start(void)
@@ -1773,7 +1890,14 @@ esp_err_t player_control_init(void)
     s_bt_volume_lock = xSemaphoreCreateMutex();
     s_fm_lock = xSemaphoreCreateMutex();
     if (s_bt_volume_lock == NULL || s_fm_lock == NULL) return ESP_ERR_NO_MEM;
-    if (board_has_fm_tuner()) player_control_fm_presets_reload();
+    if (board_has_fm_tuner()) {
+        player_control_fm_presets_reload();
+        rds_decoder_reset(&s_fm_rds);
+        if (fm_tuner_present() &&
+            xTaskCreate(player_fm_rds_task, "fm_rds", PLAYER_FM_RDS_STACK, NULL, 3, NULL) != pdPASS) {
+            ESP_LOGW(TAG, "fm: no RDS task");
+        }
+    }
     bt_link_set_key_listener(player_speaker_key);
     if (s_command_queue != NULL) {
         return ESP_OK;
@@ -1983,6 +2107,7 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
         const uint32_t settled = atomic_load_explicit(&s_fm_khz, memory_order_acquire);
         snapshot->fm_khz = settled;
         snapshot->active_item_index = player_fm_preset_index(settled);
+        snapshot->track_tag_revision = player_fm_rds_revision();
         /* While a seek runs the chip's channel moves, and showing it move
          * is what says the seek is working. A scan says where it has got to
          * itself. */

@@ -796,8 +796,11 @@ static void capture_now_playing(const player_snapshot_t *player,
         fm_preset_t preset;
         const bool on_preset = player->active_item_index != PLAYER_ITEM_NONE &&
                                player_control_fm_preset_at(player->active_item_index, &preset);
+        char rds_name[RDS_PS_TEXT_MAX];
+        char radiotext[RDS_RT_TEXT_MAX];
+        player_control_fm_rds(rds_name, sizeof(rds_name), radiotext, sizeof(radiotext));
         ui_now_playing_for_tuner(player->context, player->stream_title,
-                                 on_preset ? preset.name : NULL, now);
+                                 on_preset ? preset.name : NULL, rds_name, radiotext, now);
         return;
     }
     if (audio_source_is_stations(player->active_source)) {

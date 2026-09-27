@@ -133,6 +133,23 @@ static esp_err_t read_status(rda5807_status_t *status)
     return ESP_OK;
 }
 
+static esp_err_t read_rds(uint16_t blocks[4], bool *ready, bool *block_a_ok, bool *block_b_ok)
+{
+    rda5807_status_t status;
+    *ready = false;
+    ESP_RETURN_ON_ERROR(read_status(&status), TAG, "rds status");
+    if (!status.rds_ready) return ESP_OK;
+    for (uint8_t i = 0U; i < 4U; ++i) {
+        ESP_RETURN_ON_ERROR(read_register((uint8_t)(RDA5807_REG_RDS_A + i), &blocks[i]), TAG,
+                            "rds block");
+    }
+    *ready = true;
+    // One or two bits corrected is still the block it says it is.
+    *block_a_ok = status.rds_block_a_errors <= 1U;
+    *block_b_ok = status.rds_block_b_errors <= 1U;
+    return ESP_OK;
+}
+
 esp_err_t fm_tuner_power(bool on)
 {
     LOCKED(power(on));
@@ -162,4 +179,11 @@ esp_err_t fm_tuner_status(rda5807_status_t *status)
 {
     ESP_RETURN_ON_FALSE(status != NULL, ESP_ERR_INVALID_ARG, TAG, "status");
     LOCKED(read_status(status));
+}
+
+esp_err_t fm_tuner_read_rds(uint16_t blocks[4], bool *ready, bool *block_a_ok, bool *block_b_ok)
+{
+    ESP_RETURN_ON_FALSE(blocks != NULL && ready != NULL && block_a_ok != NULL && block_b_ok != NULL,
+                        ESP_ERR_INVALID_ARG, TAG, "rds");
+    LOCKED(read_rds(blocks, ready, block_a_ok, block_b_ok));
 }

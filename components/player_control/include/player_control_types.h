@@ -257,6 +257,11 @@ void player_fm_frequency_text(uint32_t khz, char *out, size_t out_size);
 #define PLAYER_FM_SIGNAL_BARS 5
 int player_fm_signal_bars(uint8_t rssi, int previous);
 
+/* Whether an RDS name only repeats the frequency - "*95.6FM*", "105.0 FM" -
+ * which many stations send in turn with their real name. Its digits are the
+ * frequency's, in tenths of a MHz. */
+bool player_fm_name_is_frequency(const char *name, uint32_t khz);
+
 player_operation_t player_control_decide(const player_snapshot_t *state,
                                          const player_command_t *command);
 

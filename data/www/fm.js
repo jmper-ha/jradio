@@ -190,7 +190,11 @@
       .slice(0, MAX_PRESETS)
       .map((station) => {
         const known = names.get(station.khz);
-        return {name: known ? known.name : '', khz: station.khz, icon: known ? known.icon : ''};
+        /* The name given here wins; the one the station sends over RDS is
+           the start for a frequency nobody has named. */
+        const sent = typeof station.name === 'string' ? cleanName(station.name) : '';
+        return {name: known && known.name ? known.name : sent, khz: station.khz,
+                icon: known ? known.icon : ''};
       });
     // Unsaved until the device has it, so a failed save leaves Save to press.
     dirty = true;

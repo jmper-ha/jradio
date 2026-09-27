@@ -29,6 +29,7 @@ bool player_file_same_file_playing(const char *path, const char *playing_path,
 #include "esp_err.h"
 #include "file_browser.h"
 #include "fm_presets.h"
+#include "rds.h"
 
 esp_err_t player_control_init(void);
 bool player_control_post(const player_command_t *command);
@@ -99,8 +100,16 @@ typedef struct {
     uint32_t khz;
     uint8_t bars;  // 0..PLAYER_FM_SIGNAL_BARS
     bool stereo;
+    // The name the station sends over RDS, if it sent one while listened to.
+    char name[RDS_PS_TEXT_MAX];
 } player_fm_found_t;
 bool player_control_fm_scan_start(void);
+
+/* What the station on the air sends over RDS: its name and its radiotext,
+ * empty until they have arrived whole. Outside the snapshot for the reason
+ * the tags are - two strings on every stack that polls - and the snapshot's
+ * track_tag_revision moves when they change. */
+void player_control_fm_rds(char *name, size_t name_size, char *text, size_t text_size);
 /* Whether a pass is running; where it has got to, and what it has found so
  * far - or found last time, once it is over. */
 bool player_control_fm_scan_status(uint32_t *khz, player_fm_found_t *found, size_t capacity,

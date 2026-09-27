@@ -185,7 +185,8 @@ async function main() {
   assert.strictEqual(scanStarts, 0);
 
   /* Saying yes: polled while it runs, then what it found is the list and is
-     saved at once - a frequency that already had a name keeps it. */
+     saved at once - a frequency that already had a name keeps it, and a new
+     one takes the name the station sends. */
   confirmAnswer = true;
   scanReply = {running: true, khz: 95600, bars: 5, found: [{khz: 94800, signal: 5, stereo: true}]};
   $('fm-scan').emit('click');
@@ -194,12 +195,14 @@ async function main() {
   assert.strictEqual($('fm-scan').disabled, true);
   assert.match($('fm-status').textContent, /95\.6/);
   scanReply = {running: false, khz: 108000, bars: 5,
-               found: [{khz: 94800, signal: 5, stereo: true}, {khz: 101200, signal: 4, stereo: true},
-                       {khz: 106200, signal: 3, stereo: false}]};
+               found: [{khz: 94800, signal: 5, stereo: true, name: 'EUROPA'},
+                       {khz: 101200, signal: 4, stereo: true, name: 'RDS2'},
+                       {khz: 106200, signal: 3, stereo: false, name: ''}]};
   firePending();
   await settle();
   assert.strictEqual($('fm-scan').disabled, false);
-  assert.strictEqual(posts.at(-1), '\t94800\nВторая станция\t101200\n\t106200\n');
+  // A name sent over RDS fills a new frequency; the one given here is kept.
+  assert.strictEqual(posts.at(-1), 'EUROPA\t94800\nВторая станция\t101200\n\t106200\n');
   assert.deepStrictEqual(rows('fm-presets').map((row) => row.dataset.khz), ['94800', '101200', '106200']);
   assert.strictEqual($('fm-status').textContent, 'Найдено и сохранено станций: 3');
 

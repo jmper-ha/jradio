@@ -115,6 +115,7 @@ run_test audio_volume tests/test_audio_volume.c components/board/audio_volume.c
 run_test audio_source tests/test_audio_source.c components/audio/audio_source_manager.c
 run_test rda5807 tests/test_rda5807.c components/fm_tuner/rda5807.c
 run_test fm_presets tests/test_fm_presets.c components/fm_tuner/fm_presets.c
+run_test rds tests/test_rds.c components/fm_tuner/rds.c
 run_test bt_link_model tests/test_bt_link_model.c components/bt_link/bt_link_model.c \
     components/bt_link/jbt_proto.c
 # The protocol is one file on both sides. When the module's repository sits

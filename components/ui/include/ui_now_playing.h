@@ -91,12 +91,15 @@ void ui_now_playing_for_file(const char *directory, const char *file_name,
 void ui_now_playing_for_phone(const char *phone, const audio_tags_t *tags,
                               ui_now_playing_t *out);
 
-/* The tuner: the preset's name where a station's goes, with the frequency
- * under it as the performer; with no preset (or a nameless one) the frequency
- * itself is the heading. The reception is the track line, never split:
- * "Stereo, signal 3/5" has no performer in it. */
+/* The tuner. The name is the preset's, or failing that the one the station
+ * sends over RDS; it goes where a station's goes, with the frequency under it
+ * as the performer, and with no name at all the frequency is the heading. The
+ * track line is the radiotext when the station sends one, the reception
+ * ("Stereo, signal 3/5") otherwise - never split, since neither is
+ * "performer - track" by any rule a station keeps to. */
 void ui_now_playing_for_tuner(const char *frequency, const char *reception,
-                              const char *preset_name, ui_now_playing_t *out);
+                              const char *preset_name, const char *rds_name,
+                              const char *radiotext, ui_now_playing_t *out);
 
 /* A station, from the list and from the stream. */
 void ui_now_playing_for_station(bool name_from_list, const char *list_name,

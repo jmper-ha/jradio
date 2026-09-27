@@ -239,22 +239,29 @@ static void test_the_tuner_is_its_frequency_over_its_reception(void)
 {
     ui_now_playing_t now;
     // A dash in the reception line is not a performer's.
-    ui_now_playing_for_tuner("101.2 МГц", "Стерео - сигнал 3/5", NULL, &now);
+    ui_now_playing_for_tuner("101.2 МГц", "Стерео - сигнал 3/5", NULL, NULL, NULL, &now);
     assert(strcmp(now.heading, "101.2 МГц") == 0);
     assert(strcmp(now.title, "Стерео - сигнал 3/5") == 0);
     assert(now.artist[0] == '\0');
     // A named preset heads the block, with the frequency under it.
-    ui_now_playing_for_tuner("98.8 МГц", "Стерео, сигнал 4/5", "Радио Шоколад", &now);
+    ui_now_playing_for_tuner("98.8 МГц", "Стерео, сигнал 4/5", "Радио Шоколад", "CHOCO", NULL,
+                             &now);
     assert(strcmp(now.heading, "Радио Шоколад") == 0);
     assert(strcmp(now.artist, "98.8 МГц") == 0);
     assert(strcmp(now.title, "Стерео, сигнал 4/5") == 0);
-    // A nameless one is only a frequency.
-    ui_now_playing_for_tuner("98.8 МГц", "", "", &now);
+    // A nameless one, or none, takes the name the station sends.
+    ui_now_playing_for_tuner("98.8 МГц", "Моно", "", "CHOCO", NULL, &now);
+    assert(strcmp(now.heading, "CHOCO") == 0);
+    assert(strcmp(now.artist, "98.8 МГц") == 0);
+    // And the radiotext, when there is one, is the track line - unsplit.
+    ui_now_playing_for_tuner("98.8 МГц", "Моно", NULL, "CHOCO", "Sade - Smooth Operator", &now);
+    assert(strcmp(now.title, "Sade - Smooth Operator") == 0);
+    ui_now_playing_for_tuner("98.8 МГц", "", "", "", "", &now);
     assert(strcmp(now.heading, "98.8 МГц") == 0);
-    assert(now.artist[0] == '\0');
-    ui_now_playing_for_tuner(NULL, NULL, NULL, &now);
+    assert(now.artist[0] == '\0' && now.title[0] == '\0');
+    ui_now_playing_for_tuner(NULL, NULL, NULL, NULL, NULL, &now);
     assert(now.heading[0] == '\0' && now.title[0] == '\0');
-    ui_now_playing_for_tuner("x", "y", "z", NULL);
+    ui_now_playing_for_tuner("x", "y", "z", "w", "v", NULL);
 }
 
 int main(void)

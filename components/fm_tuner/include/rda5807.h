@@ -25,6 +25,8 @@ extern "C" {
 #define RDA5807_REG_VOLUME 0x05U
 #define RDA5807_REG_STATUS 0x0AU
 #define RDA5807_REG_SIGNAL 0x0BU
+// The four blocks of the last RDS group, A to D.
+#define RDA5807_REG_RDS_A 0x0CU
 
 // The high byte of 00h on every chip of the family.
 #define RDA5807_CHIP_ID_FAMILY 0x58U
@@ -51,6 +53,9 @@ typedef struct {
     bool station;        // FM_TRUE: what is on the channel is a station
     uint8_t rssi;        // 0..127, logarithmic
     uint32_t khz;        // the channel the chip is on now
+    bool rds_ready;      // RDSR: a new RDS group is in 0Ch-0Fh
+    uint8_t rds_block_a_errors;  // BLERA: 0 clean, 3 beyond repair
+    uint8_t rds_block_b_errors;  // BLERB: likewise
 } rda5807_status_t;
 
 /* The nearest channel to `khz`, clamped to the band. */
@@ -59,7 +64,8 @@ uint32_t rda5807_khz_for_channel(uint16_t channel);
 
 /* 02h: power, mute, mono, bass, and the seek bits. `soft_reset` is written
  * once, at power-up; `seek` starts a seek in the direction `seek_up`. The
- * clock is always the 32.768 kHz crystal (CLK_MODE 000). */
+ * clock is always the 32.768 kHz crystal (CLK_MODE 000), and RDS always on:
+ * it costs nothing, and a station's name is worth having whenever it is sent. */
 uint16_t rda5807_control_word(const rda5807_state_t *state, bool soft_reset, bool seek,
                               bool seek_up);
 

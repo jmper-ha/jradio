@@ -10,6 +10,7 @@
 #define CTRL_SEEKUP (1U << 9)
 #define CTRL_SEEK (1U << 8)
 #define CTRL_SKMODE (1U << 7)  // stop a seek at the band's edge, not wrap
+#define CTRL_RDS_EN (1U << 3)
 #define CTRL_NEW_METHOD (1U << 2)
 #define CTRL_SOFT_RESET (1U << 1)
 #define CTRL_ENABLE (1U << 0)
@@ -32,6 +33,7 @@
 #define VOL_LNA_PORT_LNAP (2U << 6)
 
 // 0Ah
+#define STATUS_RDSR (1U << 15)
 #define STATUS_STC (1U << 14)
 #define STATUS_SF (1U << 13)
 #define STATUS_ST (1U << 10)
@@ -40,6 +42,8 @@
 // 0Bh
 #define SIGNAL_RSSI_SHIFT 9U
 #define SIGNAL_FM_TRUE (1U << 8)
+#define SIGNAL_BLERA_SHIFT 2U
+#define SIGNAL_BLER_MASK 0x3U
 
 uint16_t rda5807_channel_for_khz(uint32_t khz)
 {
@@ -57,7 +61,7 @@ uint32_t rda5807_khz_for_channel(uint16_t channel)
 uint16_t rda5807_control_word(const rda5807_state_t *state, bool soft_reset, bool seek,
                               bool seek_up)
 {
-    uint16_t word = CTRL_DHIZ | CTRL_SKMODE | CTRL_NEW_METHOD;
+    uint16_t word = CTRL_DHIZ | CTRL_SKMODE | CTRL_RDS_EN | CTRL_NEW_METHOD;
     if (state != NULL) {
         if (!state->muted) word |= CTRL_DMUTE;
         if (state->mono) word |= CTRL_MONO;
@@ -97,4 +101,7 @@ void rda5807_parse_status(uint16_t status, uint16_t signal, rda5807_status_t *ou
     out->khz = rda5807_khz_for_channel((uint16_t)(status & STATUS_CHAN_MASK));
     out->rssi = (uint8_t)(signal >> SIGNAL_RSSI_SHIFT);
     out->station = (signal & SIGNAL_FM_TRUE) != 0U;
+    out->rds_ready = (status & STATUS_RDSR) != 0U;
+    out->rds_block_a_errors = (uint8_t)((signal >> SIGNAL_BLERA_SHIFT) & SIGNAL_BLER_MASK);
+    out->rds_block_b_errors = (uint8_t)(signal & SIGNAL_BLER_MASK);
 }

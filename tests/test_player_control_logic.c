@@ -881,6 +881,18 @@ static void test_the_signal_is_a_scale_that_does_not_flicker(void)
     assert(player_fm_signal_bars(60U, 1) == 5);
 }
 
+static void test_a_name_that_is_only_the_frequency(void)
+{
+    assert(player_fm_name_is_frequency("*95.6FM*", 95600U));
+    assert(player_fm_name_is_frequency("105.0 FM", 105000U));
+    assert(player_fm_name_is_frequency("FM 88,3", 88300U));
+    assert(!player_fm_name_is_frequency("*ZVEZDA*", 95600U));
+    assert(!player_fm_name_is_frequency("RADIO 1", 95600U));
+    assert(!player_fm_name_is_frequency("95.6FM", 101200U));
+    assert(!player_fm_name_is_frequency("", 95600U));
+    assert(!player_fm_name_is_frequency(NULL, 95600U));
+}
+
 static void test_snapshot_equality_notices_the_frequency(void)
 {
     player_snapshot_t left = {.active_source = AUDIO_SOURCE_FM, .fm_khz = 101200U};
@@ -897,6 +909,7 @@ int main(void)
     test_a_preset_is_chosen_without_a_network();
     test_snapshot_equality_notices_the_frequency();
     test_the_signal_is_a_scale_that_does_not_flicker();
+    test_a_name_that_is_only_the_frequency();
     test_the_phone_is_a_source_only_while_the_module_answers();
     test_the_phones_queue_takes_both_keys_and_the_skip();
     test_the_track_keys_stop_at_the_ends_of_the_catalog();

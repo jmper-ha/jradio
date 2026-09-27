@@ -27,8 +27,8 @@ static void test_the_control_word(void)
 {
     rda5807_state_t state = {.enabled = true, .volume = 8U};
     const uint16_t on = rda5807_control_word(&state, false, false, false);
-    // Outputs driven, not muted, stops at the band's edge, new demodulator, on.
-    assert(on == 0xC085U);
+    // Outputs driven, not muted, stops at the band's edge, RDS, new demodulator, on.
+    assert(on == 0xC08DU);
     assert(rda5807_control_word(&state, true, false, false) == (on | 0x0002U));
     assert(rda5807_control_word(&state, false, true, true) == (on | 0x0300U));
     assert(rda5807_control_word(&state, false, true, false) == (on | 0x0100U));
@@ -60,6 +60,12 @@ static void test_the_status_words(void)
     assert(status.khz == 101200U);
     assert(status.rssi == 40U);
     assert(status.station);
+    assert(!status.rds_ready);
+    // RDSR, and the error counts of blocks A and B from the low bits of 0Bh.
+    rda5807_parse_status(0x8000U, 0x000DU, &status);
+    assert(status.rds_ready);
+    assert(status.rds_block_a_errors == 3U);
+    assert(status.rds_block_b_errors == 1U);
     rda5807_parse_status(0x6000U, 0x0000U, &status);
     assert(status.seek_failed);
     assert(!status.stereo);

@@ -199,19 +199,27 @@ void ui_now_playing_for_phone(const char *phone, const audio_tags_t *tags,
     copy_string(tags->artist, out->artist, sizeof(out->artist));
 }
 
+static bool has_text(const char *text)
+{
+    return text != NULL && text[0] != '\0';
+}
+
 void ui_now_playing_for_tuner(const char *frequency, const char *reception,
-                              const char *preset_name, ui_now_playing_t *out)
+                              const char *preset_name, const char *rds_name,
+                              const char *radiotext, ui_now_playing_t *out)
 {
     if (out == NULL) return;
     memset(out, 0, sizeof(*out));
     const char *heard = frequency != NULL ? frequency : "";
-    if (preset_name != NULL && preset_name[0] != '\0') {
-        copy_string(preset_name, out->heading, sizeof(out->heading));
+    const char *name = has_text(preset_name) ? preset_name : has_text(rds_name) ? rds_name : NULL;
+    if (name != NULL) {
+        copy_string(name, out->heading, sizeof(out->heading));
         copy_string(heard, out->artist, sizeof(out->artist));
     } else {
         copy_string(heard, out->heading, sizeof(out->heading));
     }
-    copy_string(reception != NULL ? reception : "", out->title, sizeof(out->title));
+    copy_string(has_text(radiotext) ? radiotext : has_text(reception) ? reception : "", out->title,
+                sizeof(out->title));
 }
 
 void ui_now_playing_for_station(bool name_from_list, const char *list_name,

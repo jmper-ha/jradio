@@ -1399,7 +1399,10 @@ static esp_err_t web_server_fm_scan_get(httpd_req_t *request)
         web_json_format(&writer, "%lu", (unsigned long)found[i].khz);
         web_json_literal(&writer, ",\"signal\":");
         web_json_format(&writer, "%u", (unsigned)found[i].bars);
-        web_json_literal(&writer, found[i].stereo ? ",\"stereo\":true}" : ",\"stereo\":false}");
+        web_json_literal(&writer, found[i].stereo ? ",\"stereo\":true" : ",\"stereo\":false");
+        web_json_literal(&writer, ",\"name\":");
+        web_json_string(&writer, found[i].name);
+        web_json_literal(&writer, "}");
     }
     web_json_literal(&writer, "]}");
     if (!web_json_valid(&writer)) return ESP_FAIL;

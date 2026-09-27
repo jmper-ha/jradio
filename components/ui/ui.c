@@ -2024,10 +2024,14 @@ static void ui_update_fm_status(const player_snapshot_t *snapshot)
     const bool on_preset = snapshot->active_item_index != PLAYER_ITEM_NONE &&
                            player_control_fm_preset_at(snapshot->active_item_index, &preset) &&
                            preset.name[0] != '\0';
+    char rds_name[RDS_PS_TEXT_MAX];
+    char radiotext[RDS_RT_TEXT_MAX];
+    player_control_fm_rds(rds_name, sizeof(rds_name), radiotext, sizeof(radiotext));
     ui_now_playing_t now;
     ui_now_playing_for_tuner(snapshot->context, snapshot->stream_title,
-                             on_preset ? preset.name : NULL, &now);
+                             on_preset ? preset.name : NULL, rds_name, radiotext, &now);
     ui_note_now_playing(&now);
+    const bool named = on_preset || rds_name[0] != '\0';
     /* The digits say the number alone: the unit is the one thing about it
      * nobody needs read out, and the face has no letters. The seek's
      * moving channel is in the context, so it is taken from there. */
@@ -2042,11 +2046,15 @@ static void ui_update_fm_status(const player_snapshot_t *snapshot)
         snapshot->playback_state != PLAYER_PLAYBACK_PAUSED) {
         state = ui_radio_state_text(snapshot->playback_state);
     }
-    /* Under the digits: the preset's name, with the reception moving down
-     * to the readings line; or, off a preset, the reception itself. */
-    ui_set_state_line_from(snapshot, state, on_preset ? now.heading : now.title);
-    if (on_preset) {
-        ui_set_label_text_if_changed(s_source_stream, now.title);
+    /* Under the digits the name - the preset's or the station's own - or,
+     * with neither, the reception. The line below carries the radiotext
+     * when there is one, the reception when the name took its row, and the
+     * plain readings otherwise. */
+    ui_set_state_line_from(snapshot, state, named ? now.heading : snapshot->stream_title);
+    if (radiotext[0] != '\0') {
+        ui_set_label_text_if_changed(s_source_stream, radiotext);
+    } else if (named) {
+        ui_set_label_text_if_changed(s_source_stream, snapshot->stream_title);
     } else {
         ui_set_stream_readings(snapshot);
     }

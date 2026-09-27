@@ -26,6 +26,10 @@ esp_err_t fm_tuner_set_volume(uint8_t volume);
 // The chip's own mute: the pause, since there is nothing to hold back.
 esp_err_t fm_tuner_set_muted(bool muted);
 esp_err_t fm_tuner_status(rda5807_status_t *status);
+/* The last RDS group, if a new one is in: `ready` false and nothing read
+ * otherwise. The two flags are the chip's word on blocks A and B - it keeps
+ * no count for C and D. */
+esp_err_t fm_tuner_read_rds(uint16_t blocks[4], bool *ready, bool *block_a_ok, bool *block_b_ok);
 
 #ifdef __cplusplus
 }

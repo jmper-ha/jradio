@@ -383,3 +383,20 @@ int player_fm_signal_bars(uint8_t rssi, int previous)
     }
     return bars;
 }
+
+bool player_fm_name_is_frequency(const char *name, uint32_t khz)
+{
+    if (name == NULL) return false;
+    char digits[12];
+    size_t count = 0U;
+    for (const char *at = name; *at != '\0'; ++at) {
+        if (*at < '0' || *at > '9') continue;
+        if (count + 1U >= sizeof(digits)) return false;
+        digits[count++] = *at;
+    }
+    digits[count] = '\0';
+    if (count == 0U) return false;
+    char tenths[12];
+    snprintf(tenths, sizeof(tenths), "%u", (unsigned)((khz + 50U) / 100U));
+    return strcmp(digits, tenths) == 0;
+}

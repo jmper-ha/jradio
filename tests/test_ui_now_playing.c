@@ -235,8 +235,22 @@ static void test_neither_builder_writes_through_a_null(void)
     assert(now.heading[0] == '\0' && now.artist[0] == '\0' && now.title[0] == '\0');
 }
 
+static void test_the_tuner_is_its_frequency_over_its_reception(void)
+{
+    ui_now_playing_t now;
+    // A dash in the reception line is not a performer's.
+    ui_now_playing_for_tuner("101.2 МГц", "Стерео - сигнал 38", &now);
+    assert(strcmp(now.heading, "101.2 МГц") == 0);
+    assert(strcmp(now.title, "Стерео - сигнал 38") == 0);
+    assert(now.artist[0] == '\0');
+    ui_now_playing_for_tuner(NULL, NULL, &now);
+    assert(now.heading[0] == '\0' && now.title[0] == '\0');
+    ui_now_playing_for_tuner("x", "y", NULL);
+}
+
 int main(void)
 {
+    test_the_tuner_is_its_frequency_over_its_reception();
     test_an_icy_title_splits_into_performer_and_track();
     test_a_spaced_dash_of_either_kind_counts();
     test_a_lopsided_or_missing_title_is_left_whole();

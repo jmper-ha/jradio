@@ -52,6 +52,9 @@
  * built for one that is unplugged, dead or being flashed offers no source,
  * rather than one that fails to open. */
 #define PLAYER_CAP_BLUETOOTH (1U << 5)
+/* The FM tuner, when the wiring has one and it answered at boot. Nothing to
+ * wait for after that: the chip is on the board, not across a cable. */
+#define PLAYER_CAP_FM (1U << 6)
 
 #ifdef __cplusplus
 extern "C" {
@@ -201,6 +204,10 @@ typedef struct {
     bool track_likeable;
     bool track_liked;
     bool track_disliked;
+    /* The frequency the tuner is on, in kHz, while FM is the source; 0
+     * otherwise. A number beside the text in `context`, because the panel
+     * writes it down to come back to and will draw it in its own digits. */
+    uint32_t fm_khz;
     char error[PLAYER_ERROR_MAX_LEN];
 } player_snapshot_t;
 
@@ -237,6 +244,18 @@ typedef enum {
  * A pure decision so it can be tested: the removal itself arrives on the USB
  * host task and cannot be staged on a host. */
 bool player_media_removal_clears_cover(audio_source_t active_source);
+
+/* 101200 -> "101.2": the way a frequency is read out, one decimal, the
+ * hundreds of kHz that FM stations sit on. */
+void player_fm_frequency_text(uint32_t khz, char *out, size_t out_size);
+
+/* The chip's RSSI (0..127) as a scale of PLAYER_FM_SIGNAL_BARS. The raw number
+ * moves by a few units several times a second, and every move was a frame to
+ * every open page; a step now has to be crossed by a margin before it is
+ * left, so a signal sitting on a boundary does not flicker across it.
+ * `previous` is the last answer, or -1 for none. */
+#define PLAYER_FM_SIGNAL_BARS 5
+int player_fm_signal_bars(uint8_t rssi, int previous);
 
 player_operation_t player_control_decide(const player_snapshot_t *state,
                                          const player_command_t *command);

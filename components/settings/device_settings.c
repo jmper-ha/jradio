@@ -156,6 +156,11 @@ bool device_settings_coordinate_valid(const char *text, int limit)
     return value >= -(double)limit && value <= (double)limit;
 }
 
+static bool device_settings_fm_frequency_valid(unsigned long khz)
+{
+    return khz >= 87000UL && khz <= 108000UL;
+}
+
 bool device_settings_init_at(device_settings_t *settings, const char *path)
 {
     if (settings == NULL || path == NULL || path[0] == '\0' ||
@@ -356,6 +361,13 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         const long parsed = strtol(value, &end, 10);
         if (end != NULL && *end == '\0' && parsed >= 0 && parsed <= 100) {
             settings->alarm.volume = (unsigned char)parsed;
+        }
+    }
+    if (read_value(path, "fm_frequency", value, sizeof(value))) {
+        char *end = NULL;
+        const unsigned long parsed = strtoul(value, &end, 10);
+        if (end != NULL && *end == '\0' && device_settings_fm_frequency_valid(parsed)) {
+            settings->fm_frequency_khz = parsed;
         }
     }
     if (read_value(path, "last_source", value, sizeof(value))) {
@@ -892,6 +904,18 @@ bool device_settings_set_last_source(device_settings_t *settings,
     if (settings->last_source == source) return true;
     if (!save_value(settings, "last_source", text)) return false;
     settings->last_source = source;
+    return true;
+}
+
+bool device_settings_set_fm_frequency(device_settings_t *settings, unsigned long khz)
+{
+    if (settings == NULL || !device_settings_fm_frequency_valid(khz)) return false;
+    // Called whenever the tuner settles, and a seek settles often.
+    if (settings->fm_frequency_khz == khz) return true;
+    char text[12];
+    snprintf(text, sizeof(text), "%lu", khz);
+    if (!save_value(settings, "fm_frequency", text)) return false;
+    settings->fm_frequency_khz = khz;
     return true;
 }
 

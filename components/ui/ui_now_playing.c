@@ -199,6 +199,15 @@ void ui_now_playing_for_phone(const char *phone, const audio_tags_t *tags,
     copy_string(tags->artist, out->artist, sizeof(out->artist));
 }
 
+void ui_now_playing_for_tuner(const char *frequency, const char *reception,
+                              ui_now_playing_t *out)
+{
+    if (out == NULL) return;
+    memset(out, 0, sizeof(*out));
+    copy_string(frequency != NULL ? frequency : "", out->heading, sizeof(out->heading));
+    copy_string(reception != NULL ? reception : "", out->title, sizeof(out->title));
+}
+
 void ui_now_playing_for_station(bool name_from_list, const char *list_name,
                                 const char *stream_name, const char *icy_title,
                                 ui_now_playing_t *out)

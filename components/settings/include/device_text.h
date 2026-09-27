@@ -146,6 +146,7 @@ typedef enum {
     DEVICE_TEXT_ERROR_YANDEX_REFRESH,
     DEVICE_TEXT_ERROR_BAD_COMMAND,
     DEVICE_TEXT_ERROR_DEVICE_BUSY,
+    DEVICE_TEXT_ERROR_FM_TUNER,
 
     /* The Yandex Music screen: its status line and the hint under it. */
     DEVICE_TEXT_YANDEX_NOT_LINKED,
@@ -170,6 +171,14 @@ typedef enum {
 
     /* The sleep timer's unit, beside the minutes on the screensaver. */
     DEVICE_TEXT_MINUTES_SHORT,
+
+    /* The tuner's line under the frequency: the unit, the mode, the signal,
+     * and the word shown while a seek is under way. */
+    DEVICE_TEXT_FM_MHZ,
+    DEVICE_TEXT_FM_STEREO,
+    DEVICE_TEXT_FM_MONO,
+    DEVICE_TEXT_FM_SIGNAL,
+    DEVICE_TEXT_FM_SEEKING,
 
     DEVICE_TEXT_COUNT,
 } device_text_id_t;

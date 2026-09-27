@@ -1,5 +1,6 @@
 #include "player_control.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "file_player_state.h"
@@ -94,6 +95,7 @@ bool player_snapshot_equal(const player_snapshot_t *left,
            left->track_likeable == right->track_likeable &&
            left->track_liked == right->track_liked &&
            left->track_disliked == right->track_disliked &&
+           left->fm_khz == right->fm_khz &&
            memcmp(left->error, right->error, sizeof(left->error)) == 0;
 }
 
@@ -136,6 +138,7 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
                                 : command->source == AUDIO_SOURCE_YANDEX ? PLAYER_CAP_YANDEX
                                 : command->source == AUDIO_SOURCE_DLNA ? PLAYER_CAP_DLNA
                                 : command->source == AUDIO_SOURCE_BLUETOOTH ? PLAYER_CAP_BLUETOOTH
+                                : command->source == AUDIO_SOURCE_FM ? PLAYER_CAP_FM
                                                                             : 0U;
         const bool supported = needed != 0U && (state->capabilities & needed) != 0U &&
                                !player_source_needs_absent_network(state, command->source);
@@ -269,7 +272,10 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
          * for. */
         /* The phone has no list here at all - the two keys go to it as its
          * own previous/next, whenever a track is on. */
-        if (state->active_source == AUDIO_SOURCE_BLUETOOTH) {
+        /* The tuner has no list yet either: the keys seek to the next
+         * station up or down the band, which is the chip's own search. */
+        if (state->active_source == AUDIO_SOURCE_BLUETOOTH ||
+            state->active_source == AUDIO_SOURCE_FM) {
             return state->playback_state == PLAYER_PLAYBACK_PLAYING ||
                            state->playback_state == PLAYER_PLAYBACK_PAUSED
                        ? step
@@ -338,4 +344,36 @@ bool player_media_removal_clears_cover(audio_source_t active_source)
      * asked about the drive. It still answers for the volume sources together:
      * the question is whether the picture came off a volume at all. */
     return audio_source_is_files(active_source);
+}
+
+void player_fm_frequency_text(uint32_t khz, char *out, size_t out_size)
+{
+    if (out == NULL || out_size == 0U) return;
+    const uint32_t tenths = (khz + 50U) / 100U;
+    snprintf(out, out_size, "%u.%u", (unsigned)(tenths / 10U), (unsigned)(tenths % 10U));
+}
+
+/* Where each step starts. A short wire picks the local stations up at 40-60,
+ * and below 20 there is mostly hiss. */
+static const uint8_t k_fm_bar_floor[PLAYER_FM_SIGNAL_BARS + 1] = {0U, 18U, 28U, 38U, 48U, 58U};
+#define PLAYER_FM_SIGNAL_MARGIN 3U
+
+int player_fm_signal_bars(uint8_t rssi, int previous)
+{
+    int bars = 0;
+    for (int step = PLAYER_FM_SIGNAL_BARS; step > 0; --step) {
+        if (rssi >= k_fm_bar_floor[step]) {
+            bars = step;
+            break;
+        }
+    }
+    if (previous < 0 || previous > PLAYER_FM_SIGNAL_BARS || bars == previous) return bars;
+    // Stay put unless the reading is clear of the step being left.
+    if (bars > previous && rssi < k_fm_bar_floor[previous + 1] + PLAYER_FM_SIGNAL_MARGIN) {
+        return previous;
+    }
+    if (bars < previous && rssi + PLAYER_FM_SIGNAL_MARGIN > k_fm_bar_floor[previous]) {
+        return previous;
+    }
+    return bars;
 }

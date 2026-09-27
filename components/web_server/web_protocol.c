@@ -727,6 +727,8 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
             parsed->player.source = AUDIO_SOURCE_DLNA;
         } else if (strcmp(source->valuestring, "bluetooth") == 0) {
             parsed->player.source = AUDIO_SOURCE_BLUETOOTH;
+        } else if (strcmp(source->valuestring, "fm") == 0) {
+            parsed->player.source = AUDIO_SOURCE_FM;
         } else {
             return false;
         }

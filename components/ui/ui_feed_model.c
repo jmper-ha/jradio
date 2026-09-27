@@ -77,6 +77,9 @@ bool ui_feed_model_activate(ui_feed_item_t item, audio_source_t *source_out)
     case UI_FEED_BLUETOOTH:
         *source_out = AUDIO_SOURCE_BLUETOOTH;
         return true;
+    case UI_FEED_FM:
+        *source_out = AUDIO_SOURCE_FM;
+        return true;
     default:
         *source_out = AUDIO_SOURCE_NONE;
         return false;

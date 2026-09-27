@@ -76,12 +76,15 @@ static void test_activation_maps_only_the_implemented_sources(void)
     assert(ui_feed_model_activate(UI_FEED_BLUETOOTH, &source));
     assert(source == AUDIO_SOURCE_BLUETOOTH);
 
-    /* Unimplemented modes must report failure rather than silently selecting
-     * nothing, or the feed would look like it opened them. */
+    /* And the tuner, which has a source of its own now. */
+    assert(ui_feed_model_activate(UI_FEED_FM, &source));
+    assert(source == AUDIO_SOURCE_FM);
+
+    /* Items that are not a plain source must report failure rather than
+     * silently selecting nothing, or the feed would look like it opened them. */
     source = AUDIO_SOURCE_INTERNET_RADIO;
-    assert(!ui_feed_model_activate(UI_FEED_FM, &source));
-    assert(source == AUDIO_SOURCE_NONE);
     assert(!ui_feed_model_activate(UI_FEED_YANDEX, &source));
+    assert(source == AUDIO_SOURCE_NONE);
     assert(!ui_feed_model_activate(UI_FEED_SETTINGS, &source));
 
     assert(!ui_feed_model_activate(UI_FEED_INTERNET_RADIO, NULL));

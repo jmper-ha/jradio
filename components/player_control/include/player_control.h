@@ -80,6 +80,12 @@ bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_se
  * changed. */
 void player_control_set_files_repeat(bool repeat);
 
+/* The FM frequency to tune to when the source is chosen, in kHz: the one in
+ * settings.csv, handed over at boot by the UI task that owns the file. From
+ * then on the player follows the tuner itself, and the snapshot's fm_khz is
+ * what the UI writes back. */
+void player_control_set_fm_frequency(uint32_t khz);
+
 /* Title, performer and album of the playing file, as its own tags gave them.
  * False for a source that has no such thing: a stream carries one ICY line and
  * no performer field at all.

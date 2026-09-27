@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "player_control.h"
 
@@ -801,8 +802,86 @@ static void test_the_phones_queue_takes_both_keys_and_the_skip(void)
     assert(player_control_decide(&state, &play) == PLAYER_OPERATION_START_SAVED);
 }
 
+static void test_the_tuner_is_a_source_while_it_answers_and_seeks_on_the_keys(void)
+{
+    player_snapshot_t state = {.wifi_connected = false, .capabilities = PLAYER_CAP_INTERNET_RADIO};
+    const player_command_t select = {.kind = PLAYER_COMMAND_SELECT_SOURCE,
+                                     .source = AUDIO_SOURCE_FM};
+    assert(player_control_decide(&state, &select) == PLAYER_OPERATION_INVALID);
+    // No network needed: the air is not the Wi-Fi.
+    state.capabilities |= PLAYER_CAP_FM;
+    assert(player_control_decide(&state, &select) == PLAYER_OPERATION_SELECT_SOURCE);
+
+    state.active_source = AUDIO_SOURCE_FM;
+    state.active_item_index = PLAYER_ITEM_NONE;
+    state.playback_state = PLAYER_PLAYBACK_STOPPED;
+    const player_command_t play = {.kind = PLAYER_COMMAND_PLAY};
+    const player_command_t toggle = {.kind = PLAYER_COMMAND_TOGGLE};
+    const player_command_t next = {.kind = PLAYER_COMMAND_NEXT_ITEM};
+    const player_command_t previous = {.kind = PLAYER_COMMAND_PREVIOUS_ITEM};
+    assert(player_control_decide(&state, &play) == PLAYER_OPERATION_START_SAVED);
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NONE);
+    state.playback_state = PLAYER_PLAYBACK_PLAYING;
+    assert(player_control_decide(&state, &toggle) == PLAYER_OPERATION_PAUSE);
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NEXT_ITEM);
+    assert(player_control_decide(&state, &previous) == PLAYER_OPERATION_PREVIOUS_ITEM);
+    state.playback_state = PLAYER_PLAYBACK_PAUSED;
+    assert(player_control_decide(&state, &toggle) == PLAYER_OPERATION_RESUME);
+    assert(player_control_decide(&state, &next) == PLAYER_OPERATION_NEXT_ITEM);
+    // The rotor's skip is not a seek.
+    const player_command_t skip = {.kind = PLAYER_COMMAND_NEXT_TRACK};
+    assert(player_control_decide(&state, &skip) == PLAYER_OPERATION_INVALID);
+}
+
+static void test_a_frequency_reads_with_one_decimal(void)
+{
+    char text[12];
+    player_fm_frequency_text(101200U, text, sizeof(text));
+    assert(strcmp(text, "101.2") == 0);
+    player_fm_frequency_text(87500U, text, sizeof(text));
+    assert(strcmp(text, "87.5") == 0);
+    player_fm_frequency_text(108000U, text, sizeof(text));
+    assert(strcmp(text, "108.0") == 0);
+    // A 50 kHz step rounds to the nearest tenth.
+    player_fm_frequency_text(99950U, text, sizeof(text));
+    assert(strcmp(text, "100.0") == 0);
+}
+
+static void test_the_signal_is_a_scale_that_does_not_flicker(void)
+{
+    assert(player_fm_signal_bars(0U, -1) == 0);
+    assert(player_fm_signal_bars(17U, -1) == 0);
+    assert(player_fm_signal_bars(18U, -1) == 1);
+    assert(player_fm_signal_bars(56U, -1) == 4);
+    assert(player_fm_signal_bars(127U, -1) == 5);
+    // On the boundary between 3 and 4 (48): a reading either side of it
+    // does not move the scale until it is 3 clear.
+    assert(player_fm_signal_bars(49U, 3) == 3);
+    assert(player_fm_signal_bars(50U, 3) == 3);
+    assert(player_fm_signal_bars(51U, 3) == 4);
+    assert(player_fm_signal_bars(47U, 4) == 4);
+    assert(player_fm_signal_bars(46U, 4) == 4);
+    assert(player_fm_signal_bars(45U, 4) == 3);
+    // A real change goes straight through.
+    assert(player_fm_signal_bars(10U, 4) == 0);
+    assert(player_fm_signal_bars(60U, 1) == 5);
+}
+
+static void test_snapshot_equality_notices_the_frequency(void)
+{
+    player_snapshot_t left = {.active_source = AUDIO_SOURCE_FM, .fm_khz = 101200U};
+    player_snapshot_t right = left;
+    assert(player_snapshot_equal(&left, &right));
+    right.fm_khz = 101300U;
+    assert(!player_snapshot_equal(&left, &right));
+}
+
 int main(void)
 {
+    test_the_tuner_is_a_source_while_it_answers_and_seeks_on_the_keys();
+    test_a_frequency_reads_with_one_decimal();
+    test_snapshot_equality_notices_the_frequency();
+    test_the_signal_is_a_scale_that_does_not_flicker();
     test_the_phone_is_a_source_only_while_the_module_answers();
     test_the_phones_queue_takes_both_keys_and_the_skip();
     test_the_track_keys_stop_at_the_ends_of_the_catalog();

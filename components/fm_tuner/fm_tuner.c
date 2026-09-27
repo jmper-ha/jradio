@@ -5,6 +5,7 @@
 #include "esp_check.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 static const char *TAG = "fm_tuner";
@@ -22,7 +23,19 @@ static const char *TAG = "fm_tuner";
  * PCM5122 will share it, and then it moves to the board with a getter. */
 static i2c_master_bus_handle_t s_bus;
 static i2c_master_dev_handle_t s_device;
+static SemaphoreHandle_t s_lock;
 static rda5807_state_t s_state = {.volume = RDA5807_VOLUME_MAX};
+
+/* Held for a whole call, a transfer or a few: the power-up is a sequence the
+ * status read must not land in the middle of. */
+#define LOCKED(call)                                                              \
+    do {                                                                          \
+        ESP_RETURN_ON_FALSE(s_device != NULL, ESP_ERR_INVALID_STATE, TAG, "no tuner"); \
+        xSemaphoreTake(s_lock, portMAX_DELAY);                                    \
+        const esp_err_t locked_result = (call);                                   \
+        xSemaphoreGive(s_lock);                                                   \
+        return locked_result;                                                     \
+    } while (0)
 
 static esp_err_t write_register(uint8_t reg, uint16_t value)
 {
@@ -43,6 +56,8 @@ static esp_err_t read_register(uint8_t reg, uint16_t *value)
 esp_err_t fm_tuner_init(void)
 {
     const board_config_t *board = board_config_get();
+    s_lock = xSemaphoreCreateMutex();
+    ESP_RETURN_ON_FALSE(s_lock != NULL, ESP_ERR_NO_MEM, TAG, "lock");
     const i2c_master_bus_config_t bus_config = {
         .i2c_port = I2C_NUM_0,
         .sda_io_num = board->i2c0_sda,
@@ -82,9 +97,8 @@ bool fm_tuner_present(void)
     return s_device != NULL;
 }
 
-esp_err_t fm_tuner_power(bool on)
+static esp_err_t power(bool on)
 {
-    ESP_RETURN_ON_FALSE(s_device != NULL, ESP_ERR_INVALID_STATE, TAG, "no tuner");
     s_state.enabled = on;
     if (!on) return write_register(RDA5807_REG_CONTROL, rda5807_control_word(&s_state, false, false, false));
     ESP_RETURN_ON_ERROR(write_register(RDA5807_REG_CONTROL,
@@ -98,31 +112,54 @@ esp_err_t fm_tuner_power(bool on)
     return write_register(RDA5807_REG_VOLUME, rda5807_volume_word(s_state.volume));
 }
 
-esp_err_t fm_tuner_tune(uint32_t khz)
+static esp_err_t set_volume(uint8_t volume)
 {
-    ESP_RETURN_ON_FALSE(s_device != NULL, ESP_ERR_INVALID_STATE, TAG, "no tuner");
-    return write_register(RDA5807_REG_CHANNEL, rda5807_tune_word(khz));
-}
-
-esp_err_t fm_tuner_seek(bool up)
-{
-    ESP_RETURN_ON_FALSE(s_device != NULL, ESP_ERR_INVALID_STATE, TAG, "no tuner");
-    return write_register(RDA5807_REG_CONTROL, rda5807_control_word(&s_state, false, true, up));
-}
-
-esp_err_t fm_tuner_set_volume(uint8_t volume)
-{
-    ESP_RETURN_ON_FALSE(s_device != NULL, ESP_ERR_INVALID_STATE, TAG, "no tuner");
     s_state.volume = volume > RDA5807_VOLUME_MAX ? RDA5807_VOLUME_MAX : volume;
     return write_register(RDA5807_REG_VOLUME, rda5807_volume_word(s_state.volume));
 }
 
-esp_err_t fm_tuner_status(rda5807_status_t *status)
+static esp_err_t set_muted(bool muted)
 {
-    ESP_RETURN_ON_FALSE(s_device != NULL && status != NULL, ESP_ERR_INVALID_STATE, TAG, "no tuner");
+    s_state.muted = muted;
+    return write_register(RDA5807_REG_CONTROL, rda5807_control_word(&s_state, false, false, false));
+}
+
+static esp_err_t read_status(rda5807_status_t *status)
+{
     uint16_t words[2] = {0U, 0U};
     ESP_RETURN_ON_ERROR(read_register(RDA5807_REG_STATUS, &words[0]), TAG, "status");
     ESP_RETURN_ON_ERROR(read_register(RDA5807_REG_SIGNAL, &words[1]), TAG, "signal");
     rda5807_parse_status(words[0], words[1], status);
     return ESP_OK;
+}
+
+esp_err_t fm_tuner_power(bool on)
+{
+    LOCKED(power(on));
+}
+
+esp_err_t fm_tuner_tune(uint32_t khz)
+{
+    LOCKED(write_register(RDA5807_REG_CHANNEL, rda5807_tune_word(khz)));
+}
+
+esp_err_t fm_tuner_seek(bool up)
+{
+    LOCKED(write_register(RDA5807_REG_CONTROL, rda5807_control_word(&s_state, false, true, up)));
+}
+
+esp_err_t fm_tuner_set_volume(uint8_t volume)
+{
+    LOCKED(set_volume(volume));
+}
+
+esp_err_t fm_tuner_set_muted(bool muted)
+{
+    LOCKED(set_muted(muted));
+}
+
+esp_err_t fm_tuner_status(rda5807_status_t *status)
+{
+    ESP_RETURN_ON_FALSE(status != NULL, ESP_ERR_INVALID_ARG, TAG, "status");
+    LOCKED(read_status(status));
 }

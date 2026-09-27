@@ -300,6 +300,14 @@ static void test_accepts_source_and_station_selection(void)
     assert(command.player.kind == PLAYER_COMMAND_SELECT_SOURCE);
     assert(command.player.source == AUDIO_SOURCE_BLUETOOTH);
 
+    /* And the tuner, likewise. */
+    const char *fm =
+        "{\"type\":\"command\",\"id\":\"source-6\","
+        "\"action\":\"source.select\",\"source\":\"fm\"}";
+    assert(parse(fm, &command) == WEB_PROTOCOL_OK);
+    assert(command.player.kind == PLAYER_COMMAND_SELECT_SOURCE);
+    assert(command.player.source == AUDIO_SOURCE_FM);
+
     const char *station =
         "{\"type\":\"command\",\"id\":\"43\",\"action\":\"list.select\",\"index\":3}";
     assert(parse(station, &command) == WEB_PROTOCOL_OK);
@@ -408,7 +416,7 @@ static void test_rejects_bad_envelope_and_exact_schema_violations(void)
         "{\"type\":\"command\",\"id\":\"1\",\"action\":\"player.toggle\",\"action\":\"player.play\"}",
         "{\"type\":\"command\",\"id\":\"1\",\"action\":\"player.toggle\",\"source\":\"internet_radio\"}",
         "{\"type\":\"command\",\"id\":\"1\",\"action\":\"source.select\"}",
-        "{\"type\":\"command\",\"id\":\"1\",\"action\":\"source.select\",\"source\":\"fm\"}",
+        "{\"type\":\"command\",\"id\":\"1\",\"action\":\"source.select\",\"source\":\"am\"}",
         "{\"type\":\"command\",\"id\":\"1\",\"action\":\"source.select\",\"source\":3}",
         "{\"type\":\"command\",\"id\":\"1\",\"action\":\"list.select\"}",
         "{\"type\":\"command\",\"id\":\"1\",\"action\":\"list.select\",\"index\":0,\"index\":1}",

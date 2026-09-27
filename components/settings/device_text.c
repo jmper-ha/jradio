@@ -155,6 +155,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_ERROR_YANDEX_REFRESH] = {"Обновить станции", "Refresh the stations"},
     [DEVICE_TEXT_ERROR_BAD_COMMAND] = {"Некорректная команда", "Malformed command"},
     [DEVICE_TEXT_ERROR_DEVICE_BUSY] = {"Устройство занято", "The device is busy"},
+    [DEVICE_TEXT_ERROR_FM_TUNER] = {"FM-тюнер не отвечает", "The FM tuner does not answer"},
 
     [DEVICE_TEXT_YANDEX_NOT_LINKED] = {"Аккаунт не привязан", "Account not linked"},
     [DEVICE_TEXT_YANDEX_LINKED] = {"Аккаунт привязан", "Account linked"},
@@ -180,6 +181,12 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
      "OK - refresh, hold - back"},
     [DEVICE_TEXT_HINT_LINK] = {"OK - привязать, удержание - назад", "OK - link, hold - back"},
     [DEVICE_TEXT_MINUTES_SHORT] = {"мин", "min"},
+
+    [DEVICE_TEXT_FM_MHZ] = {"МГц", "MHz"},
+    [DEVICE_TEXT_FM_STEREO] = {"Стерео", "Stereo"},
+    [DEVICE_TEXT_FM_MONO] = {"Моно", "Mono"},
+    [DEVICE_TEXT_FM_SIGNAL] = {"сигнал", "signal"},
+    [DEVICE_TEXT_FM_SEEKING] = {"Поиск станции…", "Seeking…"},
 };
 
 /* An id added to the enum without a string here does not compile. That is the

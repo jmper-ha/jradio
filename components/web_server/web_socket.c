@@ -160,6 +160,10 @@ static void write_capabilities(web_json_writer_t *writer,
     if ((player->capabilities & PLAYER_CAP_BLUETOOTH) != 0U) {
         write_capability(writer, &written, "bluetooth", AUDIO_SOURCE_BLUETOOTH, "", language);
     }
+    // The tuner has no list yet either: the frequency is the whole source.
+    if ((player->capabilities & PLAYER_CAP_FM) != 0U) {
+        write_capability(writer, &written, "fm", AUDIO_SOURCE_FM, "", language);
+    }
     web_json_literal(writer, "]");
 }
 
@@ -249,7 +253,9 @@ static void write_list(web_json_writer_t *writer, const player_snapshot_t *playe
     web_json_literal(writer, "\"list\":{\"kind\":");
     /* The phone has no list on this side at all: an empty kind is what the
      * page hides its list on. */
-    web_json_literal(writer, player->active_source == AUDIO_SOURCE_BLUETOOTH ? "\"\""
+    web_json_literal(writer, player->active_source == AUDIO_SOURCE_BLUETOOTH ||
+                                     player->active_source == AUDIO_SOURCE_FM
+                                 ? "\"\""
                              : browsable                                     ? "\"files\""
                                                                              : "\"stations\"");
     web_json_literal(writer, ",\"active_index\":");
@@ -784,6 +790,10 @@ static void capture_now_playing(const player_snapshot_t *player,
         const bool tagged = player_control_track_tags(&tags);
         ui_now_playing_for_phone(player->context, tagged ? &tags : NULL, now);
         secure_zero(&tags, sizeof(tags));
+        return;
+    }
+    if (player->active_source == AUDIO_SOURCE_FM) {
+        ui_now_playing_for_tuner(player->context, player->stream_title, now);
         return;
     }
     if (audio_source_is_stations(player->active_source)) {

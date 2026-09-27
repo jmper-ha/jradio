@@ -280,6 +280,12 @@
       'M0 5.6h12.69a2.7 2.7 0 1 0 0 2.8H0Z' +
       'M24 10.6H11.31a2.7 2.7 0 1 1 0 2.8H24Z' +
       'M0 15.6h12.69a2.7 2.7 0 1 0 0 2.8H0Z"/></svg>',
+    /* A receiver with its whip aerial: the air, not the internet. */
+    fm:
+      '<svg class="source-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+      '<path class="stroke" d="M5 9.5h14a1.6 1.6 0 0 1 1.6 1.6v7.3A1.6 1.6 0 0 1 19 20H5' +
+      'a1.6 1.6 0 0 1-1.6-1.6v-7.3A1.6 1.6 0 0 1 5 9.5ZM6.5 9.5l10-5.7M13.6 13.2h4M13.6 16.4h4"/>' +
+      '<circle cx="8.6" cy="14.8" r="2.3"/></svg>',
     /* The rune, as the panel draws it: a stem with the two bows. */
     bluetooth:
       '<svg class="source-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +

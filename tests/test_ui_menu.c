@@ -105,20 +105,21 @@ static void test_only_the_parts_this_build_has_get_a_row(void)
     assert(ui_menu_item_is_visible(UI_MENU_ITEM_INTERNET_RADIO, ALL));
     assert(ui_menu_item_is_visible(UI_MENU_ITEM_SETTINGS, ALL));
     const ui_menu_item_t parts[] = {UI_MENU_ITEM_USB_FILES, UI_MENU_ITEM_SD_CARD,
-                                    UI_MENU_ITEM_BLUETOOTH};
+                                    UI_MENU_ITEM_BLUETOOTH, UI_MENU_ITEM_FM_RADIO};
     for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); ++i) {
         assert(ui_menu_item_is_visible(parts[i], ALL));
         assert(!ui_menu_item_is_visible(parts[i], ALL & ~UI_MENU_VISIBLE(parts[i])));
     }
-    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_FM_RADIO, ALL));
     assert(ui_menu_item_is_visible(UI_MENU_ITEM_DLNA, ALL) == (bool)BOARD_HAS_DLNA);
     assert(ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, ALL) ==
            (bool)BOARD_HAS_YANDEX_MUSIC);
     assert(!ui_menu_item_is_visible(UI_MENU_ITEM_COUNT, ALL));
 
-    /* Two always, plus whatever this build has. */
-    const uint8_t expected = (uint8_t)(2 + BOARD_HAS_USB + BOARD_HAS_SD_CARD +
-                                       BOARD_HAS_BLUETOOTH + BOARD_HAS_DLNA + BOARD_HAS_YANDEX_MUSIC);
+    /* Two always, the four parts (every build has them, and ALL says the
+     * wiring does), plus the features this build has. Counting the parts by
+     * the header's BOARD_HAS_* passed only on a board whose header named all
+     * of them. */
+    const uint8_t expected = (uint8_t)(2 + 4 + BOARD_HAS_DLNA + BOARD_HAS_YANDEX_MUSIC);
     assert(ui_menu_visible_count(ALL) == expected);
 
     /* Walking the rows only ever lands on items this build has, which is what

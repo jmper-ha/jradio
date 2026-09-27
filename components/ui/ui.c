@@ -1995,6 +1995,24 @@ static void ui_update_bluetooth_status(const player_snapshot_t *snapshot)
     ui_set_stream_readings(snapshot);
 }
 
+static void ui_update_fm_status(const player_snapshot_t *snapshot)
+{
+    ui_now_playing_t now;
+    ui_now_playing_for_tuner(snapshot->context, snapshot->stream_title, &now);
+    ui_note_now_playing(&now);
+    ui_set_label_text_if_changed(s_source_title, now.heading[0] != '\0'
+                                                     ? now.heading
+                                                     : ui_text(DEVICE_TEXT_SOURCE_FM));
+    ui_scroller_set_text(&s_source_detail, now.title);
+    const char *state = "";
+    if (snapshot->playback_state != PLAYER_PLAYBACK_PLAYING &&
+        snapshot->playback_state != PLAYER_PLAYBACK_PAUSED) {
+        state = ui_radio_state_text(snapshot->playback_state);
+    }
+    ui_set_state_line_from(snapshot, state, now.artist);
+    ui_set_stream_readings(snapshot);
+}
+
 static void ui_update_radio_status(const player_snapshot_t *snapshot)
 {
     if (snapshot == NULL) return;
@@ -2005,6 +2023,10 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
     }
     if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_BLUETOOTH) {
         ui_update_bluetooth_status(snapshot);
+        return;
+    }
+    if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_FM) {
+        ui_update_fm_status(snapshot);
         return;
     }
     /* Both station sources render the same way: a name on top, a track under
@@ -2098,6 +2120,8 @@ static void ui_apply_source_visibility(void)
     ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_BLUETOOTH, board_has_bluetooth());
     ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_BLUETOOTH,
                                      board_has_bluetooth());
+    ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_FM_RADIO, board_has_fm_tuner());
+    ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_FM_RADIO, board_has_fm_tuner());
     ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_YANDEX_MUSIC,
                                s_device_settings.yandex_music);
     ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_YANDEX_MUSIC,
@@ -4509,8 +4533,9 @@ static void ui_show_source(void)
     /* The phone is not a list to choose from: the player screen is the whole
      * of this source, and while no phone is on it the screen says where to
      * look for the device. */
-    if (selected_source == AUDIO_SOURCE_BLUETOOTH) {
-        ui_load_source_screen(AUDIO_SOURCE_BLUETOOTH);
+    if (selected_source == AUDIO_SOURCE_BLUETOOTH || selected_source == AUDIO_SOURCE_FM) {
+        /* Nor is the tuner, until it has presets: choosing it plays it. */
+        ui_load_source_screen(selected_source);
         return;
     }
     // Both sources open on their list rather than the player: there is nothing
@@ -5975,9 +6000,11 @@ static void ui_handle_input(board_input_action_t action)
                     return;
                 }
                 command.kind = PLAYER_COMMAND_NEXT_TRACK;
-            } else if (has_list || source == AUDIO_SOURCE_BLUETOOTH) {
+            } else if (has_list || source == AUDIO_SOURCE_BLUETOOTH ||
+                       source == AUDIO_SOURCE_FM) {
                 /* The phone's queue has both directions, and no list on this
-                 * side to page through: the keys go straight to it. */
+                 * side to page through: the keys go straight to it. On the
+                 * tuner they seek up and down the band. */
                 command.kind = forward ? PLAYER_COMMAND_NEXT_ITEM
                                        : PLAYER_COMMAND_PREVIOUS_ITEM;
             } else {
@@ -6072,6 +6099,14 @@ static void ui_scroll_tick(void)
             ui_scroller_tick(&s_yandex_rows[row], mode, now);
         }
     }
+}
+
+/* The frequency the tuner settled on, whether or not autoplay is on: coming
+ * back to FM means coming back to it. The setter skips an unchanged value. */
+static void ui_remember_fm(const player_snapshot_t *snapshot)
+{
+    if (snapshot->active_source != AUDIO_SOURCE_FM || snapshot->fm_khz == 0U) return;
+    (void)device_settings_set_fm_frequency(&s_device_settings, snapshot->fm_khz);
 }
 
 static void ui_remember_playing(const player_snapshot_t *snapshot)
@@ -6191,6 +6226,7 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     s_last_usb_media = snapshot->usb_media;
     s_last_sd_media = snapshot->sd_media;
     s_last_files_entry_count = snapshot->files_entry_count;
+    ui_remember_fm(snapshot);
     ui_remember_playing(snapshot);
     if (s_files_unavailable &&
         ui_files_can_open(s_files_unavailable_source,
@@ -7025,6 +7061,9 @@ esp_err_t ui_init(void)
         ui_apply_display_rotation();
         ui_backlight_apply(s_device_settings.brightness);
         ui_apply_files_end();
+        /* Once, here: from now on the player follows the tuner and this
+         * screen writes down where it went. */
+        player_control_set_fm_frequency((uint32_t)s_device_settings.fm_frequency_khz);
     }
     /* After the settings are read and the visibility they decide is applied:
      * the model asks how many rows the home screen would have, and before this

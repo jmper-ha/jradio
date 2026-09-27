@@ -546,6 +546,29 @@ static void test_the_weather_settings_persist_and_are_checked(void)
     assert(strcmp(value, "wttr") == 0);
 }
 
+static void test_the_fm_frequency_persists_and_stays_in_the_band(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    assert(settings.fm_frequency_khz == 0UL);
+    assert(device_settings_set_fm_frequency(&settings, 101200UL));
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.fm_frequency_khz == 101200UL);
+    assert(!device_settings_set_fm_frequency(&settings, 86900UL));
+    assert(!device_settings_set_fm_frequency(&settings, 108100UL));
+    assert(settings.fm_frequency_khz == 101200UL);
+
+    // A hand-edited file out of the band reads as never tuned.
+    FILE *file = fopen(test_path, "w");
+    assert(file != NULL);
+    fputs("fm_frequency,76000\n", file);
+    fclose(file);
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.fm_frequency_khz == 0UL);
+}
+
 static void test_the_screensaver_settings_persist_and_are_checked(void)
 {
     reset_file();
@@ -742,6 +765,7 @@ static void test_a_corrupt_alarm_leaves_the_defaults(void)
 int main(void)
 {
     test_the_bluetooth_output_persists_and_forgets();
+    test_the_fm_frequency_persists_and_stays_in_the_band();
     test_defaults_and_load();
     test_values_and_unknown_lines_are_saved();
     test_invalid_values_do_not_change_model();

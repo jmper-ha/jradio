@@ -35,6 +35,7 @@
 #include "file_browser.h"
 #include "file_storage.h"
 #include "file_player.h"
+#include "fm_tuner.h"
 #include "sd_storage.h"
 #include "usb_storage.h"
 #include "wifi_provisioning.h"
@@ -759,6 +760,135 @@ static void player_bt_close(void)
     album_art_clear();
 }
 
+/* The FM tuner. Its sound is the module's own analogue output, so nothing
+ * here touches the I2S bus: opening is powering the chip and tuning it,
+ * closing is powering it down. The pause is the chip's mute. */
+#define PLAYER_FM_START_KHZ 87500U
+// How often a snapshot may read the chip's status; every task polls.
+#define PLAYER_FM_STATUS_MS 200U
+/* A seek clears STC as it starts, but a status read in the same breath can
+ * still see the last tune's. */
+#define PLAYER_FM_SEEK_SETTLE_MS 60U
+
+// The frequency to come back to: handed over from settings, then followed.
+static atomic_uint s_fm_khz = ATOMIC_VAR_INIT(0U);
+static atomic_bool s_fm_on = ATOMIC_VAR_INIT(false);
+static atomic_bool s_fm_muted = ATOMIC_VAR_INIT(false);
+static atomic_bool s_fm_failed = ATOMIC_VAR_INIT(false);
+static atomic_bool s_fm_seeking = ATOMIC_VAR_INIT(false);
+static atomic_uint s_fm_seek_started_ms = ATOMIC_VAR_INIT(0U);
+// The last status read, and when; one reader at a time refreshes it.
+static SemaphoreHandle_t s_fm_lock;
+static rda5807_status_t s_fm_status;
+static uint32_t s_fm_status_ms;
+static bool s_fm_status_seen;
+static uint8_t s_fm_volume_sent = 0xFFU;
+// The scale last shown, for its hysteresis; -1 before the first reading.
+static int s_fm_signal_bars = -1;
+
+static uint32_t player_now_ms(void)
+{
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
+
+/* The knob's percent onto the chip's 16 steps. Zero stays zero; anything
+ * above it is at least the first step, so the knob never goes quiet a click
+ * before its end. */
+static uint8_t player_fm_volume_for(uint8_t percent)
+{
+    if (percent == 0U) return 0U;
+    return (uint8_t)((percent * RDA5807_VOLUME_MAX + 99U) / 100U);
+}
+
+static void player_fm_sync_volume(void)
+{
+    const uint8_t volume = player_fm_volume_for(board_audio_volume());
+    if (volume == s_fm_volume_sent) return;
+    if (fm_tuner_set_volume(volume) == ESP_OK) s_fm_volume_sent = volume;
+}
+
+static bool player_fm_open(void)
+{
+    uint32_t khz = atomic_load_explicit(&s_fm_khz, memory_order_acquire);
+    if (khz == 0U) khz = PLAYER_FM_START_KHZ;
+    esp_err_t err = fm_tuner_power(true);
+    if (err == ESP_OK) err = fm_tuner_set_muted(false);
+    if (err == ESP_OK) err = fm_tuner_tune(khz);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "fm: the tuner did not start: %s", esp_err_to_name(err));
+        (void)fm_tuner_power(false);
+        atomic_store_explicit(&s_fm_failed, true, memory_order_release);
+        return false;
+    }
+    s_fm_volume_sent = 0xFFU;
+    player_fm_sync_volume();
+    atomic_store_explicit(&s_fm_khz, khz, memory_order_release);
+    atomic_store_explicit(&s_fm_muted, false, memory_order_release);
+    atomic_store_explicit(&s_fm_seeking, false, memory_order_release);
+    atomic_store_explicit(&s_fm_failed, false, memory_order_release);
+    atomic_store_explicit(&s_fm_on, true, memory_order_release);
+    ESP_LOGI(TAG, "fm: on at %u kHz", (unsigned)khz);
+    return true;
+}
+
+static void player_fm_close(void)
+{
+    atomic_store_explicit(&s_fm_on, false, memory_order_release);
+    atomic_store_explicit(&s_fm_seeking, false, memory_order_release);
+    (void)fm_tuner_power(false);
+}
+
+static void player_fm_mute(bool muted)
+{
+    if (fm_tuner_set_muted(muted) == ESP_OK) {
+        atomic_store_explicit(&s_fm_muted, muted, memory_order_release);
+    }
+}
+
+static void player_fm_seek(bool up)
+{
+    if (fm_tuner_seek(up) != ESP_OK) return;
+    atomic_store_explicit(&s_fm_seek_started_ms, player_now_ms(), memory_order_release);
+    atomic_store_explicit(&s_fm_seeking, true, memory_order_release);
+}
+
+/* The chip's status as of at most PLAYER_FM_STATUS_MS ago. A finished seek
+ * is noticed here, whoever happens to ask, and becomes the frequency to come
+ * back to. */
+static bool player_fm_status(rda5807_status_t *status, int *bars)
+{
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    const uint32_t now = player_now_ms();
+    if (!s_fm_status_seen || (uint32_t)(now - s_fm_status_ms) >= PLAYER_FM_STATUS_MS) {
+        rda5807_status_t fresh;
+        if (fm_tuner_status(&fresh) == ESP_OK) {
+            s_fm_signal_bars = player_fm_signal_bars(fresh.rssi, s_fm_signal_bars);
+            s_fm_status = fresh;
+            s_fm_status_ms = now;
+            s_fm_status_seen = true;
+            const uint32_t started =
+                atomic_load_explicit(&s_fm_seek_started_ms, memory_order_acquire);
+            if (atomic_load_explicit(&s_fm_seeking, memory_order_acquire) &&
+                fresh.tune_complete && (uint32_t)(now - started) >= PLAYER_FM_SEEK_SETTLE_MS) {
+                atomic_store_explicit(&s_fm_seeking, false, memory_order_release);
+                atomic_store_explicit(&s_fm_khz, fresh.khz, memory_order_release);
+                ESP_LOGI(TAG, "fm: seek stopped at %u kHz%s", (unsigned)fresh.khz,
+                         fresh.seek_failed ? " (nothing found)" : "");
+            }
+        }
+    }
+    *status = s_fm_status;
+    *bars = s_fm_signal_bars;
+    const bool seen = s_fm_status_seen;
+    xSemaphoreGive(s_fm_lock);
+    return seen;
+}
+
+void player_control_set_fm_frequency(uint32_t khz)
+{
+    atomic_store_explicit(&s_fm_khz, khz, memory_order_release);
+}
+
 /* The knob and the phone's slider, kept the same: the knob's change goes to
  * the module, the phone's comes back to the board so the panel shows it. */
 static void player_bt_sync_volume(void)
@@ -788,6 +918,8 @@ static bool player_stop_active_source(audio_source_t source)
 {
     if (source == AUDIO_SOURCE_BLUETOOTH) {
         player_bt_close();
+    } else if (source == AUDIO_SOURCE_FM) {
+        player_fm_close();
     } else if (audio_source_is_stations(source)) {
         const esp_err_t result = internet_radio_stop();
         if (result != ESP_OK) {
@@ -1013,6 +1145,11 @@ static void player_control_task(void *arg)
             if (command.source == AUDIO_SOURCE_YANDEX) {
                 (void)yandex_catalog_request_refresh();
             }
+            /* The one source that plays on being chosen: there is nothing to
+             * pick after it - no list, no phone - so choosing FM is choosing
+             * to hear it. A tuner that does not answer stays the source, in
+             * ERROR, so the screen says why and a second choice retries. */
+            if (command.source == AUDIO_SOURCE_FM) (void)player_fm_open();
             if (command.source == AUDIO_SOURCE_BLUETOOTH && !player_bt_open()) {
                 /* The module refused or went quiet: the source is not open,
                  * and saying so here is what keeps the manager and the bus in
@@ -1178,8 +1315,7 @@ static void player_control_task(void *arg)
                 break;
             }
             case AUDIO_SOURCE_FM:
-                /* Named in the enum, not built. Nothing to resume, and saying
-                 * so here is what keeps the switch exhaustive. */
+                started = player_fm_open();
                 break;
             }
             atomic_store_explicit(&s_no_resume_at_ms,
@@ -1194,6 +1330,8 @@ static void player_control_task(void *arg)
         case PLAYER_OPERATION_PAUSE:
             if (snapshot.active_source == AUDIO_SOURCE_BLUETOOTH) {
                 (void)bt_link_passthrough(JBT_KEY_PAUSE);
+            } else if (snapshot.active_source == AUDIO_SOURCE_FM) {
+                player_fm_mute(true);
             } else if (audio_source_is_files(snapshot.active_source)) {
                 (void)file_player_pause();
             } else {
@@ -1203,6 +1341,8 @@ static void player_control_task(void *arg)
         case PLAYER_OPERATION_RESUME:
             if (snapshot.active_source == AUDIO_SOURCE_BLUETOOTH) {
                 (void)bt_link_passthrough(JBT_KEY_PLAY);
+            } else if (snapshot.active_source == AUDIO_SOURCE_FM) {
+                player_fm_mute(false);
             } else if (audio_source_is_files(snapshot.active_source)) {
                 (void)file_player_resume();
             } else {
@@ -1266,6 +1406,8 @@ static void player_control_task(void *arg)
             const bool forward = operation == PLAYER_OPERATION_NEXT_ITEM;
             if (snapshot.active_source == AUDIO_SOURCE_BLUETOOTH) {
                 (void)bt_link_passthrough(forward ? JBT_KEY_NEXT : JBT_KEY_PREV);
+            } else if (snapshot.active_source == AUDIO_SOURCE_FM) {
+                player_fm_seek(forward);
             } else if (audio_source_is_files(snapshot.active_source)) {
                 player_file_step(forward);
             } else if (snapshot.active_source == AUDIO_SOURCE_DLNA) {
@@ -1388,6 +1530,7 @@ static void player_speaker_key(jbt_key_t key)
 esp_err_t player_control_init(void)
 {
     s_bt_volume_lock = xSemaphoreCreateMutex();
+    s_fm_lock = xSemaphoreCreateMutex();
     if (s_bt_volume_lock == NULL) return ESP_ERR_NO_MEM;
     bt_link_set_key_listener(player_speaker_key);
     if (s_command_queue != NULL) {
@@ -1547,6 +1690,9 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     if (board_has_bluetooth() && bt_link_alive()) {
         snapshot->capabilities |= PLAYER_CAP_BLUETOOTH;
     }
+    if (board_has_fm_tuner() && fm_tuner_present()) {
+        snapshot->capabilities |= PLAYER_CAP_FM;
+    }
     snapshot->active_source =
         (audio_source_t)atomic_load_explicit(&s_active_source, memory_order_acquire);
 
@@ -1565,6 +1711,51 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     snapshot->wifi_setup_ap = wifi_mode == WIFI_PROVISIONING_AP_SETUP;
 
     player_note_nothing_started(snapshot);
+
+    if (snapshot->active_source == AUDIO_SOURCE_FM) {
+        /* The frequency takes the station's place and the reception the
+         * track's, so both faces draw it through the station derivation with
+         * no list behind it, as they draw the phone. */
+        snapshot->active_item_index = PLAYER_ITEM_NONE;
+        snapshot->item_count = 0U;
+        snprintf(snapshot->codec, sizeof(snapshot->codec), "FM");
+        if (atomic_load_explicit(&s_fm_failed, memory_order_acquire)) {
+            snapshot->playback_state = PLAYER_PLAYBACK_ERROR;
+            snprintf(snapshot->error, sizeof(snapshot->error), "%s",
+                     player_text(DEVICE_TEXT_ERROR_FM_TUNER));
+            return;
+        }
+        if (!atomic_load_explicit(&s_fm_on, memory_order_acquire)) {
+            snapshot->playback_state = PLAYER_PLAYBACK_STOPPED;
+            return;
+        }
+        player_fm_sync_volume();
+        snapshot->playback_state = atomic_load_explicit(&s_fm_muted, memory_order_acquire)
+                                       ? PLAYER_PLAYBACK_PAUSED
+                                       : PLAYER_PLAYBACK_PLAYING;
+        rda5807_status_t status;
+        int bars = 0;
+        const bool seen = player_fm_status(&status, &bars);
+        const bool seeking = atomic_load_explicit(&s_fm_seeking, memory_order_acquire);
+        const uint32_t settled = atomic_load_explicit(&s_fm_khz, memory_order_acquire);
+        snapshot->fm_khz = settled;
+        /* While a seek runs the chip's channel moves, and showing it move
+         * is what says the seek is working. */
+        char frequency[12];
+        player_fm_frequency_text(seen && seeking ? status.khz : settled, frequency,
+                                 sizeof(frequency));
+        snprintf(snapshot->context, sizeof(snapshot->context), "%s %s", frequency,
+                 player_text(DEVICE_TEXT_FM_MHZ));
+        if (seeking) {
+            snprintf(snapshot->stream_title, sizeof(snapshot->stream_title), "%s",
+                     player_text(DEVICE_TEXT_FM_SEEKING));
+        } else if (seen) {
+            snprintf(snapshot->stream_title, sizeof(snapshot->stream_title), "%s, %s %d/%d",
+                     player_text(status.stereo ? DEVICE_TEXT_FM_STEREO : DEVICE_TEXT_FM_MONO),
+                     player_text(DEVICE_TEXT_FM_SIGNAL), bars, PLAYER_FM_SIGNAL_BARS);
+        }
+        return;
+    }
 
     if (snapshot->active_source == AUDIO_SOURCE_BLUETOOTH) {
         /* What the module last said. The phone's name takes the place of a

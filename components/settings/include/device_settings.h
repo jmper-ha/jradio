@@ -264,6 +264,10 @@ typedef struct {
      * the page and to the sleep. */
     alarm_config_t alarm;
     device_last_source_t last_source;
+    /* The FM frequency last listened to, in kHz; 0 until one has been. Its
+     * own key rather than a resume point: the tuner comes back to it every
+     * time the source is chosen, not only after a restart. */
+    unsigned long fm_frequency_khz;
     char last_file[DEVICE_LAST_FILE_MAX];
     char last_yandex_id[DEVICE_LAST_YANDEX_ID_MAX];
     char last_yandex_name[DEVICE_LAST_YANDEX_NAME_MAX];
@@ -381,6 +385,8 @@ bool device_settings_set_alarm_volume(device_settings_t *settings, unsigned char
  * behind. Writing "none" clears the resume point. */
 bool device_settings_set_last_source(device_settings_t *settings,
                                      device_last_source_t source);
+/* Refused outside the FM band, 87.0-108.0 MHz. */
+bool device_settings_set_fm_frequency(device_settings_t *settings, unsigned long khz);
 bool device_settings_set_last_file(device_settings_t *settings, const char *path);
 /* The three together, because they are one identity and are only ever written
  * as one - into one key, so that no power cut can leave an id beside the

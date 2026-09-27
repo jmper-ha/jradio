@@ -1763,7 +1763,8 @@ static void ui_update_footer(void)
             snprintf(left_text, sizeof(left_text), "%s", elapsed_text);
         }
     } else if (audio_source_is_files(ui_player_state_source(&s_player_ui)) ||
-               ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_DLNA) {
+               ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_DLNA ||
+               ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_FM) {
         /* A file's buffer sits at the brim from the first block, so the
          * reading says nothing; and until the decoder has found its first
          * frame there is no position to show either. The slot stays empty
@@ -1773,7 +1774,9 @@ static void ui_update_footer(void)
          * reading at all. player_control_input_fill() answers only for files
          * and for stations, so this source got the slot, the strip and a
          * permanent "Буфер --" - a gauge with no needle, which is worse than
-         * no gauge. */
+         * no gauge. The tuner has no buffer at all - its samples go from the
+         * I2S input to the output block by block - and kept the radio's
+         * strip on screen until it was added here. */
         left_text[0] = '\0';
     } else {
         buffer_slot = true;

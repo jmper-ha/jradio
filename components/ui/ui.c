@@ -2141,8 +2141,8 @@ static void ui_update_fm_status(const player_snapshot_t *snapshot)
     char radiotext[RDS_RT_TEXT_MAX];
     player_control_fm_rds(rds_name, sizeof(rds_name), radiotext, sizeof(radiotext));
     ui_now_playing_t now;
-    ui_now_playing_for_tuner(snapshot->context, snapshot->stream_title,
-                             on_preset ? preset.name : NULL, rds_name, radiotext, &now);
+    ui_now_playing_for_tuner(snapshot->context, on_preset ? preset.name : NULL, rds_name,
+                             radiotext, &now);
     ui_note_now_playing(&now);
     const bool named = on_preset || rds_name[0] != '\0';
     /* The digits say the number alone: the unit is the one thing about it

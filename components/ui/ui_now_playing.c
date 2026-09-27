@@ -204,9 +204,9 @@ static bool has_text(const char *text)
     return text != NULL && text[0] != '\0';
 }
 
-void ui_now_playing_for_tuner(const char *frequency, const char *reception,
-                              const char *preset_name, const char *rds_name,
-                              const char *radiotext, ui_now_playing_t *out)
+void ui_now_playing_for_tuner(const char *frequency, const char *preset_name,
+                              const char *rds_name, const char *radiotext,
+                              ui_now_playing_t *out)
 {
     if (out == NULL) return;
     memset(out, 0, sizeof(*out));
@@ -218,8 +218,7 @@ void ui_now_playing_for_tuner(const char *frequency, const char *reception,
     } else {
         copy_string(heard, out->heading, sizeof(out->heading));
     }
-    copy_string(has_text(radiotext) ? radiotext : has_text(reception) ? reception : "", out->title,
-                sizeof(out->title));
+    copy_string(has_text(radiotext) ? radiotext : "", out->title, sizeof(out->title));
 }
 
 void ui_now_playing_for_station(bool name_from_list, const char *list_name,

@@ -798,8 +798,19 @@ static void capture_now_playing(const player_snapshot_t *player,
         char rds_name[RDS_PS_TEXT_MAX];
         char radiotext[RDS_RT_TEXT_MAX];
         player_control_fm_rds(rds_name, sizeof(rds_name), radiotext, sizeof(radiotext));
-        ui_now_playing_for_tuner(player->context, player->stream_title,
-                                 on_preset ? preset.name : NULL, rds_name, radiotext, now);
+        ui_now_playing_t tuner;
+        ui_now_playing_for_tuner(player->context, on_preset ? preset.name : NULL, rds_name,
+                                 radiotext, &tuner);
+        /* The page's large line is the title, the one under it the
+         * performer, the last the context. The station goes first and large,
+         * the radiotext under it, the frequency last - the order Ден asked
+         * for, and the panel's, where the name heads the block. */
+        memset(now, 0, sizeof(*now));
+        snprintf(now->title, sizeof(now->title), "%s", tuner.heading);
+        snprintf(now->artist, sizeof(now->artist), "%s", tuner.title);
+        // A frequency, a few bytes; the performer's room is for ICY lines.
+        snprintf(now->heading, sizeof(now->heading), "%.*s", (int)(sizeof(now->heading) - 1U),
+                 tuner.artist);
         return;
     }
     if (audio_source_is_stations(player->active_source)) {

@@ -94,12 +94,13 @@ void ui_now_playing_for_phone(const char *phone, const audio_tags_t *tags,
 /* The tuner. The name is the preset's, or failing that the one the station
  * sends over RDS; it goes where a station's goes, with the frequency under it
  * as the performer, and with no name at all the frequency is the heading. The
- * track line is the radiotext when the station sends one, the reception
- * ("Stereo, signal 3/5") otherwise - never split, since neither is
- * "performer - track" by any rule a station keeps to. */
-void ui_now_playing_for_tuner(const char *frequency, const char *reception,
-                              const char *preset_name, const char *rds_name,
-                              const char *radiotext, ui_now_playing_t *out);
+ * track line is the radiotext, when the station sends one, and empty
+ * otherwise - never split, since no station keeps to "performer - track". The
+ * reception is not a line here: the panel draws it as marks, and the page
+ * showed "Stereo, signal 5/5" where the panel had the station's name. */
+void ui_now_playing_for_tuner(const char *frequency, const char *preset_name,
+                              const char *rds_name, const char *radiotext,
+                              ui_now_playing_t *out);
 
 /* A station, from the list and from the stream. */
 void ui_now_playing_for_station(bool name_from_list, const char *list_name,

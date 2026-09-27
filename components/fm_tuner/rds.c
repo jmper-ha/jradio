@@ -112,15 +112,6 @@ static bool rds_feed_rt(rds_decoder_t *decoder, uint16_t block_b, uint16_t block
 {
     const int8_t flag = (int8_t)((block_b >> 4) & 0x1U);
     const uint8_t per_segment = version_b ? 2U : 4U;
-    /* A new text, by the station's own flag, or a switch between the two
-     * versions: what was collected belongs to the old one. */
-    if (flag != decoder->rt_flag || per_segment != decoder->rt_segment_chars) {
-        memset(decoder->rt, ' ', sizeof(decoder->rt));
-        decoder->rt_segments = 0U;
-        decoder->rt_end = (uint8_t)(per_segment * 16U);
-        decoder->rt_flag = flag;
-        decoder->rt_segment_chars = per_segment;
-    }
     const uint8_t segment = (uint8_t)(block_b & 0xFU);
     uint8_t chars[4];
     if (version_b) {
@@ -133,6 +124,26 @@ static bool rds_feed_rt(rds_decoder_t *decoder, uint16_t block_b, uint16_t block
         chars[3] = (uint8_t)block_d;
     }
     const uint8_t at = (uint8_t)(segment * per_segment);
+    /* Believed on the second sighting alike, flag and all. */
+    const uint16_t bit = (uint16_t)(1U << segment);
+    const uint16_t flag_bit = flag != 0 ? bit : 0U;
+    uint8_t *candidate = &decoder->rt_candidate[at];
+    if ((decoder->rt_candidates & bit) == 0U || memcmp(candidate, chars, per_segment) != 0 ||
+        (decoder->rt_candidate_flags & bit) != flag_bit) {
+        memcpy(candidate, chars, per_segment);
+        decoder->rt_candidates |= bit;
+        decoder->rt_candidate_flags = (uint16_t)((decoder->rt_candidate_flags & ~bit) | flag_bit);
+        return false;
+    }
+    /* A new text, by the station's own flag, or a switch between the two
+     * versions: what was collected belongs to the old one. */
+    if (flag != decoder->rt_flag || per_segment != decoder->rt_segment_chars) {
+        memset(decoder->rt, ' ', sizeof(decoder->rt));
+        decoder->rt_segments = 0U;
+        decoder->rt_end = (uint8_t)(per_segment * 16U);
+        decoder->rt_flag = flag;
+        decoder->rt_segment_chars = per_segment;
+    }
     for (uint8_t i = 0U; i < per_segment; ++i) {
         if (chars[i] == RDS_CARRIAGE_RETURN && at + i < decoder->rt_end) {
             decoder->rt_end = (uint8_t)(at + i);
@@ -155,14 +166,24 @@ bool rds_decoder_heard(const rds_decoder_t *decoder)
 bool rds_decoder_feed(rds_decoder_t *decoder, const uint16_t blocks[4], bool block_a_ok,
                       bool block_b_ok)
 {
-    if (decoder == NULL || blocks == NULL || !block_b_ok) return false;
+    if (decoder == NULL || blocks == NULL) return false;
+    // The same group read again, not sent again: stations rotate their groups.
+    if (memcmp(blocks, decoder->last_group, sizeof(decoder->last_group)) == 0) return false;
+    memcpy(decoder->last_group, blocks, sizeof(decoder->last_group));
+    if (!block_b_ok) return false;
     /* Another station's code: nothing collected so far is about it. Version
      * B groups repeat the code in block C, but block A always has it. */
     if (block_a_ok && blocks[0] != 0U && blocks[0] != decoder->pi) {
-        /* And not on one sighting: the chip calls block A clean on groups
-         * whose code is plainly noise - 0xEE60 and 0xF730 among 0x7730 on
-         * the bench - and each of those used to throw the name away. A
-         * code is another station's once it has come twice in a row. */
+        /* Once a station's code is settled nothing replaces it: on one
+         * frequency the station does not change, and the tuner starts the
+         * decoder afresh whenever it moves. The chip calls block A clean on
+         * groups whose code is plainly noise - 0xEE60, 0xE28C, 0x6E8C among
+         * 0x7746 on the bench - and noise comes in bursts, the same wrong
+         * code twice running now and then: each time it was taken for
+         * another station and the text vanished. */
+        if (rds_decoder_heard(decoder)) return false;
+        /* Before that, a code is the station's once it has come twice in a
+         * row - the first one heard may itself be noise. */
         if (decoder->pi == 0U || blocks[0] == decoder->pi_candidate) {
             if (decoder->pi != 0U) rds_decoder_reset(decoder);
             decoder->pi = blocks[0];
@@ -176,13 +197,27 @@ bool rds_decoder_feed(rds_decoder_t *decoder, const uint16_t blocks[4], bool blo
         decoder->pi_candidate = 0U;
         if (decoder->pi_repeats < UINT8_MAX) ++decoder->pi_repeats;
     }
+    // Only the station's own groups are read; see the header.
+    if (!block_a_ok || blocks[0] != decoder->pi) return false;
     const uint8_t type = (uint8_t)(blocks[1] >> 12);
     const bool version_b = (blocks[1] & 0x0800U) != 0U;
     bool changed = false;
+    if (type == 2U) {
+        decoder->rt_quiet = 0U;
+    } else if (decoder->rt_quiet < UINT16_MAX) {
+        ++decoder->rt_quiet;
+    }
     if (type == 0U) {
         changed = rds_feed_ps(decoder, blocks[1], blocks[3]);
     } else if (type == 2U) {
         changed = rds_feed_rt(decoder, blocks[1], blocks[2], blocks[3], version_b);
+    }
+    // The station has stopped sending a text: the last one is not current.
+    if (decoder->rt_quiet >= RDS_RT_STALE_GROUPS && decoder->rt_text[0] != '\0') {
+        decoder->rt_text[0] = '\0';
+        decoder->rt_segments = 0U;
+        decoder->rt_candidates = 0U;
+        changed = true;
     }
     if (changed) ++decoder->revision;
     return changed;

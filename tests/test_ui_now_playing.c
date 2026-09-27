@@ -235,38 +235,34 @@ static void test_neither_builder_writes_through_a_null(void)
     assert(now.heading[0] == '\0' && now.artist[0] == '\0' && now.title[0] == '\0');
 }
 
-static void test_the_tuner_is_its_frequency_over_its_reception(void)
+static void test_the_tuner_is_its_name_over_its_frequency(void)
 {
     ui_now_playing_t now;
-    // A dash in the reception line is not a performer's.
-    ui_now_playing_for_tuner("101.2 МГц", "Стерео - сигнал 3/5", NULL, NULL, NULL, &now);
+    // No name: the frequency heads the block, and nothing is under it.
+    ui_now_playing_for_tuner("101.2 МГц", NULL, NULL, NULL, &now);
     assert(strcmp(now.heading, "101.2 МГц") == 0);
-    assert(strcmp(now.title, "Стерео - сигнал 3/5") == 0);
-    assert(now.artist[0] == '\0');
+    assert(now.artist[0] == '\0' && now.title[0] == '\0');
     // A named preset heads the block, with the frequency under it.
-    ui_now_playing_for_tuner("98.8 МГц", "Стерео, сигнал 4/5", "Радио Шоколад", "CHOCO", NULL,
-                             &now);
+    ui_now_playing_for_tuner("98.8 МГц", "Радио Шоколад", "CHOCO", NULL, &now);
     assert(strcmp(now.heading, "Радио Шоколад") == 0);
     assert(strcmp(now.artist, "98.8 МГц") == 0);
-    assert(strcmp(now.title, "Стерео, сигнал 4/5") == 0);
+    assert(now.title[0] == '\0');
     // A nameless one, or none, takes the name the station sends.
-    ui_now_playing_for_tuner("98.8 МГц", "Моно", "", "CHOCO", NULL, &now);
+    ui_now_playing_for_tuner("98.8 МГц", "", "CHOCO", NULL, &now);
     assert(strcmp(now.heading, "CHOCO") == 0);
     assert(strcmp(now.artist, "98.8 МГц") == 0);
     // And the radiotext, when there is one, is the track line - unsplit.
-    ui_now_playing_for_tuner("98.8 МГц", "Моно", NULL, "CHOCO", "Sade - Smooth Operator", &now);
+    ui_now_playing_for_tuner("98.8 МГц", NULL, "CHOCO", "Sade - Smooth Operator", &now);
     assert(strcmp(now.title, "Sade - Smooth Operator") == 0);
-    ui_now_playing_for_tuner("98.8 МГц", "", "", "", "", &now);
-    assert(strcmp(now.heading, "98.8 МГц") == 0);
-    assert(now.artist[0] == '\0' && now.title[0] == '\0');
-    ui_now_playing_for_tuner(NULL, NULL, NULL, NULL, NULL, &now);
+    assert(strcmp(now.artist, "98.8 МГц") == 0);
+    ui_now_playing_for_tuner(NULL, NULL, NULL, NULL, &now);
     assert(now.heading[0] == '\0' && now.title[0] == '\0');
-    ui_now_playing_for_tuner("x", "y", "z", "w", "v", NULL);
+    ui_now_playing_for_tuner("x", "z", "w", "v", NULL);
 }
 
 int main(void)
 {
-    test_the_tuner_is_its_frequency_over_its_reception();
+    test_the_tuner_is_its_name_over_its_frequency();
     test_an_icy_title_splits_into_performer_and_track();
     test_a_spaced_dash_of_either_kind_counts();
     test_a_lopsided_or_missing_title_is_left_whole();

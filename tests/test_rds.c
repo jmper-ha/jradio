@@ -7,12 +7,23 @@
 
 #define PI 0x7201U
 
-/* Group 0A, segment `segment`, two characters. */
+/* Another group of the station's, of a type nothing here reads: what a
+ * station sends between the groups a test is about. */
+static void filler(rds_decoder_t *decoder)
+{
+    static uint16_t count;
+    const uint16_t blocks[4] = {PI, 0xF000U, 0U, ++count};
+    (void)rds_decoder_feed(decoder, blocks, true, true);
+}
+
+/* Group 0A, segment `segment`, two characters - with a group of something
+ * else after it, as on the air, so the next one is not a second read of it. */
 static void ps(rds_decoder_t *decoder, unsigned segment, const char *two)
 {
     const uint16_t blocks[4] = {PI, (uint16_t)(0x0000U | segment), 0U,
                                 (uint16_t)(((uint8_t)two[0] << 8) | (uint8_t)two[1])};
     (void)rds_decoder_feed(decoder, blocks, true, true);
+    filler(decoder);
 }
 
 static void ps_name(rds_decoder_t *decoder, const char *eight)
@@ -20,25 +31,22 @@ static void ps_name(rds_decoder_t *decoder, const char *eight)
     for (unsigned segment = 0U; segment < 4U; ++segment) ps(decoder, segment, eight + segment * 2U);
 }
 
-/* Group 2A, text flag `flag`, segment `segment`, four characters. */
-static void rt(rds_decoder_t *decoder, unsigned flag, unsigned segment, const char *four)
+/* Group 2A, text flag `flag`, segment `segment`, four characters - once. */
+static void rt_once(rds_decoder_t *decoder, unsigned flag, unsigned segment, const char *four)
 {
     const uint16_t blocks[4] = {
         PI, (uint16_t)(0x2000U | (flag << 4) | segment),
         (uint16_t)(((uint8_t)four[0] << 8) | (uint8_t)four[1]),
         (uint16_t)(((uint8_t)four[2] << 8) | (uint8_t)four[3])};
     (void)rds_decoder_feed(decoder, blocks, true, true);
+    filler(decoder);
 }
 
-static const uint16_t *blocks_of_pi(uint16_t pi)
+// The way a station sends it: every piece comes round more than once.
+static void rt(rds_decoder_t *decoder, unsigned flag, unsigned segment, const char *four)
 {
-    // A group of a type nothing here reads: it only carries the code.
-    static uint16_t blocks[4];
-    blocks[0] = pi;
-    blocks[1] = 0xF000U;
-    blocks[2] = 0U;
-    blocks[3] = 0U;
-    return blocks;
+    rt_once(decoder, flag, segment, four);
+    rt_once(decoder, flag, segment, four);
 }
 
 static void test_the_name_needs_every_piece_twice(void)
@@ -145,31 +153,42 @@ static void test_radiotext_shows_once_it_is_whole(void)
     assert(strcmp(decoder.rt_text, "Next") == 0);
 }
 
-static void test_another_station_starts_again(void)
+static void test_a_settled_station_is_not_replaced(void)
 {
     rds_decoder_t decoder;
     rds_decoder_reset(&decoder);
     ps_name(&decoder, "FIRST   ");
     ps_name(&decoder, "FIRST   ");
     assert(strcmp(decoder.ps_text, "FIRST") == 0);
-    const uint32_t before = decoder.revision;
-    /* A code out of a damaged block A is not another station. */
+    assert(rds_decoder_heard(&decoder));
+    /* A code out of a damaged block A is nothing. */
     const uint16_t noise[4] = {0x3495U, 0x0000U, 0U, ('F' << 8) | 'I'};
     (void)rds_decoder_feed(&decoder, noise, false, true);
     assert(strcmp(decoder.ps_text, "FIRST") == 0);
+    /* Nor is a burst of noise with the same wrong code twice running, which
+       the chip calls clean: once the station is settled, only a retune (a
+       reset) starts another. */
+    const uint16_t burst[4] = {0xE28CU, 0x0000U, 0U, ('S' << 8) | 'E'};
+    const uint16_t burst_next[4] = {0xE28CU, 0x0001U, 0U, ('C' << 8) | 'O'};
+    (void)rds_decoder_feed(&decoder, burst, true, true);
+    (void)rds_decoder_feed(&decoder, burst_next, true, true);
+    (void)rds_decoder_feed(&decoder, burst, true, true);
+    assert(strcmp(decoder.ps_text, "FIRST") == 0);
     assert(decoder.pi == PI);
-    /* Nor is one that the chip called clean but comes only once. */
-    const uint16_t once[4] = {0xEE60U, 0x0000U, 0U, ('F' << 8) | 'I'};
-    (void)rds_decoder_feed(&decoder, once, true, true);
-    assert(strcmp(decoder.ps_text, "FIRST") == 0);
-    (void)rds_decoder_feed(&decoder, blocks_of_pi(PI), true, true);
-    const uint16_t other[4] = {0x7202U, 0x0000U, 0U, ('S' << 8) | 'E'};
-    (void)rds_decoder_feed(&decoder, other, true, true);
-    assert(strcmp(decoder.ps_text, "FIRST") == 0);
-    (void)rds_decoder_feed(&decoder, other, true, true);
-    assert(decoder.ps_text[0] == '\0');
-    assert(decoder.revision != before);
-    assert(decoder.pi == 0x7202U);
+}
+
+static void test_the_first_code_must_come_twice_before_it_settles(void)
+{
+    rds_decoder_t decoder;
+    rds_decoder_reset(&decoder);
+    // Noise first: taken as the code, but not settled.
+    const uint16_t noise[4] = {0x3495U, 0x0000U, 0U, ('X' << 8) | 'X'};
+    (void)rds_decoder_feed(&decoder, noise, true, true);
+    assert(decoder.pi == 0x3495U && !rds_decoder_heard(&decoder));
+    // The real station, twice running, takes over.
+    filler(&decoder);
+    filler(&decoder);
+    assert(decoder.pi == PI);
 }
 
 static void test_the_station_is_heard_by_its_code(void)
@@ -184,21 +203,83 @@ static void test_the_station_is_heard_by_its_code(void)
         (void)rds_decoder_feed(&decoder, blocks, true, true);
     }
     assert(!rds_decoder_heard(&decoder));
-    // A station: its code three times running, whatever the groups carry.
+    // A station: its code three times running, in whatever groups.
     rds_decoder_reset(&decoder);
-    const uint16_t station[4] = {PI, 0xF000U, 0U, 0U};
-    (void)rds_decoder_feed(&decoder, station, true, true);
-    (void)rds_decoder_feed(&decoder, station, true, true);
+    filler(&decoder);
+    filler(&decoder);
     assert(!rds_decoder_heard(&decoder));
-    (void)rds_decoder_feed(&decoder, station, true, true);
+    filler(&decoder);
     assert(rds_decoder_heard(&decoder));
     assert(decoder.ps_text[0] == '\0');  // long before any name
     rds_decoder_reset(&decoder);
     assert(!rds_decoder_heard(&decoder));
 }
 
+static void test_noise_puts_nothing_into_the_text(void)
+{
+    rds_decoder_t decoder;
+    rds_decoder_reset(&decoder);
+    rt(&decoder, 0U, 0U, "Now ");
+    rt(&decoder, 0U, 1U, "on\r ");
+    assert(strcmp(decoder.rt_text, "Now on") == 0);
+    // One spoiled sighting of a piece is not believed.
+    rt_once(&decoder, 0U, 1U, "o\x93\xfa\r");
+    assert(strcmp(decoder.rt_text, "Now on") == 0);
+    /* Nor is a whole group under another code - noise comes that way, with a
+       different code each time. */
+    const uint16_t noise[4] = {0x9468U, 0x2001U, ('X' << 8) | 'Y', ('\r' << 8) | ' '};
+    const uint16_t more_noise[4] = {0x1444U, 0x2001U, ('X' << 8) | 'Y', ('\r' << 8) | ' '};
+    (void)rds_decoder_feed(&decoder, noise, true, true);
+    (void)rds_decoder_feed(&decoder, more_noise, true, true);
+    assert(strcmp(decoder.rt_text, "Now on") == 0);
+    assert(decoder.pi == PI);
+}
+
+static void test_a_text_the_station_stops_sending_goes(void)
+{
+    rds_decoder_t decoder;
+    rds_decoder_reset(&decoder);
+    rt(&decoder, 0U, 0U, "Song");
+    rt(&decoder, 0U, 1U, "\r   ");
+    assert(strcmp(decoder.rt_text, "Song") == 0);
+    /* Its other groups keep coming, its text does not. rt() has already sent
+       one group of something else after the text. */
+    for (unsigned group = 0U; group + 2U < RDS_RT_STALE_GROUPS; ++group) filler(&decoder);
+    assert(strcmp(decoder.rt_text, "Song") == 0);
+    filler(&decoder);
+    assert(decoder.rt_text[0] == '\0');
+    // And a new text comes up again as before.
+    rt(&decoder, 1U, 0U, "Next");
+    rt(&decoder, 1U, 1U, "\r   ");
+    assert(strcmp(decoder.rt_text, "Next") == 0);
+}
+
+static void test_a_group_read_twice_counts_once(void)
+{
+    rds_decoder_t decoder;
+    rds_decoder_reset(&decoder);
+    rt(&decoder, 0U, 0U, "Song");
+    rt(&decoder, 0U, 1U, "\r   ");
+    assert(strcmp(decoder.rt_text, "Song") == 0);
+    /* A noisy group under a stray code, read twice because the chip's flag
+       was still up: it is not another station, and nothing is lost. */
+    const uint16_t noise[4] = {0xEE60U, 0x0000U, 0U, ('X' << 8) | 'Y'};
+    (void)rds_decoder_feed(&decoder, noise, true, true);
+    (void)rds_decoder_feed(&decoder, noise, true, true);
+    assert(strcmp(decoder.rt_text, "Song") == 0);
+    assert(decoder.pi == PI);
+    /* Nor does a piece read twice get believed. */
+    const uint16_t piece[4] = {PI, 0x2001U, ('Z' << 8) | 'Z', ('\r' << 8) | ' '};
+    (void)rds_decoder_feed(&decoder, piece, true, true);
+    (void)rds_decoder_feed(&decoder, piece, true, true);
+    assert(strcmp(decoder.rt_text, "Song") == 0);
+}
+
 int main(void)
 {
+    test_a_group_read_twice_counts_once();
+    test_a_text_the_station_stops_sending_goes();
+    test_noise_puts_nothing_into_the_text();
     test_the_station_is_heard_by_its_code();
     test_the_name_needs_every_piece_twice();
     test_a_scrolling_name_follows();
@@ -206,7 +287,8 @@ int main(void)
     test_a_group_with_a_bad_block_b_is_dropped();
     test_windows_1251_is_read_as_cyrillic();
     test_radiotext_shows_once_it_is_whole();
-    test_another_station_starts_again();
+    test_a_settled_station_is_not_replaced();
+    test_the_first_code_must_come_twice_before_it_settles();
     puts("rds tests passed");
     return 0;
 }

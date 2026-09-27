@@ -239,13 +239,22 @@ static void test_the_tuner_is_its_frequency_over_its_reception(void)
 {
     ui_now_playing_t now;
     // A dash in the reception line is not a performer's.
-    ui_now_playing_for_tuner("101.2 МГц", "Стерео - сигнал 38", &now);
+    ui_now_playing_for_tuner("101.2 МГц", "Стерео - сигнал 3/5", NULL, &now);
     assert(strcmp(now.heading, "101.2 МГц") == 0);
-    assert(strcmp(now.title, "Стерео - сигнал 38") == 0);
+    assert(strcmp(now.title, "Стерео - сигнал 3/5") == 0);
     assert(now.artist[0] == '\0');
-    ui_now_playing_for_tuner(NULL, NULL, &now);
+    // A named preset heads the block, with the frequency under it.
+    ui_now_playing_for_tuner("98.8 МГц", "Стерео, сигнал 4/5", "Радио Шоколад", &now);
+    assert(strcmp(now.heading, "Радио Шоколад") == 0);
+    assert(strcmp(now.artist, "98.8 МГц") == 0);
+    assert(strcmp(now.title, "Стерео, сигнал 4/5") == 0);
+    // A nameless one is only a frequency.
+    ui_now_playing_for_tuner("98.8 МГц", "", "", &now);
+    assert(strcmp(now.heading, "98.8 МГц") == 0);
+    assert(now.artist[0] == '\0');
+    ui_now_playing_for_tuner(NULL, NULL, NULL, &now);
     assert(now.heading[0] == '\0' && now.title[0] == '\0');
-    ui_now_playing_for_tuner("x", "y", NULL);
+    ui_now_playing_for_tuner("x", "y", "z", NULL);
 }
 
 int main(void)

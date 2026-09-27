@@ -34,6 +34,8 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "ui_now_playing.h"
 #include "version_info.h"
 #include "file_storage.h"
+#include "fm_presets.h"
+#include "fm_tuner.h"
 #include "dlna_source.h"
 #include "radio_stream_format.h"
 #include "album_art.h"
@@ -421,6 +423,12 @@ static esp_err_t web_server_remote_page_get(httpd_req_t *request)
 static esp_err_t web_server_remote_js_get(httpd_req_t *request)
 {
     return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/remote.js",
+                                "application/javascript; charset=utf-8");
+}
+
+static esp_err_t web_server_fm_js_get(httpd_req_t *request)
+{
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/fm.js",
                                 "application/javascript; charset=utf-8");
 }
 
@@ -1273,6 +1281,131 @@ static esp_err_t web_server_playlist_post(httpd_req_t *request)
     return send_err;
 }
 
+/* ---- FM presets and the scan ---------------------------------------------
+ *
+ * The web page's FM section is where presets are made: it scans the band,
+ * the user names and ticks what to keep, and the list comes back here whole.
+ * The device itself only plays them. */
+
+static esp_err_t web_server_fm_presets_get(httpd_req_t *request)
+{
+    httpd_resp_set_type(request, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    FILE *file = fopen(FM_PRESETS_PATH, "r");
+    // None saved yet is an empty list, not an error.
+    if (file == NULL) return httpd_resp_send(request, "", 0);
+    size_t bytes_read;
+    while ((bytes_read = fread(s_file_chunk_buffer, 1, sizeof(s_file_chunk_buffer), file)) > 0) {
+        const esp_err_t err = httpd_resp_send_chunk(request, s_file_chunk_buffer, bytes_read);
+        if (err != ESP_OK) {
+            fclose(file);
+            return err;
+        }
+    }
+    fclose(file);
+    return httpd_resp_send_chunk(request, NULL, 0);
+}
+
+/* The whole list, in the file's own shape. It is parsed and written back
+ * rather than stored as sent, so what is on the flash is always a file the
+ * device reads the same way; lines it could not read are counted in the
+ * answer. An empty body is an empty list. */
+static esp_err_t web_server_fm_presets_post(httpd_req_t *request)
+{
+    if (request->content_len >= FM_PRESETS_TEXT_MAX_LEN) {
+        httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Invalid preset list size");
+        return ESP_FAIL;
+    }
+    const size_t length = request->content_len;
+    char *body = heap_caps_malloc(FM_PRESETS_TEXT_MAX_LEN, MALLOC_CAP_SPIRAM);
+    fm_presets_t *presets = heap_caps_malloc(sizeof(*presets), MALLOC_CAP_SPIRAM);
+    if (body == NULL || presets == NULL) {
+        heap_caps_free(body);
+        heap_caps_free(presets);
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_FAIL;
+    }
+    size_t received = 0U;
+    while (received < length) {
+        const int read = httpd_req_recv(request, body + received, length - received);
+        if (read <= 0) {
+            heap_caps_free(body);
+            heap_caps_free(presets);
+            httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Incomplete request");
+            return ESP_FAIL;
+        }
+        received += (size_t)read;
+    }
+    const size_t skipped = fm_presets_parse(body, received, presets);
+    const size_t written = fm_presets_write(presets, body, FM_PRESETS_TEXT_MAX_LEN);
+    const size_t count = presets->count;
+    heap_caps_free(presets);
+
+    FILE *file = fopen(FM_PRESETS_TEMP_PATH, "w");
+    bool saved = file != NULL;
+    if (saved) {
+        saved = fwrite(body, 1, written, file) == written;
+        saved = fclose(file) == 0 && saved;
+    }
+    heap_caps_free(body);
+    if (!saved || rename(FM_PRESETS_TEMP_PATH, FM_PRESETS_PATH) != 0) {
+        (void)unlink(FM_PRESETS_TEMP_PATH);
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save presets");
+        return ESP_FAIL;
+    }
+    player_control_fm_presets_reload();
+    ESP_LOGI(TAG, "fm presets saved: %u, %u lines skipped", (unsigned)count, (unsigned)skipped);
+
+    char answer[48];
+    snprintf(answer, sizeof(answer), "{\"count\":%u,\"skipped\":%u}", (unsigned)count,
+             (unsigned)skipped);
+    httpd_resp_set_type(request, "application/json");
+    return httpd_resp_sendstr(request, answer);
+}
+
+static esp_err_t web_server_fm_scan_post(httpd_req_t *request)
+{
+    if (!player_control_fm_scan_start()) {
+        httpd_resp_set_status(request, "409 Conflict");
+        httpd_resp_set_type(request, "application/json");
+        return httpd_resp_sendstr(request, "{\"started\":false}");
+    }
+    httpd_resp_set_status(request, "202 Accepted");
+    httpd_resp_set_type(request, "application/json");
+    return httpd_resp_sendstr(request, "{\"started\":true}");
+}
+
+/* Where the pass has got to and what it has found - while it runs, so the
+ * page fills its list as stations turn up, and after, until the next one. */
+static esp_err_t web_server_fm_scan_get(httpd_req_t *request)
+{
+    static player_fm_found_t found[FM_PRESETS_MAX];
+    uint32_t khz = 0U;
+    size_t count = 0U;
+    const bool running = player_control_fm_scan_status(&khz, found, FM_PRESETS_MAX, &count);
+    httpd_resp_set_type(request, "application/json; charset=utf-8");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    web_json_writer_t writer;
+    web_json_init(&writer, s_file_chunk_buffer, sizeof(s_file_chunk_buffer),
+                  sizeof(s_file_chunk_buffer));
+    web_json_literal(&writer, running ? "{\"running\":true" : "{\"running\":false");
+    web_json_literal(&writer, ",\"khz\":");
+    web_json_format(&writer, "%lu", (unsigned long)khz);
+    web_json_literal(&writer, ",\"bars\":");
+    web_json_format(&writer, "%d", PLAYER_FM_SIGNAL_BARS);
+    web_json_literal(&writer, ",\"found\":[");
+    for (size_t i = 0U; i < count; ++i) {
+        web_json_literal(&writer, i > 0U ? ",{\"khz\":" : "{\"khz\":");
+        web_json_format(&writer, "%lu", (unsigned long)found[i].khz);
+        web_json_literal(&writer, ",\"signal\":");
+        web_json_format(&writer, "%u", (unsigned)found[i].bars);
+        web_json_literal(&writer, found[i].stereo ? ",\"stereo\":true}" : ",\"stereo\":false}");
+    }
+    web_json_literal(&writer, "]}");
+    if (!web_json_valid(&writer)) return ESP_FAIL;
+    return httpd_resp_send(request, s_file_chunk_buffer, web_json_length(&writer));
+}
+
 /* What the device's own menu would offer. The Yandex row exists only in a
  * build that has the feature, and a home screen only where there is more than
  * one place to go - which the Yandex switch itself can decide, since turning it
@@ -1302,6 +1435,7 @@ void web_server_fill_remote(struct web_settings_view *view)
 {
     if (view == NULL) return;
     view->remote_available = board_has_ir();
+    view->fm_available = board_has_fm_tuner() && fm_tuner_present();
     remote_function_t learning = REMOTE_FUNCTION_COUNT;
     if (board_has_ir()) remote_control_snapshot(NULL, &learning);
     view->remote_learning = learning == REMOTE_FUNCTION_COUNT ? -1 : (int)learning;
@@ -2194,10 +2328,10 @@ esp_err_t web_server_start(void)
         // The HTTP worker is network-bound; keep it on core 0 with Wi-Fi and
         // lwIP so it cannot preempt the audio decoder pinned to core 1.
         config.core_id = 0;
-        // Thirty-seven are registered below plus /ws; the spare ones exist
+        // Forty-five are registered below plus /ws; the spare ones exist
         // because running out is not a build error - httpd_register_uri_handler
         // fails at startup and takes the whole web server down with it.
-        config.max_uri_handlers = 42;
+        config.max_uri_handlers = 50;
         config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
         config.send_wait_timeout = 1;
         config.lru_purge_enable = false;
@@ -2212,6 +2346,11 @@ esp_err_t web_server_start(void)
             {.uri = "/settings.js", .method = HTTP_GET, .handler = web_server_settings_js_get},
             {.uri = "/remote", .method = HTTP_GET, .handler = web_server_remote_page_get},
             {.uri = "/remote.js", .method = HTTP_GET, .handler = web_server_remote_js_get},
+            {.uri = "/fm.js", .method = HTTP_GET, .handler = web_server_fm_js_get},
+            {.uri = "/api/fm/presets", .method = HTTP_GET, .handler = web_server_fm_presets_get},
+            {.uri = "/api/fm/presets", .method = HTTP_POST, .handler = web_server_fm_presets_post},
+            {.uri = "/api/fm/scan", .method = HTTP_GET, .handler = web_server_fm_scan_get},
+            {.uri = "/api/fm/scan", .method = HTTP_POST, .handler = web_server_fm_scan_post},
             {.uri = "/playlist", .method = HTTP_GET, .handler = web_server_playlist_page_get},
             {.uri = "/playlist.js", .method = HTTP_GET, .handler = web_server_playlist_js_get},
             {.uri = "/api/status", .method = HTTP_GET, .handler = web_server_status_get},

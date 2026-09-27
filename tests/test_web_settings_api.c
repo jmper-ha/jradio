@@ -317,7 +317,7 @@ static void test_document_names_what_the_build_has(void)
     // A build without Yandex Music or a media server says so, so the page
     // drops those rows rather than offering switches behind which there is
     // nothing.
-    assert(strstr(document, "\"yandex_music\":false,\"dlna\":false,\"bt_output\":false,\"remote\":false}") != NULL);
+    assert(strstr(document, "\"yandex_music\":false,\"dlna\":false,\"bt_output\":false,\"remote\":false,\"fm\":false}") != NULL);
     /* The remote's part of the frame: no receiver, nothing armed, and a
        revision the page compares to know when to fetch the table. */
     assert(strstr(document, "\"remote_learning\":null,\"remote_revision\":0") != NULL);

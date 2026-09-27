@@ -160,6 +160,9 @@ typedef struct web_settings_view {
      * the page fetches it again when this moves. Filled by the caller after
      * make_view, which knows nothing of the receiver. */
     bool remote_available;
+    /* The FM tuner, for the section that scans and keeps its presets; filled
+     * by the same caller. */
+    bool fm_available;
     int remote_learning;
     uint32_t remote_revision;
 } web_settings_view_t;

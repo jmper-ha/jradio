@@ -28,6 +28,7 @@ bool player_file_same_file_playing(const char *path, const char *playing_path,
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
 #include "file_browser.h"
+#include "fm_presets.h"
 
 esp_err_t player_control_init(void);
 bool player_control_post(const player_command_t *command);
@@ -85,6 +86,25 @@ void player_control_set_files_repeat(bool repeat);
  * then on the player follows the tuner itself, and the snapshot's fm_khz is
  * what the UI writes back. */
 void player_control_set_fm_frequency(uint32_t khz);
+
+/* The FM presets, as fm_presets.csv last read. Reloaded when the web page
+ * saves the file; the listing revision moves with it. */
+void player_control_fm_presets_reload(void);
+size_t player_control_fm_preset_count(void);
+bool player_control_fm_preset_at(size_t index, fm_preset_t *preset);
+
+/* A pass up the band for the web page's FM section, on a task of its own.
+ * False when one is already running or there is no tuner. */
+typedef struct {
+    uint32_t khz;
+    uint8_t bars;  // 0..PLAYER_FM_SIGNAL_BARS
+    bool stereo;
+} player_fm_found_t;
+bool player_control_fm_scan_start(void);
+/* Whether a pass is running; where it has got to, and what it has found so
+ * far - or found last time, once it is over. */
+bool player_control_fm_scan_status(uint32_t *khz, player_fm_found_t *found, size_t capacity,
+                                   size_t *count);
 
 /* Title, performer and album of the playing file, as its own tags gave them.
  * False for a source that has no such thing: a stream carries one ICY line and

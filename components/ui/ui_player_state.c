@@ -324,11 +324,12 @@ bool ui_player_state_show_station_list(ui_player_state_t *state)
 {
     /* Every source that has a list shares this view: stations for the radio,
      * the current directory for the drive and the card, the open container for
-     * a media server. Leaving the last one out is what made the browser
+     * a media server, the presets for the tuner. Leaving the last one out is what made the browser
      * unreachable - the screen simply refused to open, and a press that opens
      * nothing and says nothing reads as a source that does not work. */
     if (state == NULL || (state->source != AUDIO_SOURCE_INTERNET_RADIO &&
                           state->source != AUDIO_SOURCE_DLNA &&
+                          state->source != AUDIO_SOURCE_FM &&
                           !audio_source_is_files(state->source))) {
         return false;
     }

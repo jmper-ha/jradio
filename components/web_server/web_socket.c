@@ -793,7 +793,11 @@ static void capture_now_playing(const player_snapshot_t *player,
         return;
     }
     if (player->active_source == AUDIO_SOURCE_FM) {
-        ui_now_playing_for_tuner(player->context, player->stream_title, now);
+        fm_preset_t preset;
+        const bool on_preset = player->active_item_index != PLAYER_ITEM_NONE &&
+                               player_control_fm_preset_at(player->active_item_index, &preset);
+        ui_now_playing_for_tuner(player->context, player->stream_title,
+                                 on_preset ? preset.name : NULL, now);
         return;
     }
     if (audio_source_is_stations(player->active_source)) {

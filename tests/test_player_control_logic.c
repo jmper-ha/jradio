@@ -833,6 +833,20 @@ static void test_the_tuner_is_a_source_while_it_answers_and_seeks_on_the_keys(vo
     assert(player_control_decide(&state, &skip) == PLAYER_OPERATION_INVALID);
 }
 
+static void test_a_preset_is_chosen_without_a_network(void)
+{
+    player_snapshot_t state = {.wifi_connected = false, .active_source = AUDIO_SOURCE_FM,
+                               .playback_state = PLAYER_PLAYBACK_PAUSED, .item_count = 3U,
+                               .active_item_index = 1U};
+    player_command_t row = {.kind = PLAYER_COMMAND_SELECT_ITEM, .item_index = 1U};
+    // The same preset again, paused: it has to be heard, so it is not a no-op.
+    assert(player_control_decide(&state, &row) == PLAYER_OPERATION_START_ITEM);
+    row.item_index = 2U;
+    assert(player_control_decide(&state, &row) == PLAYER_OPERATION_START_ITEM);
+    row.item_index = 3U;
+    assert(player_control_decide(&state, &row) == PLAYER_OPERATION_INVALID);
+}
+
 static void test_a_frequency_reads_with_one_decimal(void)
 {
     char text[12];
@@ -880,6 +894,7 @@ int main(void)
 {
     test_the_tuner_is_a_source_while_it_answers_and_seeks_on_the_keys();
     test_a_frequency_reads_with_one_decimal();
+    test_a_preset_is_chosen_without_a_network();
     test_snapshot_equality_notices_the_frequency();
     test_the_signal_is_a_scale_that_does_not_flicker();
     test_the_phone_is_a_source_only_while_the_module_answers();

@@ -91,11 +91,12 @@ void ui_now_playing_for_file(const char *directory, const char *file_name,
 void ui_now_playing_for_phone(const char *phone, const audio_tags_t *tags,
                               ui_now_playing_t *out);
 
-/* The tuner: the frequency where a station's name goes and the reception
- * where the track goes, both as the snapshot put them. Never split: "Stereo,
- * signal 38" has no performer in it. RDS will fill the performer later. */
+/* The tuner: the preset's name where a station's goes, with the frequency
+ * under it as the performer; with no preset (or a nameless one) the frequency
+ * itself is the heading. The reception is the track line, never split:
+ * "Stereo, signal 3/5" has no performer in it. */
 void ui_now_playing_for_tuner(const char *frequency, const char *reception,
-                              ui_now_playing_t *out);
+                              const char *preset_name, ui_now_playing_t *out);
 
 /* A station, from the list and from the stream. */
 void ui_now_playing_for_station(bool name_from_list, const char *list_name,

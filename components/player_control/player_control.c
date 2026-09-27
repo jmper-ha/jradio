@@ -35,6 +35,7 @@
 #include "file_browser.h"
 #include "file_storage.h"
 #include "file_player.h"
+#include "fm_presets.h"
 #include "fm_tuner.h"
 #include "sd_storage.h"
 #include "usb_storage.h"
@@ -769,6 +770,8 @@ static void player_bt_close(void)
 /* A seek clears STC as it starts, but a status read in the same breath can
  * still see the last tune's. */
 #define PLAYER_FM_SEEK_SETTLE_MS 60U
+// And after a plain tune, before the first seek of a scan leaves from it.
+#define FM_SCAN_SETTLE_AFTER_TUNE_MS 100U
 
 // The frequency to come back to: handed over from settings, then followed.
 static atomic_uint s_fm_khz = ATOMIC_VAR_INIT(0U);
@@ -807,10 +810,20 @@ static void player_fm_sync_volume(void)
     if (fm_tuner_set_volume(volume) == ESP_OK) s_fm_volume_sent = volume;
 }
 
+static bool player_fm_scanning(void);
+
 static bool player_fm_open(void)
 {
     uint32_t khz = atomic_load_explicit(&s_fm_khz, memory_order_acquire);
     if (khz == 0U) khz = PLAYER_FM_START_KHZ;
+    if (player_fm_scanning()) {
+        // The scan puts the tuner here when it is done.
+        atomic_store_explicit(&s_fm_khz, khz, memory_order_release);
+        atomic_store_explicit(&s_fm_muted, false, memory_order_release);
+        atomic_store_explicit(&s_fm_failed, false, memory_order_release);
+        atomic_store_explicit(&s_fm_on, true, memory_order_release);
+        return true;
+    }
     esp_err_t err = fm_tuner_power(true);
     if (err == ESP_OK) err = fm_tuner_set_muted(false);
     if (err == ESP_OK) err = fm_tuner_tune(khz);
@@ -835,18 +848,37 @@ static void player_fm_close(void)
 {
     atomic_store_explicit(&s_fm_on, false, memory_order_release);
     atomic_store_explicit(&s_fm_seeking, false, memory_order_release);
-    (void)fm_tuner_power(false);
+    // A scan in progress powers the chip down itself when it ends.
+    if (!player_fm_scanning()) (void)fm_tuner_power(false);
 }
 
 static void player_fm_mute(bool muted)
 {
-    if (fm_tuner_set_muted(muted) == ESP_OK) {
+    if (player_fm_scanning() || fm_tuner_set_muted(muted) == ESP_OK) {
         atomic_store_explicit(&s_fm_muted, muted, memory_order_release);
     }
 }
 
+/* A preset: straight to its frequency, and heard - choosing a station while
+ * paused is asking to hear it. */
+static void player_fm_tune(uint32_t khz)
+{
+    atomic_store_explicit(&s_fm_khz, khz, memory_order_release);
+    atomic_store_explicit(&s_fm_seeking, false, memory_order_release);
+    if (!atomic_load_explicit(&s_fm_on, memory_order_acquire)) {
+        (void)player_fm_open();
+        return;
+    }
+    if (player_fm_scanning()) {
+        atomic_store_explicit(&s_fm_muted, false, memory_order_release);
+        return;
+    }
+    if (fm_tuner_tune(khz) == ESP_OK) player_fm_mute(false);
+}
+
 static void player_fm_seek(bool up)
 {
+    if (player_fm_scanning()) return;
     if (fm_tuner_seek(up) != ESP_OK) return;
     atomic_store_explicit(&s_fm_seek_started_ms, player_now_ms(), memory_order_release);
     atomic_store_explicit(&s_fm_seeking, true, memory_order_release);
@@ -887,6 +919,194 @@ static bool player_fm_status(rda5807_status_t *status, int *bars)
 void player_control_set_fm_frequency(uint32_t khz)
 {
     atomic_store_explicit(&s_fm_khz, khz, memory_order_release);
+}
+
+/* The presets, read from fm_presets.csv at boot and again whenever the web
+ * page saves it. In PSRAM: three kilobytes the internal heap has no room to
+ * spare for. Read and written under s_fm_lock, like the status. */
+static fm_presets_t *s_fm_presets;
+
+static void *player_fm_alloc(size_t size)
+{
+    void *memory = heap_caps_calloc(1U, size, MALLOC_CAP_SPIRAM);
+    if (memory == NULL) memory = heap_caps_calloc(1U, size, MALLOC_CAP_INTERNAL);
+    return memory;
+}
+
+void player_control_fm_presets_reload(void)
+{
+    if (s_fm_lock == NULL) return;
+    if (s_fm_presets == NULL) s_fm_presets = player_fm_alloc(sizeof(*s_fm_presets));
+    char *text = player_fm_alloc(FM_PRESETS_TEXT_MAX_LEN);
+    if (s_fm_presets == NULL || text == NULL) {
+        ESP_LOGW(TAG, "fm: no memory for the presets");
+        free(text);
+        return;
+    }
+    size_t length = 0U;
+    FILE *file = fopen(FM_PRESETS_PATH, "r");
+    if (file != NULL) {
+        length = fread(text, 1U, FM_PRESETS_TEXT_MAX_LEN - 1U, file);
+        fclose(file);
+    }
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    const size_t skipped = fm_presets_parse(text, length, s_fm_presets);
+    const size_t count = s_fm_presets->count;
+    xSemaphoreGive(s_fm_lock);
+    free(text);
+    if (count > 0U || skipped > 0U) {
+        ESP_LOGI(TAG, "fm: %u presets%s", (unsigned)count, skipped > 0U ? ", some lines skipped" : "");
+    }
+    atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
+}
+
+size_t player_control_fm_preset_count(void)
+{
+    if (s_fm_presets == NULL) return 0U;
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    const size_t count = s_fm_presets->count;
+    xSemaphoreGive(s_fm_lock);
+    return count;
+}
+
+bool player_control_fm_preset_at(size_t index, fm_preset_t *preset)
+{
+    if (s_fm_presets == NULL || preset == NULL) return false;
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    const bool found = index < s_fm_presets->count;
+    if (found) *preset = s_fm_presets->presets[index];
+    xSemaphoreGive(s_fm_lock);
+    return found;
+}
+
+static size_t player_fm_preset_index(uint32_t khz)
+{
+    if (s_fm_presets == NULL) return PLAYER_ITEM_NONE;
+    size_t index = PLAYER_ITEM_NONE;
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    if (!fm_presets_find(s_fm_presets, khz, &index)) index = PLAYER_ITEM_NONE;
+    xSemaphoreGive(s_fm_lock);
+    return index;
+}
+
+/* ---- The scan -------------------------------------------------------------
+ *
+ * One pass up the band with the chip's own seek, for the web page's FM
+ * section: what it finds is offered there to be named and kept. It runs on a
+ * task of its own because a pass takes half a minute and the HTTP worker and
+ * the player task both have other people to answer. The tuner is muted for
+ * it and put back as it was found; the player's own FM commands, arriving
+ * meanwhile, only move what it will be put back to. */
+#define PLAYER_FM_SCAN_STACK 3072
+#define PLAYER_FM_SCAN_STEP_MS 6000U
+#define PLAYER_FM_SCAN_POLL_MS 30U
+#define PLAYER_FM_SCAN_MEASURE_MS 250U
+
+static atomic_bool s_fm_scanning = ATOMIC_VAR_INIT(false);
+static atomic_uint s_fm_scan_khz = ATOMIC_VAR_INIT(0U);
+static player_fm_found_t s_fm_found[FM_PRESETS_MAX];
+static size_t s_fm_found_count;
+
+static bool player_fm_scanning(void)
+{
+    return atomic_load_explicit(&s_fm_scanning, memory_order_acquire);
+}
+
+/* One seek up, waited out. False when it found nothing or the band ran out. */
+static bool player_fm_scan_step(uint32_t after_khz, rda5807_status_t *found)
+{
+    if (fm_tuner_seek(true) != ESP_OK) return false;
+    vTaskDelay(pdMS_TO_TICKS(PLAYER_FM_SEEK_SETTLE_MS));
+    const uint32_t started = player_now_ms();
+    while ((uint32_t)(player_now_ms() - started) < PLAYER_FM_SCAN_STEP_MS) {
+        if (fm_tuner_status(found) == ESP_OK) {
+            atomic_store_explicit(&s_fm_scan_khz, found->khz, memory_order_release);
+            if (found->tune_complete) {
+                if (found->seek_failed || found->khz <= after_khz) return false;
+                /* The level and the stereo flag are measured after the
+                 * stop, not by it: read at once they said 0 for every
+                 * station on the bench. */
+                vTaskDelay(pdMS_TO_TICKS(PLAYER_FM_SCAN_MEASURE_MS));
+                rda5807_status_t settled;
+                if (fm_tuner_status(&settled) == ESP_OK) {
+                    found->rssi = settled.rssi;
+                    found->stereo = settled.stereo;
+                }
+                return true;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(PLAYER_FM_SCAN_POLL_MS));
+    }
+    return false;
+}
+
+static void player_fm_scan_task(void *arg)
+{
+    (void)arg;
+    esp_err_t err = ESP_OK;
+    if (!atomic_load_explicit(&s_fm_on, memory_order_acquire)) err = fm_tuner_power(true);
+    if (err == ESP_OK) err = fm_tuner_set_muted(true);
+    if (err == ESP_OK) err = fm_tuner_tune(RDA5807_BAND_MIN_KHZ);
+    vTaskDelay(pdMS_TO_TICKS(FM_SCAN_SETTLE_AFTER_TUNE_MS));
+    uint32_t last = RDA5807_BAND_MIN_KHZ;
+    rda5807_status_t status;
+    while (err == ESP_OK && player_fm_scan_step(last, &status)) {
+        last = status.khz;
+        const player_fm_found_t found = {
+            .khz = status.khz,
+            .bars = (uint8_t)player_fm_signal_bars(status.rssi, -1),
+            .stereo = status.stereo,
+        };
+        xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+        const bool room = s_fm_found_count < FM_PRESETS_MAX;
+        if (room) s_fm_found[s_fm_found_count++] = found;
+        xSemaphoreGive(s_fm_lock);
+        if (!room || status.khz >= RDA5807_BAND_MAX_KHZ) break;
+    }
+    /* Back as it was, or as the player has since asked for: a preset chosen
+     * during the pass is where the tuner lands. */
+    if (atomic_load_explicit(&s_fm_on, memory_order_acquire)) {
+        (void)fm_tuner_tune(atomic_load_explicit(&s_fm_khz, memory_order_acquire));
+        (void)fm_tuner_set_muted(atomic_load_explicit(&s_fm_muted, memory_order_acquire));
+    } else {
+        (void)fm_tuner_power(false);
+    }
+    ESP_LOGI(TAG, "fm: scan found %u stations", (unsigned)s_fm_found_count);
+    atomic_store_explicit(&s_fm_scanning, false, memory_order_release);
+    vTaskDelete(NULL);
+}
+
+bool player_control_fm_scan_start(void)
+{
+    if (!fm_tuner_present() || s_fm_lock == NULL) return false;
+    bool idle = false;
+    if (!atomic_compare_exchange_strong(&s_fm_scanning, &idle, true)) return false;
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    s_fm_found_count = 0U;
+    xSemaphoreGive(s_fm_lock);
+    atomic_store_explicit(&s_fm_scan_khz, RDA5807_BAND_MIN_KHZ, memory_order_release);
+    if (xTaskCreate(player_fm_scan_task, "fm_scan", PLAYER_FM_SCAN_STACK, NULL, 3, NULL) != pdPASS) {
+        atomic_store_explicit(&s_fm_scanning, false, memory_order_release);
+        return false;
+    }
+    ESP_LOGI(TAG, "fm: scan started");
+    return true;
+}
+
+bool player_control_fm_scan_status(uint32_t *khz, player_fm_found_t *found, size_t capacity,
+                                   size_t *count)
+{
+    if (khz != NULL) *khz = atomic_load_explicit(&s_fm_scan_khz, memory_order_acquire);
+    size_t copied = 0U;
+    if (s_fm_lock != NULL) {
+        xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+        for (; copied < s_fm_found_count && copied < capacity && found != NULL; ++copied) {
+            found[copied] = s_fm_found[copied];
+        }
+        xSemaphoreGive(s_fm_lock);
+    }
+    if (count != NULL) *count = copied;
+    return player_fm_scanning();
 }
 
 /* The knob and the phone's slider, kept the same: the knob's change goes to
@@ -1240,6 +1460,11 @@ static void player_control_task(void *arg)
                 }
             } else if (snapshot.active_source == AUDIO_SOURCE_YANDEX) {
                 (void)player_yandex_start(command.item_index);
+            } else if (snapshot.active_source == AUDIO_SOURCE_FM) {
+                fm_preset_t preset;
+                if (player_control_fm_preset_at(command.item_index, &preset)) {
+                    player_fm_tune(preset.khz);
+                }
             } else if (player_adopt_internet_radio(snapshot.active_source)) {
                 (void)internet_radio_start_station_index(command.item_index);
             }
@@ -1407,7 +1632,23 @@ static void player_control_task(void *arg)
             if (snapshot.active_source == AUDIO_SOURCE_BLUETOOTH) {
                 (void)bt_link_passthrough(forward ? JBT_KEY_NEXT : JBT_KEY_PREV);
             } else if (snapshot.active_source == AUDIO_SOURCE_FM) {
-                player_fm_seek(forward);
+                /* Along the presets when there are any; nothing wraps, as on
+                 * the station list. Off a preset, forward goes to the first
+                 * and back to the last. Without presets the chip seeks. */
+                const size_t count = player_control_fm_preset_count();
+                const size_t at = snapshot.active_item_index;
+                size_t target = PLAYER_ITEM_NONE;
+                if (count == 0U) {
+                    player_fm_seek(forward);
+                } else if (at == PLAYER_ITEM_NONE) {
+                    target = forward ? 0U : count - 1U;
+                } else if (forward ? at + 1U < count : at > 0U) {
+                    target = forward ? at + 1U : at - 1U;
+                }
+                fm_preset_t preset;
+                if (target != PLAYER_ITEM_NONE && player_control_fm_preset_at(target, &preset)) {
+                    player_fm_tune(preset.khz);
+                }
             } else if (audio_source_is_files(snapshot.active_source)) {
                 player_file_step(forward);
             } else if (snapshot.active_source == AUDIO_SOURCE_DLNA) {
@@ -1531,7 +1772,8 @@ esp_err_t player_control_init(void)
 {
     s_bt_volume_lock = xSemaphoreCreateMutex();
     s_fm_lock = xSemaphoreCreateMutex();
-    if (s_bt_volume_lock == NULL) return ESP_ERR_NO_MEM;
+    if (s_bt_volume_lock == NULL || s_fm_lock == NULL) return ESP_ERR_NO_MEM;
+    if (board_has_fm_tuner()) player_control_fm_presets_reload();
     bt_link_set_key_listener(player_speaker_key);
     if (s_command_queue != NULL) {
         return ESP_OK;
@@ -1714,10 +1956,9 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
 
     if (snapshot->active_source == AUDIO_SOURCE_FM) {
         /* The frequency takes the station's place and the reception the
-         * track's, so both faces draw it through the station derivation with
-         * no list behind it, as they draw the phone. */
+         * track's, and the presets are the list. */
         snapshot->active_item_index = PLAYER_ITEM_NONE;
-        snapshot->item_count = 0U;
+        snapshot->item_count = player_control_fm_preset_count();
         snprintf(snapshot->codec, sizeof(snapshot->codec), "FM");
         if (atomic_load_explicit(&s_fm_failed, memory_order_acquire)) {
             snapshot->playback_state = PLAYER_PLAYBACK_ERROR;
@@ -1736,13 +1977,19 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
         rda5807_status_t status;
         int bars = 0;
         const bool seen = player_fm_status(&status, &bars);
-        const bool seeking = atomic_load_explicit(&s_fm_seeking, memory_order_acquire);
+        const bool scanning = player_fm_scanning();
+        const bool seeking =
+            scanning || atomic_load_explicit(&s_fm_seeking, memory_order_acquire);
         const uint32_t settled = atomic_load_explicit(&s_fm_khz, memory_order_acquire);
         snapshot->fm_khz = settled;
+        snapshot->active_item_index = player_fm_preset_index(settled);
         /* While a seek runs the chip's channel moves, and showing it move
-         * is what says the seek is working. */
+         * is what says the seek is working. A scan says where it has got to
+         * itself. */
+        const uint32_t moving =
+            scanning ? atomic_load_explicit(&s_fm_scan_khz, memory_order_acquire) : status.khz;
         char frequency[12];
-        player_fm_frequency_text(seen && seeking ? status.khz : settled, frequency,
+        player_fm_frequency_text(seen && seeking ? moving : settled, frequency,
                                  sizeof(frequency));
         snprintf(snapshot->context, sizeof(snapshot->context), "%s %s", frequency,
                  player_text(DEVICE_TEXT_FM_MHZ));

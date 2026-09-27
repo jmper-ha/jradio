@@ -805,8 +805,20 @@ static void test_a_chosen_source_with_nothing_playing_wants_its_list(void)
                                                     PLAYER_PLAYBACK_STOPPED, false));
 }
 
+static void test_the_tuner_opens_its_presets(void)
+{
+    ui_player_state_t state;
+    ui_player_state_init(&state);
+    player_snapshot_t fm = snapshot(AUDIO_SOURCE_FM, PLAYER_ITEM_NONE, 2);
+    fm.playback_state = PLAYER_PLAYBACK_PLAYING;
+    ui_player_state_apply_snapshot(&state, &fm, 0);
+    assert(ui_player_state_show_station_list(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
+}
+
 int main(void)
 {
+    test_the_tuner_opens_its_presets();
     test_a_chosen_source_with_nothing_playing_wants_its_list();
     test_the_card_gets_the_same_views_as_the_drive();
     test_a_yandex_row_can_be_selected_and_confirmed();

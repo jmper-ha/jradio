@@ -200,11 +200,17 @@ void ui_now_playing_for_phone(const char *phone, const audio_tags_t *tags,
 }
 
 void ui_now_playing_for_tuner(const char *frequency, const char *reception,
-                              ui_now_playing_t *out)
+                              const char *preset_name, ui_now_playing_t *out)
 {
     if (out == NULL) return;
     memset(out, 0, sizeof(*out));
-    copy_string(frequency != NULL ? frequency : "", out->heading, sizeof(out->heading));
+    const char *heard = frequency != NULL ? frequency : "";
+    if (preset_name != NULL && preset_name[0] != '\0') {
+        copy_string(preset_name, out->heading, sizeof(out->heading));
+        copy_string(heard, out->artist, sizeof(out->artist));
+    } else {
+        copy_string(heard, out->heading, sizeof(out->heading));
+    }
     copy_string(reception != NULL ? reception : "", out->title, sizeof(out->title));
 }
 

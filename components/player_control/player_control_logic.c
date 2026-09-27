@@ -189,6 +189,12 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
          * play. */
         const bool browsable = audio_source_is_files(state->active_source) ||
                                state->active_source == AUDIO_SOURCE_DLNA;
+        /* A preset needs no network and has no "same row still healthy" to
+         * spare: choosing the one on the air while it is muted unmutes it. */
+        if (state->active_source == AUDIO_SOURCE_FM) {
+            return command->item_index < state->item_count ? PLAYER_OPERATION_START_ITEM
+                                                           : PLAYER_OPERATION_INVALID;
+        }
         if ((!stations && !browsable) || command->item_index >= state->item_count) {
             return PLAYER_OPERATION_INVALID;
         }

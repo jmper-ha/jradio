@@ -301,6 +301,7 @@ void web_settings_make_view(web_settings_view_t *view,
         /* Nothing armed until the caller says otherwise: zero would be the
          * first function. */
         .remote_available = false,
+        .fm_available = false,
         .remote_learning = -1,
         .remote_revision = 0U,
     };
@@ -341,6 +342,7 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->dlna_available == right->dlna_available &&
            left->bt_available == right->bt_available &&
            left->remote_available == right->remote_available &&
+           left->fm_available == right->fm_available &&
            left->remote_learning == right->remote_learning &&
            left->remote_revision == right->remote_revision;
 }
@@ -424,6 +426,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_literal(writer, view->bt_available ? "true" : "false");
     web_json_literal(writer, ",\"remote\":");
     web_json_literal(writer, view->remote_available ? "true" : "false");
+    web_json_literal(writer, ",\"fm\":");
+    web_json_literal(writer, view->fm_available ? "true" : "false");
     web_json_literal(writer, "},\"remote_learning\":");
     if (view->remote_learning < 0) {
         web_json_literal(writer, "null");

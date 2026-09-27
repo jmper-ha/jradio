@@ -2020,8 +2020,13 @@ static void ui_show_fm_face(bool fm)
 
 static void ui_update_fm_status(const player_snapshot_t *snapshot)
 {
+    fm_preset_t preset;
+    const bool on_preset = snapshot->active_item_index != PLAYER_ITEM_NONE &&
+                           player_control_fm_preset_at(snapshot->active_item_index, &preset) &&
+                           preset.name[0] != '\0';
     ui_now_playing_t now;
-    ui_now_playing_for_tuner(snapshot->context, snapshot->stream_title, &now);
+    ui_now_playing_for_tuner(snapshot->context, snapshot->stream_title,
+                             on_preset ? preset.name : NULL, &now);
     ui_note_now_playing(&now);
     /* The digits say the number alone: the unit is the one thing about it
      * nobody needs read out, and the face has no letters. The seek's
@@ -2037,9 +2042,14 @@ static void ui_update_fm_status(const player_snapshot_t *snapshot)
         snapshot->playback_state != PLAYER_PLAYBACK_PAUSED) {
         state = ui_radio_state_text(snapshot->playback_state);
     }
-    // The reception takes the performer's row, under the digits.
-    ui_set_state_line_from(snapshot, state, now.title);
-    ui_set_stream_readings(snapshot);
+    /* Under the digits: the preset's name, with the reception moving down
+     * to the readings line; or, off a preset, the reception itself. */
+    ui_set_state_line_from(snapshot, state, on_preset ? now.heading : now.title);
+    if (on_preset) {
+        ui_set_label_text_if_changed(s_source_stream, now.title);
+    } else {
+        ui_set_stream_readings(snapshot);
+    }
 }
 
 static void ui_update_radio_status(const player_snapshot_t *snapshot)
@@ -2440,6 +2450,23 @@ static bool ui_list_row_text(size_t list_index, char *text, size_t text_size,
 {
     *active = false;
     *mark = NULL;
+    if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_FM) {
+        // A preset is its name, or its frequency until it is given one.
+        fm_preset_t preset;
+        if (!player_control_fm_preset_at(list_index, &preset)) {
+            text[0] = '\0';
+            return false;
+        }
+        if (preset.name[0] != '\0') {
+            snprintf(text, text_size, "%s", preset.name);
+        } else {
+            char frequency[12];
+            player_fm_frequency_text(preset.khz, frequency, sizeof(frequency));
+            snprintf(text, text_size, "%s %s", frequency, ui_text(DEVICE_TEXT_FM_MHZ));
+        }
+        *active = list_index == station_list_active_index(&s_station_list);
+        return true;
+    }
     if (!ui_list_shows_files() && !ui_list_shows_dlna()) {
         const station_catalog_entry_t *entry = player_control_station_at(list_index);
         /* The name alone. The index used to be part of this string and
@@ -5875,6 +5902,21 @@ static void ui_handle_input(board_input_action_t action)
             ui_scroller_set_text(&s_source_detail, entry.title);
             ui_set_label_text_if_changed(s_source_stream,
                                          radio_stream_format_codec_name(entry.format));
+        } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON &&
+                   ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_FM) {
+            size_t index;
+            if (!station_list_get_selection(&s_station_list, &index)) return;
+            const player_command_t command = {
+                .kind = PLAYER_COMMAND_SELECT_ITEM,
+                .source = AUDIO_SOURCE_FM,
+                .item_index = index,
+            };
+            if (!ui_submit_player_command(&command)) return;
+            /* Back to the digits at once: a preset is heard as soon as the
+             * chip has tuned, and the list-to-player step the radio takes on
+             * its own only fires for the radio. */
+            ui_leave_station_list();
+            ui_load_source_screen(AUDIO_SOURCE_FM);
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON && ui_list_shows_files()) {
             size_t row;
             if (!station_list_get_selection(&s_station_list, &row)) return;
@@ -5949,7 +5991,7 @@ static void ui_handle_input(board_input_action_t action)
         const audio_source_t source = ui_player_state_source(&s_player_ui);
         const bool has_list = audio_source_is_stations(source) ||
                               audio_source_is_files(source) ||
-                              source == AUDIO_SOURCE_DLNA;
+                              source == AUDIO_SOURCE_DLNA || source == AUDIO_SOURCE_FM;
         if (ui_seek_is_active(&s_player_seek)) {
             // Scrubbing owns the knob and the press while it is open, so the
             // volume and the play/pause click are unreachable and cannot be

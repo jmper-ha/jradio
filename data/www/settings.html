@@ -321,6 +321,31 @@
           </div>
         </section>
 
+        <section class="card is-collapsed" data-section="fm" id="fm-card" aria-labelledby="fm-title" hidden>
+          <div class="card-head">
+            <button class="card-toggle" type="button" aria-expanded="false" aria-controls="fm-body">
+              <svg class="card-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7"/></svg>
+              <h2 id="fm-title" data-i18n="fm.title">FM-станции</h2>
+            </button>
+            <span id="fm-status" class="settings-status" role="status" aria-live="polite"></span>
+          </div>
+
+          <div class="card-body" id="fm-body" hidden>
+            <p class="field-note" data-i18n="note.fm">«Сканировать» проходит весь диапазон, и найденные станции заменяют этот список. Дайте им имена и сохраните: на устройстве они откроются двойным нажатием, а Prev и Next будут переключать между ними.</p>
+
+            <div class="device-group">
+              <h3 data-i18n="fm.saved">Сохранённые станции</h3>
+              <ul id="fm-presets" class="saved-networks fm-list"></ul>
+              <p id="fm-presets-empty" class="empty-state" data-i18n="fm.saved_empty">Станций пока нет — нажмите «Сканировать»</p>
+            </div>
+
+            <div class="settings-actions">
+              <button id="fm-scan" class="secondary-button" type="button" data-i18n="fm.scan">Сканировать</button>
+              <button id="fm-save" class="primary-button" type="button" disabled data-i18n="fm.save">Сохранить</button>
+            </div>
+          </div>
+        </section>
+
         <section class="card is-collapsed" data-section="backup" aria-labelledby="backup-title">
           <div class="card-head">
             <button class="card-toggle" type="button" aria-expanded="false" aria-controls="backup-body">
@@ -465,5 +490,6 @@
 
   <noscript><p class="noscript-message">Для настроек требуется JavaScript. / JavaScript is required for the settings page.</p></noscript>
   <script src="/settings.js"></script>
+  <script src="/fm.js"></script>
 </body>
 </html>

@@ -1,3 +1,3 @@
-idf_component_register(SRCS "rda5807.c" "fm_tuner.c"
+idf_component_register(SRCS "rda5807.c" "fm_presets.c" "fm_tuner.c"
                        INCLUDE_DIRS "include"
                        REQUIRES board esp_driver_i2c)

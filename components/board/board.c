@@ -1314,14 +1314,24 @@ static bool board_remote_wakes(void)
     return pin >= 0 && pin < SOC_RTCIO_PIN_COUNT;
 }
 
-/* Only an RTC-capable pad can wake the chip - on the S3 that is GPIO 0-21 -
- * and a board that cannot wake must not sleep, or the only way back is the
- * reset button. F1 - the sleep button on this board - was moved onto such a
- * pin on the bench for exactly that. */
-bool board_deep_sleep_supported(void)
+// The sleep button, on a pad that can wake the chip.
+static bool board_button_wakes(void)
 {
     const int8_t pin = wiring()->button_sleep;
     return pin >= 0 && pin < SOC_RTCIO_PIN_COUNT;
+}
+
+/* Only an RTC-capable pad can wake the chip - on the S3 that is GPIO 0-21 -
+ * and a board that cannot wake must not sleep, or the only way back is the
+ * reset button. F1 - the sleep button on this board - was moved onto such a
+ * pin on the bench for exactly that.
+ *
+ * Either way back will do: the button, or the remote's receiver. A board
+ * wired with a receiver and no buttons used to refuse the sleep its own
+ * remote asked for, although the remote was what would have woken it. */
+bool board_deep_sleep_supported(void)
+{
+    return board_button_wakes() || board_remote_wakes();
 }
 
 /* The wake sources, armed the same way on both paths into the sleep: the
@@ -1330,10 +1340,13 @@ bool board_deep_sleep_supported(void)
  * the timer is only armed when the alarm asked for one. */
 static void board_arm_wake_sources(uint32_t wake_after_seconds)
 {
-    const gpio_num_t button = (gpio_num_t)wiring()->button_sleep;
-    (void)rtc_gpio_pullup_en(button);
-    (void)rtc_gpio_pulldown_dis(button);
-    uint64_t mask = 1ULL << button;
+    uint64_t mask = 0U;
+    if (board_button_wakes()) {
+        const gpio_num_t button = (gpio_num_t)wiring()->button_sleep;
+        (void)rtc_gpio_pullup_en(button);
+        (void)rtc_gpio_pulldown_dis(button);
+        mask |= 1ULL << button;
+    }
     if (board_remote_wakes()) {
         /* The receiver's output idles high and drops for every mark, so the
          * first mark of any frame from any remote wakes the chip; whether it
@@ -1369,7 +1382,7 @@ bool board_woke_by_remote(void)
 void board_deep_sleep_again(uint32_t wake_after_seconds)
 {
     if (!board_deep_sleep_supported()) {
-        ESP_LOGE(TAG, "deep sleep refused: no wake button on an RTC pin");
+        ESP_LOGE(TAG, "deep sleep refused: neither the sleep button nor the receiver can wake the chip");
         return;
     }
     /* Nothing to shut down: this is a board that woke on the timer, found the
@@ -1383,7 +1396,7 @@ void board_deep_sleep_again(uint32_t wake_after_seconds)
 void board_deep_sleep(uint32_t wake_after_seconds)
 {
     if (!board_deep_sleep_supported()) {
-        ESP_LOGE(TAG, "deep sleep refused: no wake button on an RTC pin");
+        ESP_LOGE(TAG, "deep sleep refused: neither the sleep button nor the receiver can wake the chip");
         return;
     }
     /* The screen first, because it is the one part of this the user sees:
@@ -1407,9 +1420,23 @@ void board_deep_sleep(uint32_t wake_after_seconds)
      * from the very press that sent it to sleep. Bounded, because a button
      * that reads as stuck must not strand the board awake with its screen
      * off - sleeping and waking at once is still better than that. */
-    for (int waited_ms = 0; waited_ms < BOARD_SLEEP_RELEASE_WAIT_MS; waited_ms += 20) {
-        if (gpio_get_level(wiring()->button_sleep) != 0) break;
-        vTaskDelay(pdMS_TO_TICKS(20));
+    if (board_button_wakes()) {
+        for (int waited_ms = 0; waited_ms < BOARD_SLEEP_RELEASE_WAIT_MS; waited_ms += 20) {
+            if (gpio_get_level(wiring()->button_sleep) != 0) break;
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+    }
+    /* The same for the remote: a Power key still held sends a repeat frame
+     * every 110 ms, and the first of them would wake the chip as it went
+     * down. The line is taken as quiet once it has idled high for a quarter
+     * of a second - two repeat periods - within the same bound. */
+    if (board_remote_wakes()) {
+        int quiet_ms = 0;
+        for (int waited_ms = 0; waited_ms < BOARD_SLEEP_RELEASE_WAIT_MS && quiet_ms < 250;
+             waited_ms += 10) {
+            quiet_ms = gpio_get_level(wiring()->ir_receiver) != 0 ? quiet_ms + 10 : 0;
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
     }
     board_arm_wake_sources(wake_after_seconds);
     ESP_LOGW(TAG, "entering deep sleep");

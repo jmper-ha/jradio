@@ -106,6 +106,16 @@ function test_the_header_round_trips_and_names_every_option() {
   const bt = {...hw.setDeviceEnabled(hw.defaults(), 'bluetooth', true), uart1_tx: 13, uart1_rx: 14};
   assert.ok(hw.toHeader(bt).includes('#define BT_UART_TX_GPIO 13'));
   assert.strictEqual(hw.parseHeader(hw.toHeader(bt)).values.bluetooth, 'jradio_bt');
+  /* The tuner: the block board_options.h has always carried, commented out. */
+  const fm = {...hw.setDeviceEnabled(hw.defaults(), 'fm', true), i2c0_sda: 8, i2c0_scl: 3};
+  const fmHeader = hw.toHeader(fm);
+  for (const line of ['#define FM_TUNER FM_TUNER_RDA5807', '#define FM_I2C_PERIPHERAL 0',
+                      '#define FM_I2C_SDA_GPIO 8', '#define FM_I2C_SCL_GPIO 3']) {
+    assert.ok(fmHeader.includes(line), line);
+  }
+  assert.deepStrictEqual(hw.parseHeader(fmHeader).values, fm);
+  assert.deepStrictEqual(hw.parseHeader(fmHeader).unknown, []);
+  assert.ok(!/#define FM_/.test(hw.toHeader(hw.defaults())));
 }
 
 function test_a_partial_file_means_the_defaults_for_the_rest() {
@@ -531,7 +541,8 @@ function test_every_label_the_page_needs_is_in_the_dictionary() {
   for (const field of hw.FIELDS) {
     if (field.fixed !== undefined) continue;
     assert.notStrictEqual(t(`hw.f.${field.key}`), `hw.f.${field.key}`, `label for ${field.key}`);
-    if (field.kind === 'choice') {
+    /* A bus a device sits on is named by its kind and number, not looked up. */
+    if (field.kind === 'choice' && !field.bus) {
       for (const option of field.options) {
         assert.notStrictEqual(t(`hw.opt.${option}`), `hw.opt.${option}`, `option ${option}`);
       }

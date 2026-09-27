@@ -106,6 +106,10 @@
     {key: 'i2s0_dout', kind: 'opt_pin', device: 'i2s0', dflt: 16, define: 'I2S_DOUT_GPIO'},
     {key: 'uart1_tx', kind: 'opt_pin', device: 'uart1', dflt: NONE, define: 'BT_UART_TX_GPIO'},
     {key: 'uart1_rx', kind: 'opt_pin', device: 'uart1', dflt: NONE, define: 'BT_UART_RX_GPIO'},
+    /* The tuner's control bus, and later the PCM5122's: one pair however
+       many chips hang off it, each at its own address. */
+    {key: 'i2c0_sda', kind: 'opt_pin', device: 'i2c0', dflt: NONE, define: 'FM_I2C_SDA_GPIO'},
+    {key: 'i2c0_scl', kind: 'opt_pin', device: 'i2c0', dflt: NONE, define: 'FM_I2C_SCL_GPIO'},
 
     /* The display is always on SPI2: only that bus has IOMUX pins on the S3,
        and the 40 MHz the wide panels run at holds on those alone. The key
@@ -161,6 +165,11 @@
        the card names that bus as its "sound". */
     {key: 'bt_i2s', kind: 'choice', device: 'bluetooth', options: ['0'], dflt: '0', bus: 'i2s'},
 
+    /* The FM tuner, controlled over I2C. Its sound is the module's own
+       analogue output for now; the RDA5807FP's I2S joins later. */
+    {key: 'fm_tuner', kind: 'choice', device: 'fm', options: [NONE, 'rda5807'], dflt: NONE, enables: true, define: 'FM_TUNER'},
+    {key: 'fm_i2c', kind: 'choice', device: 'fm', options: ['0'], dflt: '0', bus: 'i2c'},
+
     /* Software sources, built in or left out: no pins, but a line in the
        header each. Both are on in the README board. */
     {key: 'yandex_music', kind: 'bool', device: 'features', dflt: 1, define: 'YANDEX_MUSIC'},
@@ -174,9 +183,9 @@
      UART - so the wires sit next to what they serve. */
   const DEVICES = [
     'board', 'tft', 'spi2', 'encoder', 'buttons', 'ir', 'dac', 'i2s0', 'amp', 'power',
-    'usb', 'sd', 'spi3', 'bluetooth', 'uart1', 'features',
+    'usb', 'sd', 'spi3', 'bluetooth', 'uart1', 'fm', 'i2c0', 'features',
   ];
-  const BUSES = ['spi2', 'spi3', 'i2s0', 'uart1'];
+  const BUSES = ['spi2', 'spi3', 'i2s0', 'uart1', 'i2c0'];
 
   /* What each device needs of its bus, by the bus's pin names. */
   const BUS_NEEDS = {
@@ -184,6 +193,7 @@
     sd: {spi: ['sclk', 'mosi', 'miso']},
     dac: {i2s: ['bclk', 'lrck', 'dout']},
     bluetooth: {uart: ['tx', 'rx'], i2s: ['bclk', 'lrck', 'dout']},
+    fm: {i2c: ['sda', 'scl']},
   };
 
   /* What a device switched on from "none" comes up with. No pin is guessed:
@@ -201,6 +211,7 @@
     usb: {usb_dp: USB_PINS.usb_dp, usb_dm: USB_PINS.usb_dm},
     sd: {sd_cs: UNSET},
     bluetooth: {bluetooth: 'jradio_bt'},
+    fm: {fm_tuner: 'rda5807'},
   };
 
   function isNone(value) {
@@ -495,6 +506,14 @@
            ...gpio('BT_UART_RX_GPIO', 'uart1_rx')]
         : ['/* No Bluetooth module: BLUETOOTH and the BT_UART_* lines would go here. */']),
       '',
+      ...(deviceEnabled(values, 'fm')
+        ? ['/* The FM tuner, controlled over I2C0. */',
+           `#define FM_TUNER FM_TUNER_${String(values.fm_tuner).toUpperCase()}`,
+           `#define FM_I2C_PERIPHERAL ${values.fm_i2c}`,
+           ...gpio('FM_I2C_SDA_GPIO', 'i2c0_sda'),
+           ...gpio('FM_I2C_SCL_GPIO', 'i2c0_scl')]
+        : ['/* No FM tuner: FM_TUNER and the FM_I2C_* lines would go here. */']),
+      '',
       '/* Sources that need no wiring; a built-in one also has a switch in the settings. */',
       `#define YANDEX_MUSIC ${on('yandex_music') ? 'FEATURE_ON' : 'FEATURE_OFF'}`,
       `#define DLNA ${on('dlna') ? 'FEATURE_ON' : 'FEATURE_OFF'}`,
@@ -577,6 +596,16 @@
       else unknown.push({key: 'BLUETOOTH', value: bluetooth});
     }
     asPin('uart1_tx', 'BT_UART_TX_GPIO'); asPin('uart1_rx', 'BT_UART_RX_GPIO');
+    const tuner = take('FM_TUNER');
+    if (tuner === undefined) values.fm_tuner = NONE;
+    else {
+      const id = tuner.replace(/^FM_TUNER_/, '').toLowerCase();
+      if (FIELD_BY_KEY.fm_tuner.options.includes(id)) values.fm_tuner = id;
+      else unknown.push({key: 'FM_TUNER', value: tuner});
+    }
+    const fmBus = take('FM_I2C_PERIPHERAL');
+    if (fmBus !== undefined && fmBus !== '0') unknown.push({key: 'FM_I2C_PERIPHERAL', value: fmBus});
+    asPin('i2c0_sda', 'FM_I2C_SDA_GPIO'); asPin('i2c0_scl', 'FM_I2C_SCL_GPIO');
     const asFeature = (key, name) => {
       const value = take(name);
       if (value !== undefined) values[key] = value === 'FEATURE_ON' ? 1 : 0;

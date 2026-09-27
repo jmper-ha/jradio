@@ -26,6 +26,7 @@ typedef enum {
     DEV_SPI3,
     DEV_I2S0,
     DEV_UART1,
+    DEV_I2C0,
     DEV_TFT,
     DEV_ENCODER,
     DEV_BUTTONS,
@@ -36,6 +37,7 @@ typedef enum {
     DEV_USB,
     DEV_SD,
     DEV_BLUETOOTH,
+    DEV_FM,
     DEV_FEATURES,
 } device_t;
 
@@ -85,6 +87,8 @@ static const field_t k_fields[] = {
     {"i2s0_dout", KIND_OPT_PIN, DEV_I2S0, AT(i2s0_dout), false, NULL, {{NULL, 0}}},
     {"uart1_tx", KIND_OPT_PIN, DEV_UART1, AT(uart1_tx), false, NULL, {{NULL, 0}}},
     {"uart1_rx", KIND_OPT_PIN, DEV_UART1, AT(uart1_rx), false, NULL, {{NULL, 0}}},
+    {"i2c0_sda", KIND_OPT_PIN, DEV_I2C0, AT(i2c0_sda), false, NULL, {{NULL, 0}}},
+    {"i2c0_scl", KIND_OPT_PIN, DEV_I2C0, AT(i2c0_scl), false, NULL, {{NULL, 0}}},
     {"tft_spi", KIND_IGNORED, DEV_TFT, 0, false, "2", {{NULL, 0}}},
     {"tft_cs", KIND_PIN, DEV_TFT, AT(tft_cs), false, NULL, {{NULL, 0}}},
     {"tft_dc", KIND_PIN, DEV_TFT, AT(tft_dc), false, NULL, {{NULL, 0}}},
@@ -120,6 +124,9 @@ static const field_t k_fields[] = {
      {{"none", BLUETOOTH_NONE}, {"jradio_bt", BLUETOOTH_JRADIO_BT}, {NULL, 0}}},
     {"bt_uart", KIND_CHOICE, DEV_BLUETOOTH, AT(bt_uart), false, NULL, {{"1", 1}, {NULL, 0}}},
     {"bt_i2s", KIND_CHOICE, DEV_BLUETOOTH, AT(bt_i2s), false, NULL, {{"0", 0}, {NULL, 0}}},
+    {"fm_tuner", KIND_CHOICE, DEV_FM, AT(fm_tuner), false, NULL,
+     {{"none", FM_TUNER_NONE}, {"rda5807", FM_TUNER_RDA5807}, {NULL, 0}}},
+    {"fm_i2c", KIND_CHOICE, DEV_FM, AT(fm_i2c), false, NULL, {{"0", 0}, {NULL, 0}}},
     {"yandex_music", KIND_BOOL, DEV_FEATURES, AT(yandex_music), false, NULL, {{NULL, 0}}},
     {"dlna", KIND_BOOL, DEV_FEATURES, AT(dlna), false, NULL, {{NULL, 0}}},
 };
@@ -175,6 +182,7 @@ void board_config_clear(board_config_t *config)
     config->display = DISPLAY_NONE;
     config->dac = DAC_PCM5102;
     config->bluetooth = BLUETOOTH_NONE;
+    config->fm_tuner = FM_TUNER_NONE;
     config->sd_spi = 3U;
     config->dac_i2s = 0U;
     config->bt_uart = 1U;
@@ -315,6 +323,7 @@ static bool device_enabled(const board_config_t *config, device_t device)
     case DEV_USB: return config->usb_dp != BOARD_PIN_NONE;
     case DEV_SD: return config->sd_cs != BOARD_PIN_NONE;
     case DEV_BLUETOOTH: return config->bluetooth != BLUETOOTH_NONE;
+    case DEV_FM: return config->fm_tuner != FM_TUNER_NONE;
     default: return true;
     }
 }
@@ -329,13 +338,15 @@ static bool bus_used(const board_config_t *config, device_t bus)
     case DEV_SPI3: return device_enabled(config, DEV_SD) && config->sd_spi == 3U;
     case DEV_I2S0: return config->dac_i2s == 0U || (bt && config->bt_i2s == 0U);
     case DEV_UART1: return bt && config->bt_uart == 1U;
+    case DEV_I2C0: return device_enabled(config, DEV_FM) && config->fm_i2c == 0U;
     default: return false;
     }
 }
 
 static bool is_bus(device_t device)
 {
-    return device == DEV_SPI2 || device == DEV_SPI3 || device == DEV_I2S0 || device == DEV_UART1;
+    return device == DEV_SPI2 || device == DEV_SPI3 || device == DEV_I2S0 || device == DEV_UART1 ||
+           device == DEV_I2C0;
 }
 
 /* Whether a pin field owns its pin right now. The SPI2 pins are not in the
@@ -392,6 +403,7 @@ static const char *device_name(device_t device)
     case DEV_SD: return "sd";
     case DEV_DAC: return "dac";
     case DEV_BLUETOOTH: return "bluetooth";
+    case DEV_FM: return "fm";
     default: return "";
     }
 }
@@ -471,6 +483,7 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     static const char *const k_spi3[] = {"spi3_sclk", "spi3_mosi", "spi3_miso"};
     static const char *const k_i2s0[] = {"i2s0_bclk", "i2s0_lrck", "i2s0_dout"};
     static const char *const k_uart1[] = {"uart1_tx", "uart1_rx"};
+    static const char *const k_i2c0[] = {"i2c0_sda", "i2c0_scl"};
     (void)k_spi2;  // SPI2's pins are fixed and always there
     if (device_enabled(config, DEV_SD) && config->sd_spi == 3U) {
         check_bus(config, report, DEV_SD, k_spi3, 3U);
@@ -479,6 +492,9 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     if (device_enabled(config, DEV_BLUETOOTH)) {
         if (config->bt_uart == 1U) check_bus(config, report, DEV_BLUETOOTH, k_uart1, 2U);
         if (config->bt_i2s == 0U) check_bus(config, report, DEV_BLUETOOTH, k_i2s0, 3U);
+    }
+    if (device_enabled(config, DEV_FM) && config->fm_i2c == 0U) {
+        check_bus(config, report, DEV_FM, k_i2c0, 2U);
     }
 
     // Only RTC pins can wake the chip.

@@ -96,6 +96,11 @@ void board_config_compiled(board_config_t *config)
     config->uart1_tx = PIN(BT_UART_TX_GPIO);
     config->uart1_rx = PIN(BT_UART_RX_GPIO);
 #endif
+#if defined(FM_TUNER) && FM_TUNER == FM_TUNER_RDA5807
+    config->fm_tuner = FM_TUNER_RDA5807;
+    config->i2c0_sda = PIN(FM_I2C_SDA_GPIO);
+    config->i2c0_scl = PIN(FM_I2C_SCL_GPIO);
+#endif
 #if defined(YANDEX_MUSIC)
     config->yandex_music = YANDEX_MUSIC == FEATURE_ON ? 1U : 0U;
 #endif

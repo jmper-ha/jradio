@@ -37,7 +37,10 @@ static bool ui_menu_item_is_built(ui_menu_item_t item)
 {
     switch (item) {
     case UI_MENU_ITEM_FM_RADIO:
-        return BOARD_HAS_FM_RADIO;
+        /* Not yet, whatever the board has: the tuner has a driver but the
+         * player no FM source, and a menu row that opens nothing is worse
+         * than none. It comes back on the wiring, like the drive's. */
+        return false;
     case UI_MENU_ITEM_DLNA:
         return BOARD_HAS_DLNA;
     case UI_MENU_ITEM_YANDEX_MUSIC:

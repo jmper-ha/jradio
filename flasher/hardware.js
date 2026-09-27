@@ -121,7 +121,9 @@
       span.className = 'row-value';
       const link = document.createElement('a');
       link.href = `#hw-dev-${field.bus}${field.options[0]}`;
-      link.textContent = OPTION_LABEL(field.options[0]);
+      /* The bus by its kind and number, "I2C0": the number alone is shared
+         between kinds - I2S0 and I2C0 are both "0". */
+      link.textContent = `${field.bus.toUpperCase()}${field.options[0]}`;
       const tail = document.createElement('span');
       tail.textContent = ` ${t('hw.bus_card')}`;
       span.append(link, tail);

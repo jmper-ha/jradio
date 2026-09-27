@@ -87,10 +87,9 @@
 #define DAC_UDA1334A 2
 
 #define FM_TUNER_NONE 0
-/* RDA5807M receiver module: FM band, I2C control, line level out into the
- * same amplifier as the DAC. No driver is written yet - the name exists so
- * fitting one is a line in board_options.h and not a search for every place
- * that has to learn about it. */
+/* RDA5807 receiver: FM band, I2C control (components/fm_tuner). The M module
+ * has a line-level output of its own; the FP adds I2S, not yet used. The
+ * player has no FM source yet, so for now the tuner is only found at boot. */
 #define FM_TUNER_RDA5807 1
 
 #define BLUETOOTH_NONE 0

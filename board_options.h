@@ -204,14 +204,9 @@
  * FM radio - tuner module on I2C  (not fitted)
  * ====================================================================== */
 
-/* Nothing on revision 1 receives FM, and no driver is written. The block is
- * here rather than absent because "which parts can this firmware drive" is a
- * question this file should answer, including with a no: an option that only
- * exists in someone's memory gets re-invented differently next time.
- *
- * Uncommenting the four lines is what fits a tuner: the source then appears
- * on the home screen and in the web interface, which is exactly the point at
- * which the missing driver becomes the next thing to write.
+/* Nothing on revision 1 receives FM. The driver finds the chip at boot and
+ * says so in the log; the player has no FM source yet, so the home screen
+ * does not offer one.
  *
  * The bus is its own, not the card's: SPI3 has no spare pins left, and a
  * tuner is an I2C part anyway. */

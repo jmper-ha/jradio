@@ -254,6 +254,8 @@
     'hw.dev.spi3': ['Шина SPI3', 'SPI3 bus'],
     'hw.dev.i2s0': ['Шина I2S', 'I2S bus'],
     'hw.dev.uart1': ['Шина UART1', 'UART1 bus'],
+    'hw.dev.fm': ['FM-тюнер', 'FM tuner'],
+    'hw.dev.i2c0': ['Шина I2C', 'I2C bus'],
 
     'hw.f.board_name': ['Название платы', 'Board name'],
     'hw.f.display': ['Дисплей', 'Display'],
@@ -262,6 +264,7 @@
     'hw.f.i2s0_bclk': ['BCLK', 'BCLK'], 'hw.f.i2s0_lrck': ['LRCK', 'LRCK'],
     'hw.f.i2s0_dout': ['DOUT (к ЦАП)', 'DOUT (to the DAC)'],
     'hw.f.uart1_tx': ['TX', 'TX'], 'hw.f.uart1_rx': ['RX', 'RX'],
+    'hw.f.i2c0_sda': ['SDA', 'SDA'], 'hw.f.i2c0_scl': ['SCL', 'SCL'],
     'hw.f.tft_cs': ['CS', 'CS'], 'hw.f.tft_dc': ['DC', 'DC'],
     'hw.f.tft_reset': ['RESET', 'RESET'], 'hw.f.tft_backlight': ['Подсветка', 'Backlight'],
     'hw.f.encoder_right': ['Вправо (A)', 'Right (A)'], 'hw.f.encoder_left': ['Влево (B)', 'Left (B)'],
@@ -276,6 +279,7 @@
     'hw.f.usb_dp': ['D+', 'D+'], 'hw.f.usb_dm': ['D−', 'D-'],
     'hw.f.sd_spi': ['Шина', 'Bus'], 'hw.f.sd_cs': ['CS', 'CS'],
     'hw.f.bluetooth': ['Модуль', 'Module'], 'hw.f.bt_uart': ['Управление', 'Control'], 'hw.f.bt_i2s': ['Звук', 'Audio'],
+    'hw.f.fm_tuner': ['Микросхема', 'Chip'], 'hw.f.fm_i2c': ['Управление', 'Control'],
 
     /* The short names the picture writes beside a pin. */
     'hw.s.spi2_sclk': ['SPI2 SCLK', 'SPI2 SCLK'], 'hw.s.spi2_mosi': ['SPI2 MOSI', 'SPI2 MOSI'],
@@ -283,6 +287,7 @@
     'hw.s.i2s0_bclk': ['I2S BCLK', 'I2S BCLK'], 'hw.s.i2s0_lrck': ['I2S LRCK', 'I2S LRCK'],
     'hw.s.i2s0_dout': ['I2S DOUT', 'I2S DOUT'],
     'hw.s.uart1_tx': ['UART1 TX', 'UART1 TX'], 'hw.s.uart1_rx': ['UART1 RX', 'UART1 RX'],
+    'hw.s.i2c0_sda': ['I2C SDA', 'I2C SDA'], 'hw.s.i2c0_scl': ['I2C SCL', 'I2C SCL'],
     'hw.s.tft_cs': ['TFT CS', 'TFT CS'], 'hw.s.tft_dc': ['TFT DC', 'TFT DC'], 'hw.s.tft_reset': ['TFT RST', 'TFT RST'],
     'hw.s.tft_backlight': ['Подсветка', 'Backlight'],
     'hw.s.encoder_right': ['Энкодер A', 'Encoder A'], 'hw.s.encoder_left': ['Энкодер B', 'Encoder B'], 'hw.s.encoder_button': ['Энкодер ⏎', 'Encoder ⏎'],
@@ -294,13 +299,14 @@
 
     'hw.opt.none': ['нет', 'none'],
     'hw.opt.pcm5102': ['PCM5102', 'PCM5102'],
+    'hw.opt.rda5807': ['RDA5807', 'RDA5807'],
     'hw.opt.jradio_bt': ['jradio-bt (ESP32 по UART)', 'jradio-bt (an ESP32 over UART)'],
     'hw.opt.st7796s_480_320': ['ST7796S 480×320', 'ST7796S 480×320'], 'hw.opt.st7796s_320_480': ['ST7796S 320×480 (портрет)', 'ST7796S 320×480 (portrait)'],
     'hw.opt.ili9488_480_320': ['ILI9488 480×320', 'ILI9488 480×320'], 'hw.opt.ili9488_320_480': ['ILI9488 320×480 (портрет)', 'ILI9488 320×480 (portrait)'],
     'hw.opt.ili9341_320_240': ['ILI9341 320×240', 'ILI9341 320×240'], 'hw.opt.ili9341_240_320': ['ILI9341 240×320 (портрет)', 'ILI9341 240×320 (portrait)'],
     'hw.opt.st7789_320_240': ['ST7789 320×240', 'ST7789 320×240'], 'hw.opt.st7789_240_320': ['ST7789 240×320 (портрет)', 'ST7789 240×320 (portrait)'],
     'hw.opt.st7789_320_170': ['ST7789 320×170', 'ST7789 320×170'],
-    'hw.opt.rst': ['RST модуля', 'The module\'s RST'], 'hw.opt.0': ['I2S0', 'I2S0'], 'hw.opt.1': ['UART1', 'UART1'], 'hw.opt.2': ['SPI2', 'SPI2'], 'hw.opt.3': ['SPI3', 'SPI3'],
+    'hw.opt.rst': ['RST модуля', 'The module\'s RST'],
 
     /* Why a pin is greyed or underlined on the picture. */
     'hw.note.pin_psram': ['Занят octal-PSRAM модуля N16R8', 'Taken by the N16R8 module\'s octal PSRAM'],

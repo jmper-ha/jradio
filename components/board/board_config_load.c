@@ -141,3 +141,8 @@ bool board_has_bluetooth(void)
 {
     return board_config_get()->bluetooth == BLUETOOTH_JRADIO_BT;
 }
+
+bool board_has_fm_tuner(void)
+{
+    return board_config_get()->fm_tuner == FM_TUNER_RDA5807;
+}

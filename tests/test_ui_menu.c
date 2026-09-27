@@ -110,7 +110,7 @@ static void test_only_the_parts_this_build_has_get_a_row(void)
         assert(ui_menu_item_is_visible(parts[i], ALL));
         assert(!ui_menu_item_is_visible(parts[i], ALL & ~UI_MENU_VISIBLE(parts[i])));
     }
-    assert(ui_menu_item_is_visible(UI_MENU_ITEM_FM_RADIO, ALL) == (bool)BOARD_HAS_FM_RADIO);
+    assert(!ui_menu_item_is_visible(UI_MENU_ITEM_FM_RADIO, ALL));
     assert(ui_menu_item_is_visible(UI_MENU_ITEM_DLNA, ALL) == (bool)BOARD_HAS_DLNA);
     assert(ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, ALL) ==
            (bool)BOARD_HAS_YANDEX_MUSIC);
@@ -118,8 +118,7 @@ static void test_only_the_parts_this_build_has_get_a_row(void)
 
     /* Two always, plus whatever this build has. */
     const uint8_t expected = (uint8_t)(2 + BOARD_HAS_USB + BOARD_HAS_SD_CARD +
-                                       BOARD_HAS_BLUETOOTH + BOARD_HAS_FM_RADIO +
-                                       BOARD_HAS_DLNA + BOARD_HAS_YANDEX_MUSIC);
+                                       BOARD_HAS_BLUETOOTH + BOARD_HAS_DLNA + BOARD_HAS_YANDEX_MUSIC);
     assert(ui_menu_visible_count(ALL) == expected);
 
     /* Walking the rows only ever lands on items this build has, which is what

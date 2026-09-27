@@ -23,6 +23,7 @@
 #include "system_report.h"
 #include "ui.h"
 #include "file_player.h"
+#include "fm_tuner.h"
 #include "usb_storage.h"
 #include "web_server.h"
 #include "wifi_provisioning.h"
@@ -259,6 +260,11 @@ void app_main(void)
          * there every time it builds a snapshot; the module itself may be
          * booting still, and shows up in the source list when it answers. */
         start_optional("Bluetooth module link", bt_link_init());
+    }
+    if (board_has_fm_tuner()) {
+        /* Only finds the chip for now and leaves it powered down: the player
+         * has no FM source to drive it with yet. */
+        start_optional("FM tuner", fm_tuner_init());
     }
     ESP_ERROR_CHECK(internet_radio_init());
     /* Nothing is installed here any more. A station that arrives one track at

@@ -39,6 +39,7 @@ typedef struct {
     uint8_t display;
     uint8_t dac;
     uint8_t bluetooth;
+    uint8_t fm_tuner;  // FM_TUNER_*
     /* The switches below are 0 or 1. They are bytes rather than bools, and a
      * choice above holds BOARD_CONFIG_INVALID, when the file said something
      * else: the editor reports that as bad_value, and a bool could not hold
@@ -55,6 +56,8 @@ typedef struct {
     int8_t i2s0_dout;
     int8_t uart1_tx;
     int8_t uart1_rx;
+    int8_t i2c0_sda;
+    int8_t i2c0_scl;
 
     int8_t tft_cs;
     int8_t tft_dc;
@@ -87,11 +90,12 @@ typedef struct {
 
     /* Which bus each device names. Each has one possible value today and is
      * kept only so a file naming another is refused rather than obeyed:
-     * tft_spi 2, sd_spi 3, dac_i2s 0, bt_uart 1, bt_i2s 0. */
+     * tft_spi 2, sd_spi 3, dac_i2s 0, bt_uart 1, bt_i2s 0, fm_i2c 0. */
     uint8_t sd_spi;
     uint8_t dac_i2s;
     uint8_t bt_uart;
     uint8_t bt_i2s;
+    uint8_t fm_i2c;
 } board_config_t;
 
 typedef enum {
@@ -221,6 +225,7 @@ bool board_has_usb(void);
 bool board_has_sd_card(void);
 bool board_has_ir(void);
 bool board_has_bluetooth(void);
+bool board_has_fm_tuner(void);
 
 #ifdef __cplusplus
 }

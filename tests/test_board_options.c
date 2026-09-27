@@ -295,10 +295,16 @@ static void test_what_is_wired_is_what_the_firmware_offers(void)
 
     /* Neither is fitted on revision 1, and both are named in board_options.h
      * anyway - the file should answer "can this firmware drive one" with a no
-     * rather than with silence. Bluetooth on this chip cannot be fitted at
-     * all - the S3 radio is Wi-Fi and BLE - so the only way the feature is
-     * on is the external module, and then its UART is named. */
+     * rather than with silence. A tuner is fitted by naming it and its bus.
+     * Bluetooth on this chip cannot be fitted at all - the S3 radio is Wi-Fi
+     * and BLE - so the only way the feature is on is the external module, and
+     * then its UART is named. */
+#if defined(FM_TUNER) && FM_TUNER == FM_TUNER_RDA5807
+    assert(BOARD_HAS_FM_RADIO == 1);
+    assert(FM_I2C_SDA_GPIO != FM_I2C_SCL_GPIO);
+#else
     assert(BOARD_HAS_FM_RADIO == 0);
+#endif
 #if defined(BLUETOOTH) && BLUETOOTH == BLUETOOTH_JRADIO_BT
     assert(BOARD_HAS_BLUETOOTH == 1);
     assert(BT_UART_TX_GPIO != BT_UART_RX_GPIO);

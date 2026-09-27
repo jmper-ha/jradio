@@ -69,9 +69,12 @@
 
   function pinOptions(field) {
     const options = [];
-    if (field.kind !== 'pin') options.push({value: hw.NONE, label: '—'});
-    // The part is on and its pin still to be chosen; see hw.UNSET.
-    if (field.enables) options.push({value: hw.UNSET, label: t('hw.opt.unset')});
+    /* The dash is "no pin". On a pin that switches its part on - the
+       receiver, the amplifier, the power switch, the card - the row shows
+       only while the part is on, so there the dash means "on, pin still to
+       choose" (hw.UNSET), which the checks report; the part goes off by its
+       switch. */
+    if (field.kind !== 'pin') options.push({value: field.enables ? hw.UNSET : hw.NONE, label: '—'});
     if (field.resetOk) options.push({value: hw.RESET, label: t('hw.opt.rst')});
     /* By number, not by the header's order: a list is scanned for a
        number, the picture for a place. */
@@ -371,7 +374,9 @@
       const value = values[field.key];
       if (field.kind === 'bool') control.checked = String(value) === '1';
       else if (field.kind === 'fixed') control.textContent = hw.isNone(value) ? '—' : `GPIO ${value}`;
-      else if (field.kind === 'pin' || field.kind === 'opt_pin') control.value = hw.isNone(value) ? hw.NONE : String(value);
+      else if (field.kind === 'pin' || field.kind === 'opt_pin') {
+        control.value = hw.isNone(value) ? (field.enables ? hw.UNSET : hw.NONE) : String(value);
+      }
       else if (control.value !== undefined) control.value = value === undefined || value === null ? '' : String(value);
       const row = rows[field.key];
       if (row) row.classList.toggle('is-picking', picking === field.key);

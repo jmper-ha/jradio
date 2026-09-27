@@ -814,6 +814,25 @@ static void test_the_tuner_opens_its_presets(void)
     ui_player_state_apply_snapshot(&state, &fm, 0);
     assert(ui_player_state_show_station_list(&state));
     assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
+    /* And a row there can be chosen - the gate used to drop it unheard. */
+    assert(ui_player_state_can_select_item(&state, 1U));
+    assert(!ui_player_state_can_select_item(&state, 2U));
+    const player_command_t row = command(PLAYER_COMMAND_SELECT_ITEM, AUDIO_SOURCE_FM, 1U);
+    assert(ui_player_state_can_post(&state, &row));
+
+    /* Posted, the screen is the tuner's at once - not the radio's - and the
+       snapshot on that preset confirms it, so no timeout sends it back to the
+       list. */
+    assert(ui_player_state_apply_post_result(&state, &row, true, 100U));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+    assert(ui_player_state_source(&state) == AUDIO_SOURCE_FM);
+    player_snapshot_t tuned = fm;
+    tuned.active_item_index = 1U;
+    ui_player_state_apply_snapshot(&state, &tuned, 200U);
+    assert(!ui_player_state_is_pending(&state));
+    ui_player_state_apply_snapshot(&state, &tuned, 100000U);
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+    assert(ui_player_state_source(&state) == AUDIO_SOURCE_FM);
 }
 
 int main(void)

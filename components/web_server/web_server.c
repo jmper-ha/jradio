@@ -977,6 +977,9 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
     player_snapshot_t snapshot;
     player_control_get_snapshot(&snapshot);
     bool rotor = snapshot.active_source == AUDIO_SOURCE_YANDEX;
+    /* The tuner's presets are a list of stations too, drawn and chosen the
+     * same way; a row is a preset's index, as on the panel. */
+    bool fm = snapshot.active_source == AUDIO_SOURCE_FM;
     /* `?source=internet_radio` asks for the radio's own list whatever happens
      * to be playing. The settings page needs it to offer the alarm a station,
      * and the number it offers has to be the number the device will dial -
@@ -987,9 +990,12 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
         if (httpd_query_key_value(query, "source", value, sizeof(value)) == ESP_OK &&
             strcmp(value, "internet_radio") == 0) {
             rotor = false;
+            fm = false;
         }
     }
-    const size_t count = rotor ? yandex_catalog_count() : internet_radio_station_count();
+    const size_t count = fm      ? player_control_fm_preset_count()
+                         : rotor ? yandex_catalog_count()
+                                 : internet_radio_station_count();
 
     web_json_writer_t writer;
     web_json_init(&writer, s_file_chunk_buffer, sizeof(s_file_chunk_buffer),
@@ -998,7 +1004,7 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
      * kind, and the rotor's catalogue is fetched over the network - a reply to
      * a request sent before the switch arrives after it. */
     web_json_literal(&writer, "{\"kind\":\"stations\",\"source\":");
-    web_json_string(&writer, rotor ? "yandex" : "internet_radio");
+    web_json_string(&writer, fm ? "fm" : rotor ? "yandex" : "internet_radio");
     web_json_literal(&writer, ",\"revision\":");
     web_json_format(&writer, "%u", snapshot.listing_revision);
     web_json_literal(&writer, ",\"count\":");
@@ -1016,7 +1022,20 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
     for (size_t index = 0U; index < count; ++index) {
         const char *label = "";
         yandex_station_t station;
-        if (rotor) {
+        fm_preset_t preset;
+        char frequency[24];
+        if (fm) {
+            if (!player_control_fm_preset_at(index, &preset)) break;
+            label = preset.name;
+            // A preset not yet named is its frequency, as on the panel.
+            if (label[0] == '\0') {
+                char digits[12];
+                player_fm_frequency_text(preset.khz, digits, sizeof(digits));
+                snprintf(frequency, sizeof(frequency), "%s %s", digits,
+                         device_text(DEVICE_TEXT_FM_MHZ, device_settings_published_language()));
+                label = frequency;
+            }
+        } else if (rotor) {
             if (!yandex_catalog_station_at(index, &station)) break;
             label = station.name;
         } else {

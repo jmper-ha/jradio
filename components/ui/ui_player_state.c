@@ -60,7 +60,9 @@ static bool ui_player_state_snapshot_confirms(
         return snapshot->active_source == AUDIO_SOURCE_NONE &&
                !state->pending_stop_requires_source_departure;
     case PLAYER_COMMAND_SELECT_ITEM:
-        if (!audio_source_is_stations(snapshot->active_source) ||
+        // The tuner's presets confirm the way a station does: by the row.
+        if (!(audio_source_is_stations(snapshot->active_source) ||
+              snapshot->active_source == AUDIO_SOURCE_FM) ||
             snapshot->active_item_index != state->pending_command.item_index) {
             return false;
         }
@@ -110,9 +112,13 @@ bool ui_player_state_can_select_item(const ui_player_state_t *state,
      * it left the encoder dead on every row of the browser - no command, no
      * notice, no log line. Which of open-or-play the row means is the source's
      * business, not this one's. */
+    /* And the tuner's presets, a flat list like the stations. Left out when
+     * they were added, the press on a row did exactly what the two above
+     * describe: nothing, with no line anywhere. */
     return state != NULL &&
            (audio_source_is_stations(state->confirmed_source) ||
             state->confirmed_source == AUDIO_SOURCE_DLNA ||
+            state->confirmed_source == AUDIO_SOURCE_FM ||
             state->confirmed_source == AUDIO_SOURCE_NONE) &&
            item_index < state->item_count;
 }
@@ -231,9 +237,11 @@ bool ui_player_state_apply_post_result(ui_player_state_t *state,
         state->source = AUDIO_SOURCE_NONE;
     } else {
         state->view = UI_PLAYER_VIEW_SOURCE;
-        state->source = command->kind == PLAYER_COMMAND_SELECT_SOURCE
-                            ? command->source
-                            : AUDIO_SOURCE_INTERNET_RADIO;
+        /* A row was a station's until the tuner had presets; a preset keeps
+         * its own source, or the screen draws the radio until it confirms. */
+        state->source = command->kind == PLAYER_COMMAND_SELECT_SOURCE ? command->source
+                        : command->source == AUDIO_SOURCE_FM          ? AUDIO_SOURCE_FM
+                                                                      : AUDIO_SOURCE_INTERNET_RADIO;
     }
     return true;
 }

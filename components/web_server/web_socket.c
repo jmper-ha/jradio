@@ -160,9 +160,9 @@ static void write_capabilities(web_json_writer_t *writer,
     if ((player->capabilities & PLAYER_CAP_BLUETOOTH) != 0U) {
         write_capability(writer, &written, "bluetooth", AUDIO_SOURCE_BLUETOOTH, "", language);
     }
-    // The tuner has no list yet either: the frequency is the whole source.
+    // Its presets are a list of stations, served by the same endpoint.
     if ((player->capabilities & PLAYER_CAP_FM) != 0U) {
-        write_capability(writer, &written, "fm", AUDIO_SOURCE_FM, "", language);
+        write_capability(writer, &written, "fm", AUDIO_SOURCE_FM, "stations", language);
     }
     web_json_literal(writer, "]");
 }
@@ -253,8 +253,7 @@ static void write_list(web_json_writer_t *writer, const player_snapshot_t *playe
     web_json_literal(writer, "\"list\":{\"kind\":");
     /* The phone has no list on this side at all: an empty kind is what the
      * page hides its list on. */
-    web_json_literal(writer, player->active_source == AUDIO_SOURCE_BLUETOOTH ||
-                                     player->active_source == AUDIO_SOURCE_FM
+    web_json_literal(writer, player->active_source == AUDIO_SOURCE_BLUETOOTH
                                  ? "\"\""
                              : browsable                                     ? "\"files\""
                                                                              : "\"stations\"");

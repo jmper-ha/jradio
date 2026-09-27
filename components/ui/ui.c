@@ -172,6 +172,9 @@ static lv_obj_t *s_feed_icons[UI_FEED_SLOTS];
 static lv_obj_t *s_feed_dots[UI_FEED_ITEM_COUNT];
 static ui_feed_model_t s_feed_model;
 static lv_obj_t *s_source_title;
+/* The FM frequency in the seven-segment face. It stands where the title and
+ * the track are on every other source, and those two are hidden under it. */
+static lv_obj_t *s_source_fm_digits;
 static lv_obj_t *s_source_status;
 /* A line that scrolls when it does not fit.
  *
@@ -1995,21 +1998,47 @@ static void ui_update_bluetooth_status(const player_snapshot_t *snapshot)
     ui_set_stream_readings(snapshot);
 }
 
+/* Hidden or shown only when that changes: every flag change invalidates, and
+ * this runs on every pass of the poll loop. */
+static void ui_set_hidden(lv_obj_t *object, bool hidden)
+{
+    if (lv_obj_has_flag(object, LV_OBJ_FLAG_HIDDEN) == hidden) return;
+    if (hidden) {
+        lv_obj_add_flag(object, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_clear_flag(object, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+/* The digits over the title and the track, or the two of them back. */
+static void ui_show_fm_face(bool fm)
+{
+    ui_set_hidden(s_source_fm_digits, !fm);
+    ui_set_hidden(s_source_title, fm);
+    ui_set_hidden(s_source_detail.box, fm);
+}
+
 static void ui_update_fm_status(const player_snapshot_t *snapshot)
 {
     ui_now_playing_t now;
     ui_now_playing_for_tuner(snapshot->context, snapshot->stream_title, &now);
     ui_note_now_playing(&now);
-    ui_set_label_text_if_changed(s_source_title, now.heading[0] != '\0'
-                                                     ? now.heading
-                                                     : ui_text(DEVICE_TEXT_SOURCE_FM));
-    ui_scroller_set_text(&s_source_detail, now.title);
+    /* The digits say the number alone: the unit is the one thing about it
+     * nobody needs read out, and the face has no letters. The seek's
+     * moving channel is in the context, so it is taken from there. */
+    char digits[12];
+    size_t length = strcspn(snapshot->context, " ");
+    if (length >= sizeof(digits)) length = sizeof(digits) - 1U;
+    memcpy(digits, snapshot->context, length);
+    digits[length] = '\0';
+    ui_set_label_text_if_changed(s_source_fm_digits, digits);
     const char *state = "";
     if (snapshot->playback_state != PLAYER_PLAYBACK_PLAYING &&
         snapshot->playback_state != PLAYER_PLAYBACK_PAUSED) {
         state = ui_radio_state_text(snapshot->playback_state);
     }
-    ui_set_state_line_from(snapshot, state, now.artist);
+    // The reception takes the performer's row, under the digits.
+    ui_set_state_line_from(snapshot, state, now.title);
     ui_set_stream_readings(snapshot);
 }
 
@@ -2017,6 +2046,7 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
 {
     if (snapshot == NULL) return;
     ui_update_playback_marks(snapshot);
+    ui_show_fm_face(ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_FM);
     if (audio_source_is_files(ui_player_state_source(&s_player_ui))) {
         ui_update_files_status(snapshot);
         return;
@@ -4172,6 +4202,17 @@ static void ui_create_source_screen(void)
      * there is nothing else on this screen competing for the eye. */
     ui_scroller_set_scrolling(&s_source_detail, true);
 
+    s_source_fm_digits = lv_label_create(s_source_screen);
+    lv_obj_set_pos(s_source_fm_digits, UI_SRC_TEXT_X, UI_SRC_ROW_TITLE);
+    lv_obj_set_size(s_source_fm_digits, UI_SRC_TEXT_W, UI_SRC_FM_DIGITS_PX);
+    lv_obj_set_style_text_font(s_source_fm_digits, UI_FONT_FM_DIGITS, 0);
+    lv_obj_set_style_text_color(s_source_fm_digits, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_label_set_long_mode(s_source_fm_digits, LV_LABEL_LONG_CLIP);
+    lv_obj_add_flag(s_source_fm_digits, LV_OBJ_FLAG_HIDDEN);
+#if UI_SRC_TEXT_CENTRED
+    lv_obj_set_style_text_align(s_source_fm_digits, LV_TEXT_ALIGN_CENTER, 0);
+#endif
+
     s_source_artist = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_artist, UI_SRC_TEXT_X, UI_SRC_ROW_ARTIST);
     lv_obj_set_size(s_source_artist, UI_SRC_TEXT_W, UI_SRC_LINE_H);
@@ -6151,6 +6192,9 @@ static void ui_remember_playing(const player_snapshot_t *snapshot)
         (void)device_settings_set_last_dlna(&s_device_settings, server, container, track, title);
         return;
     }
+    case AUDIO_SOURCE_FM:
+        (void)device_settings_set_last_source(&s_device_settings, DEVICE_LAST_SOURCE_FM);
+        return;
     case AUDIO_SOURCE_BLUETOOTH:
         /* Written as soon as the source is active, not when sound arrives: the
          * phone decides that, and waiting for a phone is the normal state of
@@ -6439,7 +6483,8 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
     if (!s_autoplay_pending) return;
     const ui_autoplay_action_t action =
         ui_autoplay_decide(&s_device_settings, snapshot->usb_media, snapshot->sd_media, false,
-                           BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth());
+                           BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(),
+                           board_has_fm_tuner());
     const bool waited =
         (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_WAIT_MS;
     // Hold off only while the answer could still change: a drive that has not
@@ -6571,6 +6616,20 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
     case UI_AUTOPLAY_BLUETOOTH:
         // Handled above: it is the one action that outlives a single pass.
         return;
+    case UI_AUTOPLAY_FM: {
+        /* One command, not the select-then-play pair: choosing the tuner is
+         * what starts it. */
+        (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_FM);
+        const player_command_t select = {
+            .kind = PLAYER_COMMAND_SELECT_SOURCE,
+            .source = AUDIO_SOURCE_FM,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        if (!ui_submit_player_command(&select)) return;
+        ui_load_source_screen(AUDIO_SOURCE_FM);
+        s_waiting_for_source_item = false;
+        return;
+    }
     case UI_AUTOPLAY_FILE_UNAVAILABLE:
         (void)ui_menu_select_source(&s_menu, ui_autoplay_source(&s_device_settings));
         ui_show_source();
@@ -7090,7 +7149,8 @@ esp_err_t ui_init(void)
                          ui_autoplay_decide(&s_device_settings, FILE_BROWSER_MEDIA_READY,
                                             FILE_BROWSER_MEDIA_READY, true,
                                             BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA,
-                                            board_has_bluetooth()) != UI_AUTOPLAY_HOME;
+                                            board_has_bluetooth(),
+                                            board_has_fm_tuner()) != UI_AUTOPLAY_HOME;
     s_autoplay_started_ms = ui_tick_get_ms();
     /* Through the same call the rest of the firmware uses, so a device with no
      * home screen boots straight into the radio instead of onto a screen it

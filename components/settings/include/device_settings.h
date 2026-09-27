@@ -87,6 +87,8 @@ typedef enum {
      * whole of this source: a device left waiting for a phone should come back
      * waiting for a phone. */
     DEVICE_LAST_SOURCE_BLUETOOTH,
+    /* The tuner, which comes back on its own frequency (fm_frequency). */
+    DEVICE_LAST_SOURCE_FM,
 } device_last_source_t;
 
 #define DEVICE_SETTINGS_PATH "/littlefs/config/settings.csv"

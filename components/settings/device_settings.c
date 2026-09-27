@@ -383,6 +383,8 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
             settings->last_source = DEVICE_LAST_SOURCE_DLNA;
         } else if (strcmp(value, "bluetooth") == 0) {
             settings->last_source = DEVICE_LAST_SOURCE_BLUETOOTH;
+        } else if (strcmp(value, "fm") == 0) {
+            settings->last_source = DEVICE_LAST_SOURCE_FM;
         }
     }
     /* Read into its own buffer: a path is far longer than the little `value`
@@ -897,8 +899,9 @@ bool device_settings_set_last_source(device_settings_t *settings,
                      : source == DEVICE_LAST_SOURCE_YANDEX        ? "yandex"
                      : source == DEVICE_LAST_SOURCE_DLNA          ? "dlna"
                      : source == DEVICE_LAST_SOURCE_BLUETOOTH     ? "bluetooth"
+                     : source == DEVICE_LAST_SOURCE_FM            ? "fm"
                                                                    : "none";
-    if (settings == NULL || source > DEVICE_LAST_SOURCE_BLUETOOTH) return false;
+    if (settings == NULL || source > DEVICE_LAST_SOURCE_FM) return false;
     /* Skip the write when nothing changed: this is called as playback starts,
      * and settings.csv lives on flash with a finite erase budget. */
     if (settings->last_source == source) return true;

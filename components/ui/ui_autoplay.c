@@ -10,6 +10,7 @@ audio_source_t ui_autoplay_source(const device_settings_t *settings)
     case DEVICE_LAST_SOURCE_YANDEX: return AUDIO_SOURCE_YANDEX;
     case DEVICE_LAST_SOURCE_DLNA: return AUDIO_SOURCE_DLNA;
     case DEVICE_LAST_SOURCE_BLUETOOTH: return AUDIO_SOURCE_BLUETOOTH;
+    case DEVICE_LAST_SOURCE_FM: return AUDIO_SOURCE_FM;
     case DEVICE_LAST_SOURCE_USB:
     case DEVICE_LAST_SOURCE_SD:
         /* The path wins over the remembered source, because the two are
@@ -35,7 +36,8 @@ ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
                                         file_browser_media_t usb_media,
                                         file_browser_media_t sd_media,
                                         bool file_present, bool yandex_built,
-                                        bool dlna_built, bool bluetooth_built)
+                                        bool dlna_built, bool bluetooth_built,
+                                        bool fm_built)
 {
     if (settings == NULL || !settings->autoplay) return UI_AUTOPLAY_HOME;
 
@@ -71,6 +73,10 @@ ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
          * nothing to wait for a network for either - the phone is the
          * network. */
         return bluetooth_built ? UI_AUTOPLAY_BLUETOOTH : UI_AUTOPLAY_HOME;
+    case DEVICE_LAST_SOURCE_FM:
+        /* No network to wait for and no module to wait for: the tuner was
+         * found before the screen came up, or the board has none. */
+        return fm_built ? UI_AUTOPLAY_FM : UI_AUTOPLAY_HOME;
     case DEVICE_LAST_SOURCE_USB:
     case DEVICE_LAST_SOURCE_SD: {
         // Asked of the volume that will actually be opened - see

@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 56 px
  * Bpp: 4
- * Opts: --no-compress --font /tmp/claude-1000/-home-jmper-codex-jradio/89e88f58-3eb8-4df9-9522-712465dd61dd/scratchpad/dseg/fonts-DSEG_v046/DSEG7-Classic/DSEG7Classic-Bold.ttf --size 56 --bpp 4 --format lvgl -r 0x2D,0x30-0x3A -o components/ui/ui_font_seven_segment_56.c
+ * Opts: --no-compress --font /tmp/claude-1000/-home-jmper-codex-jradio/74da151b-f3c3-40d3-8a5b-2bcbb66c0b59/scratchpad/dseg/fonts-DSEG_v046/DSEG7-Classic/DSEG7Classic-Bold.ttf --size 56 --bpp 4 --format lvgl -r 0x2D,0x2E,0x30-0x3A -o components/ui/ui_font_seven_segment_56.c
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE
@@ -37,6 +37,12 @@ static LV_ATTRIBUTE_LARGE_CONST const uint8_t glyph_bitmap[] = {
     0xff, 0xff, 0xff, 0xff, 0xff, 0xd1, 0x0, 0x0,
     0x4f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xd1, 0x0,
+
+    /* U+002E "." */
+    0x0, 0x0, 0x0, 0x0, 0x1, 0x9f, 0xf9, 0x10,
+    0xc, 0xff, 0xff, 0xc0, 0x4f, 0xff, 0xff, 0xf4,
+    0x7f, 0xff, 0xff, 0xf7, 0x4f, 0xff, 0xff, 0xf4,
+    0xc, 0xff, 0xff, 0xc0, 0x1, 0x9e, 0xe9, 0x0,
 
     /* U+0030 "0" */
     0x0, 0x0, 0xaf, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -1246,17 +1252,18 @@ static LV_ATTRIBUTE_LARGE_CONST const uint8_t glyph_bitmap[] = {
 static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {
     {.bitmap_index = 0, .adv_w = 0, .box_w = 0, .box_h = 0, .ofs_x = 0, .ofs_y = 0} /* id = 0 reserved */,
     {.bitmap_index = 0, .adv_w = 731, .box_w = 27, .box_h = 8, .ofs_x = 9, .ofs_y = 25},
-    {.bitmap_index = 108, .adv_w = 731, .box_w = 36, .box_h = 57, .ofs_x = 5, .ofs_y = 0},
-    {.bitmap_index = 1134, .adv_w = 731, .box_w = 8, .box_h = 52, .ofs_x = 33, .ofs_y = 3},
-    {.bitmap_index = 1342, .adv_w = 731, .box_w = 36, .box_h = 57, .ofs_x = 5, .ofs_y = 0},
-    {.bitmap_index = 2368, .adv_w = 731, .box_w = 33, .box_h = 57, .ofs_x = 8, .ofs_y = 0},
-    {.bitmap_index = 3309, .adv_w = 731, .box_w = 36, .box_h = 53, .ofs_x = 5, .ofs_y = 2},
-    {.bitmap_index = 4263, .adv_w = 731, .box_w = 36, .box_h = 57, .ofs_x = 5, .ofs_y = 0},
-    {.bitmap_index = 5289, .adv_w = 731, .box_w = 36, .box_h = 57, .ofs_x = 5, .ofs_y = 0},
-    {.bitmap_index = 6315, .adv_w = 731, .box_w = 36, .box_h = 55, .ofs_x = 5, .ofs_y = 3},
-    {.bitmap_index = 7305, .adv_w = 731, .box_w = 36, .box_h = 57, .ofs_x = 5, .ofs_y = 0},
-    {.bitmap_index = 8331, .adv_w = 731, .box_w = 36, .box_h = 57, .ofs_x = 5, .ofs_y = 0},
-    {.bitmap_index = 9357, .adv_w = 179, .box_w = 8, .box_h = 30, .ofs_x = 2, .ofs_y = 12}
+    {.bitmap_index = 108, .adv_w = 0, .box_w = 8, .box_h = 8, .ofs_x = -4, .ofs_y = 0},
+    {.bitmap_index = 140, .adv_w = 731, .box_w = 36, .box_h = 57, .ofs_x = 5, .ofs_y = 0},
+    {.bitmap_index = 1166, .adv_w = 731, .box_w = 8, .box_h = 52, .ofs_x = 33, .ofs_y = 3},
+    {.bitmap_index = 1374, .adv_w = 731, .box_w = 36, .box_h = 57, .ofs_x = 5, .ofs_y = 0},
+    {.bitmap_index = 2400, .adv_w = 731, .box_w = 33, .box_h = 57, .ofs_x = 8, .ofs_y = 0},
+    {.bitmap_index = 3341, .adv_w = 731, .box_w = 36, .box_h = 53, .ofs_x = 5, .ofs_y = 2},
+    {.bitmap_index = 4295, .adv_w = 731, .box_w = 36, .box_h = 57, .ofs_x = 5, .ofs_y = 0},
+    {.bitmap_index = 5321, .adv_w = 731, .box_w = 36, .box_h = 57, .ofs_x = 5, .ofs_y = 0},
+    {.bitmap_index = 6347, .adv_w = 731, .box_w = 36, .box_h = 55, .ofs_x = 5, .ofs_y = 3},
+    {.bitmap_index = 7337, .adv_w = 731, .box_w = 36, .box_h = 57, .ofs_x = 5, .ofs_y = 0},
+    {.bitmap_index = 8363, .adv_w = 731, .box_w = 36, .box_h = 57, .ofs_x = 5, .ofs_y = 0},
+    {.bitmap_index = 9389, .adv_w = 179, .box_w = 8, .box_h = 30, .ofs_x = 2, .ofs_y = 12}
 };
 
 /*---------------------
@@ -1264,8 +1271,8 @@ static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {
  *--------------------*/
 
 static const uint8_t glyph_id_ofs_list_0[] = {
-    0, 0, 0, 1, 2, 3, 4, 5,
-    6, 7, 8, 9, 10, 11
+    0, 1, 0, 2, 3, 4, 5, 6,
+    7, 8, 9, 10, 11, 12
 };
 
 /*Collect the unicode lists and glyph_id offsets*/

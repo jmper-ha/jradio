@@ -26,8 +26,13 @@ extern const lv_font_t ui_font_cyrillic_14;
 extern const lv_font_t ui_font_cyrillic_18;
 extern const lv_font_t ui_font_cyrillic_20;
 extern const lv_font_t ui_font_cyrillic_26;
-/* DSEG7 Classic Bold (SIL OFL), digits, colon and dash only: the screensaver's
- * clock. Three sizes, one per panel width, chosen by the shape file. */
+/* DSEG7 Classic Bold (SIL OFL), digits, colon, dash and period only: the
+ * screensaver's clock and the FM frequency. The period has no width of its
+ * own - it sits in the gap after the digit before it, as on a real display.
+ * Five sizes, chosen by the shape file; only the ones a shape names are
+ * linked in. */
+extern const lv_font_t ui_font_seven_segment_40;
+extern const lv_font_t ui_font_seven_segment_48;
 extern const lv_font_t ui_font_seven_segment_56;
 extern const lv_font_t ui_font_seven_segment_72;
 extern const lv_font_t ui_font_seven_segment_112;
@@ -44,6 +49,7 @@ extern const lv_font_t ui_font_seven_segment_112;
 #define UI_FONT_SEGMENT(px) UI_FONT_SEGMENT_(px)
 /* The screensaver's clock, and nothing else: a face with eleven glyphs. */
 #define UI_FONT_SAVER_CLOCK (&UI_FONT_SEGMENT(UI_SAVER_CLOCK_PX))
+#define UI_FONT_FM_DIGITS (&UI_FONT_SEGMENT(UI_SRC_FM_DIGITS_PX))
 /* The two lines under it. */
 #define UI_FONT_SAVER_TEXT (&UI_FONT_TEXT(UI_SAVER_TEXT_PX))
 

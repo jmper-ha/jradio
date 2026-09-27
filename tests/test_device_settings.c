@@ -560,6 +560,11 @@ static void test_the_fm_frequency_persists_and_stays_in_the_band(void)
     assert(!device_settings_set_fm_frequency(&settings, 108100UL));
     assert(settings.fm_frequency_khz == 101200UL);
 
+    // And the source itself, for autoplay.
+    assert(device_settings_set_last_source(&settings, DEVICE_LAST_SOURCE_FM));
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.last_source == DEVICE_LAST_SOURCE_FM);
+
     // A hand-edited file out of the band reads as never tuned.
     FILE *file = fopen(test_path, "w");
     assert(file != NULL);

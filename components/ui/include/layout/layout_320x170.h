@@ -101,6 +101,12 @@
 #define UI_SRC_STREAM_LINES 0
 #define UI_SRC_TEXT_CENTRED 0
 
+/* The FM frequency, in the seven-segment face, over the rows the station
+ * name and the track take on other sources: the title and the track rows together, 27 to 69, hold 40 px; four
+ * digits of it are 131 px of the column's 196. A size the DSEG7 conversion
+ * has made. */
+#define UI_SRC_FM_DIGITS_PX 40
+
 /* The pause badge sits on the cover rather than in the middle of the screen,
  * where it would cover the names - the cover is the one block on its side
  * of the panel, and the badge is 76 px in a 96 px tile. */

@@ -20,7 +20,7 @@ static device_settings_t settings(bool autoplay, device_last_source_t source,
 static ui_autoplay_action_t decide(const device_settings_t *settings, file_browser_media_t usb,
                                    file_browser_media_t sd, bool file_present)
 {
-    return ui_autoplay_decide(settings, usb, sd, file_present, true, true, true);
+    return ui_autoplay_decide(settings, usb, sd, file_present, true, true, true, true);
 }
 
 /* A Yandex resume point: the station identity, plus the row being on the home
@@ -194,7 +194,7 @@ static void test_yandex_taken_off_the_home_screen_does_not_come_back(void)
 
     const device_settings_t shown = yandex_settings(true, "user:onyourwave", true);
     assert(ui_autoplay_decide(&shown, FILE_BROWSER_MEDIA_READY, FILE_BROWSER_MEDIA_ABSENT, true,
-                              false, true, true) == UI_AUTOPLAY_HOME);
+                              false, true, true, true) == UI_AUTOPLAY_HOME);
 
     // And the master switch still comes first.
     const device_settings_t off = yandex_settings(false, "user:onyourwave", true);
@@ -251,7 +251,7 @@ static void test_a_media_server_taken_off_the_home_screen_does_not_come_back(voi
     // Nor in a build that has no media server in it at all.
     const device_settings_t shown = dlna_settings(true, "94502", true);
     assert(ui_autoplay_decide(&shown, FILE_BROWSER_MEDIA_READY, FILE_BROWSER_MEDIA_ABSENT, true,
-                              true, false, true) == UI_AUTOPLAY_HOME);
+                              true, false, true, true) == UI_AUTOPLAY_HOME);
 
     // And the master switch still comes first.
     const device_settings_t off = dlna_settings(false, "94502", true);
@@ -276,7 +276,7 @@ static void test_bluetooth_comes_back_to_its_screen(void)
     /* A build without the module: the row does not exist, so neither does the
        screen to come back to. */
     assert(ui_autoplay_decide(&phone, FILE_BROWSER_MEDIA_ABSENT, FILE_BROWSER_MEDIA_ABSENT,
-                              false, true, true, false) == UI_AUTOPLAY_HOME);
+                              false, true, true, false, true) == UI_AUTOPLAY_HOME);
 
     /* And the master switch still comes first. */
     const device_settings_t off = settings(false, DEVICE_LAST_SOURCE_BLUETOOTH, NULL);
@@ -284,8 +284,25 @@ static void test_bluetooth_comes_back_to_its_screen(void)
            UI_AUTOPLAY_HOME);
 }
 
+/* The tuner: back on, with nothing to wait for - it was found at boot before
+   the screen came up, and it needs no network. */
+static void test_fm_comes_back_on(void)
+{
+    const device_settings_t fm = settings(true, DEVICE_LAST_SOURCE_FM, NULL);
+    assert(decide(&fm, FILE_BROWSER_MEDIA_ABSENT, FILE_BROWSER_MEDIA_ABSENT, false) ==
+           UI_AUTOPLAY_FM);
+    assert(ui_autoplay_source(&fm) == AUDIO_SOURCE_FM);
+    // A board whose wiring has no tuner (any more) goes home.
+    assert(ui_autoplay_decide(&fm, FILE_BROWSER_MEDIA_ABSENT, FILE_BROWSER_MEDIA_ABSENT,
+                              false, true, true, true, false) == UI_AUTOPLAY_HOME);
+    const device_settings_t off = settings(false, DEVICE_LAST_SOURCE_FM, NULL);
+    assert(decide(&off, FILE_BROWSER_MEDIA_ABSENT, FILE_BROWSER_MEDIA_ABSENT, false) ==
+           UI_AUTOPLAY_HOME);
+}
+
 int main(void)
 {
+    test_fm_comes_back_on();
     test_autoplay_off_always_opens_the_home_screen();
     test_nothing_played_before_opens_the_home_screen();
     test_radio_resumes_whatever_the_drive_is_doing();

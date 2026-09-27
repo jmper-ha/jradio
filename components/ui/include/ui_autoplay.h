@@ -35,6 +35,9 @@ typedef enum {
      * device. So this is a screen to open rather than a thing to resume - which
      * is exactly what the source is. */
     UI_AUTOPLAY_BLUETOOTH,
+    /* Tune the FM receiver back in: choosing the source is what starts it,
+     * on the frequency kept in settings.csv. */
+    UI_AUTOPLAY_FM,
     /* The volume is there and so is the remembered file: play it. */
     UI_AUTOPLAY_FILE,
     /* The volume is there but the file is not - a different stick or card, or
@@ -51,8 +54,8 @@ typedef enum {
  * since it needs the filesystem, and it is only consulted when the volume is
  * usable.
  *
- * `yandex_built`, `dlna_built` and `bluetooth_built` are whether this firmware
- * was built with those sources at all - build options, which this layer cannot
+ * `yandex_built`, `dlna_built`, `bluetooth_built` and `fm_built` are whether
+ * this board has those sources at all - build options, which this layer cannot
  * see. Whether the user kept each row is settings->yandex_music and
  * settings->dlna and is checked here: a source taken off the home screen should
  * not come back on its own at the next power-on.
@@ -65,7 +68,8 @@ ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
                                         file_browser_media_t usb_media,
                                         file_browser_media_t sd_media,
                                         bool file_present, bool yandex_built,
-                                        bool dlna_built, bool bluetooth_built);
+                                        bool dlna_built, bool bluetooth_built,
+                                        bool fm_built);
 
 // Which source the decision was about, so the caller can select it without
 // reading last_source a second time and getting the mapping wrong.

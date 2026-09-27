@@ -97,6 +97,12 @@
 #define UI_SRC_STREAM_LINES 1
 #define UI_SRC_TEXT_CENTRED 1
 
+/* The FM frequency, in the seven-segment face, over the rows the station
+ * name and the track take on other sources: the title and the track rows together, 226 to 300, hold 72 px, and
+ * four digits of it are 235 px across the column. A size the DSEG7 conversion
+ * has made. */
+#define UI_SRC_FM_DIGITS_PX 72
+
 /* The faces this shape is laid out for: the landscape ILI9488's, for the
  * reason that file gives at length - it is the same glass, and 14 px of a
  * 480 px-tall screen is a quarter smaller a share of what the eye takes in

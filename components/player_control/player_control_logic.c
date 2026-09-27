@@ -96,6 +96,8 @@ bool player_snapshot_equal(const player_snapshot_t *left,
            left->track_liked == right->track_liked &&
            left->track_disliked == right->track_disliked &&
            left->fm_khz == right->fm_khz &&
+           left->fm_stereo == right->fm_stereo && left->fm_signal == right->fm_signal &&
+           left->fm_rds == right->fm_rds &&
            memcmp(left->error, right->error, sizeof(left->error)) == 0;
 }
 

@@ -217,6 +217,13 @@ typedef struct {
      * otherwise. A number beside the text in `context`, because the panel
      * writes it down to come back to and will draw it in its own digits. */
     uint32_t fm_khz;
+    /* The reception, as the panel draws it: stereo or not, the signal on the
+     * PLAYER_FM_SIGNAL_BARS scale, and whether the station sends RDS at all.
+     * Apart from the text in stream_title, which the page shows, because the
+     * panel draws them as marks in fixed places that do not move. */
+    bool fm_stereo;
+    uint8_t fm_signal;
+    bool fm_rds;
     char error[PLAYER_ERROR_MAX_LEN];
 } player_snapshot_t;
 

@@ -172,8 +172,34 @@ static void test_another_station_starts_again(void)
     assert(decoder.pi == 0x7202U);
 }
 
+static void test_the_station_is_heard_by_its_code(void)
+{
+    rds_decoder_t decoder;
+    rds_decoder_reset(&decoder);
+    assert(!rds_decoder_heard(&decoder));
+    // Noise: a code each time, never the same twice.
+    const uint16_t codes[] = {0x3495U, 0xC9ABU, 0x93C0U, 0x9CEEU};
+    for (size_t i = 0; i < 4; ++i) {
+        const uint16_t blocks[4] = {codes[i], 0x0000U, 0U, 0U};
+        (void)rds_decoder_feed(&decoder, blocks, true, true);
+    }
+    assert(!rds_decoder_heard(&decoder));
+    // A station: its code three times running, whatever the groups carry.
+    rds_decoder_reset(&decoder);
+    const uint16_t station[4] = {PI, 0xF000U, 0U, 0U};
+    (void)rds_decoder_feed(&decoder, station, true, true);
+    (void)rds_decoder_feed(&decoder, station, true, true);
+    assert(!rds_decoder_heard(&decoder));
+    (void)rds_decoder_feed(&decoder, station, true, true);
+    assert(rds_decoder_heard(&decoder));
+    assert(decoder.ps_text[0] == '\0');  // long before any name
+    rds_decoder_reset(&decoder);
+    assert(!rds_decoder_heard(&decoder));
+}
+
 int main(void)
 {
+    test_the_station_is_heard_by_its_code();
     test_the_name_needs_every_piece_twice();
     test_a_scrolling_name_follows();
     test_two_alternating_names_never_mix();

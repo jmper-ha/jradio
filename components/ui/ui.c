@@ -105,6 +105,10 @@
 #define UI_COLOR_TEXT 0xFFFFFF
 #define UI_COLOR_MUTED 0xB0BEC5
 #define UI_COLOR_DIM 0x78909C
+/* The FM reception marks: stereo lit in a dark yellow, and the unlit steps
+ * of the signal mark, a shade the eye reads as "there, but off". */
+#define UI_COLOR_FM_STEREO 0xC9A227
+#define UI_COLOR_FM_UNLIT 0x37474F
 /* A row that is on the screen but cannot be started: dimmer than the
  * unselected text, still plainly readable against the ground. */
 #define UI_COLOR_DISABLED 0x4E606C
@@ -176,6 +180,19 @@ static lv_obj_t *s_source_title;
 /* The FM frequency in the seven-segment face. It stands where the title and
  * the track are on every other source, and those two are hidden under it. */
 static lv_obj_t *s_source_fm_digits;
+/* The FM reception, in place of the readings line: "Stereo", the signal as
+ * rising steps, and an RDS mark. Each in a place of its own, so a change of
+ * station or of signal moves nothing - the last of them is RDS, which comes
+ * and goes, so nothing stands after it to be pushed about. */
+#define UI_FM_SIGNAL_STEPS 5
+static lv_obj_t *s_fm_marks;
+static lv_obj_t *s_fm_stereo;
+static lv_obj_t *s_fm_signal[UI_FM_SIGNAL_STEPS];
+static lv_obj_t *s_fm_rds;
+// What is on the marks now, so a pass that changes nothing redraws nothing.
+static int s_fm_marks_stereo = -1;
+static int s_fm_marks_signal = -1;
+static int s_fm_marks_rds = -1;
 static lv_obj_t *s_source_status;
 /* A line that scrolls when it does not fit.
  *
@@ -2019,12 +2036,96 @@ static void ui_set_hidden(lv_obj_t *object, bool hidden)
     }
 }
 
-/* The digits over the title and the track, or the two of them back. */
+/* The digits over the title and the track and the marks over the readings,
+ * or the four of them back. */
 static void ui_show_fm_face(bool fm)
 {
     ui_set_hidden(s_source_fm_digits, !fm);
     ui_set_hidden(s_source_title, fm);
     ui_set_hidden(s_source_detail.box, fm);
+    ui_set_hidden(s_fm_marks, !fm);
+    ui_set_hidden(s_source_stream, fm);
+}
+
+/* Sized off the body face, so they sit on the readings line as text would
+ * on every panel: "Stereo" in a box wide enough for either language, the
+ * steps as tall as a capital, the RDS mark a boxed word. */
+#define UI_FM_STEREO_W (UI_FONT_BODY_PX * 4)
+/* The signal as five blocks in a row, the level meter's shape made small:
+ * as wide as a narrow letter, half as tall as a capital. */
+#define UI_FM_STEP_W (UI_FONT_BODY_PX / 2)
+#define UI_FM_STEP_H (UI_FONT_BODY_PX / 3)
+#define UI_FM_STEP_GAP 2
+// Clear of the word, so the two read as two marks.
+#define UI_FM_STEPS_X (UI_FM_STEREO_W + UI_FONT_BODY_PX / 2)
+#define UI_FM_STEPS_W (UI_FM_SIGNAL_STEPS * (UI_FM_STEP_W + UI_FM_STEP_GAP))
+
+static void ui_create_fm_marks(void)
+{
+    s_fm_marks = lv_obj_create(s_source_screen);
+    lv_obj_remove_style_all(s_fm_marks);
+    lv_obj_remove_flag(s_fm_marks, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(s_fm_marks, UI_SRC_STREAM_X, UI_SRC_STREAM_Y);
+    lv_obj_set_size(s_fm_marks, UI_SRC_STREAM_W, UI_SRC_LINE_H);
+    lv_obj_add_flag(s_fm_marks, LV_OBJ_FLAG_HIDDEN);
+
+    s_fm_stereo = lv_label_create(s_fm_marks);
+    lv_obj_set_pos(s_fm_stereo, 0, 0);
+    lv_obj_set_width(s_fm_stereo, UI_FM_STEREO_W);
+    lv_label_set_long_mode(s_fm_stereo, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_color(s_fm_stereo, lv_color_hex(UI_COLOR_DIM), 0);
+
+    /* Five equal blocks, lit from the left in the stereo mark's yellow - the
+     * level meter's look, not a fan like the Wi-Fi mark in the strip, since
+     * the two signals are not the same thing. Standing on the text's
+     * baseline, as if on the same shelf as "Stereo": the face says how far
+     * above the bottom of its line that is. */
+    const int32_t baseline = UI_SRC_LINE_H - UI_FONT_BODY->base_line;
+    for (int step = 0; step < UI_FM_SIGNAL_STEPS; ++step) {
+        s_fm_signal[step] = lv_obj_create(s_fm_marks);
+        lv_obj_remove_style_all(s_fm_signal[step]);
+        lv_obj_set_style_bg_opa(s_fm_signal[step], LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(s_fm_signal[step], lv_color_hex(UI_COLOR_FM_UNLIT), 0);
+        lv_obj_set_size(s_fm_signal[step], UI_FM_STEP_W, UI_FM_STEP_H);
+        lv_obj_set_pos(s_fm_signal[step], UI_FM_STEPS_X + step * (UI_FM_STEP_W + UI_FM_STEP_GAP),
+                       baseline - UI_FM_STEP_H);
+    }
+
+    s_fm_rds = lv_label_create(s_fm_marks);
+    lv_label_set_text(s_fm_rds, "RDS");
+    lv_obj_set_pos(s_fm_rds, UI_FM_STEPS_X + UI_FM_STEPS_W + UI_FONT_BODY_PX / 2, 0);
+    lv_obj_set_style_text_color(s_fm_rds, lv_color_hex(UI_COLOR_MUTED), 0);
+    lv_obj_set_style_border_color(s_fm_rds, lv_color_hex(UI_COLOR_MUTED), 0);
+    lv_obj_set_style_border_width(s_fm_rds, 1, 0);
+    lv_obj_set_style_radius(s_fm_rds, 3, 0);
+    lv_obj_set_style_pad_hor(s_fm_rds, 3, 0);
+    lv_obj_add_flag(s_fm_rds, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* Only what changed is touched: this runs every pass of the poll loop. */
+static void ui_update_fm_marks(const player_snapshot_t *snapshot)
+{
+    const int stereo = snapshot->fm_stereo ? 1 : 0;
+    if (stereo != s_fm_marks_stereo) {
+        s_fm_marks_stereo = stereo;
+        lv_obj_set_style_text_color(
+            s_fm_stereo, lv_color_hex(stereo ? UI_COLOR_FM_STEREO : UI_COLOR_DIM), 0);
+    }
+    ui_set_label_text_if_changed(s_fm_stereo, ui_text(DEVICE_TEXT_FM_STEREO));
+    const int signal = snapshot->fm_signal;
+    if (signal != s_fm_marks_signal) {
+        s_fm_marks_signal = signal;
+        for (int step = 0; step < UI_FM_SIGNAL_STEPS; ++step) {
+            lv_obj_set_style_bg_color(
+                s_fm_signal[step],
+                lv_color_hex(step < signal ? UI_COLOR_FM_STEREO : UI_COLOR_FM_UNLIT), 0);
+        }
+    }
+    const int rds = snapshot->fm_rds ? 1 : 0;
+    if (rds != s_fm_marks_rds) {
+        s_fm_marks_rds = rds;
+        ui_set_hidden(s_fm_rds, rds == 0);
+    }
 }
 
 static void ui_update_fm_status(const player_snapshot_t *snapshot)
@@ -2067,18 +2168,12 @@ static void ui_update_fm_status(const player_snapshot_t *snapshot)
         snapshot->playback_state != PLAYER_PLAYBACK_PAUSED) {
         state = ui_radio_state_text(snapshot->playback_state);
     }
-    /* Under the digits the name - the preset's or the station's own - or,
-     * with neither, the reception. The line below carries the radiotext
-     * when there is one, the reception when the name took its row, and the
-     * plain readings otherwise. */
-    ui_set_state_line_from(snapshot, state, named ? now.heading : snapshot->stream_title);
-    if (radiotext[0] != '\0') {
-        ui_set_label_text_if_changed(s_source_stream, radiotext);
-    } else if (named) {
-        ui_set_label_text_if_changed(s_source_stream, snapshot->stream_title);
-    } else {
-        ui_set_stream_readings(snapshot);
-    }
+    /* Three rows that keep their places whatever the station sends: the
+     * digits, the name under them - the preset's or the station's own, or an
+     * empty row - and the reception marks. The radiotext has no row here; the
+     * page shows it. */
+    ui_set_state_line_from(snapshot, state, named ? now.heading : "");
+    ui_update_fm_marks(snapshot);
 }
 
 static void ui_update_radio_status(const player_snapshot_t *snapshot)
@@ -4302,6 +4397,8 @@ static void ui_create_source_screen(void)
     lv_obj_set_size(s_source_stream, UI_SRC_STREAM_W, UI_SRC_STREAM_H);
     lv_label_set_long_mode(s_source_stream, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_source_stream, lv_color_hex(UI_COLOR_DIM), 0);
+
+    ui_create_fm_marks();
 
     /* Brighter than the meter's own unlit blocks, which looks backwards for a
      * divider until you remember it is one pixel tall: a hairline loses far

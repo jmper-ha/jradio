@@ -25,6 +25,8 @@ static i2c_master_bus_handle_t s_bus;
 static i2c_master_dev_handle_t s_device;
 static SemaphoreHandle_t s_lock;
 static rda5807_state_t s_state = {.volume = RDA5807_VOLUME_MAX};
+// The last frequency tuned to, for putting the chip back on it after a reset.
+static uint32_t s_khz;
 
 /* Held for a whole call, a transfer or a few: the power-up is a sequence the
  * status read must not land in the middle of. */
@@ -156,15 +158,20 @@ static esp_err_t read_status(rda5807_status_t *status)
     if (err == ESP_OK) err = read_register(RDA5807_REG_SIGNAL, &words[1]);
     if (err != ESP_OK) return err;
     rda5807_parse_status(words[0], words[1], status);
+    /* A seek moves the channel without a write to 03h, so the one to come
+     * back to after a reset is the one the chip last settled on. */
+    if (status->tune_complete && !status->seek_failed && s_state.enabled) s_khz = status->khz;
     return ESP_OK;
 }
 
-static esp_err_t read_rds(uint16_t blocks[4], bool *ready, bool *block_a_ok, bool *block_b_ok)
+static esp_err_t poll(rda5807_status_t *out, uint16_t blocks[4], bool *ready, bool *block_a_ok,
+                      bool *block_b_ok)
 {
     rda5807_status_t status;
     *ready = false;
     const esp_err_t err = read_status(&status);
     if (err != ESP_OK) return err;
+    if (out != NULL) *out = status;
     if (!status.rds_ready) return ESP_OK;
     for (uint8_t i = 0U; i < 4U; ++i) {
         const esp_err_t block_err = read_register((uint8_t)(RDA5807_REG_RDS_A + i), &blocks[i]);
@@ -177,14 +184,25 @@ static esp_err_t read_rds(uint16_t blocks[4], bool *ready, bool *block_a_ok, boo
     return ESP_OK;
 }
 
+static esp_err_t read_rds(uint16_t blocks[4], bool *ready, bool *block_a_ok, bool *block_b_ok)
+{
+    return poll(NULL, blocks, ready, block_a_ok, block_b_ok);
+}
+
 esp_err_t fm_tuner_power(bool on)
 {
     LOCKED(power(on));
 }
 
+static esp_err_t tune(uint32_t khz)
+{
+    s_khz = khz;
+    return write_register(RDA5807_REG_CHANNEL, rda5807_tune_word(khz));
+}
+
 esp_err_t fm_tuner_tune(uint32_t khz)
 {
-    LOCKED(write_register(RDA5807_REG_CHANNEL, rda5807_tune_word(khz)));
+    LOCKED(tune(khz));
 }
 
 esp_err_t fm_tuner_seek(bool up)
@@ -208,31 +226,57 @@ esp_err_t fm_tuner_status(rda5807_status_t *status)
     LOCKED(read_status(status));
 }
 
-static bool repair_i2s(void)
+/* The chip clears the seek bits in 02h itself when a seek ends, and the
+ * soft reset is only ever a pulse: those are not part of what is compared. */
+#define CONTROL_SELF_CLEARING 0x0302U
+
+static bool repair(void)
 {
-    uint16_t options = 0U;
-    uint16_t format = 0U;
-    if (read_register(RDA5807_REG_OPTIONS, &options) != ESP_OK ||
-        read_register(RDA5807_REG_I2S, &format) != ESP_OK) {
-        return false;
+    struct {
+        uint8_t reg;
+        uint16_t want;
+        uint16_t mask;
+    } setup[] = {
+        {RDA5807_REG_CONTROL, rda5807_control_word(&s_state, false, false, false),
+         (uint16_t)~CONTROL_SELF_CLEARING},
+        {RDA5807_REG_OPTIONS, rda5807_options_word(s_state.i2s), 0xFFFFU},
+        {RDA5807_REG_VOLUME, rda5807_volume_word(s_state.volume), 0xFFFFU},
+        {RDA5807_REG_I2S, rda5807_i2s_word(), 0xFFFFU},
+    };
+    const size_t count = s_state.i2s ? 4U : 3U;
+    bool repaired = false;
+    for (size_t i = 0U; i < count; ++i) {
+        uint16_t value = 0U;
+        if (read_register(setup[i].reg, &value) != ESP_OK) continue;
+        if ((value & setup[i].mask) == (setup[i].want & setup[i].mask)) continue;
+        ESP_LOGW(TAG, "%02xh was %04x, not %04x; writing it again", setup[i].reg, value,
+                 setup[i].want);
+        (void)write_register(setup[i].reg, setup[i].want);
+        repaired = true;
     }
-    const uint16_t want_options = rda5807_options_word(true);
-    const uint16_t want_format = rda5807_i2s_word();
-    if (options == want_options && format == want_format) return false;
-    ESP_LOGW(TAG, "I2S setup lost (04h=%04x 06h=%04x, want %04x %04x); writing it again", options,
-             format, want_options, want_format);
-    (void)write_register(RDA5807_REG_I2S, want_format);
-    (void)write_register(RDA5807_REG_OPTIONS, want_options);
-    return true;
+    /* The one time this fired on the bench every register it checks was
+     * back at the chip's own defaults - a reset, not a spoiled write - and
+     * a reset also loses the channel. */
+    if (repaired && s_khz != 0U) (void)write_register(RDA5807_REG_CHANNEL, rda5807_tune_word(s_khz));
+    return repaired;
 }
 
-bool fm_tuner_repair_i2s(void)
+bool fm_tuner_repair(void)
 {
-    if (s_device == NULL || !s_state.i2s) return false;
+    if (s_device == NULL || !s_state.enabled) return false;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    const bool repaired = repair_i2s();
+    const bool repaired = repair();
     xSemaphoreGive(s_lock);
     return repaired;
+}
+
+esp_err_t fm_tuner_poll(rda5807_status_t *status, uint16_t blocks[4], bool *ready,
+                        bool *block_a_ok, bool *block_b_ok)
+{
+    ESP_RETURN_ON_FALSE(status != NULL && blocks != NULL && ready != NULL && block_a_ok != NULL &&
+                            block_b_ok != NULL,
+                        ESP_ERR_INVALID_ARG, TAG, "poll");
+    LOCKED(poll(status, blocks, ready, block_a_ok, block_b_ok));
 }
 
 esp_err_t fm_tuner_read_rds(uint16_t blocks[4], bool *ready, bool *block_a_ok, bool *block_b_ok)

@@ -33,6 +33,7 @@ extern "C" {
 typedef struct {
     uint16_t pi;
     uint16_t pi_candidate;  // a different code seen once, waiting for a second
+    uint8_t pi_repeats;     // clean sightings of `pi` in a row
     uint8_t ps[RDS_PS_LEN];
     uint8_t ps_candidate[RDS_PS_LEN];
     uint8_t ps_segments;        // bit per two-character segment, confirmed
@@ -56,6 +57,13 @@ void rds_decoder_reset(rds_decoder_t *decoder);
  * Returns true when the published text changed. */
 bool rds_decoder_feed(rds_decoder_t *decoder, const uint16_t blocks[4], bool block_a_ok,
                       bool block_b_ok);
+
+/* Whether the station sends RDS at all: its code has come clean and the same
+ * RDS_HEARD_REPEATS times running. Noise brings a code too, but a different
+ * one each time. Long before a name is whole - a station that rotates four
+ * messages takes seconds to show one, and the mark should not wait for it. */
+#define RDS_HEARD_REPEATS 3U
+bool rds_decoder_heard(const rds_decoder_t *decoder);
 
 #ifdef __cplusplus
 }

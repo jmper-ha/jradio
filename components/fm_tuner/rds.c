@@ -147,6 +147,11 @@ static bool rds_feed_rt(rds_decoder_t *decoder, uint16_t block_b, uint16_t block
     return rds_publish(decoder->rt_text, sizeof(decoder->rt_text), decoder->rt, decoder->rt_end);
 }
 
+bool rds_decoder_heard(const rds_decoder_t *decoder)
+{
+    return decoder != NULL && decoder->pi_repeats >= RDS_HEARD_REPEATS;
+}
+
 bool rds_decoder_feed(rds_decoder_t *decoder, const uint16_t blocks[4], bool block_a_ok,
                       bool block_b_ok)
 {
@@ -161,12 +166,15 @@ bool rds_decoder_feed(rds_decoder_t *decoder, const uint16_t blocks[4], bool blo
         if (decoder->pi == 0U || blocks[0] == decoder->pi_candidate) {
             if (decoder->pi != 0U) rds_decoder_reset(decoder);
             decoder->pi = blocks[0];
+            decoder->pi_repeats = 1U;
         } else {
             decoder->pi_candidate = blocks[0];
+            decoder->pi_repeats = 0U;
             return false;
         }
     } else if (block_a_ok && blocks[0] == decoder->pi) {
         decoder->pi_candidate = 0U;
+        if (decoder->pi_repeats < UINT8_MAX) ++decoder->pi_repeats;
     }
     const uint8_t type = (uint8_t)(blocks[1] >> 12);
     const bool version_b = (blocks[1] & 0x0800U) != 0U;

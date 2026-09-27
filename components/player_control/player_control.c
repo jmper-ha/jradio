@@ -767,8 +767,6 @@ static void player_bt_close(void)
  * here touches the I2S bus: opening is powering the chip and tuning it,
  * closing is powering it down. The pause is the chip's mute. */
 #define PLAYER_FM_START_KHZ 87500U
-// How often a snapshot may read the chip's status; every task polls.
-#define PLAYER_FM_STATUS_MS 200U
 /* A seek clears STC as it starts, but a status read in the same breath can
  * still see the last tune's. */
 #define PLAYER_FM_SEEK_SETTLE_MS 60U
@@ -782,10 +780,9 @@ static atomic_bool s_fm_muted = ATOMIC_VAR_INIT(false);
 static atomic_bool s_fm_failed = ATOMIC_VAR_INIT(false);
 static atomic_bool s_fm_seeking = ATOMIC_VAR_INIT(false);
 static atomic_uint s_fm_seek_started_ms = ATOMIC_VAR_INIT(0U);
-// The last status read, and when; one reader at a time refreshes it.
+// The last status the monitor read, for every task that builds a snapshot.
 static SemaphoreHandle_t s_fm_lock;
 static rda5807_status_t s_fm_status;
-static uint32_t s_fm_status_ms;
 static bool s_fm_status_seen;
 static uint8_t s_fm_volume_sent = 0xFFU;
 // The scale last shown, for its hysteresis; -1 before the first reading.
@@ -904,6 +901,8 @@ static void player_fm_tune(uint32_t khz)
 #define PLAYER_FM_PIPE_STOP_WAIT_MS 1000U
 // Half a second of stereo 16-bit at the pipe's rate.
 #define PLAYER_FM_PIPE_DEAD_BYTES (AUDIO_DEFAULT_SAMPLE_RATE * 4U / 2U)
+// Out of 32767: dither, not sound.
+#define PLAYER_FM_PIPE_DEAD_LEVEL 4
 
 static atomic_bool s_fm_pipe_wanted = ATOMIC_VAR_INIT(false);
 // Whether the output is ours right now; the close waits for it to drop.
@@ -957,15 +956,20 @@ static void player_fm_pipe_task(void *arg)
             read > 0U) {
             size_t written = 0U;
             (void)board_audio_write(block, read, &written, PLAYER_FM_PIPE_IO_MS);
-            /* Even static between stations is never exactly zero, so half a
-             * second of nothing but zeros is the tuner's output gone, not the
-             * air gone quiet: its setup is checked, and put back. */
+            /* Even static between stations is louder than this, so half a
+             * second of it is the tuner gone quiet, not the air: its setup
+             * is checked, and put back. Not exact zeros - a muted chip sends
+             * a bit of dither, and that missed the first version. */
+            const int16_t *samples = (const int16_t *)block;
             bool silent = true;
-            for (size_t i = 0U; i < read && silent; ++i) silent = block[i] == 0U;
+            for (size_t i = 0U; i < read / sizeof(int16_t) && silent; ++i) {
+                silent = samples[i] <= PLAYER_FM_PIPE_DEAD_LEVEL &&
+                         samples[i] >= -PLAYER_FM_PIPE_DEAD_LEVEL;
+            }
             silent_bytes = silent ? silent_bytes + read : 0U;
             if (silent_bytes >= PLAYER_FM_PIPE_DEAD_BYTES) {
                 silent_bytes = 0U;
-                (void)fm_tuner_repair_i2s();
+                (void)fm_tuner_repair();
             }
         }
     }
@@ -1007,31 +1011,13 @@ static void player_fm_seek(bool up)
     atomic_store_explicit(&s_fm_seeking, true, memory_order_release);
 }
 
-/* The chip's status as of at most PLAYER_FM_STATUS_MS ago. A finished seek
- * is noticed here, whoever happens to ask, and becomes the frequency to come
- * back to. */
+/* The chip's status as the monitor last read it. Every task that builds a
+ * snapshot asks, so nothing here touches the bus: it used to, and the web
+ * broadcaster - 4 KB of stack - overflowed and took the board down, logging
+ * an I2C read spoiled by the FP's own I2S clock on the bench's wires. */
 static bool player_fm_status(rda5807_status_t *status, int *bars)
 {
     xSemaphoreTake(s_fm_lock, portMAX_DELAY);
-    const uint32_t now = player_now_ms();
-    if (!s_fm_status_seen || (uint32_t)(now - s_fm_status_ms) >= PLAYER_FM_STATUS_MS) {
-        rda5807_status_t fresh;
-        if (fm_tuner_status(&fresh) == ESP_OK) {
-            s_fm_signal_bars = player_fm_signal_bars(fresh.rssi, s_fm_signal_bars);
-            s_fm_status = fresh;
-            s_fm_status_ms = now;
-            s_fm_status_seen = true;
-            const uint32_t started =
-                atomic_load_explicit(&s_fm_seek_started_ms, memory_order_acquire);
-            if (atomic_load_explicit(&s_fm_seeking, memory_order_acquire) &&
-                fresh.tune_complete && (uint32_t)(now - started) >= PLAYER_FM_SEEK_SETTLE_MS) {
-                atomic_store_explicit(&s_fm_seeking, false, memory_order_release);
-                atomic_store_explicit(&s_fm_khz, fresh.khz, memory_order_release);
-                ESP_LOGI(TAG, "fm: seek stopped at %u kHz%s", (unsigned)fresh.khz,
-                         fresh.seek_failed ? " (nothing found)" : "");
-            }
-        }
-    }
     *status = s_fm_status;
     *bars = s_fm_signal_bars;
     const bool seen = s_fm_status_seen;
@@ -1268,30 +1254,52 @@ static void player_fm_scan_task(void *arg)
     vTaskDelete(NULL);
 }
 
-/* Reads the groups as they come while the tuner plays. A task of its own
- * because a group lasts 88 ms and the snapshot's status read is five times
- * slower than that; it sleeps while there is nothing to listen to. */
-#define PLAYER_FM_RDS_STACK 2560
+/* The one task that talks to the tuner while it plays: its status, the end
+ * of a seek, the RDS groups as they come (a group lasts 88 ms) and the
+ * volume. Everything else reads what this left behind, so the bus - and the
+ * logging its spoiled transfers cause - stays on this task's stack. It
+ * sleeps while there is nothing to listen to. */
+#define PLAYER_FM_RDS_STACK 3584
 #define PLAYER_FM_RDS_IDLE_MS 250U
 
-static void player_fm_rds_task(void *arg)
+static void player_fm_monitor_task(void *arg)
 {
     (void)arg;
     for (;;) {
-        if (!atomic_load_explicit(&s_fm_on, memory_order_acquire) || player_fm_scanning() ||
-            atomic_load_explicit(&s_fm_seeking, memory_order_acquire)) {
+        if (!atomic_load_explicit(&s_fm_on, memory_order_acquire) || player_fm_scanning()) {
             vTaskDelay(pdMS_TO_TICKS(PLAYER_FM_RDS_IDLE_MS));
             continue;
         }
+        rda5807_status_t status;
         uint16_t blocks[4];
         bool ready = false;
         bool block_a_ok = false;
         bool block_b_ok = false;
-        if (fm_tuner_read_rds(blocks, &ready, &block_a_ok, &block_b_ok) == ESP_OK && ready) {
+        if (fm_tuner_poll(&status, blocks, &ready, &block_a_ok, &block_b_ok) == ESP_OK) {
+            const uint32_t now = player_now_ms();
+            const bool seeking = atomic_load_explicit(&s_fm_seeking, memory_order_acquire);
+            bool stopped = false;
             xSemaphoreTake(s_fm_lock, portMAX_DELAY);
-            (void)rds_decoder_feed(&s_fm_rds, blocks, block_a_ok, block_b_ok);
+            s_fm_signal_bars = player_fm_signal_bars(status.rssi, s_fm_signal_bars);
+            s_fm_status = status;
+            s_fm_status_seen = true;
+            const uint32_t started =
+                atomic_load_explicit(&s_fm_seek_started_ms, memory_order_acquire);
+            if (seeking && status.tune_complete &&
+                (uint32_t)(now - started) >= PLAYER_FM_SEEK_SETTLE_MS) {
+                atomic_store_explicit(&s_fm_seeking, false, memory_order_release);
+                atomic_store_explicit(&s_fm_khz, status.khz, memory_order_release);
+                stopped = true;
+            }
+            // Groups heard mid-seek belong to the stations it passes.
+            if (ready && !seeking) (void)rds_decoder_feed(&s_fm_rds, blocks, block_a_ok, block_b_ok);
             xSemaphoreGive(s_fm_lock);
+            if (stopped) {
+                ESP_LOGI(TAG, "fm: seek stopped at %u kHz%s", (unsigned)status.khz,
+                         status.seek_failed ? " (nothing found)" : "");
+            }
         }
+        player_fm_sync_volume();
         vTaskDelay(pdMS_TO_TICKS(PLAYER_FM_RDS_POLL_MS));
     }
 }
@@ -1305,6 +1313,16 @@ void player_control_fm_rds(char *name, size_t name_size, char *text, size_t text
     if (name != NULL && name_size > 0U) snprintf(name, name_size, "%s", s_fm_rds.ps_text);
     if (text != NULL && text_size > 0U) snprintf(text, text_size, "%s", s_fm_rds.rt_text);
     xSemaphoreGive(s_fm_lock);
+}
+
+/* Whether the station on the air sends RDS - see rds_decoder_heard(). */
+static bool player_fm_rds_heard(void)
+{
+    if (s_fm_lock == NULL) return false;
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    const bool heard = rds_decoder_heard(&s_fm_rds) || s_fm_rds.ps_text[0] != '\0';
+    xSemaphoreGive(s_fm_lock);
+    return heard;
 }
 
 static uint32_t player_fm_rds_revision(void)
@@ -2024,8 +2042,9 @@ esp_err_t player_control_init(void)
         player_control_fm_presets_reload();
         rds_decoder_reset(&s_fm_rds);
         if (fm_tuner_present() &&
-            xTaskCreate(player_fm_rds_task, "fm_rds", PLAYER_FM_RDS_STACK, NULL, 3, NULL) != pdPASS) {
-            ESP_LOGW(TAG, "fm: no RDS task");
+            xTaskCreate(player_fm_monitor_task, "fm_monitor", PLAYER_FM_RDS_STACK, NULL, 3, NULL) !=
+                pdPASS) {
+            ESP_LOGW(TAG, "fm: no monitor task");
         }
         /* Above the RDS reader: a late block is a click, a late group is not. */
         if (fm_tuner_present() && board_fm_over_i2s() &&
@@ -2230,7 +2249,6 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
             snapshot->playback_state = PLAYER_PLAYBACK_STOPPED;
             return;
         }
-        player_fm_sync_volume();
         snapshot->playback_state = atomic_load_explicit(&s_fm_muted, memory_order_acquire)
                                        ? PLAYER_PLAYBACK_PAUSED
                                        : PLAYER_PLAYBACK_PLAYING;
@@ -2254,6 +2272,11 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
                                  sizeof(frequency));
         snprintf(snapshot->context, sizeof(snapshot->context), "%s %s", frequency,
                  player_text(DEVICE_TEXT_FM_MHZ));
+        if (seen && !seeking) {
+            snapshot->fm_stereo = status.stereo;
+            snapshot->fm_signal = (uint8_t)(bars < 0 ? 0 : bars);
+        }
+        snapshot->fm_rds = player_fm_rds_heard();
         if (seeking) {
             snprintf(snapshot->stream_title, sizeof(snapshot->stream_title), "%s",
                      player_text(DEVICE_TEXT_FM_SEEKING));

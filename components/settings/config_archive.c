@@ -28,6 +28,8 @@ const char *config_archive_member_file(config_archive_member_t member)
         return "weather.json";
     case CONFIG_ARCHIVE_MEMBER_REMOTE:
         return "remote.csv";
+    case CONFIG_ARCHIVE_MEMBER_FM_PRESETS:
+        return "fm_presets.csv";
     case CONFIG_ARCHIVE_MEMBER_UNKNOWN:
         break;
     }
@@ -90,7 +92,8 @@ static bool archive_json_is_plausible(const unsigned char *bytes, size_t size)
     return false;
 }
 
-static bool archive_csv_is_plausible(const unsigned char *bytes, size_t size)
+static bool archive_csv_is_plausible(const unsigned char *bytes, size_t size,
+                                     unsigned char separator)
 {
     if (size == 0U) return false;
     bool separator_seen = false;
@@ -103,7 +106,7 @@ static bool archive_csv_is_plausible(const unsigned char *bytes, size_t size)
             return false;
         }
         if (character == 0x7FU) return false;
-        if (character == ',') separator_seen = true;
+        if (character == separator) separator_seen = true;
     }
     return separator_seen;
 }
@@ -122,7 +125,10 @@ bool config_archive_member_is_plausible(config_archive_member_t member, const vo
     case CONFIG_ARCHIVE_MEMBER_REMOTE:
         /* Both are "key,value" text; the remote's table is written with a
          * "# function,code" header, which the comma check accepts. */
-        return archive_csv_is_plausible(bytes, size);
+        return archive_csv_is_plausible(bytes, size, ',');
+    case CONFIG_ARCHIVE_MEMBER_FM_PRESETS:
+        // "name<TAB>kHz" lines: a tab where the others have a comma.
+        return archive_csv_is_plausible(bytes, size, '\t');
     case CONFIG_ARCHIVE_MEMBER_UNKNOWN:
         break;
     }

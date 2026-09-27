@@ -19,6 +19,8 @@ static void test_member_names_map_both_ways(void)
     assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_YANDEX), "yandex.json") == 0);
     assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_WEATHER), "weather.json") == 0);
     assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_REMOTE), "remote.csv") == 0);
+    assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_FM_PRESETS),
+                  "fm_presets.csv") == 0);
     assert(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_UNKNOWN) == NULL);
     /* Every member has a name and a place in the archive, and the range the
      * loops walk covers all of them. */
@@ -38,6 +40,8 @@ static void test_member_names_map_both_ways(void)
            CONFIG_ARCHIVE_MEMBER_YANDEX);
     assert(config_archive_member_from_file("weather.json") == CONFIG_ARCHIVE_MEMBER_WEATHER);
     assert(config_archive_member_from_file("config/remote.csv") == CONFIG_ARCHIVE_MEMBER_REMOTE);
+    assert(config_archive_member_from_file("config/fm_presets.csv") ==
+           CONFIG_ARCHIVE_MEMBER_FM_PRESETS);
     assert(config_archive_member_from_file("stations.csv") == CONFIG_ARCHIVE_MEMBER_UNKNOWN);
     assert(config_archive_member_from_file("wifi.json.bak") == CONFIG_ARCHIVE_MEMBER_UNKNOWN);
     assert(config_archive_member_from_file("config/") == CONFIG_ARCHIVE_MEMBER_UNKNOWN);
@@ -74,6 +78,15 @@ static void test_plausibility_gates_the_obvious_wrong_file(void)
     assert(!config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_WIFI, png, sizeof(png)));
     assert(!config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_SETTINGS, png, sizeof(png)));
     assert(!config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_REMOTE, png, sizeof(png)));
+    /* The FM presets are tab-separated: a comma file under that name is
+     * somebody else's, and a tabbed one is ours, Cyrillic names and all. */
+    static const char presets[] = "Радио Шоколад\t98800\n\t101200\n";
+    assert(config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_FM_PRESETS, presets,
+                                              sizeof(presets) - 1U));
+    assert(!config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_FM_PRESETS, SETTINGS_CSV,
+                                               sizeof(SETTINGS_CSV) - 1U));
+    assert(!config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_FM_PRESETS, png,
+                                               sizeof(png)));
     /* JSON, but somebody else's: the loader would read it as no networks at
      * all and the device would come up on the setup access point. */
     static const char foreign[] = "{\"networks\":[]}";

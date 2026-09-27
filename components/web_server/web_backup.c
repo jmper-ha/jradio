@@ -21,7 +21,7 @@
 #include "yandex_token_store.h"
 
 #define WEB_BACKUP_CONFIG_DIR "/littlefs/config"
-/* One file at a time is held in RAM. wifi.json is the largest of the five at
+/* One file at a time is held in RAM. wifi.json is the largest of the six at
  * about 3.3 KB with five networks - the remote's table is about 1 KB with
  * every function bound - so this is headroom rather than a limit anything
  * real approaches: it is here to stop an upload, not a backup. */
@@ -30,7 +30,7 @@
     CONFIG_ARCHIVE_CAPACITY(CONFIG_ARCHIVE_MEMBER_MAX * WEB_BACKUP_MEMBER_MAX_LEN)
 /* Long enough for the directory and the longest member name. */
 #define WEB_BACKUP_PATH_MAX 64
-/* Enough for the answer with all five names in both lists: the names are 57
+/* Enough for the answer with all six names in both lists: the names are 71
  * characters together, and each appears quoted and comma-separated. */
 #define WEB_BACKUP_REPLY_MAX 256
 /* The browser has to receive the answer before the device goes away, and the
@@ -404,7 +404,8 @@ esp_err_t web_backup_restore_post(httpd_req_t *request)
         if (refusal == NULL && count == 0U) {
             refusal = "empty";
             refusal_reason =
-                "no wifi.json, settings.csv, yandex.json, weather.json or remote.csv inside";
+                "no wifi.json, settings.csv, yandex.json, weather.json, remote.csv or "
+                "fm_presets.csv inside";
         }
     } else {
         const config_archive_member_t member = config_archive_member_from_file(name);

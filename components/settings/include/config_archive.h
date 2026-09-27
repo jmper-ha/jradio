@@ -4,15 +4,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The five files that make a device this device: the networks it knows, how
- * it is set up, the Yandex token, the weather key and the remote's learned
- * table. A backup carries them as one zip, so a restore does not depend on
- * the browser having kept five separate downloads together - and so one file
- * out of the archive can still be restored on its own.
+/* The six files that make a device this device: the networks it knows, how
+ * it is set up, the Yandex token, the weather key, the remote's learned table
+ * and the FM presets. A backup carries them as one zip, so a restore does not
+ * depend on the browser having kept six separate downloads together - and so
+ * one file out of the archive can still be restored on its own.
  *
  * The remote joined them when a bench with 33 learned keys needed a data
  * flash: idf.py littlefs-flash rewrites the whole partition, and re-teaching
  * a full remote by hand is a quarter of an hour nobody should spend twice.
+ * The FM presets joined for the same reason: a scan is quick, but the names
+ * given to thirty stations are not.
  *
  * Entries are stored, never deflated. The files are a few kilobytes each, so
  * compression would buy nothing, and an inflater on the device would be a
@@ -23,7 +25,7 @@
  * Everything here is pure: no filesystem, no ESP-IDF. The buffer belongs to
  * the caller. */
 
-#define CONFIG_ARCHIVE_MEMBER_MAX 5U
+#define CONFIG_ARCHIVE_MEMBER_MAX 6U
 /* Long enough for the names below with a directory prefix; anything longer
  * belongs to some other archive and is skipped rather than truncated into a
  * name that might collide with ours. */
@@ -36,14 +38,15 @@ typedef enum {
     CONFIG_ARCHIVE_MEMBER_YANDEX,
     CONFIG_ARCHIVE_MEMBER_WEATHER,
     CONFIG_ARCHIVE_MEMBER_REMOTE,
+    CONFIG_ARCHIVE_MEMBER_FM_PRESETS,
 } config_archive_member_t;
 /* The members run from the first to this one; the loops that walk them say
  * so here rather than naming whichever member happens to be last. */
 #define CONFIG_ARCHIVE_MEMBER_FIRST CONFIG_ARCHIVE_MEMBER_WIFI
-#define CONFIG_ARCHIVE_MEMBER_LAST CONFIG_ARCHIVE_MEMBER_REMOTE
+#define CONFIG_ARCHIVE_MEMBER_LAST CONFIG_ARCHIVE_MEMBER_FM_PRESETS
 
-/* "wifi.json", "settings.csv", "yandex.json", "weather.json", "remote.csv";
- * NULL for UNKNOWN. */
+/* "wifi.json", "settings.csv", "yandex.json", "weather.json", "remote.csv",
+ * "fm_presets.csv"; NULL for UNKNOWN. */
 const char *config_archive_member_file(config_archive_member_t member);
 
 /* Maps a file name onto a member. A leading directory is ignored, so both

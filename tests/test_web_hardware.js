@@ -116,6 +116,14 @@ function test_the_header_round_trips_and_names_every_option() {
   assert.deepStrictEqual(hw.parseHeader(fmHeader).values, fm);
   assert.deepStrictEqual(hw.parseHeader(fmHeader).unknown, []);
   assert.ok(!/#define FM_/.test(hw.toHeader(hw.defaults())));
+  assert.ok(!/FM_I2S_PERIPHERAL|I2S_DIN_GPIO/.test(fmHeader));
+  /* And its sound over I2S, the data line on 39. */
+  const fmI2s = {...fm, fm_i2s: '0', i2s0_din: 39};
+  const fmI2sHeader = hw.toHeader(fmI2s);
+  assert.ok(fmI2sHeader.includes('#define FM_I2S_PERIPHERAL 0'));
+  assert.ok(fmI2sHeader.includes('#define I2S_DIN_GPIO 39'));
+  assert.deepStrictEqual(hw.parseHeader(fmI2sHeader).values, fmI2s);
+  assert.deepStrictEqual(hw.validate(fmI2s).errors, []);
 }
 
 function test_a_partial_file_means_the_defaults_for_the_rest() {

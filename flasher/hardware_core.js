@@ -104,6 +104,8 @@
     {key: 'i2s0_bclk', kind: 'opt_pin', device: 'i2s0', dflt: 18, define: 'I2S_BCLK_GPIO'},
     {key: 'i2s0_lrck', kind: 'opt_pin', device: 'i2s0', dflt: 17, define: 'I2S_LRCK_GPIO'},
     {key: 'i2s0_dout', kind: 'opt_pin', device: 'i2s0', dflt: 16, define: 'I2S_DOUT_GPIO'},
+    /* The one line into the S3: the FM tuner's sound, on the DAC's clocks. */
+    {key: 'i2s0_din', kind: 'opt_pin', device: 'i2s0', dflt: NONE, define: 'I2S_DIN_GPIO'},
     {key: 'uart1_tx', kind: 'opt_pin', device: 'uart1', dflt: NONE, define: 'BT_UART_TX_GPIO'},
     {key: 'uart1_rx', kind: 'opt_pin', device: 'uart1', dflt: NONE, define: 'BT_UART_RX_GPIO'},
     /* The tuner's control bus, and later the PCM5122's: one pair however
@@ -165,10 +167,12 @@
        the card names that bus as its "sound". */
     {key: 'bt_i2s', kind: 'choice', device: 'bluetooth', options: ['0'], dflt: '0', bus: 'i2s'},
 
-    /* The FM tuner, controlled over I2C. Its sound is the module's own
-       analogue output for now; the RDA5807FP's I2S joins later. */
+    /* The FM tuner, controlled over I2C. Its sound is its own analogue
+       output, or - the RDA5807FP - I2S into the S3, which then plays it
+       through the DAC with the knob and the meter like every other source. */
     {key: 'fm_tuner', kind: 'choice', device: 'fm', options: [NONE, 'rda5807'], dflt: NONE, enables: true, define: 'FM_TUNER'},
     {key: 'fm_i2c', kind: 'choice', device: 'fm', options: ['0'], dflt: '0', bus: 'i2c'},
+    {key: 'fm_i2s', kind: 'choice', device: 'fm', options: [NONE, '0'], dflt: NONE, bus: 'i2s'},
 
     /* Software sources, built in or left out: no pins, but a line in the
        header each. Both are on in the README board. */
@@ -193,7 +197,7 @@
     sd: {spi: ['sclk', 'mosi', 'miso']},
     dac: {i2s: ['bclk', 'lrck', 'dout']},
     bluetooth: {uart: ['tx', 'rx'], i2s: ['bclk', 'lrck', 'dout']},
-    fm: {i2c: ['sda', 'scl']},
+    fm: {i2c: ['sda', 'scl'], i2s: ['bclk', 'lrck', 'din']},
   };
 
   /* What a device switched on from "none" comes up with. No pin is guessed:
@@ -371,6 +375,10 @@
       for (const [busKind, pins] of Object.entries(needs)) {
         const bus = busOf(values, device, busKind);
         if (bus === null) continue;  /* a bus the device may go without, such as the tuner's I2S */
+        /* A bus that is not one of the choices is reported as a bad value
+           below, and has no pins to ask after. */
+        const busField = FIELDS.find((item) => item.device === device && item.bus === busKind);
+        if (busField.options && !busField.options.includes(String(values[busField.key]))) continue;
         for (const pin of pins) {
           if (pinValue(values[`${bus}_${pin}`]) === null) {
             errors.push({code: 'bus_unwired', device, bus, pin});
@@ -511,7 +519,12 @@
            `#define FM_TUNER FM_TUNER_${String(values.fm_tuner).toUpperCase()}`,
            `#define FM_I2C_PERIPHERAL ${values.fm_i2c}`,
            ...gpio('FM_I2C_SDA_GPIO', 'i2c0_sda'),
-           ...gpio('FM_I2C_SCL_GPIO', 'i2c0_scl')]
+           ...gpio('FM_I2C_SCL_GPIO', 'i2c0_scl'),
+           ...(isNone(values.fm_i2s)
+             ? []
+             : ['/* Its sound over I2S0: the DAC\'s clocks, and a data line into the S3. */',
+                `#define FM_I2S_PERIPHERAL ${values.fm_i2s}`,
+                ...gpio('I2S_DIN_GPIO', 'i2s0_din')])]
         : ['/* No FM tuner: FM_TUNER and the FM_I2C_* lines would go here. */']),
       '',
       '/* Sources that need no wiring; a built-in one also has a switch in the settings. */',
@@ -606,6 +619,11 @@
     const fmBus = take('FM_I2C_PERIPHERAL');
     if (fmBus !== undefined && fmBus !== '0') unknown.push({key: 'FM_I2C_PERIPHERAL', value: fmBus});
     asPin('i2c0_sda', 'FM_I2C_SDA_GPIO'); asPin('i2c0_scl', 'FM_I2C_SCL_GPIO');
+    const fmI2s = take('FM_I2S_PERIPHERAL');
+    if (fmI2s === undefined) values.fm_i2s = NONE;
+    else if (fmI2s === '0') values.fm_i2s = '0';
+    else unknown.push({key: 'FM_I2S_PERIPHERAL', value: fmI2s});
+    asPin('i2s0_din', 'I2S_DIN_GPIO');
     const asFeature = (key, name) => {
       const value = take(name);
       if (value !== undefined) values[key] = value === 'FEATURE_ON' ? 1 : 0;

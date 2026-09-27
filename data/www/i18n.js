@@ -286,6 +286,7 @@
     'hw.f.spi3_sclk': ['SCLK', 'SCLK'], 'hw.f.spi3_mosi': ['MOSI', 'MOSI'], 'hw.f.spi3_miso': ['MISO', 'MISO'],
     'hw.f.i2s0_bclk': ['BCLK', 'BCLK'], 'hw.f.i2s0_lrck': ['LRCK', 'LRCK'],
     'hw.f.i2s0_dout': ['DOUT (к ЦАП)', 'DOUT (to the DAC)'],
+    'hw.f.i2s0_din': ['DIN (от тюнера)', 'DIN (from the tuner)'],
     'hw.f.uart1_tx': ['TX', 'TX'], 'hw.f.uart1_rx': ['RX', 'RX'],
     'hw.f.i2c0_sda': ['SDA', 'SDA'], 'hw.f.i2c0_scl': ['SCL', 'SCL'],
     'hw.f.tft_cs': ['CS', 'CS'], 'hw.f.tft_dc': ['DC', 'DC'],
@@ -303,12 +304,13 @@
     'hw.f.sd_spi': ['Шина', 'Bus'], 'hw.f.sd_cs': ['CS', 'CS'],
     'hw.f.bluetooth': ['Модуль', 'Module'], 'hw.f.bt_uart': ['Управление', 'Control'], 'hw.f.bt_i2s': ['Звук', 'Audio'],
     'hw.f.fm_tuner': ['Микросхема', 'Chip'], 'hw.f.fm_i2c': ['Управление', 'Control'],
+    'hw.f.fm_i2s': ['Звук', 'Audio'],
 
     /* The short names the picture writes beside a pin. */
     'hw.s.spi2_sclk': ['SPI2 SCLK', 'SPI2 SCLK'], 'hw.s.spi2_mosi': ['SPI2 MOSI', 'SPI2 MOSI'],
     'hw.s.spi3_sclk': ['SPI3 SCLK', 'SPI3 SCLK'], 'hw.s.spi3_mosi': ['SPI3 MOSI', 'SPI3 MOSI'], 'hw.s.spi3_miso': ['SPI3 MISO', 'SPI3 MISO'],
     'hw.s.i2s0_bclk': ['I2S BCLK', 'I2S BCLK'], 'hw.s.i2s0_lrck': ['I2S LRCK', 'I2S LRCK'],
-    'hw.s.i2s0_dout': ['I2S DOUT', 'I2S DOUT'],
+    'hw.s.i2s0_dout': ['I2S DOUT', 'I2S DOUT'], 'hw.s.i2s0_din': ['I2S DIN', 'I2S DIN'],
     'hw.s.uart1_tx': ['UART1 TX', 'UART1 TX'], 'hw.s.uart1_rx': ['UART1 RX', 'UART1 RX'],
     'hw.s.i2c0_sda': ['I2C SDA', 'I2C SDA'], 'hw.s.i2c0_scl': ['I2C SCL', 'I2C SCL'],
     'hw.s.tft_cs': ['TFT CS', 'TFT CS'], 'hw.s.tft_dc': ['TFT DC', 'TFT DC'], 'hw.s.tft_reset': ['TFT RST', 'TFT RST'],

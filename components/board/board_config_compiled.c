@@ -100,6 +100,10 @@ void board_config_compiled(board_config_t *config)
     config->fm_tuner = FM_TUNER_RDA5807;
     config->i2c0_sda = PIN(FM_I2C_SDA_GPIO);
     config->i2c0_scl = PIN(FM_I2C_SCL_GPIO);
+#if defined(FM_I2S_PERIPHERAL) && defined(I2S_DIN_GPIO)
+    config->fm_i2s = (uint8_t)FM_I2S_PERIPHERAL;
+    config->i2s0_din = PIN(I2S_DIN_GPIO);
+#endif
 #endif
 #if defined(YANDEX_MUSIC)
     config->yandex_music = YANDEX_MUSIC == FEATURE_ON ? 1U : 0U;

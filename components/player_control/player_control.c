@@ -13,12 +13,14 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
 #include "album_art.h"
 #include "audio_source.h"
 #include "board.h"
+#include "board_audio_format.h"
 #include "board_config.h"
 #include "board_features.h"
 #include "bt_link.h"
@@ -805,13 +807,17 @@ static uint8_t player_fm_volume_for(uint8_t percent)
 
 static void player_fm_sync_volume(void)
 {
-    const uint8_t volume = player_fm_volume_for(board_audio_volume());
+    /* Over I2S the knob is the board's own, applied to the samples on their
+     * way to the DAC like every other source's; the tuner sends at full. */
+    const uint8_t volume = board_fm_over_i2s() ? RDA5807_VOLUME_MAX
+                                               : player_fm_volume_for(board_audio_volume());
     if (volume == s_fm_volume_sent) return;
     if (fm_tuner_set_volume(volume) == ESP_OK) s_fm_volume_sent = volume;
 }
 
 static bool player_fm_scanning(void);
 static void player_fm_rds_reset(void);
+static void player_fm_pipe_run(bool run);
 
 static bool player_fm_open(void)
 {
@@ -842,12 +848,15 @@ static bool player_fm_open(void)
     atomic_store_explicit(&s_fm_seeking, false, memory_order_release);
     atomic_store_explicit(&s_fm_failed, false, memory_order_release);
     atomic_store_explicit(&s_fm_on, true, memory_order_release);
+    player_fm_pipe_run(true);
     ESP_LOGI(TAG, "fm: on at %u kHz", (unsigned)khz);
     return true;
 }
 
 static void player_fm_close(void)
 {
+    // The output is let go before anything else may start on it.
+    player_fm_pipe_run(false);
     atomic_store_explicit(&s_fm_on, false, memory_order_release);
     atomic_store_explicit(&s_fm_seeking, false, memory_order_release);
     // A scan in progress powers the chip down itself when it ends.
@@ -877,6 +886,90 @@ static void player_fm_tune(uint32_t khz)
     }
     player_fm_rds_reset();
     if (fm_tuner_tune(khz) == ESP_OK) player_fm_mute(false);
+}
+
+/* ---- The tuner's sound over I2S -------------------------------------------
+ *
+ * On a board whose tuner sends its sound to the S3, the sound is read off
+ * I2S0's input and written to the DAC block by block, through the same
+ * board_audio_write() as a decoded stream: the knob, the meter and the health
+ * log come with it. Both directions run on one pair of clocks, so what comes
+ * in is exactly what goes out and nothing can drift or need buffering. A
+ * pause stops the output the way a paused stream's does, rather than sending
+ * the chip's silence to a DAC that would log it as a fault. */
+#define PLAYER_FM_PIPE_STACK 3072
+#define PLAYER_FM_PIPE_BYTES 1024U
+#define PLAYER_FM_PIPE_IO_MS 100U
+#define PLAYER_FM_PIPE_IDLE_MS 50U
+#define PLAYER_FM_PIPE_STOP_WAIT_MS 1000U
+
+static atomic_bool s_fm_pipe_wanted = ATOMIC_VAR_INIT(false);
+// Whether the output is ours right now; the close waits for it to drop.
+static atomic_bool s_fm_pipe_playing = ATOMIC_VAR_INIT(false);
+
+static void player_fm_pipe_stop_output(void)
+{
+    (void)board_audio_capture_set_enabled(false);
+    (void)board_audio_set_enabled(false);
+    atomic_store_explicit(&s_fm_pipe_playing, false, memory_order_release);
+}
+
+static void player_fm_pipe_task(void *arg)
+{
+    (void)arg;
+    uint8_t *block = heap_caps_malloc(PLAYER_FM_PIPE_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (block == NULL) block = heap_caps_malloc(PLAYER_FM_PIPE_BYTES, MALLOC_CAP_INTERNAL);
+    if (block == NULL) {
+        ESP_LOGE(TAG, "fm: no memory for the I2S pipe");
+        vTaskDelete(NULL);
+        return;
+    }
+    for (;;) {
+        const bool play = atomic_load_explicit(&s_fm_pipe_wanted, memory_order_acquire) &&
+                          !atomic_load_explicit(&s_fm_muted, memory_order_acquire) &&
+                          !player_fm_scanning();
+        const bool playing = atomic_load_explicit(&s_fm_pipe_playing, memory_order_acquire);
+        if (!play) {
+            if (playing) player_fm_pipe_stop_output();
+            vTaskDelay(pdMS_TO_TICKS(PLAYER_FM_PIPE_IDLE_MS));
+            continue;
+        }
+        if (!playing) {
+            /* The rate the tuner is sent clocks at; it follows whatever it is
+             * given, and the DAC's default is as good as any. */
+            if (board_audio_set_sample_rate(AUDIO_DEFAULT_SAMPLE_RATE) != ESP_OK ||
+                board_audio_set_enabled(true) != ESP_OK ||
+                board_audio_capture_set_enabled(true) != ESP_OK) {
+                ESP_LOGW(TAG, "fm: the I2S pipe did not start");
+                player_fm_pipe_stop_output();
+                vTaskDelay(pdMS_TO_TICKS(PLAYER_FM_PIPE_STOP_WAIT_MS));
+                continue;
+            }
+            atomic_store_explicit(&s_fm_pipe_playing, true, memory_order_release);
+            ESP_LOGI(TAG, "fm: sound over I2S at %u Hz", (unsigned)AUDIO_DEFAULT_SAMPLE_RATE);
+        }
+        size_t read = 0U;
+        if (board_audio_capture_read(block, PLAYER_FM_PIPE_BYTES, &read, PLAYER_FM_PIPE_IO_MS) ==
+                ESP_OK &&
+            read > 0U) {
+            size_t written = 0U;
+            (void)board_audio_write(block, read, &written, PLAYER_FM_PIPE_IO_MS);
+        }
+    }
+}
+
+static void player_fm_pipe_run(bool run)
+{
+    if (!board_fm_over_i2s()) return;
+    atomic_store_explicit(&s_fm_pipe_wanted, run, memory_order_release);
+    if (run) return;
+    /* Waited out, so the next source finds the output free rather than
+     * racing the last block of FM onto it. */
+    const uint32_t started = player_now_ms();
+    while (atomic_load_explicit(&s_fm_pipe_playing, memory_order_acquire) &&
+           (uint32_t)(player_now_ms() - started) < PLAYER_FM_PIPE_STOP_WAIT_MS) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 }
 
 /* RDS for the station on the air, fed by its own task and read by the faces.
@@ -1896,6 +1989,12 @@ esp_err_t player_control_init(void)
         if (fm_tuner_present() &&
             xTaskCreate(player_fm_rds_task, "fm_rds", PLAYER_FM_RDS_STACK, NULL, 3, NULL) != pdPASS) {
             ESP_LOGW(TAG, "fm: no RDS task");
+        }
+        /* Above the RDS reader: a late block is a click, a late group is not. */
+        if (fm_tuner_present() && board_fm_over_i2s() &&
+            xTaskCreate(player_fm_pipe_task, "fm_pipe", PLAYER_FM_PIPE_STACK, NULL, 6, NULL) !=
+                pdPASS) {
+            ESP_LOGW(TAG, "fm: no I2S pipe task");
         }
     }
     bt_link_set_key_listener(player_speaker_key);

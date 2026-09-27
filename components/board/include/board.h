@@ -64,6 +64,13 @@ esp_err_t board_audio_set_enabled(bool enabled);
  * start. Both are no-ops when already in that state. */
 esp_err_t board_audio_release_bus(void);
 esp_err_t board_audio_reclaim_bus(void);
+/* The FM tuner's sound in, on I2S0's input line (i2s0_din) and the output's
+ * own clocks - so it arrives at exactly the rate it goes out, with nothing to
+ * drift. The output has to be running for the clocks to be there. Only on a
+ * board that wires the line; ESP_ERR_NOT_SUPPORTED elsewhere. */
+bool board_audio_capture_available(void);
+esp_err_t board_audio_capture_set_enabled(bool enabled);
+esp_err_t board_audio_capture_read(void *pcm, size_t length, size_t *read, uint32_t timeout_ms);
 /* The DAC's soft mute, on boards that wire AUDIO_DAC_MUTE_GPIO; a no-op
  * elsewhere. The stream keeps going either way - only the analogue output
  * is silenced, which is what a Bluetooth speaker taking the sound wants. */

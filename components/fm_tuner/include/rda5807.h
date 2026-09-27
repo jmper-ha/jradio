@@ -11,9 +11,10 @@ extern "C" {
  * status read says. Pure, so the bit layout is tested on the host; putting
  * the words on the bus is fm_tuner.c.
  *
- * The whole family - the M module on the bench, the FP with I2S later -
- * shares 02h-05h and the status words. The FP adds its I2S setup in 04h and
- * 06h, which is not here yet. */
+ * The whole family - the M module and the FP - shares 02h-05h and the status
+ * words. The FP adds its I2S output: the enable in 04h and the format in
+ * 06h. Both answer to the same chip id, 0x5804, so which one is fitted is
+ * the wiring's to say. */
 
 // Random access: the register's address, then its 16 bits, high byte first.
 #define RDA5807_I2C_ADDRESS 0x11U
@@ -23,6 +24,7 @@ extern "C" {
 #define RDA5807_REG_CHANNEL 0x03U
 #define RDA5807_REG_OPTIONS 0x04U
 #define RDA5807_REG_VOLUME 0x05U
+#define RDA5807_REG_I2S 0x06U
 #define RDA5807_REG_STATUS 0x0AU
 #define RDA5807_REG_SIGNAL 0x0BU
 // The four blocks of the last RDS group, A to D.
@@ -44,6 +46,7 @@ typedef struct {
     bool mono;
     bool bass;
     uint8_t volume;  // 0..RDA5807_VOLUME_MAX; 0 is quiet, not silent
+    bool i2s;        // the FP's digital output instead of only the analogue one
 } rda5807_state_t;
 
 typedef struct {
@@ -73,8 +76,14 @@ uint16_t rda5807_control_word(const rda5807_state_t *state, bool soft_reset, boo
 uint16_t rda5807_tune_word(uint32_t khz);
 
 /* 04h: 50 us de-emphasis, the curve European and Russian stations are sent
- * with; the chip's default is the American 75 us, which sounds dull here. */
-uint16_t rda5807_options_word(void);
+ * with; the chip's default is the American 75 us, which sounds dull here.
+ * Soft mute off. And the I2S output, when `i2s`. */
+uint16_t rda5807_options_word(bool i2s);
+
+/* 06h: the I2S format the DAC is sent, so the S3 can pass the samples
+ * straight on - slave to the S3's clocks, left channel while WS is low (the
+ * I2S standard), 16-bit signed. */
+uint16_t rda5807_i2s_word(void);
 
 /* 05h: the seek threshold, the antenna input and the volume. */
 uint16_t rda5807_volume_word(uint8_t volume);

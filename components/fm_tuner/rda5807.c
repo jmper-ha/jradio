@@ -22,7 +22,12 @@
 
 // 04h
 #define OPT_DE_50US (1U << 11)
-#define OPT_SOFTMUTE (1U << 9)
+#define OPT_I2S_ENABLED (1U << 6)
+
+// 06h
+#define I2S_SLAVE (1U << 12)
+#define I2S_WS_LOW_IS_LEFT (1U << 11)
+#define I2S_DATA_SIGNED (1U << 9)
 
 // 05h
 #define VOL_INT_MODE (1U << 15)
@@ -81,9 +86,19 @@ uint16_t rda5807_tune_word(uint32_t khz)
     return (uint16_t)((rda5807_channel_for_khz(khz) << CHAN_SHIFT) | CHAN_TUNE);
 }
 
-uint16_t rda5807_options_word(void)
+uint16_t rda5807_options_word(bool i2s)
 {
-    return OPT_DE_50US | OPT_SOFTMUTE;
+    /* No soft mute. It pulls a weak station down to keep its hiss quiet,
+     * and on the bench, with no aerial on the FP, it held every station at a
+     * third of its level - measured against the same station with it off,
+     * which is the one that was called "excellent". The listener's own knob
+     * is the better judge of how loud hiss may be. */
+    return (uint16_t)(OPT_DE_50US | (i2s ? OPT_I2S_ENABLED : 0U));
+}
+
+uint16_t rda5807_i2s_word(void)
+{
+    return I2S_SLAVE | I2S_WS_LOW_IS_LEFT | I2S_DATA_SIGNED;
 }
 
 uint16_t rda5807_volume_word(uint8_t volume)

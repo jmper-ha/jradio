@@ -136,7 +136,10 @@
       for (const value of field.options) {
         const element = document.createElement('option');
         element.value = value;
-        element.textContent = OPTION_LABEL(value);
+        /* A bus by its kind and number, as the single-bus link above: the
+           number alone is shared between kinds. */
+        element.textContent = field.bus && value !== hw.NONE
+          ? `${field.bus.toUpperCase()}${value}` : OPTION_LABEL(value);
         select.append(element);
       }
       select.addEventListener('change', () => setValue(field.key, select.value));

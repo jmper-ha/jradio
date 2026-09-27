@@ -37,18 +37,36 @@ static rda5807_state_t s_state = {.volume = RDA5807_VOLUME_MAX};
         return locked_result;                                                     \
     } while (0)
 
+/* Each transfer is tried a few times before it counts as failed. With the
+ * FP's I2S running, its 1.4 MHz bit clock on the bench's wires beside SCL and
+ * SDA spoiled a read about once a second; the next try goes through. Only a
+ * transfer that fails every time is logged - the RDS reader asks 25 times a
+ * second, and logging each spoiled try buried everything else. */
+#define FM_I2C_TRIES 3
+
 static esp_err_t write_register(uint8_t reg, uint16_t value)
 {
     const uint8_t bytes[3] = {reg, (uint8_t)(value >> 8), (uint8_t)value};
-    return i2c_master_transmit(s_device, bytes, sizeof(bytes), FM_I2C_TIMEOUT_MS);
+    esp_err_t err = ESP_FAIL;
+    for (int attempt = 0; attempt < FM_I2C_TRIES && err != ESP_OK; ++attempt) {
+        err = i2c_master_transmit(s_device, bytes, sizeof(bytes), FM_I2C_TIMEOUT_MS);
+    }
+    if (err != ESP_OK) ESP_LOGW(TAG, "write %02x failed: %s", reg, esp_err_to_name(err));
+    return err;
 }
 
 static esp_err_t read_register(uint8_t reg, uint16_t *value)
 {
     uint8_t bytes[2] = {0};
-    ESP_RETURN_ON_ERROR(
-        i2c_master_transmit_receive(s_device, &reg, 1, bytes, sizeof(bytes), FM_I2C_TIMEOUT_MS),
-        TAG, "read %02x", reg);
+    esp_err_t err = ESP_FAIL;
+    for (int attempt = 0; attempt < FM_I2C_TRIES && err != ESP_OK; ++attempt) {
+        err = i2c_master_transmit_receive(s_device, &reg, 1, bytes, sizeof(bytes),
+                                          FM_I2C_TIMEOUT_MS);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "read %02x failed: %s", reg, esp_err_to_name(err));
+        return err;
+    }
     *value = (uint16_t)((bytes[0] << 8) | bytes[1]);
     return ESP_OK;
 }
@@ -87,8 +105,11 @@ esp_err_t fm_tuner_init(void)
         s_bus = NULL;
         return err;
     }
-    ESP_LOGI(TAG, "RDA5807 found on SDA %d / SCL %d, chip id 0x%04x", board->i2c0_sda,
-             board->i2c0_scl, chip_id);
+    /* The wiring says whether its I2S output reaches the S3: the chip id is
+     * the same for the FP, which has one, and the M, which has not. */
+    s_state.i2s = board_fm_over_i2s();
+    ESP_LOGI(TAG, "RDA5807 found on SDA %d / SCL %d, chip id 0x%04x%s", board->i2c0_sda,
+             board->i2c0_scl, chip_id, s_state.i2s ? ", sound over I2S" : "");
     return ESP_OK;
 }
 
@@ -108,7 +129,11 @@ static esp_err_t power(bool on)
                                        rda5807_control_word(&s_state, false, false, false)),
                         TAG, "enable");
     vTaskDelay(pdMS_TO_TICKS(FM_POWER_UP_MS));
-    ESP_RETURN_ON_ERROR(write_register(RDA5807_REG_OPTIONS, rda5807_options_word()), TAG, "options");
+    if (s_state.i2s) {
+        ESP_RETURN_ON_ERROR(write_register(RDA5807_REG_I2S, rda5807_i2s_word()), TAG, "i2s");
+    }
+    ESP_RETURN_ON_ERROR(write_register(RDA5807_REG_OPTIONS, rda5807_options_word(s_state.i2s)),
+                        TAG, "options");
     return write_register(RDA5807_REG_VOLUME, rda5807_volume_word(s_state.volume));
 }
 
@@ -127,8 +152,9 @@ static esp_err_t set_muted(bool muted)
 static esp_err_t read_status(rda5807_status_t *status)
 {
     uint16_t words[2] = {0U, 0U};
-    ESP_RETURN_ON_ERROR(read_register(RDA5807_REG_STATUS, &words[0]), TAG, "status");
-    ESP_RETURN_ON_ERROR(read_register(RDA5807_REG_SIGNAL, &words[1]), TAG, "signal");
+    esp_err_t err = read_register(RDA5807_REG_STATUS, &words[0]);
+    if (err == ESP_OK) err = read_register(RDA5807_REG_SIGNAL, &words[1]);
+    if (err != ESP_OK) return err;
     rda5807_parse_status(words[0], words[1], status);
     return ESP_OK;
 }
@@ -137,11 +163,12 @@ static esp_err_t read_rds(uint16_t blocks[4], bool *ready, bool *block_a_ok, boo
 {
     rda5807_status_t status;
     *ready = false;
-    ESP_RETURN_ON_ERROR(read_status(&status), TAG, "rds status");
+    const esp_err_t err = read_status(&status);
+    if (err != ESP_OK) return err;
     if (!status.rds_ready) return ESP_OK;
     for (uint8_t i = 0U; i < 4U; ++i) {
-        ESP_RETURN_ON_ERROR(read_register((uint8_t)(RDA5807_REG_RDS_A + i), &blocks[i]), TAG,
-                            "rds block");
+        const esp_err_t block_err = read_register((uint8_t)(RDA5807_REG_RDS_A + i), &blocks[i]);
+        if (block_err != ESP_OK) return block_err;
     }
     *ready = true;
     // One or two bits corrected is still the block it says it is.

@@ -115,6 +115,10 @@ static bool s_scroll_flipped;
 #define BOARD_SCROLL_ROWS (TFT_WIDTH > TFT_HEIGHT ? TFT_WIDTH : TFT_HEIGHT)
 static SemaphoreHandle_t s_lcd_transfer_done;
 static i2s_chan_handle_t s_i2s_tx;
+/* The input half of the same controller, when i2s0_din is wired: the FM
+ * tuner's sound. Created and deleted with the output. */
+static i2s_chan_handle_t s_i2s_rx;
+static bool s_capture_enabled;
 static SemaphoreHandle_t s_audio_mutex;
 static bool s_audio_enabled;
 static const uint8_t s_i2s_silence[I2S_DMA_BUFFER_BYTES];
@@ -333,8 +337,13 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     channel_config.dma_desc_num = I2S_DMA_DESC_NUM;
     channel_config.dma_frame_num = I2S_DMA_FRAME_NUM;
     channel_config.auto_clear_after_cb = I2S_AUTO_CLEAR_AFTER_CB != 0;
-    ESP_RETURN_ON_ERROR(i2s_new_channel(&channel_config, &s_i2s_tx, NULL), TAG,
-                        "create I2S TX channel failed");
+    /* Full duplex when the input is wired: one controller, one pair of
+     * clocks for both directions, which is what makes the tuner's samples
+     * arrive at the rate the DAC takes them. */
+    const bool capture = wiring()->i2s0_din >= 0;
+    ESP_RETURN_ON_ERROR(i2s_new_channel(&channel_config, &s_i2s_tx, capture ? &s_i2s_rx : NULL),
+                        TAG, "create I2S channels failed");
+    s_capture_enabled = false;
 
     /* A TX "send queue overflow" means the DMA ran out of filled descriptors
      * and replayed/zeroed a buffer - i.e. an audible dropout. Nothing else in
@@ -372,6 +381,15 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     std_config.slot_cfg.slot_bit_width = (i2s_slot_bit_width_t)I2S_SLOT_BIT_WIDTH;
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_tx, &std_config), TAG,
                         "configure I2S TX failed");
+    if (capture) {
+        /* The same format both ways - the tuner is set to send what the DAC
+         * is sent: Philips, 16-bit stereo - with the data line the other way. */
+        std_config.gpio_cfg.dout = I2S_GPIO_UNUSED;
+        std_config.gpio_cfg.din = wired(wiring()->i2s0_din);
+        ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_rx, &std_config), TAG,
+                            "configure I2S RX failed");
+        ESP_LOGI(TAG, "I2S input on GPIO %d, for the FM tuner", wiring()->i2s0_din);
+    }
     ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_dout)), TAG,
                         "enable I2S DOUT pad observation failed");
     ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_bclk)), TAG,
@@ -485,6 +503,12 @@ esp_err_t board_audio_release_bus(void)
          * the pads: a disabled channel still drives its idle levels, and the
          * module about to clock the DAC would be fighting them. Then plain
          * inputs, no pull - a pull would load the module's edges. */
+        if (s_i2s_rx != NULL) {
+            if (s_capture_enabled) (void)i2s_channel_disable(s_i2s_rx);
+            s_capture_enabled = false;
+            (void)i2s_del_channel(s_i2s_rx);
+            s_i2s_rx = NULL;
+        }
         result = i2s_del_channel(s_i2s_tx);
         s_i2s_tx = NULL;
         const gpio_num_t pins[] = {wired(wiring()->i2s0_bclk), wired(wiring()->i2s0_lrck),
@@ -887,6 +911,7 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
     const i2s_std_clk_config_t clock_config = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate);
     xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
     const bool was_enabled = s_audio_enabled;
+    const bool was_capturing = s_capture_enabled;
     esp_err_t result = ESP_OK;
     if (was_enabled) {
         board_audio_flush_tail();
@@ -895,8 +920,20 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
             s_audio_enabled = false;
         }
     }
+    // Both halves share the clock, so both are stopped and both retimed.
+    if (result == ESP_OK && was_capturing) {
+        result = i2s_channel_disable(s_i2s_rx);
+        if (result == ESP_OK) s_capture_enabled = false;
+    }
     if (result == ESP_OK) {
         result = i2s_channel_reconfig_std_clock(s_i2s_tx, &clock_config);
+    }
+    if (result == ESP_OK && s_i2s_rx != NULL) {
+        result = i2s_channel_reconfig_std_clock(s_i2s_rx, &clock_config);
+    }
+    if (result == ESP_OK && was_capturing) {
+        result = i2s_channel_enable(s_i2s_rx);
+        if (result == ESP_OK) s_capture_enabled = true;
     }
     if (result == ESP_OK) {
         // The health window measures bytes against real time, so it is only
@@ -917,6 +954,39 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
                  esp_err_to_name(result));
     }
     return result;
+}
+
+bool board_audio_capture_available(void)
+{
+    return wiring()->i2s0_din >= 0;
+}
+
+esp_err_t board_audio_capture_set_enabled(bool enabled)
+{
+    if (s_audio_mutex == NULL) return ESP_ERR_INVALID_STATE;
+    if (!board_audio_capture_available()) return ESP_ERR_NOT_SUPPORTED;
+    xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
+    esp_err_t result = s_i2s_rx == NULL ? ESP_ERR_INVALID_STATE : ESP_OK;
+    if (result == ESP_OK && enabled != s_capture_enabled) {
+        result = enabled ? i2s_channel_enable(s_i2s_rx) : i2s_channel_disable(s_i2s_rx);
+        if (result == ESP_OK) {
+            s_capture_enabled = enabled;
+            ESP_LOGI(TAG, "I2S input %s", enabled ? "enabled" : "disabled");
+        }
+    }
+    xSemaphoreGive(s_audio_mutex);
+    return result;
+}
+
+/* Outside the audio mutex: a read waits for the DMA, and holding the lock
+ * across that would stall the writes it feeds. The channel is only taken
+ * away by the bus hand-over, which the FM source is never running through. */
+esp_err_t board_audio_capture_read(void *pcm, size_t length, size_t *read, uint32_t timeout_ms)
+{
+    if (pcm == NULL || read == NULL) return ESP_ERR_INVALID_ARG;
+    *read = 0U;
+    if (s_i2s_rx == NULL || !s_capture_enabled) return ESP_ERR_INVALID_STATE;
+    return i2s_channel_read(s_i2s_rx, pcm, length, read, pdMS_TO_TICKS(timeout_ms));
 }
 
 esp_err_t board_audio_self_test(uint32_t duration_ms)

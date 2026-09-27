@@ -29,6 +29,8 @@ extern "C" {
 
 #define BOARD_CONFIG_NAME_MAX 48
 #define BOARD_CONFIG_INVALID 0xFFU
+// A device's bus that is not wired: its "none".
+#define BOARD_BUS_NONE 0xFEU
 #define BOARD_CONFIG_FORMAT 1
 
 typedef struct {
@@ -54,6 +56,7 @@ typedef struct {
     int8_t i2s0_bclk;
     int8_t i2s0_lrck;
     int8_t i2s0_dout;
+    int8_t i2s0_din;
     int8_t uart1_tx;
     int8_t uart1_rx;
     int8_t i2c0_sda;
@@ -90,12 +93,16 @@ typedef struct {
 
     /* Which bus each device names. Each has one possible value today and is
      * kept only so a file naming another is refused rather than obeyed:
-     * tft_spi 2, sd_spi 3, dac_i2s 0, bt_uart 1, bt_i2s 0, fm_i2c 0. */
+     * tft_spi 2, sd_spi 3, dac_i2s 0, bt_uart 1, bt_i2s 0, fm_i2c 0. The
+     * tuner's sound is the one a device may go without: fm_i2s is 0 when its
+     * I2S output is wired to the S3, BOARD_BUS_NONE when only its own
+     * analogue output is used. */
     uint8_t sd_spi;
     uint8_t dac_i2s;
     uint8_t bt_uart;
     uint8_t bt_i2s;
     uint8_t fm_i2c;
+    uint8_t fm_i2s;
 } board_config_t;
 
 typedef enum {
@@ -226,6 +233,9 @@ bool board_has_sd_card(void);
 bool board_has_ir(void);
 bool board_has_bluetooth(void);
 bool board_has_fm_tuner(void);
+/* The tuner's sound comes to the S3 over I2S0's input, rather than only out
+ * of the tuner's own analogue pins. */
+bool board_fm_over_i2s(void);
 
 #ifdef __cplusplus
 }

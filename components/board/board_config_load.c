@@ -146,3 +146,9 @@ bool board_has_fm_tuner(void)
 {
     return board_config_get()->fm_tuner == FM_TUNER_RDA5807;
 }
+
+bool board_fm_over_i2s(void)
+{
+    const board_config_t *board = board_config_get();
+    return board_has_fm_tuner() && board->fm_i2s == 0U && board->i2s0_din >= 0;
+}

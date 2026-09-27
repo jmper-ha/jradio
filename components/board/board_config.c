@@ -85,6 +85,7 @@ static const field_t k_fields[] = {
     {"i2s0_bclk", KIND_OPT_PIN, DEV_I2S0, AT(i2s0_bclk), false, NULL, {{NULL, 0}}},
     {"i2s0_lrck", KIND_OPT_PIN, DEV_I2S0, AT(i2s0_lrck), false, NULL, {{NULL, 0}}},
     {"i2s0_dout", KIND_OPT_PIN, DEV_I2S0, AT(i2s0_dout), false, NULL, {{NULL, 0}}},
+    {"i2s0_din", KIND_OPT_PIN, DEV_I2S0, AT(i2s0_din), false, NULL, {{NULL, 0}}},
     {"uart1_tx", KIND_OPT_PIN, DEV_UART1, AT(uart1_tx), false, NULL, {{NULL, 0}}},
     {"uart1_rx", KIND_OPT_PIN, DEV_UART1, AT(uart1_rx), false, NULL, {{NULL, 0}}},
     {"i2c0_sda", KIND_OPT_PIN, DEV_I2C0, AT(i2c0_sda), false, NULL, {{NULL, 0}}},
@@ -127,6 +128,8 @@ static const field_t k_fields[] = {
     {"fm_tuner", KIND_CHOICE, DEV_FM, AT(fm_tuner), false, NULL,
      {{"none", FM_TUNER_NONE}, {"rda5807", FM_TUNER_RDA5807}, {NULL, 0}}},
     {"fm_i2c", KIND_CHOICE, DEV_FM, AT(fm_i2c), false, NULL, {{"0", 0}, {NULL, 0}}},
+    {"fm_i2s", KIND_CHOICE, DEV_FM, AT(fm_i2s), false, NULL,
+     {{"none", BOARD_BUS_NONE}, {"0", 0}, {NULL, 0}}},
     {"yandex_music", KIND_BOOL, DEV_FEATURES, AT(yandex_music), false, NULL, {{NULL, 0}}},
     {"dlna", KIND_BOOL, DEV_FEATURES, AT(dlna), false, NULL, {{NULL, 0}}},
 };
@@ -183,6 +186,7 @@ void board_config_clear(board_config_t *config)
     config->dac = DAC_PCM5102;
     config->bluetooth = BLUETOOTH_NONE;
     config->fm_tuner = FM_TUNER_NONE;
+    config->fm_i2s = BOARD_BUS_NONE;
     config->sd_spi = 3U;
     config->dac_i2s = 0U;
     config->bt_uart = 1U;
@@ -484,6 +488,8 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     static const char *const k_i2s0[] = {"i2s0_bclk", "i2s0_lrck", "i2s0_dout"};
     static const char *const k_uart1[] = {"uart1_tx", "uart1_rx"};
     static const char *const k_i2c0[] = {"i2c0_sda", "i2c0_scl"};
+    // The tuner sends on the DAC's clocks and has a data line of its own.
+    static const char *const k_i2s0_in[] = {"i2s0_bclk", "i2s0_lrck", "i2s0_din"};
     (void)k_spi2;  // SPI2's pins are fixed and always there
     if (device_enabled(config, DEV_SD) && config->sd_spi == 3U) {
         check_bus(config, report, DEV_SD, k_spi3, 3U);
@@ -495,6 +501,9 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     }
     if (device_enabled(config, DEV_FM) && config->fm_i2c == 0U) {
         check_bus(config, report, DEV_FM, k_i2c0, 2U);
+    }
+    if (device_enabled(config, DEV_FM) && config->fm_i2s == 0U) {
+        check_bus(config, report, DEV_FM, k_i2s0_in, 3U);
     }
 
     // Only RTC pins can wake the chip.

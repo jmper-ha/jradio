@@ -42,7 +42,10 @@ static void test_the_control_word(void)
 
 static void test_options_and_volume(void)
 {
-    assert(rda5807_options_word() == 0x0A00U);  // 50 us de-emphasis, soft mute
+    assert(rda5807_options_word(false) == 0x0800U);  // 50 us de-emphasis, no soft mute
+    assert(rda5807_options_word(true) == 0x0840U);   // and I2S_ENABLED
+    // Slave, WS low is left, signed.
+    assert(rda5807_i2s_word() == 0x1A00U);
     assert(rda5807_volume_word(0U) == 0x8880U);
     assert(rda5807_volume_word(15U) == 0x888FU);
     assert(rda5807_volume_word(200U) == 0x888FU);

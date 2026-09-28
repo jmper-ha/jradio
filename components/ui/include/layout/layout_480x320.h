@@ -114,6 +114,15 @@
  * has made. */
 #define UI_SRC_FM_DIGITS_PX 72
 
+/* FM: the radiotext on the row under the station's name, and the reception
+ * marks under that, above the rule. */
+#define UI_SRC_FM_TEXT_ROW 1
+#define UI_SRC_FM_TEXT_X UI_SRC_TEXT_X
+#define UI_SRC_FM_TEXT_Y (UI_SRC_ROW_ARTIST + UI_SRC_LINE_H)
+#define UI_SRC_FM_TEXT_W UI_SRC_TEXT_W
+#define UI_SRC_FM_MARKS_X UI_SRC_TEXT_X
+#define UI_SRC_FM_MARKS_Y (UI_SRC_FM_TEXT_Y + UI_SRC_LINE_H)
+
 /* The faces this shape is laid out for. Every row pitch and every line height
  * below follows from them. The text sizes have to exist in ui_font_metrics.h;
  * the icon sizes have to be enabled in sdkconfig.

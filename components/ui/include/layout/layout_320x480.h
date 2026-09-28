@@ -103,6 +103,16 @@
  * has made. */
 #define UI_SRC_FM_DIGITS_PX 72
 
+/* FM: the rows under the digits are the name's and the rule's, so the
+ * radiotext and the reception marks go in the column beside the cover where
+ * the readings are, one line each. */
+#define UI_SRC_FM_TEXT_ROW 1
+#define UI_SRC_FM_TEXT_X UI_SRC_STREAM_X
+#define UI_SRC_FM_TEXT_Y UI_SRC_STREAM_Y
+#define UI_SRC_FM_TEXT_W UI_SRC_STREAM_W
+#define UI_SRC_FM_MARKS_X UI_SRC_STREAM_X
+#define UI_SRC_FM_MARKS_Y (UI_SRC_STREAM_Y + UI_SRC_LINE_H)
+
 /* The faces this shape is laid out for: the landscape ILI9488's, for the
  * reason that file gives at length - it is the same glass, and 14 px of a
  * 480 px-tall screen is a quarter smaller a share of what the eye takes in

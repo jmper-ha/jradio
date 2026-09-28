@@ -40,7 +40,8 @@ extern "C" {
 
 typedef struct {
     uint16_t pi;
-    uint16_t pi_candidate;  // a different code seen once, waiting for a second
+    uint16_t pi_candidate;  // another code than `pi`, and how far it has got
+    uint8_t pi_candidate_count;
     uint8_t pi_repeats;     // clean sightings of `pi` in a row
     /* The group read last. The chip is asked more often than a group lasts,
      * and its "new group" flag is sometimes still up for the same one: read
@@ -83,6 +84,12 @@ bool rds_decoder_feed(rds_decoder_t *decoder, const uint16_t blocks[4], bool blo
  * one each time. Long before a name is whole - a station that rotates four
  * messages takes seconds to show one, and the mark should not wait for it. */
 #define RDS_HEARD_REPEATS 3U
+/* How far another code has to get past a settled one to replace it: each
+ * sighting of it a step forward, each of any third code a step back, and one
+ * of the settled code back to nothing. The real station's code gets there
+ * in well under a second when the settled one was noise; a burst of noise
+ * never does while the station keeps sending. */
+#define RDS_REPLACE_COUNT 8U
 bool rds_decoder_heard(const rds_decoder_t *decoder);
 
 #ifdef __cplusplus

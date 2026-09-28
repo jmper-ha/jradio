@@ -367,6 +367,11 @@
 #ifndef UI_QR_BACK_Y
 #define UI_QR_BACK_Y (UI_QR_CARD_Y + UI_QR_CARD + 28)
 #endif
+/* The FM rows - radiotext and reception marks - finish above the rule. */
+_Static_assert(UI_SRC_FM_MARKS_Y + UI_SRC_LINE_H <= UI_SRC_RULE_TOP,
+               "the FM reception marks run into the rule");
+_Static_assert(!UI_SRC_FM_TEXT_ROW || UI_SRC_FM_TEXT_Y + UI_SRC_LINE_H <= UI_SRC_FM_MARKS_Y,
+               "the FM radiotext runs into the reception marks");
 _Static_assert(UI_QR_CARD_Y + UI_QR_CARD <= TFT_HEIGHT, "the QR card runs off the panel");
 _Static_assert(UI_QR_BACK_Y + UI_FONT_BODY_LINE_H <= TFT_HEIGHT,
                "the QR screen's way out runs off the bottom of the panel");

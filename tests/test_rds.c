@@ -275,8 +275,50 @@ static void test_a_group_read_twice_counts_once(void)
     assert(strcmp(decoder.rt_text, "Song") == 0);
 }
 
+static void test_a_settled_noise_code_gives_way_to_the_station(void)
+{
+    rds_decoder_t decoder;
+    rds_decoder_reset(&decoder);
+    /* A burst of noise under one code, three groups running, settles first -
+       what a morning switch-on can meet. */
+    for (uint16_t i = 0U; i < 3U; ++i) {
+        const uint16_t burst[4] = {0xE28CU, 0xF000U, 0U, i};
+        (void)rds_decoder_feed(&decoder, burst, true, true);
+    }
+    assert(decoder.pi == 0xE28CU && rds_decoder_heard(&decoder));
+    /* Then the station, with noise of other codes among its groups: it takes
+       over, and its name comes through. */
+    for (int round = 0; round < 8; ++round) {
+        filler(&decoder);
+        const uint16_t other[4] = {(uint16_t)(0x1000U + round), 0xF000U, 0U, 0U};
+        (void)rds_decoder_feed(&decoder, other, true, true);
+        filler(&decoder);
+    }
+    assert(decoder.pi == PI);
+    ps_name(&decoder, "RADIOMSK");
+    ps_name(&decoder, "RADIOMSK");
+    assert(strcmp(decoder.ps_text, "RADIOMSK") == 0);
+}
+
+static void test_spoiled_bytes_are_not_taken(void)
+{
+    rds_decoder_t decoder;
+    rds_decoder_reset(&decoder);
+    // The same spoiled piece twice: bytes no station sends.
+    const char spoiled[3] = {(char)0x93, (char)0x88, '\0'};
+    ps(&decoder, 0U, spoiled);
+    ps(&decoder, 0U, spoiled);
+    ps_name(&decoder, "RADIOMSK");
+    ps_name(&decoder, "RADIOMSK");
+    assert(strcmp(decoder.ps_text, "RADIOMSK") == 0);
+    rt(&decoder, 0U, 0U, "\x01\x02" "ab");
+    assert(decoder.rt_candidates == 0U);
+}
+
 int main(void)
 {
+    test_a_settled_noise_code_gives_way_to_the_station();
+    test_spoiled_bytes_are_not_taken();
     test_a_group_read_twice_counts_once();
     test_a_text_the_station_stops_sending_goes();
     test_noise_puts_nothing_into_the_text();

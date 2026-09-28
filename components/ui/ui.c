@@ -218,6 +218,9 @@ typedef struct {
 } ui_scroller_t;
 
 static ui_scroller_t s_source_detail;
+/* The FM radiotext under the station's name, travelling when it is too long -
+ * on the panels that have a row for it (UI_SRC_FM_TEXT_ROW). */
+static ui_scroller_t s_fm_text;
 static lv_obj_t *s_source_stream;
 static lv_obj_t *s_source_buffer;
 /* The same reading as a strip: one object, whose bars are drawn into it from
@@ -2048,6 +2051,9 @@ static void ui_show_fm_face(bool fm)
     ui_set_hidden(s_source_detail.box, fm);
     ui_set_hidden(s_fm_marks, !fm);
     ui_set_hidden(s_source_stream, fm);
+#if UI_SRC_FM_TEXT_ROW
+    ui_set_hidden(s_fm_text.box, !fm);
+#endif
 }
 
 /* Sized off the body face, so they sit on the readings line as text would
@@ -2062,13 +2068,24 @@ static void ui_show_fm_face(bool fm)
 // Clear of the word, so the two read as two marks.
 #define UI_FM_STEPS_X (UI_FM_STEREO_W + UI_FONT_BODY_PX / 2)
 #define UI_FM_STEPS_W (UI_FM_SIGNAL_STEPS * (UI_FM_STEP_W + UI_FM_STEP_GAP))
+// Room inside the RDS frame, round the capitals.
+#define UI_FM_RDS_PAD 2
 
 static void ui_create_fm_marks(void)
 {
+#if UI_SRC_FM_TEXT_ROW
+    s_fm_text = ui_scroller_create(s_source_screen, UI_SRC_FM_TEXT_X, UI_SRC_FM_TEXT_Y,
+                                   UI_SRC_FM_TEXT_W, UI_SRC_LINE_H);
+    lv_obj_set_style_text_font(s_fm_text.box, UI_FONT_BODY, 0);
+    lv_obj_set_style_text_color(s_fm_text.box, lv_color_hex(UI_COLOR_MUTED), 0);
+    ui_scroller_set_scrolling(&s_fm_text, true);
+    lv_obj_add_flag(s_fm_text.box, LV_OBJ_FLAG_HIDDEN);
+#endif
+
     s_fm_marks = lv_obj_create(s_source_screen);
     lv_obj_remove_style_all(s_fm_marks);
     lv_obj_remove_flag(s_fm_marks, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(s_fm_marks, UI_SRC_STREAM_X, UI_SRC_STREAM_Y);
+    lv_obj_set_pos(s_fm_marks, UI_SRC_FM_MARKS_X, UI_SRC_FM_MARKS_Y);
     lv_obj_set_size(s_fm_marks, UI_SRC_STREAM_W, UI_SRC_LINE_H);
     lv_obj_add_flag(s_fm_marks, LV_OBJ_FLAG_HIDDEN);
 
@@ -2094,14 +2111,28 @@ static void ui_create_fm_marks(void)
                        baseline - UI_FM_STEP_H);
     }
 
-    s_fm_rds = lv_label_create(s_fm_marks);
-    lv_label_set_text(s_fm_rds, "RDS");
-    lv_obj_set_pos(s_fm_rds, UI_FM_STEPS_X + UI_FM_STEPS_W + UI_FONT_BODY_PX / 2, 0);
-    lv_obj_set_style_text_color(s_fm_rds, lv_color_hex(UI_COLOR_MUTED), 0);
+    /* The RDS mark: a frame the height of the capitals with a little room
+     * round them, standing on the baseline like the rest, and the word in it
+     * on that same baseline. A label with a border was a line tall, taller
+     * than the row, and the row cut its frame off at the bottom. */
+    const int32_t cap = UI_FONT_BODY_PX * 7 / 10;
+    const int32_t frame_h = cap + 2 * UI_FM_RDS_PAD + 2;
+    s_fm_rds = lv_obj_create(s_fm_marks);
+    lv_obj_remove_style_all(s_fm_rds);
+    lv_obj_remove_flag(s_fm_rds, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_border_color(s_fm_rds, lv_color_hex(UI_COLOR_MUTED), 0);
     lv_obj_set_style_border_width(s_fm_rds, 1, 0);
     lv_obj_set_style_radius(s_fm_rds, 3, 0);
-    lv_obj_set_style_pad_hor(s_fm_rds, 3, 0);
+    lv_obj_set_style_pad_hor(s_fm_rds, UI_FM_RDS_PAD + 1, 0);
+    lv_obj_set_size(s_fm_rds, LV_SIZE_CONTENT, frame_h);
+    lv_obj_set_pos(s_fm_rds, UI_FM_STEPS_X + UI_FM_STEPS_W + UI_FONT_BODY_PX / 2,
+                   baseline + UI_FM_RDS_PAD + 1 - frame_h);
+    lv_obj_t *word = lv_label_create(s_fm_rds);
+    lv_label_set_text(word, "RDS");
+    lv_obj_set_style_text_color(word, lv_color_hex(UI_COLOR_MUTED), 0);
+    // Its baseline on the frame's inner bottom edge, less the padding.
+    const int32_t word_baseline = UI_FONT_BODY->line_height - UI_FONT_BODY->base_line;
+    lv_obj_set_pos(word, 0, frame_h - 1 - UI_FM_RDS_PAD - word_baseline);
     lv_obj_add_flag(s_fm_rds, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -2171,11 +2202,14 @@ static void ui_update_fm_status(const player_snapshot_t *snapshot)
         snapshot->playback_state != PLAYER_PLAYBACK_PAUSED) {
         state = ui_radio_state_text(snapshot->playback_state);
     }
-    /* Three rows that keep their places whatever the station sends: the
-     * digits, the name under them - the preset's or the station's own, or an
-     * empty row - and the reception marks. The radiotext has no row here; the
-     * page shows it. */
+    /* Rows that keep their places whatever the station sends: the digits,
+     * the name under them - the preset's or the station's own, or an empty
+     * row - the radiotext, travelling when long, or an empty row, and the
+     * reception marks. */
     ui_set_state_line_from(snapshot, state, named ? now.heading : "");
+#if UI_SRC_FM_TEXT_ROW
+    ui_scroller_set_text(&s_fm_text, radiotext);
+#endif
     ui_update_fm_marks(snapshot);
 }
 
@@ -6417,6 +6451,9 @@ static void ui_scroll_tick(void)
     lv_obj_t *active = lv_screen_active();
     if (active == s_source_screen) {
         ui_scroller_tick(&s_source_detail, mode, now);
+#if UI_SRC_FM_TEXT_ROW
+        if (s_fm_text.box != NULL) ui_scroller_tick(&s_fm_text, mode, now);
+#endif
     } else if (active == s_station_list_screen) {
         for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
             ui_scroller_tick(&s_station_list_rows[row], mode, now);

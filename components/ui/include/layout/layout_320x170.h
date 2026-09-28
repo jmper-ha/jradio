@@ -107,6 +107,16 @@
  * has made. */
 #define UI_SRC_FM_DIGITS_PX 40
 
+/* FM: no row for the radiotext - the digits, the name and the readings line
+ * fill the space above the rule on this panel - so the marks stay on the
+ * readings line and the radiotext is the page's alone. */
+#define UI_SRC_FM_TEXT_ROW 0
+#define UI_SRC_FM_TEXT_X UI_SRC_STREAM_X
+#define UI_SRC_FM_TEXT_Y UI_SRC_STREAM_Y
+#define UI_SRC_FM_TEXT_W UI_SRC_STREAM_W
+#define UI_SRC_FM_MARKS_X UI_SRC_STREAM_X
+#define UI_SRC_FM_MARKS_Y UI_SRC_STREAM_Y
+
 /* The pause badge sits on the cover rather than in the middle of the screen,
  * where it would cover the names - the cover is the one block on its side
  * of the panel, and the badge is 76 px in a 96 px tile. */

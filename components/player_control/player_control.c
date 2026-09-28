@@ -802,11 +802,17 @@ static uint8_t player_fm_volume_for(uint8_t percent)
     return (uint8_t)((percent * RDA5807_VOLUME_MAX + 99U) / 100U);
 }
 
+/* What the tuner sends at over I2S. At full, FM came out louder than the
+ * internet stations at the same place on the knob; three steps down is
+ * closer to them. */
+#define PLAYER_FM_I2S_VOLUME 12U
+
 static void player_fm_sync_volume(void)
 {
     /* Over I2S the knob is the board's own, applied to the samples on their
-     * way to the DAC like every other source's; the tuner sends at full. */
-    const uint8_t volume = board_fm_over_i2s() ? RDA5807_VOLUME_MAX
+     * way to the DAC like every other source's; the tuner sends at a fixed
+     * level. */
+    const uint8_t volume = board_fm_over_i2s() ? PLAYER_FM_I2S_VOLUME
                                                : player_fm_volume_for(board_audio_volume());
     if (volume == s_fm_volume_sent) return;
     if (fm_tuner_set_volume(volume) == ESP_OK) s_fm_volume_sent = volume;

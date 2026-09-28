@@ -916,8 +916,9 @@ static atomic_bool s_fm_pipe_playing = ATOMIC_VAR_INIT(false);
 
 static void player_fm_pipe_stop_output(void)
 {
-    (void)board_audio_capture_set_enabled(false);
+    // Output first: the input's channels are only dropped with it stopped.
     (void)board_audio_set_enabled(false);
+    (void)board_audio_capture_set_enabled(false);
     atomic_store_explicit(&s_fm_pipe_playing, false, memory_order_release);
 }
 
@@ -944,10 +945,12 @@ static void player_fm_pipe_task(void *arg)
         }
         if (!playing) {
             /* The rate the tuner is sent clocks at; it follows whatever it is
-             * given, and the DAC's default is as good as any. */
+             * given, and the DAC's default is as good as any. The input goes
+             * on before the output: turning it on makes the channels again,
+             * which the output has to be stopped for. */
             if (board_audio_set_sample_rate(AUDIO_DEFAULT_SAMPLE_RATE) != ESP_OK ||
-                board_audio_set_enabled(true) != ESP_OK ||
-                board_audio_capture_set_enabled(true) != ESP_OK) {
+                board_audio_capture_set_enabled(true) != ESP_OK ||
+                board_audio_set_enabled(true) != ESP_OK) {
                 ESP_LOGW(TAG, "fm: the I2S pipe did not start");
                 player_fm_pipe_stop_output();
                 vTaskDelay(pdMS_TO_TICKS(PLAYER_FM_PIPE_STOP_WAIT_MS));
@@ -2039,6 +2042,24 @@ static void player_speaker_key(jbt_key_t key)
     (void)player_control_post(&command);
 }
 
+/* The FM tasks' stacks are in PSRAM. Made at boot and never ended, they sat in
+ * internal RAM whatever was playing, and with the tuner's I2S input on the
+ * bench that left 14 KB free with the largest block 7 KB: the USB player
+ * found no 8 KB for its task and Yandex Music no room for TLS. Neither task
+ * touches flash, which is what a stack in external memory has to avoid; the
+ * control blocks stay internal. */
+static bool player_fm_task_start(TaskFunction_t task, const char *name, uint32_t stack_size,
+                                 UBaseType_t priority, StaticTask_t *control)
+{
+    StackType_t *stack = heap_caps_malloc(stack_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (stack == NULL) return false;
+    if (xTaskCreateStatic(task, name, stack_size, NULL, priority, stack, control) == NULL) {
+        free(stack);
+        return false;
+    }
+    return true;
+}
+
 esp_err_t player_control_init(void)
 {
     s_bt_volume_lock = xSemaphoreCreateMutex();
@@ -2047,15 +2068,17 @@ esp_err_t player_control_init(void)
     if (board_has_fm_tuner()) {
         player_control_fm_presets_reload();
         rds_decoder_reset(&s_fm_rds);
+        static StaticTask_t s_monitor_control;
+        static StaticTask_t s_pipe_control;
         if (fm_tuner_present() &&
-            xTaskCreate(player_fm_monitor_task, "fm_monitor", PLAYER_FM_RDS_STACK, NULL, 3, NULL) !=
-                pdPASS) {
+            !player_fm_task_start(player_fm_monitor_task, "fm_monitor", PLAYER_FM_RDS_STACK, 3,
+                                  &s_monitor_control)) {
             ESP_LOGW(TAG, "fm: no monitor task");
         }
         /* Above the RDS reader: a late block is a click, a late group is not. */
         if (fm_tuner_present() && board_fm_over_i2s() &&
-            xTaskCreate(player_fm_pipe_task, "fm_pipe", PLAYER_FM_PIPE_STACK, NULL, 6, NULL) !=
-                pdPASS) {
+            !player_fm_task_start(player_fm_pipe_task, "fm_pipe", PLAYER_FM_PIPE_STACK, 6,
+                                  &s_pipe_control)) {
             ESP_LOGW(TAG, "fm: no I2S pipe task");
         }
     }

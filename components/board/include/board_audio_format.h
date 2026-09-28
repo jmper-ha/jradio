@@ -29,6 +29,12 @@
  * against. */
 #define I2S_DMA_DESC_NUM 8
 #define I2S_DMA_FRAME_NUM 512
+/* Half of it each way while the input runs as well, for FM: the two rings
+ * then hold the same 16 KB of internal RAM the output alone does, and the
+ * input's could be found right after an internet station - its full 16 KB
+ * on top was not there for five seconds. FM's samples arrive at the pace the
+ * DAC takes them, so there is no source hiccup for the depth to cover. */
+#define I2S_DMA_DESC_NUM_DUPLEX 4
 
 /* Start output with real samples after a silent clock pre-roll instead of
  * enabling TX into an empty ring: 93 ms of zeros exceeds this DAC's zero-data

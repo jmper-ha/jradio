@@ -118,6 +118,9 @@ static i2s_chan_handle_t s_i2s_tx;
 /* The input half of the same controller, when i2s0_din is wired: the FM
  * tuner's sound. Created and deleted with the output. */
 static i2s_chan_handle_t s_i2s_rx;
+static bool s_capture_wanted;
+// The channel's ring as made: I2S_DMA_DESC_NUM, or _DUPLEX with the input.
+static uint32_t s_dma_desc_num = I2S_DMA_DESC_NUM;
 static bool s_capture_enabled;
 static SemaphoreHandle_t s_audio_mutex;
 static bool s_audio_enabled;
@@ -334,13 +337,15 @@ static void board_audio_health_rearm(void)
 static esp_err_t board_audio_create_channel(uint32_t sample_rate)
 {
     i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
-    channel_config.dma_desc_num = I2S_DMA_DESC_NUM;
     channel_config.dma_frame_num = I2S_DMA_FRAME_NUM;
     channel_config.auto_clear_after_cb = I2S_AUTO_CLEAR_AFTER_CB != 0;
-    /* Full duplex when the input is wired: one controller, one pair of
+    /* Full duplex while the input is in use: one controller, one pair of
      * clocks for both directions, which is what makes the tuner's samples
-     * arrive at the rate the DAC takes them. */
-    const bool capture = wiring()->i2s0_din >= 0;
+     * arrive at the rate the DAC takes them. Only then - see
+     * board_audio_rebuild_channel(). */
+    const bool capture = s_capture_wanted && wiring()->i2s0_din >= 0;
+    s_dma_desc_num = capture ? I2S_DMA_DESC_NUM_DUPLEX : I2S_DMA_DESC_NUM;
+    channel_config.dma_desc_num = s_dma_desc_num;
     ESP_RETURN_ON_ERROR(i2s_new_channel(&channel_config, &s_i2s_tx, capture ? &s_i2s_rx : NULL),
                         TAG, "create I2S channels failed");
     s_capture_enabled = false;
@@ -400,8 +405,8 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
              BOARD_DAC_NAME " I2S: Philips, 16-bit stereo in %u-bit slots, BCLK=%uxFs, "
              "DMA=%ux%u frames (%lu ms)",
              I2S_SLOT_BIT_WIDTH, I2S_SLOT_BIT_WIDTH * AUDIO_CHANNEL_COUNT,
-             I2S_DMA_DESC_NUM, I2S_DMA_FRAME_NUM,
-             (unsigned long)((I2S_DMA_DESC_NUM * I2S_DMA_FRAME_NUM * 1000U) /
+             (unsigned)s_dma_desc_num, I2S_DMA_FRAME_NUM,
+             (unsigned long)((s_dma_desc_num * I2S_DMA_FRAME_NUM * 1000U) /
                              AUDIO_DEFAULT_SAMPLE_RATE));
     /* Keep TX in READY state. It is preloaded and enabled only when an audio
      * source starts, so the DAC never starts from empty DMA descriptors. */
@@ -509,6 +514,7 @@ esp_err_t board_audio_release_bus(void)
             (void)i2s_del_channel(s_i2s_rx);
             s_i2s_rx = NULL;
         }
+        s_capture_wanted = false;
         result = i2s_del_channel(s_i2s_tx);
         s_i2s_tx = NULL;
         const gpio_num_t pins[] = {wired(wiring()->i2s0_bclk), wired(wiring()->i2s0_lrck),
@@ -545,7 +551,7 @@ static esp_err_t board_audio_preload_silence(void)
 {
 #if I2S_PRELOAD_SILENCE
     size_t total_loaded = 0U;
-    for (size_t descriptor = 0; descriptor < I2S_DMA_DESC_NUM; ++descriptor) {
+    for (size_t descriptor = 0; descriptor < s_dma_desc_num; ++descriptor) {
         size_t loaded = 0U;
         ESP_RETURN_ON_ERROR(i2s_channel_preload_data(s_i2s_tx, s_i2s_silence,
                                                       sizeof(s_i2s_silence), &loaded),
@@ -555,7 +561,7 @@ static esp_err_t board_audio_preload_silence(void)
             break;
         }
     }
-    const size_t expected = board_audio_startup_silence_bytes(I2S_DMA_DESC_NUM,
+    const size_t expected = board_audio_startup_silence_bytes(s_dma_desc_num,
                                                               sizeof(s_i2s_silence));
     if (total_loaded != expected) {
         ESP_LOGE(TAG, "I2S silence preload incomplete: loaded=%u expected=%u",
@@ -674,7 +680,7 @@ static void board_audio_flush_tail(void)
     s_audio_last_right = 0;
     /* The write above only queues: this is the wait for the queue - the tail
      * included - to reach the pins. */
-    vTaskDelay(pdMS_TO_TICKS(((I2S_DMA_DESC_NUM * I2S_DMA_FRAME_NUM * 1000U) / rate) + 2U));
+    vTaskDelay(pdMS_TO_TICKS(((s_dma_desc_num * I2S_DMA_FRAME_NUM * 1000U) / rate) + 2U));
 #endif
 }
 
@@ -830,7 +836,7 @@ esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloade
             ESP_LOGI(TAG,
                      BOARD_DAC_NAME " I2S output enabled after %u-byte silent clock pre-roll",
                      (unsigned int)board_audio_startup_silence_bytes(
-                         I2S_DMA_DESC_NUM, sizeof(s_i2s_silence)));
+                         s_dma_desc_num, sizeof(s_i2s_silence)));
         } else if (s_audio_enabled) {
             (void)i2s_channel_disable(s_i2s_tx);
             s_audio_enabled = false;
@@ -961,18 +967,55 @@ bool board_audio_capture_available(void)
     return wiring()->i2s0_din >= 0;
 }
 
+/* The channels made again, with the input or without it. The input's DMA
+ * buffers are internal RAM, and held from boot they took the one block the
+ * USB player's task and a TLS handshake need: on the bench the largest went
+ * from 11 KB to 7 KB, and nothing but FM played. Only with the output
+ * stopped, which is how the FM pipe calls it. */
+static esp_err_t board_audio_rebuild_channel(bool capture)
+{
+    if (s_i2s_tx == NULL || s_audio_enabled) return ESP_ERR_INVALID_STATE;
+    if (s_i2s_rx != NULL) {
+        if (s_capture_enabled) (void)i2s_channel_disable(s_i2s_rx);
+        s_capture_enabled = false;
+        (void)i2s_del_channel(s_i2s_rx);
+        s_i2s_rx = NULL;
+    }
+    (void)i2s_del_channel(s_i2s_tx);
+    s_i2s_tx = NULL;
+    s_capture_wanted = capture;
+    esp_err_t result = board_audio_create_channel(s_audio_sample_rate);
+    if (result != ESP_OK && capture) {
+        /* No room for the input: whatever half got made goes, and the output
+         * comes back on its own, so the other sources still have it. */
+        if (s_i2s_rx != NULL) (void)i2s_del_channel(s_i2s_rx);
+        if (s_i2s_tx != NULL) (void)i2s_del_channel(s_i2s_tx);
+        s_i2s_rx = NULL;
+        s_i2s_tx = NULL;
+        s_capture_wanted = false;
+        const esp_err_t output = board_audio_create_channel(s_audio_sample_rate);
+        if (output != ESP_OK) ESP_LOGE(TAG, "I2S output lost: %s", esp_err_to_name(output));
+    }
+    return result;
+}
+
 esp_err_t board_audio_capture_set_enabled(bool enabled)
 {
     if (s_audio_mutex == NULL) return ESP_ERR_INVALID_STATE;
     if (!board_audio_capture_available()) return ESP_ERR_NOT_SUPPORTED;
     xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
-    esp_err_t result = s_i2s_rx == NULL ? ESP_ERR_INVALID_STATE : ESP_OK;
-    if (result == ESP_OK && enabled != s_capture_enabled) {
+    esp_err_t result = ESP_OK;
+    if (enabled && s_i2s_rx == NULL) result = board_audio_rebuild_channel(true);
+    if (result == ESP_OK && s_i2s_rx != NULL && enabled != s_capture_enabled) {
         result = enabled ? i2s_channel_enable(s_i2s_rx) : i2s_channel_disable(s_i2s_rx);
         if (result == ESP_OK) {
             s_capture_enabled = enabled;
             ESP_LOGI(TAG, "I2S input %s", enabled ? "enabled" : "disabled");
         }
+    }
+    // With the output still running the input stays made; the next stop drops it.
+    if (result == ESP_OK && !enabled && s_i2s_rx != NULL && !s_audio_enabled) {
+        result = board_audio_rebuild_channel(false);
     }
     xSemaphoreGive(s_audio_mutex);
     return result;
@@ -980,7 +1023,8 @@ esp_err_t board_audio_capture_set_enabled(bool enabled)
 
 /* Outside the audio mutex: a read waits for the DMA, and holding the lock
  * across that would stall the writes it feeds. The channel is only taken
- * away by the bus hand-over, which the FM source is never running through. */
+ * away by the bus hand-over, which the FM source is never running through,
+ * and by board_audio_capture_set_enabled(false) from the one task reading. */
 esp_err_t board_audio_capture_read(void *pcm, size_t length, size_t *read, uint32_t timeout_ms)
 {
     if (pcm == NULL || read == NULL) return ESP_ERR_INVALID_ARG;

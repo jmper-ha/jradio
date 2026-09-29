@@ -195,6 +195,9 @@ typedef struct {
     flac_streaminfo_t flac_info;
     uint8_t flac_priming[FLAC_SIGNATURE_SIZE + FLAC_BLOCK_HEADER_SIZE + FLAC_STREAMINFO_SIZE];
     bool flac_ready;
+    // Where the file's SEEKTABLE is and how many points it holds; 0 without one.
+    uint64_t flac_seektable_offset;
+    uint32_t flac_seektable_points;
     /* Output samples to drop before the next one is played: a jump lands on
      * the frame that contains the target sample, and the samples of that
      * frame before it belong to the track before. */
@@ -367,6 +370,13 @@ static void read_flac_layout(file_player_context_t *ctx)
                 ctx->flac_priming[6] = 0x00U;
                 ctx->flac_priming[7] = (uint8_t)FLAC_STREAMINFO_SIZE;
                 memcpy(ctx->flac_priming + 8, block, sizeof(block));
+            }
+        }
+        if (type == FLAC_BLOCK_SEEKTABLE) {
+            const long at = ftell(ctx->file);
+            if (at >= 0) {
+                ctx->flac_seektable_offset = (uint64_t)at;
+                ctx->flac_seektable_points = (uint32_t)(block_length / FLAC_SEEKPOINT_SIZE);
             }
         }
         if (block_length > 0U && fseek(ctx->file, (long)block_length, SEEK_CUR) != 0) return;
@@ -714,43 +724,116 @@ static bool flac_frame_at(file_player_context_t *ctx, uint64_t *offset, uint64_t
 
 /* Lands a FLAC jump on the frame that holds sample `target`.
  *
- * Aimed by the file's own sample count, then corrected by what the frame
- * header says: a frame past the target means stepping back, one far short of
- * it stepping on, so what is left to drop before the target is under a few
- * frames. Six tries; in practice the second lands. `*landed` is the first
- * sample of the frame chosen. */
-#define FILE_PLAYER_FLAC_AIM_TRIES 6U
+ * Aimed between the nearest SEEKTABLE points around it - the audio's ends in
+ * a file without one - then narrowed by what the frame headers say, see
+ * file_track_flac_between(), until what is left to drop before the target is
+ * under a few frames. A few looks usually do; the silence before a CD track,
+ * a few bytes a frame, can take a dozen. The tries only bound a file that
+ * will not settle, which then starts from the closest frame found below and
+ * drops more. `*landed` is the first sample of the frame chosen, never past
+ * the target. */
+#define FILE_PLAYER_FLAC_AIM_TRIES 16U
+/* The most a jump will decode and drop to reach its target, from the nearest
+ * frame it found before it: a SEEKTABLE's points are ten seconds apart. */
+#define FILE_PLAYER_FLAC_DROP_SECONDS 12U
+/* Narrows the bounds by the file's SEEKTABLE, read a piece at a time into the
+ * input buffer - which the jump empties anyway. Offsets in the table count
+ * from the first frame. */
+static void flac_seektable_bounds(file_player_context_t *ctx, uint64_t target,
+                                  uint64_t *below_sample, uint64_t *below_offset,
+                                  uint64_t *above_sample, uint64_t *above_offset)
+{
+    if (ctx->flac_seektable_points == 0U || ctx->flac_seektable_offset > LONG_MAX ||
+        fseek(ctx->file, (long)ctx->flac_seektable_offset, SEEK_SET) != 0) {
+        return;
+    }
+    uint64_t below = *below_offset - ctx->header_bytes;
+    uint64_t above = *above_offset - ctx->header_bytes;
+    const size_t piece = FILE_PLAYER_INPUT_SIZE / FLAC_SEEKPOINT_SIZE;
+    for (uint32_t done = 0U; done < ctx->flac_seektable_points;) {
+        const uint32_t left = ctx->flac_seektable_points - done;
+        const size_t want = left < piece ? left : piece;
+        const size_t got =
+            fread(ctx->compressed, FLAC_SEEKPOINT_SIZE, want, ctx->file);
+        flac_seektable_narrow(ctx->compressed, got, target, below_sample, &below, above_sample,
+                              &above);
+        if (got != want) break;
+        done += (uint32_t)got;
+    }
+    // A table pointing past the audio is no guide to it.
+    if (ctx->header_bytes + above <= ctx->file_bytes) {
+        *below_offset = ctx->header_bytes + below;
+        *above_offset = ctx->header_bytes + above;
+    } else {
+        *below_sample = 0U;
+        *above_sample = ctx->flac_info.total_samples;
+    }
+}
+
 static bool flac_aim(file_player_context_t *ctx, uint64_t target, uint16_t bitrate_kbps,
                      uint64_t *offset, uint64_t *landed)
 {
     const flac_streaminfo_t *info = &ctx->flac_info;
     const uint32_t block = info->max_block_size != 0U ? info->max_block_size : 4096U;
-    uint64_t aim =
-        info->total_samples != 0U
-            ? file_track_flac_aim(ctx->header_bytes, ctx->file_bytes, info->total_samples, target)
-            : file_track_seek_offset(ctx->file_bytes, ctx->header_bytes, bitrate_kbps,
+    /* The frames known on either side of the target: the audio's own ends,
+     * then the SEEKTABLE's nearest points, then whatever each look finds.
+     * Every look lands between them and narrows them, and the one below is
+     * where the jump starts in the end, however close the last look came from
+     * above - it only costs the samples dropped, which is why it is not taken
+     * while that would mean decoding more than a few seconds for nothing. */
+    uint64_t below_offset = ctx->header_bytes;
+    uint64_t below_sample = 0U;
+    uint64_t above_offset = ctx->file_bytes;
+    uint64_t above_sample = info->total_samples;
+    const uint64_t drop_limit = (uint64_t)FILE_PLAYER_FLAC_DROP_SECONDS * info->sample_rate_hz;
+    uint64_t aim = 0U;
+    if (info->total_samples != 0U) {
+        flac_seektable_bounds(ctx, target, &below_sample, &below_offset, &above_sample,
+                              &above_offset);
+        aim = file_track_flac_between(below_offset, below_sample, above_offset, above_sample,
+                                      target, block, false);
+    } else {
+        aim = file_track_seek_offset(ctx->file_bytes, ctx->header_bytes, bitrate_kbps,
                                      (uint32_t)(target / info->sample_rate_hz));
-    bool found = false;
+    }
+    bool found = target - below_sample <= drop_limit;
+    if (found) {
+        *offset = below_offset;
+        *landed = below_sample;
+    }
+    int last_side = 0;  // -1 below the target, 1 above, 0 before the first look
     for (unsigned int attempt = 0U; attempt < FILE_PLAYER_FLAC_AIM_TRIES; ++attempt) {
+        if (found && target - *landed <= 4U * (uint64_t)block) break;
         uint64_t at = aim;
         uint64_t first = 0U;
         if (!flac_frame_at(ctx, &at, &first)) break;
-        found = true;
-        *offset = at;
-        *landed = first;
-        if (info->total_samples == 0U) break;  // nothing to correct by
-        if (first > target) {
-            aim = file_track_flac_back_off(at, ctx->header_bytes, ctx->file_bytes,
-                                           info->total_samples, first - target, block);
-        } else if (target - first > 4U * (uint64_t)block) {
-            // Short by more than a few frames: step on by the gap, less a block.
-            aim = at + (file_track_flac_aim(0U, ctx->file_bytes - ctx->header_bytes,
-                                            info->total_samples, target - first - block));
+        const int side = first <= target ? -1 : 1;
+        const bool halve = side == last_side;
+        last_side = side;
+        if (first <= target) {
+            if (first >= below_sample) {
+                below_offset = at;
+                below_sample = first;
+            }
+            if (target - below_sample <= drop_limit) {
+                found = true;
+                *offset = below_offset;
+                *landed = below_sample;
+            }
+        } else if (at >= above_offset) {
+            // No frame begins between the aim and the one above: less room.
+            above_offset = aim;
         } else {
-            break;
+            above_offset = at;
+            above_sample = first;
         }
+        if (info->total_samples == 0U) break;  // nothing to narrow by
+        const uint64_t next = file_track_flac_between(below_offset, below_sample, above_offset,
+                                                      above_sample, target, block, halve);
+        if (next == below_offset) break;
+        aim = next;
     }
-    return found && *landed <= target;
+    return found;
 }
 
 /* Applies a pending jump on the compressed path. The target is in CD frames

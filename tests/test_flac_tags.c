@@ -327,8 +327,53 @@ static void test_a_block_that_is_not_streaminfo_is_refused(void)
     assert(!flac_streaminfo_parse(zero_rate, sizeof(zero_rate), &info));
 }
 
+static void seekpoint(uint8_t *out, uint64_t sample, uint64_t offset)
+{
+    for (int i = 0; i < 8; ++i) {
+        out[i] = (uint8_t)(sample >> (56 - 8 * i));
+        out[8 + i] = (uint8_t)(offset >> (56 - 8 * i));
+    }
+    out[16] = 0x10U;
+    out[17] = 0x00U;
+}
+
+static void test_a_seektable_narrows_a_jump(void)
+{
+    uint8_t table[4 * FLAC_SEEKPOINT_SIZE];
+    seekpoint(table, 0U, 0U);
+    seekpoint(table + FLAC_SEEKPOINT_SIZE, 441000U, 900000U);
+    seekpoint(table + 2 * FLAC_SEEKPOINT_SIZE, UINT64_MAX, 0U);  // placeholder
+    seekpoint(table + 3 * FLAC_SEEKPOINT_SIZE, 882000U, 1700000U);
+    uint64_t below_sample = 0U, below_offset = 0U;
+    uint64_t above_sample = 1300000U, above_offset = 2600000U;
+    flac_seektable_narrow(table, 4U, 500000U, &below_sample, &below_offset, &above_sample,
+                          &above_offset);
+    assert(below_sample == 441000U && below_offset == 900000U);
+    assert(above_sample == 882000U && above_offset == 1700000U);
+
+    // A point on the target is a place to start; in two pieces, the same.
+    below_sample = below_offset = 0U;
+    above_sample = 1300000U;
+    above_offset = 2600000U;
+    flac_seektable_narrow(table, 2U, 441000U, &below_sample, &below_offset, &above_sample,
+                          &above_offset);
+    flac_seektable_narrow(table + 2 * FLAC_SEEKPOINT_SIZE, 2U, 441000U, &below_sample,
+                          &below_offset, &above_sample, &above_offset);
+    assert(below_sample == 441000U && above_sample == 882000U);
+
+    // Bounds already closer are kept.
+    below_sample = 600000U;
+    below_offset = 1200000U;
+    above_sample = 700000U;
+    above_offset = 1400000U;
+    flac_seektable_narrow(table, 4U, 650000U, &below_sample, &below_offset, &above_sample,
+                          &above_offset);
+    assert(below_sample == 600000U && above_sample == 700000U);
+}
+
 int main(void)
 {
+    test_a_seektable_narrows_a_jump();
     test_a_frame_says_where_it_starts();
     test_the_block_header_splits_into_three_parts();
     test_vorbis_comments_are_named_fields();

@@ -19,6 +19,8 @@ extern "C" {
 #define FLAC_PICTURE_TYPE_FRONT_COVER 3U
 
 #define FLAC_BLOCK_STREAMINFO 0U
+#define FLAC_BLOCK_SEEKTABLE 3U
+#define FLAC_SEEKPOINT_SIZE 18U
 // Fixed by the format: sample rate, channels, depth, length and an MD5 of the
 // audio, in that order.
 #define FLAC_STREAMINFO_SIZE 34U
@@ -92,6 +94,21 @@ uint64_t flac_frame_first_sample(const flac_frame_header_t *header,
                                  const flac_streaminfo_t *info);
 
 bool flac_signature_matches(const uint8_t *bytes, size_t length);
+
+/* Narrows a jump's bounds by `count` points of a SEEKTABLE: each point is the
+ * first sample of a frame and that frame's offset from the first frame, so
+ * the nearest at or before `target` is a place a jump can start from, and the
+ * nearest after it bounds where the target can be. The bounds come in as
+ * what is known already and go out no wider; placeholder points are skipped.
+ * Called piece by piece, a table need not be read whole.
+ *
+ * An encoder writes one every ten seconds or so, and between two of them the
+ * byte offsets follow the samples closely - unlike across a whole CD rip,
+ * where the near silence before each track packs to a few bytes a frame and
+ * an aim by the file's average rate misses by seconds. */
+void flac_seektable_narrow(const uint8_t *points, size_t count, uint64_t target,
+                           uint64_t *below_sample, uint64_t *below_offset, uint64_t *above_sample,
+                           uint64_t *above_offset);
 
 // Reads the first metadata block of a FLAC file, which the format requires to
 // be STREAMINFO. `block` is its body, without the four-byte block header.

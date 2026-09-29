@@ -216,10 +216,20 @@ static void test_cue_tracks_and_the_flac_aim(void)
     assert(file_track_flac_aim(start, end, 10000000U, 5000000U) == start + 5000000U);
     assert(file_track_flac_aim(start, end, 10000000U, 20000000U) == end - 1U);
     assert(file_track_flac_aim(start, end, 0U, 5U) == start);
-    // Landed 2000 samples late: back by 2000 samples and a 4096 block.
-    assert(file_track_flac_back_off(start + 5000000U, start, end, 10000000U, 2000U, 4096U) ==
-           start + 5000000U - 6097U);
-    assert(file_track_flac_back_off(start + 10U, start, end, 10000000U, 2000U, 4096U) == start);
+    /* Between frames at bytes 1000 (sample 0) and 101000 (sample 400000): a
+     * quiet stretch, a quarter byte a sample against the file's one. The
+     * target a quarter of the way in is aimed at by that stretch's rate, a
+     * block early. */
+    assert(file_track_flac_between(1000U, 0U, 101000U, 400000U, 104096U, 4096U, false) == 26000U);
+    // Never on either end, so every look narrows the two.
+    assert(file_track_flac_between(1000U, 0U, 101000U, 400000U, 10U, 4096U, false) == 1001U);
+    assert(file_track_flac_between(1000U, 0U, 101000U, 400000U, 399999U, 4096U, false) == 99975U);
+    assert(file_track_flac_between(1000U, 0U, 101000U, 400000U, 500000U, 4096U, false) == 100999U);
+    // No room between them: stay on the one below.
+    assert(file_track_flac_between(1000U, 0U, 1001U, 4096U, 2000U, 4096U, false) == 1000U);
+    assert(file_track_flac_between(1000U, 5U, 9000U, 5U, 2000U, 4096U, false) == 1000U);
+    assert(file_track_flac_between(1000U, 0U, 101000U, 400000U, 104096U, 4096U, true) == 51000U);
+    assert(file_track_flac_between(1000U, 0U, 1001U, 4096U, 2000U, 4096U, true) == 1000U);
 }
 
 int main(void)

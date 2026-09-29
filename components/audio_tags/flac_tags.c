@@ -321,3 +321,35 @@ bool flac_picture_describe(const uint8_t *block, size_t length,
     *data_offset = offset;
     return *data_length != 0U;
 }
+
+static uint64_t flac_be64(const uint8_t *bytes)
+{
+    uint64_t value = 0U;
+    for (size_t i = 0U; i < 8U; ++i) value = (value << 8) | bytes[i];
+    return value;
+}
+
+void flac_seektable_narrow(const uint8_t *points, size_t count, uint64_t target,
+                           uint64_t *below_sample, uint64_t *below_offset, uint64_t *above_sample,
+                           uint64_t *above_offset)
+{
+    if (points == NULL || below_sample == NULL || below_offset == NULL || above_sample == NULL ||
+        above_offset == NULL) {
+        return;
+    }
+    for (size_t i = 0U; i < count; ++i) {
+        const uint8_t *point = points + i * FLAC_SEEKPOINT_SIZE;
+        const uint64_t sample = flac_be64(point);
+        const uint64_t offset = flac_be64(point + 8);
+        if (sample == UINT64_MAX) continue;  // a placeholder
+        if (sample <= target) {
+            if (sample >= *below_sample && offset >= *below_offset) {
+                *below_sample = sample;
+                *below_offset = offset;
+            }
+        } else if (sample < *above_sample && offset < *above_offset) {
+            *above_sample = sample;
+            *above_offset = offset;
+        }
+    }
+}

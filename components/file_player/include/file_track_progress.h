@@ -119,9 +119,20 @@ size_t file_track_cue_track_at(const uint32_t *starts_frames, size_t count,
 uint64_t file_track_flac_aim(uint64_t audio_start, uint64_t file_bytes, uint64_t total_samples,
                              uint64_t target);
 
-/* Where to aim again after landing on a frame that starts `overshoot` samples
- * past the target: back by that many samples' worth of bytes and one block
- * more, since a frame header only follows the offset. */
-uint64_t file_track_flac_back_off(uint64_t offset, uint64_t audio_start, uint64_t file_bytes,
-                                  uint64_t total_samples, uint64_t overshoot,
-                                  uint32_t block_samples);
+/* Where to look next, between a frame known to start at or before the target
+ * (`below_*`) and one known to start after it (`above_*`): in proportion to
+ * the samples, by the bytes between the two - the rate there, not the file's.
+ * A block early, since a frame header only follows the offset. Always past
+ * `below_offset` and before `above_offset`, so every look narrows the two;
+ * `below_offset` itself when there is no room between them. `halve` looks in
+ * the middle instead: a proportional aim that keeps landing on the same side
+ * narrows the two from that side only, a few frames at a time.
+ *
+ * Aiming again by the file's average rate never settled on a CD rip whose
+ * tracks begin after a few seconds of near silence: that packs far tighter
+ * than the average, so each correction flew past the target the other way,
+ * and six of them ended beyond it - track 2 of such a rip, asked for, went
+ * on playing the one before. */
+uint64_t file_track_flac_between(uint64_t below_offset, uint64_t below_sample,
+                                 uint64_t above_offset, uint64_t above_sample, uint64_t target,
+                                 uint32_t block_samples, bool halve);

@@ -114,12 +114,17 @@ uint64_t file_track_flac_aim(uint64_t audio_start, uint64_t file_bytes, uint64_t
     return audio_start + offset;
 }
 
-uint64_t file_track_flac_back_off(uint64_t offset, uint64_t audio_start, uint64_t file_bytes,
-                                  uint64_t total_samples, uint64_t overshoot,
-                                  uint32_t block_samples)
+uint64_t file_track_flac_between(uint64_t below_offset, uint64_t below_sample,
+                                 uint64_t above_offset, uint64_t above_sample, uint64_t target,
+                                 uint32_t block_samples, bool halve)
 {
-    if (file_bytes <= audio_start || total_samples == 0U) return audio_start;
-    const double bytes_per_sample = (double)(file_bytes - audio_start) / (double)total_samples;
-    const uint64_t back = (uint64_t)(bytes_per_sample * (double)(overshoot + block_samples)) + 1U;
-    return offset > audio_start + back ? offset - back : audio_start;
+    if (above_offset <= below_offset + 1U || above_sample <= below_sample) return below_offset;
+    if (halve) return below_offset + (above_offset - below_offset) / 2U;
+    const uint64_t goal = target > below_sample + block_samples ? target - block_samples
+                                                                : below_sample;
+    const double share = (double)(goal - below_sample) / (double)(above_sample - below_sample);
+    uint64_t aim = below_offset + (uint64_t)((double)(above_offset - below_offset) * share);
+    if (aim <= below_offset) aim = below_offset + 1U;
+    if (aim >= above_offset) aim = above_offset - 1U;
+    return aim;
 }

@@ -367,11 +367,32 @@
 #ifndef UI_QR_BACK_Y
 #define UI_QR_BACK_Y (UI_QR_CARD_Y + UI_QR_CARD + 28)
 #endif
-/* The FM rows - radiotext and reception marks - finish above the rule. */
-_Static_assert(UI_SRC_FM_MARKS_Y + UI_SRC_LINE_H <= UI_SRC_RULE_TOP,
+/* The reception marks - "Stereo", the five blocks of signal, the RDS frame -
+ * are one row, side by side, unless a layout stacks them: one under another,
+ * three rows, for a column too narrow to hold them in a line or a screen that
+ * reads better so. */
+#ifndef UI_SRC_FM_MARKS_STACKED
+#define UI_SRC_FM_MARKS_STACKED 0
+#endif
+#define UI_SRC_FM_MARKS_H ((UI_SRC_FM_MARKS_STACKED ? 3 : 1) * UI_SRC_LINE_H)
+/* The radiotext's row is centred in its width when it runs the width of the
+ * screen under the name, where the name is centred too; beside the cover it is
+ * read down the left edge. */
+#ifndef UI_SRC_FM_TEXT_CENTRED
+#define UI_SRC_FM_TEXT_CENTRED 0
+#endif
+/* The FM rows - radiotext and reception marks - finish above the rule, and do
+ * not stand on each other wherever a layout puts them. */
+_Static_assert(UI_SRC_FM_MARKS_Y + UI_SRC_FM_MARKS_H <= UI_SRC_RULE_TOP,
                "the FM reception marks run into the rule");
-_Static_assert(!UI_SRC_FM_TEXT_ROW || UI_SRC_FM_TEXT_Y + UI_SRC_LINE_H <= UI_SRC_FM_MARKS_Y,
-               "the FM radiotext runs into the reception marks");
+_Static_assert(!UI_SRC_FM_TEXT_ROW || UI_SRC_FM_TEXT_Y + UI_SRC_LINE_H <= UI_SRC_RULE_TOP,
+               "the FM radiotext runs into the rule");
+_Static_assert(!UI_SRC_FM_TEXT_ROW ||
+                   UI_SRC_FM_TEXT_Y + UI_SRC_LINE_H <= UI_SRC_FM_MARKS_Y ||
+                   UI_SRC_FM_MARKS_Y + UI_SRC_FM_MARKS_H <= UI_SRC_FM_TEXT_Y ||
+                   UI_SRC_FM_TEXT_X + UI_SRC_FM_TEXT_W <= UI_SRC_FM_MARKS_X ||
+                   UI_SRC_FM_MARKS_X + UI_SRC_STREAM_W <= UI_SRC_FM_TEXT_X,
+               "the FM radiotext and the reception marks stand on each other");
 _Static_assert(UI_QR_CARD_Y + UI_QR_CARD <= TFT_HEIGHT, "the QR card runs off the panel");
 _Static_assert(UI_QR_BACK_Y + UI_FONT_BODY_LINE_H <= TFT_HEIGHT,
                "the QR screen's way out runs off the bottom of the panel");

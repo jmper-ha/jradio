@@ -103,15 +103,20 @@
  * has made. */
 #define UI_SRC_FM_DIGITS_PX 72
 
-/* FM: the rows under the digits are the name's and the rule's, so the
- * radiotext and the reception marks go in the column beside the cover where
- * the readings are, one line each. */
+/* FM: the digits take the title and track rows, the station's name the
+ * artist row under them, and the radiotext the row under the name, across the
+ * screen and centred like it, between the name and the level meter. The
+ * reception marks are what the column beside the cover is for, one under
+ * another from its top: the height is there, and read as a stack each mark has
+ * a place of its own. */
 #define UI_SRC_FM_TEXT_ROW 1
-#define UI_SRC_FM_TEXT_X UI_SRC_STREAM_X
-#define UI_SRC_FM_TEXT_Y UI_SRC_STREAM_Y
-#define UI_SRC_FM_TEXT_W UI_SRC_STREAM_W
+#define UI_SRC_FM_TEXT_X UI_SRC_TEXT_X
+#define UI_SRC_FM_TEXT_Y (UI_SRC_ROW_ARTIST + UI_SRC_LINE_H)
+#define UI_SRC_FM_TEXT_W UI_SRC_TEXT_W
+#define UI_SRC_FM_TEXT_CENTRED 1
 #define UI_SRC_FM_MARKS_X UI_SRC_STREAM_X
-#define UI_SRC_FM_MARKS_Y (UI_SRC_STREAM_Y + UI_SRC_LINE_H)
+#define UI_SRC_FM_MARKS_Y UI_SRC_STREAM_Y
+#define UI_SRC_FM_MARKS_STACKED 1
 
 /* The faces this shape is laid out for: the landscape ILI9488's, for the
  * reason that file gives at length - it is the same glass, and 14 px of a

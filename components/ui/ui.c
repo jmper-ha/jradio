@@ -2081,6 +2081,9 @@ static void ui_create_fm_marks(void)
     lv_obj_set_style_text_font(s_fm_text.box, UI_FONT_BODY, 0);
     lv_obj_set_style_text_color(s_fm_text.box, lv_color_hex(UI_COLOR_MUTED), 0);
     ui_scroller_set_scrolling(&s_fm_text, true);
+#if UI_SRC_FM_TEXT_CENTRED
+    s_fm_text.centred = true;
+#endif
     lv_obj_add_flag(s_fm_text.box, LV_OBJ_FLAG_HIDDEN);
 #endif
 
@@ -2088,8 +2091,22 @@ static void ui_create_fm_marks(void)
     lv_obj_remove_style_all(s_fm_marks);
     lv_obj_remove_flag(s_fm_marks, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(s_fm_marks, UI_SRC_FM_MARKS_X, UI_SRC_FM_MARKS_Y);
-    lv_obj_set_size(s_fm_marks, UI_SRC_STREAM_W, UI_SRC_LINE_H);
+    lv_obj_set_size(s_fm_marks, UI_SRC_STREAM_W, UI_SRC_FM_MARKS_H);
     lv_obj_add_flag(s_fm_marks, LV_OBJ_FLAG_HIDDEN);
+
+    /* Where the signal blocks and the RDS frame stand: after the word on one
+     * row, or each on a row of its own under it. */
+#if UI_SRC_FM_MARKS_STACKED
+    const int32_t steps_x = 0;
+    const int32_t steps_row = UI_SRC_LINE_H;
+    const int32_t rds_x = 0;
+    const int32_t rds_row = 2 * UI_SRC_LINE_H;
+#else
+    const int32_t steps_x = UI_FM_STEPS_X;
+    const int32_t steps_row = 0;
+    const int32_t rds_x = UI_FM_STEPS_X + UI_FM_STEPS_W + UI_FONT_BODY_PX / 2;
+    const int32_t rds_row = 0;
+#endif
 
     s_fm_stereo = lv_label_create(s_fm_marks);
     lv_obj_set_pos(s_fm_stereo, 0, 0);
@@ -2109,8 +2126,8 @@ static void ui_create_fm_marks(void)
         lv_obj_set_style_bg_opa(s_fm_signal[step], LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(s_fm_signal[step], lv_color_hex(UI_COLOR_FM_UNLIT), 0);
         lv_obj_set_size(s_fm_signal[step], UI_FM_STEP_W, UI_FM_STEP_H);
-        lv_obj_set_pos(s_fm_signal[step], UI_FM_STEPS_X + step * (UI_FM_STEP_W + UI_FM_STEP_GAP),
-                       baseline - UI_FM_STEP_H);
+        lv_obj_set_pos(s_fm_signal[step], steps_x + step * (UI_FM_STEP_W + UI_FM_STEP_GAP),
+                       steps_row + baseline - UI_FM_STEP_H);
     }
 
     /* The RDS mark: a frame the height of the capitals with a little room
@@ -2127,8 +2144,7 @@ static void ui_create_fm_marks(void)
     lv_obj_set_style_radius(s_fm_rds, 3, 0);
     lv_obj_set_style_pad_hor(s_fm_rds, UI_FM_RDS_PAD + 1, 0);
     lv_obj_set_size(s_fm_rds, LV_SIZE_CONTENT, frame_h);
-    lv_obj_set_pos(s_fm_rds, UI_FM_STEPS_X + UI_FM_STEPS_W + UI_FONT_BODY_PX / 2,
-                   baseline + UI_FM_RDS_PAD + 1 - frame_h);
+    lv_obj_set_pos(s_fm_rds, rds_x, rds_row + baseline + UI_FM_RDS_PAD + 1 - frame_h);
     lv_obj_t *word = lv_label_create(s_fm_rds);
     lv_label_set_text(word, "RDS");
     lv_obj_set_style_text_color(word, lv_color_hex(UI_COLOR_MUTED), 0);

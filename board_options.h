@@ -201,12 +201,12 @@
  * trying to mount. */
 
 /* ======================================================================
- * FM radio - tuner module on I2C  (not fitted)
+ * FM radio - an RDA5807 tuner on I2C  (not fitted)
  * ====================================================================== */
 
-/* Nothing on revision 1 receives FM. The driver finds the chip at boot and
- * says so in the log; the player has no FM source yet, so the home screen
- * does not offer one.
+/* Nothing on revision 1 receives FM. With a tuner fitted the driver finds the
+ * chip at boot and says so in the log, the player offers an FM source, and
+ * the presets, RDS and the scan in the web settings come with it.
  *
  * The bus is its own, not the card's: SPI3 has no spare pins left, and a
  * tuner is an I2C part anyway. */
@@ -214,6 +214,22 @@
 // #define FM_I2C_PERIPHERAL 0
 // #define FM_I2C_SDA_GPIO 8
 // #define FM_I2C_SCL_GPIO 3
+
+/* The tuner's sound, by one of two ways.
+ *
+ * Without the two lines below it is the module's own analogue output, to be
+ * heard through whatever the module is wired to. The volume knob then sets the
+ * chip's own volume, in its 16 steps.
+ *
+ * With them - an RDA5807FP, which has an I2S output - the chip sends its
+ * samples to the DAC's I2S controller, which reads them on the DAC's own
+ * clocks (BCLK and LRCK, the ones the DAC already has: the chip follows them
+ * as a slave) and plays them through the DAC like any source: the volume, the
+ * VU meter and the health log all work as they do for the radio. The data
+ * line is the one new wire, into a pin of its own - 39 is the amplifier's
+ * enable above, so when both are fitted take another free one. */
+// #define FM_I2S_PERIPHERAL 0
+// #define I2S_DIN_GPIO 39
 
 /* ======================================================================
  * Bluetooth audio - not possible on this part

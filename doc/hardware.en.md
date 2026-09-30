@@ -15,6 +15,7 @@
 | microSD | a slot over SPI | no |
 | IR receiver | a three-pin 38 kHz one: TSOP38238, VS1838B, HX1838 | no |
 | Bluetooth | a second ESP32 module (WROOM-32) running [jradio-bt](https://github.com/jmper-ha/jradio-bt) | no |
+| FM tuner | an RDA5807FP (digital sound over I2S) or a module on an RDA5807M (analogue output) | no |
 | Amplifier | any with a MUTE / SD input - the firmware mutes it on pause | no |
 | Peripheral power switch | a load switch or a P-MOSFET - cuts the periphery in sleep | no |
 
@@ -229,6 +230,56 @@ speaker, wire its XSMT pin to a free GPIO:
 On the purple PCM5102 modules this is the XMT pad, pulled to 3.3 V by a jumper
 - cut the jumper and connect the pad to the GPIO (1 kΩ in series is fine).
 Without this line the DAC simply always plays.
+
+## FM radio: the RDA5807 tuner
+
+The tuner is controlled over I2C (address 0x11), so it needs a pair of pins of
+its own: SPI3 leaves none free. With a tuner fitted the menu and the web page
+offer an "FM radio" source: the frequency in large digits, the station's name
+and radiotext from RDS, presets, a scan of the band and a picture for every
+preset.
+
+![Connecting the RDA5807FP to the ESP32-S3 and the PCM5102 DAC](RDA5807FP_connections.png)
+
+Two variants of the chip, and the difference is the sound:
+
+- The **RDA5807FP** (SOP16) sends its sound over an I2S bus. It is a slave on
+  the same BCLK and LRCK as the DAC, and the data reaches the S3 on a pin of
+  its own, DIN. The sound then goes the way every source's does: the volume
+  knob, the VU meter and the log work as usual.
+- The **RDA5807M** (the ordinary module) has no I2S on its pins, only an
+  analogue output. The I2S lines are then left out, and the sound is taken
+  from the module's output to an amplifier input; the knob sets the chip's
+  own volume, in 16 steps.
+
+```c
+#define FM_TUNER FM_TUNER_RDA5807
+#define FM_I2C_PERIPHERAL 0
+#define FM_I2C_SDA_GPIO 8
+#define FM_I2C_SCL_GPIO 3
+// RDA5807FP only: the sound over I2S0, on the DIN pin
+#define FM_I2S_PERIPHERAL 0
+#define I2S_DIN_GPIO 39
+```
+
+| S3 (jRadio) | RDA5807FP | What |
+|---|---|---|
+| GPIO 8 | 8 (SDA) | I2C, a 4.7 kΩ pull-up to 3V3 |
+| GPIO 3 | 7 (SCLK) | I2C, a 4.7 kΩ pull-up to 3V3 |
+| GPIO 18 (BCLK) | 15 (GPIO3) | the clocks shared with the DAC |
+| GPIO 17 (LRCK) | 1 (GPIO1) | the clocks shared with the DAC |
+| GPIO 39 | 16 (GPIO2) | the tuner's data into the S3 (DIN) |
+| 3V3 | 10 (VDD) | 100 nF and 10 µF to ground next to the pin are advised (not on the drawing) |
+| GND | 2, 3, 5, 6, 11, 14 | |
+| | 4 (FMIN) | the aerial, for example a wire about 75 cm long |
+| | 9 (RCLK) | a 32.768 kHz crystal to ground |
+
+Pins 12 and 13 (ROUT, LOUT) are unused with digital sound. GPIO 39 is the
+amplifier's pin by default (`AUDIO_AMP_GPIO`): if the amplifier is fitted too,
+take another free pin for DIN. The pull-ups on SDA and SCL are required. RDS is
+sensitive to reception: on a weak signal a station's name may not come
+together while the sound plays fine, and an aerial kept away from the board's
+wires helps.
 
 ## What the home screen shows
 

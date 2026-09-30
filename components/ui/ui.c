@@ -220,7 +220,9 @@ typedef struct {
 static ui_scroller_t s_source_detail;
 /* The FM radiotext under the station's name, travelling when it is too long -
  * on the panels that have a row for it (UI_SRC_FM_TEXT_ROW). */
+#if UI_SRC_FM_TEXT_ROW
 static ui_scroller_t s_fm_text;
+#endif
 static lv_obj_t *s_source_stream;
 static lv_obj_t *s_source_buffer;
 /* The same reading as a strip: one object, whose bars are drawn into it from

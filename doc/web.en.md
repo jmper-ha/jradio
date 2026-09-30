@@ -15,7 +15,7 @@ meant for a trusted home network - do not expose it.**
 |---|---|
 | **Player** (`/`) | What is playing, the cover, volume, position, buttons; source choice and the lists of stations, files and server folders; the sleep timer and the alarm |
 | **Playlist** (`/playlist`) | The station list editor: name, address, picture, order by dragging; trying an address by ear right on the device; import and export |
-| **Settings** (`/settings`) | Everything the device has, plus Wi-Fi networks, the name, time and zone, weather, the alarm, the sleep timer, Yandex Music, Bluetooth speakers, the backup, About |
+| **Settings** (`/settings`) | Everything the device has, plus Wi-Fi networks, the name, time and zone, weather, the alarm, the sleep timer, Yandex Music, Bluetooth speakers, FM stations, the backup, About |
 | **Remote** (`/remote`) | Learning the IR remote's keys; opened by a button in the settings when the build has a receiver |
 
 On a phone the settings sections fold: one open, the rest as headers. Live
@@ -37,6 +37,22 @@ pictures when there are any; import takes either. The order is changed by
 dragging the handle left of the name (or with the arrow keys). Everything
 goes to the device on Save. Up to 99 stations.
 
+## FM stations
+
+The settings section is there when the build has a tuner. A row of the list is
+"picture, frequency, name" and the buttons up, down, remove. "Scan" starts a
+pass up the band on the device, shows which frequency it is at, and when it
+ends replaces the list with what it found: after a warning, keeping the names
+you gave and taking the RDS names for the rest. The list goes to the device at
+once. What you edit by hand goes by "Save".
+
+A picture belongs to the preset, not to the frequency: 101.2 is another
+station in every city. The tile at the start of the row chooses a file, the
+browser scales it to 160 pixels and 32 KB (PNG first, then JPEG) and sends it
+with the list, when that is saved. "×" takes the picture off. The device shows
+it in the player's tile while the tuner stands on that preset. The presets file
+is `name<TAB>kHz[<TAB>picture]` a line, up to 40 stations.
+
 ## The remote
 
 A table of functions with Learn and Forget buttons. While the page is open, a
@@ -47,10 +63,11 @@ a key; if none came, the page says so. More in
 
 ## Backup
 
-`GET /api/backup` gives a zip with five files: `wifi.json` (the networks),
+`GET /api/backup` gives a zip with six files: `wifi.json` (the networks),
 `settings.csv` (the settings), `yandex.json` (the token), `weather.json` (the
-OpenWeatherMap key), `remote.csv` (the keys the remote was taught). `POST
-/api/restore` takes the whole archive or one file;
+OpenWeatherMap key), `remote.csv` (the keys the remote was taught) and
+`fm_presets.csv` (the FM stations), and with them those stations' pictures,
+`radio_img/<name>`. `POST /api/restore` takes the whole archive or one file;
 the device checks all files before writing, writes them and reboots. The
 station list is not in the archive - it has its own export on the playlist
 page.
@@ -66,7 +83,9 @@ you would a password.
 | `GET /api/status` | Wi-Fi and player state in one snapshot |
 | `GET /api/playlist` | The station list as CSV |
 | `POST /api/playlist` | Replace the whole list |
-| `GET /api/stations` | The names of the active source's stations; `?source=internet_radio` - always the radio |
+| `GET /api/stations` | The names of the active source's stations (on FM, rows "frequency name"); `?source=internet_radio` - always the radio |
+| `GET /api/fm/presets`, `POST /api/fm/presets` | The FM stations as `name<TAB>kHz[<TAB>picture]` text; the answer to a write is `{"count":…,"skipped":…}` |
+| `POST /api/fm/scan`, `GET /api/fm/scan` | Start a pass up the band (409 if one is already running) and ask whether it is running, at which frequency, and what it has found |
 | `GET /api/files` | The current folder of the drive |
 | `GET /api/dlna` | The open folder of the media server; `searching` - the server is still being looked for |
 | `GET /api/progress` | Position in the track, the buffer, the cover's signature, the sleep timer's remainder |

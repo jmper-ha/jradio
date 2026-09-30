@@ -96,8 +96,8 @@ one before the flash and restoring it afterwards brings the keys back.
 ### The home screen
 
 A list of sources or a carousel of large icons - your choice in the settings:
-radio, the stick, the card, Yandex Music, the media server, Bluetooth,
-settings. Only what is on the board and enabled is shown.
+radio, FM radio, the stick, the card, Yandex Music, the media server,
+Bluetooth, settings. Only what is on the board and enabled is shown.
 
 No stick or card inserted - instead of an empty list, a screen with a hint:
 insert the drive, it cannot be read, or there is no music on it. Without a
@@ -135,6 +135,48 @@ an ordinary slider under the track title.
 The station list is edited in the web interface (the Playlist page): name,
 address, picture, order by dragging. Up to 99 stations, HTTP and HTTPS, the
 track title comes from the stream. After a drop the device reconnects itself.
+
+### FM radio
+
+With an RDA5807 tuner ([Hardware](hardware.en.md#fm-radio-the-rda5807-tuner))
+the menu has an "FM radio" source. It comes on at the frequency you left it
+on. While there are no presets, choosing the source opens manual tuning at
+once: an empty list and hiss at the edge of the band is no place to begin.
+
+**The screen.** On the left a tile: the picture of the preset the tuner is
+standing on, or a note when it has none and the frequency matches no preset.
+On the right the frequency in large digits, under it the station's name (the
+preset's, or failing that the one RDS sends), the RDS radiotext as a scrolling
+line and, at the bottom, "Stereo", five blocks of signal level and an "RDS"
+frame when the station sends it. The 320×170 screen has no radiotext: there
+are not enough rows.
+
+| Action | What it does |
+|---|---|
+| Turning the encoder | Volume, as everywhere |
+| A press | Pause (the tuner is muted) or play |
+| A double press | The list of presets, rows like "88.3" or "91.2 Name"; choosing a row starts that station |
+| A triple press | Manual tuning, see below |
+| Prev / Next | Search: the nearest station down or up the band |
+| A long press | Back, to the menu |
+
+**Manual tuning.** The digits turn orange, with "Tuning by hand" under them.
+Turning moves the frequency by 0.1 MHz and the sound follows the digits; a
+press keeps the frequency reached and gives the knob back to the volume. Prev
+and Next inside the mode search the air. Any other button leaves and puts back
+the frequency you began on, and ten seconds without action close the mode by
+themselves, keeping what is tuned.
+
+**Presets** are made in the web interface: Settings → FM stations → Scan. The
+pass up the band takes up to a minute; the screen says "Scanning…" in place
+of the name and the radiotext meanwhile. What it finds, with the names the
+stations send over RDS, replaces the list - after a warning - and the names
+you gave to frequencies before are kept. When the search is over the radio
+stands on the first station found. The list is then edited on the same page:
+names, pictures, order, removal, up to 40 presets.
+
+The name and the radiotext come over RDS, and on a weak signal they may not
+come together though the sound plays fine: the RDS mark does not light then.
 
 ### The stick and the card
 
@@ -310,8 +352,9 @@ data partition (see [Building](build.en.md)).
 ### Backup
 
 Web interface only. "Download archive" gives a zip with the Wi-Fi networks,
-the settings, the Yandex token, the weather key and the table of keys the
-remote was taught - everything the device knows about itself. The station
+the settings, the Yandex token, the weather key, the table of keys the
+remote was taught and the FM stations with their pictures - everything the
+device knows about itself. The station
 list is exported separately, on the playlist page. Restore takes the whole
 archive or one file from it and reboots the device.
 

@@ -257,7 +257,7 @@ Two variants of the chip, and the difference is the sound:
 #define FM_I2C_PERIPHERAL 0
 #define FM_I2C_SDA_GPIO 8
 #define FM_I2C_SCL_GPIO 3
-// RDA5807FP only: the sound over I2S0, on the DIN pin
+// RDA5807FP only: the sound over I2S0, and the DIN pin - any free one
 #define FM_I2S_PERIPHERAL 0
 #define I2S_DIN_GPIO 39
 ```
@@ -268,15 +268,17 @@ Two variants of the chip, and the difference is the sound:
 | GPIO 3 | 7 (SCLK) | I2C, a 4.7 kΩ pull-up to 3V3 |
 | GPIO 18 (BCLK) | 15 (GPIO3) | the clocks shared with the DAC |
 | GPIO 17 (LRCK) | 1 (GPIO1) | the clocks shared with the DAC |
-| GPIO 39 | 16 (GPIO2) | the tuner's data into the S3 (DIN) |
+| a free GPIO (39 on the drawing) | 16 (GPIO2) | the tuner's data into the S3 (DIN); the pin is yours to choose |
 | 3V3 | 10 (VDD) | 100 nF and 10 µF to ground next to the pin are advised (not on the drawing) |
 | GND | 2, 3, 5, 6, 11, 14 | |
 | | 4 (FMIN) | the aerial, for example a wire about 75 cm long |
 | | 9 (RCLK) | a 32.768 kHz crystal to ground |
 
-Pins 12 and 13 (ROUT, LOUT) are unused with digital sound. GPIO 39 is the
-amplifier's pin by default (`AUDIO_AMP_GPIO`): if the amplifier is fitted too,
-take another free pin for DIN. The pull-ups on SDA and SCL are required. RDS is
+Pins 12 and 13 (ROUT, LOUT) are unused with digital sound. Any free pin will do
+for DIN, and the choice is yours: it is 39 on the drawing, but 39 is also the
+amplifier's pin by default (`AUDIO_AMP_GPIO`), and if the amplifier is fitted
+too, DIN goes on another. The wiring editor proposes 39 when it is free and
+the next free pin when it is not. The pull-ups on SDA and SCL are required. RDS is
 sensitive to reception: on a weak signal a station's name may not come
 together while the sound plays fine, and an aerial kept away from the board's
 wires helps.

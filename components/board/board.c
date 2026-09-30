@@ -1517,6 +1517,13 @@ void board_deep_sleep(uint32_t wake_after_seconds)
      * the panel going dark is the acknowledgement that the hold registered,
      * and everything below takes a moment. */
     (void)board_backlight_set(0);
+    /* And then the glass itself black. Nothing here cuts the panel's power -
+     * only a board with a peripheral switch does - so whatever it last showed
+     * stays in its memory through the whole sleep, and with the backlight off
+     * a faint picture is what is left to look at on a dark screen. Painted
+     * after the backlight goes, so the fill (about 60 ms) is never seen, and
+     * from the task that draws: nothing else is sending to the panel. */
+    (void)board_display_fill(0, 0, TFT_WIDTH, TFT_HEIGHT, 0U);
     /* Playback has already been stopped by the caller; this is the belt to
      * that braces, because the rail under the amplifier is about to go. */
     board_amp_drive(false);

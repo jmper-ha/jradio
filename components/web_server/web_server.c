@@ -1367,6 +1367,8 @@ static esp_err_t web_server_fm_presets_post(httpd_req_t *request)
         return ESP_FAIL;
     }
     player_control_fm_presets_reload();
+    // The names in use have just changed: a picture replaced or dropped goes.
+    web_server_sweep_station_icons();
     ESP_LOGI(TAG, "fm presets saved: %u, %u lines skipped", (unsigned)count, (unsigned)skipped);
 
     char answer[48];
@@ -1833,7 +1835,10 @@ static void web_server_sweep_station_icons(void)
     const struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_DIR) continue;
-        if (internet_radio_icon_in_use(entry->d_name)) continue;
+        if (internet_radio_icon_in_use(entry->d_name) ||
+            player_control_fm_icon_in_use(entry->d_name)) {
+            continue;
+        }
         char path[sizeof(STATION_ICON_DIR) + STATION_CATALOG_ICON_MAX_LEN + 1U];
         if (snprintf(path, sizeof(path), "%s/%s", STATION_ICON_DIR, entry->d_name) >=
             (int)sizeof(path)) {

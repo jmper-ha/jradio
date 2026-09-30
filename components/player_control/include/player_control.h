@@ -93,6 +93,8 @@ void player_control_set_fm_frequency(uint32_t khz);
 void player_control_fm_presets_reload(void);
 size_t player_control_fm_preset_count(void);
 bool player_control_fm_preset_at(size_t index, fm_preset_t *preset);
+// Whether any preset names this picture; asked when pictures are swept.
+bool player_control_fm_icon_in_use(const char *icon);
 
 /* A pass up the band for the web page's FM section, on a task of its own.
  * False when one is already running or there is no tuner. */

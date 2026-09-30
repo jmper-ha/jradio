@@ -65,6 +65,18 @@ class Element {
 
 
 let presetsText = 'Первая\t88300\n\t101200\n';
+const iconPosts = [];
+let blobCount = 0;
+
+// Just enough of a browser to scale a picture: a decoded image, a canvas, blob addresses.
+class FakeImage {
+  set src(value) {
+    this.width = 320;
+    this.height = 240;
+    Promise.resolve().then(() => { if (this.onload) this.onload(); });
+  }
+}
+const fakeUrl = {createObjectURL: () => `blob:${++blobCount}`, revokeObjectURL() {}};
 let scanReply = {running: false, khz: 87000, bars: 5, found: []};
 const posts = [];
 let scanStarts = 0;
@@ -83,6 +95,10 @@ function fakeFetch(url, options) {
   }
   if (url === '/api/fm/presets') {
     return Promise.resolve({ok: true, text: () => Promise.resolve(presetsText)});
+  }
+  if (url === '/api/station-icon' && method === 'POST') {
+    iconPosts.push({type: options.headers['Content-Type'], body: options.body});
+    return Promise.resolve({ok: true, json: () => Promise.resolve({file: 'p1.png'})});
   }
   if (url === '/api/fm/scan' && method === 'POST') {
     scanStarts += 1;
@@ -109,7 +125,14 @@ function loadPage() {
     body,
     documentElement: new Element('html'),
     readyState: 'complete',
-    createElement: (tag) => new Element(tag),
+    createElement: (tag) => {
+      const element = new Element(tag);
+      if (tag === 'canvas') {
+        element.getContext = () => ({fillStyle: '', fillRect() {}, drawImage() {}});
+        element.toBlob = (callback, type) => callback({size: 1000, type});
+      }
+      return element;
+    },
     querySelectorAll: (selector) => body.querySelectorAll(selector),
     querySelector: (selector) => body.querySelector(selector),
     addEventListener() {},
@@ -124,6 +147,7 @@ function loadPage() {
   };
   window.window = window;
   const context = vm.createContext({window, document, console, fetch: fakeFetch,
+                                    Image: FakeImage, URL: fakeUrl,
                                     setTimeout: window.setTimeout, clearTimeout: window.clearTimeout});
   for (const file of ['i18n.js', 'fm.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'data', 'www', file), 'utf8'), context,
@@ -144,7 +168,7 @@ async function main() {
   await settle();
   const $ = (id) => document.body.querySelector(`#${id}`);
   const rows = (id) => $(id).querySelectorAll('li');
-  const input = (row) => row.querySelector('input');
+  const input = (row) => row.querySelector('.fm-name');
   const button = (row, label) => row.querySelectorAll('button').find((node) => node.getAttribute('title') === label);
 
   /* The saved list: in the file's order, the frequency beside a name field,
@@ -174,6 +198,30 @@ async function main() {
   $('fm-save').emit('click');
   await settle();
   assert.strictEqual(posts.at(-1), 'Вторая станция\t101200\n');
+
+  /* A picture is chosen on a row, shown from here, and goes up with the list
+     when that is saved - the name the device gives it is what the line keeps.
+     It can be taken off again. */
+  const pictureInput = (row) => row.querySelectorAll('input').find((node) => node.type === 'file');
+  const pictureImage = (row) => row.querySelector('img');
+  pictureInput(rows('fm-presets')[0]).files = [{name: 'logo.jpg', type: 'image/jpeg', size: 900000}];
+  pictureInput(rows('fm-presets')[0]).emit('change');
+  await settle();
+  assert.deepStrictEqual(iconPosts, []);  // not before the list is saved
+  assert.strictEqual(pictureImage(rows('fm-presets')[0]).src, 'blob:' + blobCount);
+  assert.strictEqual($('fm-save').disabled, false);
+  $('fm-save').emit('click');
+  await settle();
+  assert.strictEqual(iconPosts.length, 1);
+  assert.strictEqual(iconPosts[0].type, 'image/png');
+  assert.strictEqual(posts.at(-1), 'Вторая станция\t101200\tp1.png\n');
+  assert.ok(pictureImage(rows('fm-presets')[0]).src.endsWith('/api/station-icon?file=p1.png'));
+  rows('fm-presets')[0].querySelector('.fm-picture-clear').emit('click');
+  assert.strictEqual(pictureImage(rows('fm-presets')[0]), null);
+  $('fm-save').emit('click');
+  await settle();
+  assert.strictEqual(posts.at(-1), 'Вторая станция\t101200\n');
+  assert.strictEqual(iconPosts.length, 1);
 
   /* A scan over a list that has stations asks first; saying no changes
      nothing and starts nothing. */

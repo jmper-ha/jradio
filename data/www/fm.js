@@ -7,8 +7,14 @@
    stations one by one was the first way and was tiring; a new city is the
    case the scan is for, and there the whole old list is wrong anyway. A name
    given to a frequency the scan finds again is kept. The list is then edited
-   here as a whole (names, order, removal) and goes back in one POST, the
-   file's own shape: "name<TAB>kHz[<TAB>picture]" a line.
+   here as a whole (names, pictures, order, removal) and goes back in one
+   POST, the file's own shape: "name<TAB>kHz[<TAB>picture]" a line.
+
+   A picture hangs off the preset, never off the frequency: 101.2 is another
+   station in every city, and the list is the one its owner made. The device
+   shows it in the player's tile while the tuner stands on that preset. It is
+   scaled here and goes up with the list when it is saved - see
+   uploadPendingPictures().
 
    settings.js decides whether the card is shown at all; the list is loaded
    regardless, since it is a few hundred bytes. */
@@ -30,7 +36,9 @@
   const BAND_MIN = 87000;
   const BAND_MAX = 108000;
 
-  /* {name, khz, icon}, in the order they are shown and saved. */
+  /* {name, khz, icon, picture}, in the order they are shown and saved. `icon`
+     is the name of a picture the device already holds; `picture` is one chosen
+     here that it does not, and the two are never both set. */
   let presets = [];
   let dirty = false;
 
@@ -41,6 +49,102 @@
 
   function mhz(khz) {
     return (Math.round(khz / 100) / 10).toFixed(1);
+  }
+
+  function isIconName(value) {
+    return value === '' || (/^[A-Za-z0-9._-]+$/.test(value) && value[0] !== '.');
+  }
+
+  /* The picture, prepared as playlist.js prepares a station's: the device
+     draws it through the same album_art, in a square no larger than 160 px, and
+     stores a few kilobytes rather than a photograph. PNG first - a logo is flat
+     colour - then JPEG, for the photograph that will not fit the 32 KB the
+     device takes as a PNG. */
+  const ICON_SIZE = 160;
+  const ICON_MAX_BYTES = 32768;
+  const ICON_TOO_LARGE = 'too large';
+  const ICON_ENCODINGS = [
+    {type: 'image/png', quality: undefined},
+    {type: 'image/jpeg', quality: 0.85},
+    {type: 'image/jpeg', quality: 0.7},
+    {type: 'image/jpeg', quality: 0.55},
+  ];
+
+  function encodeWithinLimit(encode, limit, index) {
+    const step = index || 0;
+    if (step >= ICON_ENCODINGS.length) return Promise.reject(new Error(ICON_TOO_LARGE));
+    const {type, quality} = ICON_ENCODINGS[step];
+    return new Promise((resolve, reject) => {
+      encode((blob) => {
+        if (blob === null) reject(new Error('encode failed'));
+        else resolve(blob);
+      }, type, quality);
+    }).then((blob) => (blob.size <= limit ? blob : encodeWithinLimit(encode, limit, step + 1)));
+  }
+
+  function scaleImage(file) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      image.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const scale = Math.min(ICON_SIZE / image.width, ICON_SIZE / image.height, 1);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext('2d');
+        // On black first: the panel has no alpha.
+        context.fillStyle = '#000000';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        encodeWithinLimit((callback, type, quality) => canvas.toBlob(callback, type, quality),
+                          ICON_MAX_BYTES).then(resolve, reject);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('decode failed'));
+      };
+      image.src = objectUrl;
+    });
+  }
+
+  function makePicture(blob) {
+    const type = blob.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+    return {blob, type, url: URL.createObjectURL(blob)};
+  }
+
+  function dropPicture(preset) {
+    if (preset.picture !== null && preset.picture.url !== null) {
+      URL.revokeObjectURL(preset.picture.url);
+    }
+    preset.picture = null;
+  }
+
+  function uploadPicture(picture) {
+    return window.fetch('/api/station-icon', {
+      method: 'POST',
+      headers: {'Content-Type': picture.type},
+      body: picture.blob,
+    }).then((response) => {
+      if (!response || response.ok !== true) throw new Error('rejected');
+      return response.json();
+    }).then((payload) => {
+      const name = payload && typeof payload.file === 'string' ? payload.file : '';
+      if (!isIconName(name) || name === '') throw new Error('bad name');
+      return name;
+    });
+  }
+
+  /* Pictures go up when the list is saved, not when they are chosen: one
+     chosen and then abandoned would stay on the device until some later save
+     swept it. One at a time - esp_http_server has a single worker. */
+  async function uploadPendingPictures() {
+    for (const preset of presets) {
+      if (preset.picture === null) continue;
+      const name = await uploadPicture(preset.picture);
+      dropPicture(preset);
+      preset.icon = name;
+    }
   }
 
   /* The file, read leniently: a line the device would skip is skipped here
@@ -54,7 +158,10 @@
       if (fields.length < 2) continue;
       const khz = Number(fields[1].trim());
       if (!Number.isInteger(khz) || khz < BAND_MIN || khz > BAND_MAX) continue;
-      list.push({name: fields[0].trim(), khz, icon: (fields[2] || '').trim()});
+      const icon = (fields[2] || '').trim();
+      // The same rule the device applies: the name is joined to one directory.
+      if (!isIconName(icon)) continue;
+      list.push({name: fields[0].trim(), khz, icon, picture: null});
     }
     return list.slice(0, MAX_PRESETS);
   }
@@ -101,6 +208,60 @@
     return input;
   }
 
+  /* The picture's place in the row: a tile to choose one by, showing the
+     current one, and a small control to take it off. */
+  function pictureCell(index) {
+    const preset = presets[index];
+    const cell = document.createElement('span');
+    cell.className = 'fm-picture-cell';
+    const pick = document.createElement('label');
+    pick.className = 'fm-picture';
+    pick.setAttribute('title', t('playlist.icon'));
+    let source = '';
+    if (preset.picture !== null) source = preset.picture.url;
+    else if (preset.icon !== '') source = `/api/station-icon?file=${encodeURIComponent(preset.icon)}`;
+    if (source !== '') {
+      const image = document.createElement('img');
+      image.alt = '';
+      image.src = source;
+      pick.append(image);
+    } else {
+      pick.textContent = '+';
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.setAttribute('aria-label', t('playlist.icon'));
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      setStatus(t('playlist.icon_preparing'), false);
+      scaleImage(file).then((blob) => {
+        dropPicture(presets[index]);
+        presets[index] = {...presets[index], icon: '', picture: makePicture(blob)};
+        markDirty();
+        renderPresets();
+      }).catch((error) => {
+        const key = error && error.message === ICON_TOO_LARGE
+          ? 'playlist.icon_too_large' : 'playlist.icon_failed';
+        setStatus(t(key, {kb: Math.round(ICON_MAX_BYTES / 1024)}), true);
+      });
+    });
+    pick.append(input);
+    cell.append(pick);
+    if (source !== '') {
+      const clear = smallButton('playlist.icon_remove', '×', () => {
+        dropPicture(presets[index]);
+        presets[index] = {...presets[index], icon: '', picture: null};
+        markDirty();
+        renderPresets();
+      });
+      clear.classList.add('fm-picture-clear');
+      cell.append(clear);
+    }
+    return cell;
+  }
+
   function frequencyLabel(khz) {
     const span = document.createElement('span');
     span.className = 'fm-frequency';
@@ -123,6 +284,7 @@
     presets.forEach((preset, index) => {
       const row = document.createElement('li');
       row.dataset.khz = String(preset.khz);
+      row.append(pictureCell(index));
       row.append(frequencyLabel(preset.khz));
       row.append(nameField(preset.name, (value) => {
         presets[index] = {...presets[index], name: value};
@@ -133,6 +295,7 @@
       const down = smallButton('fm.down', '↓', () => move(index, 1));
       down.disabled = index === presets.length - 1;
       const remove = smallButton('fm.remove', '✕', () => {
+        dropPicture(presets[index]);
         presets = presets.filter((item, at) => at !== index);
         markDirty();
         renderPresets();
@@ -160,11 +323,15 @@
 
   function save() {
     saveButton.disabled = true;
-    return window.fetch('/api/fm/presets', {
+    return uploadPendingPictures().catch(() => {
+      saveButton.disabled = !dirty;
+      setStatus(t('fm.picture_upload_failed'), true);
+      throw new Error('picture upload');
+    }).then(() => window.fetch('/api/fm/presets', {
       method: 'POST',
       headers: {'Content-Type': 'text/plain; charset=utf-8'},
       body: serialise(presets),
-    })
+    }))
       .then((response) => {
         if (!response.ok) throw new Error(String(response.status));
         return response.json();
@@ -175,9 +342,10 @@
         /* Back from the device, so what is shown is what it kept. */
         return load();
       })
-      .catch(() => {
+      .catch((error) => {
         saveButton.disabled = !dirty;
-        setStatus(t('fm.save_failed'), true);
+        // A picture that would not go up has said so already.
+        if (!error || error.message !== 'picture upload') setStatus(t('fm.save_failed'), true);
       });
   }
 
@@ -194,7 +362,7 @@
            the start for a frequency nobody has named. */
         const sent = typeof station.name === 'string' ? cleanName(station.name) : '';
         return {name: known && known.name ? known.name : sent, khz: station.khz,
-                icon: known ? known.icon : ''};
+                icon: known ? known.icon : '', picture: known ? known.picture : null};
       });
     // Unsaved until the device has it, so a failed save leaves Save to press.
     dirty = true;

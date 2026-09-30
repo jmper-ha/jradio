@@ -1097,6 +1097,18 @@ bool player_control_fm_preset_at(size_t index, fm_preset_t *preset)
     return found;
 }
 
+bool player_control_fm_icon_in_use(const char *icon)
+{
+    if (s_fm_presets == NULL || icon == NULL || icon[0] == '\0') return false;
+    bool used = false;
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    for (size_t index = 0U; index < s_fm_presets->count && !used; ++index) {
+        used = strcmp(s_fm_presets->presets[index].icon, icon) == 0;
+    }
+    xSemaphoreGive(s_fm_lock);
+    return used;
+}
+
 static size_t player_fm_preset_index(uint32_t khz)
 {
     if (s_fm_presets == NULL) return PLAYER_ITEM_NONE;
@@ -1517,6 +1529,7 @@ static bool player_adopt_internet_radio(audio_source_t active)
 #define PLAYER_STATION_ICON_MAX_BYTES 32768U
 
 static char s_icon_shown[STATION_CATALOG_ICON_MAX_LEN];
+#define PLAYER_FM_ICON_POLL_MS 300U
 
 static void player_publish_station_icon(const char *icon)
 {
@@ -1562,7 +1575,18 @@ static void player_sync_station_icon(void)
 {
     const audio_source_t source =
         atomic_load_explicit(&s_active_source, memory_order_acquire);
-    if (source != AUDIO_SOURCE_INTERNET_RADIO) {
+    /* The tuner has its pictures too, hung off the preset it stands on - a
+     * frequency between presets has none, and the tile shows its placeholder. */
+    char fm_icon[STATION_CATALOG_ICON_MAX_LEN] = "";
+    if (source == AUDIO_SOURCE_FM) {
+        fm_preset_t preset;
+        const size_t index =
+            player_fm_preset_index(atomic_load_explicit(&s_fm_khz, memory_order_acquire));
+        if (index != PLAYER_ITEM_NONE && player_control_fm_preset_at(index, &preset)) {
+            snprintf(fm_icon, sizeof(fm_icon), "%s", preset.icon);
+        }
+    }
+    if (source != AUDIO_SOURCE_INTERNET_RADIO && source != AUDIO_SOURCE_FM) {
         /* The station's picture must not outlive the station. Clearing only
          * what this function put up leaves the covers that files and the
          * rotor publish for themselves alone: s_icon_shown is empty unless a
@@ -1574,8 +1598,9 @@ static void player_sync_station_icon(void)
         return;
     }
     const station_catalog_entry_t *entry =
-        player_control_station_at(internet_radio_current_station_index());
-    const char *icon = entry == NULL ? "" : entry->icon;
+        source == AUDIO_SOURCE_FM ? NULL
+                                  : player_control_station_at(internet_radio_current_station_index());
+    const char *icon = source == AUDIO_SOURCE_FM ? fm_icon : entry == NULL ? "" : entry->icon;
     if (strncmp(icon, s_icon_shown, sizeof(s_icon_shown)) == 0) return;
     snprintf(s_icon_shown, sizeof(s_icon_shown), "%s", icon);
     if (icon[0] == '\0') {
@@ -1592,7 +1617,14 @@ static void player_control_task(void *arg)
 
     player_command_t command;
     for (;;) {
-        if (xQueueReceive(s_command_queue, &command, portMAX_DELAY) != pdTRUE) {
+        /* The tuner's preset changes without a command - a seek ends on one
+         * - so on FM the wait has an end, to look at the picture again. */
+        const TickType_t wait =
+            atomic_load_explicit(&s_active_source, memory_order_acquire) == AUDIO_SOURCE_FM
+                ? pdMS_TO_TICKS(PLAYER_FM_ICON_POLL_MS)
+                : portMAX_DELAY;
+        if (xQueueReceive(s_command_queue, &command, wait) != pdTRUE) {
+            player_sync_station_icon();
             continue;
         }
 

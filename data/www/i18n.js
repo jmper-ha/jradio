@@ -121,6 +121,7 @@
     'fm.up': ['Выше', 'Up'],
     'fm.down': ['Ниже', 'Down'],
     'fm.remove': ['Удалить', 'Remove'],
+    'fm.picture_upload_failed': ['Не удалось отправить картинку на устройство', 'Could not send the picture to the device'],
     'fm.signal': ['сигнал {signal}/{bars}', 'signal {signal}/{bars}'],
     'fm.stereo': ['стерео', 'stereo'],
     'note.remote_page': ['Любой инфракрасный пульт: нажмите «Обучить» у функции, затем кнопку на пульте. Одна кнопка — одна функция; таблица хранится на устройстве в remote.csv.',
@@ -720,7 +721,7 @@
        why a setting behaves the way it does. */
     'note.device': ['Записывается в settings.csv устройства и применяется сразу — экран и кнопки на корпусе показывают то же самое.',
                     'Written to the device\'s settings.csv and applied at once — the screen and the buttons on the case show the same.'],
-    'note.backup': ['В архив попадает всё, что устройство знает о себе: сети Wi-Fi, настройки, токен ЯМузыки, ключ погоды, обученные кнопки пульта и FM-станции. Плейлист сохраняется отдельно, на странице плейлиста.',
+    'note.backup': ['В архив попадает всё, что устройство знает о себе: сети Wi-Fi, настройки, токен ЯМузыки, ключ погоды, обученные кнопки пульта и FM-станции . Плейлист сохраняется отдельно, на странице плейлиста.',
                     'The archive holds everything the device knows about itself: Wi-Fi networks, settings, the Ya.Music token, the weather key, the keys the remote was taught and the FM stations. The playlist is saved separately, on the playlist page.'],
     'note.restore': ['Восстановить можно весь архив целиком или один файл из него — wifi.json, settings.csv, yandex.json, weather.json, remote.csv или fm_presets.csv. После восстановления устройство перезагрузится.',
                      'Restore the whole archive or a single file out of it — wifi.json, settings.csv, yandex.json, weather.json, remote.csv or fm_presets.csv. The device restarts afterwards.'],

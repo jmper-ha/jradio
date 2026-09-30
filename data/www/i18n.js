@@ -721,8 +721,8 @@
        why a setting behaves the way it does. */
     'note.device': ['Записывается в settings.csv устройства и применяется сразу — экран и кнопки на корпусе показывают то же самое.',
                     'Written to the device\'s settings.csv and applied at once — the screen and the buttons on the case show the same.'],
-    'note.backup': ['В архив попадает всё, что устройство знает о себе: сети Wi-Fi, настройки, токен ЯМузыки, ключ погоды, обученные кнопки пульта и FM-станции . Плейлист сохраняется отдельно, на странице плейлиста.',
-                    'The archive holds everything the device knows about itself: Wi-Fi networks, settings, the Ya.Music token, the weather key, the keys the remote was taught and the FM stations. The playlist is saved separately, on the playlist page.'],
+    'note.backup': ['В архив попадает всё, что устройство знает о себе: сети Wi-Fi, настройки, токен ЯМузыки, ключ погоды, обученные кнопки пульта и FM-станции вместе с их картинками. Плейлист сохраняется отдельно, на странице плейлиста.',
+                    'The archive holds everything the device knows about itself: Wi-Fi networks, settings, the Ya.Music token, the weather key, the keys the remote was taught and the FM stations with their pictures. The playlist is saved separately, on the playlist page.'],
     'note.restore': ['Восстановить можно весь архив целиком или один файл из него — wifi.json, settings.csv, yandex.json, weather.json, remote.csv или fm_presets.csv. После восстановления устройство перезагрузится.',
                      'Restore the whole archive or a single file out of it — wifi.json, settings.csv, yandex.json, weather.json, remote.csv or fm_presets.csv. The device restarts afterwards.'],
     'note.backup_secret': ['Пароли Wi-Fi, токен ЯМузыки и ключ погоды лежат в архиве открытым текстом: храните его так же, как хранили бы пароль.',

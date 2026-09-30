@@ -51,14 +51,88 @@ static bool archive_name_equals(const char *left, const char *right)
     return *left == '\0' && *right == '\0';
 }
 
-config_archive_member_t config_archive_member_from_file(const char *name)
+static bool archive_is_separator(char character)
 {
-    if (name == NULL) return CONFIG_ARCHIVE_MEMBER_UNKNOWN;
+    return character == '/' || character == '\\';
+}
+
+/* The last directory of the path, when there is one. */
+static bool archive_parent_is_pictures(const char *name, const char *file)
+{
+    if (file == name) return false;
+    const char *end = file - 1;  // the separator before the file
+    const char *start = end;
+    while (start > name && !archive_is_separator(start[-1])) --start;
+    const size_t length = (size_t)(end - start);
+    const char *directory = CONFIG_ARCHIVE_PICTURE_DIR;
+    if (length != strlen(directory)) return false;
+    for (size_t index = 0U; index < length; ++index) {
+        if (archive_lower(start[index]) != directory[index]) return false;
+    }
+    return true;
+}
+
+static const char *archive_file_part(const char *name)
+{
+    const char *file = name;
     /* Both separators, because the archive may have been repacked on Windows
      * and a backslash there is still a directory, not part of the name. */
     for (const char *cursor = name; *cursor != '\0'; ++cursor) {
-        if (*cursor == '/' || *cursor == '\\') name = cursor + 1;
+        if (archive_is_separator(*cursor)) file = cursor + 1;
     }
+    return file;
+}
+
+static bool archive_picture_extension(const char *file)
+{
+    const size_t length = strlen(file);
+    const char *dot = NULL;
+    for (size_t index = 0U; index < length; ++index) {
+        if (file[index] == '.') dot = file + index;
+    }
+    if (dot == NULL) return false;
+    return archive_name_equals(dot, ".png") || archive_name_equals(dot, ".jpg") ||
+           archive_name_equals(dot, ".jpeg");
+}
+
+bool config_archive_picture_name(const char *entry_name, char *out, size_t out_size)
+{
+    if (entry_name == NULL || out == NULL || out_size == 0U) return false;
+    const char *file = archive_file_part(entry_name);
+    if (!archive_parent_is_pictures(entry_name, file)) return false;
+    const size_t length = strlen(file);
+    if (length == 0U || length >= CONFIG_ARCHIVE_PICTURE_NAME_MAX || length >= out_size ||
+        file[0] == '.') {
+        return false;
+    }
+    for (size_t index = 0U; index < length; ++index) {
+        const char c = file[index];
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_';
+        if (!ok) return false;
+    }
+    if (!archive_picture_extension(file)) return false;
+    memcpy(out, file, length + 1U);
+    return true;
+}
+
+bool config_archive_picture_is_plausible(const void *data, size_t size)
+{
+    static const unsigned char png[] = {0x89U, 'P', 'N', 'G', 0x0DU, 0x0AU, 0x1AU, 0x0AU};
+    static const unsigned char jpeg[] = {0xFFU, 0xD8U, 0xFFU};
+    if (data == NULL || size == 0U || size > CONFIG_ARCHIVE_PICTURE_MAX_LEN) return false;
+    if (size >= sizeof(png) && memcmp(data, png, sizeof(png)) == 0) return true;
+    return size >= sizeof(jpeg) && memcmp(data, jpeg, sizeof(jpeg)) == 0;
+}
+
+config_archive_member_t config_archive_member_from_file(const char *name)
+{
+    if (name == NULL) return CONFIG_ARCHIVE_MEMBER_UNKNOWN;
+    const char *file = archive_file_part(name);
+    /* A picture named wifi.json is not wifi.json: what sits under the
+     * pictures' directory is theirs, whatever it is called. */
+    if (archive_parent_is_pictures(name, file)) return CONFIG_ARCHIVE_MEMBER_UNKNOWN;
+    name = file;
     for (config_archive_member_t member = CONFIG_ARCHIVE_MEMBER_FIRST;
          member <= CONFIG_ARCHIVE_MEMBER_LAST; ++member) {
         if (archive_name_equals(name, config_archive_member_file(member))) return member;
@@ -205,7 +279,7 @@ bool config_archive_writer_add(config_archive_writer_t *writer, const char *name
                                const void *data, size_t size)
 {
     if (writer == NULL) return false;
-    if (name == NULL || data == NULL || writer->count >= CONFIG_ARCHIVE_MEMBER_MAX) {
+    if (name == NULL || data == NULL || writer->count >= CONFIG_ARCHIVE_ENTRIES_MAX) {
         writer->failed = true;
         return false;
     }

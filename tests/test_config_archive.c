@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "config_archive.h"
@@ -213,14 +214,89 @@ static void test_writer_refuses_rather_than_truncates(void)
     assert(!config_archive_writer_add(&nowhere, "wifi.json", WIFI_JSON, 4U));
     assert(!config_archive_writer_finish(&nowhere, NULL));
 
-    /* More members than the device has files. */
-    uint8_t roomy[512];
-    config_archive_writer_t full;
+    /* More members than the device has files and pictures. */
+    static uint8_t roomy[CONFIG_ARCHIVE_ENTRIES_MAX * 128U];
+    static config_archive_writer_t full;
     config_archive_writer_init(&full, roomy, sizeof(roomy), CONFIG_ARCHIVE_DOS_DATE_MIN, 0U);
-    for (size_t index = 0U; index < CONFIG_ARCHIVE_MEMBER_MAX; ++index) {
+    for (size_t index = 0U; index < CONFIG_ARCHIVE_ENTRIES_MAX; ++index) {
         assert(config_archive_writer_add(&full, "settings.csv", "a,b\n", 4U));
     }
     assert(!config_archive_writer_add(&full, "settings.csv", "a,b\n", 4U));
+}
+
+/* The pictures the playlist and the presets point at travel in the archive
+ * under radio_img/, and a file of that directory is never a configuration
+ * file, whatever it is called. */
+static void test_pictures_ride_along_and_are_never_configuration(void)
+{
+    char name[CONFIG_ARCHIVE_PICTURE_NAME_MAX];
+    assert(config_archive_picture_name("radio_img/s4be0348b.png", name, sizeof(name)));
+    assert(strcmp(name, "s4be0348b.png") == 0);
+    assert(config_archive_picture_name("RADIO_IMG\\S1.JPG", name, sizeof(name)));
+    assert(strcmp(name, "S1.JPG") == 0);
+    assert(config_archive_picture_name("littlefs/radio_img/logo-1.jpeg", name, sizeof(name)));
+    // Not directly under the directory, not a picture by name, or a way out of it.
+    assert(!config_archive_picture_name("s4be0348b.png", name, sizeof(name)));
+    assert(!config_archive_picture_name("other/s1.png", name, sizeof(name)));
+    assert(!config_archive_picture_name("radio_img/", name, sizeof(name)));
+    assert(!config_archive_picture_name("radio_img/.hidden.png", name, sizeof(name)));
+    assert(!config_archive_picture_name("radio_img/a b.png", name, sizeof(name)));
+    assert(!config_archive_picture_name("radio_img/readme.txt", name, sizeof(name)));
+    assert(!config_archive_picture_name("radio_img/noextension", name, sizeof(name)));
+    assert(!config_archive_picture_name("radio_img/0123456789012345678901234567.png", name,
+                                        sizeof(name)));
+    assert(!config_archive_picture_name(NULL, name, sizeof(name)));
+
+    // A picture called wifi.json stays a picture's business.
+    assert(config_archive_member_from_file("radio_img/wifi.json") == CONFIG_ARCHIVE_MEMBER_UNKNOWN);
+    assert(config_archive_member_from_file("radio_img\\settings.csv") ==
+           CONFIG_ARCHIVE_MEMBER_UNKNOWN);
+    assert(config_archive_member_from_file("config/fm_presets.csv") ==
+           CONFIG_ARCHIVE_MEMBER_FM_PRESETS);
+
+    static const unsigned char png[] = {0x89U, 'P', 'N', 'G', 0x0DU, 0x0AU, 0x1AU, 0x0AU, 0U};
+    static const unsigned char jpeg[] = {0xFFU, 0xD8U, 0xFFU, 0xE0U};
+    assert(config_archive_picture_is_plausible(png, sizeof(png)));
+    assert(config_archive_picture_is_plausible(jpeg, sizeof(jpeg)));
+    assert(!config_archive_picture_is_plausible("GIF89a....", 10U));
+    assert(!config_archive_picture_is_plausible(png, 0U));
+    assert(!config_archive_picture_is_plausible(png, CONFIG_ARCHIVE_PICTURE_MAX_LEN + 1U));
+    assert(!config_archive_picture_is_plausible(NULL, 4U));
+
+    // Many entries round trip: the six files and every picture the archive has room for.
+    const size_t pictures = CONFIG_ARCHIVE_PICTURES_MAX;
+    const size_t payload = sizeof(WIFI_JSON) + pictures * sizeof(png);
+    const size_t capacity = CONFIG_ARCHIVE_CAPACITY_FOR(CONFIG_ARCHIVE_MEMBER_MAX + pictures, payload);
+    uint8_t *buffer = malloc(capacity);
+    config_archive_writer_t *writer = malloc(sizeof(*writer));
+    assert(buffer != NULL && writer != NULL);
+    config_archive_writer_init(writer, buffer, capacity, CONFIG_ARCHIVE_DOS_DATE_MIN, 0U);
+    assert(config_archive_writer_add(writer, "wifi.json", WIFI_JSON, sizeof(WIFI_JSON) - 1U));
+    for (size_t index = 0U; index < pictures; ++index) {
+        char entry[CONFIG_ARCHIVE_NAME_MAX];
+        snprintf(entry, sizeof(entry), "radio_img/s%03zu.png", index);
+        assert(config_archive_writer_add(writer, entry, png, sizeof(png)));
+    }
+    size_t length = 0U;
+    assert(config_archive_writer_finish(writer, &length));
+    config_archive_reader_t reader;
+    config_archive_reader_init(&reader, buffer, length);
+    size_t seen = 0U;
+    size_t seen_pictures = 0U;
+    for (;;) {
+        config_archive_entry_t entry;
+        const config_archive_read_t status = config_archive_reader_next(&reader, &entry);
+        if (status == CONFIG_ARCHIVE_READ_END) break;
+        assert(status == CONFIG_ARCHIVE_READ_OK);
+        ++seen;
+        if (config_archive_picture_name(entry.name, name, sizeof(name))) {
+            ++seen_pictures;
+            assert(entry.size == sizeof(png));
+        }
+    }
+    assert(seen == pictures + 1U && seen_pictures == pictures);
+    free(writer);
+    free(buffer);
 }
 
 static void test_reader_rejects_what_it_cannot_unpack(void)
@@ -346,6 +422,7 @@ int main(void)
     test_round_trip_returns_every_member_unchanged();
     test_archive_carries_a_readable_central_directory();
     test_writer_refuses_rather_than_truncates();
+    test_pictures_ride_along_and_are_never_configuration();
     test_reader_rejects_what_it_cannot_unpack();
     test_foreign_entries_are_walked_over_not_refused();
     printf("config_archive tests passed\n");

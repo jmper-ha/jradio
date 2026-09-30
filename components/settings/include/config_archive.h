@@ -26,6 +26,18 @@
  * the caller. */
 
 #define CONFIG_ARCHIVE_MEMBER_MAX 6U
+/* And the pictures the FM presets point at, which the archive carries beside
+ * the presets as "radio_img/<name>": a data flash wipes the directory they
+ * live in, and presets that name nothing show a note where each station's
+ * logo was. A preset has at most one, and there are at most 40 presets. The
+ * playlist's pictures are not in here, as the playlist is not: the playlist
+ * page makes its own archive of the two together. */
+#define CONFIG_ARCHIVE_PICTURES_MAX 40U
+#define CONFIG_ARCHIVE_ENTRIES_MAX (CONFIG_ARCHIVE_MEMBER_MAX + CONFIG_ARCHIVE_PICTURES_MAX)
+#define CONFIG_ARCHIVE_PICTURE_DIR "radio_img"
+// The device stores nothing larger: see WEB_SERVER_STATION_ICON_MAX_LEN.
+#define CONFIG_ARCHIVE_PICTURE_MAX_LEN 32768U
+#define CONFIG_ARCHIVE_PICTURE_NAME_MAX 32U
 /* Long enough for the names below with a directory prefix; anything longer
  * belongs to some other archive and is skipped rather than truncated into a
  * name that might collide with ours. */
@@ -63,6 +75,19 @@ config_archive_member_t config_archive_member_from_file(const char *name);
 bool config_archive_member_is_plausible(config_archive_member_t member, const void *data,
                                         size_t size);
 
+/* Whether an entry's name is a picture of this device's: a file directly
+ * under a "radio_img" directory, named as the station catalogue allows -
+ * letters, digits, dot, dash and underscore, no leading dot, PNG or JPEG by
+ * its extension. On success `out` is the file's own name, without the
+ * directory, for the caller to join to the one it writes into. Anything else
+ * is false, and in particular never a way out of that directory. */
+bool config_archive_picture_name(const char *entry_name, char *out, size_t out_size);
+
+/* Whether the bytes are a PNG or a JPEG no larger than the device takes - the
+ * gate in front of the filesystem, as config_archive_member_is_plausible() is
+ * for the configuration. */
+bool config_archive_picture_is_plausible(const void *data, size_t size);
+
 uint32_t config_archive_crc32(const void *data, size_t size);
 
 /* MS-DOS packed date and time, the only stamp a zip entry has. The device has
@@ -86,16 +111,22 @@ typedef struct {
         uint32_t crc;
         uint32_t size;
         uint32_t offset;
-    } entries[CONFIG_ARCHIVE_MEMBER_MAX];
+    } entries[CONFIG_ARCHIVE_ENTRIES_MAX];
 } config_archive_writer_t;
 
 /* How much room the archive needs for members of `payload` bytes in total.
  * Derived rather than typed: a cap guessed by hand is the thing that silently
  * truncates the day a file grows. */
-#define CONFIG_ARCHIVE_OVERHEAD                                                    \
-    (CONFIG_ARCHIVE_MEMBER_MAX * (30U + 46U + 2U * CONFIG_ARCHIVE_NAME_MAX) + 22U)
+#define CONFIG_ARCHIVE_OVERHEAD_FOR(entries) \
+    ((entries) * (30U + 46U + 2U * CONFIG_ARCHIVE_NAME_MAX) + 22U)
+#define CONFIG_ARCHIVE_OVERHEAD CONFIG_ARCHIVE_OVERHEAD_FOR(CONFIG_ARCHIVE_MEMBER_MAX)
 #define CONFIG_ARCHIVE_CAPACITY(payload) ((size_t)(payload) + CONFIG_ARCHIVE_OVERHEAD)
+// The same for an archive of `entries` members, pictures among them.
+#define CONFIG_ARCHIVE_CAPACITY_FOR(entries, payload) \
+    ((size_t)(payload) + CONFIG_ARCHIVE_OVERHEAD_FOR(entries))
 
+/* The writer is about ten kilobytes with its room for the pictures: not a
+ * thing for a task's stack. */
 void config_archive_writer_init(config_archive_writer_t *writer, void *buffer, size_t capacity,
                                 uint16_t dos_date, uint16_t dos_time);
 bool config_archive_writer_add(config_archive_writer_t *writer, const char *name,

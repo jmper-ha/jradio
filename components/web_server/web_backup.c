@@ -2,6 +2,7 @@
 
 #ifdef ESP_PLATFORM
 
+#include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -17,6 +19,8 @@
 #include "miniz.h"
 
 #include "config_archive.h"
+#include "player_control.h"
+#include "station_catalog.h"
 #include "wifi_settings.h"
 #include "yandex_token_store.h"
 
@@ -26,8 +30,14 @@
  * every function bound - so this is headroom rather than a limit anything
  * real approaches: it is here to stop an upload, not a backup. */
 #define WEB_BACKUP_MEMBER_MAX_LEN 8192U
-#define WEB_BACKUP_UPLOAD_MAX_LEN \
-    CONFIG_ARCHIVE_CAPACITY(CONFIG_ARCHIVE_MEMBER_MAX * WEB_BACKUP_MEMBER_MAX_LEN)
+/* The preset pictures ride in it too, up to what the device keeps: an upload
+ * is refused past this, which is ~1.4 MB with every picture at its largest -
+ * room the PSRAM has and the internal heap does not, so it is asked of the
+ * former. */
+#define WEB_BACKUP_UPLOAD_MAX_LEN                                               \
+    CONFIG_ARCHIVE_CAPACITY_FOR(CONFIG_ARCHIVE_ENTRIES_MAX,                     \
+                                CONFIG_ARCHIVE_MEMBER_MAX * WEB_BACKUP_MEMBER_MAX_LEN + \
+                                    CONFIG_ARCHIVE_PICTURES_MAX * CONFIG_ARCHIVE_PICTURE_MAX_LEN)
 /* Long enough for the directory and the longest member name. */
 #define WEB_BACKUP_PATH_MAX 64
 /* Enough for the answer with all six names in both lists: the names are 71
@@ -45,6 +55,69 @@ static void web_backup_secure_zero(void *memory, size_t size)
     while (size-- > 0U) {
         *bytes++ = 0U;
     }
+}
+
+/* PSRAM first: the archive, the body of an upload and the picture lists are
+ * all larger than the internal heap can spare a block for. */
+static void *web_backup_alloc(size_t size)
+{
+    void *memory = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return memory != NULL ? memory : malloc(size);
+}
+
+/* A picture the backup carries: its file name and size. Listed first, so the
+ * archive is made exactly as large as it needs to be. */
+typedef struct {
+    char name[CONFIG_ARCHIVE_PICTURE_NAME_MAX];
+    uint32_t size;
+} web_backup_picture_t;
+
+/* The pictures the FM presets name, that are the size and kind the device
+ * itself would have stored. The presets are what the archive carries; the
+ * playlist's pictures go with the playlist, from its own page. */
+static size_t web_backup_list_pictures(web_backup_picture_t *list, size_t capacity,
+                                       size_t *payload)
+{
+    size_t count = 0U;
+    *payload = 0U;
+    DIR *dir = opendir(STATION_ICON_DIR);
+    if (dir == NULL) return 0U;
+    const struct dirent *found;
+    while (count < capacity && (found = readdir(dir)) != NULL) {
+        if (found->d_type == DT_DIR) continue;
+        char entry[CONFIG_ARCHIVE_NAME_MAX];
+        char name[CONFIG_ARCHIVE_PICTURE_NAME_MAX];
+        if (snprintf(entry, sizeof(entry), CONFIG_ARCHIVE_PICTURE_DIR "/%s", found->d_name) >=
+                (int)sizeof(entry) ||
+            !config_archive_picture_name(entry, name, sizeof(name))) {
+            continue;
+        }
+        if (!player_control_fm_icon_in_use(name)) continue;
+        char path[sizeof(STATION_ICON_DIR) + CONFIG_ARCHIVE_PICTURE_NAME_MAX + 1U];
+        struct stat info;
+        snprintf(path, sizeof(path), "%s/%s", STATION_ICON_DIR, name);
+        if (stat(path, &info) != 0 || info.st_size <= 0 ||
+            (size_t)info.st_size > CONFIG_ARCHIVE_PICTURE_MAX_LEN) {
+            continue;
+        }
+        memcpy(list[count].name, name, strlen(name) + 1U);
+        list[count].size = (uint32_t)info.st_size;
+        *payload += (size_t)info.st_size;
+        ++count;
+    }
+    closedir(dir);
+    return count;
+}
+
+static size_t web_backup_read_picture(const web_backup_picture_t *picture, uint8_t *buffer)
+{
+    char path[sizeof(STATION_ICON_DIR) + CONFIG_ARCHIVE_PICTURE_NAME_MAX + 1U];
+    snprintf(path, sizeof(path), "%s/%s", STATION_ICON_DIR, picture->name);
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) return 0U;
+    const size_t read = fread(buffer, 1U, picture->size, file);
+    fclose(file);
+    return read == picture->size && config_archive_picture_is_plausible(buffer, read) ? read : 0U;
 }
 
 static void web_backup_path(char *path, size_t size, config_archive_member_t member)
@@ -107,9 +180,24 @@ static void web_backup_filename(char *name, size_t size)
 
 esp_err_t web_backup_get(httpd_req_t *request)
 {
-    uint8_t *archive = malloc(WEB_BACKUP_UPLOAD_MAX_LEN);
-    uint8_t *member = malloc(WEB_BACKUP_MEMBER_MAX_LEN);
+    web_backup_picture_t *pictures =
+        web_backup_alloc(CONFIG_ARCHIVE_PICTURES_MAX * sizeof(*pictures));
+    config_archive_writer_t *writer = web_backup_alloc(sizeof(*writer));
+    // One buffer for every file: the largest thing in it is a picture.
+    uint8_t *member = web_backup_alloc(CONFIG_ARCHIVE_PICTURE_MAX_LEN);
+    size_t picture_count = 0U;
+    size_t picture_bytes = 0U;
+    if (pictures != NULL) {
+        picture_count = web_backup_list_pictures(pictures, CONFIG_ARCHIVE_PICTURES_MAX,
+                                                 &picture_bytes);
+    }
+    const size_t capacity = CONFIG_ARCHIVE_CAPACITY_FOR(
+        CONFIG_ARCHIVE_MEMBER_MAX + picture_count,
+        CONFIG_ARCHIVE_MEMBER_MAX * WEB_BACKUP_MEMBER_MAX_LEN + picture_bytes);
+    uint8_t *archive = pictures != NULL && writer != NULL ? web_backup_alloc(capacity) : NULL;
     if (archive == NULL || member == NULL) {
+        free(pictures);
+        free(writer);
         free(archive);
         free(member);
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
@@ -119,25 +207,46 @@ esp_err_t web_backup_get(httpd_req_t *request)
     uint16_t date = CONFIG_ARCHIVE_DOS_DATE_MIN;
     uint16_t time_of_day = 0U;
     web_backup_stamp(&date, &time_of_day);
-    config_archive_writer_t writer;
-    config_archive_writer_init(&writer, archive, WEB_BACKUP_UPLOAD_MAX_LEN, date, time_of_day);
+    config_archive_writer_init(writer, archive, capacity, date, time_of_day);
+    size_t configuration_files = 0U;
     for (config_archive_member_t kind = CONFIG_ARCHIVE_MEMBER_FIRST;
          kind <= CONFIG_ARCHIVE_MEMBER_LAST; ++kind) {
         const size_t size = web_backup_read_member(kind, member, WEB_BACKUP_MEMBER_MAX_LEN);
         if (size == 0U) continue;
-        if (!config_archive_writer_add(&writer, config_archive_member_file(kind), member, size)) {
+        if (!config_archive_writer_add(writer, config_archive_member_file(kind), member, size)) {
             ESP_LOGE(TAG, "%s did not fit the archive", config_archive_member_file(kind));
             break;
         }
+        ++configuration_files;
+    }
+    /* Only with a configuration to go with them: pictures alone are not a
+     * device, and "nothing to back up" stays true of one that has none. */
+    size_t pictures_added = 0U;
+    for (size_t index = 0U; configuration_files > 0U && index < picture_count; ++index) {
+        const size_t size = web_backup_read_picture(&pictures[index], member);
+        if (size == 0U) {
+            ESP_LOGW(TAG, "picture %s could not be read and was left out", pictures[index].name);
+            continue;
+        }
+        char entry[CONFIG_ARCHIVE_NAME_MAX];
+        snprintf(entry, sizeof(entry), CONFIG_ARCHIVE_PICTURE_DIR "/%s", pictures[index].name);
+        if (!config_archive_writer_add(writer, entry, member, size)) {
+            ESP_LOGE(TAG, "%s did not fit the archive", entry);
+            break;
+        }
+        ++pictures_added;
     }
 
     size_t length = 0U;
-    const bool empty = writer.count == 0U;
-    const bool complete = !empty && config_archive_writer_finish(&writer, &length);
-    web_backup_secure_zero(member, WEB_BACKUP_MEMBER_MAX_LEN);
+    const bool empty = configuration_files == 0U;
+    const bool complete = !empty && config_archive_writer_finish(writer, &length);
+    const size_t entries = writer->count;
+    web_backup_secure_zero(member, CONFIG_ARCHIVE_PICTURE_MAX_LEN);
     free(member);
+    free(pictures);
+    free(writer);
     if (!complete) {
-        web_backup_secure_zero(archive, WEB_BACKUP_UPLOAD_MAX_LEN);
+        web_backup_secure_zero(archive, capacity);
         free(archive);
         if (empty) {
             /* Not an error worth a 500: a device that has never been set up
@@ -148,8 +257,7 @@ esp_err_t web_backup_get(httpd_req_t *request)
             /* Told apart from the empty case on purpose: this one means the
              * files outgrew a buffer that is derived from their own caps, so
              * it is a bug here, not a device with nothing saved. */
-            ESP_LOGE(TAG, "the archive did not fit %u bytes",
-                     (unsigned)WEB_BACKUP_UPLOAD_MAX_LEN);
+            ESP_LOGE(TAG, "the archive did not fit %u bytes", (unsigned)capacity);
             httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
                                 "Cannot build the archive");
         }
@@ -165,9 +273,10 @@ esp_err_t web_backup_get(httpd_req_t *request)
      * does, so a cached one would be wrong as well as private. */
     httpd_resp_set_hdr(request, "Cache-Control", "no-store");
     const esp_err_t sent = httpd_resp_send(request, (const char *)archive, length);
-    web_backup_secure_zero(archive, WEB_BACKUP_UPLOAD_MAX_LEN);
+    web_backup_secure_zero(archive, capacity);
     free(archive);
-    ESP_LOGI(TAG, "backup sent: %u files, %u bytes", (unsigned)writer.count, (unsigned)length);
+    ESP_LOGI(TAG, "backup sent: %u files, %u pictures, %u bytes", (unsigned)entries,
+             (unsigned)pictures_added, (unsigned)length);
     return sent;
 }
 
@@ -191,9 +300,9 @@ static void web_backup_release(web_backup_pending_t *pending, size_t count)
     }
 }
 
-static uint8_t *web_backup_inflate(const config_archive_entry_t *entry)
+static uint8_t *web_backup_inflate(const config_archive_entry_t *entry, size_t limit)
 {
-    if (entry->original_size == 0U || entry->original_size > WEB_BACKUP_MEMBER_MAX_LEN) {
+    if (entry->original_size == 0U || entry->original_size > limit) {
         return NULL;
     }
     uint8_t *out = malloc(entry->original_size);
@@ -225,6 +334,51 @@ static uint8_t *web_backup_inflate(const config_archive_entry_t *entry)
         return NULL;
     }
     return out;
+}
+
+/* A picture on its way to the flash, like the files above but named by
+ * itself and owned - when it was inflated - by the list that holds it. */
+typedef struct {
+    char name[CONFIG_ARCHIVE_PICTURE_NAME_MAX];
+    const uint8_t *data;
+    size_t size;
+    uint8_t *owned;
+} web_backup_pending_picture_t;
+
+static void web_backup_release_pictures(web_backup_pending_picture_t *pictures, size_t count)
+{
+    if (pictures == NULL) return;
+    for (size_t index = 0U; index < count; ++index) {
+        free(pictures[index].owned);
+        pictures[index].owned = NULL;
+    }
+}
+
+/* Beside the file and renamed over it, as the configuration is: a power cut
+ * leaves a picture that is whole or not there, never half of one. */
+static bool web_backup_write_picture(const web_backup_pending_picture_t *picture)
+{
+    if (mkdir(STATION_ICON_DIR, 0777) != 0 && errno != EEXIST) {
+        ESP_LOGE(TAG, "cannot create %s: %s", STATION_ICON_DIR, strerror(errno));
+        return false;
+    }
+    char path[sizeof(STATION_ICON_DIR) + CONFIG_ARCHIVE_PICTURE_NAME_MAX + 1U];
+    const char temp[] = STATION_ICON_DIR "/restore.tmp";
+    snprintf(path, sizeof(path), "%s/%s", STATION_ICON_DIR, picture->name);
+    FILE *file = fopen(temp, "wb");
+    if (file == NULL) {
+        ESP_LOGE(TAG, "cannot open %s: %s", temp, strerror(errno));
+        return false;
+    }
+    const size_t written = fwrite(picture->data, 1U, picture->size, file);
+    const bool flushed = fflush(file) == 0;
+    fclose(file);
+    if (written != picture->size || !flushed || rename(temp, path) != 0) {
+        ESP_LOGE(TAG, "cannot write %s: %s", path, strerror(errno));
+        unlink(temp);
+        return false;
+    }
+    return true;
 }
 
 static bool web_backup_write_member(config_archive_member_t member, const void *data, size_t size)
@@ -336,7 +490,7 @@ esp_err_t web_backup_restore_post(httpd_req_t *request)
         name[0] = '\0';
     }
 
-    uint8_t *body = malloc((size_t)request->content_len);
+    uint8_t *body = web_backup_alloc((size_t)request->content_len);
     if (body == NULL) {
         return web_backup_fail(request, "500 Internal Server Error", "memory",
                                "no room for the upload");
@@ -355,6 +509,15 @@ esp_err_t web_backup_restore_post(httpd_req_t *request)
 
     web_backup_pending_t pending[CONFIG_ARCHIVE_MEMBER_MAX] = {0};
     size_t count = 0U;
+    web_backup_pending_picture_t *pictures =
+        web_backup_alloc(CONFIG_ARCHIVE_PICTURES_MAX * sizeof(*pictures));
+    size_t picture_count = 0U;
+    if (pictures == NULL) {
+        web_backup_secure_zero(body, received);
+        free(body);
+        return web_backup_fail(request, "500 Internal Server Error", "memory",
+                               "no room for the pictures");
+    }
     const char *refusal = NULL;
     const char *refusal_reason = NULL;
 
@@ -375,6 +538,32 @@ esp_err_t web_backup_restore_post(httpd_req_t *request)
                 refusal_reason = "the archive could not be walked";
                 break;
             }
+            char picture_name[CONFIG_ARCHIVE_PICTURE_NAME_MAX];
+            if (config_archive_picture_name(entry.name, picture_name, sizeof(picture_name))) {
+                bool known = false;
+                for (size_t index = 0U; index < picture_count; ++index) {
+                    if (strcmp(pictures[index].name, picture_name) == 0) known = true;
+                }
+                if (known || picture_count >= CONFIG_ARCHIVE_PICTURES_MAX) continue;
+                web_backup_pending_picture_t *picture = &pictures[picture_count];
+                memset(picture, 0, sizeof(*picture));
+                memcpy(picture->name, picture_name, strlen(picture_name) + 1U);
+                if (entry.deflated) {
+                    picture->owned = web_backup_inflate(&entry, CONFIG_ARCHIVE_PICTURE_MAX_LEN);
+                    if (picture->owned == NULL) {
+                        refusal = "damaged";
+                        refusal_reason = "a picture did not inflate to what it declared";
+                        break;
+                    }
+                    picture->data = picture->owned;
+                    picture->size = entry.original_size;
+                } else {
+                    picture->data = entry.data;
+                    picture->size = entry.size;
+                }
+                ++picture_count;
+                continue;
+            }
             const config_archive_member_t member = config_archive_member_from_file(entry.name);
             if (member == CONFIG_ARCHIVE_MEMBER_UNKNOWN) continue;
             /* An archive that names the same file twice is somebody's edit, not
@@ -387,7 +576,7 @@ esp_err_t web_backup_restore_post(httpd_req_t *request)
             if (duplicate || count >= CONFIG_ARCHIVE_MEMBER_MAX) continue;
             pending[count].member = member;
             if (entry.deflated) {
-                pending[count].owned = web_backup_inflate(&entry);
+                pending[count].owned = web_backup_inflate(&entry, WEB_BACKUP_MEMBER_MAX_LEN);
                 if (pending[count].owned == NULL) {
                     refusal = "damaged";
                     refusal_reason = "an entry did not inflate to what it declared";
@@ -401,7 +590,7 @@ esp_err_t web_backup_restore_post(httpd_req_t *request)
             }
             ++count;
         }
-        if (refusal == NULL && count == 0U) {
+        if (refusal == NULL && count == 0U && picture_count == 0U) {
             refusal = "empty";
             refusal_reason =
                 "no wifi.json, settings.csv, yandex.json, weather.json, remote.csv or "
@@ -423,6 +612,12 @@ esp_err_t web_backup_restore_post(httpd_req_t *request)
     /* Every file is checked before any file is written: a restore that stops
      * halfway leaves the device with somebody else's networks and its own
      * token, which is a state neither backup describes. */
+    for (size_t index = 0U; refusal == NULL && index < picture_count; ++index) {
+        if (!config_archive_picture_is_plausible(pictures[index].data, pictures[index].size)) {
+            refusal = "contents";
+            refusal_reason = pictures[index].name;
+        }
+    }
     for (size_t index = 0U; refusal == NULL && index < count; ++index) {
         if (pending[index].size > WEB_BACKUP_MEMBER_MAX_LEN) {
             refusal = "size";
@@ -436,6 +631,8 @@ esp_err_t web_backup_restore_post(httpd_req_t *request)
 
     if (refusal != NULL) {
         web_backup_release(pending, count);
+        web_backup_release_pictures(pictures, picture_count);
+        free(pictures);
         web_backup_secure_zero(body, received);
         free(body);
         return web_backup_reject(request, refusal, refusal_reason);
@@ -453,6 +650,8 @@ esp_err_t web_backup_restore_post(httpd_req_t *request)
         if (!web_backup_write_member(pending[index].member, pending[index].data,
                                      pending[index].size)) {
             web_backup_release(pending, count);
+            web_backup_release_pictures(pictures, picture_count);
+            free(pictures);
             web_backup_secure_zero(body, received);
             free(body);
             return web_backup_fail(request, "500 Internal Server Error", "write", file);
@@ -473,11 +672,29 @@ esp_err_t web_backup_restore_post(httpd_req_t *request)
         }
         ESP_LOGI(TAG, "restored %s, %u bytes", file, (unsigned)pending[index].size);
     }
-    web_backup_append(reply, sizeof(reply), &length, "],\"warnings\":[");
+    /* The pictures after the files: a playlist that names one is restored
+     * already, and a picture that cannot be written is one logo lost, not a
+     * device refused. Counted rather than named - there are up to 160. */
+    size_t pictures_written = 0U;
+    for (size_t index = 0U; index < picture_count; ++index) {
+        if (web_backup_write_picture(&pictures[index])) {
+            ++pictures_written;
+        } else {
+            ESP_LOGW(TAG, "picture %s was not restored", pictures[index].name);
+        }
+    }
+    char pictures_field[48];
+    snprintf(pictures_field, sizeof(pictures_field), "],\"pictures\":%u,\"warnings\":[",
+             (unsigned)pictures_written);
+    web_backup_append(reply, sizeof(reply), &length, pictures_field);
     web_backup_append(reply, sizeof(reply), &length, warnings);
     web_backup_append(reply, sizeof(reply), &length, "],\"reboot\":true}");
+    ESP_LOGI(TAG, "restored %u of %u pictures", (unsigned)pictures_written,
+             (unsigned)picture_count);
 
     web_backup_release(pending, count);
+    web_backup_release_pictures(pictures, picture_count);
+    free(pictures);
     web_backup_secure_zero(body, received);
     free(body);
 

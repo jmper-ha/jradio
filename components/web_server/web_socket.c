@@ -811,6 +811,15 @@ static void capture_now_playing(const player_snapshot_t *player,
         // A frequency, a few bytes; the performer's room is for ICY lines.
         snprintf(now->heading, sizeof(now->heading), "%.*s", (int)(sizeof(now->heading) - 1U),
                  tuner.artist);
+        if (player->fm_scanning) {
+            /* A scan has left the station that was on: one word, in the
+             * device's language, where its name and radiotext were, and the
+             * frequency it has reached last. */
+            snprintf(now->title, sizeof(now->title), "%s", player->stream_title);
+            now->artist[0] = '\0';
+            snprintf(now->heading, sizeof(now->heading), "%.*s",
+                     (int)(sizeof(now->heading) - 1U), player->context);
+        }
         return;
     }
     if (audio_source_is_stations(player->active_source)) {

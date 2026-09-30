@@ -80,8 +80,16 @@ static void test_it_closes_after_a_quiet_spell(void)
     assert(ui_fm_tune_idle(&tune, 5000U + UI_FM_TUNE_IDLE_MS));
 }
 
+static void test_it_opens_by_itself_only_without_presets(void)
+{
+    assert(ui_fm_tune_opens_on_entry(0U));
+    assert(!ui_fm_tune_opens_on_entry(1U));
+    assert(!ui_fm_tune_opens_on_entry(40U));
+}
+
 int main(void)
 {
+    test_it_opens_by_itself_only_without_presets();
     test_the_knob_moves_in_tenths_within_the_band();
     test_a_fast_turn_sends_the_latest_at_a_measured_pace();
     test_a_press_keeps_and_anything_else_goes_back();

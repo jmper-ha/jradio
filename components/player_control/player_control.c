@@ -1250,9 +1250,16 @@ static void player_fm_scan_task(void *arg)
         xSemaphoreGive(s_fm_lock);
         if (!room || status.khz >= RDA5807_BAND_MAX_KHZ) break;
     }
-    /* Back as it was, or as the player has since asked for: a preset chosen
-     * during the pass is where the tuner lands. */
+    /* On the first station found, which is the first preset once the page has
+     * made the list of them - the band's low end, where the pass began, is
+     * mostly hiss. With nothing found, back as it was, or as the player has
+     * since asked for: a preset chosen during the pass is where it lands. */
     if (atomic_load_explicit(&s_fm_on, memory_order_acquire)) {
+        xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+        const uint32_t first = s_fm_found_count > 0U ? s_fm_found[0].khz : 0U;
+        xSemaphoreGive(s_fm_lock);
+        if (first != 0U) atomic_store_explicit(&s_fm_khz, first, memory_order_release);
+        player_fm_rds_reset();
         (void)fm_tuner_tune(atomic_load_explicit(&s_fm_khz, memory_order_acquire));
         (void)fm_tuner_set_muted(atomic_load_explicit(&s_fm_muted, memory_order_acquire));
     } else {
@@ -2305,10 +2312,12 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
             snapshot->fm_stereo = status.stereo;
             snapshot->fm_signal = (uint8_t)(bars < 0 ? 0 : bars);
         }
-        snapshot->fm_rds = player_fm_rds_heard();
+        // The station the mark was about is not the one being passed.
+        snapshot->fm_rds = !scanning && player_fm_rds_heard();
+        snapshot->fm_scanning = scanning;
         if (seeking) {
             snprintf(snapshot->stream_title, sizeof(snapshot->stream_title), "%s",
-                     player_text(DEVICE_TEXT_FM_SEEKING));
+                     player_text(scanning ? DEVICE_TEXT_FM_SCANNING : DEVICE_TEXT_FM_SEEKING));
         } else if (seen) {
             snprintf(snapshot->stream_title, sizeof(snapshot->stream_title), "%s, %s %d/%d",
                      player_text(status.stereo ? DEVICE_TEXT_FM_STEREO : DEVICE_TEXT_FM_MONO),

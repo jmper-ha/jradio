@@ -1023,18 +1023,12 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
         const char *label = "";
         yandex_station_t station;
         fm_preset_t preset;
-        char frequency[24];
+        char frequency[FM_PRESET_NAME_MAX_LEN + 12U];  // "88.3 " and a name
         if (fm) {
             if (!player_control_fm_preset_at(index, &preset)) break;
-            label = preset.name;
-            // A preset not yet named is its frequency, as on the panel.
-            if (label[0] == '\0') {
-                char digits[12];
-                player_fm_frequency_text(preset.khz, digits, sizeof(digits));
-                snprintf(frequency, sizeof(frequency), "%s %s", digits,
-                         device_text(DEVICE_TEXT_FM_MHZ, device_settings_published_language()));
-                label = frequency;
-            }
+            // The frequency, then the name if there is one, as on the panel.
+            player_fm_list_label(preset.khz, preset.name, frequency, sizeof(frequency));
+            label = frequency;
         } else if (rotor) {
             if (!yandex_catalog_station_at(index, &station)) break;
             label = station.name;

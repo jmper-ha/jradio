@@ -95,3 +95,8 @@ uint32_t ui_fm_tune_khz(const ui_fm_tune_t *tune)
 {
     return tune != NULL && tune->active ? tune->khz : 0U;
 }
+
+bool ui_fm_tune_opens_on_entry(size_t preset_count)
+{
+    return preset_count == 0U;
+}

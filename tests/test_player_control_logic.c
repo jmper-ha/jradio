@@ -881,6 +881,20 @@ static void test_a_frequency_reads_with_one_decimal(void)
     assert(strcmp(text, "100.0") == 0);
 }
 
+static void test_a_list_row_leads_with_the_frequency(void)
+{
+    char text[64];
+    player_fm_list_label(88300U, "Radio One", text, sizeof(text));
+    assert(strcmp(text, "88.3 Radio One") == 0);
+    player_fm_list_label(106200U, "", text, sizeof(text));
+    assert(strcmp(text, "106.2") == 0);
+    player_fm_list_label(87900U, NULL, text, sizeof(text));
+    assert(strcmp(text, "87.9") == 0);
+    // Cut to the room there is, never past it.
+    player_fm_list_label(88300U, "Radio One", text, 7U);
+    assert(strcmp(text, "88.3 R") == 0);
+}
+
 static void test_the_signal_is_a_scale_that_does_not_flicker(void)
 {
     assert(player_fm_signal_bars(0U, -1) == 0);
@@ -938,6 +952,7 @@ int main(void)
 {
     test_the_tuner_is_a_source_while_it_answers_and_seeks_on_the_keys();
     test_a_frequency_reads_with_one_decimal();
+    test_a_list_row_leads_with_the_frequency();
     test_tuning_by_hand_is_the_tuners_alone();
     test_a_preset_is_chosen_without_a_network();
     test_snapshot_equality_notices_the_frequency();

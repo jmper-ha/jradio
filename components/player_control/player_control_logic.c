@@ -97,7 +97,7 @@ bool player_snapshot_equal(const player_snapshot_t *left,
            left->track_disliked == right->track_disliked &&
            left->fm_khz == right->fm_khz &&
            left->fm_stereo == right->fm_stereo && left->fm_signal == right->fm_signal &&
-           left->fm_rds == right->fm_rds &&
+           left->fm_rds == right->fm_rds && left->fm_scanning == right->fm_scanning &&
            memcmp(left->error, right->error, sizeof(left->error)) == 0;
 }
 
@@ -372,6 +372,15 @@ void player_fm_frequency_text(uint32_t khz, char *out, size_t out_size)
     if (out == NULL || out_size == 0U) return;
     const uint32_t tenths = (khz + 50U) / 100U;
     snprintf(out, out_size, "%u.%u", (unsigned)(tenths / 10U), (unsigned)(tenths % 10U));
+}
+
+void player_fm_list_label(uint32_t khz, const char *name, char *out, size_t out_size)
+{
+    if (out == NULL || out_size == 0U) return;
+    char frequency[12];
+    player_fm_frequency_text(khz, frequency, sizeof(frequency));
+    const bool named = name != NULL && name[0] != '\0';
+    snprintf(out, out_size, "%s%s%s", frequency, named ? " " : "", named ? name : "");
 }
 
 /* Where each step starts. A short wire picks the local stations up at 40-60,

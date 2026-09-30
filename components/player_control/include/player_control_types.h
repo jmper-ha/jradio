@@ -224,6 +224,9 @@ typedef struct {
     bool fm_stereo;
     uint8_t fm_signal;
     bool fm_rds;
+    /* A scan of the band is under way: whatever was on the air is not now, so
+     * the faces drop the station's name and radiotext for one word. */
+    bool fm_scanning;
     char error[PLAYER_ERROR_MAX_LEN];
 } player_snapshot_t;
 
@@ -267,6 +270,12 @@ bool player_media_removal_clears_cover(audio_source_t active_source);
 /* 101200 -> "101.2": the way a frequency is read out, one decimal, the
  * hundreds of kHz that FM stations sit on. */
 void player_fm_frequency_text(uint32_t khz, char *out, size_t out_size);
+
+/* A preset's row in a list: its frequency, then the name if it has one -
+ * "88.3" or "88.3 Radio One". The frequency always leads, so the rows line up
+ * in the order of the band whether or not the stations are named; the unit
+ * is left off, since every row would carry the same one. */
+void player_fm_list_label(uint32_t khz, const char *name, char *out, size_t out_size);
 
 /* The chip's RSSI (0..127) as a scale of PLAYER_FM_SIGNAL_BARS. The raw number
  * moves by a few units several times a second, and every move was a frame to

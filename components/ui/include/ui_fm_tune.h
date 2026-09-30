@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /* Tuning the FM receiver by hand.
@@ -56,6 +57,12 @@ uint32_t ui_fm_tune_cancel(ui_fm_tune_t *tune);
 
 /* Left alone long enough to close by itself. */
 bool ui_fm_tune_idle(const ui_fm_tune_t *tune, uint32_t now_ms);
+
+/* Whether choosing FM opens the mode by itself: with no presets there is no
+ * list to step along and nothing for the keys to switch between, so tuning by
+ * hand is the only way to use the receiver - left to be found by a triple
+ * click, a newcomer hears noise on the band's edge and a list with no rows. */
+bool ui_fm_tune_opens_on_entry(size_t preset_count);
 
 bool ui_fm_tune_is_active(const ui_fm_tune_t *tune);
 uint32_t ui_fm_tune_khz(const ui_fm_tune_t *tune);

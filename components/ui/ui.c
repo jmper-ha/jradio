@@ -490,6 +490,8 @@ static ui_seek_t s_player_seek;
  * asked for from inside the mode - from which frequency, and since when. */
 static ui_fm_tune_t s_fm_tune;
 static bool s_fm_tune_following;
+// FM was chosen and the mode has not been offered yet; see ui_fm_tune_opens_on_entry().
+static bool s_fm_tune_entry_pending = true;
 static uint32_t s_fm_tune_follow_from;
 static uint32_t s_fm_tune_follow_ms;
 // A seek that comes back with no station leaves the digits where they were.
@@ -2206,9 +2208,13 @@ static void ui_update_fm_status(const player_snapshot_t *snapshot)
      * the name under them - the preset's or the station's own, or an empty
      * row - the radiotext, travelling when long, or an empty row, and the
      * reception marks. */
-    ui_set_state_line_from(snapshot, state, named ? now.heading : "");
+    /* A scan has left the station that was on: its name and radiotext are
+     * not what is heard now, and one word stands in their place. */
+    ui_set_state_line_from(snapshot, state,
+                           snapshot->fm_scanning ? ui_text(DEVICE_TEXT_FM_SCANNING)
+                                                 : (named ? now.heading : ""));
 #if UI_SRC_FM_TEXT_ROW
-    ui_scroller_set_text(&s_fm_text, radiotext);
+    ui_scroller_set_text(&s_fm_text, snapshot->fm_scanning ? "" : radiotext);
 #endif
     ui_update_fm_marks(snapshot);
 }
@@ -2612,19 +2618,13 @@ static bool ui_list_row_text(size_t list_index, char *text, size_t text_size,
     *active = false;
     *mark = NULL;
     if (ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_FM) {
-        // A preset is its name, or its frequency until it is given one.
+        // A preset is its frequency, and its name after it when it has one.
         fm_preset_t preset;
         if (!player_control_fm_preset_at(list_index, &preset)) {
             text[0] = '\0';
             return false;
         }
-        if (preset.name[0] != '\0') {
-            snprintf(text, text_size, "%s", preset.name);
-        } else {
-            char frequency[12];
-            player_fm_frequency_text(preset.khz, frequency, sizeof(frequency));
-            snprintf(text, text_size, "%s %s", frequency, ui_text(DEVICE_TEXT_FM_MHZ));
-        }
+        player_fm_list_label(preset.khz, preset.name, text, text_size);
         *active = list_index == station_list_active_index(&s_station_list);
         return true;
     }
@@ -6625,6 +6625,20 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
         ui_fm_tune_reset(&s_fm_tune);
         s_fm_tune_following = false;
         ui_fm_tune_paint(false);
+    }
+    if (snapshot->active_source != AUDIO_SOURCE_FM) {
+        s_fm_tune_entry_pending = true;
+    } else if (s_fm_tune_entry_pending) {
+        /* Once per time FM is chosen: the mode can be left and the source
+         * stay, and it must not come back by itself. Kept until the tuner has
+         * a frequency to begin from. */
+        if (!ui_fm_tune_opens_on_entry(player_control_fm_preset_count())) {
+            s_fm_tune_entry_pending = false;
+        } else if (ui_fm_tune_begin(&s_fm_tune, snapshot->fm_khz, ui_tick_get_ms())) {
+            s_fm_tune_following = false;
+            ui_fm_tune_paint(true);
+            s_fm_tune_entry_pending = false;
+        }
     }
     if (ui_seek_is_active(&s_player_seek) &&
         (!audio_source_is_files(snapshot->active_source) ||

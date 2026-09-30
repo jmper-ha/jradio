@@ -325,7 +325,9 @@
 
     'hw.opt.none': ['нет', 'none'],
     'hw.opt.pcm5102': ['PCM5102', 'PCM5102'],
-    'hw.opt.rda5807': ['RDA5807', 'RDA5807'],
+    'hw.opt.rda5807': ['RDA5807 (M, FP)', 'RDA5807 (M, FP)'],
+    'hw.opt.fm_i2s.none': ['Аналог (RDA5807M)', 'Analogue (RDA5807M)'],
+    'hw.opt.fm_i2s.0': ['I2S0 (RDA5807FP)', 'I2S0 (RDA5807FP)'],
     'hw.opt.jradio_bt': ['jradio-bt (ESP32 по UART)', 'jradio-bt (an ESP32 over UART)'],
     'hw.opt.st7796s_480_320': ['ST7796S 480×320', 'ST7796S 480×320'], 'hw.opt.st7796s_320_480': ['ST7796S 320×480 (портрет)', 'ST7796S 320×480 (portrait)'],
     'hw.opt.ili9488_480_320': ['ILI9488 480×320', 'ILI9488 480×320'], 'hw.opt.ili9488_320_480': ['ILI9488 320×480 (портрет)', 'ILI9488 320×480 (portrait)'],

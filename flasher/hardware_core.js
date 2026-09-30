@@ -104,8 +104,11 @@
     {key: 'i2s0_bclk', kind: 'opt_pin', device: 'i2s0', dflt: 18, define: 'I2S_BCLK_GPIO'},
     {key: 'i2s0_lrck', kind: 'opt_pin', device: 'i2s0', dflt: 17, define: 'I2S_LRCK_GPIO'},
     {key: 'i2s0_dout', kind: 'opt_pin', device: 'i2s0', dflt: 16, define: 'I2S_DOUT_GPIO'},
-    /* The one line into the S3: the FM tuner's sound, on the DAC's clocks. */
-    {key: 'i2s0_din', kind: 'opt_pin', device: 'i2s0', dflt: NONE, define: 'I2S_DIN_GPIO'},
+    /* The one line into the S3: the FM tuner's sound, on the DAC's clocks.
+       Only there while the tuner sends its sound over I2S - with the module's
+       analogue output there is no line, and a row for it is a row to get wrong. */
+    {key: 'i2s0_din', kind: 'opt_pin', device: 'i2s0', dflt: NONE, define: 'I2S_DIN_GPIO',
+     when: (values) => !isNone(values.fm_i2s)},
     {key: 'uart1_tx', kind: 'opt_pin', device: 'uart1', dflt: NONE, define: 'BT_UART_TX_GPIO'},
     {key: 'uart1_rx', kind: 'opt_pin', device: 'uart1', dflt: NONE, define: 'BT_UART_RX_GPIO'},
     /* The tuner's control bus, and later the PCM5122's: one pair however
@@ -207,7 +210,11 @@
      So the pin starts unset and the rules hold the file back until it is
      chosen. Only the USB pair is filled in, being the chip's and no choice;
      the module's UART pins are left as they are, and unwired they are what
-     the rules ask for. */
+     the rules ask for.
+
+     The FM tuner's own pins are the one exception, see suggestFmPin(): they
+     are proposed, in the open - the row shows GPIO 8, not a dash - and only
+     where the pin is free. */
   const ENABLE_VALUES = {
     ir: {ir_receiver: UNSET},
     amp: {amp_enable: UNSET},
@@ -274,16 +281,74 @@
     return !isNone(values[field.key]);
   }
 
+  /* Where the tuner's wires go on the board this was made for, in the order
+     they are tried: I2C on 8 and 3, the data line into the S3 on 39 and then
+     the pins that are free on the README board. A proposal, not a rule - the
+     first one that nothing else on the board already uses is put in the row,
+     and none at all when they are all taken, which is then the dash and the
+     check that asks for it. */
+  const FM_PIN_SUGGESTIONS = {
+    i2c0_sda: [8],
+    i2c0_scl: [3],
+    i2s0_din: [39, 14, 13, 38],
+  };
+
+  function suggestFmPin(values, key) {
+    const probe = {...values, [key]: NONE};
+    const taken = pinMap(probe);
+    const header = headerGpios();
+    for (const gpio of FM_PIN_SUGGESTIONS[key]) {
+      if (!header.includes(gpio) || taken[gpio]) continue;
+      const note = pinNote(gpio, values.module);
+      if (note && note.hard) continue;
+      return gpio;
+    }
+    return null;
+  }
+
+  /* Fills the tuner's unset pins with their proposals. Pins already chosen
+     are left alone. */
+  function withFmPins(values) {
+    const next = {...values};
+    const keys = ['i2c0_sda', 'i2c0_scl'];
+    if (!isNone(next.fm_i2s)) keys.push('i2s0_din');
+    for (const key of keys) {
+      if (!isNone(next[key])) continue;
+      const gpio = suggestFmPin(next, key);
+      if (gpio !== null) next[key] = gpio;
+    }
+    return next;
+  }
+
   function setDeviceEnabled(values, device, enabled) {
     const next = {...values};
     const field = FIELDS.find((item) => item.device === device && item.enables);
     if (!field) return next;
     if (!enabled) {
       next[field.key] = NONE;
+      /* The tuner's sound goes with it: a data line into the S3 for a tuner
+         that is not there is a wire the file would still claim. */
+      if (device === 'fm') {
+        next.fm_i2s = NONE;
+        next.i2s0_din = NONE;
+      }
       return next;
     }
     for (const [key, value] of Object.entries(ENABLE_VALUES[device] || {})) next[key] = value;
-    return next;
+    return device === 'fm' ? withFmPins(next) : next;
+  }
+
+  /* One value changed by hand, and what follows from it: the tuner's sound
+     choosing I2S brings its data line (proposed, where free), and choosing the
+     analogue output takes the line away. */
+  function changeValue(values, key, value) {
+    const next = {...values, [key]: value};
+    if (key !== 'fm_i2s') return next;
+    if (isNone(value)) {
+      next.i2s0_din = NONE;
+      return next;
+    }
+    return withFmPins(next);
   }
 
   /* The bus a device sits on, as the bus's field prefix: tft_spi=2 -> spi2. */
@@ -669,7 +734,7 @@
   return {
     NONE, RESET, UNSET, FORMAT, FIELDS, FIELD_BY_KEY, DEVICES, BUSES, HEADER, MODULES, DISPLAYS,
     RTC_GPIO_MAX, USB_PINS,
-    defaults, headerPins, headerGpios, pinNote, deviceEnabled, setDeviceEnabled,
+    defaults, headerPins, headerGpios, pinNote, deviceEnabled, setDeviceEnabled, changeValue,
     busOf, busUsed, signals, pinMap, validate, toCsv, parseCsv, toHeader, parseHeader, isNone, pinValue,
   };
 });

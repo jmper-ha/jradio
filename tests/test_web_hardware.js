@@ -435,6 +435,9 @@ function test_the_page_builds_every_part_and_follows_the_clicks() {
   const uart = sections.find((section) => section.dataset.device === 'uart1');
   assert.ok(uart.classList.contains('is-off'));
   assert.ok(uart.querySelectorAll('.hw-row').every((row) => row.hidden));
+  // The tuner's data line has no row until the sound is the I2S one.
+  const dinRow = parts.querySelectorAll('.hw-row').find((row) => row.dataset.key === 'i2s0_din');
+  assert.strictEqual(dinRow.hidden, true);
   /* SPI2 sits right under the display, shown and not edited, and has no
      MISO row: the card cannot share it. */
   const spi2 = sections.find((section) => section.dataset.device === 'spi2');
@@ -543,6 +546,48 @@ function test_the_page_builds_every_part_and_follows_the_clicks() {
   assert.strictEqual(csv.textContent, hw.toHeader(hw.defaults()));
 }
 
+/* The tuner is the one part whose pins are proposed: Ден's bench is on 8 and
+   3, and with a wire already there a proposal that took it would be a second
+   signal on the pin. */
+function test_the_fm_tuner_brings_its_pins_where_they_are_free() {
+  const on = hw.setDeviceEnabled(hw.defaults(), 'fm', true);
+  assert.strictEqual(on.i2c0_sda, 8);
+  assert.strictEqual(on.i2c0_scl, 3);
+  // Analogue until the sound is chosen: no data line.
+  assert.strictEqual(on.fm_i2s, hw.NONE);
+  assert.strictEqual(on.i2s0_din, hw.NONE);
+  assert.deepStrictEqual(hw.validate(on).errors, []);
+
+  // A pin something else is on is not taken; the row stays a dash.
+  const busy = hw.setDeviceEnabled({...hw.defaults(), ir_receiver: 8}, 'fm', true);
+  assert.strictEqual(busy.i2c0_sda, hw.NONE);
+  assert.strictEqual(busy.i2c0_scl, 3);
+  // One already chosen stays.
+  const chosen = hw.setDeviceEnabled({...hw.defaults(), i2c0_sda: 14}, 'fm', true);
+  assert.strictEqual(chosen.i2c0_sda, 14);
+
+  // The sound over I2S brings the data line, on 39 or the next free pin.
+  const digital = hw.changeValue(on, 'fm_i2s', '0');
+  assert.strictEqual(digital.fm_i2s, '0');
+  assert.strictEqual(digital.i2s0_din, 39);
+  assert.deepStrictEqual(hw.validate(digital).errors, []);
+  const amplified = hw.changeValue({...on, amp_enable: 39}, 'fm_i2s', '0');
+  assert.strictEqual(amplified.i2s0_din, 14);
+  // A line already chosen stays, and the analogue output takes it away.
+  assert.strictEqual(hw.changeValue({...on, i2s0_din: 13}, 'fm_i2s', '0').i2s0_din, 13);
+  assert.strictEqual(hw.changeValue(digital, 'fm_i2s', hw.NONE).i2s0_din, hw.NONE);
+  // So does the tuner going off.
+  const off = hw.setDeviceEnabled(digital, 'fm', false);
+  assert.strictEqual(off.fm_i2s, hw.NONE);
+  assert.strictEqual(off.i2s0_din, hw.NONE);
+  // Other values change as they always did.
+  assert.strictEqual(hw.changeValue(on, 'tft_cs', 12).tft_cs, 12);
+
+  // The data line is a signal only while the tuner sends its sound over I2S.
+  assert.strictEqual(hw.pinMap({...on, i2s0_din: 39})[39], undefined);
+  assert.deepStrictEqual(hw.pinMap(digital)[39], ['i2s0_din']);
+}
+
 function test_every_label_the_page_needs_is_in_the_dictionary() {
   const {window} = loadPage();
   const t = window.jradioI18n.t;
@@ -558,6 +603,10 @@ function test_every_label_the_page_needs_is_in_the_dictionary() {
   }
   for (const device of hw.DEVICES) {
     assert.notStrictEqual(t(`hw.dev.${device}`), `hw.dev.${device}`, `device ${device}`);
+  }
+  // The tuner's sound has words of its own, not "none" and "I2S0".
+  for (const option of ['none', '0']) {
+    assert.notStrictEqual(t(`hw.opt.fm_i2s.${option}`), `hw.opt.fm_i2s.${option}`, `fm_i2s ${option}`);
   }
   for (const code of ['pin_conflict', 'pin_missing', 'pin_not_on_header', 'pin_psram', 'pin_console', 'pin_usb',
                       'usb_pin_fixed', 'bus_unwired', 'bad_value', 'sleep_not_rtc', 'ir_not_rtc', 'spi_not_iomux']) {
@@ -603,6 +652,7 @@ test_two_signals_on_one_pin_is_a_conflict_but_a_shared_bus_is_not();
 test_the_pins_the_chip_keeps_for_itself();
 test_a_device_needs_the_pins_of_its_bus();
 test_switching_a_device_off_and_on();
+test_the_fm_tuner_brings_its_pins_where_they_are_free();
 test_the_warnings_that_do_not_stop_a_file();
 test_the_header_is_the_devkit();
 test_the_page_builds_every_part_and_follows_the_clicks();

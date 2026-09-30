@@ -60,7 +60,7 @@
   }
 
   function setValue(key, value) {
-    values = {...values, [key]: value};
+    values = hw.changeValue(values, key, value);
     sync();
     saveDraft();
   }
@@ -138,8 +138,13 @@
         element.value = value;
         /* A bus by its kind and number, as the single-bus link above: the
            number alone is shared between kinds. */
-        element.textContent = field.bus && value !== hw.NONE
-          ? `${field.bus.toUpperCase()}${value}` : OPTION_LABEL(value);
+        /* Some choices have words of their own: the tuner's sound is the
+           module's analogue output or an I2S line, and which chip that is is
+           the thing to tell the reader. */
+        const specific = t(`hw.opt.${field.key}.${value}`);
+        element.textContent = specific !== `hw.opt.${field.key}.${value}` ? specific
+          : field.bus && value !== hw.NONE ? `${field.bus.toUpperCase()}${value}`
+          : OPTION_LABEL(value);
         select.append(element);
       }
       select.addEventListener('change', () => setValue(field.key, select.value));

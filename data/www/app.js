@@ -349,7 +349,10 @@
   }
 
   function updatePlaylistLink() {
-    playlistLink.hidden = state.activeSource !== 'internet_radio';
+    /* The stations page has a tab for each: the radio's playlist, and the
+       tuner's presets, which it opens on when the tuner is what is playing. */
+    playlistLink.hidden = state.activeSource !== 'internet_radio' && state.activeSource !== 'fm';
+    playlistLink.href = state.activeSource === 'fm' ? '/playlist#fm' : '/playlist';
   }
 
   function stateLabel(value) {

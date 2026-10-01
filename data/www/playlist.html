@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark light">
   <meta name="theme-color" content="#0c0f13">
-  <title>jRadio — плейлист</title>
+  <title>jRadio — станции</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3CradialGradient id='g' cx='50%25' cy='45%25' r='55%25'%3E%3Cstop offset='0%25' stop-color='%237bffb0'/%3E%3Cstop offset='55%25' stop-color='%2322e06a'/%3E%3Cstop offset='100%25' stop-color='%230a8f3c'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='7' fill='%23121417'/%3E%3Ccircle cx='16' cy='16' r='11' fill='url(%23g)'/%3E%3Cpath d='M16 16 12.9 5.6a11 11 0 0 1 6.2 0Z' fill='%23103a22'/%3E%3Ccircle cx='16' cy='16' r='3.7' fill='%230d1a12'/%3E%3Ccircle cx='16' cy='16' r='12.3' fill='none' stroke='%238c96a3' stroke-width='1.4'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/style.css">
   <script src="/theme.js"></script>
@@ -36,7 +36,7 @@
 
       <nav class="source-tabs" data-i18n-aria="nav.sections" aria-label="Разделы">
         <a class="source-tab" href="/" data-i18n="nav.player">Плеер</a>
-        <a class="source-tab is-active" href="/playlist" aria-current="page" data-i18n="nav.playlist">Плейлист</a>
+        <a class="source-tab is-active" href="/playlist" aria-current="page" data-i18n="nav.playlist">Станции</a>
         <a class="source-tab" href="/settings" data-i18n="nav.settings">Настройки</a>
       </nav>
 
@@ -57,13 +57,22 @@
 
   <main class="page-shell">
     <div class="page-heading">
-      <h1 data-i18n="nav.playlist">Плейлист</h1>
-      <p data-i18n="playlist.lead">Импорт из файла заменяет список целиком, экспорт сохраняет то, что сейчас на экране.</p>
+      <h1 data-i18n="nav.playlist">Станции</h1>
+      <p data-i18n="stations.lead">Станции, которые играет устройство: интернет-радио и, если в нём есть тюнер, FM.</p>
     </div>
 
+    <!-- The FM tab is there only on a board with a tuner; fm.js says which. -->
+    <div id="stations-tabs" class="stations-tabs" role="tablist" data-i18n-aria="stations.kinds" aria-label="Виды станций">
+      <button id="stations-tab-radio" class="stations-tab is-active" type="button" role="tab" aria-selected="true"
+              aria-controls="stations-radio" data-station-tab="radio" data-i18n="stations.tab_radio">Интернет-радио</button>
+      <button id="stations-tab-fm" class="stations-tab" type="button" role="tab" aria-selected="false"
+              aria-controls="stations-fm" data-station-tab="fm" hidden data-i18n="stations.tab_fm">FM</button>
+    </div>
+
+    <div id="stations-radio" role="tabpanel" aria-labelledby="stations-tab-radio">
     <section class="card" aria-labelledby="playlist-title">
       <div class="card-head">
-        <h2 id="playlist-title" data-i18n="list.stations">Станции</h2>
+        <h2 id="playlist-title" data-i18n="stations.tab_radio">Интернет-радио</h2>
         <span id="playlist-status" class="settings-status" role="status" aria-live="polite" data-i18n="common.loading">Загрузка…</span>
         <div class="playlist-toolbar">
           <button id="playlist-add" class="secondary-button" type="button" data-i18n="playlist.add">Добавить</button>
@@ -85,10 +94,32 @@
 
       <p class="field-note" data-i18n="playlist.note_order">Порядок станций меняется перетаскиванием строки за ручку слева; с клавиатуры — стрелками вверх и вниз на ней. Иконка станции снимается кнопкой «Убрать» в её карточке.</p>
       <p class="field-note" data-i18n="playlist.note_format">Формат файла: одна станция на строку, поля разделены табуляцией — имя, URL, флаг «имя из списка» (0 или 1).</p>
+      <p class="field-note" data-i18n="playlist.lead">Импорт из файла заменяет список целиком, экспорт сохраняет то, что сейчас на экране.</p>
     </section>
+    </div>
+
+    <div id="stations-fm" role="tabpanel" aria-labelledby="stations-tab-fm" hidden>
+    <section class="card" id="fm-card" aria-labelledby="fm-title">
+      <div class="card-head">
+        <h2 id="fm-title" data-i18n="fm.title">FM-станции</h2>
+        <span id="fm-status" class="settings-status" role="status" aria-live="polite"></span>
+      </div>
+
+      <p class="field-note" data-i18n="note.fm">«Сканировать» проходит весь диапазон, и найденные станции заменяют этот список. Дайте им имена и картинки и сохраните: на устройстве список открывается двойным нажатием, а Prev и Next ищут ближайшую станцию.</p>
+
+      <ul id="fm-presets" class="saved-networks fm-list"></ul>
+      <p id="fm-presets-empty" class="empty-state" data-i18n="fm.saved_empty">Станций пока нет — нажмите «Сканировать»</p>
+
+      <div class="settings-actions">
+        <button id="fm-scan" class="secondary-button" type="button" data-i18n="fm.scan">Сканировать</button>
+        <button id="fm-save" class="primary-button" type="button" disabled data-i18n="fm.save">Сохранить</button>
+      </div>
+    </section>
+    </div>
   </main>
 
   <noscript><p class="noscript-message">Для редактора плейлиста требуется JavaScript. / JavaScript is required for the playlist editor.</p></noscript>
   <script src="/playlist.js"></script>
+  <script src="/fm.js"></script>
 </body>
 </html>

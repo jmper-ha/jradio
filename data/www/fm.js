@@ -1,4 +1,4 @@
-/* The settings page's FM section: the presets the device plays, and the scan
+/* The stations page's FM tab: the presets the device plays, and the scan
    that finds them.
 
    The device only plays presets; this is where they are made. A scan runs on
@@ -16,12 +16,53 @@
    scaled here and goes up with the list when it is saved - see
    uploadPendingPictures().
 
-   settings.js decides whether the card is shown at all; the list is loaded
-   regardless, since it is a few hundred bytes. */
+   The list is loaded whether or not the tab is shown, since it is a few
+   hundred bytes. */
 (() => {
   'use strict';
 
   const t = (key, values) => window.jradioI18n.t(key, values);
+
+  /* The stations page has a tab for the radio's playlist and one for the
+     tuner's presets, which is there only on a board with a tuner - the
+     settings say so. The choice rides in the address, so the player's link
+     can open the page on FM and a reload comes back to the same tab. */
+  function setupTabs() {
+    const tabs = [...document.querySelectorAll('[data-station-tab]')];
+    if (tabs.length === 0) return;
+    const panels = {
+      radio: document.querySelector('#stations-radio'),
+      fm: document.querySelector('#stations-fm'),
+    };
+    const show = (name) => {
+      for (const tab of tabs) {
+        const active = tab.dataset.stationTab === name;
+        tab.classList.toggle('is-active', active);
+        tab.setAttribute('aria-selected', active ? 'true' : 'false');
+      }
+      for (const [key, panel] of Object.entries(panels)) {
+        if (panel) panel.hidden = key !== name;
+      }
+    };
+    for (const tab of tabs) {
+      tab.addEventListener('click', () => {
+        show(tab.dataset.stationTab);
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, '', tab.dataset.stationTab === 'fm' ? '#fm' : '#radio');
+        }
+      });
+    }
+    const fmTab = tabs.find((tab) => tab.dataset.stationTab === 'fm');
+    window.fetch('/api/settings', {cache: 'no-store'})
+      .then((response) => response.json())
+      .then((settings) => {
+        const available = settings && settings.available && settings.available.fm === true;
+        if (fmTab) fmTab.hidden = !available;
+        const wanted = window.location && window.location.hash === '#fm';
+        show(available && wanted ? 'fm' : 'radio');
+      })
+      .catch(() => show('radio'));
+  }
 
   const card = document.querySelector('#fm-card');
   if (card === null) return;
@@ -422,5 +463,6 @@
      rebuild them for their labels. */
   window.jradioI18n.onChange(renderPresets);
 
+  setupTabs();
   load();
 })();

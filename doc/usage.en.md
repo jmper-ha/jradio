@@ -132,7 +132,8 @@ an ordinary slider under the track title.
 
 ### Internet radio
 
-The station list is edited in the web interface (the Playlist page): name,
+The station list is edited in the web interface (the Stations page, the
+"Internet radio" tab): name,
 address, picture, order by dragging. Up to 99 stations, HTTP and HTTPS, the
 track title comes from the stream. After a drop the device reconnects itself.
 
@@ -167,7 +168,7 @@ and Next inside the mode search the air. Any other button leaves and puts back
 the frequency you began on, and ten seconds without action close the mode by
 themselves, keeping what is tuned.
 
-**Presets** are made in the web interface: Settings → FM stations → Scan. The
+**Presets** are made in the web interface: Stations → the FM tab → Scan. The
 pass up the band takes up to a minute; the screen says "Scanning…" in place
 of the name and the radiotext meanwhile. What it finds, with the names the
 stations send over RDS, replaces the list - after a warning - and the names
@@ -355,7 +356,7 @@ Web interface only. "Download archive" gives a zip with the Wi-Fi networks,
 the settings, the Yandex token, the weather key, the table of keys the
 remote was taught and the FM stations with their pictures - everything the
 device knows about itself. The station
-list is exported separately, on the playlist page. Restore takes the whole
+list is exported separately, on the Stations page. Restore takes the whole
 archive or one file from it and reboots the device.
 
 It is for rewriting the data partition: download → flash → restore. **The

@@ -14,8 +14,8 @@ meant for a trusted home network - do not expose it.**
 | Page | What is on it |
 |---|---|
 | **Player** (`/`) | What is playing, the cover, volume, position, buttons; source choice and the lists of stations, files and server folders; the sleep timer and the alarm |
-| **Playlist** (`/playlist`) | The station list editor: name, address, picture, order by dragging; trying an address by ear right on the device; import and export |
-| **Settings** (`/settings`) | Everything the device has, plus Wi-Fi networks, the name, time and zone, weather, the alarm, the sleep timer, Yandex Music, Bluetooth speakers, FM stations, the backup, About |
+| **Stations** (`/playlist`) | Two tabs. "Internet radio": the station list editor - name, address, picture, order by dragging, trying an address by ear right on the device, import and export. "FM" (there when the build has a tuner): the presets, the scan of the band, pictures |
+| **Settings** (`/settings`) | Everything the device has, plus Wi-Fi networks, the name, time and zone, weather, the alarm, the sleep timer, Yandex Music, Bluetooth speakers, the backup, About |
 | **Remote** (`/remote`) | Learning the IR remote's keys; opened by a button in the settings when the build has a receiver |
 
 On a phone the settings sections fold: one open, the rest as headers. Live
@@ -39,7 +39,9 @@ goes to the device on Save. Up to 99 stations.
 
 ## FM stations
 
-The settings section is there when the build has a tuner. A row of the list is
+The "FM" tab of the Stations page is there when the build has a tuner; the
+address `/playlist#fm` opens the page on it, and the stations button on the
+player page leads there while FM is playing. A row of the list is
 "picture, frequency, name" and the buttons up, down, remove. "Scan" starts a
 pass up the band on the device, shows which frequency it is at, and when it
 ends replaces the list with what it found: after a warning, keeping the names
@@ -69,7 +71,7 @@ OpenWeatherMap key), `remote.csv` (the keys the remote was taught) and
 `fm_presets.csv` (the FM stations), and with them those stations' pictures,
 `radio_img/<name>`. `POST /api/restore` takes the whole archive or one file;
 the device checks all files before writing, writes them and reboots. The
-station list is not in the archive - it has its own export on the playlist
+station list is not in the archive - it has its own export on the Stations
 page.
 
 **The archive holds the Wi-Fi password, the token and the key in clear

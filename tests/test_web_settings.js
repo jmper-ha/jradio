@@ -104,7 +104,6 @@ const ids = [
   'device-weather-now',
   'backup-status', 'backup-file', 'backup-restore',
   'remote-card',
-  'fm-card',
 ];
 const elements = Object.fromEntries(ids.map((id) => [`#${id}`, new Element()]));
 /* The alarm's seven day buttons, in the order the markup puts them and each
@@ -1508,19 +1507,6 @@ function lastYandexTimer() {
   });
   assert.equal(remoteCard.hidden, true);
   assert.equal(remoteLearns.length, 0);
-
-  /* The FM section the same way: shown only on a board with a tuner. */
-  const fmCard = elements['#fm-card'];
-  sendEvent(second, {
-    type: 'settings.update', revision: 122,
-    settings: {...settingsReply, available: {...settingsReply.available, fm: true}},
-  });
-  assert.equal(fmCard.hidden, false);
-  sendEvent(second, {
-    type: 'settings.update', revision: 123,
-    settings: {...settingsReply, available: {...settingsReply.available, fm: false}},
-  });
-  assert.equal(fmCard.hidden, true);
 
   /* And the choice outlives the load, so a device that reboots after a restore
      comes back with the section that was being worked in. */

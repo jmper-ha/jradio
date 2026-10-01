@@ -663,13 +663,9 @@
      go to: the receiver is a part of the board, and a board without it has
      nothing to learn. */
   const remoteCard = document.querySelector('#remote-card');
-  /* The FM section likewise: fm.js fills it, this only says whether the board
-     has a tuner to scan with. */
-  const fmCard = document.querySelector('#fm-card');
   function applyRemote(payload) {
     const available = isObject(payload.available) ? payload.available : {};
     remoteCard.hidden = available.remote !== true;
-    fmCard.hidden = available.fm !== true;
   }
 
   function applyWifiMode(wifi) {

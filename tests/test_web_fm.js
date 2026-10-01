@@ -1,6 +1,6 @@
 'use strict';
 
-/* The settings page's FM section (fm.js): the saved presets from
+/* The stations page's FM tab (fm.js): the saved presets from
    /api/fm/presets, edited and sent back whole, and a scan polled from
    /api/fm/scan whose stations replace the list after a warning. Run under a fake DOM, the way the
    remote's page is tested. */
@@ -65,6 +65,9 @@ class Element {
 
 
 let presetsText = 'Первая\t88300\n\t101200\n';
+// What the settings say of the board: whether it has a tuner at all.
+let tunerFitted = true;
+const historyCalls = [];
 const iconPosts = [];
 let blobCount = 0;
 
@@ -96,6 +99,9 @@ function fakeFetch(url, options) {
   if (url === '/api/fm/presets') {
     return Promise.resolve({ok: true, text: () => Promise.resolve(presetsText)});
   }
+  if (url === '/api/settings') {
+    return Promise.resolve({ok: true, json: () => Promise.resolve({available: {fm: tunerFitted}})});
+  }
   if (url === '/api/station-icon' && method === 'POST') {
     iconPosts.push({type: options.headers['Content-Type'], body: options.body});
     return Promise.resolve({ok: true, json: () => Promise.resolve({file: 'p1.png'})});
@@ -108,8 +114,26 @@ function fakeFetch(url, options) {
   return Promise.resolve({ok: true, json: () => Promise.resolve(scanReply)});
 }
 
-function loadPage() {
+function loadPage(options = {}) {
   const body = new Element('body');
+  /* The stations page's two tabs and their panels, when asked for; the
+     FM tab starts hidden, as the markup has it. */
+  if (options.tabs) {
+    for (const [id, panel] of [['stations-tab-radio', 'radio'], ['stations-tab-fm', 'fm']]) {
+      const tab = new Element('button');
+      tab.id = id;
+      tab.dataset.stationTab = panel;
+      tab.setAttribute('data-station-tab', panel);
+      tab.hidden = panel === 'fm';
+      body.append(tab);
+    }
+    for (const [id, hidden] of [['stations-radio', false], ['stations-fm', true]]) {
+      const panel = new Element('div');
+      panel.id = id;
+      panel.hidden = hidden;
+      body.append(panel);
+    }
+  }
   const card = new Element('section');
   card.id = 'fm-card';
   body.append(card);
@@ -140,6 +164,8 @@ function loadPage() {
   const window = {
     localStorage: {getItem: () => null, setItem: () => {}},
     document,
+    location: {hash: options.hash || ''},
+    history: {replaceState: (state, title, url) => { historyCalls.push(url); }},
     fetch: fakeFetch,
     confirm: (text) => { confirms.push(text); return confirmAnswer; },
     setTimeout: (callback, ms) => { timers.set(++timerId, {callback, ms}); return timerId; },
@@ -263,7 +289,46 @@ async function main() {
   assert.strictEqual(rows('fm-presets').length, 3);
   assert.match($('fm-status').textContent, /не изменён/);
 
+  await tabsMain();
   console.log('web fm tests passed');
+}
+
+/* The page's two tabs: FM is there only on a board with a tuner, the address
+   can open the page on it, and a click on a tab shows its panel and writes the
+   choice to the address. */
+async function tabsMain() {
+  const tab = (document, panel) => document.body.querySelector(`#stations-tab-${panel}`);
+  const panel = (document, name) => document.body.querySelector(`#stations-${name}`);
+
+  tunerFitted = false;
+  let {document} = loadPage({tabs: true, hash: '#fm'});
+  await settle();
+  assert.strictEqual(tab(document, 'fm').hidden, true);
+  assert.strictEqual(panel(document, 'radio').hidden, false);
+  assert.strictEqual(panel(document, 'fm').hidden, true);
+
+  tunerFitted = true;
+  ({document} = loadPage({tabs: true, hash: '#fm'}));
+  await settle();
+  assert.strictEqual(tab(document, 'fm').hidden, false);
+  assert.strictEqual(panel(document, 'fm').hidden, false);
+  assert.strictEqual(panel(document, 'radio').hidden, true);
+  assert.strictEqual(tab(document, 'fm').getAttribute('aria-selected'), 'true');
+  assert.strictEqual(tab(document, 'radio').getAttribute('aria-selected'), 'false');
+
+  tab(document, 'radio').emit('click');
+  assert.strictEqual(panel(document, 'radio').hidden, false);
+  assert.strictEqual(panel(document, 'fm').hidden, true);
+  assert.strictEqual(historyCalls.at(-1), '#radio');
+  tab(document, 'fm').emit('click');
+  assert.strictEqual(panel(document, 'fm').hidden, false);
+  assert.strictEqual(historyCalls.at(-1), '#fm');
+
+  // Without the address asking for FM the page opens on the radio's tab.
+  ({document} = loadPage({tabs: true}));
+  await settle();
+  assert.strictEqual(tab(document, 'fm').hidden, false);
+  assert.strictEqual(panel(document, 'radio').hidden, false);
 }
 
 main().catch((error) => {

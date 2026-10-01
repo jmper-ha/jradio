@@ -408,6 +408,28 @@ int player_fm_signal_bars(uint8_t rssi, int previous)
     return bars;
 }
 
+bool player_fm_name_watch_step(player_fm_name_watch_t *watch, const char *rds_name, uint32_t khz,
+                               bool eligible, uint32_t now_ms, char *out, size_t out_size)
+{
+    if (watch == NULL || out == NULL || out_size == 0U) return false;
+    if (!eligible || rds_name == NULL || rds_name[0] == '\0' ||
+        strlen(rds_name) >= PLAYER_FM_NAME_WATCH_MAX || strlen(rds_name) >= out_size ||
+        player_fm_name_is_frequency(rds_name, khz)) {
+        watch->watching = false;
+        return false;
+    }
+    if (!watch->watching || strcmp(watch->name, rds_name) != 0) {
+        snprintf(watch->name, sizeof(watch->name), "%s", rds_name);
+        watch->since_ms = now_ms;
+        watch->watching = true;
+        return false;
+    }
+    if ((uint32_t)(now_ms - watch->since_ms) < PLAYER_FM_NAME_HOLD_MS) return false;
+    snprintf(out, out_size, "%s", watch->name);
+    watch->watching = false;
+    return true;
+}
+
 bool player_fm_name_is_frequency(const char *name, uint32_t khz)
 {
     if (name == NULL) return false;

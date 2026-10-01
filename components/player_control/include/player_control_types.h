@@ -290,6 +290,27 @@ int player_fm_signal_bars(uint8_t rssi, int previous);
  * frequency's, in tenths of a MHz. */
 bool player_fm_name_is_frequency(const char *name, uint32_t khz);
 
+/* A preset with no name takes the one its station sends over RDS while it is
+ * listened to. A scan hears the station for a few seconds only, and some
+ * stations send nothing in them that is worth taking - the name comes later,
+ * to anyone who stays. The name has to hold still for PLAYER_FM_NAME_HOLD_MS
+ * first: stations rotate their messages, and the one caught on its way past
+ * would be written down for good. */
+#define PLAYER_FM_NAME_HOLD_MS 4000U
+#define PLAYER_FM_NAME_WATCH_MAX 32U
+typedef struct {
+    char name[PLAYER_FM_NAME_WATCH_MAX];
+    uint32_t since_ms;
+    bool watching;
+} player_fm_name_watch_t;
+
+/* One look. `eligible` is the caller's word that the tuner has settled on a
+ * preset that has no name and the station's code has come clean. True once,
+ * with `out` the name to give it, after the same name has been sent for the
+ * whole hold; a name that only repeats the frequency is never taken. */
+bool player_fm_name_watch_step(player_fm_name_watch_t *watch, const char *rds_name, uint32_t khz,
+                               bool eligible, uint32_t now_ms, char *out, size_t out_size);
+
 /* What a scan does with a station it has just stopped on. A strong station
  * stops a seek on the channel beside it as well as on its own - 93.9 and
  * 94.0, 104.1 and 104.2 on the bench - and two stations 100 kHz apart are not

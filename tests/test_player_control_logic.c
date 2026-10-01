@@ -895,6 +895,40 @@ static void test_a_list_row_leads_with_the_frequency(void)
     assert(strcmp(text, "88.3 R") == 0);
 }
 
+static void test_a_preset_takes_the_name_that_holds_still(void)
+{
+    player_fm_name_watch_t watch = {0};
+    char name[32] = "";
+    // Held for the whole of the hold, and then once.
+    assert(!player_fm_name_watch_step(&watch, "RADIO 7", 104700U, true, 1000U, name, sizeof(name)));
+    assert(!player_fm_name_watch_step(&watch, "RADIO 7", 104700U, true, 1000U + PLAYER_FM_NAME_HOLD_MS - 1U,
+                                      name, sizeof(name)));
+    assert(player_fm_name_watch_step(&watch, "RADIO 7", 104700U, true, 1000U + PLAYER_FM_NAME_HOLD_MS, name,
+                                     sizeof(name)));
+    assert(strcmp(name, "RADIO 7") == 0);
+    // Taken: the next look starts over rather than answering again.
+    assert(!player_fm_name_watch_step(&watch, "RADIO 7", 104700U, true, 9000U, name, sizeof(name)));
+
+    // A station that rotates its messages is not caught on one of them.
+    assert(!player_fm_name_watch_step(&watch, "ZVEZDA", 95600U, true, 20000U, name, sizeof(name)));
+    assert(!player_fm_name_watch_step(&watch, "ZVEZDA", 95600U, true, 23000U, name, sizeof(name)));
+    assert(!player_fm_name_watch_step(&watch, "WEATHER", 95600U, true, 24000U, name, sizeof(name)));
+    assert(!player_fm_name_watch_step(&watch, "WEATHER", 95600U, true, 27999U, name, sizeof(name)));
+    assert(player_fm_name_watch_step(&watch, "WEATHER", 95600U, true, 28000U, name, sizeof(name)));
+
+    // Not on a preset with a name, nor before the station's code is clean: the
+    // clock does not run, and a name that arrives later is held from then.
+    assert(!player_fm_name_watch_step(&watch, "KULTURA", 91600U, false, 30000U, name, sizeof(name)));
+    assert(!player_fm_name_watch_step(&watch, "KULTURA", 91600U, true, 36000U, name, sizeof(name)));
+    assert(!player_fm_name_watch_step(&watch, "KULTURA", 91600U, true, 36000U + PLAYER_FM_NAME_HOLD_MS - 1U,
+                                      name, sizeof(name)));
+    // Nothing sent, or only the frequency repeated, is no name.
+    assert(!player_fm_name_watch_step(&watch, "", 91600U, true, 50000U, name, sizeof(name)));
+    assert(!player_fm_name_watch_step(&watch, "*95.6FM*", 95600U, true, 60000U, name, sizeof(name)));
+    assert(!player_fm_name_watch_step(&watch, "*95.6FM*", 95600U, true, 90000U, name, sizeof(name)));
+    assert(!player_fm_name_watch_step(NULL, "A", 1U, true, 0U, name, sizeof(name)));
+}
+
 static void test_the_signal_is_a_scale_that_does_not_flicker(void)
 {
     assert(player_fm_signal_bars(0U, -1) == 0);
@@ -953,6 +987,7 @@ int main(void)
     test_the_tuner_is_a_source_while_it_answers_and_seeks_on_the_keys();
     test_a_frequency_reads_with_one_decimal();
     test_a_list_row_leads_with_the_frequency();
+    test_a_preset_takes_the_name_that_holds_still();
     test_tuning_by_hand_is_the_tuners_alone();
     test_a_preset_is_chosen_without_a_network();
     test_snapshot_equality_notices_the_frequency();

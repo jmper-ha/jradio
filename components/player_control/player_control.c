@@ -7,6 +7,7 @@
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -1109,6 +1110,36 @@ bool player_control_fm_icon_in_use(const char *icon)
     return used;
 }
 
+/* Writes the presets as they are in memory to their file, beside it and
+ * renamed over it, as the web page does. False when it could not. */
+static bool player_fm_presets_save(void)
+{
+    char *text = player_fm_alloc(FM_PRESETS_TEXT_MAX_LEN);
+    fm_presets_t *copy = player_fm_alloc(sizeof(*copy));
+    if (text == NULL || copy == NULL) {
+        free(text);
+        free(copy);
+        return false;
+    }
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    *copy = *s_fm_presets;
+    xSemaphoreGive(s_fm_lock);
+    const size_t length = fm_presets_write(copy, text, FM_PRESETS_TEXT_MAX_LEN);
+    free(copy);
+    bool saved = false;
+    FILE *file = fopen(FM_PRESETS_TEMP_PATH, "w");
+    if (file != NULL) {
+        saved = fwrite(text, 1U, length, file) == length;
+        saved = fclose(file) == 0 && saved;
+    }
+    free(text);
+    if (!saved || rename(FM_PRESETS_TEMP_PATH, FM_PRESETS_PATH) != 0) {
+        (void)unlink(FM_PRESETS_TEMP_PATH);
+        return false;
+    }
+    return true;
+}
+
 static size_t player_fm_preset_index(uint32_t khz)
 {
     if (s_fm_presets == NULL) return PLAYER_ITEM_NONE;
@@ -1610,6 +1641,53 @@ static void player_sync_station_icon(void)
     player_publish_station_icon(icon);
 }
 
+/* A preset with no name takes the one its station sends over RDS while it is
+ * listened to - see player_fm_name_watch_step(). Run from this task and not
+ * the tuner's own, because it writes a file, and a task whose stack is in
+ * PSRAM must never be the one the flash is written under. */
+static void player_fm_learn_name(void)
+{
+    static player_fm_name_watch_t watch;
+    char name[PLAYER_FM_NAME_WATCH_MAX] = "";
+    bool eligible = false;
+    uint32_t khz = 0U;
+    size_t index = PLAYER_ITEM_NONE;
+    if (atomic_load_explicit(&s_active_source, memory_order_acquire) == AUDIO_SOURCE_FM &&
+        atomic_load_explicit(&s_fm_on, memory_order_acquire) && s_fm_presets != NULL &&
+        !player_fm_scanning() && !atomic_load_explicit(&s_fm_seeking, memory_order_acquire)) {
+        khz = atomic_load_explicit(&s_fm_khz, memory_order_acquire);
+        index = player_fm_preset_index(khz);
+    }
+    char heard[RDS_PS_TEXT_MAX] = "";
+    if (index != PLAYER_ITEM_NONE) {
+        xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+        eligible = s_fm_presets->presets[index].name[0] == '\0' && rds_decoder_heard(&s_fm_rds);
+        snprintf(heard, sizeof(heard), "%s", s_fm_rds.ps_text);
+        xSemaphoreGive(s_fm_lock);
+    }
+    if (!player_fm_name_watch_step(&watch, heard, khz, eligible, player_now_ms(), name,
+                                   sizeof(name))) {
+        return;
+    }
+    // Looked at again under the lock: the list may have been replaced meanwhile.
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    const bool still = index < s_fm_presets->count && s_fm_presets->presets[index].khz == khz &&
+                       s_fm_presets->presets[index].name[0] == '\0';
+    if (still) {
+        snprintf(s_fm_presets->presets[index].name, sizeof(s_fm_presets->presets[index].name),
+                 "%s", name);
+    }
+    xSemaphoreGive(s_fm_lock);
+    if (!still) return;
+    if (player_fm_presets_save()) {
+        ESP_LOGI(TAG, "fm: %u kHz is called \"%s\"", (unsigned)khz, name);
+        // The lists, on the panel and in the browser, read the names afresh.
+        atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
+    } else {
+        ESP_LOGW(TAG, "fm: could not save the name \"%s\" for %u kHz", name, (unsigned)khz);
+    }
+}
+
 static void player_control_task(void *arg)
 {
     (void)arg;
@@ -1625,6 +1703,7 @@ static void player_control_task(void *arg)
                 : portMAX_DELAY;
         if (xQueueReceive(s_command_queue, &command, wait) != pdTRUE) {
             player_sync_station_icon();
+            player_fm_learn_name();
             continue;
         }
 

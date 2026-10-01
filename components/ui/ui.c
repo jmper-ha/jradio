@@ -2093,7 +2093,7 @@ static void ui_create_fm_marks(void)
     lv_obj_remove_style_all(s_fm_marks);
     lv_obj_remove_flag(s_fm_marks, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(s_fm_marks, UI_SRC_FM_MARKS_X, UI_SRC_FM_MARKS_Y);
-    lv_obj_set_size(s_fm_marks, UI_SRC_STREAM_W, UI_SRC_FM_MARKS_H);
+    lv_obj_set_size(s_fm_marks, UI_SRC_FM_MARKS_W, UI_SRC_FM_MARKS_H);
     lv_obj_add_flag(s_fm_marks, LV_OBJ_FLAG_HIDDEN);
 
     /* Where the signal blocks and the RDS frame stand: after the word on one

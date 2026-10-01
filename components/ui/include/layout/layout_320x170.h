@@ -107,15 +107,20 @@
  * has made. */
 #define UI_SRC_FM_DIGITS_PX 40
 
-/* FM: no row for the radiotext - the digits, the name and the readings line
- * fill the space above the rule on this panel - so the marks stay on the
- * readings line and the radiotext is the page's alone. */
-#define UI_SRC_FM_TEXT_ROW 0
+/* FM: the radiotext has the readings line - the codec and the bitrate are
+ * not FM's - under the name, as on every other panel. The reception marks go
+ * under the cover, in a line, a little above the footer's row where the
+ * buffer gauge is on other sources: FM has no use for that slot, nor for the
+ * position bar beside it. They are 160 px wide there, short of the like mark
+ * and the Bluetooth rune that stand further along. */
+#define UI_SRC_FM_TEXT_ROW 1
 #define UI_SRC_FM_TEXT_X UI_SRC_STREAM_X
 #define UI_SRC_FM_TEXT_Y UI_SRC_STREAM_Y
 #define UI_SRC_FM_TEXT_W UI_SRC_STREAM_W
-#define UI_SRC_FM_MARKS_X UI_SRC_STREAM_X
-#define UI_SRC_FM_MARKS_Y UI_SRC_STREAM_Y
+#define UI_SRC_FM_MARKS_IN_FOOTER 1
+#define UI_SRC_FM_MARKS_X UI_SRC_BUFFER_X
+#define UI_SRC_FM_MARKS_Y (UI_SRC_BUFFER_Y - 8)
+#define UI_SRC_FM_MARKS_W 160
 
 /* The pause badge sits on the cover rather than in the middle of the screen,
  * where it would cover the names - the cover is the one block on its side

@@ -90,15 +90,25 @@
  * has made. */
 #define UI_SRC_FM_DIGITS_PX 48
 
-/* FM: the rows under the digits are the name's and the rule's, so the
- * radiotext and the reception marks go in the column beside the cover where
- * the readings are, one line each. */
+/* FM: the digits take the title and track rows, the station's name the
+ * artist row under them, and the radiotext the row under the name, across the
+ * screen and centred like it, between the name and the level meter. The
+ * reception marks are what the column beside the cover is for, one under
+ * another from its top, as on the larger portrait panel: the column is narrow
+ * and the three marks in a line did not fit it. */
 #define UI_SRC_FM_TEXT_ROW 1
-#define UI_SRC_FM_TEXT_X UI_SRC_STREAM_X
-#define UI_SRC_FM_TEXT_Y UI_SRC_STREAM_Y
-#define UI_SRC_FM_TEXT_W UI_SRC_STREAM_W
+#define UI_SRC_FM_TEXT_X UI_SRC_TEXT_X
+/* Standing on the rule's line, not on the name's row end: the two rows are a
+ * line of 19 px each, 38 together, and there are 34 between the artist row and
+ * the rule, so the radiotext's box starts four pixels into the name's. The
+ * glyphs of 14 px text are nowhere near that - the room is the line's own
+ * leading above and below them. */
+#define UI_SRC_FM_TEXT_Y (UI_SRC_RULE_TOP - UI_SRC_LINE_H)
+#define UI_SRC_FM_TEXT_W UI_SRC_TEXT_W
+#define UI_SRC_FM_TEXT_CENTRED 1
 #define UI_SRC_FM_MARKS_X UI_SRC_STREAM_X
-#define UI_SRC_FM_MARKS_Y (UI_SRC_STREAM_Y + UI_SRC_LINE_H)
+#define UI_SRC_FM_MARKS_Y UI_SRC_STREAM_Y
+#define UI_SRC_FM_MARKS_STACKED 1
 
 /* The faces this shape is laid out for. Every row pitch and every line height
  * below follows from them, so a panel that wants bigger text states it here

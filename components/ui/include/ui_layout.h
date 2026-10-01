@@ -375,6 +375,15 @@
 #define UI_SRC_FM_MARKS_STACKED 0
 #endif
 #define UI_SRC_FM_MARKS_H ((UI_SRC_FM_MARKS_STACKED ? 3 : 1) * UI_SRC_LINE_H)
+/* The marks stand in the footer's left slot - where the buffer gauge is on
+ * other sources and FM has none - for a layout with no room for them above the
+ * rule. Then they are as wide as that slot, not as the column. */
+#ifndef UI_SRC_FM_MARKS_IN_FOOTER
+#define UI_SRC_FM_MARKS_IN_FOOTER 0
+#endif
+#ifndef UI_SRC_FM_MARKS_W
+#define UI_SRC_FM_MARKS_W UI_SRC_STREAM_W
+#endif
 /* The radiotext's row is centred in its width when it runs the width of the
  * screen under the name, where the name is centred too; beside the cover it is
  * read down the left edge. */
@@ -383,8 +392,11 @@
 #endif
 /* The FM rows - radiotext and reception marks - finish above the rule, and do
  * not stand on each other wherever a layout puts them. */
-_Static_assert(UI_SRC_FM_MARKS_Y + UI_SRC_FM_MARKS_H <= UI_SRC_RULE_TOP,
+_Static_assert(UI_SRC_FM_MARKS_IN_FOOTER || UI_SRC_FM_MARKS_Y + UI_SRC_FM_MARKS_H <= UI_SRC_RULE_TOP,
                "the FM reception marks run into the rule");
+_Static_assert(UI_SRC_FM_MARKS_Y + UI_SRC_FM_MARKS_H <= TFT_HEIGHT &&
+                   UI_SRC_FM_MARKS_X + UI_SRC_FM_MARKS_W <= TFT_WIDTH,
+               "the FM reception marks run off the panel");
 _Static_assert(!UI_SRC_FM_TEXT_ROW || UI_SRC_FM_TEXT_Y + UI_SRC_LINE_H <= UI_SRC_RULE_TOP,
                "the FM radiotext runs into the rule");
 _Static_assert(!UI_SRC_FM_TEXT_ROW ||

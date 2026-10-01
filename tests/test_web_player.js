@@ -509,6 +509,23 @@ assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.next_item');
 elements['#previous-item'].emit('click');
 assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
 
+/* The tuner has the two keys as well: on the device they search the band for
+   the nearest station, and the browser's copy asks for the same. */
+sendEvent(second, {
+  type: 'player.update', revision: 8, active_source: 'fm',
+  player: {state: 'playing', mode: 'FM-радио', artist: '', title: 'RADIO 7',
+           context: '104.7 МГц', codec: 'FM', bitrate_kbps: 0, sample_rate_hz: 0, error: ''},
+});
+assert.equal(elements['#previous-item'].hidden, false);
+assert.equal(elements['#next-item'].hidden, false);
+assert.equal(elements['#next-item'].disabled, false);
+elements['#next-item'].emit('click');
+assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.next_item');
+sendEvent(second, {
+  type: 'player.update', revision: 8, active_source: 'internet_radio',
+  player: player('Радио снова'),
+});
+
 (async () => {
   /* Position and cover come over REST rather than the socket: the device
      diffs its snapshot and broadcasts on every change, so a second counter

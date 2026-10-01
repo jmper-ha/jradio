@@ -1399,16 +1399,27 @@ button.network-name:hover { color: var(--accent); }
 
 /* The stations page's tabs: one per kind of station, in the look of the
    header's. */
-.stations-tabs {
+.stations-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+}
+.stations-tabs, .stations-io {
   display: flex;
   gap: .4rem;
-  margin: 0 0 .9rem;
   flex-wrap: wrap;
 }
+#stations-io-status:empty { display: none; }
 .stations-tab {
-  padding: .4rem .9rem;
+  /* The corners and the height of the buttons below, which these sit above. */
+  height: 30px;
+  padding: 0 .75rem;
+  display: inline-flex;
+  align-items: center;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--surface);
   color: var(--muted);
   font: inherit;

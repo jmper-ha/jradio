@@ -767,9 +767,12 @@
        so they belong to the sources that are a list. The rotor is
        not one: its next track is the skip button above, and it has no previous
        one at all. Nothing wraps, so at either end of the list the key does
-       nothing; the device refuses it rather than rolling over. */
+       nothing; the device refuses it rather than rolling over. The tuner has
+       them too, as on the device: there they search the band for the nearest
+       station down or up, which is the chip's own seek. */
     const steppable = state.activeSource === 'usb' || state.activeSource === 'sd' ||
-      state.activeSource === 'internet_radio' || state.activeSource === 'dlna';
+      state.activeSource === 'internet_radio' || state.activeSource === 'dlna' ||
+      state.activeSource === 'fm';
     const stepReady = steppable && state.connected &&
       player.state !== 'stopped' && player.state !== 'error';
     previousItem.hidden = !steppable;

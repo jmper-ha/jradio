@@ -179,7 +179,7 @@ function loadPage(options = {}) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'data', 'www', file), 'utf8'), context,
                     {filename: file});
   }
-  return {document};
+  return {document, window};
 }
 
 const settle = async () => { for (let i = 0; i < 4; ++i) await new Promise((resolve) => setImmediate(resolve)); };
@@ -290,6 +290,7 @@ async function main() {
   assert.match($('fm-status').textContent, /не изменён/);
 
   await tabsMain();
+  await sharedIoMain();
   console.log('web fm tests passed');
 }
 
@@ -329,6 +330,41 @@ async function tabsMain() {
   await settle();
   assert.strictEqual(tab(document, 'fm').hidden, false);
   assert.strictEqual(panel(document, 'radio').hidden, false);
+}
+
+/* The page's one import and one export are playlist.js's; what they need of
+   the presets is offered through window.jradioStations: whether there is a
+   tuner at all, what is in the list and the pictures it names, and taking a
+   file's list in place of it. */
+async function sharedIoMain() {
+  presetsText = 'Первая\t88300\tp1.png\nВторая\t101200\n';
+  tunerFitted = false;
+  let {window} = loadPage({tabs: true});
+  await settle();
+  const fm = window.jradioStations.fm;
+  assert.strictEqual(fm.available(), false);
+  tunerFitted = true;
+  ({window} = loadPage({tabs: true}));
+  await settle();
+  const shared = window.jradioStations.fm;
+  assert.strictEqual(shared.available(), true);
+  assert.strictEqual(shared.isDirty(), false);
+
+  // What is on the page, in the file's shape, with the pictures it names.
+  const out = shared.exportData();
+  assert.strictEqual(out.text, 'Первая\t88300\tp1.png\nВторая\t101200\n');
+  assert.strictEqual(out.count, 2);
+  assert.strictEqual(JSON.stringify(out.pictures.map((picture) => picture.name)), '["p1.png"]');
+
+  // A file's list in place of it: the picture it names is found in the archive
+  // and held, the one it does not is counted, and the page has unsaved work.
+  const pictures = new Map([['a.png', {type: 'image/png', size: 900}]]);
+  const result = await shared.importData('Третья\t95600\ta.png\nЧетвёртая\t97000\tgone.png\n', pictures);
+  assert.strictEqual(JSON.stringify(result), '{"count":2,"missing":1}');
+  assert.strictEqual(shared.isDirty(), true);
+  const again = shared.exportData();
+  assert.match(again.text, /^Третья\t95600\tfm\d+\.png\nЧетвёртая\t97000\n$/);
+  assert.strictEqual(again.pictures.length, 1);
 }
 
 main().catch((error) => {

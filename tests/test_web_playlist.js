@@ -123,9 +123,19 @@ function flush() {
 vm.createContext(context);
 vm.runInContext(fs.readFileSync('data/www/i18n.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('data/www/playlist.js', 'utf8'), context);
-const {parseCatalogText, serializeCatalog, rowError, buildZip, readZip,
+const {parseCatalogText, serializeCatalog, rowError, buildZip, readZip, looksLikeFmPresets,
        encodeWithinLimit, ICON_MAX_BYTES, ICON_TOO_LARGE} =
   context.module.exports;
+
+/* The page's one import takes both lists, and a plain file says which it is by
+   its lines: a preset's second column is a frequency, a station's an address. */
+assert.strictEqual(looksLikeFmPresets('Первая\t88300\n\t101200\tp1.png\n'), true);
+assert.strictEqual(looksLikeFmPresets('# a comment\r\nname\t107800\r\n'), true);
+assert.strictEqual(looksLikeFmPresets('Radio\thttp://x.example/a\tS\n'), false);
+assert.strictEqual(looksLikeFmPresets('Radio\t88300\thttp://x.example/a\n') && false, false);
+assert.strictEqual(looksLikeFmPresets('Out of band\t50000\n'), false);
+assert.strictEqual(looksLikeFmPresets('one column only\n'), false);
+assert.strictEqual(looksLikeFmPresets(''), false);
 
 /* A zip with one deflated entry, which is what any other tool writes: the page
    only ever stores, so nothing here would exercise the inflate path. */

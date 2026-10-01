@@ -57,6 +57,7 @@
       .then((response) => response.json())
       .then((settings) => {
         const available = settings && settings.available && settings.available.fm === true;
+        tunerAvailable = available;
         if (fmTab) fmTab.hidden = !available;
         const wanted = window.location && window.location.hash === '#fm';
         show(available && wanted ? 'fm' : 'radio');
@@ -82,6 +83,9 @@
      here that it does not, and the two are never both set. */
   let presets = [];
   let dirty = false;
+  // Whether the board has a tuner, which the settings say; the import and the
+  // export of the page are told only once it is known.
+  let tunerAvailable = false;
 
   function setStatus(text, error) {
     status.textContent = text;
@@ -149,9 +153,22 @@
     });
   }
 
+  /* A picture that is not on the device yet carries a name of its own, which an
+     export has to call it by before the device has named it. */
+  let nextPictureId = 1;
   function makePicture(blob) {
     const type = blob.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
-    return {blob, type, url: URL.createObjectURL(blob)};
+    return {blob, type, url: URL.createObjectURL(blob),
+            name: `fm${nextPictureId++}.${type === 'image/jpeg' ? 'jpg' : 'png'}`};
+  }
+
+  /* Straight through when it already fits: one out of an archive was scaled by
+     whoever exported it, and decoding and encoding it again would cost quality
+     to arrive where it started. */
+  function fitPicture(blob) {
+    const known = blob.type === 'image/png' || blob.type === 'image/jpeg';
+    if (known && blob.size <= ICON_MAX_BYTES) return Promise.resolve(makePicture(blob));
+    return scaleImage(blob).then(makePicture);
   }
 
   function dropPicture(preset) {
@@ -456,6 +473,71 @@
         setStatus(t('fm.load_failed'), true);
       });
   }
+
+  /* What the page's one import and one export - they are playlist.js's, and
+     serve both lists - need of this one. */
+  function pictureBytes(preset) {
+    if (preset.picture !== null) {
+      return preset.picture.blob.arrayBuffer().then((buffer) => new Uint8Array(buffer));
+    }
+    return window.fetch(`/api/station-icon?file=${encodeURIComponent(preset.icon)}`)
+      .then((response) => {
+        if (!response || response.ok !== true) throw new Error('missing');
+        return response.arrayBuffer();
+      })
+      .then((buffer) => new Uint8Array(buffer));
+  }
+
+  function exportData() {
+    const named = presets.map((preset) => ({
+      ...preset, icon: preset.picture !== null ? preset.picture.name : preset.icon}));
+    return {
+      text: serialise(named),
+      count: presets.length,
+      pictures: presets
+        .filter((preset) => preset.picture !== null || preset.icon !== '')
+        .map((preset) => ({
+          name: preset.picture !== null ? preset.picture.name : preset.icon,
+          bytes: () => pictureBytes(preset),
+        })),
+    };
+  }
+
+  /* The presets of a file in place of these: lenient like the device's own
+     reading, the pictures it names taken from the archive and held until the
+     list is saved, and a name that finds none counted. */
+  async function importData(text, pictures) {
+    const list = parse(text);
+    let missing = 0;
+    for (const preset of list) {
+      const wanted = preset.icon;
+      preset.icon = '';
+      if (wanted === '') continue;
+      const blob = pictures.get(wanted);
+      if (blob === undefined) {
+        missing += 1;
+        continue;
+      }
+      try {
+        preset.picture = await fitPicture(blob);
+      } catch (error) {
+        missing += 1;
+      }
+    }
+    presets.forEach(dropPicture);
+    presets = list;
+    renderPresets();
+    markDirty();
+    return {count: list.length, missing};
+  }
+
+  window.jradioStations = window.jradioStations || {};
+  window.jradioStations.fm = {
+    available: () => tunerAvailable,
+    isDirty: () => dirty,
+    exportData,
+    importData,
+  };
 
   scanButton.addEventListener('click', startScan);
   saveButton.addEventListener('click', save);

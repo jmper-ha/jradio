@@ -16,6 +16,9 @@
   const STATION_MAX_ENTRIES = 99;
 
   const statusEl = document.querySelector('#playlist-status');
+  // Where an import or an export says how it went: above both lists, since the
+  // two buttons serve both and the radio's card may be the one that is hidden.
+  const ioStatusEl = document.querySelector('#stations-io-status');
   const rowsEl = document.querySelector('#playlist-rows');
   const emptyEl = document.querySelector('#playlist-empty');
   const addButton = document.querySelector('#playlist-add');
@@ -278,6 +281,13 @@
     statusEl.textContent = text;
     statusEl.classList.toggle('is-error', isError);
     statusEl.classList.remove('is-success');
+  }
+
+  function setIoStatus(text, isError = false) {
+    const target = ioStatusEl || statusEl;
+    target.textContent = text;
+    target.classList.toggle('is-error', isError);
+    target.classList.remove('is-success');
   }
 
   function setSaveStatus(text, isError = false) {
@@ -976,21 +986,36 @@
       .then((buffer) => new Uint8Array(buffer));
   }
 
-  /* A plain file while there are no pictures, so a list stays something any
-     other player can read; an archive once there is one, because a browser
-     downloads a file and a playlist with pictures is a folder. */
-  async function exportPlaylist() {
+  /* The tuner's presets, when there is a tuner and its tab has loaded them: the
+     FM script offers them through window.jradioStations, since the two pages
+     of the editor share this one pair of buttons. */
+  function fmPart() {
+    const fm = window.jradioStations && window.jradioStations.fm;
+    return fm && fm.available() ? fm : null;
+  }
+
+  /* One export for both lists. A plain file while there is nothing but the
+     playlist and no pictures, so a list stays something any other player can
+     read; an archive once there is anything more, because a browser downloads
+     a file and a playlist with pictures, or with presets beside it, is a
+     folder: playlist.csv, fm_presets.csv, and every picture either names under
+     radio_img/ - the pictures are the device's own and have one directory. */
+  async function exportStations() {
+    const fm = fmPart();
+    const fmData = fm ? fm.exportData() : null;
     const named = state.rows.filter((row) => iconNameOf(row) !== '');
     const text = serializeCatalog(
       state.rows.map((row) => ({...row, icon: iconNameOf(row)})));
-    if (named.length === 0) {
+    const fmPictures = fmData ? fmData.pictures : [];
+    if (named.length === 0 && fmPictures.length === 0 && !fmData) {
       download(new Blob([text], {type: 'text/plain;charset=utf-8'}), 'playlist.csv');
-      setStatus(t('playlist.exported', {n: state.rows.length}));
+      setIoStatus(t('playlist.exported', {n: state.rows.length}));
       return;
     }
-    setStatus(t('playlist.packing'));
+    setIoStatus(t('playlist.packing'));
     try {
       const files = [{name: 'playlist.csv', bytes: encoder.encode(text)}];
+      if (fmData) files.push({name: 'fm_presets.csv', bytes: encoder.encode(fmData.text)});
       const taken = new Set();
       for (const row of named) {
         const name = iconNameOf(row);
@@ -999,10 +1024,19 @@
         taken.add(name);
         files.push({name: `radio_img/${name}`, bytes: await pictureBytes(row)});
       }
-      download(new Blob([buildZip(files)], {type: 'application/zip'}), 'playlist.zip');
-      setStatus(t('playlist.exported_icons', {n: state.rows.length, icons: files.length - 1}));
+      for (const picture of fmPictures) {
+        if (taken.has(picture.name)) continue;
+        taken.add(picture.name);
+        files.push({name: `radio_img/${picture.name}`, bytes: await picture.bytes()});
+      }
+      const pictureCount = taken.size;
+      download(new Blob([buildZip(files)], {type: 'application/zip'}),
+               fmData ? 'stations.zip' : 'playlist.zip');
+      setIoStatus(fmData
+        ? t('stations.exported_all', {n: state.rows.length, fm: fmData.count, icons: pictureCount})
+        : t('playlist.exported_icons', {n: state.rows.length, icons: pictureCount}));
     } catch (error) {
-      setStatus(t('playlist.export_failed'), true);
+      setIoStatus(t('playlist.export_failed'), true);
     }
   }
 
@@ -1021,78 +1055,120 @@
     return '';
   }
 
-  /* Pictures are indexed by their bare name and the playlist is whatever is
-     not a picture: an archive written here puts them under radio_img/, but one
-     assembled by hand may nest them anywhere or not at all. */
+  /* Pictures are indexed by their bare name, the tuner's presets are the file
+     called fm_presets, and the playlist is whatever else is not a picture: an
+     archive written here puts the pictures under radio_img/, but one assembled
+     by hand may nest them anywhere or not at all. Either list may be missing -
+     an archive of presets alone is a way to move them. */
   function readArchive(bytes) {
     return readZip(bytes).then((files) => {
       const pictures = new Map();
       let playlist = null;
+      let fm = null;
       files.forEach((file) => {
         const type = pictureTypeOf(file.name);
+        const base = file.name.slice(file.name.lastIndexOf('/') + 1);
         if (type !== '') {
-          pictures.set(file.name.slice(file.name.lastIndexOf('/') + 1),
-                       new Blob([file.bytes], {type}));
+          pictures.set(base, new Blob([file.bytes], {type}));
+        } else if (/^fm_presets/i.test(base)) {
+          if (fm === null) fm = new TextDecoder().decode(file.bytes);
         } else if (playlist === null) {
-          playlist = file;
+          playlist = new TextDecoder().decode(file.bytes);
         }
       });
-      if (playlist === null) throw new Error('no playlist');
-      return {text: new TextDecoder().decode(playlist.bytes), pictures};
+      if (playlist === null && fm === null) throw new Error('no playlist');
+      return {playlist, fm, pictures};
+    });
+  }
+
+  /* A plain file says nothing of what it is but its lines: a preset's second
+     column is a frequency in kHz, a station's is an address, and no address is
+     a whole number of kilohertz. */
+  function looksLikeFmPresets(text) {
+    const lines = text.split('\n').map((line) => line.replace(/\r$/, ''))
+      .filter((line) => line.trim() !== '' && !line.trim().startsWith('#'));
+    return lines.length > 0 && lines.every((line) => {
+      const fields = line.split('\t');
+      if (fields.length < 2) return false;
+      const khz = Number(fields[1].trim());
+      return Number.isInteger(khz) && khz >= 87000 && khz <= 108000;
     });
   }
 
   const ZIP_SIGNATURE = [0x50, 0x4b, 0x03, 0x04];
 
-  function importPlaylist(file) {
-    if (state.loaded && isDirty() &&
-        !window.confirm(t('playlist.unsaved_import'))) {
-      return;
-    }
-    setStatus(t('playlist.reading'));
+  /* One import for both lists: the file says which it holds - an archive by
+     its members, a plain file by its lines - and each list it holds replaces
+     the one on the page, to be saved from there. */
+  function importStations(file) {
+    setIoStatus(t('playlist.reading'));
     readFileBytes(file)
       .then((bytes) => {
         const archive = bytes.length > ZIP_SIGNATURE.length &&
           ZIP_SIGNATURE.every((value, index) => bytes[index] === value);
-        return archive
-          ? readArchive(bytes)
-          : {text: new TextDecoder().decode(bytes), pictures: new Map()};
+        if (archive) return readArchive(bytes);
+        const text = new TextDecoder().decode(bytes);
+        return looksLikeFmPresets(text)
+          ? {playlist: null, fm: text, pictures: new Map()}
+          : {playlist: text, fm: null, pictures: new Map()};
       })
-      .then(async ({text, pictures}) => {
-        const {rows, skipped, truncated} = parseCatalogText(text);
-        let missing = 0;
-        for (const row of rows) {
-          /* The name in the file names a picture in the archive, not one on
-             the device: it is cleared either way, and what is found takes its
-             place until the playlist is saved. */
-          const wanted = row.icon;
-          row.icon = '';
-          if (wanted === '') continue;
-          const blob = pictures.get(wanted);
-          if (blob === undefined) {
-            missing += 1;
-            continue;
+      .then(async ({playlist, fm: fmText, pictures}) => {
+        const fm = fmPart();
+        const hasFm = fmText !== null;
+        const dirty = (playlist !== null && state.loaded && isDirty()) ||
+          (hasFm && fm && fm.isDirty());
+        if (dirty && !window.confirm(t('playlist.unsaved_import'))) {
+          setIoStatus('');
+          return;
+        }
+        const notes = [];
+        const done = [];
+        if (playlist !== null) {
+          const {rows, skipped, truncated} = parseCatalogText(playlist);
+          let missing = 0;
+          for (const row of rows) {
+            /* The name in the file names a picture in the archive, not one on
+               the device: it is cleared either way, and what is found takes
+               its place until the playlist is saved. */
+            const wanted = row.icon;
+            row.icon = '';
+            if (wanted === '') continue;
+            const blob = pictures.get(wanted);
+            if (blob === undefined) {
+              missing += 1;
+              continue;
+            }
+            try {
+              row.picture = await fitPicture(blob);
+            } catch (error) {
+              missing += 1;
+            }
           }
-          try {
-            row.picture = await fitPicture(blob);
-          } catch (error) {
-            missing += 1;
+          state.rows.forEach(dropPicture);
+          state.rows = rows;
+          renderRows();
+          updateSaveAvailability();
+          if (skipped > 0) notes.push(t('playlist.rows_skipped', {n: skipped}));
+          if (truncated) notes.push(t('playlist.kept_first', {n: STATION_MAX_ENTRIES}));
+          if (missing > 0) notes.push(t('playlist.icons_missing', {n: missing}));
+          done.push(t('playlist.imported', {n: rows.length}));
+        }
+        if (hasFm) {
+          if (fm) {
+            const result = await fm.importData(fmText, pictures);
+            if (result.missing > 0) notes.push(t('playlist.icons_missing', {n: result.missing}));
+            done.push(t('stations.imported_fm', {n: result.count}));
+          } else {
+            notes.push(t('stations.no_tuner'));
           }
         }
-        state.rows.forEach(dropPicture);
-        state.rows = rows;
-        renderRows();
-        updateSaveAvailability();
-        const notes = [];
-        if (skipped > 0) notes.push(t('playlist.rows_skipped', {n: skipped}));
-        if (truncated) notes.push(t('playlist.kept_first', {n: STATION_MAX_ENTRIES}));
-        if (missing > 0) notes.push(t('playlist.icons_missing', {n: missing}));
-        setStatus(notes.length > 0
-          ? t('playlist.imported_notes', {n: rows.length, notes: notes.join(', ')})
-          : t('playlist.imported', {n: rows.length}));
+        const head = done.join('; ');
+        setIoStatus(notes.length > 0
+          ? t('stations.imported_notes', {done: head, notes: notes.join(', ')})
+          : (head !== '' ? head : t('playlist.read_failed')), head === '');
       })
       .catch(() => {
-        setStatus(t('playlist.read_failed'), true);
+        setIoStatus(t('playlist.read_failed'), true);
       });
   }
 
@@ -1144,12 +1220,12 @@
   }
 
   addButton.addEventListener('click', addRow);
-  exportButton.addEventListener('click', exportPlaylist);
+  exportButton.addEventListener('click', exportStations);
   saveButton.addEventListener('click', savePlaylist);
   importInput.addEventListener('change', () => {
     const file = importInput.files && importInput.files[0];
     importInput.value = '';
-    if (file) importPlaylist(file);
+    if (file) importStations(file);
   });
 
   /* This page has no socket - it is a form over one REST endpoint - so the
@@ -1175,6 +1251,6 @@
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {parseCatalogText, serializeCatalog, rowError, buildZip, readZip,
-                      encodeWithinLimit, ICON_MAX_BYTES, ICON_TOO_LARGE};
+                      looksLikeFmPresets, encodeWithinLimit, ICON_MAX_BYTES, ICON_TOO_LARGE};
   }
 })();

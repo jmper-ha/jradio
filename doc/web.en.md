@@ -14,7 +14,7 @@ meant for a trusted home network - do not expose it.**
 | Page | What is on it |
 |---|---|
 | **Player** (`/`) | What is playing, the cover, volume, position, buttons; source choice and the lists of stations, files and server folders; the sleep timer and the alarm |
-| **Stations** (`/playlist`) | Two tabs. "Internet radio": the station list editor - name, address, picture, order by dragging, trying an address by ear right on the device, import and export. "FM" (there when the build has a tuner): the presets, the scan of the band, pictures |
+| **Stations** (`/playlist`) | Two tabs. "Internet radio": the station list editor - name, address, picture, order by dragging, trying an address by ear right on the device. "FM" (there when the build has a tuner): the presets, the scan of the band, pictures. Above the tabs a shared Import and Export for both lists |
 | **Settings** (`/settings`) | Everything the device has, plus Wi-Fi networks, the name, time and zone, weather, the alarm, the sleep timer, Yandex Music, Bluetooth speakers, the backup, About |
 | **Remote** (`/remote`) | Learning the IR remote's keys; opened by a button in the settings when the build has a receiver |
 
@@ -32,8 +32,15 @@ keep a volume correction in the third column are read too: the name and the
 address are taken.
 
 A station's picture is chosen in the browser, shrunk to 96 pixels and stored
-on the device. Export gives `playlist.csv`, or `playlist.zip` with the
-pictures when there are any; import takes either. The order is changed by
+on the device. The Import and Export buttons stand above the tabs and serve
+both lists. Export gives `playlist.csv`, or `playlist.zip` with the pictures
+when there are any; on a board with a tuner it is always the archive
+`stations.zip`, holding `playlist.csv`, `fm_presets.csv` and the pictures of
+both lists in `radio_img/`. Import takes the archive, any of those files on its
+own, and a playlist.csv from elsewhere; it works out which list a file holds
+(by its lines: a preset's second column is a frequency in kHz, a station's an
+address) and puts it in the page's list in place of the one there, to be sent
+to the device on Save. The order is changed by
 dragging the handle left of the name (or with the arrow keys). Everything
 goes to the device on Save. Up to 99 stations.
 

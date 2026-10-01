@@ -61,13 +61,24 @@
       <p data-i18n="stations.lead">Станции, которые играет устройство: интернет-радио и, если в нём есть тюнер, FM.</p>
     </div>
 
-    <!-- The FM tab is there only on a board with a tuner; fm.js says which. -->
-    <div id="stations-tabs" class="stations-tabs" role="tablist" data-i18n-aria="stations.kinds" aria-label="Виды станций">
-      <button id="stations-tab-radio" class="stations-tab is-active" type="button" role="tab" aria-selected="true"
-              aria-controls="stations-radio" data-station-tab="radio" data-i18n="stations.tab_radio">Интернет-радио</button>
-      <button id="stations-tab-fm" class="stations-tab" type="button" role="tab" aria-selected="false"
-              aria-controls="stations-fm" data-station-tab="fm" hidden data-i18n="stations.tab_fm">FM</button>
+    <div class="stations-bar">
+      <!-- The FM tab is there only on a board with a tuner; fm.js says which. -->
+      <div id="stations-tabs" class="stations-tabs" role="tablist" data-i18n-aria="stations.kinds" aria-label="Виды станций">
+        <button id="stations-tab-radio" class="stations-tab is-active" type="button" role="tab" aria-selected="true"
+                aria-controls="stations-radio" data-station-tab="radio" data-i18n="stations.tab_radio">Интернет-радио</button>
+        <button id="stations-tab-fm" class="stations-tab" type="button" role="tab" aria-selected="false"
+                aria-controls="stations-fm" data-station-tab="fm" hidden data-i18n="stations.tab_fm">FM</button>
+      </div>
+      <!-- One import and one export for both lists: the file says which it holds. -->
+      <div class="stations-io">
+        <label class="secondary-button file-button" for="playlist-import-input">
+          <span data-i18n="playlist.import">Импорт</span>
+          <input id="playlist-import-input" type="file" accept=".csv,.zip,text/plain,application/zip" hidden>
+        </label>
+        <button id="playlist-export" class="secondary-button" type="button" data-i18n="playlist.export">Экспорт</button>
+      </div>
     </div>
+    <p id="stations-io-status" class="settings-status" role="status" aria-live="polite"></p>
 
     <div id="stations-radio" role="tabpanel" aria-labelledby="stations-tab-radio">
     <section class="card" aria-labelledby="playlist-title">
@@ -76,11 +87,6 @@
         <span id="playlist-status" class="settings-status" role="status" aria-live="polite" data-i18n="common.loading">Загрузка…</span>
         <div class="playlist-toolbar">
           <button id="playlist-add" class="secondary-button" type="button" data-i18n="playlist.add">Добавить</button>
-          <label class="secondary-button file-button" for="playlist-import-input">
-            <span data-i18n="playlist.import">Импорт</span>
-            <input id="playlist-import-input" type="file" accept=".csv,.zip,text/plain,application/zip" hidden>
-          </label>
-          <button id="playlist-export" class="secondary-button" type="button" data-i18n="playlist.export">Экспорт</button>
         </div>
       </div>
 

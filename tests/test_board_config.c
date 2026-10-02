@@ -37,6 +37,7 @@ static void normalise(const board_issue_t *issue, char *out, size_t size)
         snprintf(out, size, "%s %s %s", name, issue->key, issue->detail);
         break;
     case BOARD_ISSUE_BAD_VALUE:
+    case BOARD_ISSUE_ADC_WITH_FM_I2S:
     case BOARD_ISSUE_PIN_MISSING:
         snprintf(out, size, "%s %s", name, issue->key);
         break;

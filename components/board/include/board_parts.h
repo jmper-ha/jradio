@@ -88,9 +88,18 @@
 
 #define FM_TUNER_NONE 0
 /* RDA5807 receiver: FM band, I2C control (components/fm_tuner). The M module
- * has a line-level output of its own; the FP adds I2S, not yet used. The
- * player has no FM source yet, so for now the tuner is only found at boot. */
+ * has a line-level output of its own, which is all it has; the FP adds an I2S
+ * output. Either one's sound reaches the S3 over I2S0's input line - the FP
+ * directly, the M through an ADC (AUDIO_ADC_PCM1808) - and plays through the
+ * DAC like any source. */
 #define FM_TUNER_RDA5807 1
+
+#define AUDIO_ADC_NONE 0
+/* PCM1808 stereo ADC: line-level analogue in, I2S out. A slave of the DAC's
+ * clocks, and it wants a master clock of 256 x fs on its SCKI pin, which the
+ * S3 brings out of its I2S0 (I2S_MCLK_GPIO). Here it takes the RDA5807M's
+ * analogue output into the S3; it could as well take a line input. */
+#define AUDIO_ADC_PCM1808 1
 
 #define BLUETOOTH_NONE 0
 /* Classic Bluetooth A2DP sink on this chip. Named but unreachable: the

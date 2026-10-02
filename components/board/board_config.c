@@ -38,6 +38,7 @@ typedef enum {
     DEV_SD,
     DEV_BLUETOOTH,
     DEV_FM,
+    DEV_ADC,
     DEV_FEATURES,
 } device_t;
 
@@ -86,6 +87,7 @@ static const field_t k_fields[] = {
     {"i2s0_lrck", KIND_OPT_PIN, DEV_I2S0, AT(i2s0_lrck), false, NULL, {{NULL, 0}}},
     {"i2s0_dout", KIND_OPT_PIN, DEV_I2S0, AT(i2s0_dout), false, NULL, {{NULL, 0}}},
     {"i2s0_din", KIND_OPT_PIN, DEV_I2S0, AT(i2s0_din), false, NULL, {{NULL, 0}}},
+    {"i2s0_mclk", KIND_OPT_PIN, DEV_I2S0, AT(i2s0_mclk), false, NULL, {{NULL, 0}}},
     {"uart1_tx", KIND_OPT_PIN, DEV_UART1, AT(uart1_tx), false, NULL, {{NULL, 0}}},
     {"uart1_rx", KIND_OPT_PIN, DEV_UART1, AT(uart1_rx), false, NULL, {{NULL, 0}}},
     {"i2c0_sda", KIND_OPT_PIN, DEV_I2C0, AT(i2c0_sda), false, NULL, {{NULL, 0}}},
@@ -130,6 +132,9 @@ static const field_t k_fields[] = {
     {"fm_i2c", KIND_CHOICE, DEV_FM, AT(fm_i2c), false, NULL, {{"0", 0}, {NULL, 0}}},
     {"fm_i2s", KIND_CHOICE, DEV_FM, AT(fm_i2s), false, NULL,
      {{"none", BOARD_BUS_NONE}, {"0", 0}, {NULL, 0}}},
+    {"adc", KIND_CHOICE, DEV_ADC, AT(adc), false, NULL,
+     {{"none", AUDIO_ADC_NONE}, {"pcm1808", AUDIO_ADC_PCM1808}, {NULL, 0}}},
+    {"adc_i2s", KIND_CHOICE, DEV_ADC, AT(adc_i2s), false, NULL, {{"0", 0}, {NULL, 0}}},
     {"yandex_music", KIND_BOOL, DEV_FEATURES, AT(yandex_music), false, NULL, {{NULL, 0}}},
     {"dlna", KIND_BOOL, DEV_FEATURES, AT(dlna), false, NULL, {{NULL, 0}}},
 };
@@ -187,6 +192,8 @@ void board_config_clear(board_config_t *config)
     config->bluetooth = BLUETOOTH_NONE;
     config->fm_tuner = FM_TUNER_NONE;
     config->fm_i2s = BOARD_BUS_NONE;
+    config->adc = AUDIO_ADC_NONE;
+    config->adc_i2s = 0U;
     config->sd_spi = 3U;
     config->dac_i2s = 0U;
     config->bt_uart = 1U;
@@ -328,6 +335,7 @@ static bool device_enabled(const board_config_t *config, device_t device)
     case DEV_SD: return config->sd_cs != BOARD_PIN_NONE;
     case DEV_BLUETOOTH: return config->bluetooth != BLUETOOTH_NONE;
     case DEV_FM: return config->fm_tuner != FM_TUNER_NONE;
+    case DEV_ADC: return config->adc != AUDIO_ADC_NONE;
     default: return true;
     }
 }
@@ -340,7 +348,9 @@ static bool bus_used(const board_config_t *config, device_t bus)
     switch (bus) {
     case DEV_SPI2: return true;  // the display's, and the display is always there
     case DEV_SPI3: return device_enabled(config, DEV_SD) && config->sd_spi == 3U;
-    case DEV_I2S0: return config->dac_i2s == 0U || (bt && config->bt_i2s == 0U);
+    case DEV_I2S0:
+        return config->dac_i2s == 0U || (bt && config->bt_i2s == 0U) ||
+               (device_enabled(config, DEV_ADC) && config->adc_i2s == 0U);
     case DEV_UART1: return bt && config->bt_uart == 1U;
     case DEV_I2C0: return device_enabled(config, DEV_FM) && config->fm_i2c == 0U;
     default: return false;
@@ -361,6 +371,14 @@ static bool signal_live(const board_config_t *config, const field_t *field)
     if (!is_pin_kind(field->kind)) return false;
     if (!device_enabled(config, field->device)) return false;
     if (is_bus(field->device) && !bus_used(config, field->device)) return false;
+    /* The two lines only the tuner's sound needs are not on the bus until it
+     * does: the data line while the sound comes in over I2S - from the chip or
+     * from an ADC - and the master clock while an ADC is on the board. A
+     * number left in the file for either is not a wire. */
+    const bool tuner_i2s = device_enabled(config, DEV_FM) && config->fm_i2s == 0U;
+    const bool adc = device_enabled(config, DEV_ADC) && config->adc_i2s == 0U;
+    if (strcmp(field->key, "i2s0_din") == 0) return tuner_i2s || adc;
+    if (strcmp(field->key, "i2s0_mclk") == 0) return adc;
     return true;
 }
 
@@ -408,6 +426,7 @@ static const char *device_name(device_t device)
     case DEV_DAC: return "dac";
     case DEV_BLUETOOTH: return "bluetooth";
     case DEV_FM: return "fm";
+    case DEV_ADC: return "adc";
     default: return "";
     }
 }
@@ -490,6 +509,8 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     static const char *const k_i2c0[] = {"i2c0_sda", "i2c0_scl"};
     // The tuner sends on the DAC's clocks and has a data line of its own.
     static const char *const k_i2s0_in[] = {"i2s0_bclk", "i2s0_lrck", "i2s0_din"};
+    // An ADC is a slave of the DAC's clocks, and wants a master clock as well.
+    static const char *const k_i2s0_adc[] = {"i2s0_bclk", "i2s0_lrck", "i2s0_din", "i2s0_mclk"};
     (void)k_spi2;  // SPI2's pins are fixed and always there
     if (device_enabled(config, DEV_SD) && config->sd_spi == 3U) {
         check_bus(config, report, DEV_SD, k_spi3, 3U);
@@ -504,6 +525,13 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     }
     if (device_enabled(config, DEV_FM) && config->fm_i2s == 0U) {
         check_bus(config, report, DEV_FM, k_i2s0_in, 3U);
+    }
+    if (device_enabled(config, DEV_ADC) && config->adc_i2s == 0U) {
+        check_bus(config, report, DEV_ADC, k_i2s0_adc, 4U);
+        /* One input line, one source of what comes down it. */
+        if (device_enabled(config, DEV_FM) && config->fm_i2s == 0U) {
+            add_issue(report, false, BOARD_ISSUE_ADC_WITH_FM_I2S, "adc", "fm_i2s", -1);
+        }
     }
 
     // Only RTC pins can wake the chip.
@@ -540,6 +568,7 @@ const char *board_config_issue_name(board_issue_code_t code)
     case BOARD_ISSUE_USB_PIN_FIXED: return "usb_pin_fixed";
     case BOARD_ISSUE_BUS_UNWIRED: return "bus_unwired";
     case BOARD_ISSUE_BAD_VALUE: return "bad_value";
+    case BOARD_ISSUE_ADC_WITH_FM_I2S: return "adc_with_fm_i2s";
     case BOARD_ISSUE_SLEEP_NOT_RTC: return "sleep_not_rtc";
     case BOARD_ISSUE_IR_NOT_RTC: return "ir_not_rtc";
     case BOARD_ISSUE_SPI_NOT_IOMUX: return "spi_not_iomux";

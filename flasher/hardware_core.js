@@ -108,7 +108,13 @@
        Only there while the tuner sends its sound over I2S - with the module's
        analogue output there is no line, and a row for it is a row to get wrong. */
     {key: 'i2s0_din', kind: 'opt_pin', device: 'i2s0', dflt: NONE, define: 'I2S_DIN_GPIO',
-     when: (values) => !isNone(values.fm_i2s)},
+     when: (values) => (deviceEnabled(values, 'fm') && !isNone(values.fm_i2s)) ||
+                       deviceEnabled(values, 'adc')},
+    /* The ADC's master clock, 256 x the sample rate, out of the S3's I2S0. A
+       slave converter wants it and a DAC does not; so it is a row only while an
+       ADC is on the board. */
+    {key: 'i2s0_mclk', kind: 'opt_pin', device: 'i2s0', dflt: NONE, define: 'I2S_MCLK_GPIO',
+     when: (values) => deviceEnabled(values, 'adc')},
     {key: 'uart1_tx', kind: 'opt_pin', device: 'uart1', dflt: NONE, define: 'BT_UART_TX_GPIO'},
     {key: 'uart1_rx', kind: 'opt_pin', device: 'uart1', dflt: NONE, define: 'BT_UART_RX_GPIO'},
     /* The tuner's control bus, and later the PCM5122's: one pair however
@@ -177,6 +183,12 @@
     {key: 'fm_i2c', kind: 'choice', device: 'fm', options: ['0'], dflt: '0', bus: 'i2c'},
     {key: 'fm_i2s', kind: 'choice', device: 'fm', options: [NONE, '0'], dflt: NONE, bus: 'i2s'},
 
+    /* An ADC on the I2S input: the RDA5807M has no I2S of its own, and this
+       takes its analogue output into the S3 - the same data line the
+       RDA5807FP's I2S output would use, so never both. */
+    {key: 'adc', kind: 'choice', device: 'adc', options: [NONE, 'pcm1808'], dflt: NONE, enables: true, define: 'AUDIO_ADC'},
+    {key: 'adc_i2s', kind: 'choice', device: 'adc', options: ['0'], dflt: '0', bus: 'i2s'},
+
     /* Software sources, built in or left out: no pins, but a line in the
        header each. Both are on in the README board. */
     {key: 'yandex_music', kind: 'bool', device: 'features', dflt: 1, define: 'YANDEX_MUSIC'},
@@ -190,7 +202,7 @@
      UART - so the wires sit next to what they serve. */
   const DEVICES = [
     'board', 'tft', 'spi2', 'encoder', 'buttons', 'ir', 'dac', 'i2s0', 'amp', 'power',
-    'usb', 'sd', 'spi3', 'bluetooth', 'uart1', 'fm', 'i2c0', 'features',
+    'usb', 'sd', 'spi3', 'bluetooth', 'uart1', 'fm', 'adc', 'i2c0', 'features',
   ];
   const BUSES = ['spi2', 'spi3', 'i2s0', 'uart1', 'i2c0'];
 
@@ -201,6 +213,7 @@
     dac: {i2s: ['bclk', 'lrck', 'dout']},
     bluetooth: {uart: ['tx', 'rx'], i2s: ['bclk', 'lrck', 'dout']},
     fm: {i2c: ['sda', 'scl'], i2s: ['bclk', 'lrck', 'din']},
+    adc: {i2s: ['bclk', 'lrck', 'din', 'mclk']},
   };
 
   /* What a device switched on from "none" comes up with. No pin is guessed:
@@ -223,6 +236,7 @@
     sd: {sd_cs: UNSET},
     bluetooth: {bluetooth: 'jradio_bt'},
     fm: {fm_tuner: 'rda5807'},
+    adc: {adc: 'pcm1808'},
   };
 
   function isNone(value) {
@@ -291,6 +305,7 @@
     i2c0_sda: [8],
     i2c0_scl: [3],
     i2s0_din: [39, 14, 13, 38],
+    i2s0_mclk: [14, 13, 38, 15],
   };
 
   function suggestFmPin(values, key) {
@@ -306,12 +321,16 @@
     return null;
   }
 
-  /* Fills the tuner's unset pins with their proposals. Pins already chosen
-     are left alone. */
+  /* Fills the unset pins of the tuner and of the ADC with their proposals. Pins
+     already chosen are left alone. */
   function withFmPins(values) {
     const next = {...values};
-    const keys = ['i2c0_sda', 'i2c0_scl'];
-    if (!isNone(next.fm_i2s)) keys.push('i2s0_din');
+    const keys = [];
+    if (deviceEnabled(next, 'fm')) {
+      keys.push('i2c0_sda', 'i2c0_scl');
+      if (!isNone(next.fm_i2s)) keys.push('i2s0_din');
+    }
+    if (deviceEnabled(next, 'adc')) keys.push('i2s0_din', 'i2s0_mclk');
     for (const key of keys) {
       if (!isNone(next[key])) continue;
       const gpio = suggestFmPin(next, key);
@@ -330,12 +349,18 @@
          that is not there is a wire the file would still claim. */
       if (device === 'fm') {
         next.fm_i2s = NONE;
-        next.i2s0_din = NONE;
+        if (!deviceEnabled(next, 'adc')) next.i2s0_din = NONE;
+      }
+      /* The clock goes with the ADC, and the data line too unless the tuner's
+         own I2S output still uses it. */
+      if (device === 'adc') {
+        next.i2s0_mclk = NONE;
+        if (isNone(next.fm_i2s) || !deviceEnabled(next, 'fm')) next.i2s0_din = NONE;
       }
       return next;
     }
     for (const [key, value] of Object.entries(ENABLE_VALUES[device] || {})) next[key] = value;
-    return device === 'fm' ? withFmPins(next) : next;
+    return device === 'fm' || device === 'adc' ? withFmPins(next) : next;
   }
 
   /* One value changed by hand, and what follows from it: the tuner's sound
@@ -345,7 +370,7 @@
     const next = {...values, [key]: value};
     if (key !== 'fm_i2s') return next;
     if (isNone(value)) {
-      next.i2s0_din = NONE;
+      if (!deviceEnabled(next, 'adc')) next.i2s0_din = NONE;
       return next;
     }
     return withFmPins(next);
@@ -450,6 +475,11 @@
           }
         }
       }
+    }
+
+    /* One input line, one source of what comes down it. */
+    if (deviceEnabled(values, 'adc') && deviceEnabled(values, 'fm') && !isNone(values.fm_i2s)) {
+      errors.push({code: 'adc_with_fm_i2s', key: 'adc', gpio: null});
     }
 
     const sleep = pinValue(values.button_sleep);
@@ -592,6 +622,13 @@
                 ...gpio('I2S_DIN_GPIO', 'i2s0_din')])]
         : ['/* No FM tuner: FM_TUNER and the FM_I2C_* lines would go here. */']),
       '',
+      ...(deviceEnabled(values, 'adc')
+        ? ['/* An ADC on I2S0\'s input - the RDA5807M\'s sound into the S3: the DAC\'s clocks, a data line and its master clock. */',
+           `#define AUDIO_ADC AUDIO_ADC_${String(values.adc).toUpperCase()}`,
+           ...(deviceEnabled(values, 'fm') && !isNone(values.fm_i2s) ? [] : gpio('I2S_DIN_GPIO', 'i2s0_din')),
+           ...gpio('I2S_MCLK_GPIO', 'i2s0_mclk')]
+        : ['/* No ADC: AUDIO_ADC and I2S_MCLK_GPIO would go here. */']),
+      '',
       '/* Sources that need no wiring; a built-in one also has a switch in the settings. */',
       `#define YANDEX_MUSIC ${on('yandex_music') ? 'FEATURE_ON' : 'FEATURE_OFF'}`,
       `#define DLNA ${on('dlna') ? 'FEATURE_ON' : 'FEATURE_OFF'}`,
@@ -689,6 +726,13 @@
     else if (fmI2s === '0') values.fm_i2s = '0';
     else unknown.push({key: 'FM_I2S_PERIPHERAL', value: fmI2s});
     asPin('i2s0_din', 'I2S_DIN_GPIO');
+    const adc = take('AUDIO_ADC');
+    if (adc === undefined) values.adc = NONE;
+    else {
+      const id = adc.replace(/^AUDIO_ADC_/, '').toLowerCase();
+      if (FIELD_BY_KEY.adc.options.includes(id)) values.adc = id; else unknown.push({key: 'AUDIO_ADC', value: adc});
+    }
+    asPin('i2s0_mclk', 'I2S_MCLK_GPIO');
     const asFeature = (key, name) => {
       const value = take(name);
       if (value !== undefined) values[key] = value === 'FEATURE_ON' ? 1 : 0;

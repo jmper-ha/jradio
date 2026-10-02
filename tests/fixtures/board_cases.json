@@ -6,7 +6,7 @@
     "normalised as in both tests and sorted. Written by hand: a changed answer",
     "is a decision, made here, not a regeneration."
   ],
-  "base": "# key,value\nboard_format,1\nboard_name,\nmodule,esp32s3_n16r8\ndisplay,st7796s_480_320\nspi2_sclk,12\nspi2_mosi,11\nspi3_sclk,41\nspi3_mosi,42\nspi3_miso,40\ni2s0_bclk,18\ni2s0_lrck,17\ni2s0_dout,16\ni2s0_din,none\nuart1_tx,none\nuart1_rx,none\ni2c0_sda,none\ni2c0_scl,none\ntft_spi,2\ntft_cs,10\ntft_dc,47\ntft_reset,rst\ntft_backlight,2\nencoder_right,5\nencoder_left,7\nencoder_button,6\nencoder_pullups,0\nbutton_sleep,21\nbutton_quick_menu,45\nbutton_prev,46\nbutton_next,9\nbuttons_pullups,1\nir_receiver,none\ndac,pcm5102\ndac_i2s,0\ndac_mute,none\namp_enable,none\namp_on_level,1\nperipheral_power,none\nperipheral_power_on_level,1\nusb_dp,20\nusb_dm,19\nsd_spi,3\nsd_cs,1\nbluetooth,none\nbt_uart,1\nbt_i2s,0\nfm_tuner,none\nfm_i2c,0\nfm_i2s,none\nyandex_music,1\ndlna,1\n",
+  "base": "# key,value\nboard_format,1\nboard_name,\nmodule,esp32s3_n16r8\ndisplay,st7796s_480_320\nspi2_sclk,12\nspi2_mosi,11\nspi3_sclk,41\nspi3_mosi,42\nspi3_miso,40\ni2s0_bclk,18\ni2s0_lrck,17\ni2s0_dout,16\ni2s0_din,none\ni2s0_mclk,none\nuart1_tx,none\nuart1_rx,none\ni2c0_sda,none\ni2c0_scl,none\ntft_spi,2\ntft_cs,10\ntft_dc,47\ntft_reset,rst\ntft_backlight,2\nencoder_right,5\nencoder_left,7\nencoder_button,6\nencoder_pullups,0\nbutton_sleep,21\nbutton_quick_menu,45\nbutton_prev,46\nbutton_next,9\nbuttons_pullups,1\nir_receiver,none\ndac,pcm5102\ndac_i2s,0\ndac_mute,none\namp_enable,none\namp_on_level,1\nperipheral_power,none\nperipheral_power_on_level,1\nusb_dp,20\nusb_dm,19\nsd_spi,3\nsd_cs,1\nbluetooth,none\nbt_uart,1\nbt_i2s,0\nfm_tuner,none\nfm_i2c,0\nfm_i2s,none\nadc,none\nadc_i2s,0\nyandex_music,1\ndlna,1\n",
   "cases": [
     {
       "name": "the README board as it is",
@@ -265,6 +265,52 @@
       "errors": [
         "pin_conflict 10"
       ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "an ADC with no master clock",
+      "csv": "adc,pcm1808\ni2s0_din,39",
+      "errors": [
+        "bus_unwired adc i2s0_mclk"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "an ADC with its data line and clock",
+      "csv": "adc,pcm1808\ni2s0_din,39\ni2s0_mclk,14",
+      "errors": [],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "an ADC and the tuner's own I2S output on one input line",
+      "csv": "fm_tuner,rda5807\ni2c0_sda,8\ni2c0_scl,3\nfm_i2s,0\nadc,pcm1808\ni2s0_din,39\ni2s0_mclk,14",
+      "errors": [
+        "adc_with_fm_i2s adc"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "the master clock on the data line's pin",
+      "csv": "adc,pcm1808\ni2s0_din,39\ni2s0_mclk,39",
+      "errors": [
+        "pin_conflict 39"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "the data line and clock left in the file with no ADC and no tuner sound hold nothing",
+      "csv": "i2s0_din,39\ni2s0_mclk,39\namp_enable,39",
+      "errors": [],
       "warnings": [],
       "unknown_keys": 0,
       "bad_lines": 0

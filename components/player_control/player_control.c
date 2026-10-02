@@ -807,14 +807,19 @@ static uint8_t player_fm_volume_for(uint8_t percent)
  * internet stations at the same place on the knob; three steps down is
  * closer to them. */
 #define PLAYER_FM_I2S_VOLUME 12U
+/* Into an ADC the tuner's own analogue output is what is converted, and the
+ * conversion has the range to spare - 15 is a start, to be set by ear when
+ * the first board is on the bench. */
+#define PLAYER_FM_ADC_VOLUME 15U
 
 static void player_fm_sync_volume(void)
 {
-    /* Over I2S the knob is the board's own, applied to the samples on their
-     * way to the DAC like every other source's; the tuner sends at a fixed
-     * level. */
-    const uint8_t volume = board_fm_over_i2s() ? PLAYER_FM_I2S_VOLUME
-                                               : player_fm_volume_for(board_audio_volume());
+    /* Once the sound is on I2S - from the chip or through an ADC - the knob is
+     * the board's own, applied to the samples on their way to the DAC like
+     * every other source's; the tuner sends at a fixed level. */
+    const uint8_t volume = board_fm_chip_i2s() ? PLAYER_FM_I2S_VOLUME
+                           : board_fm_captured() ? PLAYER_FM_ADC_VOLUME
+                                                 : player_fm_volume_for(board_audio_volume());
     if (volume == s_fm_volume_sent) return;
     if (fm_tuner_set_volume(volume) == ESP_OK) s_fm_volume_sent = volume;
 }
@@ -987,7 +992,7 @@ static void player_fm_pipe_task(void *arg)
 
 static void player_fm_pipe_run(bool run)
 {
-    if (!board_fm_over_i2s()) return;
+    if (!board_fm_captured()) return;
     atomic_store_explicit(&s_fm_pipe_wanted, run, memory_order_release);
     if (run) return;
     /* Waited out, so the next source finds the output free rather than
@@ -2194,7 +2199,7 @@ esp_err_t player_control_init(void)
             ESP_LOGW(TAG, "fm: no monitor task");
         }
         /* Above the RDS reader: a late block is a click, a late group is not. */
-        if (fm_tuner_present() && board_fm_over_i2s() &&
+        if (fm_tuner_present() && board_fm_captured() &&
             !player_fm_task_start(player_fm_pipe_task, "fm_pipe", PLAYER_FM_PIPE_STACK, 6,
                                   &s_pipe_control)) {
             ESP_LOGW(TAG, "fm: no I2S pipe task");

@@ -231,6 +231,28 @@
 // #define FM_I2S_PERIPHERAL 0
 // #define I2S_DIN_GPIO 39
 
+/* The RDA5807M has no I2S output, only an analogue one. Its sound can still
+ * come through the DAC's path like any source's, by way of a PCM1808 ADC on
+ * the same I2S0: the ADC is a slave of the DAC's BCLK and LRCK, sends its
+ * samples into the S3 on the data line, and wants a master clock of 256 x fs
+ * on its SCKI pin, which the S3 brings out on I2S_MCLK_GPIO - only while FM
+ * plays. Instead of the two lines above, not with them: the tuner's own I2S
+ * output and an ADC would share the one data line. */
+// #define AUDIO_ADC AUDIO_ADC_PCM1808
+// #define I2S_DIN_GPIO 39
+// #define I2S_MCLK_GPIO 14
+
+/* ======================================================================
+ * The module's own RGB LED
+ * ====================================================================== */
+
+/* A DevKitC-1 carries an RGB LED of its own on one pin - GPIO 48 on the v1.0,
+ * 38 on the v1.1 - and it comes up lit, white, and stays so. Naming that pin
+ * here turns it off at boot with a black frame. Not part of the wiring and not
+ * in board.csv: it belongs to the module the board sits on. A pin the board
+ * uses for something else must not be named. */
+// #define BOARD_RGB_LED_OFF_GPIO 48
+
 /* ======================================================================
  * Bluetooth audio - not possible on this part
  * ====================================================================== */

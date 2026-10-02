@@ -108,8 +108,10 @@ esp_err_t fm_tuner_init(void)
         return err;
     }
     /* The wiring says whether its I2S output reaches the S3: the chip id is
-     * the same for the FP, which has one, and the M, which has not. */
-    s_state.i2s = board_fm_over_i2s();
+     * the same for the FP, which has one, and the M, which has not. An M whose
+     * sound goes through an ADC has its analogue output only, and the chip is
+     * not told to send I2S. */
+    s_state.i2s = board_fm_chip_i2s();
     ESP_LOGI(TAG, "RDA5807 found on SDA %d / SCL %d, chip id 0x%04x%s", board->i2c0_sda,
              board->i2c0_scl, chip_id, s_state.i2s ? ", sound over I2S" : "");
     return ESP_OK;

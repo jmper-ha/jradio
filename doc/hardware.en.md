@@ -15,7 +15,7 @@
 | microSD | a slot over SPI | no |
 | IR receiver | a three-pin 38 kHz one: TSOP38238, VS1838B, HX1838 | no |
 | Bluetooth | a second ESP32 module (WROOM-32) running [jradio-bt](https://github.com/jmper-ha/jradio-bt) | no |
-| FM tuner | an RDA5807FP (digital sound over I2S) or a module on an RDA5807M (analogue output) | no |
+| FM tuner | an RDA5807FP (digital sound over I2S) or a module on an RDA5807M (analogue output, or over I2S through a PCM1808 ADC) | no |
 | Amplifier | any with a MUTE / SD input - the firmware mutes it on pause | no |
 | Peripheral power switch | a load switch or a P-MOSFET - cuts the periphery in sleep | no |
 
@@ -282,6 +282,51 @@ the next free pin when it is not. The pull-ups on SDA and SCL are required. RDS 
 sensitive to reception: on a weak signal a station's name may not come
 together while the sound plays fine, and an aerial kept away from the board's
 wires helps.
+
+### The RDA5807M through a PCM1808 ADC
+
+The RDA5807M (the ordinary module) has no I2S, only an analogue output. Its
+sound can still go the way every source's does, by way of a PCM1808 ADC on the
+same I2S0 bus: the volume knob, the VU meter and the pass to the DAC work as
+they do for the RDA5807FP. The ADC is a slave of the DAC's clocks, sends its
+samples into the S3 on the same DIN pin, and asks for a master clock of 256 x
+fs on its SCKI pin, which the S3 puts out itself.
+
+```c
+#define FM_TUNER FM_TUNER_RDA5807
+#define FM_I2C_PERIPHERAL 0
+#define FM_I2C_SDA_GPIO 8
+#define FM_I2C_SCL_GPIO 3
+#define AUDIO_ADC AUDIO_ADC_PCM1808
+#define I2S_DIN_GPIO 39
+#define I2S_MCLK_GPIO 14
+```
+
+Instead of the I2S lines of the RDA5807FP, not with them: both want the one DIN
+line. In the wiring editor it is a card of its own, "ADC"; with an ADC on, the
+tuner's "Audio" has to be "Analogue".
+
+| S3 (jRadio) | PCM1808 | What |
+|---|---|---|
+| GPIO 18 (BCLK) | BCK | the clocks shared with the DAC |
+| GPIO 17 (LRCK) | LRCK | the clocks shared with the DAC |
+| GPIO 39 (by default) | DOUT | the ADC's data into the S3 (a pin of your choice, see the DIN note above) |
+| GPIO 14 (by default) | SCKI | the master clock, any free pin |
+| 3V3, GND | power | |
+| GND | FMT, MD0, MD1 | I2S format, slave mode (256 x fs) |
+| | LIN, RIN | the tuner's sound, see below |
+
+From the RDA5807M take LOUT and ROUT (marked L and R on the module) and the
+ground. **Put a capacitor in series in each channel**, 1-10 µF, plus towards
+the tuner: the RDA5807M's output carries a DC offset, and the ADC's input has to
+be AC-coupled. Many ready-made PCM1808 modules have the capacitors already; a
+bare RDA5807M has none.
+
+The master clock, 11.3 MHz at 44.1 kHz, has harmonics right in the FM band (the
+8th at 90.3 MHz, the 9th at 101.6 MHz). So the firmware runs it only while FM
+plays, and the wire to SCKI is best short, with a 100 Ω resistor in it next to
+the S3. The tuner's volume for this variant is 15 (the maximum), and the level
+is set by ear.
 
 ## What the home screen shows
 

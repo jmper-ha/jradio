@@ -23,7 +23,7 @@ const hw = require(path.join(FLASHER, 'hardware_core.js'));
 function normalisedIssue(issue) {
   if (issue.code === 'pin_conflict') return `pin_conflict ${issue.gpio}`;
   if (issue.code === 'bus_unwired') return `bus_unwired ${issue.device} ${issue.bus}_${issue.pin}`;
-  if (issue.code === 'bad_value' || issue.code === 'pin_missing') return `${issue.code} ${issue.key}`;
+  if (issue.code === 'bad_value' || issue.code === 'pin_missing' || issue.code === 'adc_with_fm_i2s') return `${issue.code} ${issue.key}`;
   return `${issue.code} ${issue.key} ${issue.gpio}`;
 }
 
@@ -588,6 +588,51 @@ function test_the_fm_tuner_brings_its_pins_where_they_are_free() {
   assert.deepStrictEqual(hw.pinMap(digital)[39], ['i2s0_din']);
 }
 
+/* The RDA5807M has no I2S: an ADC on the S3's input line takes its analogue
+   output in. The ADC brings the data line and a master clock of its own, the
+   two proposed where free, and shares the line with the RDA5807FP's output
+   only by exclusion. */
+function test_an_adc_takes_the_analogue_tuner_in() {
+  const tuner = hw.setDeviceEnabled(hw.defaults(), 'fm', true);
+  const adc = hw.setDeviceEnabled(tuner, 'adc', true);
+  assert.strictEqual(adc.adc, 'pcm1808');
+  assert.strictEqual(adc.i2s0_din, 39);
+  assert.strictEqual(adc.i2s0_mclk, 14);
+  assert.strictEqual(adc.fm_i2s, hw.NONE);
+  assert.deepStrictEqual(hw.validate(adc).errors, []);
+
+  // The clock's pin taken by something else: not proposed, and the check says so.
+  const taken = hw.setDeviceEnabled({...tuner, amp_enable: 14}, 'adc', true);
+  assert.strictEqual(taken.i2s0_mclk, 13);
+  const none = hw.setDeviceEnabled({...tuner, amp_enable: 14, ir_receiver: 13, peripheral_power: 38, dac_mute: 15},
+                                   'adc', true);
+  assert.strictEqual(none.i2s0_mclk, hw.NONE);
+  assert.strictEqual(hw.validate(none).errors.some((issue) => issue.code === 'bus_unwired' && issue.pin === 'mclk'), true);
+
+  // Both the pins are signals while the ADC is on, and neither while it is off.
+  assert.deepStrictEqual(hw.pinMap(adc)[14], ['i2s0_mclk']);
+  assert.deepStrictEqual(hw.pinMap(adc)[39], ['i2s0_din']);
+  const off = hw.setDeviceEnabled(adc, 'adc', false);
+  assert.strictEqual(off.i2s0_mclk, hw.NONE);
+  assert.strictEqual(off.i2s0_din, hw.NONE);
+  assert.strictEqual(hw.pinMap({...off, i2s0_mclk: 14, i2s0_din: 39})[14], undefined);
+
+  // The tuner's own I2S output and an ADC on one data line is a mistake the page names.
+  const both = hw.changeValue(adc, 'fm_i2s', '0');
+  assert.strictEqual(hw.validate(both).errors.some((issue) => issue.code === 'adc_with_fm_i2s'), true);
+  // The analogue output going away does not take the line the ADC uses.
+  assert.strictEqual(hw.changeValue(both, 'fm_i2s', hw.NONE).i2s0_din, 39);
+
+  // The header carries it and reads it back.
+  const header = hw.toHeader(adc);
+  for (const line of ['#define AUDIO_ADC AUDIO_ADC_PCM1808', '#define I2S_DIN_GPIO 39', '#define I2S_MCLK_GPIO 14']) {
+    assert.ok(header.includes(line), line);
+  }
+  assert.deepStrictEqual(hw.parseHeader(header).values, adc);
+  assert.deepStrictEqual(hw.parseHeader(header).unknown, []);
+  assert.ok(!/AUDIO_ADC|I2S_MCLK_GPIO/.test(hw.toHeader(hw.defaults()).replace(/^\/\*.*\*\/$/gm, '')));
+}
+
 function test_every_label_the_page_needs_is_in_the_dictionary() {
   const {window} = loadPage();
   const t = window.jradioI18n.t;
@@ -653,6 +698,7 @@ test_the_pins_the_chip_keeps_for_itself();
 test_a_device_needs_the_pins_of_its_bus();
 test_switching_a_device_off_and_on();
 test_the_fm_tuner_brings_its_pins_where_they_are_free();
+test_an_adc_takes_the_analogue_tuner_in();
 test_the_warnings_that_do_not_stop_a_file();
 test_the_header_is_the_devkit();
 test_the_page_builds_every_part_and_follows_the_clicks();

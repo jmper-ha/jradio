@@ -6,6 +6,7 @@
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
 #include "driver/ledc.h"
+#include "driver/rmt_tx.h"
 #include "driver/rtc_io.h"
 #include "soc/soc_caps.h"
 #include "driver/spi_master.h"
@@ -331,6 +332,18 @@ static void board_audio_health_rearm(void)
      * straddles a window boundary. */
 }
 
+/* The ADC's clock pin when the clock is not running: driven low, not loose - a
+ * floating pin picks up whatever is near it, and an LED or a chip on it shows
+ * as much. */
+static void board_adc_clock_park(void)
+{
+    if (!board_has_adc()) return;
+    const gpio_num_t mclk = wired(wiring()->i2s0_mclk);
+    (void)gpio_reset_pin(mclk);
+    (void)gpio_set_direction(mclk, GPIO_MODE_OUTPUT);
+    (void)gpio_set_level(mclk, 0);
+}
+
 /* The channel on its own, apart from the mutex: it is created at boot and
  * again every time the bus comes back from the Bluetooth module, which owns
  * the same three pins while a phone plays through it. */
@@ -349,6 +362,7 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     ESP_RETURN_ON_ERROR(i2s_new_channel(&channel_config, &s_i2s_tx, capture ? &s_i2s_rx : NULL),
                         TAG, "create I2S channels failed");
     s_capture_enabled = false;
+    if (!capture) board_adc_clock_park();
 
     /* A TX "send queue overflow" means the DMA ran out of filled descriptors
      * and replayed/zeroed a buffer - i.e. an audible dropout. Nothing else in
@@ -368,7 +382,11 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
                                                          I2S_SLOT_MODE_STEREO),
         .gpio_cfg = {
-            .mclk = I2S_GPIO_UNUSED,
+            /* The master clock only while the input is made - that is, while an
+             * FM station plays - and only with an ADC to feed it: a 256 x fs
+             * clock on a wire beside the antenna's board is not something to
+             * leave running under every other source. */
+            .mclk = capture && board_has_adc() ? wired(wiring()->i2s0_mclk) : I2S_GPIO_UNUSED,
             .bclk = wired(wiring()->i2s0_bclk),
             .ws = wired(wiring()->i2s0_lrck),
             .dout = wired(wiring()->i2s0_dout),
@@ -382,8 +400,19 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     };
     /* Both DACs take a 32 x Fs BCLK with 16-bit stereo I2S. Keeping the
      * slot equal to the decoded sample width avoids padding and halves the
-     * BCLK edge rate compared with 32-bit slots. */
-    std_config.slot_cfg.slot_bit_width = (i2s_slot_bit_width_t)I2S_SLOT_BIT_WIDTH;
+     * BCLK edge rate compared with 32-bit slots. An ADC is the exception: it
+     * sends a 24-bit word per channel and is a slave of the BCLK, and half a
+     * frame of 16 clocks has no room for it - a PCM1808 wants 64 x Fs. The
+     * data stays 16 bits wide, left-aligned in the slot, so the DAC and the
+     * samples read back are as they were; only the clock is twice as fast, and
+     * only while the input is made. */
+    const bool wide_slots = capture && board_has_adc();
+    std_config.slot_cfg.slot_bit_width =
+        wide_slots ? I2S_SLOT_BIT_WIDTH_32BIT : (i2s_slot_bit_width_t)I2S_SLOT_BIT_WIDTH;
+    /* The word-select's width follows the slot: left at the 16 bits of the data
+     * it was made for, LRCK is high for 16 of 64 BCLKs instead of 32, and the
+     * ADC's right channel gets a window too short for its word. */
+    if (wide_slots) std_config.slot_cfg.ws_width = 32;
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_tx, &std_config), TAG,
                         "configure I2S TX failed");
     if (capture) {
@@ -393,7 +422,8 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
         std_config.gpio_cfg.din = wired(wiring()->i2s0_din);
         ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_rx, &std_config), TAG,
                             "configure I2S RX failed");
-        ESP_LOGI(TAG, "I2S input on GPIO %d, for the FM tuner", wiring()->i2s0_din);
+        ESP_LOGI(TAG, "I2S input on GPIO %d, for the FM tuner%s", wiring()->i2s0_din,
+                 wide_slots ? ", through the ADC (master clock out, BCLK=64xFs)" : "");
     }
     ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_dout)), TAG,
                         "enable I2S DOUT pad observation failed");
@@ -983,6 +1013,7 @@ static esp_err_t board_audio_rebuild_channel(bool capture)
     }
     (void)i2s_del_channel(s_i2s_tx);
     s_i2s_tx = NULL;
+    if (!capture) board_adc_clock_park();
     s_capture_wanted = capture;
     esp_err_t result = board_audio_create_channel(s_audio_sample_rate);
     if (result != ESP_OK && capture) {
@@ -1564,12 +1595,60 @@ void board_deep_sleep(uint32_t wake_after_seconds)
     esp_deep_sleep_start();
 }
 
+#ifdef BOARD_RGB_LED_OFF_GPIO
+/* A DevKit's own RGB LED is a WS2812 on one pin, and it comes up lit - white,
+ * from whatever the pin did while the chip booted - and stays lit until a data
+ * frame tells it otherwise: one pixel, 24 bits of zero, then a pause. A build
+ * option and no part of the wiring: it is a property of the module the board
+ * sits on, not of the board. */
+static void board_rgb_led_off(void)
+{
+    const gpio_num_t pin = (gpio_num_t)BOARD_RGB_LED_OFF_GPIO;
+    rmt_channel_handle_t channel = NULL;
+    rmt_encoder_handle_t encoder = NULL;
+    const rmt_tx_channel_config_t config = {
+        .gpio_num = pin,
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .resolution_hz = 10000000,  // 0.1 us a tick
+        .mem_block_symbols = 64,
+        .trans_queue_depth = 1,
+    };
+    const rmt_copy_encoder_config_t copy = {};
+    if (rmt_new_tx_channel(&config, &channel) != ESP_OK ||
+        rmt_new_copy_encoder(&copy, &encoder) != ESP_OK) {
+        ESP_LOGW(TAG, "the RGB LED on GPIO %d could not be turned off", (int)pin);
+        if (channel != NULL) (void)rmt_del_channel(channel);
+        return;
+    }
+    // A zero is 0.4 us high and 0.85 us low; 80 us low after the pixel latches it.
+    rmt_symbol_word_t symbols[25];
+    for (int bit = 0; bit < 24; ++bit) {
+        symbols[bit] = (rmt_symbol_word_t){.level0 = 1, .duration0 = 4, .level1 = 0, .duration1 = 9};
+    }
+    symbols[24] = (rmt_symbol_word_t){.level0 = 0, .duration0 = 400, .level1 = 0, .duration1 = 400};
+    const rmt_transmit_config_t transmit = {.loop_count = 0};
+    (void)rmt_enable(channel);
+    (void)rmt_transmit(channel, encoder, symbols, sizeof(symbols), &transmit);
+    (void)rmt_tx_wait_all_done(channel, 100);
+    (void)rmt_disable(channel);
+    (void)rmt_del_encoder(encoder);
+    (void)rmt_del_channel(channel);
+    (void)gpio_reset_pin(pin);
+    (void)gpio_set_direction(pin, GPIO_MODE_OUTPUT);
+    (void)gpio_set_level(pin, 0);
+    ESP_LOGI(TAG, "the RGB LED on GPIO %d is off", (int)pin);
+}
+#endif
+
 esp_err_t board_init(bool flip_vertical, bool flip_horizontal, bool invert_colors, bool dark)
 {
     ESP_LOGI(TAG, "initializing input, PWM backlight, I2S and " BOARD_PANEL_NAME);
     /* Before any of them is addressed, and before the hold from a previous
      * deep sleep would keep them dark. */
     board_peripheral_power(true);
+#ifdef BOARD_RGB_LED_OFF_GPIO
+    board_rgb_led_off();
+#endif
     ESP_RETURN_ON_ERROR(board_input_init(), TAG, "configure input GPIOs failed");
     /* Not fatal: a receiver that will not come up costs the remote, not the
      * radio. The table is loaded before the receiver is listening, so the

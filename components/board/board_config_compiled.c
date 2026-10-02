@@ -105,6 +105,11 @@ void board_config_compiled(board_config_t *config)
     config->i2s0_din = PIN(I2S_DIN_GPIO);
 #endif
 #endif
+#if defined(AUDIO_ADC) && AUDIO_ADC == AUDIO_ADC_PCM1808
+    config->adc = AUDIO_ADC_PCM1808;
+    config->i2s0_din = PIN(I2S_DIN_GPIO);
+    config->i2s0_mclk = PIN(I2S_MCLK_GPIO);
+#endif
 #if defined(YANDEX_MUSIC)
     config->yandex_music = YANDEX_MUSIC == FEATURE_ON ? 1U : 0U;
 #endif

@@ -57,6 +57,7 @@ typedef struct {
     int8_t i2s0_lrck;
     int8_t i2s0_dout;
     int8_t i2s0_din;
+    int8_t i2s0_mclk;
     int8_t uart1_tx;
     int8_t uart1_rx;
     int8_t i2c0_sda;
@@ -93,16 +94,20 @@ typedef struct {
 
     /* Which bus each device names. Each has one possible value today and is
      * kept only so a file naming another is refused rather than obeyed:
-     * tft_spi 2, sd_spi 3, dac_i2s 0, bt_uart 1, bt_i2s 0, fm_i2c 0. The
-     * tuner's sound is the one a device may go without: fm_i2s is 0 when its
-     * I2S output is wired to the S3, BOARD_BUS_NONE when only its own
-     * analogue output is used. */
+     * tft_spi 2, sd_spi 3, dac_i2s 0, bt_uart 1, bt_i2s 0, fm_i2c 0, adc_i2s 0.
+     * The tuner's sound is the one a device may go without: fm_i2s is 0 when
+     * its own I2S output is wired to the S3 (the RDA5807FP), BOARD_BUS_NONE
+     * when only its analogue output is used - which an ADC may carry in
+     * instead: `adc` is AUDIO_ADC_PCM1808 when one is wired to I2S0's input
+     * line, and then the data comes from it, not from the tuner. Never both. */
     uint8_t sd_spi;
     uint8_t dac_i2s;
     uint8_t bt_uart;
     uint8_t bt_i2s;
     uint8_t fm_i2c;
     uint8_t fm_i2s;
+    uint8_t adc;
+    uint8_t adc_i2s;
 } board_config_t;
 
 typedef enum {
@@ -115,6 +120,8 @@ typedef enum {
     BOARD_ISSUE_USB_PIN_FIXED,
     BOARD_ISSUE_BUS_UNWIRED,
     BOARD_ISSUE_BAD_VALUE,
+    // The tuner's own I2S output and an ADC both claim I2S0's input line.
+    BOARD_ISSUE_ADC_WITH_FM_I2S,
     // Warnings: the board works, but not the way its builder expects.
     BOARD_ISSUE_SLEEP_NOT_RTC,
     BOARD_ISSUE_IR_NOT_RTC,
@@ -233,9 +240,14 @@ bool board_has_sd_card(void);
 bool board_has_ir(void);
 bool board_has_bluetooth(void);
 bool board_has_fm_tuner(void);
-/* The tuner's sound comes to the S3 over I2S0's input, rather than only out
- * of the tuner's own analogue pins. */
-bool board_fm_over_i2s(void);
+/* The RDA5807FP's own I2S output is wired to the S3: the chip is set to send
+ * on it. */
+bool board_fm_chip_i2s(void);
+// An ADC is wired to the S3's I2S input (and the tuner's sound is its input).
+bool board_has_adc(void);
+/* The tuner's sound reaches the S3 over I2S, from the chip or from the ADC:
+ * the player reads it from the input line and plays it through the DAC. */
+bool board_fm_captured(void);
 
 #ifdef __cplusplus
 }

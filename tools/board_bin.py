@@ -105,6 +105,7 @@ def board_csv(macros):
     bt = value(macros, "BLUETOOTH") == value(macros, "BLUETOOTH_JRADIO_BT") and defined("BLUETOOTH")
     fm = defined("FM_TUNER") and value(macros, "FM_TUNER") == value(macros, "FM_TUNER_RDA5807")
     fm_i2s = fm and defined("FM_I2S_PERIPHERAL") and defined("I2S_DIN_GPIO")
+    adc = defined("AUDIO_ADC") and value(macros, "AUDIO_ADC") == value(macros, "AUDIO_ADC_PCM1808")
     reset = pin(macros, "TFT_RESET_GPIO") if defined("TFT_RESET_GPIO") else "rst"
     feature_on = value(macros, "FEATURE_ON")
     rows = [
@@ -120,7 +121,8 @@ def board_csv(macros):
         ("i2s0_bclk", pin(macros, "I2S_BCLK_GPIO")),
         ("i2s0_lrck", pin(macros, "I2S_LRCK_GPIO")),
         ("i2s0_dout", pin(macros, "I2S_DOUT_GPIO")),
-        ("i2s0_din", pin(macros, "I2S_DIN_GPIO") if fm_i2s else "none"),
+        ("i2s0_din", pin(macros, "I2S_DIN_GPIO") if fm_i2s or adc else "none"),
+        ("i2s0_mclk", pin(macros, "I2S_MCLK_GPIO") if adc else "none"),
         ("uart1_tx", pin(macros, "BT_UART_TX_GPIO") if bt else "none"),
         ("uart1_rx", pin(macros, "BT_UART_RX_GPIO") if bt else "none"),
         ("i2c0_sda", pin(macros, "FM_I2C_SDA_GPIO") if fm else "none"),
@@ -158,6 +160,8 @@ def board_csv(macros):
         ("fm_tuner", "rda5807" if fm else "none"),
         ("fm_i2c", "0"),
         ("fm_i2s", "0" if fm_i2s else "none"),
+        ("adc", "pcm1808" if adc else "none"),
+        ("adc_i2s", "0"),
         ("yandex_music", "1" if defined("YANDEX_MUSIC") and
          value(macros, "YANDEX_MUSIC") == feature_on else "0"),
         ("dlna", "1" if defined("DLNA") and value(macros, "DLNA") == feature_on else "0"),

@@ -147,8 +147,20 @@ bool board_has_fm_tuner(void)
     return board_config_get()->fm_tuner == FM_TUNER_RDA5807;
 }
 
-bool board_fm_over_i2s(void)
+bool board_fm_chip_i2s(void)
 {
     const board_config_t *board = board_config_get();
     return board_has_fm_tuner() && board->fm_i2s == 0U && board->i2s0_din >= 0;
+}
+
+bool board_has_adc(void)
+{
+    const board_config_t *board = board_config_get();
+    return board->adc == AUDIO_ADC_PCM1808 && board->adc_i2s == 0U && board->i2s0_din >= 0 &&
+           board->i2s0_mclk >= 0;
+}
+
+bool board_fm_captured(void)
+{
+    return board_has_fm_tuner() && (board_fm_chip_i2s() || board_has_adc());
 }

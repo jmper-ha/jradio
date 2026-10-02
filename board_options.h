@@ -206,7 +206,8 @@
 
 /* Nothing on revision 1 receives FM. With a tuner fitted the driver finds the
  * chip at boot and says so in the log, the player offers an FM source, and
- * the presets, RDS and the scan in the web settings come with it.
+ * RDS, the presets and the scan - on the web page's Stations, FM tab - come
+ * with it.
  *
  * The bus is its own, not the card's: SPI3 has no spare pins left, and a
  * tuner is an I2C part anyway. */
@@ -215,13 +216,13 @@
 // #define FM_I2C_SDA_GPIO 8
 // #define FM_I2C_SCL_GPIO 3
 
-/* The tuner's sound, by one of two ways.
+/* The tuner's sound, by one of three ways.
  *
- * Without the two lines below it is the module's own analogue output, to be
+ * With none of the lines below it is the module's own analogue output, to be
  * heard through whatever the module is wired to. The volume knob then sets the
  * chip's own volume, in its 16 steps.
  *
- * With them - an RDA5807FP, which has an I2S output - the chip sends its
+ * With the first two - an RDA5807FP, which has an I2S output - the chip sends its
  * samples to the DAC's I2S controller, which reads them on the DAC's own
  * clocks (BCLK and LRCK, the ones the DAC already has: the chip follows them
  * as a slave) and plays them through the DAC like any source: the volume, the
@@ -231,16 +232,19 @@
 // #define FM_I2S_PERIPHERAL 0
 // #define I2S_DIN_GPIO 39
 
-/* The RDA5807M has no I2S output, only an analogue one. Its sound can still
- * come through the DAC's path like any source's, by way of a PCM1808 ADC on
+/* Or, the third way: the RDA5807M has no I2S output, only an analogue one.
+ * Its sound can still come through the DAC's path like any source's, by way
+ * of a PCM1808 ADC on
  * the same I2S0: the ADC is a slave of the DAC's BCLK and LRCK, sends its
  * samples into the S3 on the data line, and wants a master clock of 256 x fs
  * on its SCKI pin, which the S3 brings out on I2S_MCLK_GPIO - only while FM
  * plays. Instead of the two lines above, not with them: the tuner's own I2S
- * output and an ADC would share the one data line. */
+ * output and an ADC would share the one data line. Any free pin will do for
+ * the clock but the module's own RGB LED (see below - 48 on a v1.0 DevKit,
+ * 38 on a v1.1), which a clock at 11 MHz lights white. */
 // #define AUDIO_ADC AUDIO_ADC_PCM1808
 // #define I2S_DIN_GPIO 39
-// #define I2S_MCLK_GPIO 14
+// #define I2S_MCLK_GPIO 38
 
 /* ======================================================================
  * The module's own RGB LED

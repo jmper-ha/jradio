@@ -107,13 +107,15 @@
     /* The one line into the S3: the FM tuner's sound, on the DAC's clocks.
        Only there while the tuner sends its sound over I2S - with the module's
        analogue output there is no line, and a row for it is a row to get wrong. */
-    {key: 'i2s0_din', kind: 'opt_pin', device: 'i2s0', dflt: NONE, define: 'I2S_DIN_GPIO',
+    /* Shown in the tuner's card rather than the bus's (showIn): they are the
+       tuner's wires, chosen where the chip and its sound are. */
+    {key: 'i2s0_din', kind: 'opt_pin', device: 'i2s0', showIn: 'fm', dflt: NONE, define: 'I2S_DIN_GPIO',
      when: (values) => (deviceEnabled(values, 'fm') && !isNone(values.fm_i2s)) ||
                        deviceEnabled(values, 'adc')},
     /* The ADC's master clock, 256 x the sample rate, out of the S3's I2S0. A
        slave converter wants it and a DAC does not; so it is a row only while an
        ADC is on the board. */
-    {key: 'i2s0_mclk', kind: 'opt_pin', device: 'i2s0', dflt: NONE, define: 'I2S_MCLK_GPIO',
+    {key: 'i2s0_mclk', kind: 'opt_pin', device: 'i2s0', showIn: 'fm', dflt: NONE, define: 'I2S_MCLK_GPIO',
      when: (values) => deviceEnabled(values, 'adc')},
     {key: 'uart1_tx', kind: 'opt_pin', device: 'uart1', dflt: NONE, define: 'BT_UART_TX_GPIO'},
     {key: 'uart1_rx', kind: 'opt_pin', device: 'uart1', dflt: NONE, define: 'BT_UART_RX_GPIO'},
@@ -179,9 +181,33 @@
     /* The FM tuner, controlled over I2C. Its sound is its own analogue
        output, or - the RDA5807FP - I2S into the S3, which then plays it
        through the DAC with the knob and the meter like every other source. */
-    {key: 'fm_tuner', kind: 'choice', device: 'fm', options: [NONE, 'rda5807'], dflt: NONE, enables: true, define: 'FM_TUNER'},
+    /* The file's keys for the tuner are the firmware's view of it: one chip
+       family, an I2S output wired or not, an ADC wired or not. The page shows
+       what a person chooses instead - the two chips, and for the M its sound -
+       through the two virtual rows below, which read and write those keys and
+       are in no file. The keys themselves have no row of their own. */
+    {key: 'fm_tuner', kind: 'choice', device: 'fm', options: [NONE, 'rda5807'], dflt: NONE, enables: true, hidden: true, define: 'FM_TUNER'},
+    {key: 'fm_chip', kind: 'choice', device: 'fm', options: ['rda5807m', 'rda5807fp'], virtual: true,
+     /* The FP is the one with an I2S output, and it is wired for it: that is
+        the whole difference the firmware sees. */
+     read: (values) => (isNone(values.fm_i2s) ? 'rda5807m' : 'rda5807fp'),
+     write: (values, choice) => {
+       if (choice === 'rda5807fp') {
+         /* Its sound is on the data line; an ADC would be a second source for it. */
+         return {...values, adc: NONE, i2s0_mclk: NONE, fm_i2s: '0'};
+       }
+       const next = {...values, fm_i2s: NONE};
+       if (!deviceEnabled(next, 'adc')) next.i2s0_din = NONE;
+       return next;
+     }},
     {key: 'fm_i2c', kind: 'choice', device: 'fm', options: ['0'], dflt: '0', bus: 'i2c'},
-    {key: 'fm_i2s', kind: 'choice', device: 'fm', options: [NONE, '0'], dflt: NONE, bus: 'i2s'},
+    /* The M has only an analogue output - to an amplifier, or through an ADC
+       into the S3 - so the choice is there for it alone. */
+    {key: 'fm_sound', kind: 'choice', device: 'fm', options: ['analog', 'adc'], virtual: true,
+     when: (values) => isNone(values.fm_i2s),
+     read: (values) => (deviceEnabled(values, 'adc') ? 'adc' : 'analog'),
+     write: (values, choice) => setDeviceEnabled(values, 'adc', choice === 'adc')},
+    {key: 'fm_i2s', kind: 'choice', device: 'fm', options: [NONE, '0'], dflt: NONE, bus: 'i2s', hidden: true},
 
     /* An ADC on the I2S input: the RDA5807M has no I2S of its own, and this
        takes its analogue output into the S3 - the same data line the
@@ -190,7 +216,10 @@
     {key: 'adc_i2s', kind: 'choice', device: 'adc', options: ['0'], dflt: '0', bus: 'i2s'},
 
     /* Software sources, built in or left out: no pins, but a line in the
-       header each. Both are on in the README board. */
+       header each. Both are on in the README board. They have no card: the
+       firmware on this site is built with both, and the device does not read
+       these keys at all - only a build from source does, through the header -
+       while its own settings hide either source. */
     {key: 'yandex_music', kind: 'bool', device: 'features', dflt: 1, define: 'YANDEX_MUSIC'},
     {key: 'dlna', kind: 'bool', device: 'features', dflt: 1, define: 'DLNA'},
   ];
@@ -202,7 +231,7 @@
      UART - so the wires sit next to what they serve. */
   const DEVICES = [
     'board', 'tft', 'spi2', 'encoder', 'buttons', 'ir', 'dac', 'i2s0', 'amp', 'power',
-    'usb', 'sd', 'spi3', 'bluetooth', 'uart1', 'fm', 'adc', 'i2c0', 'features',
+    'usb', 'sd', 'spi3', 'bluetooth', 'uart1', 'fm', 'i2c0',
   ];
   const BUSES = ['spi2', 'spi3', 'i2s0', 'uart1', 'i2c0'];
 
@@ -223,11 +252,10 @@
      So the pin starts unset and the rules hold the file back until it is
      chosen. Only the USB pair is filled in, being the chip's and no choice;
      the module's UART pins are left as they are, and unwired they are what
-     the rules ask for.
-
-     The FM tuner's own pins are the one exception, see suggestFmPin(): they
-     are proposed, in the open - the row shows GPIO 8, not a dash - and only
-     where the pin is free. */
+     the rules ask for. The tuner's pins
+     follow the same rule: its rows come up as a dash, and the check asks for
+     them. A proposal that was free on the default board was taken on the
+     bench - GPIO 14, its Bluetooth module's UART. */
   const ENABLE_VALUES = {
     ir: {ir_receiver: UNSET},
     amp: {amp_enable: UNSET},
@@ -249,9 +277,16 @@
     return Number.isInteger(number) ? number : null;
   }
 
+  /* A field's value as the page shows it: the file's key, or for a virtual row
+     what the keys add up to. */
+  function valueOf(values, field) {
+    return field.virtual ? field.read(values) : values[field.key];
+  }
+
   function defaults() {
     const values = {};
     for (const field of FIELDS) {
+      if (field.virtual) continue;
       values[field.key] = field.fixed !== undefined ? field.fixed : field.dflt;
     }
     return values;
@@ -295,50 +330,6 @@
     return !isNone(values[field.key]);
   }
 
-  /* Where the tuner's wires go on the board this was made for, in the order
-     they are tried: I2C on 8 and 3, the data line into the S3 on 39 and then
-     the pins that are free on the README board. A proposal, not a rule - the
-     first one that nothing else on the board already uses is put in the row,
-     and none at all when they are all taken, which is then the dash and the
-     check that asks for it. */
-  const FM_PIN_SUGGESTIONS = {
-    i2c0_sda: [8],
-    i2c0_scl: [3],
-    i2s0_din: [39, 14, 13, 38],
-    i2s0_mclk: [14, 13, 38, 15],
-  };
-
-  function suggestFmPin(values, key) {
-    const probe = {...values, [key]: NONE};
-    const taken = pinMap(probe);
-    const header = headerGpios();
-    for (const gpio of FM_PIN_SUGGESTIONS[key]) {
-      if (!header.includes(gpio) || taken[gpio]) continue;
-      const note = pinNote(gpio, values.module);
-      if (note && note.hard) continue;
-      return gpio;
-    }
-    return null;
-  }
-
-  /* Fills the unset pins of the tuner and of the ADC with their proposals. Pins
-     already chosen are left alone. */
-  function withFmPins(values) {
-    const next = {...values};
-    const keys = [];
-    if (deviceEnabled(next, 'fm')) {
-      keys.push('i2c0_sda', 'i2c0_scl');
-      if (!isNone(next.fm_i2s)) keys.push('i2s0_din');
-    }
-    if (deviceEnabled(next, 'adc')) keys.push('i2s0_din', 'i2s0_mclk');
-    for (const key of keys) {
-      if (!isNone(next[key])) continue;
-      const gpio = suggestFmPin(next, key);
-      if (gpio !== null) next[key] = gpio;
-    }
-    return next;
-  }
-
   function setDeviceEnabled(values, device, enabled) {
     const next = {...values};
     const field = FIELDS.find((item) => item.device === device && item.enables);
@@ -347,9 +338,13 @@
       next[field.key] = NONE;
       /* The tuner's sound goes with it: a data line into the S3 for a tuner
          that is not there is a wire the file would still claim. */
+      /* The ADC is the tuner's now - the page offers it only with an M - so
+         it goes with it, and so does what it had of the I2S lines. */
       if (device === 'fm') {
         next.fm_i2s = NONE;
-        if (!deviceEnabled(next, 'adc')) next.i2s0_din = NONE;
+        next.adc = NONE;
+        next.i2s0_din = NONE;
+        next.i2s0_mclk = NONE;
       }
       /* The clock goes with the ADC, and the data line too unless the tuner's
          own I2S output still uses it. */
@@ -360,20 +355,20 @@
       return next;
     }
     for (const [key, value] of Object.entries(ENABLE_VALUES[device] || {})) next[key] = value;
-    return device === 'fm' || device === 'adc' ? withFmPins(next) : next;
+    return next;
   }
 
   /* One value changed by hand, and what follows from it: the tuner's sound
-     choosing I2S brings its data line (proposed, where free), and choosing the
-     analogue output takes the line away. */
+     going back to the analogue output takes its data line away. */
   function changeValue(values, key, value) {
+    const field = FIELD_BY_KEY[key];
+    if (field && field.virtual) return field.write(values, value);
     const next = {...values, [key]: value};
     if (key !== 'fm_i2s') return next;
     if (isNone(value)) {
       if (!deviceEnabled(next, 'adc')) next.i2s0_din = NONE;
-      return next;
     }
-    return withFmPins(next);
+    return next;
   }
 
   /* The bus a device sits on, as the bus's field prefix: tft_spi=2 -> spi2. */
@@ -495,6 +490,7 @@
     }
 
     for (const field of FIELDS) {
+      if (field.virtual) continue;
       const value = values[field.key];
       if (field.kind === 'choice' && !field.options.includes(String(value))) {
         errors.push({code: 'bad_value', key: field.key, value});
@@ -515,6 +511,7 @@
   function toCsv(values) {
     const lines = ['# key,value'];
     for (const field of FIELDS) {
+      if (field.virtual) continue;
       const value = values[field.key];
       lines.push(`${field.key},${isNone(value) && field.kind !== 'text' ? NONE : value}`);
     }
@@ -778,7 +775,7 @@
   return {
     NONE, RESET, UNSET, FORMAT, FIELDS, FIELD_BY_KEY, DEVICES, BUSES, HEADER, MODULES, DISPLAYS,
     RTC_GPIO_MAX, USB_PINS,
-    defaults, headerPins, headerGpios, pinNote, deviceEnabled, setDeviceEnabled, changeValue,
+    defaults, headerPins, headerGpios, pinNote, deviceEnabled, setDeviceEnabled, changeValue, valueOf,
     busOf, busUsed, signals, pinMap, validate, toCsv, parseCsv, toHeader, parseHeader, isNone, pinValue,
   };
 });

@@ -27,6 +27,7 @@
   --accent-2: #ffc369;
   --accent-soft: #2b2114;
   --accent-line: #4a3a1e;
+  --switch-line: var(--accent-line);
   --on-accent: #191203;
   --ok: #4cc38a;
   --bad: #f0785a;
@@ -68,6 +69,7 @@
   --accent-2: #8a5108;
   --accent-soft: #f8ecd9;
   --accent-line: #e3c79b;
+  --switch-line: var(--line);
   --on-accent: #ffffff;
   --ok: #1b7048;
   --bad: #a83a1c;
@@ -1197,7 +1199,9 @@ input[type="password"] { width: 100%; }
 .password-field .secondary-button { flex: 0 0 auto; }
 
 /* A switch rather than a checkbox: beside the volume slider a square box
-   looks borrowed, and its state reads worse. */
+   looks borrowed, and its state reads worse. On the dark page a switch that
+   is off drew its edge in --line and vanished into the card; users could not
+   find it, so the dark theme rims it with a faint touch of the accent. */
 input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
@@ -1207,7 +1211,7 @@ input[type="checkbox"] {
   flex: none;
   border-radius: 99px;
   background: var(--surface-3);
-  border: 1px solid var(--line);
+  border: 1px solid var(--switch-line);
   position: relative;
   cursor: pointer;
   transition: background .15s ease;

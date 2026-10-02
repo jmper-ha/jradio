@@ -11,8 +11,8 @@ or from a browser - a phone or a computer on the same network.
 
 ## Features
 
-- **Everything in one box.** Radio, files, DLNA, Yandex Music, Bluetooth both
-  ways - one player instead of several devices.
+- **Everything in one box.** Internet radio, FM, files, DLNA, Yandex Music,
+  Bluetooth both ways - one player instead of several devices.
 - **Built from ordinary parts.** An ESP32-S3 module, an SPI display, a PCM5102
   DAC, an encoder and buttons. No custom board needed - a breadboard or a
   simple PCB will do.
@@ -41,6 +41,7 @@ or from a browser - a phone or a computer on the same network.
 | Media | a USB stick (USB Host) and microSD; FAT16/FAT32 |
 | Network | 2.4 GHz Wi-Fi, up to five saved networks |
 | Controls | an encoder with a button, four buttons, an IR remote (any, learned) |
+| FM tuner | optional: an RDA5807FP with its sound over I2S, or an RDA5807M - analog out or through a PCM1808 ADC |
 | Bluetooth | through the [jradio-bt](https://github.com/jmper-ha/jradio-bt) module on a second ESP32 |
 | Firmware | ESP-IDF 5.5.x, target `esp32s3` |
 
@@ -51,6 +52,7 @@ The full pinout and the choice of parts are in [Hardware](doc/hardware.en.md).
 | | |
 |---|---|
 | **Internet radio** | Your own station list (up to 99), the track title from the stream, HTTP and HTTPS, reconnects after a drop |
+| **FM radio** | Presets with pictures, the station name and radiotext from RDS, a band scan, free tuning, stereo - [more](doc/usage.en.md#fm-radio) |
 | **Music from USB and SD** | Folders, tags (including Russian ones in legacy encodings), covers, seeking, auto-advance to the next track. `.m3u`, `.m3u8` and `.pls` playlists open as folders, albums with a `.cue` - track by track |
 | **Yandex Music** | "My Wave" and the account's stations, covers, like / dislike - [more](doc/yandex.en.md) |
 | **Media server (DLNA)** | Finds the server on the network itself, walks the library, tags and covers - [more](doc/dlna.en.md) |

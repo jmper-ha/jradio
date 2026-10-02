@@ -69,7 +69,7 @@ function test_the_file_round_trips() {
   assert.deepStrictEqual(parsed.bad, []);
   /* Every key is written, in the schema's order, once. */
   const keys = text.trim().split('\n').slice(1).map((line) => line.split(',')[0]);
-  assert.deepStrictEqual(keys, hw.FIELDS.map((field) => field.key));
+  assert.deepStrictEqual(keys, hw.FIELDS.filter((field) => !field.virtual).map((field) => field.key));
 }
 
 function test_the_header_round_trips_and_names_every_option() {
@@ -546,91 +546,106 @@ function test_the_page_builds_every_part_and_follows_the_clicks() {
   assert.strictEqual(csv.textContent, hw.toHeader(hw.defaults()));
 }
 
-/* The tuner is the one part whose pins are proposed: Ден's bench is on 8 and
-   3, and with a wire already there a proposal that took it would be a second
-   signal on the pin. */
-function test_the_fm_tuner_brings_its_pins_where_they_are_free() {
+/* The tuner's pins are chosen, not guessed, like every other part's: its rows
+   come up as a dash and the check asks for them. A guess that was free on the
+   default board - GPIO 14 for the master clock - was the bench's Bluetooth
+   UART. */
+function test_the_fm_tuner_asks_for_its_pins() {
   const on = hw.setDeviceEnabled(hw.defaults(), 'fm', true);
-  assert.strictEqual(on.i2c0_sda, 8);
-  assert.strictEqual(on.i2c0_scl, 3);
-  // Analogue until the sound is chosen: no data line.
-  assert.strictEqual(on.fm_i2s, hw.NONE);
+  assert.strictEqual(on.i2c0_sda, hw.NONE);
+  assert.strictEqual(on.i2c0_scl, hw.NONE);
   assert.strictEqual(on.i2s0_din, hw.NONE);
-  assert.deepStrictEqual(hw.validate(on).errors, []);
+  const unwired = hw.validate(on).errors.filter((issue) => issue.code === 'bus_unwired').map((issue) => issue.pin).sort();
+  assert.deepStrictEqual(unwired, ['scl', 'sda']);
+  const wired = {...on, i2c0_sda: 8, i2c0_scl: 3};
+  assert.deepStrictEqual(hw.validate(wired).errors, []);
 
-  // A pin something else is on is not taken; the row stays a dash.
-  const busy = hw.setDeviceEnabled({...hw.defaults(), ir_receiver: 8}, 'fm', true);
-  assert.strictEqual(busy.i2c0_sda, hw.NONE);
-  assert.strictEqual(busy.i2c0_scl, 3);
-  // One already chosen stays.
-  const chosen = hw.setDeviceEnabled({...hw.defaults(), i2c0_sda: 14}, 'fm', true);
-  assert.strictEqual(chosen.i2c0_sda, 14);
-
-  // The sound over I2S brings the data line, on 39 or the next free pin.
-  const digital = hw.changeValue(on, 'fm_i2s', '0');
-  assert.strictEqual(digital.fm_i2s, '0');
-  assert.strictEqual(digital.i2s0_din, 39);
-  assert.deepStrictEqual(hw.validate(digital).errors, []);
-  const amplified = hw.changeValue({...on, amp_enable: 39}, 'fm_i2s', '0');
-  assert.strictEqual(amplified.i2s0_din, 14);
-  // A line already chosen stays, and the analogue output takes it away.
-  assert.strictEqual(hw.changeValue({...on, i2s0_din: 13}, 'fm_i2s', '0').i2s0_din, 13);
-  assert.strictEqual(hw.changeValue(digital, 'fm_i2s', hw.NONE).i2s0_din, hw.NONE);
-  // So does the tuner going off.
-  const off = hw.setDeviceEnabled(digital, 'fm', false);
-  assert.strictEqual(off.fm_i2s, hw.NONE);
-  assert.strictEqual(off.i2s0_din, hw.NONE);
-  // Other values change as they always did.
-  assert.strictEqual(hw.changeValue(on, 'tft_cs', 12).tft_cs, 12);
-
-  // The data line is a signal only while the tuner sends its sound over I2S.
-  assert.strictEqual(hw.pinMap({...on, i2s0_din: 39})[39], undefined);
-  assert.deepStrictEqual(hw.pinMap(digital)[39], ['i2s0_din']);
+  // The FP's data line, and the ADC's line and clock, are asked for the same way.
+  const fp = hw.changeValue(wired, 'fm_chip', 'rda5807fp');
+  assert.strictEqual(fp.i2s0_din, hw.NONE);
+  assert.ok(hw.validate(fp).errors.some((issue) => issue.code === 'bus_unwired' && issue.pin === 'din'));
+  const adc = hw.changeValue(wired, 'fm_sound', 'adc');
+  assert.strictEqual(adc.i2s0_din, hw.NONE);
+  assert.strictEqual(adc.i2s0_mclk, hw.NONE);
+  const missing = hw.validate(adc).errors.filter((issue) => issue.code === 'bus_unwired').map((issue) => issue.pin).sort();
+  assert.deepStrictEqual(missing, ['din', 'mclk']);
+  // Chosen, they are the tuner's signals; a pin something else is on is a conflict.
+  const chosen = {...adc, i2s0_din: 39, i2s0_mclk: 38};
+  assert.deepStrictEqual(hw.validate(chosen).errors, []);
+  assert.deepStrictEqual(hw.pinMap(chosen)[38], ['i2s0_mclk']);
+  assert.ok(hw.validate({...chosen, amp_enable: 38}).errors.some((issue) => issue.code === 'pin_conflict'));
 }
 
-/* The RDA5807M has no I2S: an ADC on the S3's input line takes its analogue
-   output in. The ADC brings the data line and a master clock of its own, the
-   two proposed where free, and shares the line with the RDA5807FP's output
-   only by exclusion. */
-function test_an_adc_takes_the_analogue_tuner_in() {
-  const tuner = hw.setDeviceEnabled(hw.defaults(), 'fm', true);
-  const adc = hw.setDeviceEnabled(tuner, 'adc', true);
+/* What a person chooses for the tuner is the chip, and for the M its sound;
+   the file keeps its own keys, and the two virtual rows read and write them. */
+function test_the_tuner_is_chosen_by_chip_and_sound() {
+  const field = (key) => hw.FIELD_BY_KEY[key];
+  const on = {...hw.setDeviceEnabled(hw.defaults(), 'fm', true), i2c0_sda: 8, i2c0_scl: 3};
+  // The M with its analogue output is the start.
+  assert.strictEqual(hw.valueOf(on, field('fm_chip')), 'rda5807m');
+  assert.strictEqual(hw.valueOf(on, field('fm_sound')), 'analog');
+  assert.strictEqual(field('fm_sound').when(on), true);
+
+  // The FP: its sound is I2S, so there is no sound to choose, and a data line to wire.
+  const fp = {...hw.changeValue(on, 'fm_chip', 'rda5807fp'), i2s0_din: 39};
+  assert.strictEqual(fp.fm_i2s, '0');
+  assert.strictEqual(fp.adc, hw.NONE);
+  assert.strictEqual(hw.valueOf(fp, field('fm_chip')), 'rda5807fp');
+  assert.strictEqual(field('fm_sound').when(fp), false);
+  assert.strictEqual(field('i2s0_din').when(fp), true);
+  assert.strictEqual(field('i2s0_mclk').when(fp), false);
+  assert.deepStrictEqual(hw.validate(fp).errors, []);
+
+  // The M through an ADC: a data line and a master clock.
+  const adc = {...hw.changeValue(on, 'fm_sound', 'adc'), i2s0_din: 39, i2s0_mclk: 38};
   assert.strictEqual(adc.adc, 'pcm1808');
-  assert.strictEqual(adc.i2s0_din, 39);
-  assert.strictEqual(adc.i2s0_mclk, 14);
   assert.strictEqual(adc.fm_i2s, hw.NONE);
+  assert.strictEqual(hw.valueOf(adc, field('fm_sound')), 'adc');
+  assert.strictEqual(field('i2s0_mclk').when(adc), true);
   assert.deepStrictEqual(hw.validate(adc).errors, []);
 
-  // The clock's pin taken by something else: not proposed, and the check says so.
-  const taken = hw.setDeviceEnabled({...tuner, amp_enable: 14}, 'adc', true);
-  assert.strictEqual(taken.i2s0_mclk, 13);
-  const none = hw.setDeviceEnabled({...tuner, amp_enable: 14, ir_receiver: 13, peripheral_power: 38, dac_mute: 15},
-                                   'adc', true);
-  assert.strictEqual(none.i2s0_mclk, hw.NONE);
-  assert.strictEqual(hw.validate(none).errors.some((issue) => issue.code === 'bus_unwired' && issue.pin === 'mclk'), true);
+  // The FP takes the ADC and its clock off and keeps the data line; the M's way
+  // back to the analogue output takes both lines off.
+  const fpAgain = hw.changeValue(adc, 'fm_chip', 'rda5807fp');
+  assert.strictEqual(fpAgain.adc, hw.NONE);
+  assert.strictEqual(fpAgain.i2s0_mclk, hw.NONE);
+  assert.strictEqual(fpAgain.i2s0_din, 39);
+  assert.deepStrictEqual(hw.validate(fpAgain).errors, []);
+  const analog = hw.changeValue(adc, 'fm_sound', 'analog');
+  assert.strictEqual(analog.adc, hw.NONE);
+  assert.strictEqual(analog.i2s0_mclk, hw.NONE);
+  assert.strictEqual(analog.i2s0_din, hw.NONE);
+  assert.strictEqual(hw.changeValue(fp, 'fm_chip', 'rda5807m').i2s0_din, hw.NONE);
 
-  // Both the pins are signals while the ADC is on, and neither while it is off.
-  assert.deepStrictEqual(hw.pinMap(adc)[14], ['i2s0_mclk']);
-  assert.deepStrictEqual(hw.pinMap(adc)[39], ['i2s0_din']);
-  const off = hw.setDeviceEnabled(adc, 'adc', false);
+  // Switching the tuner off takes all of it away.
+  const off = hw.setDeviceEnabled(adc, 'fm', false);
+  assert.strictEqual(off.adc, hw.NONE);
   assert.strictEqual(off.i2s0_mclk, hw.NONE);
   assert.strictEqual(off.i2s0_din, hw.NONE);
-  assert.strictEqual(hw.pinMap({...off, i2s0_mclk: 14, i2s0_din: 39})[14], undefined);
 
-  // The tuner's own I2S output and an ADC on one data line is a mistake the page names.
-  const both = hw.changeValue(adc, 'fm_i2s', '0');
-  assert.strictEqual(hw.validate(both).errors.some((issue) => issue.code === 'adc_with_fm_i2s'), true);
-  // The analogue output going away does not take the line the ADC uses.
-  assert.strictEqual(hw.changeValue(both, 'fm_i2s', hw.NONE).i2s0_din, 39);
-
-  // The header carries it and reads it back.
+  // The file keeps its own keys and says nothing of the rows; a header read back gives the same rows.
+  assert.ok(!/fm_chip|fm_sound/.test(hw.toCsv(adc)));
   const header = hw.toHeader(adc);
-  for (const line of ['#define AUDIO_ADC AUDIO_ADC_PCM1808', '#define I2S_DIN_GPIO 39', '#define I2S_MCLK_GPIO 14']) {
+  for (const line of ['#define AUDIO_ADC AUDIO_ADC_PCM1808', '#define I2S_DIN_GPIO 39', '#define I2S_MCLK_GPIO 38']) {
     assert.ok(header.includes(line), line);
   }
   assert.deepStrictEqual(hw.parseHeader(header).values, adc);
-  assert.deepStrictEqual(hw.parseHeader(header).unknown, []);
-  assert.ok(!/AUDIO_ADC|I2S_MCLK_GPIO/.test(hw.toHeader(hw.defaults()).replace(/^\/\*.*\*\/$/gm, '')));
+  assert.strictEqual(hw.valueOf(hw.parseHeader(header).values, field('fm_sound')), 'adc');
+  assert.strictEqual(hw.valueOf(hw.parseHeader(hw.toHeader(fp)).values, field('fm_chip')), 'rda5807fp');
+  // A hand-made file with both the FP's output and an ADC is named for what it is.
+  assert.ok(hw.validate({...adc, fm_i2s: '0'}).errors.some((issue) => issue.code === 'adc_with_fm_i2s'));
+
+  // On the page: the chip, the sound for the M, and the two lines in the tuner's
+  // own card after them - no row for the keys, no card for the ADC.
+  const {document} = loadPage();
+  const parts = document.getElementById('hw-parts');
+  const fmCard = parts.children.find((section) => section.dataset.device === 'fm');
+  const fmRows = fmCard.querySelectorAll('.hw-row').map((row) => row.dataset.key);
+  assert.deepStrictEqual(fmRows, ['fm_chip', 'fm_i2c', 'fm_sound', 'i2s0_din', 'i2s0_mclk']);
+  const busCard = parts.children.find((section) => section.dataset.device === 'i2s0');
+  const busRows = busCard.querySelectorAll('.hw-row').map((row) => row.dataset.key);
+  assert.ok(!busRows.includes('i2s0_din') && !busRows.includes('i2s0_mclk'));
+  assert.ok(!hw.DEVICES.includes('adc'));
 }
 
 function test_every_label_the_page_needs_is_in_the_dictionary() {
@@ -639,6 +654,8 @@ function test_every_label_the_page_needs_is_in_the_dictionary() {
   for (const field of hw.FIELDS) {
     if (field.fixed !== undefined) continue;
     assert.notStrictEqual(t(`hw.f.${field.key}`), `hw.f.${field.key}`, `label for ${field.key}`);
+    // A key with no row of its own has no option words either.
+    if (field.hidden) continue;
     /* A bus a device sits on is named by its kind and number, not looked up. */
     if (field.kind === 'choice' && !field.bus) {
       for (const option of field.options) {
@@ -649,10 +666,7 @@ function test_every_label_the_page_needs_is_in_the_dictionary() {
   for (const device of hw.DEVICES) {
     assert.notStrictEqual(t(`hw.dev.${device}`), `hw.dev.${device}`, `device ${device}`);
   }
-  // The tuner's sound has words of its own, not "none" and "I2S0".
-  for (const option of ['none', '0']) {
-    assert.notStrictEqual(t(`hw.opt.fm_i2s.${option}`), `hw.opt.fm_i2s.${option}`, `fm_i2s ${option}`);
-  }
+
   for (const code of ['pin_conflict', 'pin_missing', 'pin_not_on_header', 'pin_psram', 'pin_console', 'pin_usb',
                       'usb_pin_fixed', 'bus_unwired', 'bad_value', 'sleep_not_rtc', 'ir_not_rtc', 'spi_not_iomux']) {
     assert.notStrictEqual(t(`hw.err.${code}`), `hw.err.${code}`, `report ${code}`);
@@ -697,8 +711,8 @@ test_two_signals_on_one_pin_is_a_conflict_but_a_shared_bus_is_not();
 test_the_pins_the_chip_keeps_for_itself();
 test_a_device_needs_the_pins_of_its_bus();
 test_switching_a_device_off_and_on();
-test_the_fm_tuner_brings_its_pins_where_they_are_free();
-test_an_adc_takes_the_analogue_tuner_in();
+test_the_fm_tuner_asks_for_its_pins();
+test_the_tuner_is_chosen_by_chip_and_sound();
 test_the_warnings_that_do_not_stop_a_file();
 test_the_header_is_the_devkit();
 test_the_page_builds_every_part_and_follows_the_clicks();

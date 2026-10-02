@@ -210,6 +210,13 @@
     root.replaceChildren();
     for (const device of hw.DEVICES) {
       const fields = hw.FIELDS.filter((field) => field.device === device && field.fixed === undefined);
+      /* Rows are built for what a person sets, in the card they belong to: a
+         key with no row of its own still counts for the switch, and a row shown
+         in another device's card (showIn) goes there, after that card's own. */
+      const shown = [
+        ...fields.filter((field) => !field.hidden && !field.showIn),
+        ...hw.FIELDS.filter((field) => field.showIn === device),
+      ];
       if (fields.length === 0) continue;
       const section = document.createElement('div');
       section.className = `device-group hw-group hw-dev-${device}`;
@@ -241,7 +248,7 @@
       section.append(heading);
       const body = document.createElement('div');
       body.className = 'hw-group-body';
-      for (const field of fields) body.append(buildRow(field));
+      for (const field of shown) body.append(buildRow(field));
       section.append(body);
       groups[device] = {section, toggle, body};
       root.append(section);
@@ -381,7 +388,7 @@
     for (const field of hw.FIELDS) {
       const control = controls[field.key];
       if (!control) continue;
-      const value = values[field.key];
+      const value = hw.valueOf(values, field);
       if (field.kind === 'bool') control.checked = String(value) === '1';
       else if (field.kind === 'fixed') control.textContent = hw.isNone(value) ? '—' : `GPIO ${value}`;
       else if (field.kind === 'pin' || field.kind === 'opt_pin') {

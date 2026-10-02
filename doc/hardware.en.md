@@ -277,8 +277,8 @@ Two variants of the chip, and the difference is the sound:
 Pins 12 and 13 (ROUT, LOUT) are unused with digital sound. Any free pin will do
 for DIN, and the choice is yours: it is 39 on the drawing, but 39 is also the
 amplifier's pin by default (`AUDIO_AMP_GPIO`), and if the amplifier is fitted
-too, DIN goes on another. The wiring editor proposes 39 when it is free and
-the next free pin when it is not. The pull-ups on SDA and SCL are required. RDS is
+too, DIN goes on another. In the wiring editor the
+tuner's pins are chosen in its card; until they are, the check asks for them. The pull-ups on SDA and SCL are required. RDS is
 sensitive to reception: on a weak signal a station's name may not come
 together while the sound plays fine, and an aerial kept away from the board's
 wires helps.
@@ -299,19 +299,23 @@ fs on its SCKI pin, which the S3 puts out itself.
 #define FM_I2C_SCL_GPIO 3
 #define AUDIO_ADC AUDIO_ADC_PCM1808
 #define I2S_DIN_GPIO 39
-#define I2S_MCLK_GPIO 14
+#define I2S_MCLK_GPIO 38
 ```
 
 Instead of the I2S lines of the RDA5807FP, not with them: both want the one DIN
-line. In the wiring editor it is a card of its own, "ADC"; with an ADC on, the
-tuner's "Audio" has to be "Analogue".
+line. In the wiring editor it is all in one card, "FM tuner": the chip first
+(RDA5807FP or RDA5807M). The FP's sound is always I2S and there is nothing to
+choose: only the DIN pin appears. The M has a choice of sound - "Analogue
+output" or "Through a PCM1808 ADC"; with the ADC an MCLK pin joins DIN.
+
+![Connecting the RDA5807M through a PCM1808 to the ESP32-S3 and the PCM5102 DAC](PCM1808_connections.png)
 
 | S3 (jRadio) | PCM1808 | What |
 |---|---|---|
 | GPIO 18 (BCLK) | BCK | the clocks shared with the DAC |
 | GPIO 17 (LRCK) | LRCK | the clocks shared with the DAC |
-| GPIO 39 (by default) | DOUT | the ADC's data into the S3 (a pin of your choice, see the DIN note above) |
-| GPIO 14 (by default) | SCKI | the master clock, any free pin |
+| a free GPIO (39 on the drawing) | DOUT | the ADC's data into the S3; the pin is yours to choose (see the DIN note above) |
+| a free GPIO (38 on the drawing) | SCKI | the master clock through 150 Ω; the pin is yours to choose |
 | 3V3, GND | power | |
 | GND | FMT, MD0, MD1 | I2S format, slave mode (256 x fs) |
 | | LIN, RIN | the tuner's sound, see below |
@@ -323,10 +327,12 @@ be AC-coupled. Many ready-made PCM1808 modules have the capacitors already; a
 bare RDA5807M has none.
 
 The master clock, 11.3 MHz at 44.1 kHz, has harmonics right in the FM band (the
-8th at 90.3 MHz, the 9th at 101.6 MHz). So the firmware runs it only while FM
-plays, and the wire to SCKI is best short, with a 100 Ω resistor in it next to
-the S3. The tuner's volume for this variant is 15 (the maximum), and the level
-is set by ear.
+8th at 90.3 MHz, the 9th at 101.6 MHz), and they sound exactly when it is
+needed - while FM is received. So the wire to SCKI is best short, with a
+100-220 Ω resistor in it (150 on the drawing) next to the S3: the resistor
+softens the edges, and the high harmonics get weaker. While anything other than
+FM plays, the ADC needs no clock, and the firmware turns it off. The tuner's
+volume for this variant is 15 (the maximum), and the level is set by ear.
 
 ## What the home screen shows
 

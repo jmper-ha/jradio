@@ -447,6 +447,15 @@ bool player_fm_name_is_frequency(const char *name, uint32_t khz)
     return strcmp(digits, tenths) == 0;
 }
 
+void player_fm_adc_gain(int16_t *samples, size_t count)
+{
+    if (samples == NULL) return;
+    for (size_t i = 0U; i < count; ++i) {
+        const int32_t louder = (int32_t)samples[i] * 2;
+        samples[i] = (int16_t)(louder > INT16_MAX ? INT16_MAX : louder < INT16_MIN ? INT16_MIN : louder);
+    }
+}
+
 player_fm_scan_step_t player_fm_scan_merge(uint32_t last_khz, uint8_t kept_rssi, uint32_t khz,
                                            uint8_t rssi)
 {

@@ -938,6 +938,8 @@ static void player_fm_pipe_task(void *arg)
         vTaskDelete(NULL);
         return;
     }
+    // The RDA5807FP sends its own full-scale samples; only the ADC's are short.
+    const bool adc = board_has_adc();
     size_t silent_bytes = 0U;
     for (;;) {
         const bool play = atomic_load_explicit(&s_fm_pipe_wanted, memory_order_acquire) &&
@@ -969,18 +971,21 @@ static void player_fm_pipe_task(void *arg)
         if (board_audio_capture_read(block, PLAYER_FM_PIPE_BYTES, &read, PLAYER_FM_PIPE_IO_MS) ==
                 ESP_OK &&
             read > 0U) {
-            size_t written = 0U;
-            (void)board_audio_write(block, read, &written, PLAYER_FM_PIPE_IO_MS);
             /* Even static between stations is louder than this, so half a
              * second of it is the tuner gone quiet, not the air: its setup
              * is checked, and put back. Not exact zeros - a muted chip sends
-             * a bit of dither, and that missed the first version. */
-            const int16_t *samples = (const int16_t *)block;
+             * a bit of dither, and that missed the first version. Measured
+             * before the ADC's gain, which the level was chosen without. */
+            int16_t *samples = (int16_t *)block;
+            const size_t count = read / sizeof(int16_t);
             bool silent = true;
-            for (size_t i = 0U; i < read / sizeof(int16_t) && silent; ++i) {
+            for (size_t i = 0U; i < count && silent; ++i) {
                 silent = samples[i] <= PLAYER_FM_PIPE_DEAD_LEVEL &&
                          samples[i] >= -PLAYER_FM_PIPE_DEAD_LEVEL;
             }
+            if (adc) player_fm_adc_gain(samples, count);
+            size_t written = 0U;
+            (void)board_audio_write(block, read, &written, PLAYER_FM_PIPE_IO_MS);
             silent_bytes = silent ? silent_bytes + read : 0U;
             if (silent_bytes >= PLAYER_FM_PIPE_DEAD_BYTES) {
                 silent_bytes = 0U;

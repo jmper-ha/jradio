@@ -961,6 +961,15 @@ static void test_a_name_that_is_only_the_frequency(void)
     assert(!player_fm_name_is_frequency(NULL, 95600U));
 }
 
+static void test_fm_through_the_adc_is_doubled_and_clipped(void)
+{
+    int16_t samples[] = {0, 1, -1, 11000, -11000, 16383, 16384, -16384, -16385, INT16_MAX, INT16_MIN};
+    player_fm_adc_gain(samples, sizeof(samples) / sizeof(samples[0]));
+    const int16_t want[] = {0, 2, -2, 22000, -22000, 32766, INT16_MAX, INT16_MIN, INT16_MIN, INT16_MAX, INT16_MIN};
+    assert(memcmp(samples, want, sizeof(want)) == 0);
+    player_fm_adc_gain(NULL, 4U);
+}
+
 static void test_a_station_on_the_next_channel_is_the_same_one(void)
 {
     // The first stop, and one further up than the next channel, are new.
@@ -993,6 +1002,7 @@ int main(void)
     test_snapshot_equality_notices_the_frequency();
     test_the_signal_is_a_scale_that_does_not_flicker();
     test_a_name_that_is_only_the_frequency();
+    test_fm_through_the_adc_is_doubled_and_clipped();
     test_a_station_on_the_next_channel_is_the_same_one();
     test_the_phone_is_a_source_only_while_the_module_answers();
     test_the_phones_queue_takes_both_keys_and_the_skip();

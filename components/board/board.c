@@ -422,6 +422,14 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
         std_config.gpio_cfg.din = wired(wiring()->i2s0_din);
         ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_rx, &std_config), TAG,
                             "configure I2S RX failed");
+        /* At the pad's default 20 mA the ADC's 11.3 MHz clock, square and on
+         * a flying wire, choked the Wi-Fi beside it: while FM played, sends
+         * stalled with EAGAIN, a status request took up to 5 s and a cover
+         * 14 s, against 13 ms paused. At the weakest drive the PCM1808 still
+         * reads it, and the web answers as fast as with FM paused. */
+        if (wide_slots) {
+            (void)gpio_set_drive_capability(wired(wiring()->i2s0_mclk), GPIO_DRIVE_CAP_0);
+        }
         ESP_LOGI(TAG, "I2S input on GPIO %d, for the FM tuner%s", wiring()->i2s0_din,
                  wide_slots ? ", through the ADC (master clock out, BCLK=64xFs)" : "");
     }

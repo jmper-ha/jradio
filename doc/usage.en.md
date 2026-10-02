@@ -149,8 +149,9 @@ standing on, or a note when it has none and the frequency matches no preset.
 On the right the frequency in large digits, under it the station's name (the
 preset's, or failing that the one RDS sends), the RDS radiotext as a scrolling
 line and, at the bottom, "Stereo", five blocks of signal level and an "RDS"
-frame when the station sends it. The 320×170 screen has no radiotext: there
-are not enough rows.
+frame when the station sends it. On the 320×170 screen those three marks stand
+in a line under the picture, and the radiotext runs right under the station's
+name.
 
 | Action | What it does |
 |---|---|

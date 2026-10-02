@@ -158,7 +158,7 @@ are not enough rows.
 | A press | Pause (the tuner is muted) or play |
 | A double press | The list of presets, rows like "88.3" or "91.2 Name"; choosing a row starts that station |
 | A triple press | Manual tuning, see below |
-| Prev / Next | Search: the nearest station down or up the band |
+| Prev / Next | The previous / next preset, not wrapping from the last to the first; off a preset, the last / the first. With no presets, a search for the nearest station down or up the band |
 | A long press | Back, to the menu |
 
 **Manual tuning.** The digits turn orange, with "Tuning by hand" under them.

@@ -176,7 +176,6 @@ static lv_obj_t *s_feed_notice;
 static lv_obj_t *s_feed_icons[UI_FEED_SLOTS];
 static lv_obj_t *s_feed_dots[UI_FEED_ITEM_COUNT];
 static ui_feed_model_t s_feed_model;
-static lv_obj_t *s_source_title;
 /* The FM frequency in the seven-segment face. It stands where the title and
  * the track are on every other source, and those two are hidden under it. */
 static lv_obj_t *s_source_fm_digits;
@@ -218,6 +217,10 @@ typedef struct {
 } ui_scroller_t;
 
 static ui_scroller_t s_source_detail;
+/* The station's or the album's name over the track. It travels when it is too
+ * long, as the track line does: a station's name cut to "Radio Paradise -
+ * Mai..." told the listener less than the name scrolling by. */
+static ui_scroller_t s_source_title;
 /* The FM radiotext under the station's name, travelling when it is too long -
  * on the panels that have a row for it (UI_SRC_FM_TEXT_ROW). */
 #if UI_SRC_FM_TEXT_ROW
@@ -1959,7 +1962,7 @@ static void ui_update_files_status(const player_snapshot_t *snapshot)
                             tagged ? &tags : NULL, &now);
     ui_note_now_playing(&now);
 
-    ui_set_label_text_if_changed(s_source_title, now.heading);
+    ui_scroller_set_text(&s_source_title, now.heading);
     ui_scroller_set_text(&s_source_detail, now.title);
     // The performer row is the state line's whenever there is a state worth
     // naming. Pause is not one - the badge says it.
@@ -1985,7 +1988,7 @@ static void ui_update_dlna_status(const player_snapshot_t *snapshot)
     ui_now_playing_for_station(false, "", snapshot->context, snapshot->stream_title, &now);
     ui_note_now_playing(&now);
 
-    ui_set_label_text_if_changed(s_source_title, now.heading);
+    ui_scroller_set_text(&s_source_title, now.heading);
     ui_scroller_set_text(&s_source_detail, now.title);
 
     /* Nothing playing yet is a browser waiting to be used, not a failure - the
@@ -2013,7 +2016,7 @@ static void ui_update_bluetooth_status(const player_snapshot_t *snapshot)
     ui_now_playing_for_phone(snapshot->context, tagged ? &tags : NULL, &now);
     ui_note_now_playing(&now);
 
-    ui_set_label_text_if_changed(s_source_title, now.heading[0] != '\0'
+    ui_scroller_set_text(&s_source_title, now.heading[0] != '\0'
                                                      ? now.heading
                                                      : ui_text(DEVICE_TEXT_SOURCE_BLUETOOTH));
     ui_scroller_set_text(&s_source_detail, now.title);
@@ -2051,7 +2054,7 @@ static void ui_set_hidden(lv_obj_t *object, bool hidden)
 static void ui_show_fm_face(bool fm)
 {
     ui_set_hidden(s_source_fm_digits, !fm);
-    ui_set_hidden(s_source_title, fm);
+    ui_set_hidden(s_source_title.box, fm);
     ui_set_hidden(s_source_detail.box, fm);
     ui_set_hidden(s_fm_marks, !fm);
     ui_set_hidden(s_source_stream, fm);
@@ -2305,7 +2308,7 @@ static void ui_update_radio_status(const player_snapshot_t *snapshot)
      * pass put there rather than having it blanked; what is playing is still
      * the stream's to tell, so the rows below it go on either way. */
     if (list_name != NULL) {
-        ui_set_label_text_if_changed(s_source_title, now.heading);
+        ui_scroller_set_text(&s_source_title, now.heading);
     }
     ui_scroller_set_text(&s_source_detail, now.title);
 
@@ -4395,11 +4398,10 @@ static void ui_create_source_screen(void)
     // Every one of these gets an explicit height of exactly one line. Without
     // it LV_LABEL_LONG_DOT wraps to a second line before it considers
     // shortening, and a long station name grew downwards over the codec row.
-    s_source_title = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_title, UI_SRC_TEXT_X, UI_SRC_ROW_TITLE);
-    lv_obj_set_size(s_source_title, UI_SRC_TEXT_W, UI_SRC_LINE_H);
-    lv_label_set_long_mode(s_source_title, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_source_title, lv_color_hex(UI_COLOR_ACCENT), 0);
+    s_source_title = ui_scroller_create(s_source_screen, UI_SRC_TEXT_X, UI_SRC_ROW_TITLE,
+                                        UI_SRC_TEXT_W, UI_SRC_LINE_H);
+    lv_obj_set_style_text_color(s_source_title.box, lv_color_hex(UI_COLOR_ACCENT), 0);
+    ui_scroller_set_scrolling(&s_source_title, true);
 
     s_source_detail = ui_scroller_create(s_source_screen, UI_SRC_TEXT_X, UI_SRC_ROW_TRACK,
                                         UI_SRC_TEXT_W, UI_SRC_TRACK_H);
@@ -4438,7 +4440,7 @@ static void ui_create_source_screen(void)
 #if UI_SRC_TEXT_CENTRED
     /* Centred as a column under a centred cover. A layout that reads the three
      * rows down their left edge beside the tile sets nothing. */
-    lv_obj_set_style_text_align(s_source_title, LV_TEXT_ALIGN_CENTER, 0);
+    s_source_title.centred = true;
     lv_obj_set_style_text_align(s_source_artist, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_align(s_source_status, LV_TEXT_ALIGN_CENTER, 0);
     s_source_detail.centred = true;
@@ -4675,7 +4677,7 @@ static void ui_load_source_screen(audio_source_t selected_source)
      * and this is the one place every route to the player passes through. */
     (void)ui_feed_model_select_source(&s_feed_model, selected_source);
     const uint8_t index = ui_menu_selected_index(&s_menu);
-    lv_label_set_text(s_source_title,
+    ui_scroller_set_text(&s_source_title,
                       ui_menu_item_label((ui_menu_item_t)index, s_device_settings.language));
     lv_screen_load(s_source_screen);
     if (selected_source == AUDIO_SOURCE_INTERNET_RADIO) {
@@ -5296,7 +5298,7 @@ static void ui_yandex_step_start(const player_snapshot_t *snapshot)
     ui_load_source_screen(AUDIO_SOURCE_YANDEX);
     yandex_station_t station;
     if (yandex_catalog_station_at(row, &station)) {
-        lv_label_set_text(s_source_title, station.name);
+        ui_scroller_set_text(&s_source_title, station.name);
         ui_scroller_set_text(&s_source_detail, station.name);
     }
 }
@@ -6180,7 +6182,7 @@ static void ui_handle_input(board_input_action_t action)
              * "select this row" while the player screen is up. */
             ui_leave_station_list();
             ui_load_source_screen(AUDIO_SOURCE_DLNA);
-            lv_label_set_text(s_source_title,
+            ui_scroller_set_text(&s_source_title,
                               ui_menu_item_label(UI_MENU_ITEM_DLNA, s_device_settings.language));
             /* Not "opening a file": the track is fetched over the network, and
              * the wait before sound is the server's rather than a disc's. */
@@ -6239,7 +6241,7 @@ static void ui_handle_input(board_input_action_t action)
             // timer, so pressing again pushed the recovery further away.
             ui_leave_station_list();
             ui_load_source_screen(source);
-            lv_label_set_text(s_source_title,
+            ui_scroller_set_text(&s_source_title,
                               ui_menu_item_label(source == AUDIO_SOURCE_SD
                                                      ? UI_MENU_ITEM_SD_CARD
                                                      : UI_MENU_ITEM_USB_FILES,
@@ -6262,7 +6264,7 @@ static void ui_handle_input(board_input_action_t action)
             };
             if (!ui_submit_player_command(&command)) return;
             ui_load_source_screen(AUDIO_SOURCE_INTERNET_RADIO);
-            if (entry != NULL) lv_label_set_text(s_source_title, entry->name);
+            if (entry != NULL) ui_scroller_set_text(&s_source_title, entry->name);
             ui_set_state_line("Connecting", "", false);
             ui_scroller_set_text(&s_source_detail,
                                          entry == NULL ? "" : entry->name);
@@ -6468,6 +6470,7 @@ static void ui_scroll_tick(void)
     const uint32_t now = ui_tick_get_ms();
     lv_obj_t *active = lv_screen_active();
     if (active == s_source_screen) {
+        ui_scroller_tick(&s_source_title, mode, now);
         ui_scroller_tick(&s_source_detail, mode, now);
 #if UI_SRC_FM_TEXT_ROW
         if (s_fm_text.box != NULL) ui_scroller_tick(&s_fm_text, mode, now);

@@ -58,6 +58,8 @@ static const field_descriptor_t k_fields[] = {
     {"screensaver", WEB_SETTINGS_FIELD_SCREENSAVER, {WEB_SETTINGS_SCREENSAVER_NAMES}, false, false},
     {"screensaver_seconds", WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS, {NULL}, true, false},
     {"screensaver_brightness", WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS, {NULL}, true, false},
+    {"encoder_reverse", WEB_SETTINGS_FIELD_ENCODER_REVERSE, {NULL}, false, false},
+    {"volume_step", WEB_SETTINGS_FIELD_VOLUME_STEP, {NULL}, true, false},
     {"alarm_enabled", WEB_SETTINGS_FIELD_ALARM_ENABLED, {NULL}, false, false},
     {"alarm_time", WEB_SETTINGS_FIELD_ALARM_TIME, {NULL}, false, true},
     {"alarm_days", WEB_SETTINGS_FIELD_ALARM_DAYS, {NULL}, true, false},
@@ -143,6 +145,8 @@ static bool parse_value(const field_descriptor_t *descriptor, const cJSON *value
         /* Never empty, which is the state the whole feature is arranged to
          * make unreachable, and never a bit the week does not have. */
         if (number <= 0 || number > (int)ALARM_DAYS_ALL) return false;
+    } else if (descriptor->field == WEB_SETTINGS_FIELD_VOLUME_STEP) {
+        if (number < DEVICE_VOLUME_STEP_MIN || number > DEVICE_VOLUME_STEP_MAX) return false;
     } else if (descriptor->field == WEB_SETTINGS_FIELD_ALARM_STATION) {
         if (number < 0 || number > DEVICE_ALARM_STATION_MAX) return false;
     } else if (number < 0 || number > 100) {
@@ -241,6 +245,10 @@ bool web_settings_apply(device_settings_t *settings,
     case WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS:
         return device_settings_set_screensaver_brightness(settings,
                                                           (unsigned char)change->value);
+    case WEB_SETTINGS_FIELD_ENCODER_REVERSE:
+        return device_settings_set_encoder_reverse(settings, change->value != 0);
+    case WEB_SETTINGS_FIELD_VOLUME_STEP:
+        return device_settings_set_volume_step(settings, (unsigned char)change->value);
     case WEB_SETTINGS_FIELD_ALARM_ENABLED:
         return device_settings_set_alarm_enabled(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_ALARM_TIME: {
@@ -288,6 +296,8 @@ void web_settings_make_view(web_settings_view_t *view,
         .flip_vertical = settings->flip_vertical,
         .flip_horizontal = settings->flip_horizontal,
         .invert_colors = settings->invert_colors,
+        .encoder_reverse = settings->encoder_reverse,
+        .volume_step = settings->volume_step,
         .timezone = (uint8_t)device_timezone_index_of(settings->timezone),
         .weather = (uint8_t)settings->weather_provider,
         .screensaver = (uint8_t)settings->screensaver,
@@ -327,6 +337,8 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->flip_vertical == right->flip_vertical &&
            left->flip_horizontal == right->flip_horizontal &&
            left->invert_colors == right->invert_colors &&
+           left->encoder_reverse == right->encoder_reverse &&
+           left->volume_step == right->volume_step &&
            left->timezone == right->timezone && left->weather == right->weather &&
            left->screensaver == right->screensaver &&
            left->screensaver_seconds == right->screensaver_seconds &&
@@ -386,6 +398,10 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_literal(writer, view->invert_colors ? "true" : "false");
     web_json_literal(writer, ",\"brightness\":");
     web_json_format(writer, "%u", (unsigned)view->brightness);
+    web_json_literal(writer, ",\"encoder_reverse\":");
+    web_json_literal(writer, view->encoder_reverse ? "true" : "false");
+    web_json_literal(writer, ",\"volume_step\":");
+    web_json_format(writer, "%u", (unsigned)view->volume_step);
     web_json_literal(writer, ",\"volume\":");
     web_json_format(writer, "%u", (unsigned)view->volume);
     web_json_literal(writer, ",\"timezone\":");
@@ -444,6 +460,10 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_format(writer, "%d", WEB_SETTINGS_IDLE_BRIGHTNESS_MIN);
     web_json_literal(writer, ",\"idle_brightness_max\":");
     web_json_format(writer, "%d", WEB_SETTINGS_IDLE_BRIGHTNESS_MAX);
+    web_json_literal(writer, ",\"volume_step_min\":");
+    web_json_format(writer, "%d", DEVICE_VOLUME_STEP_MIN);
+    web_json_literal(writer, ",\"volume_step_max\":");
+    web_json_format(writer, "%d", DEVICE_VOLUME_STEP_MAX);
     /* The waits the device offers, so the page's list is the device's and a
      * step added in the firmware is one line here and none on the page. */
     web_json_literal(writer, ",\"screensaver_seconds_choices\":[");

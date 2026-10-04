@@ -316,8 +316,9 @@ static lv_obj_t *s_source_progress;
 /* Four rising bars. Drawn rather than taken from a font: LVGL's symbol set has
  * one Wi-Fi glyph with no strength in it, and the strength is the half worth
  * showing. */
-/* One encoder click. Five percent is 2 dB on this curve - a step you can hear
- * without hunting, and 20 clicks from silence to full. */
+/* One click of a remote's volume key. Five percent is 2 dB on this curve - a
+ * step you can hear without hunting, and 20 clicks from silence to full. The
+ * encoder's own step is a setting, and starts out the same. */
 #define UI_VOLUME_STEP_PERCENT 5
 /* How long the knob has to be still before the setting is written to flash.
  * Long enough to cover a whole gesture, short enough that a power cut right
@@ -365,7 +366,7 @@ static lv_obj_t *s_settings_more_above;
 static lv_obj_t *s_settings_more_below;
 /* One per boolean setting, not per row on screen: only one group is open at
  * a time, so at most three are ever visible, but each keeps its own object. */
-#define UI_SETTINGS_SWITCH_COUNT 8U
+#define UI_SETTINGS_SWITCH_COUNT 9U
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
@@ -394,6 +395,15 @@ static char s_qr_shown[128];
 static lv_obj_t *s_settings_notice;
 static ui_settings_model_t s_settings_model;
 static device_settings_t s_device_settings;
+
+/* Volume percent per encoder detent. Read through here rather than straight
+ * off the struct: before the settings are first read it is zero, and a knob
+ * that does nothing looks broken. */
+static int ui_encoder_volume_step(void)
+{
+    const int step = (int)s_device_settings.volume_step;
+    return step > 0 ? step : UI_VOLUME_STEP_PERCENT;
+}
 
 /* The current language, every time rather than cached: it changes from the row
  * above on this very screen, and from the browser while the screen is open. */
@@ -3217,6 +3227,15 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_BT_OUTPUT,
                                  s_device_settings.bt_output);
         break;
+    case UI_SETTINGS_ROW_ENCODER_REVERSE_FIELD:
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_ENCODER_REVERSE,
+                                 s_device_settings.encoder_reverse);
+        break;
+    case UI_SETTINGS_ROW_VOLUME_STEP_FIELD:
+        snprintf(text, text_size,
+                 ui_settings_model_is_editing(&s_settings_model) ? "  %s: <%d%%>" : "  %s: %d%%",
+                 ui_text(DEVICE_TEXT_ROW_VOLUME_STEP), ui_encoder_volume_step());
+        break;
     case UI_SETTINGS_ROW_BRIGHTNESS_FIELD:
         /* Angle brackets while the knob owns the value: the cursor already
          * says which row, and this is the only thing that says the next click
@@ -3296,6 +3315,10 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     case UI_SETTINGS_ROW_INVERT_COLORS_FIELD:
         *index = 7U;
         *value = s_device_settings.invert_colors;
+        return true;
+    case UI_SETTINGS_ROW_ENCODER_REVERSE_FIELD:
+        *index = 8U;
+        *value = s_device_settings.encoder_reverse;
         return true;
     default:
         return false;
@@ -3642,6 +3665,7 @@ static void ui_reload_settings(void)
     if (brightness_pending) s_device_settings.brightness = turning_brightness;
 
     ui_apply_display_rotation();
+    board_input_set_encoder_reverse(s_device_settings.encoder_reverse);
     ui_backlight_apply(s_device_settings.brightness);
     if (!volume_pending) board_audio_set_volume(s_device_settings.volume);
     /* The zone applies to the next reading of the clock and the server only
@@ -4136,6 +4160,11 @@ static void ui_settings_change_selected(void)
          * to invalidate. */
         if (changed) (void)board_display_set_invert(s_device_settings.invert_colors);
         break;
+    case UI_SETTINGS_ROW_ENCODER_REVERSE_FIELD:
+        changed = device_settings_set_encoder_reverse(&s_device_settings,
+                                                      !s_device_settings.encoder_reverse);
+        if (changed) board_input_set_encoder_reverse(s_device_settings.encoder_reverse);
+        break;
     default:
         return;
     }
@@ -4162,12 +4191,29 @@ static void ui_brightness_step(int direction)
     device_settings_publish(&s_device_settings);
 }
 
+/* Written per detent, unlike the brightness: nothing on the screen follows
+ * this value while it is turned, so there is no lag to hide, and a step of
+ * twenty is twenty writes at most. */
+static void ui_volume_step_setting_step(int direction)
+{
+    const int next = ui_settings_volume_step_step(ui_encoder_volume_step(), direction);
+    if (next == ui_encoder_volume_step()) return;
+    const bool changed = device_settings_set_volume_step(&s_device_settings, (unsigned char)next);
+    lv_label_set_text(s_settings_notice,
+                      changed ? "" : ui_text(DEVICE_TEXT_SETTINGS_WRITE_FAILED));
+    if (changed) device_settings_publish(&s_device_settings);
+}
+
 /* The number fields. Separate from ui_settings_change_selected() because a
  * click and a detent mean different things here: the click only decides who
  * the knob belongs to, and this is the turn that moves the value. */
 static void ui_settings_change_number(int direction)
 {
     const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
+    if (selected == UI_SETTINGS_ROW_VOLUME_STEP_FIELD) {
+        ui_volume_step_setting_step(direction);
+        return;
+    }
     if (selected != UI_SETTINGS_ROW_BRIGHTNESS_FIELD) {
         return;
     }
@@ -6356,8 +6402,8 @@ static void ui_handle_input(board_input_action_t action)
                    action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
             // The encoder was unused on this screen, which is why volume gets
             // it: no gesture has to be given up to make room.
-            ui_volume_step(action == BOARD_INPUT_ACTION_ENCODER_RIGHT ? UI_VOLUME_STEP_PERCENT
-                                                                       : -UI_VOLUME_STEP_PERCENT);
+            ui_volume_step(action == BOARD_INPUT_ACTION_ENCODER_RIGHT ? ui_encoder_volume_step()
+                                                                       : -ui_encoder_volume_step());
         } else if (action == BOARD_INPUT_ACTION_BTN_PREV ||
                    action == BOARD_INPUT_ACTION_BTN_NEXT) {
             const bool forward = action == BOARD_INPUT_ACTION_BTN_NEXT;
@@ -7486,6 +7532,7 @@ esp_err_t ui_init(void)
         lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
     } else {
         ui_apply_display_rotation();
+        board_input_set_encoder_reverse(s_device_settings.encoder_reverse);
         ui_backlight_apply(s_device_settings.brightness);
         ui_apply_files_end();
         /* Once, here: from now on the player follows the tuner and this

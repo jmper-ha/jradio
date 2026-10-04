@@ -194,6 +194,12 @@ typedef enum {
 /* Backlight percentage. The range is the UI's - see ui_settings_model.h - and
  * this is what the panel came up at before the setting existed. */
 #define DEVICE_BRIGHTNESS_DEFAULT 50
+/* Volume percent per encoder detent. 5 is what the knob did before it could
+ * be changed; 1 lets a sensitive amplifier be set finely, 20 crosses the
+ * whole range in five clicks. */
+#define DEVICE_VOLUME_STEP_DEFAULT 5
+#define DEVICE_VOLUME_STEP_MIN 1
+#define DEVICE_VOLUME_STEP_MAX 20
 
 typedef struct {
     device_language_t language;
@@ -209,6 +215,10 @@ typedef struct {
      * flipped. A setting rather than a build option so a ready-made image
      * fits either glass. */
     bool invert_colors;
+    /* Swaps the encoder's two directions everywhere, for an encoder whose A
+     * and B came out the other way round on the board - cheaper than
+     * resoldering, and the same image fits either. */
+    bool encoder_reverse;
     /* Resume what was playing at power-off instead of opening the home
      * screen. What "what was playing" means is the two fields below: the
      * radio's own last-station URL is stored separately by station_resume. */
@@ -240,6 +250,8 @@ typedef struct {
      * UI's 10..90 window: this layer only refuses what the hardware cannot do,
      * so a value written by hand still reaches the panel. */
     unsigned char brightness;
+    /* DEVICE_VOLUME_STEP_MIN..MAX. */
+    unsigned char volume_step;
     /* The time zone as an id out of device_timezone.h, not a POSIX string:
      * every summer-time rule carries commas, and settings.csv splits a line on
      * the first one. */
@@ -296,6 +308,7 @@ bool device_settings_set_flip_vertical_value(device_settings_t *settings, int va
 bool device_settings_set_flip_horizontal_value(device_settings_t *settings, int value);
 bool device_settings_set_invert_colors(device_settings_t *settings, bool enabled);
 bool device_settings_set_invert_colors_value(device_settings_t *settings, int value);
+bool device_settings_set_encoder_reverse(device_settings_t *settings, bool enabled);
 bool device_settings_set_autoplay(device_settings_t *settings, bool enabled);
 bool device_settings_set_yandex_music(device_settings_t *settings, bool enabled);
 bool device_settings_set_dlna(device_settings_t *settings, bool enabled);
@@ -324,6 +337,7 @@ bool device_settings_set_bt_speaker(device_settings_t *settings, const char *add
  * bug, and silently accepting it would hide it. */
 bool device_settings_set_volume(device_settings_t *settings, unsigned char volume);
 bool device_settings_set_brightness(device_settings_t *settings, unsigned char brightness);
+bool device_settings_set_volume_step(device_settings_t *settings, unsigned char step);
 /* An id this build knows, out of device_timezone.h; anything else is refused
  * rather than stored, since a zone the firmware cannot translate is a clock
  * that silently stays on the old one. */

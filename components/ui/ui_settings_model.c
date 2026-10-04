@@ -79,6 +79,16 @@ static const ui_settings_row_t s_field_rows[] = {
         .kind = UI_SETTINGS_ROW_FIELD,
     },
     {
+        .id = UI_SETTINGS_ROW_ENCODER_REVERSE_FIELD,
+        .group = UI_SETTINGS_GROUP_GENERAL,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
+        .id = UI_SETTINGS_ROW_VOLUME_STEP_FIELD,
+        .group = UI_SETTINGS_GROUP_GENERAL,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
         .id = UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
         .group = UI_SETTINGS_GROUP_DISPLAY,
         .kind = UI_SETTINGS_ROW_FIELD,
@@ -262,7 +272,7 @@ bool ui_settings_model_has_rows_below(const ui_settings_model_t *model, size_t v
 
 bool ui_settings_row_is_number(ui_settings_row_id_t id)
 {
-    return id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD;
+    return id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD || id == UI_SETTINGS_ROW_VOLUME_STEP_FIELD;
 }
 
 bool ui_settings_model_is_editing(const ui_settings_model_t *model)
@@ -381,4 +391,12 @@ bool ui_settings_model_is_expanded(const ui_settings_model_t *model, ui_settings
 {
     return valid_model(model) && group < UI_SETTINGS_GROUP_COUNT &&
            model->expanded_group == (int)group;
+}
+
+int ui_settings_volume_step_step(int value, int direction)
+{
+    int stepped = value + (direction > 0 ? 1 : direction < 0 ? -1 : 0);
+    if (stepped < UI_SETTINGS_VOLUME_STEP_MIN) stepped = UI_SETTINGS_VOLUME_STEP_MIN;
+    if (stepped > UI_SETTINGS_VOLUME_STEP_MAX) stepped = UI_SETTINGS_VOLUME_STEP_MAX;
+    return stepped;
 }

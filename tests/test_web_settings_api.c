@@ -148,6 +148,16 @@ static void test_numbers_are_range_checked(void)
     assert(!parse_one("{\"field\":\"brightness\",\"value\":101}", &change));
     assert(!parse_one("{\"field\":\"brightness\",\"value\":-5}", &change));
 
+    // The encoder's volume step: zero would be a knob that does nothing.
+    assert(parse_one("{\"field\":\"volume_step\",\"value\":1}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_VOLUME_STEP && change.value == 1);
+    assert(parse_one("{\"field\":\"volume_step\",\"value\":20}", &change));
+    assert(!parse_one("{\"field\":\"volume_step\",\"value\":0}", &change));
+    assert(!parse_one("{\"field\":\"volume_step\",\"value\":21}", &change));
+    assert(parse_one("{\"field\":\"encoder_reverse\",\"value\":true}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_ENCODER_REVERSE && change.value == 1);
+    assert(!parse_one("{\"field\":\"encoder_reverse\",\"value\":1}", &change));
+
     // The volume has the whole range: silence is a thing to ask for.
     assert(parse_one("{\"field\":\"volume\",\"value\":0}", &change));
     assert(change.field == WEB_SETTINGS_FIELD_VOLUME);
@@ -188,6 +198,11 @@ static void test_apply_writes_through_to_the_file(void)
     const web_settings_change_t brightness = {WEB_SETTINGS_FIELD_BRIGHTNESS, 35, ""};
     assert(web_settings_apply(&settings, &brightness));
     assert(settings.brightness == 35);
+
+    const web_settings_change_t reverse = {WEB_SETTINGS_FIELD_ENCODER_REVERSE, 1, ""};
+    assert(web_settings_apply(&settings, &reverse));
+    const web_settings_change_t step = {WEB_SETTINGS_FIELD_VOLUME_STEP, 3, ""};
+    assert(web_settings_apply(&settings, &step));
 
     const web_settings_change_t scroll = {WEB_SETTINGS_FIELD_SCROLL, DEVICE_SCROLL_LEFT, ""};
     assert(web_settings_apply(&settings, &scroll));
@@ -256,6 +271,8 @@ static void test_apply_writes_through_to_the_file(void)
     device_settings_t reloaded;
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.brightness == 35);
+    assert(reloaded.encoder_reverse);
+    assert(reloaded.volume_step == 3U);
     assert(reloaded.scroll == DEVICE_SCROLL_LEFT);
     assert(reloaded.buffer_view == DEVICE_BUFFER_VIEW_GRAPH);
     assert(reloaded.weather_provider == DEVICE_WEATHER_WTTR);
@@ -314,6 +331,10 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"files_end\":\"stop\"") != NULL);
     assert(strstr(document, "\"volume\":42") != NULL);
     assert(strstr(document, "\"brightness\":50") != NULL);
+    assert(strstr(document, "\"encoder_reverse\":false") != NULL);
+    assert(strstr(document, "\"volume_step\":5") != NULL);
+    assert(strstr(document, "\"volume_step_min\":1") != NULL);
+    assert(strstr(document, "\"volume_step_max\":20") != NULL);
     // A build without Yandex Music or a media server says so, so the page
     // drops those rows rather than offering switches behind which there is
     // nothing.
@@ -408,6 +429,12 @@ static void test_view_comparison_notices_every_field(void)
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.brightness = (uint8_t)(base.brightness + 5U);
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.encoder_reverse = !base.encoder_reverse;
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.volume_step = (uint8_t)(base.volume_step + 1U);
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.language = DEVICE_LANGUAGE_EN;

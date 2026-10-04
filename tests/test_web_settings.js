@@ -92,6 +92,7 @@ const ids = [
   'bt-chosen', 'bt-chosen-name', 'bt-chosen-state', 'bt-scan',
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal', 'device-invert-colors',
+  'device-encoder-reverse', 'device-volume-step', 'device-volume-step-value',
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
   'device-idle-brightness-value', 'device-screensaver-after-row',
   'device-idle-brightness-row',
@@ -175,10 +176,10 @@ let settingsReply = {
   language: 'ru', home_screen: 'text', scroll: 'bounce', buffer_view: 'graph',
   autoplay: false, files_end: 'repeat',
   yandex_music: true, dlna: false, flip_vertical: false, flip_horizontal: true,
-  invert_colors: true,
+  invert_colors: true, encoder_reverse: true, volume_step: 7,
   brightness: 45, volume: 62,
   available: {home_screen: true, yandex_music: false, dlna: true, bt_output: true},
-  brightness_min: 10, brightness_max: 90,
+  brightness_min: 10, brightness_max: 90, volume_step_min: 1, volume_step_max: 20,
   screensaver: 'clock', screensaver_seconds: 120, screensaver_brightness: 15,
   idle_brightness_min: 5, idle_brightness_max: 50,
   screensaver_seconds_choices: [15, 30, 60, 120, 300, 600],
@@ -664,6 +665,11 @@ function lastYandexTimer() {
   assert.equal(elements['#device-files-end'].value, 'repeat');
   assert.equal(elements['#device-flip-horizontal'].checked, true);
   assert.equal(elements['#device-invert-colors'].checked, true);
+  assert.equal(elements['#device-encoder-reverse'].checked, true);
+  assert.equal(elements['#device-volume-step'].value, '7');
+  assert.equal(elements['#device-volume-step-value'].textContent, '7');
+  assert.equal(elements['#device-volume-step'].min, '1');
+  assert.equal(elements['#device-volume-step'].max, '20');
   assert.equal(elements['#device-brightness'].value, '45');
   assert.equal(elements['#device-brightness-value'].textContent, '45');
   // The slider stops where the encoder does, and the device says where.
@@ -899,6 +905,22 @@ function lastYandexTimer() {
                                            call.options.method === 'POST')
       .at(-1).options.body),
     {field: 'brightness', value: 30});
+
+  // The encoder's step is a slider of the same kind: written when let go.
+  const beforeStep = fetchCalls.length;
+  elements['#device-volume-step'].value = '3';
+  elements['#device-volume-step'].emit('input');
+  assert.equal(elements['#device-volume-step-value'].textContent, '3');
+  assert.equal(fetchCalls.length, beforeStep);
+  settingsReply = {...settingsReply, volume_step: 3};
+  elements['#device-volume-step'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
+                                           call.options &&
+                                           call.options.method === 'POST')
+      .at(-1).options.body),
+    {field: 'volume_step', value: 3});
 
   /* The wait goes out as a number, the way the slider's value does, even
      though it is picked off a list: the device validates it against the same

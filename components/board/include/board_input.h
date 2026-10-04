@@ -138,4 +138,8 @@ bool board_input_read(board_input_action_t *action, TickType_t timeout);
  * the same queue, so it reaches the screen the way a key does. False when the
  * queue is full or not yet there. */
 bool board_input_inject(board_input_action_t action);
+/* Swaps the encoder's two directions from the next detent on. Here, at the
+ * pins, rather than where the actions are read: the remote's Up and Down
+ * arrive as the same two actions and must not turn round with it. */
+void board_input_set_encoder_reverse(bool reverse);
 #endif

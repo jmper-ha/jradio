@@ -74,6 +74,8 @@ typedef enum {
     DEVICE_TEXT_ROW_YANDEX,
     DEVICE_TEXT_ROW_DLNA,
     DEVICE_TEXT_ROW_BRIGHTNESS,
+    DEVICE_TEXT_ROW_ENCODER_REVERSE,
+    DEVICE_TEXT_ROW_VOLUME_STEP,
     /* The two the quick panel names that no settings row does: the sleep
      * timer is set from the panel and from the web page, never from the
      * settings screen, and the alarm's own rows live in the browser. */

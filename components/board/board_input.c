@@ -84,6 +84,8 @@ static board_input_channel_t s_channels[] = {
 static int s_encoder_left = BOARD_GPIO_NOT_WIRED;
 static int s_encoder_right = BOARD_GPIO_NOT_WIRED;
 static board_encoder_decoder_t s_encoder_decoder;
+/* Written by the UI task, read by this one: a single bool needs no lock. */
+static volatile bool s_encoder_reverse;
 
 static void board_input_task(void *arg)
 {
@@ -91,9 +93,14 @@ static void board_input_task(void *arg)
     TickType_t last_wake = xTaskGetTickCount();
 
     while (true) {
-        const board_input_action_t encoder_action =
+        board_input_action_t encoder_action =
             board_encoder_decoder_update(&s_encoder_decoder, gpio_get_level(s_encoder_left),
                                          gpio_get_level(s_encoder_right));
+        if (s_encoder_reverse && encoder_action != BOARD_INPUT_ACTION_NONE) {
+            encoder_action = encoder_action == BOARD_INPUT_ACTION_ENCODER_RIGHT
+                                 ? BOARD_INPUT_ACTION_ENCODER_LEFT
+                                 : BOARD_INPUT_ACTION_ENCODER_RIGHT;
+        }
         if (encoder_action != BOARD_INPUT_ACTION_NONE &&
             xQueueSend(s_event_queue, &encoder_action, 0) != pdTRUE) {
             ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)encoder_action);
@@ -338,6 +345,11 @@ bool board_input_inject(board_input_action_t action)
 {
     if (s_event_queue == NULL || action == BOARD_INPUT_ACTION_NONE) return false;
     return xQueueSend(s_event_queue, &action, 0) == pdTRUE;
+}
+
+void board_input_set_encoder_reverse(bool reverse)
+{
+    s_encoder_reverse = reverse;
 }
 
 bool board_input_read(board_input_action_t *action, TickType_t timeout)

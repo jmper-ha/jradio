@@ -293,7 +293,8 @@ page as a line with the time and the days.
 
 On the device: language, home screen style, scrolling of long lines, the
 buffer readout, resume, end of folder, Yandex Music, DLNA, weather, brightness, picture
-mirroring, colour inversion, screensaver, sound over Bluetooth, volume. They apply at once and
+mirroring, colour inversion, screensaver, sound over Bluetooth, encoder reverse, volume
+step, volume. They apply at once and
 are saved. The same settings are in the web interface, in the same words;
 changes either way show at once.
 
@@ -312,6 +313,13 @@ detail, the alarm, the sleep timer, the backup.
 - **Scrolling** - how long lines move: "left-right", or "left" with a jump
   back to the start.
 - **Brightness** - 10 to 100, changed with the encoder right on the row.
+- **Reverse encoder** - if the encoder turns "the wrong way" (A and B
+  swapped on the board), switch this on and the direction turns round
+  everywhere. The remote's keys are not affected.
+- **Volume step** - how many percent one click of the encoder moves the
+  volume: 1 to 20, 5 by default. On the device it is changed with the encoder
+  right on the row, on the web with a slider in the Encoder group. The
+  remote's volume keys always step by 5.
 - **Invert colours** - if the picture looks like a negative (a dark
   background gone light, colours turned inside out), your display has the
   other kind of glass from the author's: IPS and TN on the same controller

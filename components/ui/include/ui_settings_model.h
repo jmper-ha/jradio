@@ -33,6 +33,10 @@ typedef enum {
      * instead of the DAC. Only the switch here; which speaker is the page's,
      * where a list can be shown. */
     UI_SETTINGS_ROW_BT_OUTPUT_FIELD,
+    /* The encoder's direction, and how far one of its detents moves the
+     * volume. Last in General: set once for the hardware, then left. */
+    UI_SETTINGS_ROW_ENCODER_REVERSE_FIELD,
+    UI_SETTINGS_ROW_VOLUME_STEP_FIELD,
     UI_SETTINGS_ROW_DISPLAY_GROUP,
     UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
     /* The mode only. Its wait and its idle level are numbers nobody sets
@@ -149,3 +153,8 @@ bool ui_settings_model_has_rows_below(const ui_settings_model_t *model, size_t v
  * settings own what it is. */
 int ui_settings_brightness_step(int value, int direction);
 int ui_settings_brightness_clamp(int value);
+/* The volume per encoder detent, one percent per detent while it is being
+ * set. Mirrors DEVICE_VOLUME_STEP_MIN/MAX, which this component cannot see. */
+#define UI_SETTINGS_VOLUME_STEP_MIN 1
+#define UI_SETTINGS_VOLUME_STEP_MAX 20
+int ui_settings_volume_step_step(int value, int direction);

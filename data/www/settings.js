@@ -54,6 +54,7 @@
   const backupRestore = document.querySelector('#backup-restore');
   const deviceBrightness = document.querySelector('#device-brightness');
   const deviceIdleBrightness = document.querySelector('#device-idle-brightness');
+  const deviceVolumeStep = document.querySelector('#device-volume-step');
   const deviceScreensaverAfter = document.querySelector('#device-screensaver-after');
   const weatherNowRow = document.querySelector('#device-weather-now-row');
   const weatherNow = document.querySelector('#device-weather-now');
@@ -127,6 +128,10 @@
     {field: 'flip_horizontal', kind: 'switch',
      node: document.querySelector('#device-flip-horizontal')},
     {field: 'invert_colors', kind: 'switch', node: document.querySelector('#device-invert-colors')},
+    {field: 'encoder_reverse', kind: 'switch',
+     node: document.querySelector('#device-encoder-reverse')},
+    {field: 'volume_step', kind: 'number', node: deviceVolumeStep,
+     output: document.querySelector('#device-volume-step-value')},
   ];
 
   const reconnectDelays = Object.freeze([500, 1000, 2000, 4000, 8000]);
@@ -1085,6 +1090,11 @@
         Number.isSafeInteger(payload.idle_brightness_max)) {
       deviceIdleBrightness.min = String(payload.idle_brightness_min);
       deviceIdleBrightness.max = String(payload.idle_brightness_max);
+    }
+    if (Number.isSafeInteger(payload.volume_step_min) &&
+        Number.isSafeInteger(payload.volume_step_max)) {
+      deviceVolumeStep.min = String(payload.volume_step_min);
+      deviceVolumeStep.max = String(payload.volume_step_max);
     }
     if (Number.isSafeInteger(payload.brightness_min) &&
         Number.isSafeInteger(payload.brightness_max)) {

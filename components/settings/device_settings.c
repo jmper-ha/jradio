@@ -170,6 +170,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         .home_screen = DEVICE_HOME_SCREEN_TEXT,
         .volume = DEVICE_VOLUME_DEFAULT,
         .brightness = DEVICE_BRIGHTNESS_DEFAULT,
+        .volume_step = DEVICE_VOLUME_STEP_DEFAULT,
         .screensaver_seconds = DEVICE_SCREENSAVER_SECONDS_DEFAULT,
         .screensaver_brightness = DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT,
         .yandex_music = true,
@@ -265,6 +266,9 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     if (read_value(path, "display_invert_colors", value, sizeof(value))) {
         (void)parse_bool(value, &settings->invert_colors);
     }
+    if (read_value(path, "encoder_reverse", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->encoder_reverse);
+    }
     if (read_value(path, "autoplay", value, sizeof(value))) {
         (void)parse_bool(value, &settings->autoplay);
     }
@@ -305,6 +309,14 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
          * screen - which would also hide the settings screen that fixes it. */
         if (end != NULL && *end == '\0' && parsed > 0 && parsed <= 100) {
             settings->brightness = (unsigned char)parsed;
+        }
+    }
+    if (read_value(path, "volume_step", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        if (end != NULL && *end == '\0' && parsed >= DEVICE_VOLUME_STEP_MIN &&
+            parsed <= DEVICE_VOLUME_STEP_MAX) {
+            settings->volume_step = (unsigned char)parsed;
         }
     }
     if (read_value(path, "screensaver", value, sizeof(value))) {
@@ -506,6 +518,13 @@ bool device_settings_set_invert_colors_value(device_settings_t *settings, int va
     return value == 0 || value == 1 ? device_settings_set_invert_colors(settings, value != 0) : false;
 }
 
+bool device_settings_set_encoder_reverse(device_settings_t *settings, bool enabled)
+{
+    if (!save_value(settings, "encoder_reverse", enabled ? "1" : "0")) return false;
+    settings->encoder_reverse = enabled;
+    return true;
+}
+
 bool device_settings_set_flip_vertical_value(device_settings_t *settings, int value)
 {
     return value == 0 || value == 1 ? device_settings_set_flip_vertical(settings, value != 0) : false;
@@ -690,6 +709,19 @@ bool device_settings_set_brightness(device_settings_t *settings, unsigned char b
     snprintf(text, sizeof(text), "%u", (unsigned int)brightness);
     if (!save_value(settings, "brightness", text)) return false;
     settings->brightness = brightness;
+    return true;
+}
+
+bool device_settings_set_volume_step(device_settings_t *settings, unsigned char step)
+{
+    if (settings == NULL || step < DEVICE_VOLUME_STEP_MIN || step > DEVICE_VOLUME_STEP_MAX) {
+        return false;
+    }
+    if (settings->volume_step == step) return true;
+    char text[8];
+    snprintf(text, sizeof(text), "%u", (unsigned int)step);
+    if (!save_value(settings, "volume_step", text)) return false;
+    settings->volume_step = step;
     return true;
 }
 

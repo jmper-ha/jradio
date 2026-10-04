@@ -62,10 +62,14 @@
 #define BOARD_DISPLAY_PORTRAIT 0
 #endif
 
-/* SPI clock for the panel - a property of the controller and the ribbon it
- * comes on, not of this board. Probing higher needs a scope on the bus, not a
- * guess. */
-#define DISPLAY_PIXEL_CLOCK_HZ (20 * 1000 * 1000)
+/* SPI clock for the panel. 40 MHz, the same as the 480 px panels, and not
+ * for speed: at 20 MHz the PCM5102 crackled - a few clicks a minute, more
+ * the busier the stream, with the panel unplugged as well - and at 40 MHz
+ * the same bench played clean (2026-10-04). Twice the clock is half as long
+ * on the bus per band; the picture on the module here is unchanged. A module
+ * on long wires that tears or speckles at this rate is the case to come back
+ * for. */
+#define DISPLAY_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
 
 /* Named for the log line and the error messages, so a boot log says which
  * panel the firmware was built for without anyone reading board_options.h. */

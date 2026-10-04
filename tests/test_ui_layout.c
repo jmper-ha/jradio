@@ -190,11 +190,15 @@ static void test_the_slow_repaint_threshold_follows_the_panel(void)
     /* And not so far above it that a pass which never ends looks normal. Ten
      * seconds is the frozen screen this exists to name. */
     assert(UI_REPAINT_WARN_MS < 10000);
-#if TFT_WIDTH == 320 && TFT_HEIGHT == 240
+#if TFT_WIDTH == 320 && TFT_HEIGHT == 240 && DISPLAY_PIXEL_CLOCK_HZ == 20000000
     /* The panel the number was measured on, and the reason it is written as a
      * derivation rather than a table: it reproduces what was there. */
     assert(UI_FRAME_WIRE_MS == 61);
     assert(UI_REPAINT_WARN_MS == 400);
+#elif TFT_WIDTH == 320 && TFT_HEIGHT == 240 && DISPLAY_PIXEL_CLOCK_HZ == 40000000
+    /* The ILI9341 since it went to 40 MHz: half the wire, the same render. */
+    assert(UI_FRAME_WIRE_MS == 30);
+    assert(UI_REPAINT_WARN_MS == 338);
 #endif
 }
 

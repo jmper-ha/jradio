@@ -1021,6 +1021,7 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
 
     for (size_t index = 0U; index < count; ++index) {
         const char *label = "";
+        const char *icon = "";
         yandex_station_t station;
         fm_preset_t preset;
         char frequency[FM_PRESET_NAME_MAX_LEN + 12U];  // "88.3 " and a name
@@ -1029,6 +1030,7 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
             // The frequency, then the name if there is one, as on the panel.
             player_fm_list_label(preset.khz, preset.name, frequency, sizeof(frequency));
             label = frequency;
+            icon = preset.icon;
         } else if (rotor) {
             if (!yandex_catalog_station_at(index, &station)) break;
             label = station.name;
@@ -1036,11 +1038,19 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
             const station_catalog_entry_t *entry = internet_radio_station_at(index);
             if (entry == NULL) break;
             label = entry->name;
+            icon = entry->icon;
         }
         web_json_literal(&writer, index > 0U ? ",{\"index\":" : "{\"index\":");
         web_json_format(&writer, "%u", (unsigned)index);
         web_json_literal(&writer, ",\"label\":");
         web_json_string(&writer, label);
+        /* The picture the station has on the device, by name, for the page to
+         * put in front of the row; none is no key at all. The rotor's stations
+         * have none here. */
+        if (icon[0] != '\0') {
+            web_json_literal(&writer, ",\"icon\":");
+            web_json_string(&writer, icon);
+        }
         web_json_literal(&writer, "}");
         if (!web_json_valid(&writer)) {
             ESP_LOGE(TAG, "station %u did not fit the chunk buffer", (unsigned)index);
@@ -1049,7 +1059,8 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
         /* Flush whenever the next entry might not fit, so one buffer serves a
          * catalogue of any size - the same rule the file listing uses, and the
          * reason 99 stations need no bigger buffer than 32 did. */
-        if (web_json_length(&writer) + STATION_CATALOG_NAME_MAX_LEN + 32U >
+        if (web_json_length(&writer) + STATION_CATALOG_NAME_MAX_LEN + STATION_CATALOG_ICON_MAX_LEN +
+                48U >
             sizeof(s_file_chunk_buffer)) {
             const esp_err_t err = httpd_resp_send_chunk(request, s_file_chunk_buffer,
                                                         web_json_length(&writer));

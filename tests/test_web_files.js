@@ -257,8 +257,20 @@ function rows() {
   return elements['#list-items'].children.map((row) => row.children[0]);
 }
 
+// The name, past the picture's tile that a station row starts with.
 function labels() {
-  return rows().map((button) => button.children[0].textContent);
+  return rows().map((button) => button.children
+    .find((child) => child.className === 'list-item-label').textContent);
+}
+
+// What each station row shows in front of its name: a picture's address, or
+// '' for the empty tile; undefined for a row with no tile at all.
+function icons() {
+  return rows().map((button) => {
+    const tile = button.children.find((child) => child.className === 'list-item-icon');
+    if (!tile) return undefined;
+    return tile.children.length > 0 ? tile.children[0].src : '';
+  });
 }
 
 vm.createContext(context);
@@ -451,8 +463,10 @@ socket.emit('open');
   assert.equal(fetchCalls.length, 1, 'a station list is fetched, not read from the frame');
   assert.equal(fetchCalls[0].url, '/api/stations');
   await respond({kind: 'stations', revision: 6, count: 1,
-                 items: [{index: 0, label: 'Радио Шоколад'}]});
+                 items: [{index: 0, label: 'Радио Шоколад', icon: 's1.png'}]});
   assert.deepEqual(labels(), ['Радио Шоколад']);
+  // The station's picture in front of its name, from the device by its name.
+  assert.deepEqual(icons(), ['/api/station-icon?file=s1.png']);
   assert.equal(elements['#list-title'].textContent, 'Станции');
 
   /* With no source selected the device still calls the list kind "stations"
@@ -474,6 +488,8 @@ socket.emit('open');
   });
   await respond({kind: 'stations', revision: 9, count: 1,
                  items: [{index: 0, label: 'Радио Шоколад'}]});
+  // With no picture, the empty tile, so the names still line up.
+  assert.deepEqual(icons(), ['']);
   rows()[0].emit('click');
   assert.deepEqual(socket.sent.map((frame) => JSON.parse(frame).action),
     ['source.select', 'list.select'],

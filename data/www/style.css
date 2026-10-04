@@ -516,6 +516,26 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .list-item.is-active:hover:not(:disabled) { background: var(--accent-soft); }
 .list-item.is-active::before { color: var(--accent); }
 
+/* A station's picture, in front of its name: a square tile, empty when the
+   station has none, so the names line up. */
+.list-item-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-2);
+}
+.list-item-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .list-item-label {
   flex: 1;
   min-width: 0;
@@ -1750,6 +1770,36 @@ a.secondary-button { text-decoration: none; color: inherit; }
 }
 
 .playlist-row-error.is-notice { color: var(--muted); }
+
+/* The way down to Save, floating over the list's lower right corner while
+   that button is out of view. */
+.to-save-button {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 20;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  background: var(--accent);
+  color: #111;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+  cursor: pointer;
+}
+.to-save-button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.to-save-button[hidden] { display: none; }
 
 .playlist-save-bar {
   display: flex;

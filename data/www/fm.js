@@ -23,6 +23,55 @@
 
   const t = (key, values) => window.jradioI18n.t(key, values);
 
+  /* A button that floats over the page while the open list's Save button is
+     out of view, and takes the page down to it: a playlist of 99 stations is
+     a long scroll to get there, and nothing on the way says how far it is.
+     Here because this script knows which tab is open. */
+  function setupToSave() {
+    const button = document.querySelector('#stations-to-save');
+    if (button === null) return;
+    const target = () => {
+      const fmOpen = document.querySelector('#stations-fm');
+      const onFm = fmOpen !== null && !fmOpen.hidden;
+      return document.querySelector(onFm ? '#fm-save' : '#playlist-save');
+    };
+    /* Written only when it changes: the observer below watches this very
+       attribute, and setting it to what it already is still counts as a
+       change to it - the page hung in a loop of the two. */
+    const show = (visible) => {
+      if (button.hidden === !visible) return;
+      button.hidden = !visible;
+    };
+    const update = () => {
+      const save = target();
+      if (save === null || typeof save.getBoundingClientRect !== 'function') {
+        show(false);
+        return;
+      }
+      const box = save.getBoundingClientRect();
+      const height = window.innerHeight || document.documentElement.clientHeight || 0;
+      // Shown while the button is below the bottom edge; at it, or above, there is no need.
+      show(height > 0 && box.top > height - 8);
+    };
+    button.addEventListener('click', () => {
+      const save = target();
+      if (save === null) return;
+      if (typeof save.scrollIntoView === 'function') save.scrollIntoView({behavior: 'smooth', block: 'center'});
+      if (typeof save.focus === 'function') save.focus({preventScroll: true});
+    });
+    if (typeof window.addEventListener === 'function') {
+      window.addEventListener('scroll', update, {passive: true});
+      window.addEventListener('resize', update);
+    }
+    // The lists grow after load, from the device, and the tabs switch them.
+    if (typeof window.MutationObserver === 'function') {
+      new window.MutationObserver(update).observe(document.body, {childList: true, subtree: true,
+                                                                  attributes: true, attributeFilter: ['hidden']});
+    }
+    for (const tab of document.querySelectorAll('[data-station-tab]')) tab.addEventListener('click', update);
+    update();
+  }
+
   /* The stations page has a tab for the radio's playlist and one for the
      tuner's presets, which is there only on a board with a tuner - the
      settings say so. The choice rides in the address, so the player's link
@@ -546,5 +595,6 @@
   window.jradioI18n.onChange(renderPresets);
 
   setupTabs();
+  setupToSave();
   load();
 })();

@@ -805,6 +805,7 @@
   function listSignature(items) {
     return items
       .map((item) => `${item.index}\u0000${item.label}\u0000${item.meta || ''}` +
+                     `\u0000${item.icon === undefined ? '-' : item.icon}` +
                      `\u0000${item.isPlaylist ? 'p' : item.isDirectory ? 'd' : 'f'}` +
                      `\u0000${item.isPlayable === false ? '0' : '1'}`)
       .join('\u0001');
@@ -867,7 +868,8 @@
     return payload.items
       .filter((item) => isObject(item) && Number.isSafeInteger(item.index) &&
                         typeof item.label === 'string')
-      .map((item) => ({index: item.index, label: item.label, meta: ''}));
+      .map((item) => ({index: item.index, label: item.label, meta: '',
+                       icon: typeof item.icon === 'string' ? item.icon : ''}));
   }
 
   /* Two kinds of list, and for the browsable one the address depends on which
@@ -1132,6 +1134,23 @@
       meta.className = 'list-item-meta';
       meta.textContent = safeString(item.meta);
       meta.hidden = meta.textContent.length === 0;
+      /* A station's picture in front of its name, as the panel has it on the
+         player - or an empty tile of the same size, so the names line up down
+         the list whether a station has one or not. Station lists only: a file
+         row has its own marks. */
+      if (item.icon !== undefined) {
+        const tile = document.createElement('span');
+        tile.className = 'list-item-icon';
+        if (item.icon !== '') {
+          const picture = document.createElement('img');
+          picture.alt = '';
+          picture.loading = 'lazy';
+          picture.decoding = 'async';
+          picture.src = `/api/station-icon?file=${encodeURIComponent(item.icon)}`;
+          tile.append(picture);
+        }
+        button.append(tile);
+      }
       button.append(label, marker, meta);
       button.addEventListener('click', () => {
         selectListItem(item.index);
@@ -1152,6 +1171,30 @@
       if (target) target.focus({preventScroll: true});
       listItems.scrollTop = scrollTop;
     }
+  }
+
+  /* The row that is playing, brought into the list's view when it is out of
+     it: the page opens - after the playlist editor, say - with the list at its
+     top, and a station far down it was playing where nobody could see it.
+     Once for each list and each station on it, and only when the row is out of
+     sight, so a list the listener has scrolled away from stays where they put
+     it until something else starts playing. */
+  let revealedRow = '';
+  function revealActiveRow() {
+    if (listItems.hidden || state.list.active_index === null) return;
+    const key = `${state.activeSource}|${state.list.revision}|${state.list.active_index}`;
+    if (key === revealedRow) return;
+    const button = Array.from(listItems.querySelectorAll('button[data-index]'))
+      .find((node) => Number(node.dataset.index) === state.list.active_index);
+    // Not built yet: the rows come over REST after the snapshot; try again then.
+    if (!button || typeof button.getBoundingClientRect !== 'function') return;
+    const view = listItems.getBoundingClientRect();
+    const row = button.getBoundingClientRect();
+    if (view.height === 0) return;  // laid out yet: asked again on the next update
+    revealedRow = key;
+    if (row.top >= view.top && row.bottom <= view.bottom) return;
+    // In the middle of the view, so the rows on either side of it show too.
+    listItems.scrollTop += (row.top - view.top) - (view.height - row.height) / 2;
   }
 
   function renderList(previousList = {items: []}) {
@@ -1237,6 +1280,7 @@
     // The filter is applied last: the rows may have just been rebuilt, and
     // they come back visible.
     applyListFilter();
+    revealActiveRow();
 
     // Every path that changes the list ends here, so this is the single place
     // the REST fetch needs to be triggered from.

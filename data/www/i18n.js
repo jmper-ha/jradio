@@ -32,6 +32,7 @@
     'stations.kinds': ['Виды станций', 'Kinds of stations'],
     'stations.tab_radio': ['Интернет-радио', 'Internet radio'],
     'stations.tab_fm': ['FM', 'FM'],
+    'stations.to_save': ['К кнопке «Сохранить»', 'Down to Save'],
     'stations.exported_all': ['Экспортировано: станций {n}, FM-станций {fm}, картинок {icons}', 'Exported: {n} stations, {fm} FM stations, {icons} pictures'],
     'stations.imported_fm': ['FM-станций: {n}', 'FM stations: {n}'],
     'stations.imported_notes': ['{done} ({notes})', '{done} ({notes})'],

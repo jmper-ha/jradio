@@ -87,7 +87,7 @@ OpenWeatherMap), `remote.csv` (обученные кнопки пульта) и 
 | `GET /api/status` | Состояние Wi-Fi и плеера одним снимком |
 | `GET /api/playlist` | Список станций в CSV |
 | `POST /api/playlist` | Замена списка целиком |
-| `GET /api/stations` | Имена станций активного источника (у FM — строки «частота имя»); `?source=internet_radio` — всегда радио |
+| `GET /api/stations` | Имена станций активного источника (у FM — строки «частота имя») и имена их картинок (`icon`); `?source=internet_radio` — всегда радио |
 | `GET /api/fm/presets`, `POST /api/fm/presets` | FM-станции как текст `имя<TAB>кГц[<TAB>картинка]`; ответ на запись — `{"count":…,"skipped":…}` |
 | `POST /api/fm/scan`, `GET /api/fm/scan` | Запустить проход по диапазону (409, если он уже идёт) и узнать, идёт ли он, на какой частоте и что найдено |
 | `GET /api/files` | Содержимое текущей папки носителя |

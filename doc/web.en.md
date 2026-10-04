@@ -92,7 +92,7 @@ you would a password.
 | `GET /api/status` | Wi-Fi and player state in one snapshot |
 | `GET /api/playlist` | The station list as CSV |
 | `POST /api/playlist` | Replace the whole list |
-| `GET /api/stations` | The names of the active source's stations (on FM, rows "frequency name"); `?source=internet_radio` - always the radio |
+| `GET /api/stations` | The names of the active source's stations (on FM, rows "frequency name") and their pictures' names (`icon`); `?source=internet_radio` - always the radio |
 | `GET /api/fm/presets`, `POST /api/fm/presets` | The FM stations as `name<TAB>kHz[<TAB>picture]` text; the answer to a write is `{"count":…,"skipped":…}` |
 | `POST /api/fm/scan`, `GET /api/fm/scan` | Start a pass up the band (409 if one is already running) and ask whether it is running, at which frequency, and what it has found |
 | `GET /api/files` | The current folder of the drive |

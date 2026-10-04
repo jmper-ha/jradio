@@ -124,6 +124,13 @@
     </div>
   </main>
 
+  <!-- To the Save button at the foot of whichever list is open, when it is out
+       of sight: with 99 stations it is a long way down. -->
+  <button id="stations-to-save" class="to-save-button" type="button" hidden
+          data-i18n-aria="stations.to_save" aria-label="К кнопке «Сохранить»" title="">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v13M6 12l6 6 6-6"/></svg>
+  </button>
+
   <noscript><p class="noscript-message">Для редактора плейлиста требуется JavaScript. / JavaScript is required for the playlist editor.</p></noscript>
   <script src="/playlist.js"></script>
   <script src="/fm.js"></script>

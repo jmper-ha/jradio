@@ -154,6 +154,18 @@ static void test_numbers_are_range_checked(void)
     assert(parse_one("{\"field\":\"volume_step\",\"value\":20}", &change));
     assert(!parse_one("{\"field\":\"volume_step\",\"value\":0}", &change));
     assert(!parse_one("{\"field\":\"volume_step\",\"value\":21}", &change));
+    // The theme by name, its colours as text, and the reset as `true` only.
+    assert(parse_one("{\"field\":\"theme\",\"value\":\"custom\"}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_THEME && change.value == 2);
+    assert(!parse_one("{\"field\":\"theme\",\"value\":\"neon\"}", &change));
+    assert(parse_one("{\"field\":\"theme_dim\",\"value\":\"#a0b1c2\"}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_THEME_DIM && strcmp(change.text, "#a0b1c2") == 0);
+    assert(parse_one("{\"field\":\"theme_reset\",\"value\":true}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_THEME_RESET && change.value == 1);
+    // Refused as requests, before anything is written.
+    assert(!parse_one("{\"field\":\"theme_dim\",\"value\":\"#a0b1c\"}", &change));
+    assert(!parse_one("{\"field\":\"theme_dim\",\"value\":\"red\"}", &change));
+    assert(!parse_one("{\"field\":\"theme_reset\",\"value\":false}", &change));
     // The switch that reversed the encoder is gone; a page that still sends it is refused.
     assert(!parse_one("{\"field\":\"encoder_reverse\",\"value\":true}", &change));
 
@@ -200,6 +212,18 @@ static void test_apply_writes_through_to_the_file(void)
 
     const web_settings_change_t step = {WEB_SETTINGS_FIELD_VOLUME_STEP, 3, ""};
     assert(web_settings_apply(&settings, &step));
+    const web_settings_change_t theme = {WEB_SETTINGS_FIELD_THEME, DEVICE_THEME_CUSTOM, ""};
+    assert(web_settings_apply(&settings, &theme));
+    const web_settings_change_t accent = {WEB_SETTINGS_FIELD_THEME_ACCENT, 0, "#00ff00"};
+    assert(web_settings_apply(&settings, &accent));
+    assert(settings.theme_colors[5] == 0x00FF00);
+    // A colour that is not one is refused by the device, not stored.
+    const web_settings_change_t junk = {WEB_SETTINGS_FIELD_THEME_GROUND, 0, "#00ff0"};
+    assert(!web_settings_apply(&settings, &junk));
+    assert(settings.theme_colors[0] == 0x101820);
+    const web_settings_change_t no_reset = {WEB_SETTINGS_FIELD_THEME_RESET, 0, ""};
+    assert(!web_settings_apply(&settings, &no_reset));
+    assert(settings.theme_colors[5] == 0x00FF00);
 
     const web_settings_change_t scroll = {WEB_SETTINGS_FIELD_SCROLL, DEVICE_SCROLL_LEFT, ""};
     assert(web_settings_apply(&settings, &scroll));
@@ -269,6 +293,11 @@ static void test_apply_writes_through_to_the_file(void)
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.brightness == 35);
     assert(reloaded.volume_step == 3U);
+    assert(reloaded.theme == DEVICE_THEME_CUSTOM);
+    assert(reloaded.theme_colors[5] == 0x00FF00);
+    const web_settings_change_t reset = {WEB_SETTINGS_FIELD_THEME_RESET, 1, ""};
+    assert(web_settings_apply(&reloaded, &reset));
+    assert(reloaded.theme_colors[5] == 0xF2A33C);
     assert(reloaded.scroll == DEVICE_SCROLL_LEFT);
     assert(reloaded.buffer_view == DEVICE_BUFFER_VIEW_GRAPH);
     assert(reloaded.weather_provider == DEVICE_WEATHER_WTTR);
@@ -302,8 +331,9 @@ static void test_document_names_what_the_build_has(void)
     web_settings_view_t view;
     web_settings_make_view(&view, &settings, true, false, false, false);
     /* Room for the zone list as well: the document carries every zone the
-       firmware knows, which the page builds its menu from. */
-    char document[2048];
+       firmware knows, which the page builds its menu from. The device's
+       buffer for it, WEB_SERVER_FILE_CHUNK_SIZE in web_server.c. */
+    char document[4096];
     const web_settings_document_t extras = {
         .ntp_server = settings.ntp_server,
         .device_name = settings.device_name,
@@ -316,6 +346,7 @@ static void test_document_names_what_the_build_has(void)
         .weather_valid = true,
         .weather_temperature = -3,
         .weather_icon = "snow",
+        .theme_colors = settings.theme_colors,
     };
     size_t length = web_settings_serialize(document, sizeof(document), &view, &extras);
     assert(length > 0U && length == strlen(document));
@@ -330,6 +361,10 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "encoder_reverse") == NULL);
     assert(strstr(document, "\"volume_step\":5") != NULL);
     assert(strstr(document, "\"volume_step_min\":1") != NULL);
+    // The theme lives; its colours are in the document, in the picker's case.
+    assert(strstr(document, "\"theme\":\"standard\"") != NULL);
+    assert(strstr(document, "\"theme_ground\":\"#101820\"") != NULL);
+    assert(strstr(document, "\"theme_accent\":\"#f2a33c\"") != NULL);
     assert(strstr(document, "\"volume_step_max\":20") != NULL);
     // A build without Yandex Music or a media server says so, so the page
     // drops those rows rather than offering switches behind which there is
@@ -428,6 +463,9 @@ static void test_view_comparison_notices_every_field(void)
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.volume_step = (uint8_t)(base.volume_step + 1U);
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.theme = (uint8_t)(base.theme + 1U);
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.language = DEVICE_LANGUAGE_EN;

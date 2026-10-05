@@ -93,6 +93,13 @@ const ids = [
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal', 'device-invert-colors',
   'device-volume-step', 'device-volume-step-value',
+  'device-theme', 'device-theme-reset', 'device-theme-reset-row',
+  'device-theme-ground', 'device-theme-ground-row',
+  'device-theme-text', 'device-theme-text-row',
+  'device-theme-artist', 'device-theme-artist-row',
+  'device-theme-secondary', 'device-theme-secondary-row',
+  'device-theme-dim', 'device-theme-dim-row',
+  'device-theme-accent', 'device-theme-accent-row',
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
   'device-idle-brightness-value', 'device-screensaver-after-row',
   'device-idle-brightness-row',
@@ -176,7 +183,9 @@ let settingsReply = {
   language: 'ru', home_screen: 'text', scroll: 'bounce', buffer_view: 'graph',
   autoplay: false, files_end: 'repeat',
   yandex_music: true, dlna: false, flip_vertical: false, flip_horizontal: true,
-  invert_colors: true, volume_step: 7,
+  invert_colors: true, volume_step: 7, theme: 'custom',
+  theme_ground: '#000000', theme_text: '#ffffff', theme_artist: '#e8e8e8',
+  theme_secondary: '#e0e6ea', theme_dim: '#b0bec5', theme_accent: '#ffb74d',
   brightness: 45, volume: 62,
   available: {home_screen: true, yandex_music: false, dlna: true, bt_output: true},
   brightness_min: 10, brightness_max: 90, volume_step_min: 1, volume_step_max: 20,
@@ -665,6 +674,13 @@ function lastYandexTimer() {
   assert.equal(elements['#device-files-end'].value, 'repeat');
   assert.equal(elements['#device-flip-horizontal'].checked, true);
   assert.equal(elements['#device-invert-colors'].checked, true);
+  // The custom theme: its six colours shown, with the way back to Standard.
+  assert.equal(elements['#device-theme'].value, 'custom');
+  assert.equal(elements['#device-theme-ground'].value, '#000000');
+  assert.equal(elements['#device-theme-accent'].value, '#ffb74d');
+  assert.equal(elements['#device-theme-ground-row'].hidden, false);
+  assert.equal(elements['#device-theme-dim-row'].hidden, false);
+  assert.equal(elements['#device-theme-reset-row'].hidden, false);
   assert.equal(elements['#device-volume-step'].value, '7');
   assert.equal(elements['#device-volume-step-value'].textContent, '7');
   assert.equal(elements['#device-volume-step'].min, '1');
@@ -920,6 +936,29 @@ function lastYandexTimer() {
                                            call.options.method === 'POST')
       .at(-1).options.body),
     {field: 'volume_step', value: 3});
+
+  /* A colour goes out when the picker closes, as the text the picker holds;
+     the reset is one write of `true`. */
+  elements['#device-theme-accent'].value = '#ff0000';
+  elements['#device-theme-accent'].emit('input');
+  elements['#device-theme-accent'].emit('change');
+  await settle();
+  const lastPost = () => JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
+                                                                 call.options &&
+                                                                 call.options.method === 'POST')
+    .at(-1).options.body);
+  assert.deepEqual(lastPost(), {field: 'theme_accent', value: '#ff0000'});
+  elements['#device-theme-reset'].emit('click');
+  await settle();
+  assert.deepEqual(lastPost(), {field: 'theme_reset', value: true});
+  // Off Custom, the colours and the reset go - their values stay on the card.
+  settingsReply = {...settingsReply, theme: 'contrast'};
+  elements['#device-theme'].value = 'contrast';
+  elements['#device-theme'].emit('change');
+  await settle();
+  assert.deepEqual(lastPost(), {field: 'theme', value: 'contrast'});
+  assert.equal(elements['#device-theme-ground-row'].hidden, true);
+  assert.equal(elements['#device-theme-reset-row'].hidden, true);
 
   /* The wait goes out as a number, the way the slider's value does, even
      though it is picked off a list: the device validates it against the same

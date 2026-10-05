@@ -128,6 +128,19 @@
     {field: 'flip_horizontal', kind: 'switch',
      node: document.querySelector('#device-flip-horizontal')},
     {field: 'invert_colors', kind: 'switch', node: document.querySelector('#device-invert-colors')},
+    {field: 'theme', kind: 'choice', node: document.querySelector('#device-theme')},
+    {field: 'theme_ground', kind: 'text', node: document.querySelector('#device-theme-ground'),
+     row: document.querySelector('#device-theme-ground-row'), when: {field: 'theme', is: 'custom'}},
+    {field: 'theme_text', kind: 'text', node: document.querySelector('#device-theme-text'),
+     row: document.querySelector('#device-theme-text-row'), when: {field: 'theme', is: 'custom'}},
+    {field: 'theme_artist', kind: 'text', node: document.querySelector('#device-theme-artist'),
+     row: document.querySelector('#device-theme-artist-row'), when: {field: 'theme', is: 'custom'}},
+    {field: 'theme_secondary', kind: 'text', node: document.querySelector('#device-theme-secondary'),
+     row: document.querySelector('#device-theme-secondary-row'), when: {field: 'theme', is: 'custom'}},
+    {field: 'theme_dim', kind: 'text', node: document.querySelector('#device-theme-dim'),
+     row: document.querySelector('#device-theme-dim-row'), when: {field: 'theme', is: 'custom'}},
+    {field: 'theme_accent', kind: 'text', node: document.querySelector('#device-theme-accent'),
+     row: document.querySelector('#device-theme-accent-row'), when: {field: 'theme', is: 'custom'}},
     {field: 'volume_step', kind: 'number', node: deviceVolumeStep,
      output: document.querySelector('#device-volume-step-value')},
   ];
@@ -476,6 +489,8 @@
   const btChosenName = document.querySelector('#bt-chosen-name');
   const btChosenState = document.querySelector('#bt-chosen-state');
   const btScanButton = document.querySelector('#bt-scan');
+  const themeResetRow = document.querySelector('#device-theme-reset-row');
+  const themeResetButton = document.querySelector('#device-theme-reset');
   let btTimer = null;
   /* idle | starting (asked, the module not yet begun) | scanning | done */
   let btScan = 'idle';
@@ -1142,7 +1157,10 @@
       // field switches off goes the same way.
       if (entry.row && entry.gate) entry.row.hidden = available[entry.gate] !== true;
       if (entry.row && entry.when && typeof payload[entry.when.field] === 'string') {
-        entry.row.hidden = payload[entry.when.field] === entry.when.not;
+        // `not` hides the row on one value, `is` shows it on one value only.
+        const shown = payload[entry.when.field];
+        entry.row.hidden = entry.when.is !== undefined ? shown !== entry.when.is
+                                                       : shown === entry.when.not;
       }
       /* A row that belongs to a switch: gone while it is off, and its value
          untouched - it is still on the card, and turning the switch back on
@@ -1151,6 +1169,8 @@
         entry.row.hidden = payload[entry.whenOn] !== true;
       }
     }
+    // The way back to the standard colours belongs with the colours.
+    if (typeof payload.theme === 'string') themeResetRow.hidden = payload.theme !== 'custom';
     /* The note under the name says what the name is for, and Bluetooth is
        only one of those on a board that has the module. */
     const nameNote = document.querySelector('#device-name-note');
@@ -1317,6 +1337,9 @@
   }
 
   function bindDeviceFields() {
+    /* One write that puts all six back, rather than six that each repaint
+       the panel on the way. */
+    themeResetButton.addEventListener('click', () => { sendDeviceChange('theme_reset', true); });
     renderSleepChoices();
     renderAlarmDays();
     loadAlarmStations();

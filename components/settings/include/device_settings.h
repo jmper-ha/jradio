@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "alarm_schedule.h"
 #include "device_language.h"
@@ -71,7 +72,16 @@ typedef enum {
 typedef enum {
     DEVICE_THEME_STANDARD = 0,
     DEVICE_THEME_CONTRAST,
+    DEVICE_THEME_CUSTOM,
 } device_theme_t;
+
+/* The custom theme: six colours, 0xRRGGBB, in ui_theme.h's role order -
+ * ground, text, artist, secondary, dim, accent. Until someone sets them they
+ * are the standard theme's, so choosing Custom first shows the panel as it
+ * was and every change is a step away from something known. Kept in one key
+ * so that a reset is one write and the six cannot be half changed. */
+#define DEVICE_THEME_COLORS 6U
+extern const uint32_t device_theme_default_colors[DEVICE_THEME_COLORS];
 
 /* The waits offered, in seconds. A closed list rather than a free number: the
  * knob steps through it, and a page has to offer the same steps or the two
@@ -272,6 +282,7 @@ typedef struct {
     char weather_longitude[DEVICE_COORDINATE_MAX];
     device_screensaver_t screensaver;
     device_theme_t theme;
+    uint32_t theme_colors[DEVICE_THEME_COLORS];
     /* One of device_screensaver_seconds_choices. */
     unsigned short screensaver_seconds;
     /* The idle backlight, a percentage like `brightness` and refused at zero
@@ -383,6 +394,13 @@ bool device_settings_set_weather_longitude(device_settings_t *settings, const ch
 bool device_settings_coordinate_valid(const char *text, int limit);
 bool device_settings_set_screensaver(device_settings_t *settings, device_screensaver_t mode);
 bool device_settings_set_theme(device_settings_t *settings, device_theme_t theme);
+/* One of the six, by index; or all six at once, which is how they go back to
+ * the defaults. */
+bool device_settings_set_theme_color(device_settings_t *settings, size_t index, uint32_t rgb);
+bool device_settings_set_theme_colors(device_settings_t *settings,
+                                      const uint32_t colors[DEVICE_THEME_COLORS]);
+/* "#RRGGBB" or "RRGGBB", either case. */
+bool device_settings_parse_color(const char *text, uint32_t *rgb);
 /* Only a value off the list is taken; anything else is refused, not rounded. */
 bool device_settings_set_screensaver_seconds(device_settings_t *settings, unsigned int seconds);
 bool device_settings_screensaver_seconds_valid(unsigned int seconds);

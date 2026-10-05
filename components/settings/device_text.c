@@ -80,6 +80,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_ROW_THEME] = {"Тема", "Theme"},
     [DEVICE_TEXT_THEME_STANDARD] = {"Стандарт", "Standard"},
     [DEVICE_TEXT_THEME_CONTRAST] = {"Контраст", "Contrast"},
+    [DEVICE_TEXT_THEME_CUSTOM] = {"Своя", "Custom"},
     [DEVICE_TEXT_ROW_WEB_ADDRESS] = {"QR по нажатию", "QR on press"},
     [DEVICE_TEXT_ROW_ABOUT] = {"Об устройстве", "About"},
     [DEVICE_TEXT_ON] = {"вкл", "on"},

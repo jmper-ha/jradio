@@ -3286,6 +3286,8 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         ui_settings_field(text, text_size, DEVICE_TEXT_ROW_THEME,
                           s_device_settings.theme == DEVICE_THEME_CONTRAST
                               ? DEVICE_TEXT_THEME_CONTRAST
+                          : s_device_settings.theme == DEVICE_THEME_CUSTOM
+                              ? DEVICE_TEXT_THEME_CUSTOM
                               : DEVICE_TEXT_THEME_STANDARD);
         break;
     case UI_SETTINGS_ROW_ABOUT:
@@ -4178,10 +4180,13 @@ static void ui_settings_change_selected(void)
         if (changed) (void)board_display_set_invert(s_device_settings.invert_colors);
         break;
     case UI_SETTINGS_ROW_THEME_FIELD:
-        changed = device_settings_set_theme(&s_device_settings,
-                                            s_device_settings.theme == DEVICE_THEME_CONTRAST
-                                                ? DEVICE_THEME_STANDARD
-                                                : DEVICE_THEME_CONTRAST);
+        /* Round the three. Custom is on the ring even before anyone has set
+         * its colours: they start as the standard ones, so it is never a
+         * stop that shows nothing. And it is the one way back from a custom
+         * theme that cannot be read - the presets do not depend on it. */
+        changed = device_settings_set_theme(
+            &s_device_settings,
+            (device_theme_t)((s_device_settings.theme + 1) % (DEVICE_THEME_CUSTOM + 1)));
         if (changed) ui_apply_theme();
         break;
     default:
@@ -7460,9 +7465,15 @@ static void ui_task(void *arg)
 static void ui_apply_theme(void)
 {
     ui_palette_t palette;
-    ui_theme_preset(s_device_settings.theme == DEVICE_THEME_CONTRAST ? UI_THEME_CONTRAST
-                                                                     : UI_THEME_STANDARD,
-                    &palette);
+    if (s_device_settings.theme == DEVICE_THEME_CUSTOM) {
+        _Static_assert(DEVICE_THEME_COLORS == UI_THEME_BASE_ROLES,
+                       "the stored colours are the theme's base roles");
+        ui_theme_derive(s_device_settings.theme_colors, &palette);
+    } else {
+        ui_theme_preset(s_device_settings.theme == DEVICE_THEME_CONTRAST ? UI_THEME_CONTRAST
+                                                                         : UI_THEME_STANDARD,
+                        &palette);
+    }
     if (memcmp(&palette, &s_palette, sizeof(palette)) == 0) return;
     s_palette = palette;
     for (int paint = 0; paint < UI_PAINT_COUNT; ++paint) {

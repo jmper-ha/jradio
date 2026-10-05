@@ -309,6 +309,45 @@
                   <input id="device-invert-colors" type="checkbox" data-field="invert_colors">
                 </div>
                 <p class="field-note" data-i18n="note.invert_colors">Если картинка выглядит негативом — у вашего дисплея другое стекло; включите.</p>
+                <div class="device-row">
+                  <label for="device-theme" data-i18n="settings.theme">Тема</label>
+                  <select id="device-theme" data-field="theme">
+                    <option value="standard" data-i18n="settings.theme_standard">Стандарт</option>
+                    <option value="contrast" data-i18n="settings.theme_contrast">Контраст</option>
+                    <option value="custom" data-i18n="settings.theme_custom">Своя</option>
+                  </select>
+                </div>
+                <!-- The custom theme's six colours, there only while it is the
+                     chosen one. The panel is the preview: each colour is on it
+                     as soon as the picker closes. -->
+                <div class="device-row" id="device-theme-ground-row" hidden>
+                  <label for="device-theme-ground" data-i18n="settings.theme_ground">Фон</label>
+                  <input id="device-theme-ground" type="color" data-field="theme_ground">
+                </div>
+                <div class="device-row" id="device-theme-text-row" hidden>
+                  <label for="device-theme-text" data-i18n="settings.theme_text">Основной текст</label>
+                  <input id="device-theme-text" type="color" data-field="theme_text">
+                </div>
+                <div class="device-row" id="device-theme-artist-row" hidden>
+                  <label for="device-theme-artist" data-i18n="settings.theme_artist">Исполнитель</label>
+                  <input id="device-theme-artist" type="color" data-field="theme_artist">
+                </div>
+                <div class="device-row" id="device-theme-secondary-row" hidden>
+                  <label for="device-theme-secondary" data-i18n="settings.theme_secondary">Второстепенный текст</label>
+                  <input id="device-theme-secondary" type="color" data-field="theme_secondary">
+                </div>
+                <div class="device-row" id="device-theme-dim-row" hidden>
+                  <label for="device-theme-dim" data-i18n="settings.theme_dim">Тусклый текст</label>
+                  <input id="device-theme-dim" type="color" data-field="theme_dim">
+                </div>
+                <div class="device-row" id="device-theme-accent-row" hidden>
+                  <label for="device-theme-accent" data-i18n="settings.theme_accent">Акцент</label>
+                  <input id="device-theme-accent" type="color" data-field="theme_accent">
+                </div>
+                <div class="settings-actions" id="device-theme-reset-row" hidden>
+                  <button id="device-theme-reset" class="secondary-button" type="button" data-i18n="settings.theme_reset">Сбросить к стандартным цветам</button>
+                </div>
+                <p class="field-note" data-i18n="note.theme">Цвета меняются на экране устройства сразу. Если что-то стало не прочитать — строка «Тема» на устройстве возвращает стандартную.</p>
               </div>
             </div>
 

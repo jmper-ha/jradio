@@ -60,6 +60,18 @@ typedef enum {
     WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS,
     WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS,
     WEB_SETTINGS_FIELD_VOLUME_STEP,
+    /* The theme, and the custom theme's six colours as "#RRGGBB" in the
+     * order the device stores them - their values follow, so the field for
+     * colour N is THEME_GROUND + N. The reset puts all six back to the
+     * standard theme's and takes `true` only. */
+    WEB_SETTINGS_FIELD_THEME,
+    WEB_SETTINGS_FIELD_THEME_GROUND,
+    WEB_SETTINGS_FIELD_THEME_TEXT,
+    WEB_SETTINGS_FIELD_THEME_ARTIST,
+    WEB_SETTINGS_FIELD_THEME_SECONDARY,
+    WEB_SETTINGS_FIELD_THEME_DIM,
+    WEB_SETTINGS_FIELD_THEME_ACCENT,
+    WEB_SETTINGS_FIELD_THEME_RESET,
     /* The alarm clock, one row per request like everything else here. The
      * time is text because "07:30" is what an <input type="time"> hands over
      * and what settings.csv stores; the days are the bitmask out of
@@ -132,6 +144,9 @@ typedef struct web_settings_view {
     bool invert_colors;
     /* Volume percent per encoder detent. */
     uint8_t volume_step;
+    /* As device_theme_t. Live, since the panel's own row changes it; the
+     * custom colours are not - see the document. */
+    uint8_t theme;
     /* The zone as its row in device_timezone.h rather than its id: this view
      * is kept per queued WebSocket frame and compared on every pass, and a
      * string here would cost every frame the whole id. Past the end means the
@@ -207,6 +222,11 @@ typedef struct {
      * sleep_timer.h - but arrives on this page because this is where it is
      * set. Minutes, zero when none is running. */
     uint16_t sleep_minutes;
+    /* The custom theme's six colours, DEVICE_THEME_COLORS of them, or NULL
+     * to leave them out. Here rather than in the live diff: they are set from
+     * this page, by one person at a time, and would cost every queued frame
+     * twenty-four bytes. */
+    const uint32_t *theme_colors;
 } web_settings_document_t;
 
 /* The same object as a standalone document, plus what is not worth a place in

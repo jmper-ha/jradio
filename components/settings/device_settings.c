@@ -162,6 +162,57 @@ static bool device_settings_fm_frequency_valid(unsigned long khz)
     return khz >= 87000UL && khz <= 108000UL;
 }
 
+/* The standard theme's six, pinned in ui_theme.c as well - this layer knows
+ * nothing of the screen, and test_device_settings and test_ui_theme hold the
+ * two copies to the same numbers. */
+const uint32_t device_theme_default_colors[DEVICE_THEME_COLORS] = {
+    0x101820, 0xFFFFFF, 0xB0BEC5, 0xB0BEC5, 0x78909C, 0xF2A33C,
+};
+
+bool device_settings_parse_color(const char *text, uint32_t *rgb)
+{
+    if (text == NULL || rgb == NULL) return false;
+    if (text[0] == '#') ++text;
+    uint32_t value = 0U;
+    size_t length = 0U;
+    for (; text[length] != '\0'; ++length) {
+        const char c = text[length];
+        int digit = -1;
+        if (c >= '0' && c <= '9') digit = c - '0';
+        else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+        if (digit < 0 || length >= 6U) return false;
+        value = (value << 4) | (uint32_t)digit;
+    }
+    if (length != 6U) return false;
+    *rgb = value;
+    return true;
+}
+
+/* "101820 FFFFFF ..." - spaces, since a value may not hold the comma that
+ * ends a key. All six or none: a line with one bad colour leaves the
+ * defaults, not a theme with a hole in it. */
+static bool theme_colors_from_text(const char *text, uint32_t colors[DEVICE_THEME_COLORS])
+{
+    uint32_t parsed[DEVICE_THEME_COLORS];
+    const char *cursor = text;
+    for (size_t index = 0U; index < DEVICE_THEME_COLORS; ++index) {
+        char word[8];
+        size_t length = 0U;
+        while (*cursor == ' ') ++cursor;
+        while (cursor[length] != '\0' && cursor[length] != ' ') ++length;
+        if (length == 0U || length >= sizeof(word)) return false;
+        memcpy(word, cursor, length);
+        word[length] = '\0';
+        if (!device_settings_parse_color(word, &parsed[index])) return false;
+        cursor += length;
+    }
+    while (*cursor == ' ') ++cursor;
+    if (*cursor != '\0') return false;
+    memcpy(colors, parsed, sizeof(parsed));
+    return true;
+}
+
 bool device_settings_init_at(device_settings_t *settings, const char *path)
 {
     if (settings == NULL || path == NULL || path[0] == '\0' ||
@@ -184,6 +235,8 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
                   .volume = DEVICE_ALARM_VOLUME_DEFAULT},
     };
     memcpy(settings->storage_path, path, strlen(path) + 1U);
+    memcpy(settings->theme_colors, device_theme_default_colors,
+           sizeof(settings->theme_colors));
     memcpy(settings->timezone, DEVICE_TIMEZONE_DEFAULT_ID,
            sizeof(DEVICE_TIMEZONE_DEFAULT_ID));
     memcpy(settings->ntp_server, DEVICE_NTP_SERVER_DEFAULT,
@@ -323,8 +376,15 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     if (read_value(&csv, "screensaver", value, sizeof(value))) {
         settings->screensaver = screensaver_from_text(value);
     }
-    if (read_value(&csv, "theme", value, sizeof(value)) && strcmp(value, "contrast") == 0) {
-        settings->theme = DEVICE_THEME_CONTRAST;
+    if (read_value(&csv, "theme", value, sizeof(value))) {
+        if (strcmp(value, "contrast") == 0) settings->theme = DEVICE_THEME_CONTRAST;
+        else if (strcmp(value, "custom") == 0) settings->theme = DEVICE_THEME_CUSTOM;
+    }
+    {
+        char colors[64];
+        if (read_value(&csv, "theme_custom", colors, sizeof(colors))) {
+            (void)theme_colors_from_text(colors, settings->theme_colors);
+        }
     }
     /* Either number off its list or range leaves the default, like the
      * brightness above: a hand-edited "0" here would be a panel that never
@@ -816,13 +876,43 @@ bool device_settings_set_screensaver(device_settings_t *settings, device_screens
 
 bool device_settings_set_theme(device_settings_t *settings, device_theme_t theme)
 {
-    if (settings == NULL || theme > DEVICE_THEME_CONTRAST) return false;
+    if (settings == NULL || theme > DEVICE_THEME_CUSTOM) return false;
     if (settings->theme == theme) return true;
-    if (!save_value(settings, "theme", theme == DEVICE_THEME_CONTRAST ? "contrast" : "standard")) {
+    if (!save_value(settings, "theme", theme == DEVICE_THEME_CONTRAST ? "contrast"
+                                       : theme == DEVICE_THEME_CUSTOM ? "custom"
+                                                                      : "standard")) {
         return false;
     }
     settings->theme = theme;
     return true;
+}
+
+bool device_settings_set_theme_colors(device_settings_t *settings,
+                                      const uint32_t colors[DEVICE_THEME_COLORS])
+{
+    if (settings == NULL || colors == NULL) return false;
+    for (size_t index = 0U; index < DEVICE_THEME_COLORS; ++index) {
+        if (colors[index] > 0xFFFFFFU) return false;
+    }
+    if (memcmp(settings->theme_colors, colors, sizeof(settings->theme_colors)) == 0) return true;
+    char text[DEVICE_THEME_COLORS * 7U];
+    size_t used = 0U;
+    for (size_t index = 0U; index < DEVICE_THEME_COLORS; ++index) {
+        used += (size_t)snprintf(text + used, sizeof(text) - used, index == 0U ? "%06X" : " %06X",
+                                 (unsigned)colors[index]);
+    }
+    if (!save_value(settings, "theme_custom", text)) return false;
+    memcpy(settings->theme_colors, colors, sizeof(settings->theme_colors));
+    return true;
+}
+
+bool device_settings_set_theme_color(device_settings_t *settings, size_t index, uint32_t rgb)
+{
+    if (settings == NULL || index >= DEVICE_THEME_COLORS || rgb > 0xFFFFFFU) return false;
+    uint32_t colors[DEVICE_THEME_COLORS];
+    memcpy(colors, settings->theme_colors, sizeof(colors));
+    colors[index] = rgb;
+    return device_settings_set_theme_colors(settings, colors);
 }
 
 bool device_settings_set_screensaver_seconds(device_settings_t *settings, unsigned int seconds)

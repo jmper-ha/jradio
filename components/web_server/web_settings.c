@@ -1,5 +1,6 @@
 #include "web_settings.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "alarm_schedule.h"
@@ -32,6 +33,13 @@ typedef struct {
 static const char *const k_weather_names[] = {WEB_SETTINGS_WEATHER_NAMES};
 #define WEB_SETTINGS_SCREENSAVER_NAMES "off", "dim", "blank", "clock"
 static const char *const k_screensaver_names[] = {WEB_SETTINGS_SCREENSAVER_NAMES};
+/* device_theme_t's order, and the names settings.csv stores. */
+#define WEB_SETTINGS_THEME_NAMES "standard", "contrast", "custom"
+static const char *const k_theme_names[] = {WEB_SETTINGS_THEME_NAMES};
+/* The custom colours' names on the page, in the order they are stored. */
+static const char *const k_theme_color_names[DEVICE_THEME_COLORS] = {
+    "theme_ground", "theme_text", "theme_artist", "theme_secondary", "theme_dim", "theme_accent",
+};
 
 static const field_descriptor_t k_fields[] = {
     {"language", WEB_SETTINGS_FIELD_LANGUAGE, {"ru", "en"}, false, false},
@@ -59,6 +67,14 @@ static const field_descriptor_t k_fields[] = {
     {"screensaver_seconds", WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS, {NULL}, true, false},
     {"screensaver_brightness", WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS, {NULL}, true, false},
     {"volume_step", WEB_SETTINGS_FIELD_VOLUME_STEP, {NULL}, true, false},
+    {"theme", WEB_SETTINGS_FIELD_THEME, {WEB_SETTINGS_THEME_NAMES}, false, false},
+    {"theme_ground", WEB_SETTINGS_FIELD_THEME_GROUND, {NULL}, false, true},
+    {"theme_text", WEB_SETTINGS_FIELD_THEME_TEXT, {NULL}, false, true},
+    {"theme_artist", WEB_SETTINGS_FIELD_THEME_ARTIST, {NULL}, false, true},
+    {"theme_secondary", WEB_SETTINGS_FIELD_THEME_SECONDARY, {NULL}, false, true},
+    {"theme_dim", WEB_SETTINGS_FIELD_THEME_DIM, {NULL}, false, true},
+    {"theme_accent", WEB_SETTINGS_FIELD_THEME_ACCENT, {NULL}, false, true},
+    {"theme_reset", WEB_SETTINGS_FIELD_THEME_RESET, {NULL}, false, false},
     {"alarm_enabled", WEB_SETTINGS_FIELD_ALARM_ENABLED, {NULL}, false, false},
     {"alarm_time", WEB_SETTINGS_FIELD_ALARM_TIME, {NULL}, false, true},
     {"alarm_days", WEB_SETTINGS_FIELD_ALARM_DAYS, {NULL}, true, false},
@@ -99,6 +115,13 @@ static bool parse_value(const field_descriptor_t *descriptor, const cJSON *value
          * is checked against the firmware's table and a host name against what
          * a host name may contain, and neither belongs here. */
         strcpy(change->text, value->valuestring);
+        /* A colour is the one text this layer can judge on its own: there is
+         * no table to look it up in, only whether it is one. */
+        if (descriptor->field >= WEB_SETTINGS_FIELD_THEME_GROUND &&
+            descriptor->field <= WEB_SETTINGS_FIELD_THEME_ACCENT) {
+            uint32_t rgb = 0U;
+            return device_settings_parse_color(change->text, &rgb);
+        }
         return true;
     }
     if (descriptor->choices[0] != NULL) {
@@ -115,7 +138,8 @@ static bool parse_value(const field_descriptor_t *descriptor, const cJSON *value
     if (!descriptor->number) {
         if (!cJSON_IsBool(value)) return false;
         *result = cJSON_IsTrue(value) ? 1 : 0;
-        return true;
+        // A reset is asked for, never un-asked.
+        return descriptor->field != WEB_SETTINGS_FIELD_THEME_RESET || *result == 1;
     }
     if (!cJSON_IsNumber(value)) return false;
     const double raw = value->valuedouble;
@@ -246,6 +270,22 @@ bool web_settings_apply(device_settings_t *settings,
                                                           (unsigned char)change->value);
     case WEB_SETTINGS_FIELD_VOLUME_STEP:
         return device_settings_set_volume_step(settings, (unsigned char)change->value);
+    case WEB_SETTINGS_FIELD_THEME:
+        return device_settings_set_theme(settings, (device_theme_t)change->value);
+    case WEB_SETTINGS_FIELD_THEME_GROUND:
+    case WEB_SETTINGS_FIELD_THEME_TEXT:
+    case WEB_SETTINGS_FIELD_THEME_ARTIST:
+    case WEB_SETTINGS_FIELD_THEME_SECONDARY:
+    case WEB_SETTINGS_FIELD_THEME_DIM:
+    case WEB_SETTINGS_FIELD_THEME_ACCENT: {
+        uint32_t rgb = 0U;
+        if (!device_settings_parse_color(change->text, &rgb)) return false;
+        return device_settings_set_theme_color(
+            settings, (size_t)(change->field - WEB_SETTINGS_FIELD_THEME_GROUND), rgb);
+    }
+    case WEB_SETTINGS_FIELD_THEME_RESET:
+        return change->value == 1 &&
+               device_settings_set_theme_colors(settings, device_theme_default_colors);
     case WEB_SETTINGS_FIELD_ALARM_ENABLED:
         return device_settings_set_alarm_enabled(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_ALARM_TIME: {
@@ -294,6 +334,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .flip_horizontal = settings->flip_horizontal,
         .invert_colors = settings->invert_colors,
         .volume_step = settings->volume_step,
+        .theme = (uint8_t)settings->theme,
         .timezone = (uint8_t)device_timezone_index_of(settings->timezone),
         .weather = (uint8_t)settings->weather_provider,
         .screensaver = (uint8_t)settings->screensaver,
@@ -333,7 +374,7 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->flip_vertical == right->flip_vertical &&
            left->flip_horizontal == right->flip_horizontal &&
            left->invert_colors == right->invert_colors &&
-           left->volume_step == right->volume_step &&
+           left->volume_step == right->volume_step && left->theme == right->theme &&
            left->timezone == right->timezone && left->weather == right->weather &&
            left->screensaver == right->screensaver &&
            left->screensaver_seconds == right->screensaver_seconds &&
@@ -395,6 +436,10 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_format(writer, "%u", (unsigned)view->brightness);
     web_json_literal(writer, ",\"volume_step\":");
     web_json_format(writer, "%u", (unsigned)view->volume_step);
+    web_json_literal(writer, ",\"theme\":");
+    web_json_string(writer, view->theme < sizeof(k_theme_names) / sizeof(k_theme_names[0])
+                                ? k_theme_names[view->theme]
+                                : k_theme_names[0]);
     web_json_literal(writer, ",\"volume\":");
     web_json_format(writer, "%u", (unsigned)view->volume);
     web_json_literal(writer, ",\"timezone\":");
@@ -530,6 +575,18 @@ size_t web_settings_serialize(char *output, size_t output_size,
         web_json_literal(&writer, "}");
     } else {
         web_json_literal(&writer, ",\"weather_report\":null");
+    }
+    /* Lower case, because that is what an <input type="color"> holds and
+     * gives back: the page compares what it shows with what arrives. */
+    if (document->theme_colors != NULL) {
+        for (size_t index = 0U; index < DEVICE_THEME_COLORS; ++index) {
+            char color[8];
+            snprintf(color, sizeof(color), "#%06x", (unsigned)(document->theme_colors[index] & 0xFFFFFFU));
+            web_json_literal(&writer, ",\"");
+            web_json_literal(&writer, k_theme_color_names[index]);
+            web_json_literal(&writer, "\":");
+            web_json_string(&writer, color);
+        }
     }
     web_json_literal(&writer, ",\"timezones\":[");
     for (size_t index = 0U; index < device_timezone_count(); ++index) {

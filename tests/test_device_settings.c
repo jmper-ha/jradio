@@ -792,8 +792,64 @@ static void test_a_corrupt_alarm_leaves_the_defaults(void)
     assert(settings.alarm.volume == DEVICE_ALARM_VOLUME_DEFAULT);
 }
 
+/* The custom theme: six colours in one key, all or none, starting as the
+ * standard theme's - the same numbers test_ui_theme pins for it. */
+static void test_the_custom_theme_colors_persist_all_or_none(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    const uint32_t standard[DEVICE_THEME_COLORS] = {0x101820, 0xFFFFFF, 0xB0BEC5,
+                                                   0xB0BEC5, 0x78909C, 0xF2A33C};
+    assert(memcmp(settings.theme_colors, standard, sizeof(standard)) == 0);
+    assert(memcmp(device_theme_default_colors, standard, sizeof(standard)) == 0);
+
+    assert(device_settings_set_theme(&settings, DEVICE_THEME_CUSTOM));
+    assert(device_settings_set_theme_color(&settings, 0U, 0x000000));
+    assert(device_settings_set_theme_color(&settings, 5U, 0xFF8800));
+    assert(!device_settings_set_theme_color(&settings, 6U, 0x123456));
+    assert(!device_settings_set_theme_color(&settings, 1U, 0x1000000));
+    char value[64];
+    assert(settings_csv_get(test_path, "theme_custom", value, sizeof(value)));
+    assert(strcmp(value, "000000 FFFFFF B0BEC5 B0BEC5 78909C FF8800") == 0);
+    assert(settings_csv_get(test_path, "theme", value, sizeof(value)));
+    assert(strcmp(value, "custom") == 0);
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.theme == DEVICE_THEME_CUSTOM);
+    assert(reloaded.theme_colors[0] == 0x000000 && reloaded.theme_colors[5] == 0xFF8800);
+
+    // Back to the defaults in one write.
+    assert(device_settings_set_theme_colors(&reloaded, device_theme_default_colors));
+    assert(settings_csv_get(test_path, "theme_custom", value, sizeof(value)));
+    assert(strcmp(value, "101820 FFFFFF B0BEC5 B0BEC5 78909C F2A33C") == 0);
+
+    /* A line with one bad colour, or one too few, leaves all six at the
+     * defaults rather than a theme with a hole in it. */
+    const char *bad[] = {"000000 FFFFFF B0BEC5 B0BEC5 78909C", "000000 FFFFFF B0BEC5 B0BEC5 78909C GG0000",
+                         "000000 FFFFFF B0BEC5 B0BEC5 78909C F2A33C 111111"};
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i) {
+        assert(settings_csv_set(test_path, "theme_custom", bad[i]));
+        assert(device_settings_init_at(&reloaded, test_path));
+        assert(memcmp(reloaded.theme_colors, standard, sizeof(standard)) == 0);
+    }
+    // A theme name this build does not know reads as Standard.
+    assert(settings_csv_set(test_path, "theme", "neon"));
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.theme == DEVICE_THEME_STANDARD);
+
+    uint32_t rgb = 0U;
+    assert(device_settings_parse_color("#a0B1c2", &rgb) && rgb == 0xA0B1C2);
+    assert(device_settings_parse_color("a0b1c2", &rgb) && rgb == 0xA0B1C2);
+    assert(!device_settings_parse_color("#a0b1c", &rgb));
+    assert(!device_settings_parse_color("#a0b1c2d", &rgb));
+    assert(!device_settings_parse_color("#zzzzzz", &rgb));
+    assert(!device_settings_parse_color("", &rgb));
+}
+
 int main(void)
 {
+    test_the_custom_theme_colors_persist_all_or_none();
     test_the_bluetooth_output_persists_and_forgets();
     test_the_fm_frequency_persists_and_stays_in_the_band();
     test_defaults_and_load();

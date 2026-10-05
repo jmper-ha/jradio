@@ -172,7 +172,8 @@ static void ui_apply_theme(void);
  * and a marquee going. */
 #define UI_LIST_DECOR_ROWS_MAX 24U
 _Static_assert(UI_STATION_LIST_MAX_ROWS <= UI_LIST_DECOR_ROWS_MAX &&
-                   UI_SETTINGS_MAX_ROWS <= UI_LIST_DECOR_ROWS_MAX,
+                   UI_SETTINGS_MAX_ROWS <= UI_LIST_DECOR_ROWS_MAX &&
+                   UI_MENU_ITEM_COUNT <= UI_LIST_DECOR_ROWS_MAX,
                "a list has more rows than its decoration has room for");
 typedef struct {
     lv_obj_t *dividers[UI_LIST_DECOR_ROWS_MAX - 1U];
@@ -181,6 +182,9 @@ typedef struct {
     int32_t row_y;
     int32_t pitch;
     int32_t mark_inset;
+    /* Rows with no gap between them, as the menu's are: a line then lies on
+     * the edge of the row below, and would cut across the cursor's tile. */
+    bool touching;
 } ui_list_decor_t;
 
 /* Built after the rows and whatever is drawn over their left edge, so the
@@ -192,7 +196,8 @@ static void ui_list_decor_create(ui_list_decor_t *decor, lv_obj_t *screen, size_
                                  int32_t line_x, int32_t line_w)
 {
     *decor = (ui_list_decor_t){.rows = rows, .row_y = row_y, .pitch = pitch,
-                               .mark_inset = row_h >= 20 ? 4 : 3};
+                               .mark_inset = row_h >= 20 ? 4 : 3,
+                               .touching = pitch <= row_h};
     for (size_t row = 0; row + 1U < rows; ++row) {
         lv_obj_t *divider = lv_obj_create(screen);
         lv_obj_remove_style_all(divider);
@@ -221,7 +226,9 @@ static void ui_list_decor_update(ui_list_decor_t *decor, const bool *shown, size
                                  int32_t mark_x)
 {
     for (size_t row = 0; row + 1U < decor->rows; ++row) {
-        const bool hidden = !(shown[row] && shown[row + 1U]);
+        bool hidden = !(shown[row] && shown[row + 1U]);
+        // Not across the cursor's tile, where the rows touch.
+        if (decor->touching && (row == cursor_row || row + 1U == cursor_row)) hidden = true;
         if (hidden != lv_obj_has_flag(decor->dividers[row], LV_OBJ_FLAG_HIDDEN)) {
             if (hidden) lv_obj_add_flag(decor->dividers[row], LV_OBJ_FLAG_HIDDEN);
             else lv_obj_remove_flag(decor->dividers[row], LV_OBJ_FLAG_HIDDEN);
@@ -582,6 +589,7 @@ static lv_obj_t *s_station_list_numbers[UI_STATION_LIST_MAX_ROWS];
 static ui_list_decor_t s_station_list_decor;
 static ui_list_decor_t s_yandex_decor;
 static ui_list_decor_t s_settings_decor;
+static ui_list_decor_t s_menu_decor;
 static lv_obj_t *s_station_list_progress;
 static station_list_state_t s_station_list;
 static ui_player_state_t s_player_ui;
@@ -955,6 +963,15 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     lv_obj_set_style_radius(band, 0, 0);
     lv_obj_set_style_pad_all(band, 0, 0);
     lv_obj_clear_flag(band, LV_OBJ_FLAG_SCROLLABLE);
+    /* A rule along the band's last pixel row, the full width: the strip reads
+     * as a header rather than as a lighter stripe of the screen. Inside the
+     * band, below the labels, so nothing under the strip moves. */
+    lv_obj_t *edge = lv_obj_create(screen);
+    lv_obj_remove_style_all(edge);
+    lv_obj_set_pos(edge, 0, UI_STRIP_H - 1);
+    lv_obj_set_size(edge, TFT_WIDTH, 1);
+    lv_obj_set_style_bg_opa(edge, LV_OPA_COVER, 0);
+    ui_paint(edge, UI_PAINT_BG, UI_ROLE_RULE, 0);
 
     /* The strip is sized from the body face, and its labels say so themselves
      * rather than inheriting the screen's: the menu screen is set in the
@@ -2642,7 +2659,10 @@ static void ui_update_menu_highlight(void)
     const uint8_t selected = ui_menu_selected_index(&s_menu);
     const ui_menu_visible_mask_t shown = ui_menu_visible_mask(&s_menu);
     const uint8_t visible = ui_menu_visible_count(shown);
+    bool on_screen[UI_MENU_ITEM_COUNT] = {false};
+    size_t cursor_row = UI_MENU_ITEM_COUNT;
     for (uint8_t row = 0; row < UI_MENU_ITEM_COUNT; ++row) {
+        on_screen[row] = row < visible;
         if (row >= visible) {
             // Hidden rather than blanked: the row tile is opaque and would
             // otherwise leave a bar of background colour below the last name.
@@ -2654,6 +2674,7 @@ static void ui_update_menu_highlight(void)
         lv_obj_clear_flag(s_menu_icons[row], LV_OBJ_FLAG_HIDDEN);
         const ui_menu_item_t item = ui_menu_visible_item_at(row, shown);
         const bool is_selected = (uint8_t)item == selected;
+        if (is_selected) cursor_row = row;
         const bool enabled = ui_menu_item_is_enabled(item, shown, s_last_wifi_connected);
         // Raised tile plus accent text, the way the player screen marks what
         // it is playing. The arrow the old highlight needed is gone: a filled
@@ -2678,6 +2699,11 @@ static void ui_update_menu_highlight(void)
                                        lv_color_hex(!enabled      ? ui_hex(UI_ROLE_DISABLED)
                                                     : is_selected ? ui_hex(UI_ROLE_ACCENT)
                                                                   : ui_hex(UI_ROLE_DIM)), 0);
+    }
+    /* The stripe is drawn whether or not the row can be started: the cursor
+     * is on it either way, and the disabled colour already says the rest. */
+    if (s_menu_decor.mark != NULL) {
+        ui_list_decor_update(&s_menu_decor, on_screen, cursor_row, UI_MENU_ROW_X);
     }
 }
 
@@ -2722,6 +2748,9 @@ static void ui_create_menu_screen(void)
                            (UI_MENU_ROW_H - UI_FEED_ICON_SMALL_PX) / 2);
         lv_obj_set_style_image_recolor_opa(s_menu_icons[index], LV_OPA_COVER, 0);
     }
+    ui_list_decor_create(&s_menu_decor, s_menu_screen, UI_MENU_ITEM_COUNT, UI_MENU_ROW_Y,
+                         UI_MENU_ROW_PITCH, UI_MENU_ROW_H, UI_MENU_ROW_X + 6,
+                         UI_MENU_ROW_W - 12);
 
     // Not a key hint: the only thing this line ever says is why a source
     // refused to open, and it is empty the rest of the time.

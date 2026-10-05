@@ -323,6 +323,9 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     if (read_value(&csv, "screensaver", value, sizeof(value))) {
         settings->screensaver = screensaver_from_text(value);
     }
+    if (read_value(&csv, "theme", value, sizeof(value)) && strcmp(value, "contrast") == 0) {
+        settings->theme = DEVICE_THEME_CONTRAST;
+    }
     /* Either number off its list or range leaves the default, like the
      * brightness above: a hand-edited "0" here would be a panel that never
      * comes back on, and nothing on a dark panel can fix it. */
@@ -808,6 +811,17 @@ bool device_settings_set_screensaver(device_settings_t *settings, device_screens
     if (settings->screensaver == mode) return true;
     if (!save_value(settings, "screensaver", screensaver_text(mode))) return false;
     settings->screensaver = mode;
+    return true;
+}
+
+bool device_settings_set_theme(device_settings_t *settings, device_theme_t theme)
+{
+    if (settings == NULL || theme > DEVICE_THEME_CONTRAST) return false;
+    if (settings->theme == theme) return true;
+    if (!save_value(settings, "theme", theme == DEVICE_THEME_CONTRAST ? "contrast" : "standard")) {
+        return false;
+    }
+    settings->theme = theme;
     return true;
 }
 

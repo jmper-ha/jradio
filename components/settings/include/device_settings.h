@@ -65,6 +65,14 @@ typedef enum {
     DEVICE_SCREENSAVER_CLOCK,
 } device_screensaver_t;
 
+/* The panel's colours, see ui_theme.h. Stored by name, so a card from a
+ * build that knows more themes reads here as the standard one rather than as
+ * a number that means something else. */
+typedef enum {
+    DEVICE_THEME_STANDARD = 0,
+    DEVICE_THEME_CONTRAST,
+} device_theme_t;
+
 /* The waits offered, in seconds. A closed list rather than a free number: the
  * knob steps through it, and a page has to offer the same steps or the two
  * would show values the other cannot set. */
@@ -263,6 +271,7 @@ typedef struct {
     char weather_latitude[DEVICE_COORDINATE_MAX];
     char weather_longitude[DEVICE_COORDINATE_MAX];
     device_screensaver_t screensaver;
+    device_theme_t theme;
     /* One of device_screensaver_seconds_choices. */
     unsigned short screensaver_seconds;
     /* The idle backlight, a percentage like `brightness` and refused at zero
@@ -373,6 +382,7 @@ bool device_settings_set_weather_longitude(device_settings_t *settings, const ch
  * six decimals, within `limit` degrees either side of zero. */
 bool device_settings_coordinate_valid(const char *text, int limit);
 bool device_settings_set_screensaver(device_settings_t *settings, device_screensaver_t mode);
+bool device_settings_set_theme(device_settings_t *settings, device_theme_t theme);
 /* Only a value off the list is taken; anything else is refused, not rounded. */
 bool device_settings_set_screensaver_seconds(device_settings_t *settings, unsigned int seconds);
 bool device_settings_screensaver_seconds_valid(unsigned int seconds);

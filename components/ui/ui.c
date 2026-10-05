@@ -123,6 +123,48 @@ static lv_color_t ui_color(ui_role_t role)
     return lv_color_hex(ui_hex(role));
 }
 
+/* A colour given to an object when it is built is a shared style per role,
+ * not a local one: changing the theme then rewrites a style and LVGL repaints
+ * whatever uses it, instead of every create function having to run again.
+ * Colours that follow state - the selected row, a lit bar - stay local and are
+ * set again by the update that owns them; ui_apply_theme() runs those. */
+typedef enum {
+    UI_PAINT_TEXT = 0,
+    UI_PAINT_BG,
+    UI_PAINT_BORDER,
+    UI_PAINT_RECOLOR,
+    UI_PAINT_COUNT,
+} ui_paint_t;
+
+static lv_style_t s_role_styles[UI_PAINT_COUNT][UI_ROLE_COUNT];
+static bool s_role_style_made[UI_PAINT_COUNT][UI_ROLE_COUNT];
+
+static void ui_role_style_fill(ui_paint_t paint, ui_role_t role)
+{
+    lv_style_t *style = &s_role_styles[paint][role];
+    switch (paint) {
+    case UI_PAINT_TEXT: lv_style_set_text_color(style, ui_color(role)); break;
+    case UI_PAINT_BG: lv_style_set_bg_color(style, ui_color(role)); break;
+    case UI_PAINT_BORDER: lv_style_set_border_color(style, ui_color(role)); break;
+    case UI_PAINT_RECOLOR: lv_style_set_image_recolor(style, ui_color(role)); break;
+    default: break;
+    }
+}
+
+static void ui_paint(lv_obj_t *obj, ui_paint_t paint, ui_role_t role,
+                     lv_style_selector_t selector)
+{
+    if (obj == NULL || paint >= UI_PAINT_COUNT || role >= UI_ROLE_COUNT) return;
+    if (!s_role_style_made[paint][role]) {
+        lv_style_init(&s_role_styles[paint][role]);
+        ui_role_style_fill(paint, role);
+        s_role_style_made[paint][role] = true;
+    }
+    lv_obj_add_style(obj, &s_role_styles[paint][role], selector);
+}
+
+static void ui_apply_theme(void);
+
 /* The code covers the settings screen, and nothing on it moves - so unlike a
  * list there is no activity to measure, only how long it has been up. Long
  * enough for a phone to be fetched from another room, short enough that the
@@ -834,7 +876,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     lv_obj_t *band = lv_obj_create(screen);
     lv_obj_set_pos(band, 0, 0);
     lv_obj_set_size(band, TFT_WIDTH, UI_STRIP_H);
-    lv_obj_set_style_bg_color(band, ui_color(UI_ROLE_STRIP), 0);
+    ui_paint(band, UI_PAINT_BG, UI_ROLE_STRIP, 0);
     lv_obj_set_style_border_width(band, 0, 0);
     lv_obj_set_style_radius(band, 0, 0);
     lv_obj_set_style_pad_all(band, 0, 0);
@@ -849,7 +891,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     lv_obj_set_size(strip->context, UI_STRIP_CONTEXT_W, 19);
     lv_obj_set_style_text_font(strip->context, UI_FONT_BODY, 0);
     lv_label_set_long_mode(strip->context, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(strip->context, ui_color(UI_ROLE_ACCENT), 0);
+    ui_paint(strip->context, UI_PAINT_TEXT, UI_ROLE_ACCENT, 0);
     lv_label_set_text(strip->context, context);
 
     // Centred rather than left-aligned: it is the one thing on the screen read
@@ -859,7 +901,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     lv_obj_set_width(strip->clock, UI_STRIP_CLOCK_W);
     lv_obj_set_style_text_font(strip->clock, UI_FONT_BODY, 0);
     lv_obj_set_style_text_align(strip->clock, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(strip->clock, ui_color(UI_ROLE_TEXT), 0);
+    ui_paint(strip->clock, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
     lv_label_set_text(strip->clock, "");
 
     /* Built hidden: the weather is off on a fresh card, and the first report
@@ -867,7 +909,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
      * recoloured to the clock's shade, the same way the carousel's are. */
     strip->weather_icon = lv_image_create(screen);
     lv_obj_set_pos(strip->weather_icon, UI_STRIP_WEATHER_ICON_X, UI_STRIP_WEATHER_ICON_Y);
-    lv_obj_set_style_image_recolor(strip->weather_icon, ui_color(UI_ROLE_TEXT), 0);
+    ui_paint(strip->weather_icon, UI_PAINT_RECOLOR, UI_ROLE_TEXT, 0);
     lv_obj_set_style_image_recolor_opa(strip->weather_icon, LV_OPA_COVER, 0);
     lv_obj_add_flag(strip->weather_icon, LV_OBJ_FLAG_HIDDEN);
     strip->weather_text = lv_label_create(screen);
@@ -878,7 +920,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
      * and a wrapped degree sign hung under the strip. */
     lv_label_set_long_mode(strip->weather_text, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(strip->weather_text, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_set_style_text_color(strip->weather_text, ui_color(UI_ROLE_TEXT), 0);
+    ui_paint(strip->weather_text, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
     lv_label_set_text(strip->weather_text, "");
     lv_obj_add_flag(strip->weather_text, LV_OBJ_FLAG_HIDDEN);
     strip->weather_shown = false;
@@ -892,7 +934,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     /* The accent, where the weather's picture is the clock's shade: one says
      * what the sky is doing, the other that the device is about to switch
      * itself off, and only one of those is worth a colour. */
-    lv_obj_set_style_image_recolor(strip->sleep_icon, ui_color(UI_ROLE_ACCENT), 0);
+    ui_paint(strip->sleep_icon, UI_PAINT_RECOLOR, UI_ROLE_ACCENT, 0);
     lv_obj_set_style_image_recolor_opa(strip->sleep_icon, LV_OPA_COVER, 0);
     lv_obj_add_flag(strip->sleep_icon, LV_OBJ_FLAG_HIDDEN);
 
@@ -901,7 +943,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     lv_obj_set_width(strip->sleep_text, UI_STRIP_SLEEP_TEXT_W);
     lv_obj_set_style_text_font(strip->sleep_text, UI_FONT_BODY, 0);
     lv_label_set_long_mode(strip->sleep_text, LV_LABEL_LONG_CLIP);
-    lv_obj_set_style_text_color(strip->sleep_text, ui_color(UI_ROLE_ACCENT), 0);
+    ui_paint(strip->sleep_text, UI_PAINT_TEXT, UI_ROLE_ACCENT, 0);
     lv_label_set_text(strip->sleep_text, "");
     lv_obj_add_flag(strip->sleep_text, LV_OBJ_FLAG_HIDDEN);
     strip->sleep_minutes = 0U;
@@ -916,7 +958,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
         lv_obj_set_style_border_width(block, 0, 0);
         lv_obj_set_style_radius(block, 1, 0);
         lv_obj_set_style_pad_all(block, 0, 0);
-        lv_obj_set_style_bg_color(block, ui_color(UI_ROLE_BAR_OFF), 0);
+        ui_paint(block, UI_PAINT_BG, UI_ROLE_BAR_OFF, 0);
         lv_obj_clear_flag(block, LV_OBJ_FLAG_SCROLLABLE);
         strip->bars[bar] = block;
         strip->bar_colour[bar] = ui_hex(UI_ROLE_BAR_OFF);
@@ -924,7 +966,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     strip->rssi = lv_label_create(screen);
     lv_obj_set_pos(strip->rssi, UI_STRIP_RSSI_X, 6);
     lv_obj_set_style_text_font(strip->rssi, UI_FONT_BODY, 0);
-    lv_obj_set_style_text_color(strip->rssi, ui_color(UI_ROLE_SECONDARY), 0);
+    ui_paint(strip->rssi, UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
     lv_label_set_text(strip->rssi, "");
 }
 
@@ -1133,7 +1175,7 @@ static void ui_create_screensaver(void)
     lv_obj_set_width(s_saver_time, s_saver_block_w);
     lv_obj_set_style_text_align(s_saver_time, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(s_saver_time, UI_FONT_SAVER_CLOCK, 0);
-    lv_obj_set_style_text_color(s_saver_time, ui_color(UI_ROLE_SECONDARY), 0);
+    ui_paint(s_saver_time, UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
     lv_label_set_text(s_saver_time, "--:--");
 
     /* The middle line is three things laid side by side and centred as one:
@@ -1142,18 +1184,18 @@ static void ui_create_screensaver(void)
     const int line_y = s_saver_sleep_line_h + time_size.y + UI_SAVER_GAP;
     s_saver_date = lv_label_create(s_saver_block);
     lv_obj_set_pos(s_saver_date, 0, line_y + (s_saver_line_h - text_h) / 2);
-    lv_obj_set_style_text_color(s_saver_date, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_saver_date, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
     lv_label_set_text(s_saver_date, "");
 
     s_saver_icon = lv_image_create(s_saver_block);
     lv_obj_set_pos(s_saver_icon, 0, line_y + (s_saver_line_h - UI_SAVER_WEATHER_ICON_PX) / 2);
-    lv_obj_set_style_image_recolor(s_saver_icon, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_saver_icon, UI_PAINT_RECOLOR, UI_ROLE_DIM, 0);
     lv_obj_set_style_image_recolor_opa(s_saver_icon, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_saver_icon, LV_OBJ_FLAG_HIDDEN);
 
     s_saver_temperature = lv_label_create(s_saver_block);
     lv_obj_set_pos(s_saver_temperature, 0, line_y + (s_saver_line_h - text_h) / 2);
-    lv_obj_set_style_text_color(s_saver_temperature, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_saver_temperature, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
     lv_label_set_text(s_saver_temperature, "");
 
     /* The top line: the crescent at the strip's size rather than the
@@ -1163,13 +1205,13 @@ static void ui_create_screensaver(void)
     s_saver_sleep_icon = lv_image_create(s_saver_block);
     lv_obj_set_pos(s_saver_sleep_icon, 0, (sleep_line_h - UI_STRIP_SLEEP_ICON_PX) / 2);
     lv_image_set_src(s_saver_sleep_icon, &UI_SLEEP_BITMAP(UI_STRIP_SLEEP_ICON_PX));
-    lv_obj_set_style_image_recolor(s_saver_sleep_icon, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_saver_sleep_icon, UI_PAINT_RECOLOR, UI_ROLE_DIM, 0);
     lv_obj_set_style_image_recolor_opa(s_saver_sleep_icon, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_saver_sleep_icon, LV_OBJ_FLAG_HIDDEN);
 
     s_saver_sleep_text = lv_label_create(s_saver_block);
     lv_obj_set_pos(s_saver_sleep_text, 0, (sleep_line_h - text_h) / 2);
-    lv_obj_set_style_text_color(s_saver_sleep_text, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_saver_sleep_text, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
     lv_label_set_text(s_saver_sleep_text, "");
     lv_obj_add_flag(s_saver_sleep_text, LV_OBJ_FLAG_HIDDEN);
 
@@ -1178,7 +1220,7 @@ static void ui_create_screensaver(void)
     lv_obj_set_width(s_saver_track, s_saver_block_w);
     lv_obj_set_style_text_align(s_saver_track, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_saver_track, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_saver_track, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_saver_track, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
     lv_label_set_text(s_saver_track, "");
 
     /* The bitmap, in PSRAM: 128 KB on the wide panel, which the LVGL pool
@@ -2075,7 +2117,7 @@ static void ui_create_fm_marks(void)
     s_fm_text = ui_scroller_create(s_source_screen, UI_SRC_FM_TEXT_X, UI_SRC_FM_TEXT_Y,
                                    UI_SRC_FM_TEXT_W, UI_SRC_LINE_H);
     lv_obj_set_style_text_font(s_fm_text.box, UI_FONT_BODY, 0);
-    lv_obj_set_style_text_color(s_fm_text.box, ui_color(UI_ROLE_SECONDARY), 0);
+    ui_paint(s_fm_text.box, UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
     ui_scroller_set_scrolling(&s_fm_text, true);
 #if UI_SRC_FM_TEXT_CENTRED
     s_fm_text.centred = true;
@@ -2108,7 +2150,7 @@ static void ui_create_fm_marks(void)
     lv_obj_set_pos(s_fm_stereo, 0, 0);
     lv_obj_set_width(s_fm_stereo, UI_FM_STEREO_W);
     lv_label_set_long_mode(s_fm_stereo, LV_LABEL_LONG_CLIP);
-    lv_obj_set_style_text_color(s_fm_stereo, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_fm_stereo, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
 
     /* Five equal blocks, lit from the left in the stereo mark's yellow - the
      * level meter's look, not a fan like the Wi-Fi mark in the strip, since
@@ -2120,7 +2162,7 @@ static void ui_create_fm_marks(void)
         s_fm_signal[step] = lv_obj_create(s_fm_marks);
         lv_obj_remove_style_all(s_fm_signal[step]);
         lv_obj_set_style_bg_opa(s_fm_signal[step], LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(s_fm_signal[step], ui_color(UI_ROLE_FM_UNLIT), 0);
+        ui_paint(s_fm_signal[step], UI_PAINT_BG, UI_ROLE_FM_UNLIT, 0);
         lv_obj_set_size(s_fm_signal[step], UI_FM_STEP_W, UI_FM_STEP_H);
         lv_obj_set_pos(s_fm_signal[step], steps_x + step * (UI_FM_STEP_W + UI_FM_STEP_GAP),
                        steps_row + baseline - UI_FM_STEP_H);
@@ -2135,7 +2177,7 @@ static void ui_create_fm_marks(void)
     s_fm_rds = lv_obj_create(s_fm_marks);
     lv_obj_remove_style_all(s_fm_rds);
     lv_obj_remove_flag(s_fm_rds, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_border_color(s_fm_rds, ui_color(UI_ROLE_SECONDARY), 0);
+    ui_paint(s_fm_rds, UI_PAINT_BORDER, UI_ROLE_SECONDARY, 0);
     lv_obj_set_style_border_width(s_fm_rds, 1, 0);
     lv_obj_set_style_radius(s_fm_rds, 3, 0);
     lv_obj_set_style_pad_hor(s_fm_rds, UI_FM_RDS_PAD + 1, 0);
@@ -2143,7 +2185,7 @@ static void ui_create_fm_marks(void)
     lv_obj_set_pos(s_fm_rds, rds_x, rds_row + baseline + UI_FM_RDS_PAD + 1 - frame_h);
     lv_obj_t *word = lv_label_create(s_fm_rds);
     lv_label_set_text(word, "RDS");
-    lv_obj_set_style_text_color(word, ui_color(UI_ROLE_SECONDARY), 0);
+    ui_paint(word, UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
     // Its baseline on the frame's inner bottom edge, less the padding.
     const int32_t word_baseline = UI_FONT_BODY->line_height - UI_FONT_BODY->base_line;
     lv_obj_set_pos(word, 0, frame_h - 1 - UI_FM_RDS_PAD - word_baseline);
@@ -2459,7 +2501,7 @@ static void ui_update_feed_screen(void)
 static void ui_create_feed_screen(void)
 {
     s_feed_screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_feed_screen, ui_color(UI_ROLE_GROUND), 0);
+    ui_paint(s_feed_screen, UI_PAINT_BG, UI_ROLE_GROUND, 0);
     lv_obj_set_style_border_width(s_feed_screen, 0, 0);
     lv_obj_set_style_pad_all(s_feed_screen, 0, 0);
     lv_obj_set_style_text_font(s_feed_screen, UI_FONT_BODY, 0);
@@ -2479,7 +2521,7 @@ static void ui_create_feed_screen(void)
      * like the display freezing on the way back to the home screen. A drawn
      * glyph is also sharper than a stretched one. */
     lv_obj_set_style_text_font(s_feed_title, UI_FONT_TITLE, 0);
-    lv_obj_set_style_text_color(s_feed_title, ui_color(UI_ROLE_TEXT), 0);
+    ui_paint(s_feed_title, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
     s_feed_notice = lv_label_create(s_feed_screen);
     lv_obj_set_pos(s_feed_notice, 8, UI_FEED_NOTICE_Y);
     lv_obj_set_size(s_feed_notice, TFT_WIDTH - 16, 18);
@@ -2568,7 +2610,7 @@ static void ui_update_menu_highlight(void)
 static void ui_create_menu_screen(void)
 {
     s_menu_screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_menu_screen, ui_color(UI_ROLE_GROUND), 0);
+    ui_paint(s_menu_screen, UI_PAINT_BG, UI_ROLE_GROUND, 0);
     lv_obj_set_style_border_width(s_menu_screen, 0, 0);
     lv_obj_set_style_pad_all(s_menu_screen, 0, 0);
     // Set once here rather than on each label: text_font is inherited in LVGL,
@@ -2900,7 +2942,7 @@ static void ui_create_about_overlay(void);
 static void ui_create_settings_screen(void)
 {
     s_settings_screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_settings_screen, ui_color(UI_ROLE_GROUND), 0);
+    ui_paint(s_settings_screen, UI_PAINT_BG, UI_ROLE_GROUND, 0);
     lv_obj_set_style_border_width(s_settings_screen, 0, 0);
     lv_obj_set_style_pad_all(s_settings_screen, 0, 0);
     // Set once here rather than on each label: text_font is inherited in LVGL,
@@ -2919,7 +2961,7 @@ static void ui_create_settings_screen(void)
     // Matches the group headings under it: a heading smaller than the rows it
     // introduces reads as a mistake.
     lv_obj_set_style_text_font(title, UI_FONT_TITLE, 0);
-    lv_obj_set_style_text_color(title, ui_color(UI_ROLE_TEXT), 0);
+    ui_paint(title, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
 
     for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
         s_settings_rows[row] = lv_label_create(s_settings_screen);
@@ -2929,9 +2971,9 @@ static void ui_create_settings_screen(void)
         lv_obj_set_style_pad_left(s_settings_rows[row], 6, 0);
         lv_obj_set_style_pad_top(s_settings_rows[row], 2, 0);
         lv_label_set_long_mode(s_settings_rows[row], LV_LABEL_LONG_DOT);
-        lv_obj_set_style_text_color(s_settings_rows[row], ui_color(UI_ROLE_TEXT), 0);
+        ui_paint(s_settings_rows[row], UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
         lv_obj_set_style_bg_opa(s_settings_rows[row], LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(s_settings_rows[row], ui_color(UI_ROLE_GROUND), 0);
+        ui_paint(s_settings_rows[row], UI_PAINT_BG, UI_ROLE_GROUND, 0);
         lv_label_set_text(s_settings_rows[row], "");
     }
     /* In the right margin, clear of the rows: the text column ends at 300 and
@@ -2953,14 +2995,14 @@ static void ui_create_settings_screen(void)
     s_settings_more_above = lv_label_create(s_settings_screen);
     lv_obj_set_pos(s_settings_more_above, UI_SET_CHEVRON_X, UI_SET_ROW_Y);
     lv_obj_set_style_text_font(s_settings_more_above, UI_FONT_ICON, 0);
-    lv_obj_set_style_text_color(s_settings_more_above, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_settings_more_above, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
     lv_label_set_text(s_settings_more_above, "");
 
     s_settings_more_below = lv_label_create(s_settings_screen);
     lv_obj_set_pos(s_settings_more_below, UI_SET_CHEVRON_X,
                    UI_SET_ROW_Y + (int)(UI_SETTINGS_MAX_ROWS - 1U) * UI_SET_ROW_PITCH);
     lv_obj_set_style_text_font(s_settings_more_below, UI_FONT_ICON, 0);
-    lv_obj_set_style_text_color(s_settings_more_below, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_settings_more_below, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
     lv_label_set_text(s_settings_more_below, "");
 
     for (size_t index = 0; index < UI_SETTINGS_SWITCH_COUNT; ++index) {
@@ -2970,11 +3012,9 @@ static void ui_create_settings_screen(void)
         // On is the accent, the same colour the selected icon and the playing
         // row use. The teal it replaced was the only colour on the device that
         // meant nothing anywhere else.
-        lv_obj_set_style_bg_color(s_settings_switches[index], ui_color(UI_ROLE_ACCENT),
-                                  LV_PART_INDICATOR | LV_STATE_CHECKED);
+        ui_paint(s_settings_switches[index], UI_PAINT_BG, UI_ROLE_ACCENT, LV_PART_INDICATOR | LV_STATE_CHECKED);
         lv_obj_set_style_bg_color(s_settings_switches[index], lv_color_hex(0xECEFF1), LV_PART_KNOB);
-        lv_obj_set_style_bg_color(s_settings_switches[index], ui_color(UI_ROLE_TEXT),
-                                  LV_PART_KNOB | LV_STATE_CHECKED);
+        ui_paint(s_settings_switches[index], UI_PAINT_BG, UI_ROLE_TEXT, LV_PART_KNOB | LV_STATE_CHECKED);
         lv_obj_add_flag(s_settings_switches[index], LV_OBJ_FLAG_HIDDEN);
     }
     s_settings_notice = lv_label_create(s_settings_screen);
@@ -2987,7 +3027,7 @@ static void ui_create_settings_screen(void)
     lv_label_set_long_mode(s_settings_notice, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_settings_notice, lv_color_hex(0xFFCC80), 0);
     lv_obj_set_style_bg_opa(s_settings_notice, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(s_settings_notice, ui_color(UI_ROLE_GROUND), 0);
+    ui_paint(s_settings_notice, UI_PAINT_BG, UI_ROLE_GROUND, 0);
     lv_label_set_text(s_settings_notice, "");
 
     /* Its own band rather than another row: the address is not a setting, and
@@ -2996,7 +3036,7 @@ static void ui_create_settings_screen(void)
     lv_obj_remove_style_all(s_settings_web_band);
     lv_obj_set_pos(s_settings_web_band, 0, UI_SET_BAND_Y);
     lv_obj_set_size(s_settings_web_band, TFT_WIDTH, UI_SET_BAND_H);
-    lv_obj_set_style_bg_color(s_settings_web_band, ui_color(UI_ROLE_STRIP), 0);
+    ui_paint(s_settings_web_band, UI_PAINT_BG, UI_ROLE_STRIP, 0);
     lv_obj_set_style_bg_opa(s_settings_web_band, LV_OPA_COVER, 0);
 
     /* The "web" tag that used to sit here is gone: the address starts with
@@ -3006,12 +3046,12 @@ static void ui_create_settings_screen(void)
     lv_obj_set_pos(s_settings_web_address, UI_SET_BAND_PAD, (UI_SET_BAND_H - 19) / 2);
     lv_obj_set_width(s_settings_web_address, UI_SET_BAND_ADDRESS_W);
     lv_label_set_long_mode(s_settings_web_address, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_settings_web_address, ui_color(UI_ROLE_TEXT), 0);
+    ui_paint(s_settings_web_address, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
     lv_label_set_text(s_settings_web_address, "");
 
     s_settings_web_hint = lv_label_create(s_settings_web_band);
     lv_obj_align(s_settings_web_hint, LV_ALIGN_RIGHT_MID, -UI_SET_BAND_PAD, 0);
-    lv_obj_set_style_text_color(s_settings_web_hint, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_settings_web_hint, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
     lv_label_set_text(s_settings_web_hint, "");
 
     /* A cover over this screen rather than a screen of its own: the code is a
@@ -3021,7 +3061,7 @@ static void ui_create_settings_screen(void)
     lv_obj_remove_style_all(s_qr_overlay);
     lv_obj_set_pos(s_qr_overlay, 0, 0);
     lv_obj_set_size(s_qr_overlay, TFT_WIDTH, TFT_HEIGHT);
-    lv_obj_set_style_bg_color(s_qr_overlay, ui_color(UI_ROLE_GROUND), 0);
+    ui_paint(s_qr_overlay, UI_PAINT_BG, UI_ROLE_GROUND, 0);
     lv_obj_set_style_bg_opa(s_qr_overlay, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_qr_overlay, LV_OBJ_FLAG_HIDDEN);
 
@@ -3048,14 +3088,14 @@ static void ui_create_settings_screen(void)
     lv_obj_set_style_text_align(s_qr_caption, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_qr_caption, UI_QR_TEXT_BESIDE ? LV_LABEL_LONG_WRAP
                                                            : LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_qr_caption, ui_color(UI_ROLE_TEXT), 0);
+    ui_paint(s_qr_caption, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
     lv_label_set_text(s_qr_caption, "");
 
     s_qr_back = lv_label_create(s_qr_overlay);
     lv_obj_set_pos(s_qr_back, UI_QR_CAPTION_X, UI_QR_BACK_Y);
     lv_obj_set_width(s_qr_back, UI_QR_CAPTION_W);
     lv_obj_set_style_text_align(s_qr_back, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(s_qr_back, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_qr_back, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
     lv_label_set_text(s_qr_back, "");
 
     ui_create_about_overlay();
@@ -3074,7 +3114,7 @@ static void ui_create_about_overlay(void)
     lv_obj_remove_style_all(s_about_overlay);
     lv_obj_set_pos(s_about_overlay, 0, 0);
     lv_obj_set_size(s_about_overlay, TFT_WIDTH, TFT_HEIGHT);
-    lv_obj_set_style_bg_color(s_about_overlay, ui_color(UI_ROLE_GROUND), 0);
+    ui_paint(s_about_overlay, UI_PAINT_BG, UI_ROLE_GROUND, 0);
     lv_obj_set_style_bg_opa(s_about_overlay, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_about_overlay, LV_OBJ_FLAG_HIDDEN);
 
@@ -3083,7 +3123,7 @@ static void ui_create_about_overlay(void)
     lv_obj_set_width(title, UI_CONTENT_W);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(title, UI_FONT_TITLE, 0);
-    lv_obj_set_style_text_color(title, ui_color(UI_ROLE_ACCENT), 0);
+    ui_paint(title, UI_PAINT_TEXT, UI_ROLE_ACCENT, 0);
     /* Not translated, and not "О устройстве": it is the name of the thing. */
     lv_label_set_text(title, "jradio");
 
@@ -3096,27 +3136,26 @@ static void ui_create_about_overlay(void)
          * fit would otherwise push every row below it down. */
         lv_obj_set_height(s_about_rows[row], UI_SRC_LINE_H);
         lv_label_set_long_mode(s_about_rows[row], LV_LABEL_LONG_DOT);
-        lv_obj_set_style_text_color(s_about_rows[row], ui_color(UI_ROLE_TEXT), 0);
+        ui_paint(s_about_rows[row], UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
         lv_label_set_text(s_about_rows[row], "");
     }
     /* The last row is the notice, which is the only one that is ever a
      * problem - so it is the only one that is not the ordinary text colour. */
-    lv_obj_set_style_text_color(s_about_rows[UI_ABOUT_ROWS - 1U],
-                                ui_color(UI_ROLE_ACCENT), 0);
+    ui_paint(s_about_rows[UI_ABOUT_ROWS - 1U], UI_PAINT_TEXT, UI_ROLE_ACCENT, 0);
 
     s_about_author = lv_label_create(s_about_overlay);
     lv_obj_set_pos(s_about_author, UI_CONTENT_X, UI_ABOUT_AUTHOR_Y);
     lv_obj_set_width(s_about_author, UI_CONTENT_W);
     lv_obj_set_style_text_align(s_about_author, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_about_author, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_about_author, ui_color(UI_ROLE_SECONDARY), 0);
+    ui_paint(s_about_author, UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
     lv_label_set_text(s_about_author, VERSION_INFO_AUTHOR);
 
     lv_obj_t *hint = lv_label_create(s_about_overlay);
     lv_obj_set_pos(hint, UI_CONTENT_X, UI_ABOUT_HINT_Y);
     lv_obj_set_width(hint, UI_CONTENT_W);
     lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(hint, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(hint, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
     /* Filled when the screen opens, because the language can change between
      * the overlay being built and anybody looking at it. */
     lv_label_set_text(hint, "");
@@ -3242,6 +3281,12 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
     case UI_SETTINGS_ROW_INVERT_COLORS_FIELD:
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_INVERT_COLORS,
                                  s_device_settings.invert_colors);
+        break;
+    case UI_SETTINGS_ROW_THEME_FIELD:
+        ui_settings_field(text, text_size, DEVICE_TEXT_ROW_THEME,
+                          s_device_settings.theme == DEVICE_THEME_CONTRAST
+                              ? DEVICE_TEXT_THEME_CONTRAST
+                              : DEVICE_TEXT_THEME_STANDARD);
         break;
     case UI_SETTINGS_ROW_ABOUT:
         /* No indent and no value: it is not a field inside a group, and there
@@ -3638,6 +3683,7 @@ static void ui_reload_settings(void)
     if (brightness_pending) s_device_settings.brightness = turning_brightness;
 
     ui_apply_display_rotation();
+    ui_apply_theme();
     ui_backlight_apply(s_device_settings.brightness);
     if (!volume_pending) board_audio_set_volume(s_device_settings.volume);
     /* The zone applies to the next reading of the clock and the server only
@@ -3671,7 +3717,7 @@ static void ui_reload_settings(void)
 static void ui_create_yandex_screen(void)
 {
     s_yandex_screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_yandex_screen, ui_color(UI_ROLE_GROUND), 0);
+    ui_paint(s_yandex_screen, UI_PAINT_BG, UI_ROLE_GROUND, 0);
     lv_obj_set_style_border_width(s_yandex_screen, 0, 0);
     lv_obj_set_style_pad_all(s_yandex_screen, 0, 0);
     lv_obj_set_style_text_font(s_yandex_screen, UI_FONT_BODY, 0);
@@ -3685,7 +3731,7 @@ static void ui_create_yandex_screen(void)
     lv_obj_set_pos(s_yandex_status, 12, UI_YANDEX_STATUS_Y);
     lv_obj_set_width(s_yandex_status, TFT_WIDTH - 24);
     lv_label_set_long_mode(s_yandex_status, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_yandex_status, ui_color(UI_ROLE_SECONDARY), 0);
+    ui_paint(s_yandex_status, UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
     lv_label_set_text(s_yandex_status, "");
 
     /* A panel rather than three loose labels: the block appears and disappears
@@ -3695,7 +3741,7 @@ static void ui_create_yandex_screen(void)
     lv_obj_remove_style_all(s_yandex_code_panel);
     lv_obj_set_pos(s_yandex_code_panel, 12, UI_YANDEX_PANEL_Y);
     lv_obj_set_size(s_yandex_code_panel, TFT_WIDTH - 24, UI_YANDEX_PANEL_H);
-    lv_obj_set_style_bg_color(s_yandex_code_panel, ui_color(UI_ROLE_STRIP), 0);
+    ui_paint(s_yandex_code_panel, UI_PAINT_BG, UI_ROLE_STRIP, 0);
     lv_obj_set_style_bg_opa(s_yandex_code_panel, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(s_yandex_code_panel, 8, 0);
     lv_obj_add_flag(s_yandex_code_panel, LV_OBJ_FLAG_HIDDEN);
@@ -3712,7 +3758,7 @@ static void ui_create_yandex_screen(void)
     lv_label_set_long_mode(s_yandex_code, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(s_yandex_code, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(s_yandex_code, UI_FONT_DISPLAY, 0);
-    lv_obj_set_style_text_color(s_yandex_code, ui_color(UI_ROLE_ACCENT), 0);
+    ui_paint(s_yandex_code, UI_PAINT_TEXT, UI_ROLE_ACCENT, 0);
     lv_label_set_text(s_yandex_code, "");
 
     /* Bigger than the body text, smaller than the code. The address is ASCII
@@ -3724,7 +3770,7 @@ static void ui_create_yandex_screen(void)
     lv_label_set_long_mode(s_yandex_url, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(s_yandex_url, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(s_yandex_url, UI_FONT_ICON, 0);
-    lv_obj_set_style_text_color(s_yandex_url, ui_color(UI_ROLE_TEXT), 0);
+    ui_paint(s_yandex_url, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
     lv_label_set_text(s_yandex_url, "");
 
     s_yandex_countdown = lv_label_create(s_yandex_code_panel);
@@ -3732,13 +3778,13 @@ static void ui_create_yandex_screen(void)
     lv_obj_set_style_text_font(s_yandex_countdown, UI_FONT_BODY, 0);
     lv_obj_set_width(s_yandex_countdown, TFT_WIDTH - 24);
     lv_obj_set_style_text_align(s_yandex_countdown, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(s_yandex_countdown, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_yandex_countdown, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
     lv_label_set_text(s_yandex_countdown, "");
 
     s_yandex_rule = lv_obj_create(s_yandex_screen);
     lv_obj_set_pos(s_yandex_rule, 10, UI_LIST_RULE_Y);
     lv_obj_set_size(s_yandex_rule, UI_CONTENT_W, 1);
-    lv_obj_set_style_bg_color(s_yandex_rule, ui_color(UI_ROLE_RULE), 0);
+    ui_paint(s_yandex_rule, UI_PAINT_BG, UI_ROLE_RULE, 0);
     lv_obj_set_style_border_width(s_yandex_rule, 0, 0);
     lv_obj_set_style_pad_all(s_yandex_rule, 0, 0);
     lv_obj_clear_flag(s_yandex_rule, LV_OBJ_FLAG_SCROLLABLE);
@@ -3750,9 +3796,8 @@ static void ui_create_yandex_screen(void)
     lv_bar_set_range(s_yandex_progress, 0, 100);
     lv_obj_set_style_radius(s_yandex_progress, 2, LV_PART_MAIN);
     lv_obj_set_style_radius(s_yandex_progress, 2, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(s_yandex_progress, ui_color(UI_ROLE_TRACK), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_yandex_progress, ui_color(UI_ROLE_ACCENT),
-                              LV_PART_INDICATOR);
+    ui_paint(s_yandex_progress, UI_PAINT_BG, UI_ROLE_TRACK, LV_PART_MAIN);
+    ui_paint(s_yandex_progress, UI_PAINT_BG, UI_ROLE_ACCENT, LV_PART_INDICATOR);
     lv_obj_add_flag(s_yandex_progress, LV_OBJ_FLAG_HIDDEN);
 
     for (size_t row = 0; row < UI_YANDEX_LIST_ROWS; ++row) {
@@ -3764,7 +3809,7 @@ static void ui_create_yandex_screen(void)
         lv_obj_set_style_pad_top(s_yandex_rows[row].box, 3, 0);
         lv_obj_set_style_radius(s_yandex_rows[row].box, 3, 0);
         lv_obj_set_style_bg_opa(s_yandex_rows[row].box, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(s_yandex_rows[row].box, ui_color(UI_ROLE_GROUND), 0);
+        ui_paint(s_yandex_rows[row].box, UI_PAINT_BG, UI_ROLE_GROUND, 0);
         lv_obj_add_flag(s_yandex_rows[row].box, LV_OBJ_FLAG_HIDDEN);
     }
 
@@ -3799,7 +3844,7 @@ static void ui_create_yandex_screen(void)
     lv_obj_set_pos(s_yandex_hint, 12, TFT_HEIGHT - 28);
     lv_obj_set_width(s_yandex_hint, TFT_WIDTH - 24);
     lv_label_set_long_mode(s_yandex_hint, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_yandex_hint, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_yandex_hint, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
     lv_label_set_text(s_yandex_hint, "");
 }
 
@@ -4132,6 +4177,13 @@ static void ui_settings_change_selected(void)
          * to invalidate. */
         if (changed) (void)board_display_set_invert(s_device_settings.invert_colors);
         break;
+    case UI_SETTINGS_ROW_THEME_FIELD:
+        changed = device_settings_set_theme(&s_device_settings,
+                                            s_device_settings.theme == DEVICE_THEME_CONTRAST
+                                                ? DEVICE_THEME_STANDARD
+                                                : DEVICE_THEME_CONTRAST);
+        if (changed) ui_apply_theme();
+        break;
     default:
         return;
     }
@@ -4190,7 +4242,7 @@ static void ui_settings_change_number(int direction)
 static void ui_create_station_list_screen(void)
 {
     s_station_list_screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_station_list_screen, ui_color(UI_ROLE_GROUND), 0);
+    ui_paint(s_station_list_screen, UI_PAINT_BG, UI_ROLE_GROUND, 0);
     lv_obj_set_style_border_width(s_station_list_screen, 0, 0);
     lv_obj_set_style_pad_all(s_station_list_screen, 0, 0);
     // Set once here rather than on each label: text_font is inherited in LVGL,
@@ -4207,7 +4259,7 @@ static void ui_create_station_list_screen(void)
     s_station_list_rule = lv_obj_create(s_station_list_screen);
     lv_obj_set_pos(s_station_list_rule, 10, UI_LIST_RULE_Y);
     lv_obj_set_size(s_station_list_rule, UI_CONTENT_W, 1);
-    lv_obj_set_style_bg_color(s_station_list_rule, ui_color(UI_ROLE_RULE), 0);
+    ui_paint(s_station_list_rule, UI_PAINT_BG, UI_ROLE_RULE, 0);
     lv_obj_set_style_border_width(s_station_list_rule, 0, 0);
     lv_obj_set_style_pad_all(s_station_list_rule, 0, 0);
     lv_obj_clear_flag(s_station_list_rule, LV_OBJ_FLAG_SCROLLABLE);
@@ -4220,9 +4272,8 @@ static void ui_create_station_list_screen(void)
     lv_bar_set_range(s_station_list_progress, 0, 100);
     lv_obj_set_style_radius(s_station_list_progress, 2, LV_PART_MAIN);
     lv_obj_set_style_radius(s_station_list_progress, 2, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(s_station_list_progress, ui_color(UI_ROLE_TRACK), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_station_list_progress, ui_color(UI_ROLE_ACCENT),
-                              LV_PART_INDICATOR);
+    ui_paint(s_station_list_progress, UI_PAINT_BG, UI_ROLE_TRACK, LV_PART_MAIN);
+    ui_paint(s_station_list_progress, UI_PAINT_BG, UI_ROLE_ACCENT, LV_PART_INDICATOR);
     for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
         /* The box is the row, and its width is the panel's - not a 300 typed
          * when there was only one panel. It is what the marquee measures
@@ -4367,7 +4418,7 @@ static void ui_update_cover(void)
 static void ui_create_source_screen(void)
 {
     s_source_screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_source_screen, ui_color(UI_ROLE_GROUND), 0);
+    ui_paint(s_source_screen, UI_PAINT_BG, UI_ROLE_GROUND, 0);
     lv_obj_set_style_border_width(s_source_screen, 0, 0);
     lv_obj_set_style_pad_all(s_source_screen, 0, 0);
     // Set once here rather than on each label: text_font is inherited in LVGL,
@@ -4383,9 +4434,9 @@ static void ui_create_source_screen(void)
     s_source_art = lv_obj_create(s_source_screen);
     lv_obj_set_pos(s_source_art, UI_SRC_ART_X, UI_SRC_ART_Y);
     lv_obj_set_size(s_source_art, UI_SRC_ART_SIZE, UI_SRC_ART_SIZE);
-    lv_obj_set_style_bg_color(s_source_art, ui_color(UI_ROLE_TILE), 0);
+    ui_paint(s_source_art, UI_PAINT_BG, UI_ROLE_TILE, 0);
     lv_obj_set_style_bg_opa(s_source_art, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(s_source_art, ui_color(UI_ROLE_TILE_EDGE), 0);
+    ui_paint(s_source_art, UI_PAINT_BORDER, UI_ROLE_TILE_EDGE, 0);
     lv_obj_set_style_border_width(s_source_art, 1, 0);
     lv_obj_set_style_radius(s_source_art, 3, 0);
     lv_obj_set_style_pad_all(s_source_art, 0, 0);
@@ -4399,7 +4450,7 @@ static void ui_create_source_screen(void)
      * the same mechanism the carousel dims its neighbours through. */
     s_source_art_note = lv_image_create(s_source_art);
     lv_image_set_src(s_source_art_note, &UI_SRC_ART_NOTE(UI_SRC_ART_NOTE_PX));
-    lv_obj_set_style_image_recolor(s_source_art_note, ui_color(UI_ROLE_ART_NOTE), 0);
+    ui_paint(s_source_art_note, UI_PAINT_RECOLOR, UI_ROLE_ART_NOTE, 0);
     lv_obj_set_style_image_recolor_opa(s_source_art_note, LV_OPA_COVER, 0);
     lv_obj_center(s_source_art_note);
 
@@ -4413,13 +4464,13 @@ static void ui_create_source_screen(void)
     // shortening, and a long station name grew downwards over the codec row.
     s_source_title = ui_scroller_create(s_source_screen, UI_SRC_TEXT_X, UI_SRC_ROW_TITLE,
                                         UI_SRC_TEXT_W, UI_SRC_LINE_H);
-    lv_obj_set_style_text_color(s_source_title.box, ui_color(UI_ROLE_ACCENT), 0);
+    ui_paint(s_source_title.box, UI_PAINT_TEXT, UI_ROLE_ACCENT, 0);
     ui_scroller_set_scrolling(&s_source_title, true);
 
     s_source_detail = ui_scroller_create(s_source_screen, UI_SRC_TEXT_X, UI_SRC_ROW_TRACK,
                                         UI_SRC_TEXT_W, UI_SRC_TRACK_H);
     lv_obj_set_style_text_font(s_source_detail.box, UI_FONT_TITLE, 0);
-    lv_obj_set_style_text_color(s_source_detail.box, ui_color(UI_ROLE_TEXT), 0);
+    ui_paint(s_source_detail.box, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
     /* The track name always travels when it is too long - unlike a list row,
      * there is nothing else on this screen competing for the eye. */
     ui_scroller_set_scrolling(&s_source_detail, true);
@@ -4428,7 +4479,7 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_fm_digits, UI_SRC_TEXT_X, UI_SRC_ROW_TITLE);
     lv_obj_set_size(s_source_fm_digits, UI_SRC_TEXT_W, UI_SRC_FM_DIGITS_PX);
     lv_obj_set_style_text_font(s_source_fm_digits, UI_FONT_FM_DIGITS, 0);
-    lv_obj_set_style_text_color(s_source_fm_digits, ui_color(UI_ROLE_TEXT), 0);
+    ui_paint(s_source_fm_digits, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
     lv_label_set_long_mode(s_source_fm_digits, LV_LABEL_LONG_CLIP);
     lv_obj_add_flag(s_source_fm_digits, LV_OBJ_FLAG_HIDDEN);
 #if UI_SRC_TEXT_CENTRED
@@ -4439,7 +4490,7 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_artist, UI_SRC_TEXT_X, UI_SRC_ROW_ARTIST);
     lv_obj_set_size(s_source_artist, UI_SRC_TEXT_W, UI_SRC_LINE_H);
     lv_label_set_long_mode(s_source_artist, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_source_artist, ui_color(UI_ROLE_ARTIST), 0);
+    ui_paint(s_source_artist, UI_PAINT_TEXT, UI_ROLE_ARTIST, 0);
 
     // Shares the performer row rather than getting one of its own: the two are
     // never both set, and a separate row would have to come out of the codec
@@ -4448,7 +4499,7 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_status, UI_SRC_TEXT_X, UI_SRC_ROW_ARTIST);
     lv_obj_set_size(s_source_status, UI_SRC_TEXT_W, UI_SRC_LINE_H);
     lv_label_set_long_mode(s_source_status, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_source_status, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_source_status, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
 
 #if UI_SRC_TEXT_CENTRED
     /* Centred as a column under a centred cover. A layout that reads the three
@@ -4466,7 +4517,7 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_stream, UI_SRC_STREAM_X, UI_SRC_STREAM_Y);
     lv_obj_set_size(s_source_stream, UI_SRC_STREAM_W, UI_SRC_STREAM_H);
     lv_label_set_long_mode(s_source_stream, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_color(s_source_stream, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_source_stream, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
 
     ui_create_fm_marks();
 
@@ -4478,7 +4529,7 @@ static void ui_create_source_screen(void)
     lv_obj_t *rule_top = lv_obj_create(s_source_screen);
     lv_obj_set_pos(rule_top, UI_SRC_BODY_X, UI_SRC_RULE_TOP);
     lv_obj_set_size(rule_top, UI_SRC_BODY_W, 1);
-    lv_obj_set_style_bg_color(rule_top, ui_color(UI_ROLE_RULE), 0);
+    ui_paint(rule_top, UI_PAINT_BG, UI_ROLE_RULE, 0);
     lv_obj_set_style_border_width(rule_top, 0, 0);
     lv_obj_set_style_pad_all(rule_top, 0, 0);
     lv_obj_clear_flag(rule_top, LV_OBJ_FLAG_SCROLLABLE);
@@ -4501,13 +4552,13 @@ static void ui_create_source_screen(void)
         lv_obj_t *mark = lv_label_create(s_source_screen);
         lv_label_set_text(mark, channel == 0U ? "L" : "R");
         lv_obj_set_pos(mark, UI_SRC_BODY_X + 2, UI_SRC_VU_Y - 3 + (int)channel * UI_SRC_VU_PITCH);
-        lv_obj_set_style_text_color(mark, ui_color(UI_ROLE_DIM), 0);
+        ui_paint(mark, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
     }
 
     lv_obj_t *rule_bottom = lv_obj_create(s_source_screen);
     lv_obj_set_pos(rule_bottom, UI_SRC_BODY_X, UI_SRC_RULE_BOTTOM);
     lv_obj_set_size(rule_bottom, UI_SRC_BODY_W, 1);
-    lv_obj_set_style_bg_color(rule_bottom, ui_color(UI_ROLE_RULE), 0);
+    ui_paint(rule_bottom, UI_PAINT_BG, UI_ROLE_RULE, 0);
     lv_obj_set_style_border_width(rule_bottom, 0, 0);
     lv_obj_set_style_pad_all(rule_bottom, 0, 0);
     lv_obj_clear_flag(rule_bottom, LV_OBJ_FLAG_SCROLLABLE);
@@ -4520,7 +4571,7 @@ static void ui_create_source_screen(void)
     s_source_progress = lv_obj_create(s_source_screen);
     lv_obj_set_pos(s_source_progress, UI_SRC_BODY_X, UI_SRC_PROGRESS_Y);
     lv_obj_set_size(s_source_progress, UI_SRC_BODY_W, UI_SRC_PROGRESS_H);
-    lv_obj_set_style_bg_color(s_source_progress, ui_color(UI_ROLE_TRACK), 0);
+    ui_paint(s_source_progress, UI_PAINT_BG, UI_ROLE_TRACK, 0);
     lv_obj_set_style_border_width(s_source_progress, 0, 0);
     lv_obj_set_style_radius(s_source_progress, 2, 0);
     lv_obj_set_style_pad_all(s_source_progress, 0, 0);
@@ -4528,7 +4579,7 @@ static void ui_create_source_screen(void)
     lv_obj_t *played = lv_obj_create(s_source_progress);
     lv_obj_set_pos(played, 0, 0);
     lv_obj_set_size(played, 1, UI_SRC_PROGRESS_H);
-    lv_obj_set_style_bg_color(played, ui_color(UI_ROLE_ACCENT), 0);
+    ui_paint(played, UI_PAINT_BG, UI_ROLE_ACCENT, 0);
     lv_obj_set_style_border_width(played, 0, 0);
     lv_obj_set_style_radius(played, 2, 0);
     lv_obj_set_style_pad_all(played, 0, 0);
@@ -4537,7 +4588,7 @@ static void ui_create_source_screen(void)
 
     s_source_buffer = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_buffer, UI_SRC_BUFFER_X, UI_SRC_BUFFER_Y);
-    lv_obj_set_style_text_color(s_source_buffer, ui_color(UI_ROLE_DIM), 0);
+    ui_paint(s_source_buffer, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
 
     /* The same reading as a strip, in the same place and about the same size,
      * on a ground a shade lighter than the screen so the empty part of it is
@@ -4546,7 +4597,7 @@ static void ui_create_source_screen(void)
     s_source_buffer_graph = lv_obj_create(s_source_screen);
     lv_obj_set_pos(s_source_buffer_graph, UI_SRC_BUFFER_X, UI_SRC_BUFFER_GRAPH_Y);
     lv_obj_set_size(s_source_buffer_graph, UI_BUFFER_GRAPH_W, UI_SRC_BUFFER_GRAPH_H);
-    lv_obj_set_style_bg_color(s_source_buffer_graph, ui_color(UI_ROLE_TILE), 0);
+    ui_paint(s_source_buffer_graph, UI_PAINT_BG, UI_ROLE_TILE, 0);
     lv_obj_set_style_border_width(s_source_buffer_graph, 0, 0);
     lv_obj_set_style_radius(s_source_buffer_graph, 2, 0);
     lv_obj_set_style_pad_all(s_source_buffer_graph, 0, 0);
@@ -4579,7 +4630,7 @@ static void ui_create_source_screen(void)
     lv_image_set_src(s_source_volume_icon, &ui_feed_icon_volume_16);
     lv_obj_set_size(s_source_volume_icon, 16, 16);
     lv_obj_set_pos(s_source_volume_icon, UI_SRC_VOLUME_ICON_X, UI_SRC_FOOT_Y + 1);
-    lv_obj_set_style_image_recolor(s_source_volume_icon, ui_color(UI_ROLE_SECONDARY), 0);
+    ui_paint(s_source_volume_icon, UI_PAINT_RECOLOR, UI_ROLE_SECONDARY, 0);
     lv_obj_set_style_image_recolor_opa(s_source_volume_icon, LV_OPA_COVER, 0);
 #ifdef UI_SRC_BT_ICON_X
     /* Says where the sound is going while it goes to a Bluetooth speaker:
@@ -4598,7 +4649,7 @@ static void ui_create_source_screen(void)
     s_source_volume_bar = lv_obj_create(s_source_screen);
     lv_obj_set_pos(s_source_volume_bar, UI_SRC_VOLUME_BAR_X, UI_SRC_FOOT_Y + 5);
     lv_obj_set_size(s_source_volume_bar, UI_SRC_VOLUME_BAR_W, 8);
-    lv_obj_set_style_bg_color(s_source_volume_bar, ui_color(UI_ROLE_TRACK), 0);
+    ui_paint(s_source_volume_bar, UI_PAINT_BG, UI_ROLE_TRACK, 0);
     lv_obj_set_style_border_width(s_source_volume_bar, 0, 0);
     lv_obj_set_style_radius(s_source_volume_bar, 2, 0);
     lv_obj_set_style_pad_all(s_source_volume_bar, 0, 0);
@@ -4606,7 +4657,7 @@ static void ui_create_source_screen(void)
     lv_obj_t *fill = lv_obj_create(s_source_volume_bar);
     lv_obj_set_pos(fill, 0, 0);
     lv_obj_set_size(fill, UI_SRC_VOLUME_BAR_W, 8);
-    lv_obj_set_style_bg_color(fill, ui_color(UI_ROLE_SECONDARY), 0);
+    ui_paint(fill, UI_PAINT_BG, UI_ROLE_SECONDARY, 0);
     lv_obj_set_style_border_width(fill, 0, 0);
     lv_obj_set_style_radius(fill, 2, 0);
     lv_obj_set_style_pad_all(fill, 0, 0);
@@ -4614,7 +4665,7 @@ static void ui_create_source_screen(void)
 
     s_source_volume = lv_label_create(s_source_screen);
     lv_obj_set_pos(s_source_volume, UI_SRC_VOLUME_TEXT_X, UI_SRC_FOOT_Y);
-    lv_obj_set_style_text_color(s_source_volume, ui_color(UI_ROLE_SECONDARY), 0);
+    ui_paint(s_source_volume, UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
     lv_label_set_text(s_source_volume, "");
 
     /* Pause badge, created last so it draws over everything else.
@@ -4636,7 +4687,7 @@ static void ui_create_source_screen(void)
     // Translucent rather than solid: the badge has to read as laid over the
     // screen, not as a hole punched in it.
     lv_obj_set_style_bg_opa(s_source_pause, LV_OPA_60, 0);
-    lv_obj_set_style_border_color(s_source_pause, ui_color(UI_ROLE_TEXT), 0);
+    ui_paint(s_source_pause, UI_PAINT_BORDER, UI_ROLE_TEXT, 0);
     lv_obj_set_style_border_opa(s_source_pause, LV_OPA_30, 0);
     lv_obj_set_style_border_width(s_source_pause, 1, 0);
     lv_obj_set_style_pad_all(s_source_pause, 0, 0);
@@ -4651,7 +4702,7 @@ static void ui_create_source_screen(void)
         // The muted tone the rest of the screen uses for secondary text, not
         // pure white: the badge should read clearly without being the
         // brightest thing on a dark panel.
-        lv_obj_set_style_bg_color(stroke, ui_color(UI_ROLE_SECONDARY), 0);
+        ui_paint(stroke, UI_PAINT_BG, UI_ROLE_SECONDARY, 0);
         lv_obj_set_style_bg_opa(stroke, LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(stroke, 0, 0);
         lv_obj_set_style_radius(stroke, 2, 0);
@@ -5483,10 +5534,10 @@ static void ui_quick_create(void)
     lv_obj_remove_flag(s_quick_window, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(s_quick_window, UI_QUICK_W, UI_QUICK_H);
     lv_obj_set_pos(s_quick_window, UI_QUICK_X, -UI_QUICK_H);
-    lv_obj_set_style_bg_color(s_quick_window, ui_color(UI_ROLE_TILE), 0);
+    ui_paint(s_quick_window, UI_PAINT_BG, UI_ROLE_TILE, 0);
     lv_obj_set_style_bg_opa(s_quick_window, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(s_quick_window, 8, 0);
-    lv_obj_set_style_border_color(s_quick_window, ui_color(UI_ROLE_TILE_EDGE), 0);
+    ui_paint(s_quick_window, UI_PAINT_BORDER, UI_ROLE_TILE_EDGE, 0);
     lv_obj_set_style_border_width(s_quick_window, 1, 0);
     lv_obj_add_flag(s_quick_window, LV_OBJ_FLAG_HIDDEN);
 
@@ -5500,7 +5551,7 @@ static void ui_quick_create(void)
                        UI_QUICK_PAD_Y + (int)row * UI_QUICK_ROW_H);
         lv_obj_set_size(s_quick_row[row], UI_QUICK_TEXT_W + 8, UI_QUICK_ROW_H);
         lv_obj_set_style_radius(s_quick_row[row], 5, 0);
-        lv_obj_set_style_bg_color(s_quick_row[row], ui_color(UI_ROLE_SELECTED), 0);
+        ui_paint(s_quick_row[row], UI_PAINT_BG, UI_ROLE_SELECTED, 0);
         lv_obj_set_style_bg_opa(s_quick_row[row], LV_OPA_TRANSP, 0);
 
         const int text_y = (UI_QUICK_ROW_H - UI_FONT_BODY_LINE_H) / 2;
@@ -5512,7 +5563,7 @@ static void ui_quick_create(void)
          * the rows below it out of a window whose height is fixed. */
         lv_label_set_long_mode(s_quick_name[row], LV_LABEL_LONG_DOT);
         lv_obj_set_style_text_font(s_quick_name[row], UI_FONT_BODY, 0);
-        lv_obj_set_style_text_color(s_quick_name[row], ui_color(UI_ROLE_SECONDARY), 0);
+        ui_paint(s_quick_name[row], UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
         lv_label_set_text(s_quick_name[row], "");
 
         /* The value is pinned to the right of the row, and its colour is what
@@ -5526,7 +5577,7 @@ static void ui_quick_create(void)
         lv_label_set_long_mode(s_quick_value[row], LV_LABEL_LONG_DOT);
         lv_obj_set_style_text_align(s_quick_value[row], LV_TEXT_ALIGN_RIGHT, 0);
         lv_obj_set_style_text_font(s_quick_value[row], UI_FONT_BODY, 0);
-        lv_obj_set_style_text_color(s_quick_value[row], ui_color(UI_ROLE_TEXT), 0);
+        ui_paint(s_quick_value[row], UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
         lv_label_set_text(s_quick_value[row], "");
 
         /* The switch rows get the same widget the settings screen uses, styled
@@ -5540,15 +5591,12 @@ static void ui_quick_create(void)
                        UI_QUICK_PAD_Y + (int)row * UI_QUICK_ROW_H +
                            (UI_QUICK_ROW_H - UI_QUICK_SWITCH_H) / 2);
         lv_obj_set_style_bg_color(s_quick_switch[row], lv_color_hex(0x546E7A), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(s_quick_switch[row], ui_color(UI_ROLE_ACCENT),
-                                  LV_PART_INDICATOR | LV_STATE_CHECKED);
+        ui_paint(s_quick_switch[row], UI_PAINT_BG, UI_ROLE_ACCENT, LV_PART_INDICATOR | LV_STATE_CHECKED);
         lv_obj_set_style_bg_color(s_quick_switch[row], lv_color_hex(0xECEFF1), LV_PART_KNOB);
-        lv_obj_set_style_bg_color(s_quick_switch[row], ui_color(UI_ROLE_TEXT),
-                                  LV_PART_KNOB | LV_STATE_CHECKED);
+        ui_paint(s_quick_switch[row], UI_PAINT_BG, UI_ROLE_TEXT, LV_PART_KNOB | LV_STATE_CHECKED);
         /* The outline is the edit mark on these rows, the way amber text is on
          * the others: transparent until the knob has taken this switch. */
-        lv_obj_set_style_border_color(s_quick_switch[row], ui_color(UI_ROLE_ACCENT),
-                                      LV_PART_MAIN);
+        ui_paint(s_quick_switch[row], UI_PAINT_BORDER, UI_ROLE_ACCENT, LV_PART_MAIN);
         lv_obj_set_style_border_width(s_quick_switch[row], 2, LV_PART_MAIN);
         lv_obj_set_style_border_opa(s_quick_switch[row], LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_add_flag(s_quick_switch[row], LV_OBJ_FLAG_HIDDEN);
@@ -7396,6 +7444,50 @@ static void ui_task(void *arg)
     }
 }
 
+/* Makes the screen show the theme the settings name. Nothing happens when it
+ * is the one already shown, which is every settings reload but the one that
+ * changed it.
+ *
+ * The shared styles carry every colour set when an object was built, and
+ * LVGL repaints what uses them once told - the screens through
+ * lv_obj_report_style_change(), the quick panel on the top layer, which that
+ * walk does not reach, by hand. What remains are the colours that follow
+ * state, set locally by the update that owns them: the three marks below
+ * remember what they last showed and would skip the repaint, so they are made
+ * to forget, and the rest are simply run again. The Wi-Fi bars and the VU
+ * blocks remember the colour itself, so a new palette is already a change to
+ * them. */
+static void ui_apply_theme(void)
+{
+    ui_palette_t palette;
+    ui_theme_preset(s_device_settings.theme == DEVICE_THEME_CONTRAST ? UI_THEME_CONTRAST
+                                                                     : UI_THEME_STANDARD,
+                    &palette);
+    if (memcmp(&palette, &s_palette, sizeof(palette)) == 0) return;
+    s_palette = palette;
+    for (int paint = 0; paint < UI_PAINT_COUNT; ++paint) {
+        for (int role = 0; role < UI_ROLE_COUNT; ++role) {
+            if (s_role_style_made[paint][role]) {
+                ui_role_style_fill((ui_paint_t)paint, (ui_role_t)role);
+            }
+        }
+    }
+    lv_obj_report_style_change(NULL);
+    lv_obj_refresh_style(lv_layer_top(), LV_PART_ANY, LV_STYLE_PROP_ANY);
+
+    s_source_like_shown = -2;
+    s_fm_marks_stereo = -1;
+    s_fm_marks_signal = -1;
+    s_quick_cursor_shown = UI_QUICK_CURSOR_NONE;
+    ui_fm_tune_paint(ui_fm_tune_is_active(&s_fm_tune));
+    ui_update_menu_highlight();
+    ui_update_feed_screen();
+    ui_update_station_list();
+    ui_update_yandex_rows();
+    ui_update_settings();
+    ui_quick_refresh();
+}
+
 esp_err_t ui_init(void)
 {
     if (s_input_queue != NULL) {
@@ -7501,6 +7593,7 @@ esp_err_t ui_init(void)
         lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
     } else {
         ui_apply_display_rotation();
+        ui_apply_theme();
         ui_backlight_apply(s_device_settings.brightness);
         ui_apply_files_end();
         /* Once, here: from now on the player follows the tuner and this

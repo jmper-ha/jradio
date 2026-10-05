@@ -37,6 +37,8 @@ static void test_defaults_and_load(void)
      * step could be changed. */
     assert(settings.volume_step == DEVICE_VOLUME_STEP_DEFAULT);
     assert(DEVICE_VOLUME_STEP_DEFAULT == 5);
+    // The colours the panel always had.
+    assert(settings.theme == DEVICE_THEME_STANDARD);
     /* Bounce is what the device did before the setting existed. */
     assert(settings.scroll == DEVICE_SCROLL_BOUNCE);
     /* And a number is what the buffer reading was before it could be a strip:
@@ -60,6 +62,7 @@ static void test_values_and_unknown_lines_are_saved(void)
     assert(device_settings_set_buffer_view(&settings, DEVICE_BUFFER_VIEW_GRAPH));
     assert(device_settings_set_files_end(&settings, DEVICE_FILES_END_REPEAT));
     assert(device_settings_set_volume_step(&settings, 12U));
+    assert(device_settings_set_theme(&settings, DEVICE_THEME_CONTRAST));
 
     char value[32];
     assert(settings_csv_get(test_path, "unknown", value, sizeof(value)));
@@ -84,6 +87,9 @@ static void test_values_and_unknown_lines_are_saved(void)
     assert(settings_csv_get(test_path, "volume_step", value, sizeof(value)));
     assert(strcmp(value, "12") == 0);
     assert(reloaded.volume_step == 12U);
+    assert(settings_csv_get(test_path, "theme", value, sizeof(value)));
+    assert(strcmp(value, "contrast") == 0);
+    assert(reloaded.theme == DEVICE_THEME_CONTRAST);
 }
 
 static void test_invalid_values_do_not_change_model(void)
@@ -104,6 +110,8 @@ static void test_invalid_values_do_not_change_model(void)
     assert(!device_settings_set_volume_step(&settings, DEVICE_VOLUME_STEP_MIN - 1));
     assert(!device_settings_set_volume_step(&settings, DEVICE_VOLUME_STEP_MAX + 1));
     assert(settings.volume_step == DEVICE_VOLUME_STEP_DEFAULT);
+    assert(!device_settings_set_theme(&settings, (device_theme_t)7));
+    assert(settings.theme == DEVICE_THEME_STANDARD);
     /* A hand-edited line out of range leaves the default: a step of zero is
      * an encoder that no longer moves the volume at all. */
     assert(settings_csv_set(test_path, "volume_step", "0"));

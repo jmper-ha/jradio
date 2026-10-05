@@ -110,6 +110,13 @@ grep -Fq 'lv_display_set_buffers(s_display, buffer1, NULL,' components/ui/ui.c
 # settings.csv has two writer tasks; without this call the lock is never
 # created and every write runs unsynchronised again.
 grep -Fq 'settings_csv_init();' main/main.c
+# Themed colours come out of the palette (ui_theme.c); a colour of the standard
+# theme typed into ui.c again would stay the same whatever theme is chosen.
+if grep -Ein '0x(101820|1E2C3A|18242E|26343F|334454|F2A33C|FFFFFF|B0BEC5|78909C|37474F|4E606C|2A3B4A|3F6187|8FA8BC|46586A|33445A|2D3F4D|23303C|3E5060|1D2A36|263746)' \
+        components/ui/ui.c; then
+    echo "components/ui/ui.c: a themed colour typed in rather than read from the palette" >&2
+    exit 1
+fi
 run_test audio_pcm_convert tests/test_audio_pcm_convert.c components/board/audio_pcm_convert.c
 run_test audio_volume tests/test_audio_volume.c components/board/audio_volume.c
 run_test audio_source tests/test_audio_source.c components/audio/audio_source_manager.c
@@ -256,6 +263,7 @@ run_test ui_settings_model tests/test_ui_settings_model.c components/ui/ui_setti
 run_test ui_buffer_graph tests/test_ui_buffer_graph.c components/ui/ui_buffer_graph.c
 run_test ui_status_bar tests/test_ui_status_bar.c components/ui/ui_status_bar.c
 run_test ui_text_scroll tests/test_ui_text_scroll.c components/ui/ui_text_scroll.c
+run_test ui_theme tests/test_ui_theme.c components/ui/ui_theme.c
 run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c
 run_test ui_vu_meter tests/test_ui_vu_meter.c components/ui/ui_vu_meter.c
 run_test ui_files_notice tests/test_ui_files_notice.c components/ui/ui_files_notice.c components/settings/device_text.c

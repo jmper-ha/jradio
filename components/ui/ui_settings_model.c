@@ -79,11 +79,6 @@ static const ui_settings_row_t s_field_rows[] = {
         .kind = UI_SETTINGS_ROW_FIELD,
     },
     {
-        .id = UI_SETTINGS_ROW_ENCODER_REVERSE_FIELD,
-        .group = UI_SETTINGS_GROUP_GENERAL,
-        .kind = UI_SETTINGS_ROW_FIELD,
-    },
-    {
         .id = UI_SETTINGS_ROW_VOLUME_STEP_FIELD,
         .group = UI_SETTINGS_GROUP_GENERAL,
         .kind = UI_SETTINGS_ROW_FIELD,

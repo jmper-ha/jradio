@@ -366,7 +366,7 @@ static lv_obj_t *s_settings_more_above;
 static lv_obj_t *s_settings_more_below;
 /* One per boolean setting, not per row on screen: only one group is open at
  * a time, so at most three are ever visible, but each keeps its own object. */
-#define UI_SETTINGS_SWITCH_COUNT 9U
+#define UI_SETTINGS_SWITCH_COUNT 8U
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
@@ -3227,10 +3227,6 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_BT_OUTPUT,
                                  s_device_settings.bt_output);
         break;
-    case UI_SETTINGS_ROW_ENCODER_REVERSE_FIELD:
-        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_ENCODER_REVERSE,
-                                 s_device_settings.encoder_reverse);
-        break;
     case UI_SETTINGS_ROW_VOLUME_STEP_FIELD:
         snprintf(text, text_size,
                  ui_settings_model_is_editing(&s_settings_model) ? "  %s: <%d%%>" : "  %s: %d%%",
@@ -3315,10 +3311,6 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     case UI_SETTINGS_ROW_INVERT_COLORS_FIELD:
         *index = 7U;
         *value = s_device_settings.invert_colors;
-        return true;
-    case UI_SETTINGS_ROW_ENCODER_REVERSE_FIELD:
-        *index = 8U;
-        *value = s_device_settings.encoder_reverse;
         return true;
     default:
         return false;
@@ -3665,7 +3657,6 @@ static void ui_reload_settings(void)
     if (brightness_pending) s_device_settings.brightness = turning_brightness;
 
     ui_apply_display_rotation();
-    board_input_set_encoder_reverse(s_device_settings.encoder_reverse);
     ui_backlight_apply(s_device_settings.brightness);
     if (!volume_pending) board_audio_set_volume(s_device_settings.volume);
     /* The zone applies to the next reading of the clock and the server only
@@ -4159,11 +4150,6 @@ static void ui_settings_change_selected(void)
         /* Unlike a mirror this reaches the glass whole and at once: nothing
          * to invalidate. */
         if (changed) (void)board_display_set_invert(s_device_settings.invert_colors);
-        break;
-    case UI_SETTINGS_ROW_ENCODER_REVERSE_FIELD:
-        changed = device_settings_set_encoder_reverse(&s_device_settings,
-                                                      !s_device_settings.encoder_reverse);
-        if (changed) board_input_set_encoder_reverse(s_device_settings.encoder_reverse);
         break;
     default:
         return;
@@ -7532,7 +7518,6 @@ esp_err_t ui_init(void)
         lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
     } else {
         ui_apply_display_rotation();
-        board_input_set_encoder_reverse(s_device_settings.encoder_reverse);
         ui_backlight_apply(s_device_settings.brightness);
         ui_apply_files_end();
         /* Once, here: from now on the player follows the tuner and this

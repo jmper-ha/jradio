@@ -59,7 +59,6 @@ typedef enum {
     WEB_SETTINGS_FIELD_SCREENSAVER,
     WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS,
     WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS,
-    WEB_SETTINGS_FIELD_ENCODER_REVERSE,
     WEB_SETTINGS_FIELD_VOLUME_STEP,
     /* The alarm clock, one row per request like everything else here. The
      * time is text because "07:30" is what an <input type="time"> hands over
@@ -131,7 +130,6 @@ typedef struct web_settings_view {
     bool flip_vertical;
     bool flip_horizontal;
     bool invert_colors;
-    bool encoder_reverse;
     /* Volume percent per encoder detent. */
     uint8_t volume_step;
     /* The zone as its row in device_timezone.h rather than its id: this view

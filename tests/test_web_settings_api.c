@@ -154,9 +154,8 @@ static void test_numbers_are_range_checked(void)
     assert(parse_one("{\"field\":\"volume_step\",\"value\":20}", &change));
     assert(!parse_one("{\"field\":\"volume_step\",\"value\":0}", &change));
     assert(!parse_one("{\"field\":\"volume_step\",\"value\":21}", &change));
-    assert(parse_one("{\"field\":\"encoder_reverse\",\"value\":true}", &change));
-    assert(change.field == WEB_SETTINGS_FIELD_ENCODER_REVERSE && change.value == 1);
-    assert(!parse_one("{\"field\":\"encoder_reverse\",\"value\":1}", &change));
+    // The switch that reversed the encoder is gone; a page that still sends it is refused.
+    assert(!parse_one("{\"field\":\"encoder_reverse\",\"value\":true}", &change));
 
     // The volume has the whole range: silence is a thing to ask for.
     assert(parse_one("{\"field\":\"volume\",\"value\":0}", &change));
@@ -199,8 +198,6 @@ static void test_apply_writes_through_to_the_file(void)
     assert(web_settings_apply(&settings, &brightness));
     assert(settings.brightness == 35);
 
-    const web_settings_change_t reverse = {WEB_SETTINGS_FIELD_ENCODER_REVERSE, 1, ""};
-    assert(web_settings_apply(&settings, &reverse));
     const web_settings_change_t step = {WEB_SETTINGS_FIELD_VOLUME_STEP, 3, ""};
     assert(web_settings_apply(&settings, &step));
 
@@ -271,7 +268,6 @@ static void test_apply_writes_through_to_the_file(void)
     device_settings_t reloaded;
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.brightness == 35);
-    assert(reloaded.encoder_reverse);
     assert(reloaded.volume_step == 3U);
     assert(reloaded.scroll == DEVICE_SCROLL_LEFT);
     assert(reloaded.buffer_view == DEVICE_BUFFER_VIEW_GRAPH);
@@ -331,7 +327,7 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"files_end\":\"stop\"") != NULL);
     assert(strstr(document, "\"volume\":42") != NULL);
     assert(strstr(document, "\"brightness\":50") != NULL);
-    assert(strstr(document, "\"encoder_reverse\":false") != NULL);
+    assert(strstr(document, "encoder_reverse") == NULL);
     assert(strstr(document, "\"volume_step\":5") != NULL);
     assert(strstr(document, "\"volume_step_min\":1") != NULL);
     assert(strstr(document, "\"volume_step_max\":20") != NULL);
@@ -429,9 +425,6 @@ static void test_view_comparison_notices_every_field(void)
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.brightness = (uint8_t)(base.brightness + 5U);
-    assert(!web_settings_view_equal(&base, &other));
-    other = base;
-    other.encoder_reverse = !base.encoder_reverse;
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.volume_step = (uint8_t)(base.volume_step + 1U);

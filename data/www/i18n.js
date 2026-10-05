@@ -536,7 +536,6 @@
     'settings.group_time': ['Время', 'Time'],
     'settings.group_display': ['Экран', 'Display'],
     'settings.group_encoder': ['Энкодер', 'Encoder'],
-    'settings.encoder_reverse': ['Реверс энкодера', 'Reverse encoder'],
     'settings.volume_step': ['Шаг громкости, %', 'Volume step, %'],
     'note.volume_step': ['На сколько процентов меняется громкость за один щелчок энкодера.',
                          'How many percent of volume one click of the encoder moves.'],

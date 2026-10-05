@@ -215,10 +215,6 @@ typedef struct {
      * flipped. A setting rather than a build option so a ready-made image
      * fits either glass. */
     bool invert_colors;
-    /* Swaps the encoder's two directions everywhere, for an encoder whose A
-     * and B came out the other way round on the board - cheaper than
-     * resoldering, and the same image fits either. */
-    bool encoder_reverse;
     /* Resume what was playing at power-off instead of opening the home
      * screen. What "what was playing" means is the two fields below: the
      * radio's own last-station URL is stored separately by station_resume. */
@@ -308,7 +304,6 @@ bool device_settings_set_flip_vertical_value(device_settings_t *settings, int va
 bool device_settings_set_flip_horizontal_value(device_settings_t *settings, int value);
 bool device_settings_set_invert_colors(device_settings_t *settings, bool enabled);
 bool device_settings_set_invert_colors_value(device_settings_t *settings, int value);
-bool device_settings_set_encoder_reverse(device_settings_t *settings, bool enabled);
 bool device_settings_set_autoplay(device_settings_t *settings, bool enabled);
 bool device_settings_set_yandex_music(device_settings_t *settings, bool enabled);
 bool device_settings_set_dlna(device_settings_t *settings, bool enabled);

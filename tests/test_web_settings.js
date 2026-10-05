@@ -92,7 +92,7 @@ const ids = [
   'bt-chosen', 'bt-chosen-name', 'bt-chosen-state', 'bt-scan',
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal', 'device-invert-colors',
-  'device-encoder-reverse', 'device-volume-step', 'device-volume-step-value',
+  'device-volume-step', 'device-volume-step-value',
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
   'device-idle-brightness-value', 'device-screensaver-after-row',
   'device-idle-brightness-row',
@@ -176,7 +176,7 @@ let settingsReply = {
   language: 'ru', home_screen: 'text', scroll: 'bounce', buffer_view: 'graph',
   autoplay: false, files_end: 'repeat',
   yandex_music: true, dlna: false, flip_vertical: false, flip_horizontal: true,
-  invert_colors: true, encoder_reverse: true, volume_step: 7,
+  invert_colors: true, volume_step: 7,
   brightness: 45, volume: 62,
   available: {home_screen: true, yandex_music: false, dlna: true, bt_output: true},
   brightness_min: 10, brightness_max: 90, volume_step_min: 1, volume_step_max: 20,
@@ -665,7 +665,6 @@ function lastYandexTimer() {
   assert.equal(elements['#device-files-end'].value, 'repeat');
   assert.equal(elements['#device-flip-horizontal'].checked, true);
   assert.equal(elements['#device-invert-colors'].checked, true);
-  assert.equal(elements['#device-encoder-reverse'].checked, true);
   assert.equal(elements['#device-volume-step'].value, '7');
   assert.equal(elements['#device-volume-step-value'].textContent, '7');
   assert.equal(elements['#device-volume-step'].min, '1');

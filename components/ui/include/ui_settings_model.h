@@ -33,9 +33,8 @@ typedef enum {
      * instead of the DAC. Only the switch here; which speaker is the page's,
      * where a list can be shown. */
     UI_SETTINGS_ROW_BT_OUTPUT_FIELD,
-    /* The encoder's direction, and how far one of its detents moves the
-     * volume. Last in General: set once for the hardware, then left. */
-    UI_SETTINGS_ROW_ENCODER_REVERSE_FIELD,
+    /* How far one encoder detent moves the volume. Last in General: set once
+     * for the amplifier, then left. */
     UI_SETTINGS_ROW_VOLUME_STEP_FIELD,
     UI_SETTINGS_ROW_DISPLAY_GROUP,
     UI_SETTINGS_ROW_BRIGHTNESS_FIELD,

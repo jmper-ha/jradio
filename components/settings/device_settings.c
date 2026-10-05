@@ -270,9 +270,6 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     if (read_value(&csv, "display_invert_colors", value, sizeof(value))) {
         (void)parse_bool(value, &settings->invert_colors);
     }
-    if (read_value(&csv, "encoder_reverse", value, sizeof(value))) {
-        (void)parse_bool(value, &settings->encoder_reverse);
-    }
     if (read_value(&csv, "autoplay", value, sizeof(value))) {
         (void)parse_bool(value, &settings->autoplay);
     }
@@ -521,13 +518,6 @@ bool device_settings_set_invert_colors(device_settings_t *settings, bool enabled
 bool device_settings_set_invert_colors_value(device_settings_t *settings, int value)
 {
     return value == 0 || value == 1 ? device_settings_set_invert_colors(settings, value != 0) : false;
-}
-
-bool device_settings_set_encoder_reverse(device_settings_t *settings, bool enabled)
-{
-    if (!save_value(settings, "encoder_reverse", enabled ? "1" : "0")) return false;
-    settings->encoder_reverse = enabled;
-    return true;
 }
 
 bool device_settings_set_flip_vertical_value(device_settings_t *settings, int value)

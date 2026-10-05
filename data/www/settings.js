@@ -128,8 +128,6 @@
     {field: 'flip_horizontal', kind: 'switch',
      node: document.querySelector('#device-flip-horizontal')},
     {field: 'invert_colors', kind: 'switch', node: document.querySelector('#device-invert-colors')},
-    {field: 'encoder_reverse', kind: 'switch',
-     node: document.querySelector('#device-encoder-reverse')},
     {field: 'volume_step', kind: 'number', node: deviceVolumeStep,
      output: document.querySelector('#device-volume-step-value')},
   ];

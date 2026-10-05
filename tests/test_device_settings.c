@@ -33,9 +33,8 @@ static void test_defaults_and_load(void)
     assert(settings.yandex_music);
     assert(settings.dlna);
     assert(settings.brightness == DEVICE_BRIGHTNESS_DEFAULT);
-    /* The encoder turns the way it was wired and steps the volume by five,
-     * which is what it did before either could be changed. */
-    assert(!settings.encoder_reverse);
+    /* The encoder steps the volume by five, which is what it did before the
+     * step could be changed. */
     assert(settings.volume_step == DEVICE_VOLUME_STEP_DEFAULT);
     assert(DEVICE_VOLUME_STEP_DEFAULT == 5);
     /* Bounce is what the device did before the setting existed. */
@@ -60,7 +59,6 @@ static void test_values_and_unknown_lines_are_saved(void)
     assert(device_settings_set_invert_colors(&settings, true));
     assert(device_settings_set_buffer_view(&settings, DEVICE_BUFFER_VIEW_GRAPH));
     assert(device_settings_set_files_end(&settings, DEVICE_FILES_END_REPEAT));
-    assert(device_settings_set_encoder_reverse(&settings, true));
     assert(device_settings_set_volume_step(&settings, 12U));
 
     char value[32];
@@ -83,9 +81,6 @@ static void test_values_and_unknown_lines_are_saved(void)
     assert(settings_csv_get(test_path, "files_end", value, sizeof(value)));
     assert(strcmp(value, "repeat") == 0);
     assert(reloaded.files_end == DEVICE_FILES_END_REPEAT);
-    assert(settings_csv_get(test_path, "encoder_reverse", value, sizeof(value)));
-    assert(strcmp(value, "1") == 0);
-    assert(reloaded.encoder_reverse);
     assert(settings_csv_get(test_path, "volume_step", value, sizeof(value)));
     assert(strcmp(value, "12") == 0);
     assert(reloaded.volume_step == 12U);

@@ -58,7 +58,6 @@ static const field_descriptor_t k_fields[] = {
     {"screensaver", WEB_SETTINGS_FIELD_SCREENSAVER, {WEB_SETTINGS_SCREENSAVER_NAMES}, false, false},
     {"screensaver_seconds", WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS, {NULL}, true, false},
     {"screensaver_brightness", WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS, {NULL}, true, false},
-    {"encoder_reverse", WEB_SETTINGS_FIELD_ENCODER_REVERSE, {NULL}, false, false},
     {"volume_step", WEB_SETTINGS_FIELD_VOLUME_STEP, {NULL}, true, false},
     {"alarm_enabled", WEB_SETTINGS_FIELD_ALARM_ENABLED, {NULL}, false, false},
     {"alarm_time", WEB_SETTINGS_FIELD_ALARM_TIME, {NULL}, false, true},
@@ -245,8 +244,6 @@ bool web_settings_apply(device_settings_t *settings,
     case WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS:
         return device_settings_set_screensaver_brightness(settings,
                                                           (unsigned char)change->value);
-    case WEB_SETTINGS_FIELD_ENCODER_REVERSE:
-        return device_settings_set_encoder_reverse(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_VOLUME_STEP:
         return device_settings_set_volume_step(settings, (unsigned char)change->value);
     case WEB_SETTINGS_FIELD_ALARM_ENABLED:
@@ -296,7 +293,6 @@ void web_settings_make_view(web_settings_view_t *view,
         .flip_vertical = settings->flip_vertical,
         .flip_horizontal = settings->flip_horizontal,
         .invert_colors = settings->invert_colors,
-        .encoder_reverse = settings->encoder_reverse,
         .volume_step = settings->volume_step,
         .timezone = (uint8_t)device_timezone_index_of(settings->timezone),
         .weather = (uint8_t)settings->weather_provider,
@@ -337,7 +333,6 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->flip_vertical == right->flip_vertical &&
            left->flip_horizontal == right->flip_horizontal &&
            left->invert_colors == right->invert_colors &&
-           left->encoder_reverse == right->encoder_reverse &&
            left->volume_step == right->volume_step &&
            left->timezone == right->timezone && left->weather == right->weather &&
            left->screensaver == right->screensaver &&
@@ -398,8 +393,6 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_literal(writer, view->invert_colors ? "true" : "false");
     web_json_literal(writer, ",\"brightness\":");
     web_json_format(writer, "%u", (unsigned)view->brightness);
-    web_json_literal(writer, ",\"encoder_reverse\":");
-    web_json_literal(writer, view->encoder_reverse ? "true" : "false");
     web_json_literal(writer, ",\"volume_step\":");
     web_json_format(writer, "%u", (unsigned)view->volume_step);
     web_json_literal(writer, ",\"volume\":");

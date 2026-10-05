@@ -160,7 +160,7 @@ static void test_each_group_has_expected_fields(void)
      * that has those features - the rows here that a board option can take
      * away. */
     assert(ui_settings_model_row_count(&model) ==
-           12U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
+           11U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
     assert(ui_settings_model_row_at(&model, 2U).id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_SCROLL_FIELD);
     assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_BUFFER_FIELD);
@@ -204,17 +204,11 @@ static void test_each_group_has_expected_fields(void)
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_BT_OUTPUT_FIELD);
     assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_BT_OUTPUT_FIELD));
 #endif
-    /* The encoder's two, last: its direction a switch, its volume step a
-     * number the knob edits like the brightness. */
+    /* The encoder's volume step, last: a number the knob edits like the
+     * brightness. */
     const size_t encoder_row =
         8U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH;
     assert(ui_settings_model_row_at(&model, encoder_row).id ==
-           UI_SETTINGS_ROW_ENCODER_REVERSE_FIELD);
-    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_ENCODER_REVERSE_FIELD);
-    assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_ENCODER_REVERSE_FIELD));
-    assert(ui_settings_model_toggle_edit(&model) == UI_SETTINGS_MODEL_NO_CHANGE);
-    assert(ui_settings_model_row_at(&model, encoder_row + 1U).id ==
            UI_SETTINGS_ROW_VOLUME_STEP_FIELD);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_VOLUME_STEP_FIELD);
@@ -459,7 +453,7 @@ static void test_the_longest_list_needs_the_window(void)
         if (count > longest) longest = count;
     }
     /* Three headings, the deepest group's fields, and About. */
-    assert(longest == 12U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
+    assert(longest == 11U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
     /* Whatever the longest is, every row of it is reachable with the window. */
     ui_settings_model_init(&model, true);
     model.expanded_group = (int)UI_SETTINGS_GROUP_GENERAL;

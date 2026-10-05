@@ -463,6 +463,22 @@ static ui_vu_meter_t s_vu_state[2];
 static uint32_t s_vu_updated_ms;
 static lv_obj_t *s_settings_screen;
 static lv_obj_t *s_settings_rows[UI_SETTINGS_MAX_ROWS];
+/* The open/closed mark at the right end of a group heading - a symbol the
+ * text face has no glyph for, so a label of its own in the icon face, one
+ * size down from the list marks: at their size it shouted over the heading
+ * it belongs to. */
+#if UI_FONT_ICON_PX >= 32
+#define UI_SET_GROUP_MARK_PX 24
+#else
+#define UI_SET_GROUP_MARK_PX 14
+#endif
+#define UI_SET_GROUP_MARK_FONT (&UI_FONT_ICON_FACE(UI_SET_GROUP_MARK_PX))
+static lv_obj_t *s_settings_group_marks[UI_SETTINGS_MAX_ROWS];
+/* The colour each line under a settings row was last given: the update runs
+ * on every pass while the screen is open, and setting a style repaints the
+ * object whether or not the value moved. The colour, not the kind of line, so
+ * a new theme is a change. */
+static uint32_t s_settings_divider_colour[UI_SETTINGS_MAX_ROWS];
 static lv_obj_t *s_settings_more_above;
 static lv_obj_t *s_settings_more_below;
 /* One per boolean setting, not per row on screen: only one group is open at
@@ -3082,6 +3098,16 @@ static void ui_create_settings_screen(void)
         ui_paint(s_settings_rows[row], UI_PAINT_BG, UI_ROLE_GROUND, 0);
         lv_label_set_text(s_settings_rows[row], "");
     }
+    for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
+        s_settings_group_marks[row] = lv_label_create(s_settings_screen);
+        lv_obj_set_style_text_font(s_settings_group_marks[row], UI_SET_GROUP_MARK_FONT, 0);
+        const lv_font_t *mark_font = UI_SET_GROUP_MARK_FONT;
+        lv_obj_set_pos(s_settings_group_marks[row], UI_SET_ROW_RIGHT - UI_SET_GROUP_MARK_PX - 6,
+                       UI_SET_ROW_Y + (int)row * UI_SET_ROW_PITCH +
+                           (UI_SET_ROW_H - (int)lv_font_get_line_height(mark_font)) / 2);
+        lv_label_set_text(s_settings_group_marks[row], "");
+        lv_obj_add_flag(s_settings_group_marks[row], LV_OBJ_FLAG_HIDDEN);
+    }
     /* The rows are a pixel apart, so the line is that pixel - lighter than
      * the field tiles on either side of it. Before the overlays below, which
      * have to cover it. */
@@ -3610,6 +3636,7 @@ static void ui_update_settings(void)
                                      ? LV_SYMBOL_DOWN
                                      : "");
     bool shown[UI_SETTINGS_MAX_ROWS] = {false};
+    bool heading[UI_SETTINGS_MAX_ROWS] = {false};
     size_t cursor_row = UI_SETTINGS_MAX_ROWS;
     int32_t cursor_left = UI_CONTENT_X;
     for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
@@ -3620,6 +3647,7 @@ static void ui_update_settings(void)
              * with the taller pitch an unused row reaches into the web band. */
             lv_label_set_text(s_settings_rows[row], "");
             lv_obj_add_flag(s_settings_rows[row], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_settings_group_marks[row], LV_OBJ_FLAG_HIDDEN);
             continue;
         }
         lv_obj_clear_flag(s_settings_rows[row], LV_OBJ_FLAG_HIDDEN);
@@ -3628,6 +3656,7 @@ static void ui_update_settings(void)
         ui_settings_row_text(&item, text, sizeof(text));
         ui_set_label_text_if_changed(s_settings_rows[row], text);
         const bool is_group = item.kind == UI_SETTINGS_ROW_GROUP;
+        heading[row] = is_group;
         /* The title face for the headings and for About, the body face for the
          * fields under them. About is not a heading, but it stands where they
          * stand - at the top level of the list rather than inside a group -
@@ -3649,9 +3678,23 @@ static void ui_update_settings(void)
         // Accent on the cursor, the way every other screen marks its
         // selection: the tile alone reads as a highlight only once you have
         // found it.
-        lv_obj_set_style_text_color(s_settings_rows[row],
-                                    lv_color_hex(selected_row ? ui_hex(UI_ROLE_ACCENT)
-                                                              : ui_hex(UI_ROLE_TEXT)), 0);
+        /* A heading is the structure, not a setting: quieter than the
+         * fields under it, with a mark saying whether it is open. Under the
+         * cursor it takes the accent like anything else. */
+        const uint32_t text_colour = selected_row ? ui_hex(UI_ROLE_ACCENT)
+                                     : is_group   ? ui_hex(UI_ROLE_SECONDARY)
+                                                  : ui_hex(UI_ROLE_TEXT);
+        lv_obj_set_style_text_color(s_settings_rows[row], lv_color_hex(text_colour), 0);
+        if (is_group) {
+            ui_set_label_text_if_changed(
+                s_settings_group_marks[row],
+                ui_settings_model_is_expanded(&s_settings_model, item.group) ? LV_SYMBOL_DOWN
+                                                                              : LV_SYMBOL_RIGHT);
+            lv_obj_set_style_text_color(s_settings_group_marks[row], lv_color_hex(text_colour), 0);
+            lv_obj_remove_flag(s_settings_group_marks[row], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_settings_group_marks[row], LV_OBJ_FLAG_HIDDEN);
+        }
         size_t switch_index = 0U;
         bool enabled = false;
         const bool has_switch = ui_settings_row_switch(item.id, &switch_index, &enabled);
@@ -3678,6 +3721,16 @@ static void ui_update_settings(void)
         }
     }
     ui_list_decor_update(&s_settings_decor, shown, cursor_row, cursor_left);
+    /* The line under a heading is a rule, not a divider: it closes the
+     * heading off from what it opens. Local, and set again on every pass, so
+     * a theme change reaches it through this update. */
+    for (size_t row = 0; row + 1U < UI_SETTINGS_MAX_ROWS; ++row) {
+        const bool under_heading = shown[row] && heading[row];
+        const uint32_t colour = ui_hex(under_heading ? UI_ROLE_RULE : UI_ROLE_DIVIDER);
+        if (s_settings_divider_colour[row] == colour) continue;
+        s_settings_divider_colour[row] = colour;
+        lv_obj_set_style_bg_color(s_settings_decor.dividers[row], lv_color_hex(colour), 0);
+    }
 }
 
 /* Applies the two flip settings and repaints everything.

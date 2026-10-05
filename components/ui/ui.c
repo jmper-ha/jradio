@@ -165,6 +165,77 @@ static void ui_paint(lv_obj_t *obj, ui_paint_t paint, ui_role_t role,
 
 static void ui_apply_theme(void);
 
+/* A hairline in the gap under each row but the last, and the accent stripe
+ * down the left edge of the row under the cursor - the same on every list
+ * screen. Both are solid, one colour and no blending, and they move only when
+ * the list does: nothing here is redrawn by the frames that keep the VU meter
+ * and a marquee going. */
+#define UI_LIST_DECOR_ROWS_MAX 24U
+_Static_assert(UI_STATION_LIST_MAX_ROWS <= UI_LIST_DECOR_ROWS_MAX &&
+                   UI_SETTINGS_MAX_ROWS <= UI_LIST_DECOR_ROWS_MAX,
+               "a list has more rows than its decoration has room for");
+typedef struct {
+    lv_obj_t *dividers[UI_LIST_DECOR_ROWS_MAX - 1U];
+    lv_obj_t *mark;
+    size_t rows;
+    int32_t row_y;
+    int32_t pitch;
+    int32_t mark_inset;
+} ui_list_decor_t;
+
+/* Built after the rows and whatever is drawn over their left edge, so the
+ * stripe lands on top; the lines sit in the gaps and overlap nothing. The
+ * line runs from `line_x` for `line_w` - inset to where the names start, so
+ * it belongs to the list rather than ruling the screen. */
+static void ui_list_decor_create(ui_list_decor_t *decor, lv_obj_t *screen, size_t rows,
+                                 int32_t row_y, int32_t pitch, int32_t row_h,
+                                 int32_t line_x, int32_t line_w)
+{
+    *decor = (ui_list_decor_t){.rows = rows, .row_y = row_y, .pitch = pitch,
+                               .mark_inset = row_h >= 20 ? 4 : 3};
+    for (size_t row = 0; row + 1U < rows; ++row) {
+        lv_obj_t *divider = lv_obj_create(screen);
+        lv_obj_remove_style_all(divider);
+        lv_obj_set_pos(divider, line_x,
+                       row_y + (int32_t)row * pitch + row_h + (pitch - row_h) / 2);
+        lv_obj_set_size(divider, line_w, 1);
+        lv_obj_set_style_bg_opa(divider, LV_OPA_COVER, 0);
+        ui_paint(divider, UI_PAINT_BG, UI_ROLE_DIVIDER, 0);
+        lv_obj_add_flag(divider, LV_OBJ_FLAG_HIDDEN);
+        decor->dividers[row] = divider;
+    }
+    decor->mark = lv_obj_create(screen);
+    lv_obj_remove_style_all(decor->mark);
+    lv_obj_set_pos(decor->mark, line_x, row_y + decor->mark_inset);
+    lv_obj_set_size(decor->mark, 3, row_h - 2 * decor->mark_inset);
+    lv_obj_set_style_radius(decor->mark, 1, 0);
+    lv_obj_set_style_bg_opa(decor->mark, LV_OPA_COVER, 0);
+    ui_paint(decor->mark, UI_PAINT_BG, UI_ROLE_ACCENT, 0);
+    lv_obj_add_flag(decor->mark, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* `shown` says which rows are on screen; a line goes only between two that
+ * are, never trailing into the blanks of a short list. The stripe goes on
+ * `cursor_row` at `mark_x`, or nowhere for a row past the end. */
+static void ui_list_decor_update(ui_list_decor_t *decor, const bool *shown, size_t cursor_row,
+                                 int32_t mark_x)
+{
+    for (size_t row = 0; row + 1U < decor->rows; ++row) {
+        const bool hidden = !(shown[row] && shown[row + 1U]);
+        if (hidden != lv_obj_has_flag(decor->dividers[row], LV_OBJ_FLAG_HIDDEN)) {
+            if (hidden) lv_obj_add_flag(decor->dividers[row], LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_remove_flag(decor->dividers[row], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (cursor_row >= decor->rows || !shown[cursor_row]) {
+        lv_obj_add_flag(decor->mark, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_obj_set_pos(decor->mark, mark_x,
+                   decor->row_y + (int32_t)cursor_row * decor->pitch + decor->mark_inset);
+    lv_obj_remove_flag(decor->mark, LV_OBJ_FLAG_HIDDEN);
+}
+
 /* The code covers the settings screen, and nothing on it moves - so unlike a
  * list there is no activity to measure, only how long it has been up. Long
  * enough for a phone to be fetched from another room, short enough that the
@@ -508,12 +579,9 @@ static lv_obj_t *s_station_list_icons[UI_STATION_LIST_MAX_ROWS];
  * the row text: the row under the cursor scrolls, and the number is what the
  * eye counts down - it has to stay where it is while the name travels. */
 static lv_obj_t *s_station_list_numbers[UI_STATION_LIST_MAX_ROWS];
-/* A hairline in the gap under each row but the last, and the accent stripe
- * down the left edge of the row under the cursor. Both are solid, one colour
- * and no blending, and they move only when the list does - nothing here is
- * redrawn by the frames that keep the VU meter and a marquee going. */
-static lv_obj_t *s_station_list_dividers[UI_STATION_LIST_MAX_ROWS - 1U];
-static lv_obj_t *s_station_list_mark;
+static ui_list_decor_t s_station_list_decor;
+static ui_list_decor_t s_yandex_decor;
+static ui_list_decor_t s_settings_decor;
 static lv_obj_t *s_station_list_progress;
 static station_list_state_t s_station_list;
 static ui_player_state_t s_player_ui;
@@ -2824,7 +2892,6 @@ static void ui_update_station_list(void)
     const int window_top = station_list_window_top(&s_station_list,
                                                    UI_STATION_LIST_MAX_ROWS, &cursor_row);
     bool shown[UI_STATION_LIST_MAX_ROWS] = {false};
-    bool marked_cursor = false;
     for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
         const int entry_index = window_top + (int)row;
         shown[row] = entry_index >= 0 && entry_index < count;
@@ -2873,10 +2940,6 @@ static void ui_update_station_list(void)
                                            : 8,
                                   0);
         const bool selected = row == cursor_row;
-        if (selected) {
-            lv_obj_set_y(s_station_list_mark, UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH + 4);
-            marked_cursor = true;
-        }
         lv_obj_set_style_bg_color(s_station_list_rows[row].box,
                                   lv_color_hex(selected ? ui_hex(UI_ROLE_SELECTED)
                                                         : ui_hex(UI_ROLE_GROUND)), 0);
@@ -2910,11 +2973,7 @@ static void ui_update_station_list(void)
         ui_scroller_set_scrolling(&s_station_list_rows[row], selected);
         ui_scroller_set_text(&s_station_list_rows[row], text);
     }
-    // A line only between two rows that are there - none trailing into blanks.
-    for (size_t row = 0; row + 1U < UI_STATION_LIST_MAX_ROWS; ++row) {
-        ui_set_hidden(s_station_list_dividers[row], !(shown[row] && shown[row + 1U]));
-    }
-    ui_set_hidden(s_station_list_mark, !marked_cursor);
+    ui_list_decor_update(&s_station_list_decor, shown, cursor_row, UI_CONTENT_X);
     ui_update_list_progress();
 }
 
@@ -2994,6 +3053,12 @@ static void ui_create_settings_screen(void)
         ui_paint(s_settings_rows[row], UI_PAINT_BG, UI_ROLE_GROUND, 0);
         lv_label_set_text(s_settings_rows[row], "");
     }
+    /* The rows are a pixel apart, so the line is that pixel - lighter than
+     * the field tiles on either side of it. Before the overlays below, which
+     * have to cover it. */
+    ui_list_decor_create(&s_settings_decor, s_settings_screen, UI_SETTINGS_MAX_ROWS,
+                         UI_SET_ROW_Y, UI_SET_ROW_PITCH, UI_SET_ROW_H, UI_CONTENT_X + 6,
+                         UI_SET_ROW_RIGHT - UI_CONTENT_X - 12);
     /* In the right margin, clear of the rows: the text column ends at 300 and
      * a row with a switch starts at 58, so nothing here overlaps either. */
     /* The icon face, explicitly, because what these two carry is LV_SYMBOL_UP
@@ -3515,8 +3580,12 @@ static void ui_update_settings(void)
                                                                   UI_SETTINGS_MAX_ROWS)
                                      ? LV_SYMBOL_DOWN
                                      : "");
+    bool shown[UI_SETTINGS_MAX_ROWS] = {false};
+    size_t cursor_row = UI_SETTINGS_MAX_ROWS;
+    int32_t cursor_left = UI_CONTENT_X;
     for (size_t row = 0; row < UI_SETTINGS_MAX_ROWS; ++row) {
         const size_t model_row = window_top + row;
+        shown[row] = model_row < row_count;
         if (model_row >= row_count) {
             /* Hidden, not merely blanked: a row's background is opaque, and
              * with the taller pitch an unused row reaches into the web band. */
@@ -3561,6 +3630,12 @@ static void ui_update_settings(void)
          * differs. A ragged right side was what made the arrows look like two
          * unrelated marks rather than one column. */
         const int row_left = has_switch ? UI_SET_SWITCH_TEXT_X : UI_CONTENT_X;
+        if (selected_row) {
+            // At the tile's own left edge: on a switch row that is past the
+            // switch, which the stripe must not sit on.
+            cursor_row = row;
+            cursor_left = row_left;
+        }
         lv_obj_set_x(s_settings_rows[row], row_left);
         lv_obj_set_width(s_settings_rows[row], UI_SET_ROW_RIGHT - row_left);
         lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(background), 0);
@@ -3573,6 +3648,7 @@ static void ui_update_settings(void)
             lv_obj_clear_flag(toggle, LV_OBJ_FLAG_HIDDEN);
         }
     }
+    ui_list_decor_update(&s_settings_decor, shown, cursor_row, cursor_left);
 }
 
 /* Applies the two flip settings and repaints everything.
@@ -3832,6 +3908,8 @@ static void ui_create_yandex_screen(void)
         ui_paint(s_yandex_rows[row].box, UI_PAINT_BG, UI_ROLE_GROUND, 0);
         lv_obj_add_flag(s_yandex_rows[row].box, LV_OBJ_FLAG_HIDDEN);
     }
+    ui_list_decor_create(&s_yandex_decor, s_yandex_screen, UI_YANDEX_LIST_ROWS, UI_LIST_ROW_Y,
+                         UI_LIST_ROW_PITCH, UI_LIST_ROW_H, UI_CONTENT_X + 8, UI_CONTENT_W - 16);
 
     /* After the rows, for the reason the file browser's notice is: the rows
      * are opaque and LVGL paints children in creation order, so a message
@@ -3877,6 +3955,7 @@ static void ui_update_yandex_rows(void)
     const int count = (int)s_yandex_list.count;
     const int window_top = station_list_window_top(&s_yandex_list, UI_YANDEX_LIST_ROWS,
                                                    &cursor_row);
+    bool shown[UI_YANDEX_LIST_ROWS] = {false};
     for (size_t row = 0; row < UI_YANDEX_LIST_ROWS; ++row) {
         const int entry_index = window_top + (int)row;
         yandex_station_t station;
@@ -3885,6 +3964,7 @@ static void ui_update_yandex_rows(void)
             lv_obj_add_flag(s_yandex_rows[row].box, LV_OBJ_FLAG_HIDDEN);
             continue;
         }
+        shown[row] = true;
         lv_obj_remove_flag(s_yandex_rows[row].box, LV_OBJ_FLAG_HIDDEN);
         const bool selected = row == cursor_row;
         const bool active = (size_t)entry_index == station_list_active_index(&s_yandex_list);
@@ -3903,6 +3983,7 @@ static void ui_update_yandex_rows(void)
         ui_scroller_set_scrolling(&s_yandex_rows[row], selected);
         ui_scroller_set_text(&s_yandex_rows[row], station.name);
     }
+    ui_list_decor_update(&s_yandex_decor, shown, cursor_row, UI_CONTENT_X);
     lv_bar_set_value(s_yandex_progress, station_list_progress_percent(&s_yandex_list),
                      LV_ANIM_OFF);
 }
@@ -3937,6 +4018,9 @@ static void ui_hide_yandex_rows(void)
     for (size_t row = 0; row < UI_YANDEX_LIST_ROWS; ++row) {
         lv_obj_add_flag(s_yandex_rows[row].box, LV_OBJ_FLAG_HIDDEN);
     }
+    // And their lines and stripe, or the code screen would show a ruled pad.
+    const bool none[UI_YANDEX_LIST_ROWS] = {false};
+    ui_list_decor_update(&s_yandex_decor, none, UI_YANDEX_LIST_ROWS, UI_CONTENT_X);
     ui_yandex_show_frame(false);
     s_yandex_rows_drawn = false;
 }
@@ -4356,30 +4440,9 @@ static void ui_create_station_list_screen(void)
         lv_obj_add_flag(s_station_list_numbers[row], LV_OBJ_FLAG_HIDDEN);
     }
 
-    /* In the 6 px between rows, inset as far as the names are so the line
-     * belongs to the list rather than ruling the screen. */
-    for (size_t row = 0; row + 1U < UI_STATION_LIST_MAX_ROWS; ++row) {
-        lv_obj_t *divider = lv_obj_create(s_station_list_screen);
-        lv_obj_remove_style_all(divider);
-        lv_obj_set_pos(divider, UI_CONTENT_X + 8,
-                       UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH + UI_LIST_ROW_H +
-                           (UI_LIST_ROW_PITCH - UI_LIST_ROW_H) / 2);
-        lv_obj_set_size(divider, UI_CONTENT_W - 16, 1);
-        lv_obj_set_style_bg_opa(divider, LV_OPA_COVER, 0);
-        ui_paint(divider, UI_PAINT_BG, UI_ROLE_DIVIDER, 0);
-        lv_obj_add_flag(divider, LV_OBJ_FLAG_HIDDEN);
-        s_station_list_dividers[row] = divider;
-    }
-    /* After the numbers, which are opaque over the row's left edge: the
-     * stripe sits on them, inside the row's corner radius. */
-    s_station_list_mark = lv_obj_create(s_station_list_screen);
-    lv_obj_remove_style_all(s_station_list_mark);
-    lv_obj_set_pos(s_station_list_mark, UI_CONTENT_X, UI_LIST_ROW_Y + 4);
-    lv_obj_set_size(s_station_list_mark, 3, UI_LIST_ROW_H - 8);
-    lv_obj_set_style_radius(s_station_list_mark, 1, 0);
-    lv_obj_set_style_bg_opa(s_station_list_mark, LV_OPA_COVER, 0);
-    ui_paint(s_station_list_mark, UI_PAINT_BG, UI_ROLE_ACCENT, 0);
-    lv_obj_add_flag(s_station_list_mark, LV_OBJ_FLAG_HIDDEN);
+    ui_list_decor_create(&s_station_list_decor, s_station_list_screen, UI_STATION_LIST_MAX_ROWS,
+                         UI_LIST_ROW_Y, UI_LIST_ROW_PITCH, UI_LIST_ROW_H, UI_CONTENT_X + 8,
+                         UI_CONTENT_W - 16);
 
     /* Created last, after every row, for the same reason the folder marks are:
      * the rows are opaque, and LVGL paints children in creation order. The

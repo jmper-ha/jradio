@@ -863,13 +863,18 @@
       }));
   }
 
-  function normalizeStationEntries(payload) {
+  /* Pictures belong to the radio's stations and the FM presets. Yandex's
+     stations have none and never will, so their rows get no tile at all -
+     a column of empty ones would only push every name to the right. */
+  function normalizeStationEntries(payload, activeSource) {
     if (!isObject(payload) || !Array.isArray(payload.items)) return null;
+    const pictured = activeSource !== 'yandex';
     return payload.items
       .filter((item) => isObject(item) && Number.isSafeInteger(item.index) &&
                         typeof item.label === 'string')
       .map((item) => ({index: item.index, label: item.label, meta: '',
-                       icon: typeof item.icon === 'string' ? item.icon : ''}));
+                       icon: !pictured ? undefined
+                         : typeof item.icon === 'string' ? item.icon : ''}));
   }
 
   /* Two kinds of list, and for the browsable one the address depends on which
@@ -910,7 +915,7 @@
       const response = await fetch(source.url(activeSource), {cache: 'no-store'});
       if (!response.ok) throw new Error(`status ${response.status}`);
       const payload = await response.json();
-      const entries = source.parse(payload);
+      const entries = source.parse(payload, activeSource);
       if (!entries) throw new Error('unexpected payload');
       // The device may have moved on while this was in flight. Trust the
       // revision the response carries, not the one that triggered the fetch.
@@ -1135,8 +1140,9 @@
       meta.textContent = safeString(item.meta);
       meta.hidden = meta.textContent.length === 0;
       /* A station's picture in front of its name, as the panel has it on the
-         player - or an empty tile of the same size, so the names line up down
-         the list whether a station has one or not. Station lists only: a file
+         player - or, without one, the player's own stand-in: the note on an
+         empty tile, so the names line up down the list whether a station has
+         a picture or not. Station lists that can have pictures only: a file
          row has its own marks. */
       if (item.icon !== undefined) {
         const tile = document.createElement('span');

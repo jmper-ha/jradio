@@ -516,8 +516,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .list-item.is-active:hover:not(:disabled) { background: var(--accent-soft); }
 .list-item.is-active::before { color: var(--accent); }
 
-/* A station's picture, in front of its name: a square tile, empty when the
-   station has none, so the names line up. */
+/* A station's picture, in front of its name: a square tile in the colours of
+   the player's empty cover, and with its note when the station has no
+   picture, so the names line up and a missing picture looks like the
+   player's rather than like a hole. */
 .list-item-icon {
   flex: none;
   width: 28px;
@@ -526,9 +528,21 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border: 1px solid var(--line);
+  border: 1px solid var(--art-edge);
   border-radius: 5px;
-  background: var(--surface-2);
+  background: var(--art-tile);
+}
+/* The note is the track-art-mark path in index.html, as a mask so it takes
+   the theme's --art-mark like the big one does. A change to one belongs in
+   the other. */
+.list-item-icon:empty::before {
+  content: "";
+  width: 55%;
+  height: 55%;
+  background: var(--art-mark);
+  -webkit-mask: var(--note-mask) center / contain no-repeat;
+  mask: var(--note-mask) center / contain no-repeat;
+  --note-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9.6 5.2 19.4 3v2.7L9.6 7.9Z'/%3E%3Crect x='9.6' y='5.2' width='1.7' height='12.4'/%3E%3Crect x='17.7' y='3' width='1.7' height='12.6'/%3E%3Cellipse cx='7.7' cy='17.4' rx='3' ry='2.6'/%3E%3Cellipse cx='15.8' cy='15.4' rx='3' ry='2.6'/%3E%3C/svg%3E");
 }
 .list-item-icon img {
   width: 100%;

@@ -551,6 +551,8 @@ socket.emit('open');
                  items: [{index: 0, label: 'Моя волна'}, {index: 1, label: 'Джаз'}]});
   assert.deepEqual(labels(), ['Моя волна', 'Джаз']);
   assert.equal(elements['#list-loading'].hidden, true, 'станции пришли - ожидание снято');
+  // Yandex's stations have no pictures, so their rows get no tile at all.
+  assert.deepEqual(icons(), [undefined, undefined]);
 
   // And back again: the same list kind, a different source, the rows change
   // once more.

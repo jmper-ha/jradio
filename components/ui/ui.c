@@ -508,6 +508,12 @@ static lv_obj_t *s_station_list_icons[UI_STATION_LIST_MAX_ROWS];
  * the row text: the row under the cursor scrolls, and the number is what the
  * eye counts down - it has to stay where it is while the name travels. */
 static lv_obj_t *s_station_list_numbers[UI_STATION_LIST_MAX_ROWS];
+/* A hairline in the gap under each row but the last, and the accent stripe
+ * down the left edge of the row under the cursor. Both are solid, one colour
+ * and no blending, and they move only when the list does - nothing here is
+ * redrawn by the frames that keep the VU meter and a marquee going. */
+static lv_obj_t *s_station_list_dividers[UI_STATION_LIST_MAX_ROWS - 1U];
+static lv_obj_t *s_station_list_mark;
 static lv_obj_t *s_station_list_progress;
 static station_list_state_t s_station_list;
 static ui_player_state_t s_player_ui;
@@ -2817,9 +2823,12 @@ static void ui_update_station_list(void)
     const int count = (int)s_station_list.count;
     const int window_top = station_list_window_top(&s_station_list,
                                                    UI_STATION_LIST_MAX_ROWS, &cursor_row);
+    bool shown[UI_STATION_LIST_MAX_ROWS] = {false};
+    bool marked_cursor = false;
     for (size_t row = 0; row < UI_STATION_LIST_MAX_ROWS; ++row) {
         const int entry_index = window_top + (int)row;
-        if (entry_index < 0 || entry_index >= count) {
+        shown[row] = entry_index >= 0 && entry_index < count;
+        if (!shown[row]) {
             // Padding: the cursor stays on the middle row, so the rows beyond
             // either end of the catalogue are simply blank.
             lv_obj_add_flag(s_station_list_rows[row].box, LV_OBJ_FLAG_HIDDEN);
@@ -2864,6 +2873,10 @@ static void ui_update_station_list(void)
                                            : 8,
                                   0);
         const bool selected = row == cursor_row;
+        if (selected) {
+            lv_obj_set_y(s_station_list_mark, UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH + 4);
+            marked_cursor = true;
+        }
         lv_obj_set_style_bg_color(s_station_list_rows[row].box,
                                   lv_color_hex(selected ? ui_hex(UI_ROLE_SELECTED)
                                                         : ui_hex(UI_ROLE_GROUND)), 0);
@@ -2897,6 +2910,11 @@ static void ui_update_station_list(void)
         ui_scroller_set_scrolling(&s_station_list_rows[row], selected);
         ui_scroller_set_text(&s_station_list_rows[row], text);
     }
+    // A line only between two rows that are there - none trailing into blanks.
+    for (size_t row = 0; row + 1U < UI_STATION_LIST_MAX_ROWS; ++row) {
+        ui_set_hidden(s_station_list_dividers[row], !(shown[row] && shown[row + 1U]));
+    }
+    ui_set_hidden(s_station_list_mark, !marked_cursor);
     ui_update_list_progress();
 }
 
@@ -4337,6 +4355,31 @@ static void ui_create_station_list_screen(void)
         lv_label_set_text(s_station_list_numbers[row], "");
         lv_obj_add_flag(s_station_list_numbers[row], LV_OBJ_FLAG_HIDDEN);
     }
+
+    /* In the 6 px between rows, inset as far as the names are so the line
+     * belongs to the list rather than ruling the screen. */
+    for (size_t row = 0; row + 1U < UI_STATION_LIST_MAX_ROWS; ++row) {
+        lv_obj_t *divider = lv_obj_create(s_station_list_screen);
+        lv_obj_remove_style_all(divider);
+        lv_obj_set_pos(divider, UI_CONTENT_X + 8,
+                       UI_LIST_ROW_Y + (int)row * UI_LIST_ROW_PITCH + UI_LIST_ROW_H +
+                           (UI_LIST_ROW_PITCH - UI_LIST_ROW_H) / 2);
+        lv_obj_set_size(divider, UI_CONTENT_W - 16, 1);
+        lv_obj_set_style_bg_opa(divider, LV_OPA_COVER, 0);
+        ui_paint(divider, UI_PAINT_BG, UI_ROLE_DIVIDER, 0);
+        lv_obj_add_flag(divider, LV_OBJ_FLAG_HIDDEN);
+        s_station_list_dividers[row] = divider;
+    }
+    /* After the numbers, which are opaque over the row's left edge: the
+     * stripe sits on them, inside the row's corner radius. */
+    s_station_list_mark = lv_obj_create(s_station_list_screen);
+    lv_obj_remove_style_all(s_station_list_mark);
+    lv_obj_set_pos(s_station_list_mark, UI_CONTENT_X, UI_LIST_ROW_Y + 4);
+    lv_obj_set_size(s_station_list_mark, 3, UI_LIST_ROW_H - 8);
+    lv_obj_set_style_radius(s_station_list_mark, 1, 0);
+    lv_obj_set_style_bg_opa(s_station_list_mark, LV_OPA_COVER, 0);
+    ui_paint(s_station_list_mark, UI_PAINT_BG, UI_ROLE_ACCENT, 0);
+    lv_obj_add_flag(s_station_list_mark, LV_OBJ_FLAG_HIDDEN);
 
     /* Created last, after every row, for the same reason the folder marks are:
      * the rows are opaque, and LVGL paints children in creation order. The

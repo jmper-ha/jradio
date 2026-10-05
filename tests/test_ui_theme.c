@@ -22,6 +22,7 @@ static void test_the_standard_theme_is_the_old_panel(void)
     assert(p.rgb[UI_ROLE_TILE] == 0x18242E);
     assert(p.rgb[UI_ROLE_TILE_EDGE] == 0x26343F);
     assert(p.rgb[UI_ROLE_RULE] == 0x334454);
+    assert(p.rgb[UI_ROLE_DIVIDER] == 0x243240);
     assert(p.rgb[UI_ROLE_FIELD_ROW] == 0x1D2A36);
     assert(p.rgb[UI_ROLE_SELECTED] == 0x2A3B4A);
     assert(p.rgb[UI_ROLE_CURSOR] == 0x3F6187);
@@ -72,6 +73,8 @@ static void test_derived_surfaces_keep_their_order(void)
 #define DIST(role) (luma(p.rgb[role]) > g ? luma(p.rgb[role]) - g : g - luma(p.rgb[role]))
         assert(DIST(UI_ROLE_TILE) < DIST(UI_ROLE_STRIP));
         assert(DIST(UI_ROLE_STRIP) < DIST(UI_ROLE_RULE));
+        // The row divider is fainter than a rule, but still off the ground.
+        assert(DIST(UI_ROLE_DIVIDER) > 0U && DIST(UI_ROLE_DIVIDER) < DIST(UI_ROLE_RULE));
         assert(DIST(UI_ROLE_FIELD_ROW) < DIST(UI_ROLE_SELECTED));
         assert(DIST(UI_ROLE_SELECTED) < DIST(UI_ROLE_CURSOR));
         assert(DIST(UI_ROLE_FEED_FAR) < DIST(UI_ROLE_FEED_NEAR));

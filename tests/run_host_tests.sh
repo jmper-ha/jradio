@@ -112,7 +112,7 @@ grep -Fq 'lv_display_set_buffers(s_display, buffer1, NULL,' components/ui/ui.c
 grep -Fq 'settings_csv_init();' main/main.c
 # Themed colours come out of the palette (ui_theme.c); a colour of the standard
 # theme typed into ui.c again would stay the same whatever theme is chosen.
-if grep -Ein '0x(101820|1E2C3A|18242E|26343F|334454|F2A33C|FFFFFF|B0BEC5|78909C|37474F|4E606C|2A3B4A|3F6187|8FA8BC|46586A|33445A|2D3F4D|23303C|3E5060|1D2A36|263746)' \
+if grep -Ein '0x(101820|1E2C3A|18242E|26343F|334454|F2A33C|FFFFFF|B0BEC5|78909C|37474F|4E606C|2A3B4A|3F6187|8FA8BC|46586A|33445A|2D3F4D|23303C|3E5060|1D2A36|263746|243240)' \
         components/ui/ui.c; then
     echo "components/ui/ui.c: a themed colour typed in rather than read from the palette" >&2
     exit 1

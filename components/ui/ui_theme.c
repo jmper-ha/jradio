@@ -18,6 +18,9 @@ static const ui_palette_t k_standard = {.rgb = {
     [UI_ROLE_TILE] = 0x18242E,
     [UI_ROLE_TILE_EDGE] = 0x26343F,
     [UI_ROLE_RULE] = 0x334454,
+    /* The hairline between list rows: only just off the ground, so the rows
+     * read as separate without a grid being drawn over them. */
+    [UI_ROLE_DIVIDER] = 0x243240,
     /* The settings rows: tinted tiles rather than bare ground. */
     [UI_ROLE_FIELD_ROW] = 0x1D2A36,
     /* A raised step rather than a colour of its own: the row under the cursor
@@ -94,6 +97,7 @@ void ui_theme_derive(const uint32_t base[UI_THEME_BASE_ROLES], ui_palette_t *pal
     const uint32_t dim = palette->rgb[UI_ROLE_DIM];
     palette->rgb[UI_ROLE_TILE] = ui_theme_mix(ground, text, 14U);
     palette->rgb[UI_ROLE_FIELD_ROW] = ui_theme_mix(ground, text, 20U);
+    palette->rgb[UI_ROLE_DIVIDER] = ui_theme_mix(ground, text, 34U);
     palette->rgb[UI_ROLE_STRIP] = ui_theme_mix(ground, text, 26U);
     palette->rgb[UI_ROLE_TRACK] = ui_theme_mix(ground, text, 30U);
     palette->rgb[UI_ROLE_VU_OFF] = ui_theme_mix(ground, text, 30U);

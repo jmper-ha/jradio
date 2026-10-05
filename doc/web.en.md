@@ -100,7 +100,7 @@ you would a password.
 | `GET /api/progress` | Position in the track, the buffer, the cover's signature, the sleep timer's remainder |
 | `GET /api/cover` | The current cover, 96×96, BMP |
 | `GET /api/settings` | The device's settings, the time zone list, the time server |
-| `POST /api/settings` | One setting: `{"field":…,"value":…}` - including `timezone`, `ntp_server`, `weather*`, `screensaver*`, `alarm_*` |
+| `POST /api/settings` | One setting: `{"field":…,"value":…}` - including `timezone`, `ntp_server`, `weather*`, `screensaver*`, `alarm_*`, `theme` (`standard`/`contrast`/`custom`), the custom theme's colours `theme_ground`, `theme_text`, `theme_artist`, `theme_secondary`, `theme_dim`, `theme_accent` (`"#rrggbb"`) and `theme_reset` (`true` puts back the standard ones). The colours come only in the `GET`, not in the diffs |
 | `POST /api/sleep-timer` | `{"minutes":45}`, zero switches it off |
 | `GET /api/about` | The firmware, web interface and ESP-IDF versions |
 | `GET /api/backup`, `POST /api/restore` | The backup, see above |

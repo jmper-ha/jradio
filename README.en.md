@@ -61,6 +61,7 @@ The full pinout and the choice of parts are in [Hardware](doc/hardware.en.md).
 | **Remote control** | Any IR remote: keys are learned in the browser, digits dial a station number, a learned key wakes the device from sleep - [more](doc/usage.en.md#the-remote-control) |
 | **Clock and weather** | Time from the internet, the temperature and a sky icon next to the clock (Open-Meteo, wttr.in or OpenWeatherMap) |
 | **Screensaver** | Dimming, a black screen, or a drifting clock with the date, the weather and the track title |
+| **Themes** | Standard, high-contrast for displays whose text looks washed out, or your own - six colours picked on the web |
 | **Quick panel** | A window over the player: the sleep timer, the alarm, the brightness, the BT speaker - without leaving the screen |
 | **Alarm clock** | A station at a set time on chosen weekdays at its own volume; a sleeping device wakes itself |
 | **Sleep timer** | 15-120 minutes, then a fade-out and sleep |

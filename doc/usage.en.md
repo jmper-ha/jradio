@@ -293,7 +293,7 @@ page as a line with the time and the days.
 
 On the device: language, home screen style, scrolling of long lines, the
 buffer readout, resume, end of folder, Yandex Music, DLNA, weather, brightness, picture
-mirroring, colour inversion, screensaver, sound over Bluetooth, volume step,
+mirroring, colour inversion, theme, screensaver, sound over Bluetooth, volume step,
 volume. They apply at once and
 are saved. The same settings are in the web interface, in the same words;
 changes either way show at once.
@@ -322,6 +322,24 @@ detail, the alarm, the sleep timer, the backup.
   other kind of glass from the author's: IPS and TN on the same controller
   want the opposite setting. Switch it on and the picture is right, at once
   and for good, with no rebuild. Next to the flips, in the Display group.
+- **Theme** - the screen's colours, the last row of the Display group; a
+  click steps round:
+  - **Standard** - the colours it always had;
+  - **Contrast** - a black ground, the grey lines brought up close to white,
+    a lighter accent. For displays on which the secondary text is hard to
+    read;
+  - **Custom** - six colours set on the web, in the same group: background,
+    main text, the artist on the player, secondary text (list rows, volume,
+    RDS), dim text (stream state, buffer, hints, screensaver) and the accent
+    (station name, selected row). Strips, rules and the cursor are worked out
+    from them. The device's screen is the preview - a colour is on it as soon
+    as the picker closes. "Reset to standard colours" puts all six back at
+    once.
+
+  If a custom theme comes out unreadable, the Theme row on the device still
+  switches to Standard - the presets do not depend on the custom colours.
+  Colours that mean something (the red error, Bluetooth's blue, the VU
+  meter's green and red) stay as they are whatever the theme.
 - **Screensaver** - what the screen does when untouched: none, dimming (to
   the "idle brightness"), a black screen, or the **clock** - the time drifting
   over a black screen with the date, the weather and the track title. The

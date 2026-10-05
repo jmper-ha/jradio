@@ -95,7 +95,7 @@ OpenWeatherMap), `remote.csv` (обученные кнопки пульта) и 
 | `GET /api/progress` | Позиция в треке, буфер, подпись обложки, остаток таймера сна |
 | `GET /api/cover` | Текущая обложка, 96×96, BMP |
 | `GET /api/settings` | Настройки устройства, список часовых поясов, сервер времени |
-| `POST /api/settings` | Одна настройка: `{"field":…,"value":…}` — в том числе `timezone`, `ntp_server`, `weather*`, `screensaver*`, `alarm_*` |
+| `POST /api/settings` | Одна настройка: `{"field":…,"value":…}` — в том числе `timezone`, `ntp_server`, `weather*`, `screensaver*`, `alarm_*`, `theme` (`standard`/`contrast`/`custom`), цвета своей темы `theme_ground`, `theme_text`, `theme_artist`, `theme_secondary`, `theme_dim`, `theme_accent` (`"#rrggbb"`) и `theme_reset` (`true` — вернуть стандартные). Цвета приходят только в `GET`, не в диффах |
 | `POST /api/sleep-timer` | `{"minutes":45}`, ноль — выключить |
 | `GET /api/about` | Версии прошивки, веб-интерфейса и ESP-IDF |
 | `GET /api/backup`, `POST /api/restore` | Резервная копия, см. выше |

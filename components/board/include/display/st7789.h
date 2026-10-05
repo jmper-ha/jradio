@@ -100,13 +100,14 @@
 #define BOARD_DISPLAY_PORTRAIT 0
 #endif
 
-/* The controller is good for far more than this - the datasheet's write cycle
- * allows tens of MHz - but the clock a panel actually takes is decided by the
- * ribbon and the wiring, and both are this board's. Kept at the rate the
- * ILI9341 was measured good at, which brought this panel up clean on the first
- * try. Raising it is worth doing with the panel in front of you: the failure
- * is torn or speckled pixels, not a dead screen. */
-#define DISPLAY_PIXEL_CLOCK_HZ (20 * 1000 * 1000)
+/* 40 MHz, like the ILI9341 and for the same reason: at 20 MHz the PCM5102
+ * crackled - a few clicks a minute, more the busier the stream - and at 40
+ * the same bench with the 2" 320x240 module played clean, the picture
+ * unchanged (2026-10-05). The controller's write cycle allows more than this;
+ * what a panel takes is decided by the ribbon and the wiring, and the failure
+ * is torn or speckled pixels, not a dead screen. The 320x170 module shares
+ * this header and has not been run at 40 yet. */
+#define DISPLAY_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
 
 /* Named for the log line and the error messages, so a boot log says which
  * panel the firmware was built for without anyone reading board_options.h. */

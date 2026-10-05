@@ -112,6 +112,88 @@ static void test_a_value_too_long_for_the_caller_is_refused(void)
     assert(!settings_csv_get("/tmp/jradio_no_such_file.csv", "key", small, sizeof(small)));
 }
 
+/* The snapshot answers every key exactly as get() does - first match wins,
+ * a line too long for get()'s buffer is cut where get() cuts it, a value too
+ * long for the caller is refused - and reads the file once. */
+static void expect_same(const settings_csv_snapshot_t *snapshot, const char *key,
+                        size_t value_size)
+{
+    char direct[300] = {0};
+    char snapped[300] = {0};
+    const bool from_file = settings_csv_get(PATH, key, direct, value_size);
+    const bool from_snapshot = settings_csv_snapshot_get(snapshot, key, snapped, value_size);
+    assert(from_file == from_snapshot);
+    if (from_file) assert(strcmp(direct, snapped) == 0);
+}
+
+static void test_a_snapshot_reads_like_get(void)
+{
+    char contents[2048];
+    char long_value[700];
+    memset(long_value, 'x', sizeof(long_value) - 1U);
+    long_value[sizeof(long_value) - 1U] = '\0';
+    snprintf(contents, sizeof(contents),
+             "language,en\n"
+             "volume,42\r\n"
+             "volume,99\n"
+             "broken line\n"
+             ",novalue\n"
+             "long,%s\n"
+             "tail,end",
+             long_value);
+    write_file(contents);
+    settings_csv_snapshot_t snapshot;
+    settings_csv_snapshot_load(&snapshot, PATH);
+    assert(snapshot.text != NULL);
+    const char *keys[] = {"language", "volume", "broken line", "long", "tail", "absent", "x"};
+    for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
+        expect_same(&snapshot, keys[i], 300U);
+        expect_same(&snapshot, keys[i], 3U);
+    }
+    char value[16];
+    assert(settings_csv_snapshot_get(&snapshot, "volume", value, sizeof(value)));
+    assert(strcmp(value, "42") == 0);
+    assert(settings_csv_snapshot_get(&snapshot, "tail", value, sizeof(value)));
+    assert(strcmp(value, "end") == 0);
+    /* Read once: a write after the load is not seen until the next one. */
+    assert(settings_csv_set(PATH, "language", "ru"));
+    assert(settings_csv_snapshot_get(&snapshot, "language", value, sizeof(value)));
+    assert(strcmp(value, "en") == 0);
+    settings_csv_snapshot_free(&snapshot);
+    assert(snapshot.text == NULL);
+}
+
+static void test_a_snapshot_of_no_file_is_empty(void)
+{
+    settings_csv_snapshot_t snapshot;
+    settings_csv_snapshot_load(&snapshot, "/tmp/jradio_no_such_file.csv");
+    assert(snapshot.text != NULL);
+    char value[8];
+    assert(!settings_csv_snapshot_get(&snapshot, "language", value, sizeof(value)));
+    settings_csv_snapshot_free(&snapshot);
+}
+
+static void test_a_file_too_big_to_hold_is_still_read(void)
+{
+    FILE *file = fopen(PATH, "w");
+    assert(file != NULL);
+    assert(fputs("first,1\n", file) >= 0);
+    for (unsigned i = 0; i * 32U <= SETTINGS_CSV_SNAPSHOT_MAX; ++i) {
+        assert(fprintf(file, "filler%05u,%024u\n", i, i) > 0);
+    }
+    assert(fputs("last,2\n", file) >= 0);
+    assert(fclose(file) == 0);
+    settings_csv_snapshot_t snapshot;
+    settings_csv_snapshot_load(&snapshot, PATH);
+    assert(snapshot.text == NULL);
+    char value[8];
+    assert(settings_csv_snapshot_get(&snapshot, "first", value, sizeof(value)));
+    assert(strcmp(value, "1") == 0);
+    assert(settings_csv_snapshot_get(&snapshot, "last", value, sizeof(value)));
+    assert(strcmp(value, "2") == 0);
+    settings_csv_snapshot_free(&snapshot);
+}
+
 int main(void)
 {
     settings_csv_init();
@@ -121,6 +203,9 @@ int main(void)
     test_a_successful_write_leaves_no_temp_file();
     test_writing_to_a_missing_file_creates_it();
     test_a_value_too_long_for_the_caller_is_refused();
+    test_a_snapshot_reads_like_get();
+    test_a_snapshot_of_no_file_is_empty();
+    test_a_file_too_big_to_hold_is_still_read();
     assert(remove(PATH) == 0);
     puts("settings_csv tests passed");
     return 0;

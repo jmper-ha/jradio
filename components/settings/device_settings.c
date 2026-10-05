@@ -14,9 +14,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-static bool read_value(const char *path, const char *key, char *value, size_t value_size)
+static bool read_value(const settings_csv_snapshot_t *csv, const char *key, char *value,
+                       size_t value_size)
 {
-    return settings_csv_get(path, key, value, value_size);
+    return settings_csv_snapshot_get(csv, key, value, value_size);
 }
 
 static bool save_value(device_settings_t *settings, const char *key, const char *value)
@@ -193,52 +194,55 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     memcpy(settings->weather_longitude, DEVICE_WEATHER_LONGITUDE_DEFAULT,
            sizeof(DEVICE_WEATHER_LONGITUDE_DEFAULT));
 
+    /* One read of the file for every key below - see settings_csv.h. */
+    settings_csv_snapshot_t csv;
+    settings_csv_snapshot_load(&csv, path);
     char value[32];
-    if (read_value(path, "language", value, sizeof(value))) {
+    if (read_value(&csv, "language", value, sizeof(value))) {
         if (strcmp(value, "en") == 0) settings->language = DEVICE_LANGUAGE_EN;
         else if (strcmp(value, "ru") != 0) settings->language = DEVICE_LANGUAGE_RU;
     }
-    if (read_value(path, "home_screen", value, sizeof(value))) {
+    if (read_value(&csv, "home_screen", value, sizeof(value))) {
         if (strcmp(value, "feed") == 0) settings->home_screen = DEVICE_HOME_SCREEN_FEED;
         else if (strcmp(value, "text") != 0) settings->home_screen = DEVICE_HOME_SCREEN_TEXT;
     }
-    if (read_value(path, "scroll", value, sizeof(value))) {
+    if (read_value(&csv, "scroll", value, sizeof(value))) {
         if (strcmp(value, "left") == 0) settings->scroll = DEVICE_SCROLL_LEFT;
         else if (strcmp(value, "bounce") != 0) settings->scroll = DEVICE_SCROLL_BOUNCE;
     }
-    if (read_value(path, "buffer_view", value, sizeof(value))) {
+    if (read_value(&csv, "buffer_view", value, sizeof(value))) {
         if (strcmp(value, "graph") == 0) settings->buffer_view = DEVICE_BUFFER_VIEW_GRAPH;
         else if (strcmp(value, "text") != 0) settings->buffer_view = DEVICE_BUFFER_VIEW_TEXT;
     }
-    if (read_value(path, "files_end", value, sizeof(value)) && strcmp(value, "repeat") == 0) {
+    if (read_value(&csv, "files_end", value, sizeof(value)) && strcmp(value, "repeat") == 0) {
         settings->files_end = DEVICE_FILES_END_REPEAT;
     }
     /* A zone this build does not have leaves the default standing rather than
      * an empty string: an unset TZ is UTC, and a clock three hours out with no
      * explanation is worse than one that ignored a line in a file. */
     char zone[DEVICE_TIMEZONE_ID_MAX];
-    if (settings_csv_get(path, "timezone", zone, sizeof(zone)) &&
+    if (settings_csv_snapshot_get(&csv, "timezone", zone, sizeof(zone)) &&
         device_timezone_find(zone) != NULL) {
         memcpy(settings->timezone, zone, strlen(zone) + 1U);
     }
     char server[DEVICE_NTP_SERVER_MAX];
-    if (settings_csv_get(path, "ntp_server", server, sizeof(server)) && server[0] != '\0') {
+    if (settings_csv_snapshot_get(&csv, "ntp_server", server, sizeof(server)) && server[0] != '\0') {
         memcpy(settings->ntp_server, server, strlen(server) + 1U);
     }
     /* "-" stands for the built-in name, as it does for no speaker: the file
      * cannot hold an empty value. */
-    if (settings_csv_get(path, "device_name", settings->device_name,
+    if (settings_csv_snapshot_get(&csv, "device_name", settings->device_name,
                          sizeof(settings->device_name)) &&
         strcmp(settings->device_name, "-") == 0) {
         settings->device_name[0] = '\0';
     }
-    if (read_value(path, "weather", value, sizeof(value))) {
+    if (read_value(&csv, "weather", value, sizeof(value))) {
         settings->weather_provider = weather_provider_from_text(value);
     }
     /* Written beside the provider whenever a service is chosen, so it is
      * only ever a service; a file from before it existed has none, and the
      * provider itself is the best guess when that one is on. */
-    if (read_value(path, "weather_service", value, sizeof(value)) &&
+    if (read_value(&csv, "weather_service", value, sizeof(value)) &&
         weather_provider_from_text(value) != DEVICE_WEATHER_OFF) {
         settings->weather_service = weather_provider_from_text(value);
     } else if (settings->weather_provider != DEVICE_WEATHER_OFF) {
@@ -249,51 +253,51 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
      * with half a number in it, which the service answers with an error the
      * panel has no way to show. */
     char coordinate[DEVICE_COORDINATE_MAX];
-    if (settings_csv_get(path, "weather_latitude", coordinate, sizeof(coordinate)) &&
+    if (settings_csv_snapshot_get(&csv, "weather_latitude", coordinate, sizeof(coordinate)) &&
         device_settings_coordinate_valid(coordinate, 90)) {
         memcpy(settings->weather_latitude, coordinate, strlen(coordinate) + 1U);
     }
-    if (settings_csv_get(path, "weather_longitude", coordinate, sizeof(coordinate)) &&
+    if (settings_csv_snapshot_get(&csv, "weather_longitude", coordinate, sizeof(coordinate)) &&
         device_settings_coordinate_valid(coordinate, 180)) {
         memcpy(settings->weather_longitude, coordinate, strlen(coordinate) + 1U);
     }
-    if (read_value(path, "display_flip_vertical", value, sizeof(value))) {
+    if (read_value(&csv, "display_flip_vertical", value, sizeof(value))) {
         (void)parse_bool(value, &settings->flip_vertical);
     }
-    if (read_value(path, "display_flip_horizontal", value, sizeof(value))) {
+    if (read_value(&csv, "display_flip_horizontal", value, sizeof(value))) {
         (void)parse_bool(value, &settings->flip_horizontal);
     }
-    if (read_value(path, "display_invert_colors", value, sizeof(value))) {
+    if (read_value(&csv, "display_invert_colors", value, sizeof(value))) {
         (void)parse_bool(value, &settings->invert_colors);
     }
-    if (read_value(path, "encoder_reverse", value, sizeof(value))) {
+    if (read_value(&csv, "encoder_reverse", value, sizeof(value))) {
         (void)parse_bool(value, &settings->encoder_reverse);
     }
-    if (read_value(path, "autoplay", value, sizeof(value))) {
+    if (read_value(&csv, "autoplay", value, sizeof(value))) {
         (void)parse_bool(value, &settings->autoplay);
     }
-    if (read_value(path, "yandex_music", value, sizeof(value))) {
+    if (read_value(&csv, "yandex_music", value, sizeof(value))) {
         (void)parse_bool(value, &settings->yandex_music);
     }
-    if (read_value(path, "dlna", value, sizeof(value))) {
+    if (read_value(&csv, "dlna", value, sizeof(value))) {
         (void)parse_bool(value, &settings->dlna);
     }
-    if (read_value(path, "bt_output", value, sizeof(value))) {
+    if (read_value(&csv, "bt_output", value, sizeof(value))) {
         (void)parse_bool(value, &settings->bt_output);
     }
     /* "-" stands for none: settings.csv has no empty values. */
-    if (settings_csv_get(path, "bt_speaker", settings->bt_speaker, sizeof(settings->bt_speaker)) &&
+    if (settings_csv_snapshot_get(&csv, "bt_speaker", settings->bt_speaker, sizeof(settings->bt_speaker)) &&
         strcmp(settings->bt_speaker, "-") == 0) {
         settings->bt_speaker[0] = '\0';
     }
-    (void)settings_csv_get(path, "bt_speakers", settings->bt_speakers, sizeof(settings->bt_speakers));
+    (void)settings_csv_snapshot_get(&csv, "bt_speakers", settings->bt_speakers, sizeof(settings->bt_speakers));
     if (strcmp(settings->bt_speakers, "-") == 0) settings->bt_speakers[0] = '\0';
-    if (settings_csv_get(path, "bt_speaker_name", settings->bt_speaker_name,
+    if (settings_csv_snapshot_get(&csv, "bt_speaker_name", settings->bt_speaker_name,
                          sizeof(settings->bt_speaker_name)) &&
         strcmp(settings->bt_speaker_name, "-") == 0) {
         settings->bt_speaker_name[0] = '\0';
     }
-    if (read_value(path, "volume", value, sizeof(value))) {
+    if (read_value(&csv, "volume", value, sizeof(value))) {
         char *end = NULL;
         const long parsed = strtol(value, &end, 10);
         /* A corrupt line leaves the default rather than silencing the device
@@ -302,7 +306,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
             settings->volume = (unsigned char)parsed;
         }
     }
-    if (read_value(path, "brightness", value, sizeof(value))) {
+    if (read_value(&csv, "brightness", value, sizeof(value))) {
         char *end = NULL;
         const long parsed = strtol(value, &end, 10);
         /* A corrupt line leaves the default rather than blacking out the
@@ -311,7 +315,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
             settings->brightness = (unsigned char)parsed;
         }
     }
-    if (read_value(path, "volume_step", value, sizeof(value))) {
+    if (read_value(&csv, "volume_step", value, sizeof(value))) {
         char *end = NULL;
         const long parsed = strtol(value, &end, 10);
         if (end != NULL && *end == '\0' && parsed >= DEVICE_VOLUME_STEP_MIN &&
@@ -319,13 +323,13 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
             settings->volume_step = (unsigned char)parsed;
         }
     }
-    if (read_value(path, "screensaver", value, sizeof(value))) {
+    if (read_value(&csv, "screensaver", value, sizeof(value))) {
         settings->screensaver = screensaver_from_text(value);
     }
     /* Either number off its list or range leaves the default, like the
      * brightness above: a hand-edited "0" here would be a panel that never
      * comes back on, and nothing on a dark panel can fix it. */
-    if (read_value(path, "screensaver_seconds", value, sizeof(value))) {
+    if (read_value(&csv, "screensaver_seconds", value, sizeof(value))) {
         char *end = NULL;
         const long parsed = strtol(value, &end, 10);
         if (end != NULL && *end == '\0' && parsed > 0 &&
@@ -333,17 +337,17 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
             settings->screensaver_seconds = (unsigned short)parsed;
         }
     }
-    if (read_value(path, "screensaver_brightness", value, sizeof(value))) {
+    if (read_value(&csv, "screensaver_brightness", value, sizeof(value))) {
         char *end = NULL;
         const long parsed = strtol(value, &end, 10);
         if (end != NULL && *end == '\0' && parsed > 0 && parsed <= 100) {
             settings->screensaver_brightness = (unsigned char)parsed;
         }
     }
-    if (read_value(path, "alarm_enabled", value, sizeof(value))) {
+    if (read_value(&csv, "alarm_enabled", value, sizeof(value))) {
         (void)parse_bool(value, &settings->alarm.enabled);
     }
-    if (read_value(path, "alarm_time", value, sizeof(value))) {
+    if (read_value(&csv, "alarm_time", value, sizeof(value))) {
         uint8_t hour = 0U;
         uint8_t minute = 0U;
         if (alarm_time_parse(value, &hour, &minute)) {
@@ -353,14 +357,14 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     }
     /* Anything outside the seven bits - and zero with it - leaves every day
      * standing, which is the one reading of a damaged mask that still rings. */
-    if (read_value(path, "alarm_days", value, sizeof(value))) {
+    if (read_value(&csv, "alarm_days", value, sizeof(value))) {
         char *end = NULL;
         const long parsed = strtol(value, &end, 10);
         if (end != NULL && *end == '\0' && parsed > 0 && parsed <= (long)ALARM_DAYS_ALL) {
             settings->alarm.days = (uint8_t)parsed;
         }
     }
-    if (read_value(path, "alarm_station", value, sizeof(value))) {
+    if (read_value(&csv, "alarm_station", value, sizeof(value))) {
         char *end = NULL;
         const long parsed = strtol(value, &end, 10);
         if (end != NULL && *end == '\0' && parsed >= 0 &&
@@ -368,21 +372,21 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
             settings->alarm.station = (uint8_t)parsed;
         }
     }
-    if (read_value(path, "alarm_volume", value, sizeof(value))) {
+    if (read_value(&csv, "alarm_volume", value, sizeof(value))) {
         char *end = NULL;
         const long parsed = strtol(value, &end, 10);
         if (end != NULL && *end == '\0' && parsed >= 0 && parsed <= 100) {
             settings->alarm.volume = (unsigned char)parsed;
         }
     }
-    if (read_value(path, "fm_frequency", value, sizeof(value))) {
+    if (read_value(&csv, "fm_frequency", value, sizeof(value))) {
         char *end = NULL;
         const unsigned long parsed = strtoul(value, &end, 10);
         if (end != NULL && *end == '\0' && device_settings_fm_frequency_valid(parsed)) {
             settings->fm_frequency_khz = parsed;
         }
     }
-    if (read_value(path, "last_source", value, sizeof(value))) {
+    if (read_value(&csv, "last_source", value, sizeof(value))) {
         if (strcmp(value, "internet_radio") == 0) {
             settings->last_source = DEVICE_LAST_SOURCE_INTERNET_RADIO;
         } else if (strcmp(value, "usb") == 0) {
@@ -404,14 +408,14 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     /* The key on disk is still "last_file": the field was renamed when the
      * SD card joined the USB drive, and settings.csv on devices in the field
      * was not. */
-    (void)settings_csv_get(path, "last_usb_file", settings->last_file,
+    (void)settings_csv_snapshot_get(&csv, "last_usb_file", settings->last_file,
                            sizeof(settings->last_file));
     /* One key holding the three, tab-separated - the shape stations.csv uses
      * for the same reason. Three keys would have needed three writes for one
      * identity, and two of them can legitimately be empty, which is a value
      * settings.csv refuses. */
     char yandex[DEVICE_LAST_YANDEX_PACKED_MAX];
-    if (settings_csv_get(path, "last_yandex", yandex, sizeof(yandex))) {
+    if (settings_csv_snapshot_get(&csv, "last_yandex", yandex, sizeof(yandex))) {
         const char *cursor = yandex;
         cursor = unpack_field(cursor, settings->last_yandex_id,
                               sizeof(settings->last_yandex_id));
@@ -423,7 +427,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     /* The same shape, and for the same reason: one place on one server, so one
      * value. The heading beside it is its own key - see the header. */
     char dlna[DEVICE_LAST_DLNA_PACKED_MAX];
-    if (settings_csv_get(path, "last_dlna", dlna, sizeof(dlna))) {
+    if (settings_csv_snapshot_get(&csv, "last_dlna", dlna, sizeof(dlna))) {
         const char *cursor = dlna;
         cursor = unpack_field(cursor, settings->last_dlna_server,
                               sizeof(settings->last_dlna_server));
@@ -432,8 +436,9 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         (void)unpack_field(cursor, settings->last_dlna_track,
                            sizeof(settings->last_dlna_track));
     }
-    (void)settings_csv_get(path, "last_dlna_title", settings->last_dlna_title,
+    (void)settings_csv_snapshot_get(&csv, "last_dlna_title", settings->last_dlna_title,
                            sizeof(settings->last_dlna_title));
+    settings_csv_snapshot_free(&csv);
     return true;
 }
 

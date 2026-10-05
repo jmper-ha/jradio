@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef ESP_PLATFORM
@@ -101,6 +102,79 @@ bool settings_csv_get(const char *path, const char *key, char *value, size_t val
     fclose(file);
     settings_csv_unlock();
     return false;
+}
+
+void settings_csv_snapshot_load(settings_csv_snapshot_t *snapshot, const char *path)
+{
+    if (snapshot == NULL) return;
+    *snapshot = (settings_csv_snapshot_t){.text = NULL, .path = path};
+    if (path == NULL || !settings_csv_lock()) return;
+    FILE *file = fopen(path, "r");
+    if (file == NULL) {
+        settings_csv_unlock();
+        snapshot->text = calloc(1U, 1U);
+        return;
+    }
+    char *text = NULL;
+    long size = -1;
+    if (fseek(file, 0, SEEK_END) == 0) size = ftell(file);
+    if (size >= 0 && (unsigned long)size <= SETTINGS_CSV_SNAPSHOT_MAX &&
+        fseek(file, 0, SEEK_SET) == 0) {
+        text = malloc((size_t)size + 1U);
+        if (text != NULL) {
+            const size_t got = fread(text, 1U, (size_t)size, file);
+            text[got] = '\0';
+        }
+    }
+    fclose(file);
+    settings_csv_unlock();
+    snapshot->text = text;
+}
+
+/* The next line as fgets() into a SETTINGS_CSV_LINE_MAX buffer would hand it
+ * over: through the newline, or cut at the buffer's length, so a file reads
+ * the same here as through get(). NULL at the end. */
+static const char *snapshot_next_line(const char *cursor, char *line)
+{
+    if (cursor == NULL || *cursor == '\0') return NULL;
+    size_t length = 0U;
+    while (length < SETTINGS_CSV_LINE_MAX - 1U && cursor[length] != '\0') {
+        if (cursor[length++] == '\n') break;
+    }
+    memcpy(line, cursor, length);
+    line[length] = '\0';
+    return cursor + length;
+}
+
+bool settings_csv_snapshot_get(const settings_csv_snapshot_t *snapshot, const char *key,
+                               char *value, size_t value_size)
+{
+    if (snapshot == NULL) return false;
+    if (snapshot->text == NULL) return settings_csv_get(snapshot->path, key, value, value_size);
+    if (!valid_field(key, SETTINGS_CSV_KEY_MAX_LEN) || value == NULL || value_size == 0) {
+        return false;
+    }
+    char line[SETTINGS_CSV_LINE_MAX];
+    char parsed_key[SETTINGS_CSV_KEY_MAX_LEN + 1];
+    char parsed_value[SETTINGS_CSV_VALUE_MAX_LEN + 1];
+    const char *cursor = snapshot->text;
+    while ((cursor = snapshot_next_line(cursor, line)) != NULL) {
+        if (parse_line(line, parsed_key, sizeof(parsed_key), parsed_value, sizeof(parsed_value)) &&
+            strcmp(parsed_key, key) == 0) {
+            const size_t length = strlen(parsed_value);
+            if (length >= value_size) return false;
+            memcpy(value, parsed_value, length + 1);
+            return true;
+        }
+    }
+    return false;
+}
+
+void settings_csv_snapshot_free(settings_csv_snapshot_t *snapshot)
+{
+    if (snapshot == NULL) return;
+    free(snapshot->text);
+    snapshot->text = NULL;
 }
 
 bool settings_csv_set(const char *path, const char *key, const char *value)

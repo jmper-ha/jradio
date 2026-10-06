@@ -2361,6 +2361,14 @@ esp_err_t web_server_start(void)
         // The HTTP worker is network-bound; keep it on core 0 with Wi-Fi and
         // lwIP so it cannot preempt the audio decoder pinned to core 1.
         config.core_id = 0;
+        /* Below the UI task (4), on the core they share. At ESP-IDF's default
+         * of 5 every request held the screen until it was answered: a backup
+         * download stopped the VU meter and the marquee for a quarter of a
+         * second, and a handler that re-read the settings froze them for half
+         * a second every time the settings page polled (10ae6d2). The UI
+         * waits on its input queue every pass, so the server still gets the
+         * core; a request now waits for at most one screen pass instead. */
+        config.task_priority = 3;
         // Forty-five are registered below plus /ws; the spare ones exist
         // because running out is not a build error - httpd_register_uri_handler
         // fails at startup and takes the whole web server down with it.

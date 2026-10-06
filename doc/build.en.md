@@ -49,8 +49,21 @@ cannot reach a serial port.
    The browser asks for the port; writing takes about a minute, then the board
    restarts.
 4. **On a first install** write the **file system** too, with the second
-   button. Without it the radio has no web pages. Afterwards the board opens
-   the `jradio-XXXX` access point - see [First boot](usage.en.md#first-boot).
+   button. Without it the radio has no web pages.
+5. **Put the radio on Wi-Fi** - the "3. Wi-Fi" card, over the same cable.
+   Press "Connect to the radio" (straight after a write the page takes the
+   same port, otherwise it asks), wait for the answer - after a write the
+   board takes a few seconds to start - pick the network from the list or
+   type its name, enter the password (the eye on the right shows it) and
+   press "Connect to the network". The radio answers with a link to its web
+   interface. The password goes to the board only; the page keeps nothing.
+
+   The old way still works: skip this step and the radio opens the
+   `jradio-XXXX` access point - see [First boot](usage.en.md#first-boot).
+   Either of the board's two sockets will do; one cable is enough. For a
+   radio flashed earlier the step works from the version that brought it:
+   such a radio, already on a network, does not look for others (it would
+   break the sound), and the network's name is typed in.
 
 **Updating** is the first button alone: it writes the app and the wiring and
 leaves the Wi-Fi networks, the settings and the playlist alone. The second

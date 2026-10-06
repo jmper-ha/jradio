@@ -4,7 +4,13 @@
 
 ## First boot
 
-The device needs Wi-Fi. While it knows no network, it opens its own access
+The device needs Wi-Fi. The simplest is to give it the network while
+flashing, over the same cable: on the
+[flasher site](https://jmper-ha.github.io/jradio/) that is step "3. Wi-Fi",
+described in [Building and flashing](build.en.md#from-the-browser). A running
+radio can change networks the same way, plugged into a computer.
+
+Without a cable: while the device knows no network, it opens its own access
 point named `jradio-XXXX` (XXXX comes from the board's serial number):
 
 1. Join it from a phone or a computer.

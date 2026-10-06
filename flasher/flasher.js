@@ -15,6 +15,7 @@ import {ESPLoader} from 'https://cdn.jsdelivr.net/npm/tasmota-webserial-esptool@
 
 const hw = window.jradioHardware;
 const fl = window.jradioFlasher;
+const im = window.jradioImprov;
 const i18n = window.jradioI18n;
 const t = (key, values) => i18n.t(key, values);
 const $ = (id) => document.getElementById(id);
@@ -22,6 +23,12 @@ const $ = (id) => document.getElementById(id);
 let manifest = null;
 let wiring = null;       // {values, source: 'draft' | 'default'}
 let busy = false;
+/* The port a write has just gone through, so the Wi-Fi step straight after
+   it does not ask for one again. Used once: any other time the page asks,
+   because a port the browser merely remembers may not be the board in front
+   of the user - a cable moved to the other socket, a second board. */
+let flashedPort = null;
+let wifi = null; // the Wi-Fi step's open port: {port, reader, writer, packets}
 
 /* The wiring: the editor's draft on this site when there is one - the page
    tells which - and the README board otherwise. */
@@ -96,8 +103,17 @@ function render() {
     problems.append(item);
   }
   const serial = 'serial' in navigator;
-  $('fl-flash-firmware').disabled = busy || !serial || blocking.length > 0;
-  $('fl-flash-littlefs').disabled = busy || !serial || manifest === null || !$('fl-littlefs-agree').checked;
+  // Nothing is written while the Wi-Fi step holds the port.
+  const portFree = wifi === null;
+  $('fl-flash-firmware').disabled = busy || !serial || !portFree || blocking.length > 0;
+  $('fl-flash-littlefs').disabled = busy || !serial || !portFree || manifest === null ||
+    !$('fl-littlefs-agree').checked;
+  // One button both ways: a step left open would keep the port from idf.py.
+  const connectKey = portFree ? 'fl.wifi_connect' : 'fl.wifi_disconnect';
+  $('fl-wifi-connect').setAttribute('data-i18n', connectKey);
+  $('fl-wifi-connect').textContent = t(connectKey);
+  $('fl-wifi-connect').disabled = busy || !serial;
+  $('fl-wifi-send').disabled = busy || wifi === null;
 }
 
 const status = (text) => { $('fl-status').textContent = text; };
@@ -172,7 +188,9 @@ async function write(parts, eraseAll, done) {
     progress.value = 100;
     await loader.hardReset(false);
     connected = false;
+    flashedPort = port;
     status(done);
+    wifiStatus(t('fl.wifi_after_flash'));
   } catch (error) {
     const text = String(error && error.message ? error.message : error);
     line(`${t('fl.error')}: ${text}`);
@@ -221,6 +239,222 @@ function flashLittlefs() {
   write(fl.littlefsParts(manifest), false, t('fl.done_littlefs'));
 }
 
+/* Wi-Fi over the cable, by Improv: see improv_core.js and components/improv.
+   The port is opened at the 115200 the running firmware talks at, read in
+   the background into a list of packets, and closed again when the step is
+   done or fails - an open port is one nothing else on the machine can use. */
+
+/* A failure is red, the way the settings page marks one; progress is not. */
+function wifiStatus(text, failed) {
+  $('fl-wifi-status').textContent = text;
+  $('fl-wifi-status').classList.toggle('is-error', failed === true);
+}
+
+function wifiRevealLabel() {
+  const shown = $('fl-wifi-reveal').getAttribute('aria-pressed') === 'true';
+  const label = t(shown ? 'common.hide' : 'common.show');
+  $('fl-wifi-reveal').setAttribute('aria-label', label);
+  $('fl-wifi-reveal').title = label;
+}
+
+function wifiReveal(shown) {
+  $('fl-wifi-password').type = shown ? 'text' : 'password';
+  $('fl-wifi-reveal').setAttribute('aria-pressed', shown ? 'true' : 'false');
+  wifiRevealLabel();
+}
+
+async function wifiOpen() {
+  const port = flashedPort !== null ? flashedPort : await navigator.serial.requestPort();
+  flashedPort = null;
+  /* The control lines are left as the browser sets them: on the chip's own
+     USB a change of DTR and RTS is how the board is told to reset. */
+  await port.open({baudRate: 115200});
+  const session = {port, reader: port.readable.getReader(), writer: port.writable.getWriter(),
+                   packets: [], closed: false};
+  const parse = im.createReader();
+  (async () => {
+    try {
+      while (!session.closed) {
+        const {value, done} = await session.reader.read();
+        if (done) break;
+        if (value) session.packets.push(...parse(value));
+      }
+    } catch (error) {
+      // The port went away, or close() cancelled the read.
+    }
+  })();
+  return session;
+}
+
+async function wifiClose() {
+  if (wifi === null) return;
+  const session = wifi;
+  wifi = null;
+  session.closed = true;
+  try { await session.reader.cancel(); } catch (error) { /* already gone */ }
+  try { session.reader.releaseLock(); } catch (error) { /* already gone */ }
+  try { session.writer.releaseLock(); } catch (error) { /* already gone */ }
+  try { await session.port.close(); } catch (error) { /* already gone */ }
+}
+
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+/* The first packet that matches, waiting up to `ms`; null when none came. */
+async function wifiWait(match, ms) {
+  const until = Date.now() + ms;
+  while (wifi !== null && Date.now() < until) {
+    const index = wifi.packets.findIndex(match);
+    if (index >= 0) return wifi.packets.splice(index, 1)[0];
+    await sleep(50);
+  }
+  return null;
+}
+
+const isResult = (command) => (packet) =>
+  packet.type === im.TYPE.result && packet.data[0] === command;
+
+async function wifiAsk(packet, match, ms) {
+  await wifi.writer.write(packet);
+  return wifiWait(match, ms);
+}
+
+function wifiShowLink(url) {
+  $('fl-wifi-url').textContent = url;
+  $('fl-wifi-url').href = url;
+  $('fl-wifi-link').hidden = false;
+}
+
+async function wifiStart() {
+  if (busy || wifi !== null) return;
+  busy = true;
+  render();
+  $('fl-wifi-form').hidden = true;
+  $('fl-wifi-link').hidden = true;
+  try {
+    wifiStatus(t('fl.pick_port'));
+    wifi = await wifiOpen();
+    wifiStatus(t('fl.wifi_waiting'));
+    // A board just written is still starting: ask once a second for a while.
+    let info = null;
+    for (let attempt = 0; attempt < 20 && info === null; attempt += 1) {
+      info = await wifiAsk(im.rpc(im.COMMAND.info), isResult(im.COMMAND.info), 1000);
+    }
+    if (info === null) throw new Error(t('fl.wifi_silent'));
+    const about = im.resultStrings(info.data).strings;
+    $('fl-wifi-device').textContent = t('fl.wifi_device', {name: about[3] || '', version: about[1] || ''});
+    wifi.packets.length = 0;
+    const state = await wifiAsk(im.rpc(im.COMMAND.state),
+                                (packet) => packet.type === im.TYPE.state, 3000);
+    if (state !== null && state.data[0] === im.STATE.provisioned) {
+      const where = await wifiWait(isResult(im.COMMAND.state), 1000);
+      if (where !== null) wifiShowLink(im.resultStrings(where.data).strings[0] || '');
+    }
+    wifiStatus(t('fl.wifi_scanning'));
+    await wifi.writer.write(im.rpc(im.COMMAND.networks));
+    const found = [];
+    while (true) {
+      const packet = await wifiWait(isResult(im.COMMAND.networks), 15000);
+      if (packet === null) break;
+      const entry = im.network(im.resultStrings(packet.data));
+      if (entry === null) break;
+      found.push(entry);
+    }
+    const list = im.networkList(found);
+    const select = $('fl-wifi-list');
+    select.textContent = '';
+    for (const entry of list) {
+      const option = document.createElement('option');
+      option.value = entry.ssid;
+      option.textContent = `${entry.ssid} (${entry.rssi} dBm${entry.secure ? '' : ', ' + t('fl.wifi_open')})`;
+      select.append(option);
+    }
+    const other = document.createElement('option');
+    other.value = '';
+    other.textContent = t('fl.wifi_other');
+    select.append(other);
+    $('fl-wifi-list-row').hidden = list.length === 0;
+    $('fl-wifi-ssid-row').hidden = list.length > 0;
+    $('fl-wifi-form').hidden = false;
+    wifiStatus(list.length > 0 ? t('fl.wifi_pick') : t('fl.wifi_type'));
+  } catch (error) {
+    const text = String(error && error.message ? error.message : error);
+    if (/NotFoundError|No port selected/i.test(text)) wifiStatus(t('fl.no_port'), true);
+    else if (/lost|busy|not ready|NetworkError|Failed to open|already open/i.test(text)) wifiStatus(t('fl.port_busy'), true);
+    else wifiStatus(text, true);
+    await wifiClose();
+  } finally {
+    busy = false;
+    render();
+  }
+}
+
+async function wifiSend() {
+  if (wifi === null || busy) return;
+  const fromList = !$('fl-wifi-list-row').hidden && $('fl-wifi-list').value !== '';
+  const ssid = (fromList ? $('fl-wifi-list').value : $('fl-wifi-ssid').value).trim();
+  const passwordField = $('fl-wifi-password');
+  let packet;
+  try {
+    packet = im.wifiRequest(ssid, passwordField.value);
+  } catch (error) {
+    wifiStatus(t(error.message === 'ssid' ? 'fl.wifi_bad_ssid' : 'fl.wifi_bad_password'), true);
+    return;
+  }
+  // The password has done its job on this page, and goes back to dots.
+  passwordField.value = '';
+  wifiReveal(false);
+  busy = true;
+  render();
+  try {
+    wifi.packets.length = 0;
+    wifiStatus(t('fl.wifi_joining', {ssid}));
+    await wifi.writer.write(packet);
+    packet.fill(0);
+    const outcome = await wifiWait((p) => (p.type === im.TYPE.result && p.data[0] === im.COMMAND.wifi) ||
+                                          (p.type === im.TYPE.error && p.data[0] !== im.ERROR.none),
+                                   60000);
+    if (outcome === null) {
+      wifiStatus(t('fl.wifi_no_answer'), true);
+    } else if (outcome.type === im.TYPE.error) {
+      wifiStatus(t(outcome.data[0] === im.ERROR.unableToConnect ? 'fl.wifi_failed' : 'fl.wifi_refused'),
+                 true);
+    } else {
+      const url = im.resultStrings(outcome.data).strings[0] || '';
+      wifiShowLink(url);
+      $('fl-wifi-form').hidden = true;
+      wifiStatus(t('fl.wifi_done', {ssid}));
+      await wifiClose();
+    }
+  } catch (error) {
+    wifiStatus(String(error && error.message ? error.message : error), true);
+    await wifiClose();
+  } finally {
+    busy = false;
+    render();
+  }
+}
+
+$('fl-wifi-connect').addEventListener('click', () => {
+  if (wifi === null) {
+    wifiStart();
+    return;
+  }
+  wifiClose().then(() => {
+    $('fl-wifi-form').hidden = true;
+    wifiStatus('');
+    render();
+  });
+});
+$('fl-wifi-send').addEventListener('click', wifiSend);
+$('fl-wifi-reveal').addEventListener('click', () => {
+  wifiReveal($('fl-wifi-reveal').getAttribute('aria-pressed') !== 'true');
+});
+wifiRevealLabel();
+i18n.onChange(wifiRevealLabel);
+$('fl-wifi-list').addEventListener('change', () => {
+  $('fl-wifi-ssid-row').hidden = $('fl-wifi-list').value !== '';
+});
+window.addEventListener('pagehide', () => { wifiClose(); });
 $('fl-flash-firmware').addEventListener('click', flashFirmware);
 $('fl-flash-littlefs').addEventListener('click', flashLittlefs);
 $('fl-littlefs-agree').addEventListener('change', render);

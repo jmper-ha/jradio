@@ -14,6 +14,7 @@
 #include "board_input.h"
 #include "device_clock.h"
 #include "weather.h"
+#include "improv_serial.h"
 #include "device_settings.h"
 #include "internet_radio.h"
 #include "player_control.h"
@@ -217,6 +218,11 @@ void app_main(void)
         device_clock_init(settings_read ? boot_settings.ntp_server : NULL,
                           settings_read ? boot_settings.timezone : NULL);
     }
+    /* After the Wi-Fi, which it hands networks to, and after LittleFS is up,
+     * which it reads the device's name from. Not before the alarm check's
+     * early Wi-Fi either: a board that woke to ring and sleeps again has no
+     * one at the cable. */
+    start_optional("Improv", improv_serial_start());
     /* Same place and the same reason: it waits for the network on its own,
      * and it reads its service and its coordinates off the same card. */
     start_optional("weather", weather_init(settings_read ? &boot_settings : NULL));

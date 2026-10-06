@@ -2152,6 +2152,29 @@ a.secondary-button { text-decoration: none; color: inherit; }
 .fl-summary dt { color: var(--muted); }
 .fl-summary dd { margin: 0; }
 .fl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem 1.2rem; margin: .8rem 0 .4rem; }
+/* The flasher's Wi-Fi form: a label beside its field, stacked on a phone. */
+.fl-wifi-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .3rem 1rem;
+  margin: .5rem 0;
+}
+.fl-wifi-row > label { flex: 0 0 8rem; }
+.fl-wifi-row > input,
+.fl-wifi-row > select,
+.fl-wifi-row > .fl-wifi-secret { flex: 1 1 14rem; min-width: 0; max-width: 22rem; }
+.fl-reveal svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Struck through while the password is hidden, as the eye says it is. */
+.fl-reveal[aria-pressed="true"] .fl-reveal-strike { display: none; }
 .fl-warn {
   margin: .6rem 0;
   padding: .6rem .8rem;

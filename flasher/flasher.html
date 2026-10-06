@@ -108,6 +108,50 @@
       </div>
     </section>
 
+    <section class="card" aria-labelledby="fl-wifi-title">
+      <div class="card-head">
+        <h2 id="fl-wifi-title" data-i18n="fl.wifi">3. Wi-Fi</h2>
+      </div>
+      <div class="card-body">
+        <p data-i18n="fl.wifi_note">Подключите радио к домашней сети по тому же кабелю — без точки доступа и без телефона. Пароль уходит только на плату и нигде на этой странице не сохраняется. Подходит и для радио, прошитого раньше, если на нём версия с поддержкой этой функции.</p>
+        <div class="fl-actions">
+          <button class="secondary-button" id="fl-wifi-connect" type="button" data-i18n="fl.wifi_connect">Подключиться к радио</button>
+        </div>
+        <div id="fl-wifi-form" hidden>
+          <p class="field-note" id="fl-wifi-device"></p>
+          <div class="fl-wifi-row" id="fl-wifi-list-row" hidden>
+            <label for="fl-wifi-list" data-i18n="fl.wifi_network">Сеть</label>
+            <select id="fl-wifi-list"></select>
+          </div>
+          <div class="fl-wifi-row" id="fl-wifi-ssid-row">
+            <label for="fl-wifi-ssid" data-i18n="fl.wifi_ssid">Имя сети</label>
+            <input id="fl-wifi-ssid" type="text" maxlength="32" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="fl-wifi-row">
+            <label for="fl-wifi-password" data-i18n="fl.wifi_password">Пароль</label>
+            <div class="password-field fl-wifi-secret">
+              <input id="fl-wifi-password" type="password" maxlength="64" autocomplete="off" spellcheck="false">
+              <!-- The eye: open while the password shows, struck through while
+                   it is hidden. Its label is set from the dictionary. -->
+              <button id="fl-wifi-reveal" class="icon-button fl-reveal" type="button"
+                      aria-controls="fl-wifi-password" aria-pressed="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                  <path class="fl-reveal-strike" d="M4 4l16 16"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="fl-actions">
+            <button class="primary-button" id="fl-wifi-send" type="button" data-i18n="fl.wifi_send">Подключиться к сети</button>
+          </div>
+        </div>
+        <p id="fl-wifi-status" class="field-note" role="status" aria-live="polite"></p>
+        <p id="fl-wifi-link" hidden><a id="fl-wifi-url" href="#" target="_blank" rel="noopener"></a></p>
+      </div>
+    </section>
+
     <section class="card" aria-labelledby="fl-progress-title">
       <div class="card-head">
         <h2 id="fl-progress-title" data-i18n="fl.progress">Ход записи</h2>
@@ -124,6 +168,7 @@
   <noscript><p class="noscript-message">Для прошивальщика требуется JavaScript. / JavaScript is required for the flasher.</p></noscript>
   <script src="hardware_core.js"></script>
   <script src="flasher_core.js"></script>
+  <script src="improv_core.js"></script>
   <script type="module" src="flasher.js"></script>
 </body>
 </html>

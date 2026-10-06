@@ -67,6 +67,25 @@ static void test_the_curve_is_logarithmic_not_linear(void)
     assert(ratio_low > 230U && ratio_low < 270U);
 }
 
+static void test_the_bottom_reaches_sixty_db_and_every_step_counts(void)
+{
+    /* 1 is -60 dB - 33/32768 - rather than the -40 it used to be, and the
+     * low end is no longer flat: each of the first five steps moves the
+     * level by more than 1 dB, where 1..5 used to share about 2 dB. */
+    assert(audio_volume_gain(1U) == 33U);
+    assert(audio_volume_gain(10U) == 164U);
+    assert(audio_volume_gain(20U) == 519U);
+    // The top seventy percent is where it always was.
+    assert(audio_volume_gain(30U) == 1304U);
+    assert(audio_volume_gain(50U) == 3277U);
+    for (unsigned int percent = 1U; percent < 5U; ++percent) {
+        // > 1 dB is a ratio above 1.122.
+        const unsigned int ratio = (unsigned int)audio_volume_gain((uint8_t)(percent + 1U)) * 1000U /
+                                   audio_volume_gain((uint8_t)percent);
+        assert(ratio > 1122U);
+    }
+}
+
 static void test_scaling_halves_a_known_sample(void)
 {
     /* -6 dB is a gain of 16384: a sample of 20000 has to come back as 10000,
@@ -238,6 +257,7 @@ int main(void)
 {
     test_full_volume_is_bit_exact();
     test_zero_is_silence_not_the_bottom_of_the_curve();
+    test_the_bottom_reaches_sixty_db_and_every_step_counts();
     test_the_curve_rises_without_a_dip();
     test_the_curve_is_logarithmic_not_linear();
     test_scaling_halves_a_known_sample();

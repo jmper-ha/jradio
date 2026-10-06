@@ -2,9 +2,15 @@
 
 #include <stdbool.h>
 
-/* Breakpoints of the volume curve: setting and the multiplier it maps to,
- * every ten percent worth 4 dB. Interpolated linearly in amplitude between
- * neighbours, which is close enough for a control read in whole percent.
+/* Breakpoints of the volume curve: setting and the multiplier it maps to.
+ * From 100 down to 30 every ten percent is worth 4 dB; below that the curve
+ * steepens to reach -60 dB at 1. It used to stop at -40, with 10..1 sharing
+ * the last 4 dB: a user measured 60 mV at 1 against 5.2 V at 100 and heard
+ * nothing change between 1 and 5 - too loud for a sleeping room and too flat
+ * to adjust. The top seventy percent is as it was, so a level people are
+ * used to does not move. 15 and 5 are there because between breakpoints the
+ * gain is interpolated linearly in amplitude, and over the long span from 10
+ * to 1 that would have bunched the decibels at the bottom.
  * Integer-only: no libm on the device, no -lm in the host tests. */
 typedef struct {
     uint8_t percent;
@@ -20,9 +26,11 @@ static const audio_volume_point_t s_curve[] = {
     {50U, 3277U},   /* -20 dB */
     {40U, 2067U},   /* -24 dB */
     {30U, 1304U},   /* -28 dB */
-    {20U, 823U},    /* -32 dB */
-    {10U, 519U},    /* -36 dB */
-    {1U, 328U},     /* -40 dB */
+    {20U, 519U},    /* -36 dB */
+    {15U, 292U},    /* -41 dB */
+    {10U, 164U},    /* -46 dB */
+    {5U, 73U},      /* -53 dB */
+    {1U, 33U},      /* -60 dB */
 };
 
 uint16_t audio_volume_gain(uint8_t percent)

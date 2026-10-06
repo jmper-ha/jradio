@@ -124,3 +124,4 @@ The full list of limits is in [Diagnostics and limits](doc/diagnostics.en.md).
 | [Yandex Music](doc/yandex.en.md) | Linking the account, stations, likes |
 | [Media server (DLNA)](doc/dlna.en.md) | Finding the server, walking the library, resume |
 | [Diagnostics and limits](doc/diagnostics.en.md) | What the log says, how to read it, the limits |
+| [Changelog](doc/changelog.en.md) | What each version added and fixed |

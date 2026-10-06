@@ -51,6 +51,7 @@ board_input_action_t board_button_gesture_update(board_button_gesture_t *gesture
 #ifdef ESP_PLATFORM
 #include "board_config.h"
 #include "driver/gpio.h"
+#include "driver/pulse_cnt.h"
 #include "esp_log.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -84,6 +85,24 @@ static board_input_channel_t s_channels[] = {
 static int s_encoder_left = BOARD_GPIO_NOT_WIRED;
 static int s_encoder_right = BOARD_GPIO_NOT_WIRED;
 static board_encoder_decoder_t s_encoder_decoder;
+/* The encoder in hardware. Polling the two lines every 5 ms lost detents on a
+ * quick turn: four transitions a detent at forty detents a second is one every
+ * 6 ms, two of them fell between samples, and the software decoder threw the
+ * whole detent away on the jump. The pulse counter sees every edge whenever
+ * this task gets to run, and contact bounce on one line while the other holds
+ * counts up and down again in quadrature, so it cancels. NULL when the
+ * counter could not be set up; the software decoder then does the job as
+ * before. */
+static pcnt_unit_handle_t s_encoder_pcnt;
+static int s_encoder_count_seen;
+static int32_t s_encoder_pending;
+/* Far enough out that a count never reaches them between two reads; the unit
+ * accumulates across them anyway, so the count read is continuous. */
+#define ENCODER_PCNT_LIMIT 30000
+/* Spikes shorter than this are not edges. The counter's filter tops out a
+ * little under 13 us at the APB clock; contact bounce is longer and is dealt
+ * with by the quadrature counting above. */
+#define ENCODER_PCNT_GLITCH_NS 10000
 
 static void board_input_task(void *arg)
 {
@@ -91,9 +110,27 @@ static void board_input_task(void *arg)
     TickType_t last_wake = xTaskGetTickCount();
 
     while (true) {
+        if (s_encoder_pcnt != NULL) {
+            int count = s_encoder_count_seen;
+            if (pcnt_unit_get_count(s_encoder_pcnt, &count) == ESP_OK) {
+                int32_t detents = board_encoder_detents_take(&s_encoder_pending,
+                                                             (int32_t)(count - s_encoder_count_seen));
+                s_encoder_count_seen = count;
+                for (; detents != 0; detents += detents > 0 ? -1 : 1) {
+                    const board_input_action_t step = detents > 0
+                                                          ? BOARD_INPUT_ACTION_ENCODER_RIGHT
+                                                          : BOARD_INPUT_ACTION_ENCODER_LEFT;
+                    if (xQueueSend(s_event_queue, &step, 0) != pdTRUE) {
+                        ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)step);
+                    }
+                }
+            }
+        }
         const board_input_action_t encoder_action =
-            board_encoder_decoder_update(&s_encoder_decoder, gpio_get_level(s_encoder_left),
-                                         gpio_get_level(s_encoder_right));
+            s_encoder_pcnt != NULL
+                ? BOARD_INPUT_ACTION_NONE
+                : board_encoder_decoder_update(&s_encoder_decoder, gpio_get_level(s_encoder_left),
+                                               gpio_get_level(s_encoder_right));
         if (encoder_action != BOARD_INPUT_ACTION_NONE &&
             xQueueSend(s_event_queue, &encoder_action, 0) != pdTRUE) {
             ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)encoder_action);
@@ -217,6 +254,18 @@ void board_encoder_decoder_init(board_encoder_decoder_t *decoder, int left_level
     decoder->transition_sum = 0;
 }
 
+int32_t board_encoder_detents_take(int32_t *pending, int32_t counted)
+{
+    if (pending == NULL) return 0;
+    *pending += counted;
+    /* Toward zero, so a turn that stopped short of a detent leaves its partial
+     * count to be finished by the next movement - or undone by going back -
+     * rather than rounded into a step nobody made. */
+    const int32_t detents = *pending / 4;
+    *pending -= detents * 4;
+    return detents;
+}
+
 board_input_action_t board_encoder_decoder_update(board_encoder_decoder_t *decoder, int left_level,
                                                   int right_level)
 {
@@ -257,6 +306,52 @@ board_input_action_t board_encoder_decoder_update(board_encoder_decoder_t *decod
 static uint64_t board_input_pin_bit(int gpio_num)
 {
     return gpio_num == BOARD_GPIO_NOT_WIRED ? 0ULL : 1ULL << gpio_num;
+}
+
+/* Two channels for x4 quadrature, signed to match the software decoder's
+ * table: a rise on the right line while the left is low counts up, as does a
+ * fall on the right line while the left is high - with both lines idling high
+ * on their pull-ups, a detent to the right is +4. */
+static esp_err_t board_encoder_pcnt_start(int left, int right)
+{
+    const pcnt_unit_config_t unit_config = {
+        .low_limit = -ENCODER_PCNT_LIMIT,
+        .high_limit = ENCODER_PCNT_LIMIT,
+        .flags.accum_count = true,
+    };
+    pcnt_unit_handle_t unit = NULL;
+    esp_err_t err = pcnt_new_unit(&unit_config, &unit);
+    if (err != ESP_OK) return err;
+    const pcnt_glitch_filter_config_t filter = {.max_glitch_ns = ENCODER_PCNT_GLITCH_NS};
+    const pcnt_chan_config_t on_right = {.edge_gpio_num = right, .level_gpio_num = left};
+    const pcnt_chan_config_t on_left = {.edge_gpio_num = left, .level_gpio_num = right};
+    pcnt_channel_handle_t right_channel = NULL;
+    pcnt_channel_handle_t left_channel = NULL;
+    if ((err = pcnt_unit_set_glitch_filter(unit, &filter)) != ESP_OK ||
+        (err = pcnt_new_channel(unit, &on_right, &right_channel)) != ESP_OK ||
+        (err = pcnt_new_channel(unit, &on_left, &left_channel)) != ESP_OK ||
+        (err = pcnt_channel_set_edge_action(right_channel, PCNT_CHANNEL_EDGE_ACTION_DECREASE,
+                                            PCNT_CHANNEL_EDGE_ACTION_INCREASE)) != ESP_OK ||
+        (err = pcnt_channel_set_level_action(right_channel, PCNT_CHANNEL_LEVEL_ACTION_KEEP,
+                                             PCNT_CHANNEL_LEVEL_ACTION_INVERSE)) != ESP_OK ||
+        (err = pcnt_channel_set_edge_action(left_channel, PCNT_CHANNEL_EDGE_ACTION_INCREASE,
+                                            PCNT_CHANNEL_EDGE_ACTION_DECREASE)) != ESP_OK ||
+        (err = pcnt_channel_set_level_action(left_channel, PCNT_CHANNEL_LEVEL_ACTION_KEEP,
+                                             PCNT_CHANNEL_LEVEL_ACTION_INVERSE)) != ESP_OK ||
+        (err = pcnt_unit_add_watch_point(unit, ENCODER_PCNT_LIMIT)) != ESP_OK ||
+        (err = pcnt_unit_add_watch_point(unit, -ENCODER_PCNT_LIMIT)) != ESP_OK ||
+        (err = pcnt_unit_enable(unit)) != ESP_OK ||
+        (err = pcnt_unit_clear_count(unit)) != ESP_OK ||
+        (err = pcnt_unit_start(unit)) != ESP_OK) {
+        if (left_channel != NULL) (void)pcnt_del_channel(left_channel);
+        if (right_channel != NULL) (void)pcnt_del_channel(right_channel);
+        (void)pcnt_del_unit(unit);
+        return err;
+    }
+    s_encoder_pcnt = unit;
+    s_encoder_count_seen = 0;
+    s_encoder_pending = 0;
+    return ESP_OK;
 }
 
 esp_err_t board_input_init(void)
@@ -323,14 +418,21 @@ esp_err_t board_input_init(void)
     }
     board_encoder_decoder_init(&s_encoder_decoder, gpio_get_level(s_encoder_left),
                                gpio_get_level(s_encoder_right));
+    if (s_encoder_left >= 0 && s_encoder_right >= 0) {
+        const esp_err_t counted = board_encoder_pcnt_start(s_encoder_left, s_encoder_right);
+        if (counted != ESP_OK) {
+            ESP_LOGW(TAG, "encoder pulse counter unavailable (%s); polling the lines instead",
+                     esp_err_to_name(counted));
+        }
+    }
     if (xTaskCreate(board_input_task, "board_input", 3072, NULL, 5, NULL) != pdPASS) {
         vQueueDelete(s_event_queue);
         s_event_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "input task started; poll=%d ms debounce=%d ms", INPUT_POLL_MS,
-             INPUT_DEBOUNCE_MS);
+    ESP_LOGI(TAG, "input task started; poll=%d ms debounce=%d ms encoder=%s", INPUT_POLL_MS,
+             INPUT_DEBOUNCE_MS, s_encoder_pcnt != NULL ? "pcnt" : "polled");
     return ESP_OK;
 }
 

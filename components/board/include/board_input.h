@@ -117,6 +117,12 @@ bool board_input_debouncer_update(board_input_debouncer_t *debouncer, bool sampl
 void board_encoder_decoder_init(board_encoder_decoder_t *decoder, int left_level, int right_level);
 board_input_action_t board_encoder_decoder_update(board_encoder_decoder_t *decoder, int left_level,
                                                   int right_level);
+/* The hardware counter's side: `counted` is how far the quadrature count moved
+ * since the last call, four counts to a detent. Adds it to `pending` and
+ * answers how many whole detents that makes - positive to the right - leaving
+ * the remainder in `pending` for the next call, so a detent split across two
+ * reads is still one detent. */
+int32_t board_encoder_detents_take(int32_t *pending, int32_t counted);
 void board_button_gesture_init(board_button_gesture_t *gesture);
 /* One button's click-or-hold, told apart. `click` is reported on release and
  * only when the hold never fired, `hold` the moment the press passes the

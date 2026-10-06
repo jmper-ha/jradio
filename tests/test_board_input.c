@@ -60,6 +60,18 @@ int main(void)
     assert(board_encoder_decoder_update(&encoder, 1, 0) == BOARD_INPUT_ACTION_NONE);
     assert(board_encoder_decoder_update(&encoder, 1, 1) == BOARD_INPUT_ACTION_ENCODER_LEFT);
 
+    /* The hardware counter: four counts to a detent, the remainder carried,
+     * either way. */
+    int32_t pending = 0;
+    assert(board_encoder_detents_take(&pending, 3) == 0 && pending == 3);
+    assert(board_encoder_detents_take(&pending, 1) == 1 && pending == 0);
+    assert(board_encoder_detents_take(&pending, 13) == 3 && pending == 1);
+    // Back past where it started: the carried count is taken off first.
+    assert(board_encoder_detents_take(&pending, -9) == -2 && pending == 0);
+    assert(board_encoder_detents_take(&pending, -3) == 0 && pending == -3);
+    assert(board_encoder_detents_take(&pending, 3) == 0 && pending == 0);
+    assert(board_encoder_detents_take(NULL, 4) == 0);
+
     puts("board_input tests passed");
     return 0;
 }

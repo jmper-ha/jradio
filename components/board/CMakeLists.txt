@@ -11,5 +11,5 @@ idf_component_register(
     # device's wiring is declared. It is public here so the components that
     # REQUIRE board (ui, internet_radio, file_player) see it too.
     INCLUDE_DIRS "include" "${CMAKE_SOURCE_DIR}"
-    REQUIRES esp_partition esp_lcd esp_lcd_ili9341 esp_lcd_ili9488 esp_lcd_st7796 esp_driver_gpio esp_driver_i2s esp_driver_ledc esp_driver_rmt esp_timer
+    REQUIRES esp_partition esp_lcd esp_lcd_ili9341 esp_lcd_ili9488 esp_lcd_st7796 esp_driver_gpio esp_driver_i2s esp_driver_ledc esp_driver_pcnt esp_driver_rmt esp_timer
 )

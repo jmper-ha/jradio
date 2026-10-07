@@ -1,5 +1,15 @@
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+# Quad I/O, not ESP-IDF's default DIO. Three users' N16R8 boards would not
+# start at all on DIO 80 MHz: the bootloader read the image and checked it,
+# then the app, once the MSPI bus was set up beside the octal PSRAM, fetched
+# 0xffffffff out of flash where its code is and died - an IllegalInstruction
+# in early startup, or a hang until the RTC watchdog. PSRAM at 40 MHz did not
+# help; QOUT did, and QIO 80 MHz - what Arduino and yoRadio use on these
+# boards - did too. QIO is also the fastest way to read the flash: address
+# and data on four lines instead of two, which every cache miss for code,
+# fonts and tables now pays half of.
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y

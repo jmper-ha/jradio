@@ -98,9 +98,11 @@ the built-in USB-Serial-JTAG shares those pins, so the write goes through a
 USB-UART bridge - /dev/ttyUSB0 or /dev/ttyACM0 on Linux, COMn on Windows.
 
 Or piece by piece - the app alone keeps the device's data partition, which is
-what an update wants:
+what an update wants. The OTA data goes with it: a radio updated over the
+network runs from its second app slot, and without the OTA data reset it
+would go on starting the old firmware there, whatever was written here:
 
-    esptool.py --chip esp32s3 -p <port> -b 460800 write_flash 0x20000 jradio-${version}-app.bin
+    esptool.py --chip esp32s3 -p <port> -b 460800 write_flash 0xf000 jradio-${version}-ota-data.bin 0x20000 jradio-${version}-app.bin
 
     esptool.py --chip esp32s3 -p <port> -b 460800 write_flash ${fs_offset} jradio-${version}-littlefs.bin
 

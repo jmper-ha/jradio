@@ -106,11 +106,17 @@ The ready-made image is built for the README board: an ST7796S 480×320
 display and the pinout from [Hardware](hardware.en.md). If your display or pins
 differ, flash [from the browser](#from-the-browser).
 
-**Updating to a new version** without losing the settings - the app only:
+**Updating to a new version** without losing the settings - the app only,
+and the `ota-data` with it:
 
 ```bash
-esptool.py --chip esp32s3 -p /dev/ttyUSB0 -b 460800 write_flash 0x20000 jradio-v1.3.0-app.bin
+esptool.py --chip esp32s3 -p /dev/ttyUSB0 -b 460800 write_flash 0xf000 jradio-v1.6.0-ota-data.bin 0x20000 jradio-v1.6.0-app.bin
 ```
+
+`ota-data` tells the bootloader which of the two halves of the memory to
+start. A radio updated over the network runs from the second half, and
+without this file it would go on starting the old firmware there, as if the
+write had failed. The flasher and `idf.py flash` write it themselves.
 
 The data partition stays yours. If the release also changed the web interface,
 the device says so on its About screen - then also write

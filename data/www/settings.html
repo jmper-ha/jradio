@@ -56,6 +56,20 @@
     </div>
   </header>
 
+  <!-- A new release, said once per page by update.js from GET /api/ota; the
+       same block on the player and the settings page. -->
+  <section id="update-banner" class="update-banner" aria-live="polite" hidden>
+    <div class="update-banner-head">
+      <strong id="update-banner-title"></strong>
+      <div class="update-banner-actions">
+        <button id="update-banner-install" class="primary-button" type="button" data-i18n="update.install">Обновить</button>
+        <button id="update-banner-skip" class="secondary-button" type="button" data-i18n="update.skip">Пропустить</button>
+      </div>
+    </div>
+    <ul id="update-banner-notes" class="update-banner-notes"></ul>
+    <p id="update-banner-status" class="settings-status update-status"></p>
+  </section>
+
   <main class="page-shell">
     <div class="page-heading">
       <h1 data-i18n="nav.settings">Настройки</h1>
@@ -522,7 +536,19 @@
           <div class="card-body" id="update-body" hidden>
             <dl class="about-list">
               <dt data-i18n="update.current">Сейчас</dt><dd id="update-current">—</dd>
+              <dt data-i18n="update.latest">Последняя</dt><dd id="update-latest">—</dd>
             </dl>
+
+            <div class="device-row">
+              <label for="update-auto" data-i18n="update.auto">Проверять обновления</label>
+              <input id="update-auto" type="checkbox">
+            </div>
+            <div class="settings-actions">
+              <button id="update-check" class="secondary-button" type="button" data-i18n="update.check">Проверить сейчас</button>
+            </div>
+            <p class="field-note" data-i18n="note.update_check">Радио раз в день спрашивает у GitHub, вышла ли новая версия, и ничего не сообщает о себе. О новой версии скажет плашка вверху страницы.</p>
+
+            <h3 class="update-subtitle" data-i18n="update.by_hand">Обновить из файла</h3>
 
             <div class="settings-actions">
               <label class="secondary-button file-button" for="update-file">

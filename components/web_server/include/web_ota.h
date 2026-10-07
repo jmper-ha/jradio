@@ -16,5 +16,6 @@
 esp_err_t web_ota_get(httpd_req_t *request);
 esp_err_t web_ota_app_post(httpd_req_t *request);
 esp_err_t web_ota_www_post(httpd_req_t *request);
+esp_err_t web_ota_action_post(httpd_req_t *request);
 
 #endif

@@ -15,6 +15,7 @@ class ClassList {
   toggle(name, force) {
     if (force) this.values.add(name); else this.values.delete(name);
   }
+  add(name) { this.values.add(name); }
   has(name) { return this.values.has(name); }
 }
 
@@ -27,17 +28,27 @@ class Element {
     this.hidden = false;
     this.value = 0;
     this.files = [];
+    this.children = [];
+    this.checked = false;
   }
+  replaceChildren(...items) { this.children = items; }
   addEventListener(type, callback) { (this.listeners[type] ||= []).push(callback); }
   emit(type) { for (const callback of this.listeners[type] || []) callback({}); }
 }
 
-function load(otaAnswers) {
+const CARD = ['update-status', 'update-current', 'update-latest', 'update-auto', 'update-check',
+              'update-file', 'update-send', 'update-progress'];
+const BANNER = ['update-banner', 'update-banner-title', 'update-banner-notes',
+                'update-banner-status', 'update-banner-install', 'update-banner-skip'];
+
+/* `page` is which of the two pages: the settings page has the card and the
+   notice, the player only the notice. */
+function load(otaAnswers, page = 'settings') {
   const elements = {};
-  for (const id of ['update-status', 'update-current', 'update-file', 'update-send',
-                    'update-progress']) {
+  for (const id of page === 'settings' ? CARD.concat(BANNER) : BANNER) {
     elements[`#${id}`] = new Element();
   }
+  if (!elements['#update-file']) elements['#update-file'] = new Element();
   /* A file input forgets its files when its value is cleared. */
   Object.defineProperty(elements['#update-file'], 'value', {
     set(next) { if (next === '') this.files = []; },
@@ -45,7 +56,8 @@ function load(otaAnswers) {
   });
   const timers = [];
   const requests = [];
-  const state = {ota: otaAnswers.slice(), about: [], fetched: []};
+  const state = {ota: otaAnswers.slice(), about: [], fetched: [], actions: [],
+                 actionReply: {}};
 
   class FakeRequest {
     constructor() {
@@ -82,13 +94,26 @@ function load(otaAnswers) {
     Date,
     Math,
     JSON,
-    document: {querySelector: (selector) => elements[selector]},
+    document: {
+      querySelector: (selector) => (selector === '#update-file' && page !== 'settings'
+        ? null : elements[selector] || null),
+      createElement: () => new Element(),
+    },
     window: {
       setTimeout(callback, delay) { timers.push({callback, delay}); return timers.length; },
       fetch(url) {
         state.fetched.push(url);
         if (url === '/api/ota') return answer(state.ota);
         if (url === '/api/about') return answer(state.about);
+        if (url.startsWith('/api/ota/action?')) {
+          const name = url.slice('/api/ota/action?'.length);
+          state.actions.push(name);
+          const refusal = state.actionReply[name.split('&')[0]];
+          if (refusal) {
+            return Promise.resolve({ok: false, json: () => Promise.resolve({error: refusal})});
+          }
+          return Promise.resolve({ok: true, json: () => Promise.resolve({ok: true})});
+        }
         return Promise.reject(new Error('unexpected ' + url));
       },
       XMLHttpRequest: FakeRequest,
@@ -108,8 +133,12 @@ function load(otaAnswers) {
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
+const quiet = {enabled: true, state: 'done', error: '', installing: false, latest: 'v1.5.5',
+               available: false, skipped: '', checked_at: 0, notes_ru: '', notes_en: ''};
 const idle = {state: 'idle', done: 0, total: 0, version: '', error: '', running: 'v1.5.5',
-              slot: 'factory'};
+              slot: 'factory', check: quiet};
+const offering = {...quiet, latest: 'v1.6.0', available: true,
+                  notes_ru: 'Новое:\n- Обновление по сети.\n- Темы.', notes_en: 'New:\n- Updates.'};
 
 async function test_a_good_upload_waits_for_the_press_and_sees_the_new_version() {
   const page = load([idle]);
@@ -272,6 +301,131 @@ async function test_a_page_opened_during_the_question_joins_it() {
   assert.strictEqual(elements['#update-send'].disabled, true);
 }
 
+async function test_the_notice_shows_a_new_release_on_the_player_too() {
+  const page = load([{...idle, check: offering}], 'player');
+  await settle();
+  const {elements} = page;
+  assert.strictEqual(elements['#update-banner'].hidden, false);
+  assert.strictEqual(elements['#update-banner-title'].textContent, 'Вышла новая версия v1.6.0');
+  const notes = elements['#update-banner-notes'].children;
+  assert.deepStrictEqual(notes.map((item) => item.textContent),
+                         ['Новое:', 'Обновление по сети.', 'Темы.']);
+  assert.strictEqual(notes[0].classList.has('is-heading'), true);
+  assert.strictEqual(notes[1].classList.has('is-heading'), false);
+
+  // Nothing new: no notice.
+  const quietPage = load([idle], 'player');
+  await settle();
+  assert.strictEqual(quietPage.elements['#update-banner'].hidden, true);
+}
+
+async function test_update_downloads_installs_and_comes_back_new() {
+  const page = load([{...idle, check: offering}], 'player');
+  await settle();
+  const {elements, state} = page;
+  elements['#update-banner-install'].emit('click');
+  await settle();
+  assert.deepStrictEqual(state.actions, ['do=install']);
+  assert.strictEqual(elements['#update-banner-install'].disabled, true);
+  state.ota.push({...idle, state: 'receiving', done: 300000, total: 600000,
+                  check: {...offering, installing: true}},
+                 {...idle, state: 'restarting', check: {...offering, installing: true}});
+  await page.runTimers();
+  assert.strictEqual(elements['#update-banner-status'].textContent, 'Загрузка с GitHub… 50%');
+  await page.runTimers();
+  assert.strictEqual(elements['#update-banner-status'].textContent, 'Перезагрузка…');
+  state.about.push({firmware: {version: 'v1.6.0'}});
+  // What the radio says once it is back: the new version, nothing to offer.
+  state.ota.push({...idle, running: 'v1.6.0', slot: 'ota_0', check: {...quiet, latest: ''}});
+  await page.runTimers();
+  assert.strictEqual(elements['#update-banner-status'].textContent, 'Установлена v1.6.0');
+  await settle();
+  // The notice goes, its last word stays readable until then.
+  assert.strictEqual(elements['#update-banner'].hidden, true);
+}
+
+async function test_the_card_follows_an_update_made_from_the_notice() {
+  const page = load([{...idle, check: offering}]);
+  await settle();
+  const {elements, state} = page;
+  assert.strictEqual(elements['#update-current'].textContent, 'v1.5.5');
+  elements['#update-banner-install'].emit('click');
+  await settle();
+  state.ota.push({...idle, state: 'restarting', check: {...offering, installing: true}});
+  await page.runTimers();
+  state.about.push({firmware: {version: 'v1.6.0'}});
+  state.ota.push({...idle, running: 'v1.6.0', slot: 'ota_0', check: {...quiet, latest: ''}});
+  await page.runTimers();
+  await settle();
+  assert.strictEqual(elements['#update-current'].textContent, 'v1.6.0');
+  assert.strictEqual(elements['#update-latest'].textContent, '—');
+}
+
+async function test_a_failed_download_says_why_and_offers_again() {
+  const page = load([{...idle, check: offering}], 'player');
+  await settle();
+  const {elements, state} = page;
+  elements['#update-banner-install'].emit('click');
+  await settle();
+  state.ota.push({...idle, state: 'failed',
+                  check: {...offering, state: 'failed', error: 'checksum', installing: false}});
+  await page.runTimers();
+  assert.strictEqual(elements['#update-banner-status'].textContent,
+                     'Файл скачался с ошибкой — попробуйте ещё раз');
+  assert.strictEqual(elements['#update-banner-install'].disabled, false);
+  assert.strictEqual(elements['#update-banner'].hidden, false);
+}
+
+async function test_skip_hides_the_notice() {
+  const page = load([{...idle, check: offering}]);
+  await settle();
+  const {elements, state} = page;
+  elements['#update-banner-skip'].emit('click');
+  await settle();
+  assert.deepStrictEqual(state.actions, ['do=skip']);
+  assert.strictEqual(elements['#update-banner'].hidden, true);
+}
+
+async function test_check_now_and_the_switch() {
+  const page = load([idle]);
+  await settle();
+  const {elements, state} = page;
+  assert.strictEqual(elements['#update-auto'].checked, true);
+  assert.strictEqual(elements['#update-latest'].textContent, 'v1.5.5');
+
+  elements['#update-check'].emit('click');
+  await settle();
+  assert.deepStrictEqual(state.actions, ['do=check']);
+  assert.strictEqual(elements['#update-check'].disabled, true);
+  state.ota.push({...idle, check: {...quiet, state: 'checking'}},
+                 {...idle, check: {...offering, checked_at: 1791300000}});
+  await page.runTimers();
+  assert.strictEqual(elements['#update-status'].textContent, 'Проверка…');
+  await page.runTimers();
+  assert.strictEqual(elements['#update-status'].textContent, 'Вышла новая версия v1.6.0');
+  assert.strictEqual(elements['#update-banner'].hidden, false);
+  assert.match(elements['#update-latest'].textContent, /^v1\.6\.0 · /);
+  assert.strictEqual(elements['#update-check'].disabled, false);
+
+  // Up to date is said as such.
+  elements['#update-check'].emit('click');
+  await settle();
+  state.ota.push(idle);
+  await page.runTimers();
+  assert.strictEqual(elements['#update-status'].textContent, 'Установлена последняя версия');
+
+  // The switch, and a refusal puts it back.
+  elements['#update-auto'].checked = false;
+  elements['#update-auto'].emit('change');
+  await settle();
+  assert.strictEqual(state.actions.at(-1), 'do=auto&on=0');
+  state.actionReply['do=auto'] = 'write';
+  elements['#update-auto'].checked = true;
+  elements['#update-auto'].emit('change');
+  await settle();
+  assert.strictEqual(elements['#update-auto'].checked, false);
+}
+
 (async () => {
   await test_a_good_upload_waits_for_the_press_and_sees_the_new_version();
   await test_the_web_files_go_first_and_say_a_firmware_follows();
@@ -280,6 +434,12 @@ async function test_a_page_opened_during_the_question_joins_it() {
   await test_a_refused_file_is_said_by_its_code();
   await test_a_no_on_the_panel_reaches_the_page();
   await test_a_page_opened_during_the_question_joins_it();
+  await test_the_notice_shows_a_new_release_on_the_player_too();
+  await test_update_downloads_installs_and_comes_back_new();
+  await test_the_card_follows_an_update_made_from_the_notice();
+  await test_a_failed_download_says_why_and_offers_again();
+  await test_skip_hides_the_notice();
+  await test_check_now_and_the_switch();
   console.log('web update tests passed');
 })().catch((error) => {
   console.error(error);

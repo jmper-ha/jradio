@@ -15,6 +15,7 @@
 #include "device_clock.h"
 #include "weather.h"
 #include "improv_serial.h"
+#include "ota_check.h"
 #include "ota_update.h"
 #include "device_settings.h"
 #include "internet_radio.h"
@@ -229,6 +230,9 @@ void app_main(void)
      * early Wi-Fi either: a board that woke to ring and sleeps again has no
      * one at the cable. */
     start_optional("Improv", improv_serial_start());
+    /* Only a timer until five minutes from now: the first look at the
+     * release waits for the boot, the stream and the screen to settle. */
+    start_optional("update check", ota_check_start());
     /* Same place and the same reason: it waits for the network on its own,
      * and it reads its service and its coordinates off the same card. */
     start_optional("weather", weather_init(settings_read ? &boot_settings : NULL));

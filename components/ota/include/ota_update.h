@@ -51,8 +51,9 @@ void ota_update_get_status(ota_status_t *status);
 esp_err_t ota_update_begin(const uint8_t *head, size_t head_length, size_t total,
                            ota_image_result_t *why);
 esp_err_t ota_update_write(const void *data, size_t length);
-/* Verifies what was written and waits for the press. */
-esp_err_t ota_update_finish(void);
+/* Verifies what was written; with `ask`, the panel then asks for the press.
+ * Without, ota_update_install() is the caller's next step. */
+esp_err_t ota_update_finish(bool ask);
 /* The upload broke off: whatever was written is left for the next one. */
 void ota_update_abort(const char *error);
 
@@ -73,6 +74,9 @@ void ota_update_boot_cleanup(void);
  * so the page has time to read that it is restarting. */
 esp_err_t ota_update_confirm(void);
 void ota_update_cancel(void);
+/* The update from the release, which nobody is asked about: the user chose it
+ * on the page, and it can only ever be the official build. */
+esp_err_t ota_update_install(void);
 
 /* "factory" or "ota_0": which slot this firmware runs from, for the page. */
 const char *ota_update_running_slot(void);

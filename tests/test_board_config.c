@@ -230,6 +230,15 @@ static void test_the_partition_blob(void)
     assert(board_config_blob_write(long_text, sizeof(long_text), blob, sizeof(blob)) == 0U);
 }
 
+/* The names the release files are called by: a radio asks for the firmware
+ * of its own display under this name, so it has to be board.csv's. */
+static void test_a_display_is_named_as_the_release_names_it(void)
+{
+    assert(strcmp(board_config_display_name(DISPLAY_ILI9341_320_240), "ili9341_320_240") == 0);
+    assert(strcmp(board_config_display_name(DISPLAY_ST7789_320_170), "st7789_320_170") == 0);
+    assert(board_config_display_name(0xFFU) == NULL);
+}
+
 int main(void)
 {
     test_the_cases_shared_with_the_editor();
@@ -239,6 +248,7 @@ int main(void)
     test_a_short_buffer_is_cut_and_says_how_much_it_needed();
     test_the_crc_is_zlibs();
     test_the_partition_blob();
+    test_a_display_is_named_as_the_release_names_it();
     puts("board_config tests passed");
     return 0;
 }

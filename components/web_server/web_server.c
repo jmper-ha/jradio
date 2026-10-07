@@ -2376,7 +2376,7 @@ esp_err_t web_server_start(void)
          * waits on its input queue every pass, so the server still gets the
          * core; a request now waits for at most one screen pass instead. */
         config.task_priority = 3;
-        // Forty-nine are registered below plus /ws; the spare ones exist
+        // Fifty are registered below plus /ws; the spare ones exist
         // because running out is not a build error - httpd_register_uri_handler
         // fails at startup and takes the whole web server down with it.
         config.max_uri_handlers = 56;
@@ -2435,6 +2435,7 @@ esp_err_t web_server_start(void)
             {.uri = "/api/ota", .method = HTTP_GET, .handler = web_ota_get},
             {.uri = "/api/ota/app", .method = HTTP_POST, .handler = web_ota_app_post},
             {.uri = "/api/ota/www", .method = HTTP_POST, .handler = web_ota_www_post},
+            {.uri = "/api/ota/action", .method = HTTP_POST, .handler = web_ota_action_post},
         };
         for (size_t index = 0; index < sizeof(handlers) / sizeof(handlers[0]); ++index) {
             const esp_err_t err = httpd_register_uri_handler(s_server, &handlers[index]);

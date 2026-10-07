@@ -270,6 +270,7 @@ run_test improv_proto tests/test_improv_proto.c components/improv/improv_proto.c
 run_test ota_image tests/test_ota_image.c components/ota/ota_image.c
 run_test ota_tar tests/test_ota_tar.c components/ota/ota_tar.c
 run_test ota_www tests/test_ota_www.c components/ota/ota_www.c components/ota/ota_tar.c
+run_test ota_offer -I"${cjson_include}" tests/test_ota_offer.c components/ota/ota_offer.c "${cjson_source}"
 run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c
 run_test ui_vu_meter tests/test_ui_vu_meter.c components/ui/ui_vu_meter.c
 run_test ui_files_notice tests/test_ui_files_notice.c components/ui/ui_files_notice.c components/settings/device_text.c

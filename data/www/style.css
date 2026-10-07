@@ -2186,6 +2186,32 @@ a.secondary-button { text-decoration: none; color: inherit; }
 .update-progress { width: 100%; margin-top: 0.75rem; }
 .update-status { margin: 0.75rem 0 0; font-size: .9rem; text-align: left; }
 .update-status:empty { display: none; }
+.update-subtitle { margin: 1.1rem 0 .4rem; font-size: .9rem; color: var(--muted); }
+.update-banner {
+  margin: .8rem auto 0;
+  width: min(1100px, calc(100% - 2rem));
+  box-sizing: border-box;
+  padding: .75rem .9rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.update-banner[hidden] { display: none; }
+.update-banner-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+}
+.update-banner-actions { display: flex; gap: .5rem; }
+.update-banner-notes {
+  margin: .5rem 0 0;
+  padding-left: 1.2rem;
+  font-size: .85rem;
+  color: var(--muted);
+}
+.update-banner-notes .is-heading { list-style: none; margin-left: -1.2rem; color: var(--text); }
 .hw-problem.is-error { color: var(--bad); }
 .hw-problem.is-warning { color: var(--accent-2); }
 .hw-problem.is-ok { color: var(--ok); }

@@ -178,6 +178,10 @@ void board_config_parse_csv(const char *text, size_t length, board_config_t *con
  * make a board unusable; warnings are notes. */
 void board_config_validate(const board_config_t *config, board_config_report_t *report);
 
+/* A DISPLAY_* id as board.csv, the editor and the release files name it:
+ * "ili9341_320_240". NULL for an id there is no firmware for. */
+const char *board_config_display_name(unsigned display);
+
 /* The code as the editor names it: "pin_conflict", "bus_unwired". */
 const char *board_config_issue_name(board_issue_code_t code);
 

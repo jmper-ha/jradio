@@ -204,7 +204,7 @@ esp_err_t ota_update_write(const void *data, size_t length)
     return err;
 }
 
-esp_err_t ota_update_finish(void)
+esp_err_t ota_update_finish(bool ask)
 {
     if (!s_writing) return ESP_ERR_INVALID_STATE;
     s_writing = false;
@@ -220,10 +220,10 @@ esp_err_t ota_update_finish(void)
         set_state(OTA_STATE_FAILED, "verify");
         return err;
     }
-    ESP_LOGI(TAG, "image verified in %s%s; waiting for the encoder", s_target->label,
-             s_www_ready ? " with its web files" : "");
+    ESP_LOGI(TAG, "image verified in %s%s%s", s_target->label,
+             s_www_ready ? " with its web files" : "", ask ? "; waiting for the encoder" : "");
     s_app_ready = true;
-    set_state(OTA_STATE_CONFIRM, NULL);
+    if (ask) set_state(OTA_STATE_CONFIRM, NULL);
     return ESP_OK;
 }
 
@@ -311,13 +311,10 @@ static void restart_now(void *arg)
     esp_restart();
 }
 
-esp_err_t ota_update_confirm(void)
+/* Both ways in end here: the pages swapped, the boot slot switched, the
+ * restart a moment later. */
+static esp_err_t install_staged(const char *version)
 {
-    ota_status_t now;
-    ota_update_get_status(&now);
-    if (now.state != OTA_STATE_CONFIRM || (!s_app_ready && !s_www_ready)) {
-        return ESP_ERR_INVALID_STATE;
-    }
     /* The pages first: if they cannot be swapped the old ones are put back,
      * and the firmware is not switched either - a new app over old pages is
      * the mismatch this was meant to end. */
@@ -336,9 +333,9 @@ esp_err_t ota_update_confirm(void)
             set_state(OTA_STATE_FAILED, "flash");
             return err;
         }
-        ESP_LOGW(TAG, "booting %s from %s next; restarting", now.version, s_target->label);
+        ESP_LOGW(TAG, "booting %s from %s next; restarting", version, s_target->label);
     } else {
-        ESP_LOGW(TAG, "web files for %s installed; restarting", now.version);
+        ESP_LOGW(TAG, "web files for %s installed; restarting", version);
     }
     set_state(OTA_STATE_RESTARTING, NULL);
     if (s_restart_timer == NULL) {
@@ -347,6 +344,24 @@ esp_err_t ota_update_confirm(void)
     }
     if (esp_timer_start_once(s_restart_timer, OTA_RESTART_DELAY_US) != ESP_OK) esp_restart();
     return ESP_OK;
+}
+
+esp_err_t ota_update_confirm(void)
+{
+    ota_status_t now;
+    ota_update_get_status(&now);
+    if (now.state != OTA_STATE_CONFIRM || (!s_app_ready && !s_www_ready)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return install_staged(now.version);
+}
+
+esp_err_t ota_update_install(void)
+{
+    ota_status_t now;
+    ota_update_get_status(&now);
+    if (now.state == OTA_STATE_RESTARTING || !s_app_ready) return ESP_ERR_INVALID_STATE;
+    return install_staged(now.version);
 }
 
 void ota_update_cancel(void)

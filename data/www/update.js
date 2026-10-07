@@ -1,27 +1,27 @@
 (() => {
   'use strict';
 
-  /* The firmware update from a file. The page only carries the file and reads
-     the answers: whether the file is a firmware for this radio is decided on
-     the device (components/ota/ota_image.c), and whether it is installed is
-     decided by whoever presses the encoder. */
+  /* Firmware updates, on two pages. The notice of a new release sits at the
+     top of the player and the settings page; the settings page also has the
+     card - the release check, and the update from a file.
+
+     The page only carries files and reads answers. Whether a file is a
+     firmware for this radio is decided on the device (components/ota), a
+     file from the browser is installed only after the encoder is pressed,
+     and the release is checked by the radio itself (ota_check.c). */
 
   const t = (key, values) => window.jradioI18n.t(key, values);
+  const $ = (selector) => document.querySelector(selector);
 
-  const statusLine = document.querySelector('#update-status');
-  const current = document.querySelector('#update-current');
-  const fileInput = document.querySelector('#update-file');
-  const sendButton = document.querySelector('#update-send');
-  const progress = document.querySelector('#update-progress');
-
-  /* While the device waits for the press, and then while it restarts. The
-     restart takes a few seconds and the page sees only failed requests until
-     the device is back. */
+  /* While the device works or waits for the press, and then while it
+     restarts: a few seconds in which every request fails. */
   const POLL_MS = 1000;
   const RETURN_POLL_MS = 2000;
   /* A restart that has not answered in this long has gone wrong in a way the
      page cannot see - the panel is the place to look. */
   const RETURN_GIVE_UP_MS = 90000;
+  /* A check is one small download; longer than this and it is not coming. */
+  const CHECK_GIVE_UP_MS = 45000;
 
   const errorText = Object.freeze({
     short: 'update.err_not_firmware',
@@ -47,14 +47,238 @@
     write: 'update.err_write',
     memory: 'update.err_memory',
   });
+  /* What the radio says when it fetched from the release itself. */
+  const releaseErrorText = Object.freeze({
+    network: 'update.err_network',
+    download: 'update.err_network',
+    malformed: 'update.err_release',
+    missing: 'update.err_release',
+    format: 'update.err_format',
+    no_display: 'update.err_no_display',
+    checksum: 'update.err_checksum',
+    verify: 'update.err_verify',
+    flash: 'update.err_flash',
+    write: 'update.err_write',
+    memory: 'update.err_memory',
+    busy: 'update.err_busy',
+  });
+
+  function errorFor(code, table = errorText) {
+    const key = table[code];
+    return key ? t(key) : t('update.err_refused');
+  }
+
+  function setLine(line, text, kind) {
+    if (!line) return;
+    line.textContent = text;
+    line.classList.toggle('is-error', kind === 'error');
+    line.classList.toggle('is-success', kind === 'success');
+  }
+
+  function getJson(url) {
+    return window.fetch(url, {cache: 'no-store'}).then((response) => {
+      if (!response || !response.ok) throw new Error('no answer');
+      return response.json();
+    });
+  }
+
+  /* The release buttons: one handler on the device, the action in the
+     query. Resolves with the refusal's code, or '' when it went through. */
+  function action(name, on) {
+    const query = on === undefined ? `do=${name}` : `do=${name}&on=${on ? 1 : 0}`;
+    return window.fetch(`/api/ota/action?${query}`, {method: 'POST'})
+      .then((response) => {
+        if (response && response.ok) return '';
+        return response.json().then((payload) => payload.error || 'refused', () => 'refused');
+      })
+      .catch(() => 'network');
+  }
+
+  /* After the press, or the install from the release: the device answers
+     "restarting", then nothing, then the new firmware's About. Matching the
+     version is what tells an installed update from a device that came back
+     with the old one. */
+  function waitForReturn(expected, say, done) {
+    const startedAt = Date.now();
+    const poll = () => {
+      window.setTimeout(() => {
+        getJson('/api/about')
+          .then((about) => {
+            const running = about && about.firmware ? about.firmware.version : '';
+            if (running === expected) {
+              say(t('update.installed', {version: running}), 'success');
+            } else {
+              say(t('update.came_back_old', {version: running}), 'error');
+            }
+            done(running);
+          })
+          .catch(() => {
+            if (Date.now() - startedAt > RETURN_GIVE_UP_MS) {
+              say(t('update.no_return'), 'error');
+              done('');
+              return;
+            }
+            poll();
+          });
+      }, RETURN_POLL_MS);
+    };
+    poll();
+  }
+
+  let last = null;
+
+  /* The notice. */
+  const banner = $('#update-banner');
+  const bannerTitle = $('#update-banner-title');
+  const bannerNotes = $('#update-banner-notes');
+  const bannerStatus = $('#update-banner-status');
+  const bannerInstall = $('#update-banner-install');
+  const bannerSkip = $('#update-banner-skip');
+  let installing = false;
+
+  /* "New:" and "- an item" lines, as tools/ota_manifest.py hands them over:
+     the items become list items, the rest headings among them. */
+  function renderNotes(text) {
+    if (!bannerNotes) return;
+    const items = String(text || '').split('\n').filter((line) => line.trim() !== '')
+      .map((line) => {
+        const item = document.createElement('li');
+        if (line.startsWith('- ')) {
+          item.textContent = line.slice(2);
+        } else {
+          item.textContent = line;
+          item.classList.add('is-heading');
+        }
+        return item;
+      });
+    bannerNotes.replaceChildren(...items);
+  }
+
+  function renderBanner(status) {
+    if (!banner || !status) return;
+    const check = status.check || {};
+    banner.hidden = !(check.available || installing);
+    if (banner.hidden) return;
+    bannerTitle.textContent = t('update.available', {version: check.latest});
+    const english = window.jradioI18n.language && window.jradioI18n.language() === 'en';
+    renderNotes(english ? check.notes_en : check.notes_ru);
+    bannerInstall.disabled = installing;
+    bannerSkip.disabled = installing;
+  }
+
+  /* After a restart everything on the page describes the firmware before
+     it: asked again, so the card says what runs now - it went on showing the
+     old version beside the new one when only the notice was redrawn. */
+  function refresh() {
+    getJson('/api/ota')
+      .then((status) => {
+        last = status;
+        renderBanner(status);
+        renderCard(status);
+      })
+      .catch(() => {});
+  }
+
+  function installDone() {
+    installing = false;
+    if (bannerInstall) bannerInstall.disabled = false;
+    if (bannerSkip) bannerSkip.disabled = false;
+    refresh();
+  }
+
+  function watchInstall(version) {
+    const sayBanner = (text, kind) => setLine(bannerStatus, text, kind);
+    window.setTimeout(() => {
+      getJson('/api/ota')
+        .then((status) => {
+          const check = status.check || {};
+          if (status.state === 'restarting') {
+            sayBanner(t('update.restarting'));
+            waitForReturn(version, sayBanner, installDone);
+            return;
+          }
+          if (!check.installing) {
+            installDone();
+            sayBanner(errorFor(check.error || status.error, releaseErrorText), 'error');
+            renderBanner(status);
+            return;
+          }
+          if (status.state === 'receiving' && status.total > 0) {
+            const percent = Math.floor(status.done * 100 / status.total);
+            sayBanner(t('update.downloading', {percent}));
+          }
+          watchInstall(version);
+        })
+        /* The device can drop off between two polls only by restarting. */
+        .catch(() => {
+          sayBanner(t('update.restarting'));
+          waitForReturn(version, sayBanner, installDone);
+        });
+    }, POLL_MS);
+  }
+
+  /* The card on the settings page. */
+  const statusLine = $('#update-status');
+  const current = $('#update-current');
+  const latestLine = $('#update-latest');
+  const autoCheck = $('#update-auto');
+  const checkButton = $('#update-check');
+  const fileInput = $('#update-file');
+  const sendButton = $('#update-send');
+  const progress = $('#update-progress');
+  const say = (text, kind) => setLine(statusLine, text, kind);
 
   let busy = false;
   let expected = '';
+  let checking = false;
 
-  function setStatus(text, kind) {
-    statusLine.textContent = text;
-    statusLine.classList.toggle('is-error', kind === 'error');
-    statusLine.classList.toggle('is-success', kind === 'success');
+  function renderCard(status) {
+    if (!statusLine || !status) return;
+    const check = status.check || {};
+    current.textContent = status.running || '—';
+    if (check.latest) {
+      latestLine.textContent = check.checked_at > 0
+        ? `${check.latest} · ${new Date(check.checked_at * 1000).toLocaleString()}`
+        : check.latest;
+    } else {
+      latestLine.textContent = '—';
+    }
+    autoCheck.checked = check.enabled !== false;
+    checkButton.disabled = checking;
+  }
+
+  if (banner) {
+    bannerInstall.addEventListener('click', () => {
+      if (installing || !last) return;
+      const version = last.check.latest;
+      installing = true;
+      renderBanner(last);
+      setLine(bannerStatus, t('update.starting'));
+      action('install').then((code) => {
+        if (code !== '') {
+          installDone();
+          renderBanner(last);
+          setLine(bannerStatus, errorFor(code, releaseErrorText), 'error');
+          return;
+        }
+        watchInstall(version);
+      });
+    });
+    bannerSkip.addEventListener('click', () => {
+      if (installing) return;
+      action('skip').then((code) => {
+        if (code !== '') {
+          setLine(bannerStatus, errorFor(code, releaseErrorText), 'error');
+          return;
+        }
+        if (last) last.check = {...last.check, available: false, skipped: last.check.latest};
+        banner.hidden = true;
+        renderCard(last);
+      });
+    });
+    if (window.jradioI18n.onChange) {
+      window.jradioI18n.onChange(() => renderBanner(last));
+    }
   }
 
   /* The firmware and its web files, picked together or either alone; a
@@ -72,55 +296,15 @@
     sendButton.disabled = busy || chosenFiles() === null;
   }
 
-  function errorFor(code, table = errorText) {
-    const key = table[code];
-    return key ? t(key) : t('update.err_refused');
-  }
-
-  function getJson(url) {
-    return window.fetch(url, {cache: 'no-store'}).then((response) => {
-      if (!response || !response.ok) throw new Error('no answer');
-      return response.json();
-    });
-  }
-
-  function showRunning(status) {
-    current.textContent = typeof status.running === 'string' && status.running !== ''
-      ? status.running : '—';
-  }
-
-  function finish() {
+  function finish(running) {
     busy = false;
     progress.hidden = true;
     fileInput.value = '';
+    if (running) {
+      current.textContent = running;
+      refresh();
+    }
     refreshButton();
-  }
-
-  /* After the press: the device answers "restarting", then nothing, then the
-     new firmware's About. Matching the version is what tells an installed
-     update from a device that came back with the old one. */
-  function waitForReturn(startedAt) {
-    window.setTimeout(() => {
-      getJson('/api/about')
-        .then((about) => {
-          const running = about && about.firmware ? about.firmware.version : '';
-          current.textContent = running || '—';
-          if (running === expected) {
-            setStatus(t('update.installed', {version: running}), 'success');
-          } else {
-            setStatus(t('update.came_back_old', {version: running}), 'error');
-          }
-          finish();
-        })
-        .catch(() => {
-          if (Date.now() - startedAt > RETURN_GIVE_UP_MS) {
-            setStatus(t('update.no_return'), 'error');
-            finish();
-            return;
-          }
-          waitForReturn(startedAt);
-        });
-    }, RETURN_POLL_MS);
   }
 
   function watchConfirm() {
@@ -130,21 +314,19 @@
           if (status.state === 'confirm') {
             watchConfirm();
           } else if (status.state === 'restarting') {
-            setStatus(t('update.restarting'));
-            waitForReturn(Date.now());
+            say(t('update.restarting'));
+            waitForReturn(expected, say, finish);
           } else if (status.error === 'declined') {
-            setStatus(t('update.declined'), 'error');
+            say(t('update.declined'), 'error');
             finish();
           } else {
-            setStatus(errorFor(status.error), 'error');
+            say(errorFor(status.error), 'error');
             finish();
           }
         })
-        /* The device can drop off between two polls only by restarting -
-           which is what the press does. */
         .catch(() => {
-          setStatus(t('update.restarting'));
-          waitForReturn(Date.now());
+          say(t('update.restarting'));
+          waitForReturn(expected, say, finish);
         });
     }, POLL_MS);
   }
@@ -161,7 +343,7 @@
         if (!event.lengthComputable) return;
         const percent = Math.floor((before + event.loaded) * 100 / total);
         progress.value = percent;
-        setStatus(t('update.sending', {percent}));
+        say(t('update.sending', {percent}));
       });
       request.addEventListener('load', () => {
         let payload = {};
@@ -186,7 +368,7 @@
     refreshButton();
     progress.value = 0;
     progress.hidden = false;
-    setStatus(t('update.sending', {percent: 0}));
+    say(t('update.sending', {percent: 0}));
     const total = (chosen.web ? chosen.web.size || 0 : 0) + (chosen.app ? chosen.app.size || 0 : 0);
     const webDone = chosen.web ? chosen.web.size || 0 : 0;
     const sendWeb = chosen.web
@@ -207,40 +389,99 @@
       .then((payload) => {
         expected = payload && typeof payload.version === 'string' ? payload.version : '';
         progress.value = 100;
-        setStatus(t('update.press', {version: expected}));
+        say(t('update.press', {version: expected}));
         watchConfirm();
       })
       .catch((text) => {
-        setStatus(typeof text === 'string' ? text : t('update.err_upload'), 'error');
+        say(typeof text === 'string' ? text : t('update.err_upload'), 'error');
         finish();
       });
   }
 
-  fileInput.addEventListener('change', () => {
-    const files = Array.from(fileInput.files || []);
-    refreshButton();
-    if (files.length === 0) {
-      setStatus('');
-    } else if (chosenFiles() === null) {
-      setStatus(t('update.err_choice'), 'error');
-    } else {
-      setStatus(t('backup.chosen', {name: files.map((file) => file.name).join(', ')}));
-    }
-  });
-  sendButton.addEventListener('click', send);
-  refreshButton();
+  /* "Check now": the radio asks the release, the page waits for the answer
+     and shows it the way a check of the radio's own would have been. */
+  function checkNow() {
+    if (checking) return;
+    checking = true;
+    checkButton.disabled = true;
+    say(t('update.checking'));
+    const startedAt = Date.now();
+    const stop = (text, kind) => {
+      checking = false;
+      checkButton.disabled = false;
+      say(text, kind);
+    };
+    const poll = () => {
+      window.setTimeout(() => {
+        getJson('/api/ota')
+          .then((status) => {
+            const check = status.check || {};
+            if (check.state === 'checking' && Date.now() - startedAt < CHECK_GIVE_UP_MS) {
+              poll();
+              return;
+            }
+            last = status;
+            checking = false;
+            renderCard(status);
+            renderBanner(status);
+            if (check.state === 'failed') {
+              stop(errorFor(check.error, releaseErrorText), 'error');
+            } else if (check.available) {
+              stop(t('update.available', {version: check.latest}), 'success');
+            } else {
+              stop(t('update.up_to_date'), 'success');
+            }
+          })
+          .catch(() => stop(t('update.err_network'), 'error'));
+      }, POLL_MS);
+    };
+    action('check').then((code) => {
+      if (code !== '') {
+        stop(errorFor(code, releaseErrorText), 'error');
+        return;
+      }
+      poll();
+    });
+  }
 
-  /* A page opened while the radio is already waiting for the press - the
-     upload came from another tab, or this one was reloaded - says so instead
-     of offering a second upload over the first. */
+  if (statusLine) {
+    fileInput.addEventListener('change', () => {
+      const files = Array.from(fileInput.files || []);
+      refreshButton();
+      if (files.length === 0) {
+        say('');
+      } else if (chosenFiles() === null) {
+        say(t('update.err_choice'), 'error');
+      } else {
+        say(t('backup.chosen', {name: files.map((file) => file.name).join(', ')}));
+      }
+    });
+    sendButton.addEventListener('click', send);
+    checkButton.addEventListener('click', checkNow);
+    autoCheck.addEventListener('change', () => {
+      const wanted = autoCheck.checked === true;
+      action('auto', wanted).then((code) => {
+        if (code === '') return;
+        autoCheck.checked = !wanted;
+        say(errorFor(code, releaseErrorText), 'error');
+      });
+    });
+    refreshButton();
+  }
+
+  /* Once per page. A page opened while the radio already waits for the
+     press - the upload came from another tab, or this one was reloaded -
+     says so instead of offering a second upload over the first. */
   getJson('/api/ota')
     .then((status) => {
-      showRunning(status);
-      if (status.state === 'confirm') {
+      last = status;
+      renderBanner(status);
+      renderCard(status);
+      if (statusLine && status.state === 'confirm') {
         expected = status.version;
         busy = true;
         refreshButton();
-        setStatus(t('update.press', {version: status.version}));
+        say(t('update.press', {version: status.version}));
         watchConfirm();
       }
     })

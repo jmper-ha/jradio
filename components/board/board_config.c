@@ -556,6 +556,17 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     }
 }
 
+const char *board_config_display_name(unsigned display)
+{
+    for (size_t index = 0U; index < sizeof(k_fields) / sizeof(k_fields[0]); ++index) {
+        if (strcmp(k_fields[index].key, "display") != 0) continue;
+        for (const choice_t *choice = k_fields[index].choices; choice->name != NULL; ++choice) {
+            if (choice->id == display) return choice->name;
+        }
+    }
+    return NULL;
+}
+
 const char *board_config_issue_name(board_issue_code_t code)
 {
     switch (code) {

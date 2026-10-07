@@ -194,6 +194,11 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_FM_SEEKING] = {"Поиск станции…", "Seeking…"},
     [DEVICE_TEXT_FM_SCANNING] = {"Сканирование…", "Scanning…"},
     [DEVICE_TEXT_FM_TUNING] = {"Ручная настройка", "Tuning by hand"},
+    [DEVICE_TEXT_OTA_TITLE] = {"Обновление прошивки", "Firmware update"},
+    [DEVICE_TEXT_OTA_WRITING] = {"Запись", "Writing"},
+    [DEVICE_TEXT_OTA_PRESS] = {"Нажмите энкодер, чтобы установить", "Press the encoder to install"},
+    [DEVICE_TEXT_OTA_OTHER_CANCELS] = {"Другая кнопка — отмена", "Any other button cancels"},
+    [DEVICE_TEXT_OTA_RESTARTING] = {"Перезагрузка…", "Restarting…"},
 };
 
 /* An id added to the enum without a string here does not compile. That is the

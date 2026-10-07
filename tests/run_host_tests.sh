@@ -26,6 +26,7 @@ include_flags=(
     -I"${project_dir}/components/board/include"
     -I"${project_dir}/components/bt_link/include"
     -I"${project_dir}/components/improv/include"
+    -I"${project_dir}/components/ota/include"
     -I"${project_dir}/components/diagnostics/include"
     -I"${project_dir}/components/dlna/include"
     -I"${project_dir}/components/internet_radio/include"
@@ -266,6 +267,7 @@ run_test ui_status_bar tests/test_ui_status_bar.c components/ui/ui_status_bar.c
 run_test ui_text_scroll tests/test_ui_text_scroll.c components/ui/ui_text_scroll.c
 run_test ui_theme tests/test_ui_theme.c components/ui/ui_theme.c
 run_test improv_proto tests/test_improv_proto.c components/improv/improv_proto.c
+run_test ota_image tests/test_ota_image.c components/ota/ota_image.c
 run_test ui_station_list tests/test_ui_station_list.c components/ui/ui_station_list.c
 run_test ui_vu_meter tests/test_ui_vu_meter.c components/ui/ui_vu_meter.c
 run_test ui_files_notice tests/test_ui_files_notice.c components/ui/ui_files_notice.c components/settings/device_text.c
@@ -347,6 +349,7 @@ node tests/test_web_files.js
 node tests/test_web_hardware.js
 node tests/test_web_flasher.js
 node tests/test_web_improv.js
+node tests/test_web_update.js
 node tests/test_web_remote.js
 node tests/test_web_fm.js
 

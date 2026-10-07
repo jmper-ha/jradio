@@ -61,6 +61,8 @@
 #include "ui_fm_tune.h"
 #include "ui_screensaver.h"
 #include "ui_theme.h"
+#include "esp_app_desc.h"
+#include "ota_update.h"
 
 /* The note on an empty cover tile, named at the size the shape file asks for.
  * Two levels so the size macro is expanded before it is pasted, the same shape
@@ -5715,6 +5717,145 @@ static bool s_quick_editing_shown;
  * an empty band instead - so the window follows the list. */
 static uint8_t s_quick_rows_shown;
 
+/* The firmware update's window, over every screen on the top layer like the
+ * quick panel. Built at start-up with everything else: objects made later
+ * come out of the same pool the screens already fill.
+ *
+ * It is the panel's half of an upload from the browser - the progress while
+ * the file is written, then the question nobody on the network can answer
+ * for the person standing at the radio. */
+#define UI_OTA_CONFIRM_TIMEOUT_MS 60000U
+
+static lv_obj_t *s_ota_window;
+static lv_obj_t *s_ota_running;
+static lv_obj_t *s_ota_incoming;
+static lv_obj_t *s_ota_line;
+static lv_obj_t *s_ota_hint;
+static bool s_ota_visible;
+static uint32_t s_ota_serial_shown;
+static unsigned s_ota_percent_shown = 101U;
+static uint32_t s_ota_confirm_since_ms;
+static ota_state_t s_ota_state = OTA_STATE_IDLE;
+
+static void ui_ota_create(void)
+{
+    s_ota_window = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(s_ota_window);
+    lv_obj_remove_flag(s_ota_window, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(s_ota_window, 0, 0);
+    lv_obj_set_size(s_ota_window, TFT_WIDTH, TFT_HEIGHT);
+    ui_paint(s_ota_window, UI_PAINT_BG, UI_ROLE_GROUND, 0);
+    lv_obj_set_style_bg_opa(s_ota_window, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_ota_window, LV_OBJ_FLAG_HIDDEN);
+
+    const int line_h = UI_FONT_BODY_LINE_H + 6;
+    const int top = TFT_HEIGHT / 2 - 5 * line_h / 2;
+    lv_obj_t *title = lv_label_create(s_ota_window);
+    lv_obj_set_pos(title, UI_CONTENT_X, top - line_h);
+    lv_obj_set_width(title, UI_CONTENT_W);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(title, UI_FONT_TITLE, 0);
+    ui_paint(title, UI_PAINT_TEXT, UI_ROLE_ACCENT, 0);
+    lv_label_set_text(title, "");
+    lv_obj_set_user_data(s_ota_window, title);
+
+    /* The two versions on lines of their own: a build between releases is
+     * named like v1.5.5-4-ge5fcf3d-dirty, and two of those side by side
+     * wrapped onto the line below. */
+    lv_obj_t **lines[] = {&s_ota_running, &s_ota_incoming, &s_ota_line, &s_ota_hint};
+    const ui_role_t roles[] = {UI_ROLE_SECONDARY, UI_ROLE_TEXT, UI_ROLE_TEXT, UI_ROLE_DIM};
+    for (size_t index = 0U; index < 4U; ++index) {
+        lv_obj_t *line = lv_label_create(s_ota_window);
+        lv_obj_set_pos(line, UI_CONTENT_X, top + line_h + (int)index * line_h);
+        /* A height of its own, or LV_LABEL_LONG_DOT has nothing to cut to and
+         * the label wraps instead. */
+        lv_obj_set_size(line, UI_CONTENT_W, UI_FONT_BODY_LINE_H);
+        lv_obj_set_style_text_align(line, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(line, LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_font(line, UI_FONT_BODY, 0);
+        ui_paint(line, UI_PAINT_TEXT, roles[index], 0);
+        lv_label_set_text(line, "");
+        *lines[index] = line;
+    }
+}
+
+static void ui_ota_poll(uint32_t now_ms)
+{
+    ota_status_t status;
+    ota_update_get_status(&status);
+    const bool wanted = status.state == OTA_STATE_RECEIVING ||
+                        status.state == OTA_STATE_CONFIRM ||
+                        status.state == OTA_STATE_RESTARTING;
+    const unsigned percent =
+        status.total == 0U ? 0U : (unsigned)((uint64_t)status.done * 100U / status.total);
+    if (status.state == OTA_STATE_CONFIRM && s_ota_state != OTA_STATE_CONFIRM) {
+        s_ota_confirm_since_ms = now_ms;
+    }
+    s_ota_state = status.state;
+    /* Unanswered, it is a no: an upload left behind on a radio nobody is
+     * standing at must not wait for the first press of the morning. */
+    if (status.state == OTA_STATE_CONFIRM &&
+        (uint32_t)(now_ms - s_ota_confirm_since_ms) >= UI_OTA_CONFIRM_TIMEOUT_MS) {
+        ota_update_cancel();
+        return;
+    }
+    if (!wanted) {
+        if (s_ota_visible) {
+            lv_obj_add_flag(s_ota_window, LV_OBJ_FLAG_HIDDEN);
+            s_ota_visible = false;
+        }
+        return;
+    }
+    if (s_ota_visible && status.serial == s_ota_serial_shown &&
+        (status.state != OTA_STATE_RECEIVING || percent == s_ota_percent_shown)) {
+        return;
+    }
+    const device_language_t language = s_device_settings.language;
+    if (!s_ota_visible) {
+        /* Nobody can answer a question on a dark panel. */
+        (void)ui_screensaver_wake(&s_saver, s_device_settings.screensaver, now_ms);
+        lv_label_set_text(lv_obj_get_user_data(s_ota_window),
+                          device_text(DEVICE_TEXT_OTA_TITLE, language));
+        lv_obj_clear_flag(s_ota_window, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(s_ota_window);
+        s_ota_visible = true;
+    }
+    lv_label_set_text(s_ota_running, esp_app_get_description()->version);
+    lv_label_set_text_fmt(s_ota_incoming, "\xC2\xBB %s", status.version);
+    if (status.state == OTA_STATE_RECEIVING) {
+        lv_label_set_text_fmt(s_ota_line, "%s %u%%",
+                              device_text(DEVICE_TEXT_OTA_WRITING, language), percent);
+        lv_label_set_text(s_ota_hint, "");
+    } else if (status.state == OTA_STATE_CONFIRM) {
+        lv_label_set_text(s_ota_line, device_text(DEVICE_TEXT_OTA_PRESS, language));
+        lv_label_set_text(s_ota_hint, device_text(DEVICE_TEXT_OTA_OTHER_CANCELS, language));
+    } else {
+        lv_label_set_text(s_ota_line, device_text(DEVICE_TEXT_OTA_RESTARTING, language));
+        lv_label_set_text(s_ota_hint, "");
+    }
+    s_ota_serial_shown = status.serial;
+    s_ota_percent_shown = percent;
+}
+
+/* True when the window took the press. While it is up every press is its:
+ * the screen under it is covered, and a press that worked it unseen would be
+ * a surprise after the update. */
+static bool ui_ota_handle_input(board_input_action_t action)
+{
+    if (!s_ota_visible) return false;
+    if (s_ota_state == OTA_STATE_CONFIRM) {
+        if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
+            (void)ota_update_confirm();
+        } else if (action != BOARD_INPUT_ACTION_ENCODER_LEFT &&
+                   action != BOARD_INPUT_ACTION_ENCODER_RIGHT) {
+            /* A turn is not an answer: the knob is also the volume, and
+             * somebody reaching for it has not decided anything. */
+            ota_update_cancel();
+        }
+    }
+    return true;
+}
+
 static void ui_quick_set_y(void *target, int32_t value)
 {
     lv_obj_set_y((lv_obj_t *)target, (int32_t)value);
@@ -6263,6 +6404,7 @@ static void ui_handle_input(board_input_action_t action)
     if (ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms())) {
         return;
     }
+    if (ui_ota_handle_input(action)) return;
 
     if (ui_handle_remote_action(action)) return;
 
@@ -7502,6 +7644,7 @@ static void ui_task(void *arg)
         if (!s_sleep_fading) ui_alarm_poll(ui_tick_get_ms());
         ui_screensaver_poll(ui_tick_get_ms());
         ui_quick_poll(ui_tick_get_ms());
+        ui_ota_poll(ui_tick_get_ms());
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
@@ -7777,6 +7920,7 @@ esp_err_t ui_init(void)
     ui_create_station_list_screen();
     ui_create_screensaver();
     ui_quick_create();
+    ui_ota_create();
     ui_quick_menu_init(&s_quick);
     /* Always there, both of them: the backlight is what somebody reaches for
      * in the evening, and the sleep timer and the alarm have no rows on the

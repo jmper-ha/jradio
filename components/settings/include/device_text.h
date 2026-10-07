@@ -187,6 +187,13 @@ typedef enum {
     DEVICE_TEXT_FM_SCANNING,
     DEVICE_TEXT_FM_TUNING,
 
+    /* The firmware update's window over every screen. */
+    DEVICE_TEXT_OTA_TITLE,
+    DEVICE_TEXT_OTA_WRITING,
+    DEVICE_TEXT_OTA_PRESS,
+    DEVICE_TEXT_OTA_OTHER_CANCELS,
+    DEVICE_TEXT_OTA_RESTARTING,
+
     DEVICE_TEXT_COUNT,
 } device_text_id_t;
 

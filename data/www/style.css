@@ -2183,6 +2183,9 @@ a.secondary-button { text-decoration: none; color: inherit; }
   background: var(--accent-soft);
 }
 #fl-progress { width: 100%; }
+.update-progress { width: 100%; margin-top: 0.75rem; }
+.update-status { margin: 0.75rem 0 0; font-size: .9rem; text-align: left; }
+.update-status:empty { display: none; }
 .hw-problem.is-error { color: var(--bad); }
 .hw-problem.is-warning { color: var(--accent-2); }
 .hw-problem.is-ok { color: var(--ok); }

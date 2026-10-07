@@ -54,6 +54,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "web_backup.h"
 #include "web_cover.h"
 #include "web_json.h"
+#include "web_ota.h"
 #include "web_settings.h"
 #include "yandex_auth.h"
 #include "yandex_catalog.h"
@@ -411,6 +412,12 @@ static esp_err_t web_server_settings_get(httpd_req_t *request)
 static esp_err_t web_server_settings_js_get(httpd_req_t *request)
 {
     return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/settings.js",
+                                "application/javascript; charset=utf-8");
+}
+
+static esp_err_t web_server_update_js_get(httpd_req_t *request)
+{
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/update.js",
                                 "application/javascript; charset=utf-8");
 }
 
@@ -2369,10 +2376,10 @@ esp_err_t web_server_start(void)
          * waits on its input queue every pass, so the server still gets the
          * core; a request now waits for at most one screen pass instead. */
         config.task_priority = 3;
-        // Forty-five are registered below plus /ws; the spare ones exist
+        // Forty-eight are registered below plus /ws; the spare ones exist
         // because running out is not a build error - httpd_register_uri_handler
         // fails at startup and takes the whole web server down with it.
-        config.max_uri_handlers = 50;
+        config.max_uri_handlers = 56;
         config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
         config.send_wait_timeout = 1;
         config.lru_purge_enable = false;
@@ -2385,6 +2392,7 @@ esp_err_t web_server_start(void)
             {.uri = "/style.css", .method = HTTP_GET, .handler = web_server_style_get},
             {.uri = "/settings", .method = HTTP_GET, .handler = web_server_settings_get},
             {.uri = "/settings.js", .method = HTTP_GET, .handler = web_server_settings_js_get},
+            {.uri = "/update.js", .method = HTTP_GET, .handler = web_server_update_js_get},
             {.uri = "/remote", .method = HTTP_GET, .handler = web_server_remote_page_get},
             {.uri = "/remote.js", .method = HTTP_GET, .handler = web_server_remote_js_get},
             {.uri = "/fm.js", .method = HTTP_GET, .handler = web_server_fm_js_get},
@@ -2424,6 +2432,8 @@ esp_err_t web_server_start(void)
             {.uri = "/api/remote/forget", .method = HTTP_POST, .handler = web_server_remote_forget_post},
             {.uri = "/api/backup", .method = HTTP_GET, .handler = web_backup_get},
             {.uri = "/api/restore", .method = HTTP_POST, .handler = web_backup_restore_post},
+            {.uri = "/api/ota", .method = HTTP_GET, .handler = web_ota_get},
+            {.uri = "/api/ota/app", .method = HTTP_POST, .handler = web_ota_app_post},
         };
         for (size_t index = 0; index < sizeof(handlers) / sizeof(handlers[0]); ++index) {
             const esp_err_t err = httpd_register_uri_handler(s_server, &handlers[index]);

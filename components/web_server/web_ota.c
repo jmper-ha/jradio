@@ -10,6 +10,8 @@
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "board_config.h"
+#include "board_display_profile.h"
 #include "ota_check.h"
 #include "ota_update.h"
 
@@ -72,6 +74,10 @@ esp_err_t web_ota_get(httpd_req_t *request)
     cJSON_AddStringToObject(root, "error", status.error != NULL ? status.error : "");
     cJSON_AddStringToObject(root, "running", esp_app_get_description()->version);
     cJSON_AddStringToObject(root, "slot", ota_update_running_slot());
+    /* The name this radio's firmware file carries in a release: the page
+     * tells the user which of the nine to take. */
+    const char *display = board_config_display_name(DISPLAY);
+    cJSON_AddStringToObject(root, "display", display != NULL ? display : "");
 
     cJSON_AddBoolToObject(offer, "enabled", check.enabled);
     cJSON_AddStringToObject(offer, "state", check_state_name(check.state));

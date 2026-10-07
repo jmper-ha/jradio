@@ -226,6 +226,7 @@
   const fileInput = $('#update-file');
   const sendButton = $('#update-send');
   const progress = $('#update-progress');
+  const filesLine = $('#update-files');
   const say = (text, kind) => setLine(statusLine, text, kind);
 
   let busy = false;
@@ -245,6 +246,16 @@
     }
     autoCheck.checked = check.enabled !== false;
     checkButton.disabled = checking;
+    /* Nine firmwares in a release, one per display, and nothing on the radio
+       says which display it has: the names are spelled out. The version is
+       the latest one when it is known. */
+    if (filesLine && status.display) {
+      const version = check.latest || t('update.version_placeholder');
+      filesLine.textContent = t('update.files', {
+        app: `jradio-${version}-${status.display}.bin`,
+        web: `jradio-${version}-www.tar`,
+      });
+    }
   }
 
   if (banner) {

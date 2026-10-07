@@ -37,7 +37,7 @@ class Element {
 }
 
 const CARD = ['update-status', 'update-current', 'update-latest', 'update-auto', 'update-check',
-              'update-file', 'update-send', 'update-progress'];
+              'update-file', 'update-send', 'update-progress', 'update-files'];
 const BANNER = ['update-banner', 'update-banner-title', 'update-banner-notes',
                 'update-banner-status', 'update-banner-install', 'update-banner-skip'];
 
@@ -136,7 +136,7 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 const quiet = {enabled: true, state: 'done', error: '', installing: false, latest: 'v1.5.5',
                available: false, skipped: '', checked_at: 0, notes_ru: '', notes_en: ''};
 const idle = {state: 'idle', done: 0, total: 0, version: '', error: '', running: 'v1.5.5',
-              slot: 'factory', check: quiet};
+              slot: 'factory', display: 'st7789_320_240', check: quiet};
 const offering = {...quiet, latest: 'v1.6.0', available: true,
                   notes_ru: 'Новое:\n- Обновление по сети.\n- Темы.', notes_en: 'New:\n- Updates.'};
 
@@ -392,6 +392,10 @@ async function test_check_now_and_the_switch() {
   const {elements, state} = page;
   assert.strictEqual(elements['#update-auto'].checked, true);
   assert.strictEqual(elements['#update-latest'].textContent, 'v1.5.5');
+  // Which of the release's files are this radio's, by name.
+  assert.strictEqual(elements['#update-files'].textContent,
+                     'Для этого радио нужны jradio-v1.5.5-st7789_320_240.bin и ' +
+                     'jradio-v1.5.5-www.tar со страницы релизов: ');
 
   elements['#update-check'].emit('click');
   await settle();

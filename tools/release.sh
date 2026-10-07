@@ -110,6 +110,17 @@ its own setup access point on the first boot. Writing it over a working
 device erases the saved networks, the playlist edits and the keys - back them
 up first (Settings > Backup on the web page) and restore afterwards.
 
+The files above are built for the README board, with the ST7796S 480x320
+display. For any other display take the firmware with the display in its
+name - jradio-${version}-<display>.bin, nine of them, one per display.
+
+A radio that already runs a version with updates over the network is updated
+from its own web page instead: it offers the release by itself, or take two
+files here - jradio-${version}-<display>.bin for its display and
+jradio-${version}-www.tar - and choose both under Settings > Firmware update.
+The card there names the exact files this radio needs. The ota-* files are
+the same bytes, for the radios' own downloads.
+
 Checksums in SHA256SUMS.
 TEXT
 

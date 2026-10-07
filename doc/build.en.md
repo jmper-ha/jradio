@@ -296,6 +296,18 @@ short instruction. It builds the data image afresh without `wifi.json`,
 passwords. On a dirty tree, or when the version in the binary does not match
 the tag, the script refuses.
 
+**The update files** are put into the release by the GitHub build itself when
+a `v*` tag arrives: the firmware for every display twice - `ota-<display>.bin`
+for the radios and `jradio-<version>-<display>.bin` for an update by hand -
+the web interface as `www.tar`, and last `ota.json`, which is how a radio
+learns there is a new version. The change list in `ota.json` is the version's
+section of `doc/changelog.md` and `changelog.en.md`, so the section is written
+**before the tag** - without it the build does not release. When the release
+does not exist yet, the build creates it with the English section as its
+notes; the `tools/release.sh` files are added afterwards with
+`gh release upload`. How many radios updated themselves:
+`bash tools/ota_stats.sh`.
+
 ## Tests
 
 ```bash

@@ -80,7 +80,7 @@ jobs:
           mkdir -p out
           cp build/jradio.bin build/bootloader/bootloader.bin \
              build/partition_table/partition-table.bin build/ota_data_initial.bin \
-             build/littlefs.bin build/flasher_args.json out/
+             build/littlefs.bin build/flasher_args.json build/www.tar out/
       - uses: actions/upload-artifact@v7
         with:
           name: firmware-${{ matrix.display }}
@@ -126,6 +126,46 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
+
+  # On a version tag only: the update files go into the GitHub release, where
+  # a radio looks for them (releases/latest/download/ota.json). The binaries
+  # for the flasher stay on the site, which the page fetches from its own
+  # origin; a radio is not a browser and needs no CORS.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: firmware
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: builds
+          pattern: firmware-*
+      - name: Lay out the update files
+        run: |
+          python3 tools/ota_manifest.py --version "$TAG" --builds builds \
+              --repo "$GITHUB_REPOSITORY" \
+              --changelog-ru doc/changelog.md --changelog-en doc/changelog.en.md \
+              --out release-assets
+          cat release-assets/ota.json
+      - name: Upload to the release
+        run: |
+          # The release may not exist yet: the tag is pushed first and the
+          # rest of it (tools/release.sh's files, the notes) is added by hand.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            awk -v tag="$TAG" '$0 ~ "^## " tag "( |$)" {on=1; next} /^## / {on=0} on' \
+                doc/changelog.en.md > notes.md
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md
+          fi
+          # Everything ota.json names first, ota.json itself last.
+          find release-assets -type f ! -name ota.json -print0 | \
+              xargs -0 gh release upload "$TAG" --clobber
+          gh release upload "$TAG" release-assets/ota.json --clobber
 
   deploy:
     needs: site

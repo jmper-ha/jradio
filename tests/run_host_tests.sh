@@ -350,6 +350,7 @@ node tests/test_web_playlist.js
 node tests/test_web_files.js
 node tests/test_web_hardware.js
 node tests/test_web_flasher.js
+python3 -B tests/test_ota_manifest.py
 node tests/test_web_improv.js
 node tests/test_web_update.js
 node tests/test_web_remote.js

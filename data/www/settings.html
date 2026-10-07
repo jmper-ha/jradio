@@ -527,7 +527,7 @@
             <div class="settings-actions">
               <label class="secondary-button file-button" for="update-file">
                 <span data-i18n="backup.choose">Выбрать файл</span>
-                <input id="update-file" type="file" accept=".bin,application/octet-stream" hidden>
+                <input id="update-file" type="file" accept=".bin,.tar" multiple hidden>
               </label>
               <button id="update-send" class="primary-button" type="button" disabled data-i18n="update.send">Загрузить</button>
             </div>
@@ -537,7 +537,7 @@
                  head they ran over the title. -->
             <p id="update-status" class="settings-status update-status" role="status" aria-live="polite"></p>
 
-            <p class="field-note" data-i18n="note.update">Файл прошивки для своего дисплея — jradio-&lt;версия&gt;-&lt;дисплей&gt;.bin со страницы релизов. Устройство проверит файл и попросит нажать энкодер: без нажатия ничего не меняется. Станции, Wi-Fi и настройки остаются на месте.</p>
+            <p class="field-note" data-i18n="note.update">Выберите два файла со страницы релизов: прошивку для своего дисплея, jradio-&lt;версия&gt;-&lt;дисплей&gt;.bin, и веб-интерфейс, jradio-&lt;версия&gt;-www.tar. Устройство проверит их и попросит нажать энкодер: без нажатия ничего не меняется. Станции, Wi-Fi и настройки остаются на месте.</p>
           </div>
         </section>
       </div>

@@ -38,6 +38,9 @@ typedef enum {
      * so not one to go back to this way: from there only a cable comes back. */
     OTA_IMAGE_NO_MARK,
     OTA_IMAGE_WRONG_DISPLAY,
+    /* Not about the image itself: web files of another version are waiting
+     * to be installed with it. Decided in ota_update.c. */
+    OTA_IMAGE_WEB_MISMATCH,
 } ota_image_result_t;
 
 typedef struct {

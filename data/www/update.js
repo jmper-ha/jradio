@@ -35,6 +35,17 @@
     upload: 'update.err_upload',
     flash: 'update.err_flash',
     verify: 'update.err_verify',
+    mismatch: 'update.err_mismatch',
+  });
+  /* The archive's own refusals: the same words for a different file mean
+     something else - "too big" there is one page in it, not the archive. */
+  const webErrorText = Object.freeze({
+    not_web: 'update.err_not_web',
+    bad_name: 'update.err_not_web',
+    too_big: 'update.err_not_web',
+    upload: 'update.err_upload',
+    write: 'update.err_write',
+    memory: 'update.err_memory',
   });
 
   let busy = false;
@@ -46,17 +57,23 @@
     statusLine.classList.toggle('is-success', kind === 'success');
   }
 
-  function chosenFile() {
-    const files = fileInput.files;
-    return files && files.length > 0 ? files[0] : null;
+  /* The firmware and its web files, picked together or either alone; a
+     choice that is neither, or two of one kind, is null. */
+  function chosenFiles() {
+    const files = Array.from(fileInput.files || []);
+    if (files.length === 0 || files.length > 2) return null;
+    const app = files.filter((file) => /\.bin$/i.test(file.name));
+    const web = files.filter((file) => /\.tar$/i.test(file.name));
+    if (app.length > 1 || web.length > 1 || app.length + web.length !== files.length) return null;
+    return {app: app[0] || null, web: web[0] || null};
   }
 
   function refreshButton() {
-    sendButton.disabled = busy || chosenFile() === null;
+    sendButton.disabled = busy || chosenFiles() === null;
   }
 
-  function errorFor(code) {
-    const key = errorText[code];
+  function errorFor(code, table = errorText) {
+    const key = table[code];
     return key ? t(key) : t('update.err_refused');
   }
 
@@ -134,52 +151,81 @@
 
   /* XMLHttpRequest rather than fetch: fetch has no upload progress, and the
      device cannot report its own while the upload occupies the only worker
-     the web server has. */
+     the web server has. Resolves with the status and the answer. */
+  function upload(url, file, before, total) {
+    return new Promise((resolve) => {
+      const request = new window.XMLHttpRequest();
+      request.open('POST', url);
+      request.setRequestHeader('Content-Type', 'application/octet-stream');
+      request.upload.addEventListener('progress', (event) => {
+        if (!event.lengthComputable) return;
+        const percent = Math.floor((before + event.loaded) * 100 / total);
+        progress.value = percent;
+        setStatus(t('update.sending', {percent}));
+      });
+      request.addEventListener('load', () => {
+        let payload = {};
+        try {
+          payload = JSON.parse(request.responseText || '{}');
+        } catch (error) {
+          payload = {};
+        }
+        resolve({status: request.status, payload});
+      });
+      request.addEventListener('error', () => resolve({status: 0, payload: {error: 'upload'}}));
+      request.send(file);
+    });
+  }
+
+  /* The web files first, then the firmware: the press installs whatever is
+     waiting, so both have to be on the device before it is asked. */
   function send() {
-    const file = chosenFile();
-    if (file === null || busy) return;
+    const chosen = chosenFiles();
+    if (chosen === null || busy) return;
     busy = true;
     refreshButton();
     progress.value = 0;
     progress.hidden = false;
     setStatus(t('update.sending', {percent: 0}));
-    const request = new window.XMLHttpRequest();
-    request.open('POST', '/api/ota/app');
-    request.setRequestHeader('Content-Type', 'application/octet-stream');
-    request.upload.addEventListener('progress', (event) => {
-      if (!event.lengthComputable || event.total <= 0) return;
-      const percent = Math.floor(event.loaded * 100 / event.total);
-      progress.value = percent;
-      setStatus(t('update.sending', {percent}));
-    });
-    request.addEventListener('load', () => {
-      let payload = {};
-      try {
-        payload = JSON.parse(request.responseText || '{}');
-      } catch (error) {
-        payload = {};
-      }
-      if (request.status !== 200) {
-        setStatus(errorFor(payload.error), 'error');
+    const total = (chosen.web ? chosen.web.size || 0 : 0) + (chosen.app ? chosen.app.size || 0 : 0);
+    const webDone = chosen.web ? chosen.web.size || 0 : 0;
+    const sendWeb = chosen.web
+      ? upload(`/api/ota/www?app=${chosen.app ? 1 : 0}`, chosen.web, 0, total || 1)
+        .then((answer) => {
+          if (answer.status !== 200) throw errorFor(answer.payload.error, webErrorText);
+          return answer.payload;
+        })
+      : Promise.resolve(null);
+    sendWeb
+      .then((webAnswer) => {
+        if (!chosen.app) return webAnswer;
+        return upload('/api/ota/app', chosen.app, webDone, total || 1).then((answer) => {
+          if (answer.status !== 200) throw errorFor(answer.payload.error);
+          return answer.payload;
+        });
+      })
+      .then((payload) => {
+        expected = payload && typeof payload.version === 'string' ? payload.version : '';
+        progress.value = 100;
+        setStatus(t('update.press', {version: expected}));
+        watchConfirm();
+      })
+      .catch((text) => {
+        setStatus(typeof text === 'string' ? text : t('update.err_upload'), 'error');
         finish();
-        return;
-      }
-      expected = typeof payload.version === 'string' ? payload.version : '';
-      progress.value = 100;
-      setStatus(t('update.press', {version: expected}));
-      watchConfirm();
-    });
-    request.addEventListener('error', () => {
-      setStatus(t('update.err_upload'), 'error');
-      finish();
-    });
-    request.send(file);
+      });
   }
 
   fileInput.addEventListener('change', () => {
-    const file = chosenFile();
+    const files = Array.from(fileInput.files || []);
     refreshButton();
-    setStatus(file === null ? '' : t('backup.chosen', {name: file.name}));
+    if (files.length === 0) {
+      setStatus('');
+    } else if (chosenFiles() === null) {
+      setStatus(t('update.err_choice'), 'error');
+    } else {
+      setStatus(t('backup.chosen', {name: files.map((file) => file.name).join(', ')}));
+    }
   });
   sendButton.addEventListener('click', send);
   refreshButton();

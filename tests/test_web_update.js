@@ -119,11 +119,12 @@ async function test_a_good_upload_waits_for_the_press_and_sees_the_new_version()
   // Nothing chosen, nothing to send.
   assert.strictEqual(elements['#update-send'].disabled, true);
 
-  const file = {name: 'jradio-v1.6.0-ili9341_320_240.bin'};
+  const file = {name: 'jradio-v1.6.0-ili9341_320_240.bin', size: 2800000};
   elements['#update-file'].files = [file];
   elements['#update-file'].emit('change');
   assert.strictEqual(elements['#update-send'].disabled, false);
   elements['#update-send'].emit('click');
+  await settle();
   assert.strictEqual(requests.length, 1);
   const upload = requests[0];
   assert.strictEqual(upload.method, 'POST');
@@ -131,6 +132,7 @@ async function test_a_good_upload_waits_for_the_press_and_sees_the_new_version()
   assert.strictEqual(upload.body, file);
   // Sent twice while busy is still one upload.
   elements['#update-send'].emit('click');
+  await settle();
   assert.strictEqual(requests.length, 1);
   assert.strictEqual(elements['#update-send'].disabled, true);
 
@@ -139,6 +141,7 @@ async function test_a_good_upload_waits_for_the_press_and_sees_the_new_version()
   assert.match(elements['#update-status'].textContent, /50%/);
 
   upload.answer(200, {version: 'v1.6.0'});
+  await settle();
   assert.match(elements['#update-status'].textContent, /энкодер.*v1\.6\.0/);
 
   // Still waiting, then the press, then the radio gone, then back.
@@ -159,6 +162,65 @@ async function test_a_good_upload_waits_for_the_press_and_sees_the_new_version()
   assert.strictEqual(elements['#update-send'].disabled, true);
 }
 
+async function test_the_web_files_go_first_and_say_a_firmware_follows() {
+  const page = load([idle]);
+  await settle();
+  const {elements, requests} = page;
+  const app = {name: 'jradio-v1.6.0-ili9341_320_240.bin', size: 3000};
+  const web = {name: 'jradio-v1.6.0-www.tar', size: 1000};
+  // Picked in either order; the archive still goes first.
+  elements['#update-file'].files = [app, web];
+  elements['#update-file'].emit('change');
+  assert.strictEqual(elements['#update-status'].textContent,
+                     'Выбран файл: jradio-v1.6.0-ili9341_320_240.bin, jradio-v1.6.0-www.tar');
+  elements['#update-send'].emit('click');
+  await settle();
+  assert.strictEqual(requests.length, 1);
+  assert.strictEqual(requests[0].url, '/api/ota/www?app=1');
+  assert.strictEqual(requests[0].body, web);
+  // One bar for both: the archive's whole is a quarter of the way.
+  requests[0].progress(1000, 1000);
+  assert.strictEqual(elements['#update-progress'].value, 25);
+  requests[0].answer(200, {version: 'v1.6.0'});
+  await settle();
+  assert.strictEqual(requests.length, 2);
+  assert.strictEqual(requests[1].url, '/api/ota/app');
+  assert.strictEqual(requests[1].body, app);
+  requests[1].progress(1500, 3000);
+  assert.strictEqual(elements['#update-progress'].value, 62);
+  requests[1].answer(200, {version: 'v1.6.0'});
+  await settle();
+  assert.match(elements['#update-status'].textContent, /энкодер.*v1\.6\.0/);
+}
+
+async function test_web_files_alone_are_asked_about_alone() {
+  const page = load([idle]);
+  await settle();
+  const {elements, requests} = page;
+  elements['#update-file'].files = [{name: 'jradio-v1.6.0-www.tar', size: 600000}];
+  elements['#update-file'].emit('change');
+  elements['#update-send'].emit('click');
+  await settle();
+  assert.strictEqual(requests[0].url, '/api/ota/www?app=0');
+  requests[0].answer(200, {version: 'v1.6.0'});
+  await settle();
+  assert.strictEqual(requests.length, 1);
+  assert.match(elements['#update-status'].textContent, /энкодер.*v1\.6\.0/);
+}
+
+async function test_a_choice_that_is_not_one_firmware_and_one_archive_is_not_sent() {
+  const page = load([idle]);
+  await settle();
+  const {elements} = page;
+  for (const files of [[{name: 'a.bin'}, {name: 'b.bin'}], [{name: 'backup.zip'}],
+                       [{name: 'a.bin'}, {name: 'b.tar'}, {name: 'c.tar'}]]) {
+    elements['#update-file'].files = files;
+    elements['#update-file'].emit('change');
+    assert.strictEqual(elements['#update-send'].disabled, true);
+    assert.strictEqual(elements['#update-status'].classList.has('is-error'), true);
+  }
+}
+
 async function test_a_refused_file_is_said_by_its_code() {
   const page = load([idle]);
   await settle();
@@ -166,10 +228,25 @@ async function test_a_refused_file_is_said_by_its_code() {
   elements['#update-file'].files = [{name: 'jradio-v1.6.0-st7796s_480_320.bin'}];
   elements['#update-file'].emit('change');
   elements['#update-send'].emit('click');
+  await settle();
   requests[0].answer(400, {error: 'wrong_display'});
+  await settle();
   assert.strictEqual(elements['#update-status'].textContent, 'Прошивка для другого дисплея');
   assert.strictEqual(elements['#update-status'].classList.has('is-error'), true);
   assert.strictEqual(elements['#update-progress'].hidden, true);
+
+  /* A refused archive stops there: no firmware is sent without its pages. */
+  const second = load([idle]);
+  await settle();
+  second.elements['#update-file'].files = [{name: 'a.bin'}, {name: 'w.tar'}];
+  second.elements['#update-file'].emit('change');
+  second.elements['#update-send'].emit('click');
+  await settle();
+  second.requests[0].answer(400, {error: 'bad_name'});
+  await settle();
+  assert.strictEqual(second.requests.length, 1);
+  assert.strictEqual(second.elements['#update-status'].textContent,
+                     'Это не архив веб-интерфейса jradio');
 }
 
 async function test_a_no_on_the_panel_reaches_the_page() {
@@ -179,7 +256,9 @@ async function test_a_no_on_the_panel_reaches_the_page() {
   elements['#update-file'].files = [{name: 'a.bin'}];
   elements['#update-file'].emit('change');
   elements['#update-send'].emit('click');
+  await settle();
   requests[0].answer(200, {version: 'v1.6.0'});
+  await settle();
   state.ota.push({...idle, state: 'idle', error: 'declined'});
   await page.runTimers();
   assert.strictEqual(elements['#update-status'].textContent, 'Установка отменена на радио');
@@ -195,6 +274,9 @@ async function test_a_page_opened_during_the_question_joins_it() {
 
 (async () => {
   await test_a_good_upload_waits_for_the_press_and_sees_the_new_version();
+  await test_the_web_files_go_first_and_say_a_firmware_follows();
+  await test_web_files_alone_are_asked_about_alone();
+  await test_a_choice_that_is_not_one_firmware_and_one_archive_is_not_sent();
   await test_a_refused_file_is_said_by_its_code();
   await test_a_no_on_the_panel_reaches_the_page();
   await test_a_page_opened_during_the_question_joins_it();

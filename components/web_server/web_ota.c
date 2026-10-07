@@ -130,4 +130,54 @@ esp_err_t web_ota_app_post(httpd_req_t *request)
     return httpd_resp_sendstr(request, reply);
 }
 
+/* www.tar, before the firmware. "?app=1" says a firmware follows, so the
+ * panel asks once, after both. */
+esp_err_t web_ota_www_post(httpd_req_t *request)
+{
+    const size_t total = request->content_len;
+    char query[16];
+    char value[4] = "";
+    if (httpd_req_get_url_query_str(request, query, sizeof(query)) == ESP_OK) {
+        (void)httpd_query_key_value(query, "app", value, sizeof(value));
+    }
+    const bool app_follows = strcmp(value, "1") == 0;
+    if (total == 0U) return send_refusal(request, "400 Bad Request", "not_web");
+    uint8_t *piece = heap_caps_malloc(WEB_OTA_PIECE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (piece == NULL) piece = malloc(WEB_OTA_PIECE);
+    if (piece == NULL) return send_refusal(request, "500 Internal Server Error", "memory");
+    if (ota_update_www_begin(total) != ESP_OK) {
+        free(piece);
+        return send_refusal(request, "500 Internal Server Error", "write");
+    }
+    size_t received = 0U;
+    ota_tar_result_t result = OTA_TAR_OK;
+    bool cut = false;
+    while (result == OTA_TAR_OK && received < total) {
+        const size_t want = total - received < WEB_OTA_PIECE ? total - received : WEB_OTA_PIECE;
+        if (receive(request, piece, want) < 0) {
+            cut = true;
+            break;
+        }
+        result = ota_update_www_write(piece, want);
+        received += want;
+    }
+    free(piece);
+    if (cut) {
+        ESP_LOGW(TAG, "web files stopped at %u of %u bytes", (unsigned)received, (unsigned)total);
+        ota_update_www_abort();
+        return send_refusal(request, "500 Internal Server Error", "upload");
+    }
+    if (result == OTA_TAR_OK) result = ota_update_www_finish(app_follows);
+    else ota_update_www_abort();
+    if (result != OTA_TAR_OK) {
+        return send_refusal(request, "400 Bad Request", ota_tar_result_code(result));
+    }
+    ota_status_t status;
+    ota_update_get_status(&status);
+    char reply[64];
+    snprintf(reply, sizeof(reply), "{\"version\":\"%s\"}", status.version);
+    httpd_resp_set_type(request, "application/json");
+    return httpd_resp_sendstr(request, reply);
+}
+
 #endif

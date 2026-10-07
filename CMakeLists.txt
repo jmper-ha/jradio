@@ -65,6 +65,9 @@ endforeach()
 # answer with one string, and a mismatch means what it says: the two were
 # flashed from different commits. Which happens, because they are flashed by
 # two different commands.
+#
+# And it packs the same web files, stamp first, into build/www.tar: what an
+# update over the network installs beside the firmware (tools/pack_www.py).
 set(littlefs_stage_dir "${CMAKE_BINARY_DIR}/littlefs_data")
 idf_build_get_property(python PYTHON)
 idf_build_get_property(jradio_project_ver PROJECT_VER)
@@ -75,6 +78,8 @@ add_custom_target(littlefs_stage
     COMMAND ${python} "${CMAKE_SOURCE_DIR}/tools/stamp_version.py"
             --version "${jradio_project_ver}"
             --out "${littlefs_stage_dir}/config/version.json"
+    COMMAND ${python} "${CMAKE_SOURCE_DIR}/tools/pack_www.py"
+            --stage "${littlefs_stage_dir}" --out "${CMAKE_BINARY_DIR}/www.tar"
     VERBATIM
 )
 

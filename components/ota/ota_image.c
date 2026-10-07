@@ -70,6 +70,7 @@ const char *ota_image_result_code(ota_image_result_t result)
     case OTA_IMAGE_NOT_JRADIO: return "not_jradio";
     case OTA_IMAGE_NO_MARK: return "no_mark";
     case OTA_IMAGE_WRONG_DISPLAY: return "wrong_display";
+    case OTA_IMAGE_WEB_MISMATCH: return "mismatch";
     }
     return "not_firmware";
 }

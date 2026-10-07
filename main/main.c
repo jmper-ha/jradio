@@ -15,6 +15,7 @@
 #include "device_clock.h"
 #include "weather.h"
 #include "improv_serial.h"
+#include "ota_update.h"
 #include "device_settings.h"
 #include "internet_radio.h"
 #include "player_control.h"
@@ -186,8 +187,13 @@ void app_main(void)
      * once the splash is on the glass. If either the mount or the file fails,
      * the flips read as off, which is the panel's own baseline. */
     device_settings_t boot_settings;
-    const bool settings_read =
-        wifi_settings_storage_init() == ESP_OK && device_settings_init(&boot_settings);
+    const bool storage_mounted = wifi_settings_storage_init() == ESP_OK;
+    /* Before anything reads a page or the web stamp: an update whose web
+     * files were being swapped when the power went is finished or undone
+     * here, so the server never starts on half of each. A few stat() calls
+     * when there is nothing to do. */
+    if (storage_mounted) ota_update_boot_cleanup();
+    const bool settings_read = storage_mounted && device_settings_init(&boot_settings);
     if (!settings_read) {
         ESP_LOGW(TAG, "settings unreadable at boot; splash drawn unflipped");
     }

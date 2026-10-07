@@ -6,6 +6,7 @@
 
 #include "esp_err.h"
 #include "ota_image.h"
+#include "ota_tar.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -54,6 +55,19 @@ esp_err_t ota_update_write(const void *data, size_t length);
 esp_err_t ota_update_finish(void);
 /* The upload broke off: whatever was written is left for the next one. */
 void ota_update_abort(const char *error);
+
+/* The web files, www.tar, unpacked beside the live pages. Sent before the
+ * firmware when both are installed; app_follows says so, and the question
+ * then waits for the firmware instead of being asked twice. Alone, the
+ * archive is asked about on its own. */
+esp_err_t ota_update_www_begin(size_t total);
+ota_tar_result_t ota_update_www_write(const void *data, size_t length);
+ota_tar_result_t ota_update_www_finish(bool app_follows);
+void ota_update_www_abort(void);
+
+/* Early at boot, once LittleFS is mounted: finishes or undoes a swap of the
+ * web files that a restart or a power cut interrupted. */
+void ota_update_boot_cleanup(void);
 
 /* From the panel. confirm switches the boot slot and restarts a moment later,
  * so the page has time to read that it is restarting. */

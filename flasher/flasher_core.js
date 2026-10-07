@@ -87,11 +87,16 @@
 
   /* A file cut into pieces written one after another, each at its own
      offset. The loader sends compressed data faster than the chip writes
-     it, then asks the chip to finish with a short timeout: the 10 MB file
-     system, almost all of it empty, went over in 28 s while the chip was
-     still writing, and the finish timed out on a write that had worked.
-     Half a megabyte leaves it little enough to catch up on. */
-  const PIECE = 512 * 1024;
+     it, then waits for the chip to finish with a fixed 3 s timeout - the
+     Python esptool scales that wait with the size, this loader does not. The
+     10 MB file system, almost all of it empty, went over in 28 s while the
+     chip was still writing, and the finish timed out on a write that had
+     worked. Half a megabyte fixed it for our boards; a user's N16R8 with a
+     Macronix flash (id c2 2018) still timed out on the file system's first
+     piece - erasing 512 KB of empty pages takes it about 3.2 s. 64 KB is one
+     erase block, at most 2 s on that chip by its datasheet, so the finish
+     always fits; the cost is a few seconds more on the file system. */
+  const PIECE = 64 * 1024;
 
   function pieces(file, size = PIECE) {
     const out = [];

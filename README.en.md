@@ -26,6 +26,9 @@ or from a browser - a phone or a computer on the same network.
   pictures, settings, files, remote learning - all from a phone, no app.
 - **Flashing from the browser.** The flasher writes the firmware for your
   display and wiring and puts the radio on Wi-Fi over the same cable.
+- **Updates over the network.** The radio finds out about a new version
+  itself and shows what is new in it; updating is one button in the web
+  interface, and the settings and stations stay.
 - **Made for every day.** Resumes what was playing, deep sleep, an alarm
   clock, a sleep timer, a clock and the weather on screen, a screensaver.
 - **Open source with a straightforward build.** ESP-IDF, VS Code, one build

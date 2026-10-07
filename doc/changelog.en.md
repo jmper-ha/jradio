@@ -6,6 +6,20 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## Unreleased
+
+New:
+- Firmware updates over the network: once a day the radio learns about a new
+  version, the web interface shows what is new and installs it with one
+  button.
+- An update from a file in the web interface, confirmed with the encoder on
+  the radio.
+
+Fixed:
+- N16R8 boards with two Type-C connectors start (the flash runs in QIO).
+- The flasher finishes writing the data to a slow flash in time.
+- The screen no longer freezes while a browser downloads the backup.
+
 ## v1.5.5 — 6 October 2026
 
 New:

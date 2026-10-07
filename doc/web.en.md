@@ -85,6 +85,20 @@ page.
 text.** The device gives it to anyone on the local network. Keep the file as
 you would a password.
 
+## Firmware update
+
+Once a day the radio reads `ota.json` of the latest GitHub release - put
+there by the release build, see [Building](build.en.md). When the version is
+newer the page shows a notice; Update downloads `ota-www.tar` and the
+firmware for its own display, checks the size and SHA-256 against the
+manifest and installs them with no question on the screen. The update from a
+file (the `.bin` and `.tar` from the releases page) sends the archive first
+and waits for a press of the encoder: the page uploads the files, the radio
+checks them before writing. The web archive is a flat `www/<name>` list with
+the version stamp first; other paths, links and an archive without the main
+pages are refused. A firmware and an archive of different versions are not
+installed together.
+
 ## API
 
 | Endpoint | Purpose |
@@ -104,6 +118,10 @@ you would a password.
 | `POST /api/sleep-timer` | `{"minutes":45}`, zero switches it off |
 | `GET /api/about` | The firmware, web interface and ESP-IDF versions |
 | `GET /api/backup`, `POST /api/restore` | The backup, see above |
+| `GET /api/ota` | The update's progress (`state`: `idle`, `receiving`, `confirm`, `restarting`, `failed`), the version and slot running; under `check`, the release's latest version, whether there is something to offer, the change lists `notes_ru`/`notes_en` |
+| `POST /api/ota/app` | A firmware from a file, as the request body; answers `{"version":…}` or `{"error":"wrong_display"}` and the like |
+| `POST /api/ota/www?app=1` | The web archive; `app=1` says a firmware follows and the question is asked once |
+| `POST /api/ota/action?do=…` | `check` - check now, `install` - download and install the release, `skip` - skip it, `auto&on=0/1` - the daily check |
 | `POST /api/station-test` | Play an address on the device without touching the playlist |
 | `POST /api/station-icon`, `GET /api/station-icon` | Upload / fetch a station's picture |
 | `GET /api/yandex`, `POST /api/yandex` | Link state and the account's stations; link, unlink, refresh |

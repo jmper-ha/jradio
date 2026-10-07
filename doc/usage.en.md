@@ -393,6 +393,33 @@ It is for rewriting the data partition: download → flash → restore. **The
 Wi-Fi password is in the archive in clear text** - keep the file as you would
 a password.
 
+### Firmware update
+
+Web interface only. Once a day the radio asks GitHub whether a new version is
+out - and tells it nothing about itself. When one is, a notice appears at the
+top of the main page and of the settings: the version, what is new in it, and
+Update and Skip.
+
+Update stops the sound, downloads the firmware for your display and the web
+interface, checks them and restarts the radio; the screen shows the progress
+meanwhile. Stations, Wi-Fi, settings and the learned remote stay as they
+are. Skip hides the notice until the next version.
+
+In the settings, under "Firmware update": the version running and the latest
+one, "Check now" and a switch for the daily check. The update **from a file**
+is there too: take two files from the releases page -
+`jradio-<version>-<display>.bin` and `jradio-<version>-www.tar` - and choose
+them together. The radio checks them (a firmware for another display, or not
+jradio at all, does not pass) and asks on its screen: press the encoder to
+install. Any other button, or a minute with no answer, cancels. The press is
+needed because the web interface is open to the whole home network with no
+password.
+
+The firmware goes into the other half of the memory, and only once it has
+been checked. Updating over the network works from the version that brought
+it; that one is installed the usual way, by cable or from the
+[flasher](build.en.md).
+
 ## Formats: the details
 
 - FLAC plays in 24 bits too (truncated to 16 on the output).

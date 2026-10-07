@@ -65,7 +65,10 @@ cannot reach a serial port.
    such a radio, already on a network, does not look for others (it would
    break the sound), and the network's name is typed in.
 
-**Updating** is the first button alone: it writes the app and the wiring and
+**Updating** a radio that already runs a version with updates over the network
+is done from its own web interface, see
+[Firmware update](usage.en.md#firmware-update). From the flasher it is the
+first button alone: it writes the app and the wiring and
 leaves the Wi-Fi networks, the settings and the playlist alone. The second
 button erases all of that; if a new version changed the web interface and you
 do want it, take a backup first - see

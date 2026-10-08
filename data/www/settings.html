@@ -370,49 +370,6 @@
             <p class="field-note" data-i18n="note.device">Записывается в settings.csv устройства и применяется сразу — экран и кнопки на корпусе показывают то же самое.</p>
           </div>
         </section>
-
-        <section class="card is-collapsed" data-section="remote" id="remote-card" aria-labelledby="remote-title" hidden>
-          <div class="card-head">
-            <button class="card-toggle" type="button" aria-expanded="false" aria-controls="remote-body">
-              <svg class="card-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7"/></svg>
-              <h2 id="remote-title" data-i18n="remote.title">Пульт</h2>
-            </button>
-            <span id="remote-status" class="settings-status" role="status" aria-live="polite"></span>
-          </div>
-
-          <div class="card-body" id="remote-body" hidden>
-            <p class="field-note" data-i18n="note.remote">Любой инфракрасный пульт: на отдельной странице у каждой функции нажимаете «Обучить», затем кнопку на пульте. Таблица хранится на устройстве в remote.csv.</p>
-            <div class="settings-actions">
-              <a class="primary-button" href="/remote" data-i18n="remote.open">Настроить пульт</a>
-            </div>
-          </div>
-        </section>
-
-        <section class="card is-collapsed" data-section="backup" aria-labelledby="backup-title">
-          <div class="card-head">
-            <button class="card-toggle" type="button" aria-expanded="false" aria-controls="backup-body">
-              <svg class="card-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7"/></svg>
-              <h2 id="backup-title" data-i18n="backup.title">Резервная копия</h2>
-            </button>
-            <span id="backup-status" class="settings-status" role="status" aria-live="polite" data-i18n="common.ready">Готово</span>
-          </div>
-
-          <div class="card-body" id="backup-body" hidden>
-            <p class="field-note" data-i18n="note.backup">В архив попадает всё, что устройство знает о себе: сети Wi-Fi, настройки, токен ЯМузыки, ключ погоды, обученные кнопки пульта и FM-станции. Плейлист сохраняется отдельно, на странице «Станции».</p>
-
-            <div class="settings-actions">
-              <a id="backup-download" class="secondary-button" href="/api/backup" download data-i18n="backup.download">Скачать архив</a>
-              <label class="secondary-button file-button" for="backup-file">
-                <span data-i18n="backup.choose">Выбрать файл</span>
-                <input id="backup-file" type="file" accept=".zip,.json,.csv,application/zip" hidden>
-              </label>
-              <button id="backup-restore" class="primary-button" type="button" disabled data-i18n="backup.restore">Восстановить</button>
-            </div>
-
-            <p class="field-note" data-i18n="note.restore">Восстановить можно весь архив целиком или один файл из него — wifi.json, settings.csv, yandex.json, weather.json, remote.csv или fm_presets.csv. После восстановления устройство перезагрузится.</p>
-            <p class="field-note" data-i18n="note.backup_secret">Пароли Wi-Fi, токен ЯМузыки и ключ погоды лежат в архиве открытым текстом: храните его так же, как хранили бы пароль.</p>
-          </div>
-        </section>
       </div>
 
       <div class="settings-column">
@@ -469,6 +426,23 @@
           </div>
         </section>
 
+        <section class="card is-collapsed" data-section="remote" id="remote-card" aria-labelledby="remote-title" hidden>
+          <div class="card-head">
+            <button class="card-toggle" type="button" aria-expanded="false" aria-controls="remote-body">
+              <svg class="card-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7"/></svg>
+              <h2 id="remote-title" data-i18n="remote.title">Пульт</h2>
+            </button>
+            <span id="remote-status" class="settings-status" role="status" aria-live="polite"></span>
+          </div>
+
+          <div class="card-body" id="remote-body" hidden>
+            <p class="field-note" data-i18n="note.remote">Любой инфракрасный пульт: на отдельной странице у каждой функции нажимаете «Обучить», затем кнопку на пульте. Таблица хранится на устройстве в remote.csv.</p>
+            <div class="settings-actions">
+              <a class="primary-button" href="/remote" data-i18n="remote.open">Настроить пульт</a>
+            </div>
+          </div>
+        </section>
+
         <section class="card is-collapsed" data-section="yandex" aria-labelledby="yandex-title">
           <div class="card-head">
             <button class="card-toggle" type="button" aria-expanded="false" aria-controls="yandex-body">
@@ -503,27 +477,29 @@
           </div>
         </section>
 
-        <section class="card is-collapsed" data-section="about" aria-labelledby="about-title">
+        <section class="card is-collapsed" data-section="backup" aria-labelledby="backup-title">
           <div class="card-head">
-            <button class="card-toggle" type="button" aria-expanded="false" aria-controls="about-body">
+            <button class="card-toggle" type="button" aria-expanded="false" aria-controls="backup-body">
               <svg class="card-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7"/></svg>
-              <h2 id="about-title" data-i18n="about.title">Об устройстве</h2>
+              <h2 id="backup-title" data-i18n="backup.title">Резервная копия</h2>
             </button>
+            <span id="backup-status" class="settings-status" role="status" aria-live="polite" data-i18n="common.ready">Готово</span>
           </div>
 
-          <div class="card-body" id="about-body" hidden>
-            <dl class="about-list">
-              <dt data-i18n="about.firmware">Прошивка</dt><dd id="about-firmware">—</dd>
-              <dt data-i18n="about.built">Собрана</dt><dd id="about-built">—</dd>
-              <dt data-i18n="about.web">Веб-интерфейс</dt><dd id="about-web">—</dd>
-              <dt>ESP-IDF</dt><dd id="about-idf">—</dd>
-              <dt id="about-module-label" data-i18n="about.module" hidden>Модуль Bluetooth</dt><dd id="about-module" hidden>—</dd>
-            </dl>
+          <div class="card-body" id="backup-body" hidden>
+            <p class="field-note" data-i18n="note.backup">В архив попадает всё, что устройство знает о себе: сети Wi-Fi, настройки, токен ЯМузыки, ключ погоды, обученные кнопки пульта и FM-станции. Плейлист сохраняется отдельно, на странице «Станции».</p>
 
-            <p id="about-notice" class="settings-status is-error" hidden></p>
+            <div class="settings-actions">
+              <a id="backup-download" class="secondary-button" href="/api/backup" download data-i18n="backup.download">Скачать архив</a>
+              <label class="secondary-button file-button" for="backup-file">
+                <span data-i18n="backup.choose">Выбрать файл</span>
+                <input id="backup-file" type="file" accept=".zip,.json,.csv,application/zip" hidden>
+              </label>
+              <button id="backup-restore" class="primary-button" type="button" disabled data-i18n="backup.restore">Восстановить</button>
+            </div>
 
-            <p class="field-note" data-i18n="note.versions">Прошивка и веб-интерфейс пишутся разными командами, поэтому у них свои версии. Если они разошлись, перепрошейте раздел данных.</p>
-            <p class="field-note"><a id="about-author" href="#">—</a></p>
+            <p class="field-note" data-i18n="note.restore">Восстановить можно весь архив целиком или один файл из него — wifi.json, settings.csv, yandex.json, weather.json, remote.csv или fm_presets.csv. После восстановления устройство перезагрузится.</p>
+            <p class="field-note" data-i18n="note.backup_secret">Пароли Wi-Fi, токен ЯМузыки и ключ погоды лежат в архиве открытым текстом: храните его так же, как хранили бы пароль.</p>
           </div>
         </section>
 
@@ -578,6 +554,30 @@
             <p id="update-status" class="settings-status update-status" role="status" aria-live="polite"></p>
 
             <p class="field-note" data-i18n="note.update">Выберите оба файла сразу. Устройство проверит их и попросит нажать энкодер: без нажатия ничего не меняется. Станции, Wi-Fi и настройки остаются на месте.</p>
+          </div>
+        </section>
+
+        <section class="card is-collapsed" data-section="about" aria-labelledby="about-title">
+          <div class="card-head">
+            <button class="card-toggle" type="button" aria-expanded="false" aria-controls="about-body">
+              <svg class="card-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7"/></svg>
+              <h2 id="about-title" data-i18n="about.title">Об устройстве</h2>
+            </button>
+          </div>
+
+          <div class="card-body" id="about-body" hidden>
+            <dl class="about-list">
+              <dt data-i18n="about.firmware">Прошивка</dt><dd id="about-firmware">—</dd>
+              <dt data-i18n="about.built">Собрана</dt><dd id="about-built">—</dd>
+              <dt data-i18n="about.web">Веб-интерфейс</dt><dd id="about-web">—</dd>
+              <dt>ESP-IDF</dt><dd id="about-idf">—</dd>
+              <dt id="about-module-label" data-i18n="about.module" hidden>Модуль Bluetooth</dt><dd id="about-module" hidden>—</dd>
+            </dl>
+
+            <p id="about-notice" class="settings-status is-error" hidden></p>
+
+            <p class="field-note" data-i18n="note.versions">Прошивка и веб-интерфейс пишутся разными командами, поэтому у них свои версии. Если они разошлись, перепрошейте раздел данных.</p>
+            <p class="field-note"><a id="about-author" href="#">—</a></p>
           </div>
         </section>
       </div>

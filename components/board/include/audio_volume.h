@@ -47,6 +47,18 @@ uint16_t audio_volume_gain(uint8_t percent);
 #define AUDIO_VOLUME_FRAME_BYTES 4U
 uint16_t audio_volume_fade_gain(uint16_t gain, uint32_t frames_done, uint32_t fade_frames);
 
+/* The gains one block of `frames` runs between. During the start fade, the
+ * fade's; after it, from where the previous block ended to the setting now.
+ *
+ * The second half is what a turn of the encoder needs: the setting was read
+ * once a block and the whole block played at it, so a change of volume was a
+ * jump between two blocks - a step in the waveform, heard as a crackle, the
+ * louder the bigger the step. Ramped across the next block (26 ms of MP3)
+ * it is a change of level and nothing else. */
+void audio_volume_block_gains(uint16_t previous_end, uint16_t target, uint32_t fade_done,
+                              uint32_t fade_frames, uint32_t frames, uint16_t *start,
+                              uint16_t *end);
+
 /* Scales interleaved 16-bit samples, moving the gain from `gain_start` to
  * `gain_end` across the block.
  *

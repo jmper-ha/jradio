@@ -59,6 +59,19 @@ uint16_t audio_volume_fade_gain(uint16_t gain, uint32_t frames_done, uint32_t fa
     return (uint16_t)(((uint32_t)gain * frames_done) / fade_frames);
 }
 
+void audio_volume_block_gains(uint16_t previous_end, uint16_t target, uint32_t fade_done,
+                              uint32_t fade_frames, uint32_t frames, uint16_t *start,
+                              uint16_t *end)
+{
+    if (fade_done < fade_frames) {
+        *start = audio_volume_fade_gain(target, fade_done, fade_frames);
+        *end = audio_volume_fade_gain(target, fade_done + frames, fade_frames);
+        return;
+    }
+    *start = previous_end;
+    *end = target;
+}
+
 void audio_volume_apply_ramp(const uint8_t *source, uint8_t *destination, size_t length,
                              uint16_t gain_start, uint16_t gain_end)
 {

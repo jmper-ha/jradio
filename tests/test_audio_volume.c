@@ -253,8 +253,40 @@ static void test_the_decay_tail_ends_at_silence(void)
     assert(untouched[0] == 1U && untouched[3] == 4U);
 }
 
+/* A turn of the encoder between two blocks is ramped across the next one,
+ * not jumped at its first sample: the jump was the crackle users heard while
+ * changing the volume. During the start fade the fade decides. */
+static void test_a_volume_change_is_ramped_not_stepped(void)
+{
+    uint16_t start = 0U;
+    uint16_t end = 0U;
+    const uint16_t before = audio_volume_gain(60U);
+    const uint16_t after = audio_volume_gain(53U);
+    audio_volume_block_gains(before, after, AUDIO_VOLUME_FADE_FRAMES, AUDIO_VOLUME_FADE_FRAMES,
+                             1152U, &start, &end);
+    assert(start == before);
+    assert(end == after);
+    /* Steady volume: a flat block. */
+    audio_volume_block_gains(after, after, 999999U, AUDIO_VOLUME_FADE_FRAMES, 1152U, &start, &end);
+    assert(start == after && end == after);
+    /* Still fading in: the fade's numbers, whatever came before. */
+    audio_volume_block_gains(12345U, after, 0U, AUDIO_VOLUME_FADE_FRAMES, 512U, &start, &end);
+    assert(start == 0U);
+    assert(end == audio_volume_fade_gain(after, 512U, AUDIO_VOLUME_FADE_FRAMES));
+
+    /* And applied, the block's first sample is still at the old level. */
+    int16_t samples[2 * 64];
+    for (size_t index = 0; index < sizeof(samples) / sizeof(samples[0]); ++index) samples[index] = 20000;
+    int16_t out[2 * 64];
+    audio_volume_apply_ramp((const uint8_t *)samples, (uint8_t *)out, sizeof(samples), before, after);
+    const int32_t first_expected = (20000 * (int32_t)before + AUDIO_VOLUME_UNITY / 2) / AUDIO_VOLUME_UNITY;
+    assert(out[0] == first_expected);
+    assert(out[2 * 63] < out[0]);
+}
+
 int main(void)
 {
+    test_a_volume_change_is_ramped_not_stepped();
     test_full_volume_is_bit_exact();
     test_zero_is_silence_not_the_bottom_of_the_curve();
     test_the_bottom_reaches_sixty_db_and_every_step_counts();

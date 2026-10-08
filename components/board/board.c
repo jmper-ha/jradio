@@ -624,14 +624,18 @@ _Static_assert(AUDIO_VOLUME_FRAME_BYTES == I2S_BYTES_PER_FRAME,
  *
  * Call with s_audio_mutex held - the scratch and the fade counter are shared
  * between the radio's task and the file player's. */
+/* Where the last block's gain ended, for the next one to start from. */
+static uint16_t s_audio_gain_end = AUDIO_VOLUME_UNITY;
+
 static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
 {
     const uint16_t gain = audio_volume_gain(board_audio_volume());
     const uint32_t frames = (uint32_t)(pcm_length / AUDIO_VOLUME_FRAME_BYTES);
-    const uint16_t gain_start =
-        audio_volume_fade_gain(gain, s_audio_fade_frames, AUDIO_VOLUME_FADE_FRAMES);
-    const uint16_t gain_end = audio_volume_fade_gain(gain, s_audio_fade_frames + frames,
-                                                     AUDIO_VOLUME_FADE_FRAMES);
+    uint16_t gain_start;
+    uint16_t gain_end;
+    audio_volume_block_gains(s_audio_gain_end, gain, s_audio_fade_frames,
+                             AUDIO_VOLUME_FADE_FRAMES, frames, &gain_start, &gain_end);
+    s_audio_gain_end = gain_end;
     if (s_audio_fade_frames < AUDIO_VOLUME_FADE_FRAMES) {
         s_audio_fade_frames += frames;
     }

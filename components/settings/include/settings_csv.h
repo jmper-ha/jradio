@@ -48,3 +48,15 @@ bool settings_csv_snapshot_get(const settings_csv_snapshot_t *snapshot, const ch
                                char *value, size_t value_size);
 void settings_csv_snapshot_free(settings_csv_snapshot_t *snapshot);
 bool settings_csv_set(const char *path, const char *key, const char *value);
+
+/* set(), written in the background. For a value that changes while a hand is
+ * on a control - the volume, the brightness - and must not hold the caller
+ * for the 80 to 720 ms a write takes on LittleFS. Until it is written, get()
+ * and the snapshot answer with it, so nobody reads the old value back. A
+ * later value for the same key replaces one not yet written. Short values
+ * only; anything that does not fit the queue is written at once, as set().
+ *
+ * On the host nothing writes in the background: the value waits until
+ * settings_csv_flush_pending(), which the device's writer task also runs. */
+bool settings_csv_set_later(const char *path, const char *key, const char *value);
+size_t settings_csv_flush_pending(void);

@@ -1,6 +1,7 @@
 #include "settings_csv.h"
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +10,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #endif
 
 #define SETTINGS_CSV_LINE_MAX 512
@@ -53,6 +55,59 @@ static bool valid_field(const char *text, size_t max_length)
     return strchr(text, ',') == NULL && strpbrk(text, "\r\n") == NULL;
 }
 
+/* Writes waiting for the background writer - see settings_csv_set_later().
+ * Small on purpose: what goes through here is a volume or a brightness, a
+ * few short values that change while a hand is on a control. */
+#define PENDING_MAX 8U
+#define PENDING_PATH_MAX 64U
+#define PENDING_KEY_MAX 32U
+#define PENDING_VALUE_MAX 32U
+
+typedef struct {
+    bool used;
+    uint32_t serial;
+    char path[PENDING_PATH_MAX];
+    char key[PENDING_KEY_MAX];
+    char value[PENDING_VALUE_MAX];
+} pending_t;
+
+static pending_t s_pending[PENDING_MAX];
+static uint32_t s_pending_serial;
+
+#ifdef ESP_PLATFORM
+/* A spinlock, not the file mutex: a reader asks the table before it takes
+ * the file, and must not wait behind a write that is the whole point of the
+ * table. Held only to copy a few dozen bytes. */
+static portMUX_TYPE s_pending_mux = portMUX_INITIALIZER_UNLOCKED;
+#define PENDING_ENTER() portENTER_CRITICAL(&s_pending_mux)
+#define PENDING_EXIT() portEXIT_CRITICAL(&s_pending_mux)
+#else
+#define PENDING_ENTER() do { } while (0)
+#define PENDING_EXIT() do { } while (0)
+#endif
+
+/* A value set but not yet on the card answers in place of the file: the
+ * screen reloads its settings when the web changes one, and a reload in the
+ * moment before the write would otherwise put the old volume back. */
+static bool pending_lookup(const char *path, const char *key, char *value, size_t value_size)
+{
+    bool found = false;
+    PENDING_ENTER();
+    for (size_t index = 0U; index < PENDING_MAX; ++index) {
+        const pending_t *entry = &s_pending[index];
+        if (entry->used && strcmp(entry->path, path) == 0 && strcmp(entry->key, key) == 0) {
+            const size_t length = strlen(entry->value);
+            if (length < value_size) {
+                memcpy(value, entry->value, length + 1U);
+                found = true;
+            }
+            break;
+        }
+    }
+    PENDING_EXIT();
+    return found;
+}
+
 static bool parse_line(const char *line, char *key, size_t key_size,
                        char *value, size_t value_size)
 {
@@ -75,6 +130,7 @@ bool settings_csv_get(const char *path, const char *key, char *value, size_t val
 {
     if (path == NULL || !valid_field(key, SETTINGS_CSV_KEY_MAX_LEN) ||
         value == NULL || value_size == 0) return false;
+    if (pending_lookup(path, key, value, value_size)) return true;
     if (!settings_csv_lock()) return false;
     FILE *file = fopen(path, "r");
     if (file == NULL) {
@@ -153,6 +209,9 @@ bool settings_csv_snapshot_get(const settings_csv_snapshot_t *snapshot, const ch
     if (snapshot->text == NULL) return settings_csv_get(snapshot->path, key, value, value_size);
     if (!valid_field(key, SETTINGS_CSV_KEY_MAX_LEN) || value == NULL || value_size == 0) {
         return false;
+    }
+    if (snapshot->path != NULL && pending_lookup(snapshot->path, key, value, value_size)) {
+        return true;
     }
     char line[SETTINGS_CSV_LINE_MAX];
     char parsed_key[SETTINGS_CSV_KEY_MAX_LEN + 1];
@@ -233,3 +292,151 @@ done:
     settings_csv_unlock();
     return ok;
 }
+
+/* Takes the oldest waiting write, leaving it in the table so readers still
+ * see it while it is written. */
+static bool pending_take(pending_t *out)
+{
+    bool found = false;
+    PENDING_ENTER();
+    const pending_t *oldest = NULL;
+    for (size_t index = 0U; index < PENDING_MAX; ++index) {
+        const pending_t *entry = &s_pending[index];
+        if (entry->used && (oldest == NULL || entry->serial - oldest->serial > UINT32_MAX / 2U)) {
+            oldest = entry;
+        }
+    }
+    if (oldest != NULL) {
+        *out = *oldest;
+        found = true;
+    }
+    PENDING_EXIT();
+    return found;
+}
+
+/* Gone from the table once written - unless it was set again meanwhile, in
+ * which case the newer value waits for its own turn. */
+static void pending_done(const pending_t *written)
+{
+    PENDING_ENTER();
+    for (size_t index = 0U; index < PENDING_MAX; ++index) {
+        pending_t *entry = &s_pending[index];
+        if (entry->used && entry->serial == written->serial) {
+            entry->used = false;
+            break;
+        }
+    }
+    PENDING_EXIT();
+}
+
+size_t settings_csv_flush_pending(void)
+{
+    size_t written = 0U;
+    pending_t entry;
+    while (pending_take(&entry)) {
+        /* A write that fails is not retried: the value still stands in
+         * memory and the next change writes it again. */
+        if (settings_csv_set(entry.path, entry.key, entry.value)) ++written;
+        pending_done(&entry);
+    }
+    return written;
+}
+
+/* Queues the write, replacing one for the same key that has not gone out
+ * yet. False when the table has no room or the fields do not fit it. */
+static bool pending_put(const char *path, const char *key, const char *value)
+{
+    if (strlen(path) >= PENDING_PATH_MAX || strlen(key) >= PENDING_KEY_MAX ||
+        strlen(value) >= PENDING_VALUE_MAX) {
+        return false;
+    }
+    bool queued = false;
+    PENDING_ENTER();
+    pending_t *slot = NULL;
+    for (size_t index = 0U; index < PENDING_MAX; ++index) {
+        pending_t *entry = &s_pending[index];
+        if (entry->used && strcmp(entry->path, path) == 0 && strcmp(entry->key, key) == 0) {
+            slot = entry;
+            break;
+        }
+        if (!entry->used && slot == NULL) slot = entry;
+    }
+    if (slot != NULL) {
+        slot->used = true;
+        slot->serial = ++s_pending_serial;
+        memcpy(slot->path, path, strlen(path) + 1U);
+        memcpy(slot->key, key, strlen(key) + 1U);
+        memcpy(slot->value, value, strlen(value) + 1U);
+        queued = true;
+    }
+    PENDING_EXIT();
+    return queued;
+}
+
+#ifdef ESP_PLATFORM
+/* Writes the card off the caller's task. A settings write is a
+ * read-modify-write of the whole file on LittleFS, measured at 80 to 720 ms,
+ * and the screen saved the volume itself: for that long after every turn of
+ * the encoder the meter and the marquee stood still.
+ *
+ * The writer exists only while there is something to write. Its stack is
+ * internal - flash is written - and 6 KB of internal RAM held for good is
+ * more than a write a minute is worth. */
+/* 6 KB: LittleFS compacting a directory inside the rename took all but 24
+ * bytes of 4 KB, and the next write overflowed it - into the heap, which
+ * the next allocation found broken. */
+#define SETTINGS_WRITER_STACK 6144
+
+static bool s_writer_running;
+
+static void settings_writer(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        (void)settings_csv_flush_pending();
+        bool more = false;
+        PENDING_ENTER();
+        for (size_t index = 0U; index < PENDING_MAX && !more; ++index) {
+            more = s_pending[index].used;
+        }
+        if (!more) s_writer_running = false;
+        PENDING_EXIT();
+        if (!more) break;
+    }
+    vTaskDelete(NULL);
+}
+
+bool settings_csv_set_later(const char *path, const char *key, const char *value)
+{
+    if (path == NULL || !valid_field(key, SETTINGS_CSV_KEY_MAX_LEN) ||
+        !valid_field(value, SETTINGS_CSV_VALUE_MAX_LEN)) return false;
+    if (!pending_put(path, key, value)) return settings_csv_set(path, key, value);
+    PENDING_ENTER();
+    const bool start = !s_writer_running;
+    s_writer_running = true;
+    PENDING_EXIT();
+    if (!start) return true;
+    /* Below the screen (4) and the web server (3), so the write waits for
+     * them rather than they for it. */
+    if (xTaskCreatePinnedToCore(settings_writer, "settings_wr", SETTINGS_WRITER_STACK, NULL, 2,
+                                NULL, tskNO_AFFINITY) != pdPASS) {
+        PENDING_ENTER();
+        s_writer_running = false;
+        PENDING_EXIT();
+        ESP_LOGW(TAG, "no internal RAM for the writer; writing %s now", key);
+        (void)settings_csv_flush_pending();
+    }
+    return true;
+}
+#else
+/* The host has no writer task: the write waits in the table until a test
+ * flushes it, which is what lets a test see a value answered from the table
+ * before it is on disk. */
+bool settings_csv_set_later(const char *path, const char *key, const char *value)
+{
+    if (path == NULL || !valid_field(key, SETTINGS_CSV_KEY_MAX_LEN) ||
+        !valid_field(value, SETTINGS_CSV_VALUE_MAX_LEN)) return false;
+    if (!pending_put(path, key, value)) return settings_csv_set(path, key, value);
+    return true;
+}
+#endif

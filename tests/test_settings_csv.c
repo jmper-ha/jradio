@@ -194,6 +194,63 @@ static void test_a_file_too_big_to_hold_is_still_read(void)
     settings_csv_snapshot_free(&snapshot);
 }
 
+static int file_has(const char *line)
+{
+    char text[1024];
+    FILE *file = fopen(PATH, "r");
+    if (file == NULL) return 0;
+    const size_t length = fread(text, 1, sizeof(text) - 1, file);
+    fclose(file);
+    text[length] = '\0';
+    return strstr(text, line) != NULL;
+}
+
+/* The screen saves the volume in the background; until the write is on the
+ * card the value is answered from the queue, so a reload of the settings in
+ * that moment does not put the old volume back. */
+static void test_a_later_write_answers_before_it_is_on_the_card(void)
+{
+    write_file("volume,30\nlast_station_url,http://a/\n");
+    assert(settings_csv_set_later(PATH, "volume", "45"));
+    assert(file_has("volume,30\n"));
+    char value[16];
+    assert(settings_csv_get(PATH, "volume", value, sizeof(value)));
+    assert(strcmp(value, "45") == 0);
+    settings_csv_snapshot_t snapshot;
+    settings_csv_snapshot_load(&snapshot, PATH);
+    assert(settings_csv_snapshot_get(&snapshot, "volume", value, sizeof(value)));
+    assert(strcmp(value, "45") == 0);
+    /* The other keys still come from the file. */
+    assert(settings_csv_snapshot_get(&snapshot, "last_station_url", value, sizeof(value)));
+    settings_csv_snapshot_free(&snapshot);
+
+    /* A second turn before the write replaces the first, and one write
+     * carries both keys. */
+    assert(settings_csv_set_later(PATH, "volume", "50"));
+    assert(settings_csv_set_later(PATH, "brightness", "70"));
+    assert(settings_csv_flush_pending() == 2U);
+    assert(file_has("volume,50\n"));
+    assert(file_has("brightness,70\n"));
+    assert(file_has("last_station_url,http://a/\n"));
+    assert(settings_csv_flush_pending() == 0U);
+    /* Written: answered by the file again. */
+    assert(settings_csv_get(PATH, "volume", value, sizeof(value)));
+    assert(strcmp(value, "50") == 0);
+}
+
+static void test_what_the_queue_cannot_hold_is_written_at_once(void)
+{
+    write_file("");
+    char long_value[64];
+    memset(long_value, 'x', sizeof(long_value) - 1);
+    long_value[sizeof(long_value) - 1] = '\0';
+    assert(settings_csv_set_later(PATH, "device_name", long_value));
+    assert(file_has(long_value));
+    assert(settings_csv_flush_pending() == 0U);
+    /* And what set() refuses, set_later() refuses too. */
+    assert(!settings_csv_set_later(PATH, "volume", "a,b"));
+}
+
 int main(void)
 {
     settings_csv_init();
@@ -206,6 +263,8 @@ int main(void)
     test_a_snapshot_reads_like_get();
     test_a_snapshot_of_no_file_is_empty();
     test_a_file_too_big_to_hold_is_still_read();
+    test_a_later_write_answers_before_it_is_on_the_card();
+    test_what_the_queue_cannot_hold_is_written_at_once();
     assert(remove(PATH) == 0);
     puts("settings_csv tests passed");
     return 0;

@@ -63,6 +63,7 @@
 #include "ui_theme.h"
 #include "esp_app_desc.h"
 #include "ota_update.h"
+#include "settings_csv.h"
 
 /* The note on an empty cover tile, named at the size the shape file asks for.
  * Two levels so the size macro is expanded before it is pasted, the same shape
@@ -5613,6 +5614,9 @@ static void ui_enter_deep_sleep(void)
         s_brightness_save_pending = false;
         (void)device_settings_set_brightness(&s_device_settings, s_device_settings.brightness);
     }
+    /* And whatever the background writer has not reached yet: a sleep is a
+     * reset, and a value still in its queue would be gone with it. */
+    (void)settings_csv_flush_pending();
 
     /* On a board that does not cut the module's power this is what actually
      * releases the speaker; on one that does, it is the difference between a
@@ -7616,13 +7620,13 @@ static void ui_task(void *arg)
         if (ui_volume_commit_due(s_volume_save_pending, s_volume_changed_ms,
                                  ui_tick_get_ms(), UI_VOLUME_SETTLE_MS)) {
             s_volume_save_pending = false;
-            (void)device_settings_set_volume(&s_device_settings, board_audio_volume());
+            (void)device_settings_save_volume_later(&s_device_settings, board_audio_volume());
         }
         if (ui_volume_commit_due(s_brightness_save_pending, s_brightness_changed_ms,
                                  ui_tick_get_ms(), UI_BRIGHTNESS_SETTLE_MS)) {
             s_brightness_save_pending = false;
-            (void)device_settings_set_brightness(&s_device_settings,
-                                                 s_device_settings.brightness);
+            (void)device_settings_save_brightness_later(&s_device_settings,
+                                                        s_device_settings.brightness);
         }
         // After the two commits above, so a change of our own is already on the
         // card and cannot be read back as if it were somebody else's.

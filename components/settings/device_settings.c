@@ -758,6 +758,31 @@ bool device_settings_set_volume(device_settings_t *settings, unsigned char volum
     return true;
 }
 
+/* The two the screen saves after a control settles: in the background, so
+ * the screen does not stand still for the write. */
+bool device_settings_save_volume_later(device_settings_t *settings, unsigned char volume)
+{
+    if (settings == NULL || settings->storage_path[0] == '\0' || volume > 100U) return false;
+    char text[8];
+    snprintf(text, sizeof(text), "%u", (unsigned int)volume);
+    if (!settings_csv_set_later(settings->storage_path, "volume", text)) return false;
+    settings->volume = volume;
+    return true;
+}
+
+bool device_settings_save_brightness_later(device_settings_t *settings, unsigned char brightness)
+{
+    if (settings == NULL || settings->storage_path[0] == '\0' || brightness == 0U ||
+        brightness > 100U) {
+        return false;
+    }
+    char text[8];
+    snprintf(text, sizeof(text), "%u", (unsigned int)brightness);
+    if (!settings_csv_set_later(settings->storage_path, "brightness", text)) return false;
+    settings->brightness = brightness;
+    return true;
+}
+
 bool device_settings_set_brightness(device_settings_t *settings, unsigned char brightness)
 {
     /* Zero is refused along with over-100: a backlight at 0 is a dark panel,

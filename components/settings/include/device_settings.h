@@ -352,6 +352,10 @@ bool device_settings_set_bt_speaker(device_settings_t *settings, const char *add
  * bug, and silently accepting it would hide it. */
 bool device_settings_set_volume(device_settings_t *settings, unsigned char volume);
 bool device_settings_set_brightness(device_settings_t *settings, unsigned char brightness);
+/* set_volume/set_brightness written in the background (settings_csv_set_later):
+ * for the screen, which saves them once a control has settled. */
+bool device_settings_save_volume_later(device_settings_t *settings, unsigned char volume);
+bool device_settings_save_brightness_later(device_settings_t *settings, unsigned char brightness);
 bool device_settings_set_volume_step(device_settings_t *settings, unsigned char step);
 /* An id this build knows, out of device_timezone.h; anything else is refused
  * rather than stored, since a zone the firmware cannot translate is a clock

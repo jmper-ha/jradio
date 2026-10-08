@@ -20,10 +20,9 @@ CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
 # Plain malloc() below this size prefers internal RAM. The ESP-IDF default of
 # 16384 sends almost every allocation in this firmware there, crowding out the
-# DMA-capable memory the panel and lwIP need. It was 1024 while the AES driver
-# encrypted through DMA and had to be fed internal memory; that peripheral is
-# off now (MBEDTLS_HARDWARE_AES), so the threshold goes lower still and only
-# the smallest, latency-sensitive allocations stay internal.
+# DMA-capable memory the panel and lwIP need, so only the smallest,
+# latency-sensitive allocations stay internal. Measured with the hardware AES
+# below and the USB host up: every HTTPS source opened at 256.
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=256
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
@@ -158,10 +157,12 @@ CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
 CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP=y
 # CONFIG_SPIRAM_MEMTEST is not set
 
-# Software AES, on purpose. The hardware one goes through DMA and wants a
-# contiguous internal block the size of a TLS record - up to 16 KB - and a
-# fully fitted board does not have one: with the USB host up the largest DMA
-# block measured 8 KB, and every HTTPS request died with
-# "esp-aes: Failed to allocate memory". Software AES needs no DMA memory at
-# all; a 320 kbps stream is 40 KB/s, which this chip does several times over.
-# CONFIG_MBEDTLS_HARDWARE_AES is not set
+# Hardware AES, back on. It was switched off on 2026-09-23 (714aa3a) because
+# HTTPS died with "esp-aes: Failed to allocate memory" on a fully fitted board,
+# and the software AES that replaced it crackled: a user's bisect landed on
+# exactly that commit, and with this line alone his radio went quiet again.
+# Measured on the fitted bench with the USB host up and a drive in it: radio
+# over HTTPS and HLS, Yandex across track changes, GitHub - no allocation
+# failure, down to a largest DMA block of 1728 bytes. The driver no longer
+# wants a record-sized contiguous block.
+CONFIG_MBEDTLS_HARDWARE_AES=y

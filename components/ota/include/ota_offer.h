@@ -14,6 +14,8 @@ extern "C" {
 
 #define OTA_OFFER_VERSION_MAX 32U
 #define OTA_OFFER_URL_MAX 192U
+/* As many as tools/ota_manifest.py puts in (HISTORY_MAX). */
+#define OTA_OFFER_HISTORY_MAX 10U
 
 typedef struct {
     char url[OTA_OFFER_URL_MAX];
@@ -21,11 +23,21 @@ typedef struct {
     uint8_t sha256[32];
 } ota_offer_file_t;
 
+/* One version's change list, in both languages. */
 typedef struct {
     char version[OTA_OFFER_VERSION_MAX];
     /* malloc'd, possibly empty, freed by ota_offer_free(). */
-    char *notes_ru;
-    char *notes_en;
+    char *ru;
+    char *en;
+} ota_offer_notes_t;
+
+typedef struct {
+    char version[OTA_OFFER_VERSION_MAX];
+    /* Every version newer than the running one that the release still
+     * describes, newest first - what an update to `version` brings,
+     * including the releases skipped on the way. */
+    ota_offer_notes_t notes[OTA_OFFER_HISTORY_MAX];
+    size_t notes_count;
     ota_offer_file_t app;
     ota_offer_file_t www;
 } ota_offer_t;
@@ -40,8 +52,10 @@ typedef enum {
     OTA_OFFER_MEMORY,
 } ota_offer_result_t;
 
+/* `running` decides which change lists are kept: the newer ones only, or
+ * all of them when it is not a version (a build with no tags). */
 ota_offer_result_t ota_offer_parse(const char *json, size_t length, const char *display,
-                                   ota_offer_t *offer);
+                                   const char *running, ota_offer_t *offer);
 void ota_offer_free(ota_offer_t *offer);
 
 /* Orders two versions as git describe writes them - v1.5.5, v1.5.5-4-gabc1234,

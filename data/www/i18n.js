@@ -797,6 +797,8 @@
                      'This radio needs {app} and {web} from the releases page: '],
     'update.version_placeholder': ['<версия>', '<version>'],
     'update.releases': ['открыть', 'open it'],
+    'update.whats_new': ['Что нового', "What's new"],
+    'update.full_history': ['Вся история изменений', 'The whole change history'],
     'update.err_choice': ['Выберите прошивку .bin, архив .tar или оба файла', 'Choose a .bin firmware, a .tar archive, or both'],
     'backup.title': ['Резервная копия', 'Backup'],
     'backup.download': ['Скачать архив', 'Download the archive'],

@@ -17,6 +17,7 @@ class ClassList {
   }
   add(name) { this.values.add(name); }
   has(name) { return this.values.has(name); }
+  contains(name) { return this.values.has(name); }
 }
 
 class Element {
@@ -37,16 +38,30 @@ class Element {
 }
 
 const CARD = ['update-status', 'update-current', 'update-latest', 'update-auto', 'update-check',
-              'update-file', 'update-send', 'update-progress', 'update-files'];
-const BANNER = ['update-banner', 'update-banner-title', 'update-banner-notes',
+              'update-file', 'update-send', 'update-progress', 'update-files',
+              'update-history-block', 'update-history', 'update-changelog', 'update'];
+const BANNER = ['update-banner', 'update-banner-title', 'update-banner-more',
                 'update-banner-status', 'update-banner-install', 'update-banner-skip'];
 
 /* `page` is which of the two pages: the settings page has the card and the
    notice, the player only the notice. */
-function load(otaAnswers, page = 'settings') {
+function load(otaAnswers, page = 'settings', hash = '') {
   const elements = {};
   for (const id of page === 'settings' ? CARD.concat(BANNER) : BANNER) {
     elements[`#${id}`] = new Element();
+  }
+  /* The card as settings.js leaves it on a phone: folded, its toggle the
+     way to unfold it. */
+  const card = elements['#update'];
+  if (card) {
+    card.classList.add('is-collapsed');
+    card.toggle = new Element();
+    card.toggle.click = () => {
+      card.toggle.clicked = (card.toggle.clicked || 0) + 1;
+      card.classList.toggle('is-collapsed', false);
+    };
+    card.querySelector = (selector) => (selector === '.card-toggle' ? card.toggle : null);
+    card.scrollIntoView = () => { card.scrolled = true; };
   }
   if (!elements['#update-file']) elements['#update-file'] = new Element();
   /* A file input forgets its files when its value is cleared. */
@@ -56,6 +71,7 @@ function load(otaAnswers, page = 'settings') {
   });
   const timers = [];
   const requests = [];
+  const windowListeners = {};
   const state = {ota: otaAnswers.slice(), about: [], fetched: [], actions: [],
                  actionReply: {}};
 
@@ -100,6 +116,8 @@ function load(otaAnswers, page = 'settings') {
       createElement: () => new Element(),
     },
     window: {
+      location: {hash},
+      addEventListener(type, callback) { (windowListeners[type] ||= []).push(callback); },
       setTimeout(callback, delay) { timers.push({callback, delay}); return timers.length; },
       fetch(url) {
         state.fetched.push(url);
@@ -128,17 +146,19 @@ function load(otaAnswers, page = 'settings') {
     for (const timer of due) timer.callback();
     await settle();
   };
-  return {elements, requests, state, runTimers};
+  return {elements, requests, state, runTimers, windowListeners, window: context.window};
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 const quiet = {enabled: true, state: 'done', error: '', installing: false, latest: 'v1.5.5',
-               available: false, skipped: '', checked_at: 0, notes_ru: '', notes_en: ''};
+               available: false, skipped: '', checked_at: 0, history: []};
 const idle = {state: 'idle', done: 0, total: 0, version: '', error: '', running: 'v1.5.5',
               slot: 'factory', display: 'st7789_320_240', check: quiet};
 const offering = {...quiet, latest: 'v1.6.0', available: true,
-                  notes_ru: 'Новое:\n- Обновление по сети.\n- Темы.', notes_en: 'New:\n- Updates.'};
+                  history: [{version: 'v1.6.0', ru: 'Новое:\n- Обновление по сети.\n- Темы.',
+                             en: 'New:\n- Updates.'},
+                            {version: 'v1.5.6', ru: 'Исправлено:\n- Энкодер.', en: ''}]};
 
 async function test_a_good_upload_waits_for_the_press_and_sees_the_new_version() {
   const page = load([idle]);
@@ -307,16 +327,51 @@ async function test_the_notice_shows_a_new_release_on_the_player_too() {
   const {elements} = page;
   assert.strictEqual(elements['#update-banner'].hidden, false);
   assert.strictEqual(elements['#update-banner-title'].textContent, 'Вышла новая версия v1.6.0');
-  const notes = elements['#update-banner-notes'].children;
-  assert.deepStrictEqual(notes.map((item) => item.textContent),
-                         ['Новое:', 'Обновление по сети.', 'Темы.']);
-  assert.strictEqual(notes[0].classList.has('is-heading'), true);
-  assert.strictEqual(notes[1].classList.has('is-heading'), false);
+  // The notice is one line; what is new is a link away, not in it.
+  assert.strictEqual(elements['#update-banner-notes'], undefined);
 
   // Nothing new: no notice.
   const quietPage = load([idle], 'player');
   await settle();
   assert.strictEqual(quietPage.elements['#update-banner'].hidden, true);
+}
+
+async function test_the_card_lists_every_version_the_update_brings() {
+  const page = load([{...idle, check: offering}]);
+  await settle();
+  const {elements} = page;
+  assert.strictEqual(elements['#update-history-block'].hidden, false);
+  const parts = elements['#update-history'].children;
+  // A heading and a list per version, newest first.
+  assert.deepStrictEqual(parts.filter((_, at) => at % 2 === 0).map((part) => part.textContent),
+                         ['v1.6.0', 'v1.5.6']);
+  const first = parts[1].children;
+  assert.deepStrictEqual(first.map((item) => item.textContent),
+                         ['Новое:', 'Обновление по сети.', 'Темы.']);
+  assert.strictEqual(first[0].classList.has('is-heading'), true);
+  assert.strictEqual(first[1].classList.has('is-heading'), false);
+
+  // Up to date: nothing to list.
+  const quietPage = load([idle]);
+  await settle();
+  assert.strictEqual(quietPage.elements['#update-history-block'].hidden, true);
+}
+
+async function test_whats_new_unfolds_the_card() {
+  const page = load([{...idle, check: offering}], 'settings', '#update');
+  await settle();
+  const card = page.elements['#update'];
+  assert.strictEqual(card.toggle.clicked, 1);
+  assert.strictEqual(card.classList.has('is-collapsed'), false);
+  assert.strictEqual(card.scrolled, true);
+  // Followed again from the notice on this same page: already open, not folded.
+  for (const callback of page.windowListeners.hashchange) callback();
+  assert.strictEqual(card.toggle.clicked, 1);
+
+  // Without the hash the card is left as the page keeps it.
+  const plain = load([idle]);
+  await settle();
+  assert.strictEqual(plain.elements['#update'].toggle.clicked, undefined);
 }
 
 async function test_update_downloads_installs_and_comes_back_new() {
@@ -380,10 +435,13 @@ async function test_skip_hides_the_notice() {
   const page = load([{...idle, check: offering}]);
   await settle();
   const {elements, state} = page;
+  assert.strictEqual(elements['#update-history-block'].hidden, false);
   elements['#update-banner-skip'].emit('click');
   await settle();
   assert.deepStrictEqual(state.actions, ['do=skip']);
   assert.strictEqual(elements['#update-banner'].hidden, true);
+  // What's new goes with it: nothing is on offer any more.
+  assert.strictEqual(elements['#update-history-block'].hidden, true);
 }
 
 async function test_check_now_and_the_switch() {
@@ -439,6 +497,8 @@ async function test_check_now_and_the_switch() {
   await test_a_no_on_the_panel_reaches_the_page();
   await test_a_page_opened_during_the_question_joins_it();
   await test_the_notice_shows_a_new_release_on_the_player_too();
+  await test_the_card_lists_every_version_the_update_brings();
+  await test_whats_new_unfolds_the_card();
   await test_update_downloads_installs_and_comes_back_new();
   await test_the_card_follows_an_update_made_from_the_notice();
   await test_a_failed_download_says_why_and_offers_again();

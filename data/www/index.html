@@ -68,13 +68,15 @@
        same block on the player and the settings page. -->
   <section id="update-banner" class="update-banner" aria-live="polite" hidden>
     <div class="update-banner-head">
-      <strong id="update-banner-title"></strong>
+      <p class="update-banner-line">
+        <strong id="update-banner-title"></strong>
+        <a id="update-banner-more" href="/settings#update" data-i18n="update.whats_new">Что нового</a>
+      </p>
       <div class="update-banner-actions">
         <button id="update-banner-install" class="primary-button" type="button" data-i18n="update.install">Обновить</button>
         <button id="update-banner-skip" class="secondary-button" type="button" data-i18n="update.skip">Пропустить</button>
       </div>
     </div>
-    <ul id="update-banner-notes" class="update-banner-notes"></ul>
     <p id="update-banner-status" class="settings-status update-status"></p>
   </section>
 

@@ -2205,13 +2205,16 @@ a.secondary-button { text-decoration: none; color: inherit; }
   gap: .6rem;
 }
 .update-banner-actions { display: flex; gap: .5rem; }
-.update-banner-notes {
-  margin: .5rem 0 0;
+.update-banner-line { margin: 0; }
+.update-banner-line a { margin-left: .5rem; white-space: nowrap; }
+.update-history h4 { margin: .7rem 0 .2rem; font-size: .9rem; }
+.update-history ul {
+  margin: 0;
   padding-left: 1.2rem;
   font-size: .85rem;
   color: var(--muted);
 }
-.update-banner-notes .is-heading { list-style: none; margin-left: -1.2rem; color: var(--text); }
+.update-history .is-heading { list-style: none; margin-left: -1.2rem; color: var(--text); }
 .hw-problem.is-error { color: var(--bad); }
 .hw-problem.is-warning { color: var(--accent-2); }
 .hw-problem.is-ok { color: var(--ok); }

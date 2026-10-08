@@ -130,16 +130,19 @@
   /* The notice. */
   const banner = $('#update-banner');
   const bannerTitle = $('#update-banner-title');
-  const bannerNotes = $('#update-banner-notes');
   const bannerStatus = $('#update-banner-status');
   const bannerInstall = $('#update-banner-install');
   const bannerSkip = $('#update-banner-skip');
   let installing = false;
 
+  function english() {
+    return Boolean(window.jradioI18n.language) && window.jradioI18n.language() === 'en';
+  }
+
   /* "New:" and "- an item" lines, as tools/ota_manifest.py hands them over:
      the items become list items, the rest headings among them. */
-  function renderNotes(text) {
-    if (!bannerNotes) return;
+  function notesList(text) {
+    const list = document.createElement('ul');
     const items = String(text || '').split('\n').filter((line) => line.trim() !== '')
       .map((line) => {
         const item = document.createElement('li');
@@ -151,7 +154,8 @@
         }
         return item;
       });
-    bannerNotes.replaceChildren(...items);
+    list.replaceChildren(...items);
+    return list;
   }
 
   function renderBanner(status) {
@@ -160,8 +164,6 @@
     banner.hidden = !(check.available || installing);
     if (banner.hidden) return;
     bannerTitle.textContent = t('update.available', {version: check.latest});
-    const english = window.jradioI18n.language && window.jradioI18n.language() === 'en';
-    renderNotes(english ? check.notes_en : check.notes_ru);
     bannerInstall.disabled = installing;
     bannerSkip.disabled = installing;
   }
@@ -227,15 +229,43 @@
   const sendButton = $('#update-send');
   const progress = $('#update-progress');
   const filesLine = $('#update-files');
+  const historyBlock = $('#update-history-block');
+  const historyList = $('#update-history');
+  const changelogLink = $('#update-changelog');
   const say = (text, kind) => setLine(statusLine, text, kind);
 
   let busy = false;
   let expected = '';
   let checking = false;
 
+  /* What the update brings: every version newer than the running one, each
+     with its list - a radio that skipped releases is shown them all. A
+     version with no English text is shown in Russian rather than left
+     out. */
+  function renderHistory(check) {
+    if (!historyBlock) return;
+    const history = Array.isArray(check.history) ? check.history : [];
+    /* Only while there is something on offer: once the version is skipped
+       the list goes with the notice, and comes back with the next one. */
+    historyBlock.hidden = history.length === 0 || check.available !== true;
+    const parts = [];
+    for (const entry of history) {
+      const heading = document.createElement('h4');
+      heading.textContent = entry.version;
+      const text = english() && entry.en ? entry.en : entry.ru;
+      parts.push(heading, notesList(text));
+    }
+    historyList.replaceChildren(...parts);
+    if (changelogLink) {
+      changelogLink.href = 'https://github.com/jmper-ha/jradio/blob/main/doc/' +
+        (english() ? 'changelog.en.md' : 'changelog.md');
+    }
+  }
+
   function renderCard(status) {
     if (!statusLine || !status) return;
     const check = status.check || {};
+    renderHistory(check);
     current.textContent = status.running || '—';
     if (check.latest) {
       latestLine.textContent = check.checked_at > 0
@@ -288,7 +318,10 @@
       });
     });
     if (window.jradioI18n.onChange) {
-      window.jradioI18n.onChange(() => renderBanner(last));
+      window.jradioI18n.onChange(() => {
+        renderBanner(last);
+        renderCard(last);
+      });
     }
   }
 
@@ -478,6 +511,24 @@
       });
     });
     refreshButton();
+  }
+
+  /* "What's new" on the notice leads here: the card is unfolded and brought
+     into view. settings.js folds the sections on a phone and has already
+     run, so the card's own toggle does the unfolding. */
+  function revealCard() {
+    if (!statusLine || !window.location || window.location.hash !== '#update') return;
+    const card = $('#update');
+    if (!card) return;
+    if (card.classList.contains('is-collapsed')) {
+      const toggle = card.querySelector('.card-toggle');
+      if (toggle) toggle.click();
+    }
+    if (typeof card.scrollIntoView === 'function') card.scrollIntoView({block: 'start'});
+  }
+  revealCard();
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('hashchange', revealCard);
   }
 
   /* Once per page. A page opened while the radio already waits for the

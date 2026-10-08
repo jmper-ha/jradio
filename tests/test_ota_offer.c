@@ -8,7 +8,10 @@
  * files. */
 static const char k_manifest[] =
     "{\"format\":1,\"version\":\"v1.6.0\","
-    "\"notes\":{\"ru\":\"Новое:\\n- Обновление по сети.\",\"en\":\"New:\\n- Updates.\"},"
+    "\"history\":["
+    "{\"version\":\"v1.6.0\",\"ru\":\"Новое:\\n- Обновление по сети.\",\"en\":\"New:\\n- Updates.\"},"
+    "{\"version\":\"v1.5.5\",\"ru\":\"Новое:\\n- Темы.\",\"en\":\"\"},"
+    "{\"version\":\"v1.5.0\",\"ru\":\"Новое:\\n- FM.\",\"en\":\"New:\\n- FM.\"}],"
     "\"www\":{\"url\":\"https://github.com/o/jradio/releases/download/v1.6.0/ota-www.tar\","
     "\"size\":604160,\"sha256\":\"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff\"},"
     "\"firmware\":{"
@@ -22,7 +25,7 @@ static const char k_manifest[] =
 static void test_the_offer_is_this_displays_firmware_and_the_web_files(void)
 {
     ota_offer_t offer;
-    assert(ota_offer_parse(k_manifest, strlen(k_manifest), "st7789_320_240", &offer) ==
+    assert(ota_offer_parse(k_manifest, strlen(k_manifest), "st7789_320_240", "v1.5.5", &offer) ==
            OTA_OFFER_OK);
     assert(strcmp(offer.version, "v1.6.0") == 0);
     assert(strstr(offer.app.url, "ota-st7789_320_240.bin") != NULL);
@@ -31,37 +34,66 @@ static void test_the_offer_is_this_displays_firmware_and_the_web_files(void)
     assert(strstr(offer.www.url, "ota-www.tar") != NULL);
     assert(offer.www.size == 604160U);
     assert(offer.www.sha256[1] == 0x11);
-    assert(strcmp(offer.notes_ru, "Новое:\n- Обновление по сети.") == 0);
-    assert(strcmp(offer.notes_en, "New:\n- Updates.") == 0);
+    /* Running v1.5.5: only what is newer comes along. */
+    assert(offer.notes_count == 1U);
+    assert(strcmp(offer.notes[0].version, "v1.6.0") == 0);
+    assert(strcmp(offer.notes[0].ru, "Новое:\n- Обновление по сети.") == 0);
+    assert(strcmp(offer.notes[0].en, "New:\n- Updates.") == 0);
+    ota_offer_free(&offer);
+}
+
+static void test_a_radio_that_skipped_releases_gets_all_it_skipped(void)
+{
+    ota_offer_t offer;
+    assert(ota_offer_parse(k_manifest, strlen(k_manifest), "st7789_320_240", "v1.4.0", &offer) ==
+           OTA_OFFER_OK);
+    assert(offer.notes_count == 3U);
+    assert(strcmp(offer.notes[0].version, "v1.6.0") == 0);
+    assert(strcmp(offer.notes[1].version, "v1.5.5") == 0);
+    /* A version with no English text comes with its Russian alone. */
+    assert(strcmp(offer.notes[1].en, "") == 0);
+    assert(strcmp(offer.notes[2].version, "v1.5.0") == 0);
+    ota_offer_free(&offer);
+
+    /* A bench build past v1.5.0 has seen it already. */
+    assert(ota_offer_parse(k_manifest, strlen(k_manifest), "st7789_320_240",
+                           "v1.5.0-12-gabc1234-dirty", &offer) == OTA_OFFER_OK);
+    assert(offer.notes_count == 2U);
+    ota_offer_free(&offer);
+
+    /* No version at all: every list there is. */
+    assert(ota_offer_parse(k_manifest, strlen(k_manifest), "st7789_320_240", "e5fcf3d",
+                           &offer) == OTA_OFFER_OK);
+    assert(offer.notes_count == 3U);
     ota_offer_free(&offer);
 }
 
 static void test_a_release_without_this_display_is_not_an_offer(void)
 {
     ota_offer_t offer;
-    assert(ota_offer_parse(k_manifest, strlen(k_manifest), "ili9488_480_320", &offer) ==
+    assert(ota_offer_parse(k_manifest, strlen(k_manifest), "ili9488_480_320", "v1.5.5", &offer) ==
            OTA_OFFER_NO_DISPLAY);
-    assert(offer.notes_ru == NULL);
+    assert(offer.notes_count == 0U);
 }
 
 static void test_broken_and_later_manifests_are_told_apart(void)
 {
     ota_offer_t offer;
     char text[sizeof(k_manifest) + 16];
-    assert(ota_offer_parse("<html>Not Found</html>", 22, "st7789_320_240", &offer) ==
+    assert(ota_offer_parse("<html>Not Found</html>", 22, "st7789_320_240", "v1.5.5", &offer) ==
            OTA_OFFER_MALFORMED);
     snprintf(text, sizeof(text), "%s", k_manifest);
     memcpy(strstr(text, "\"format\":1"), "\"format\":2", 10);
-    assert(ota_offer_parse(text, strlen(text), "st7789_320_240", &offer) == OTA_OFFER_FORMAT);
+    assert(ota_offer_parse(text, strlen(text), "st7789_320_240", "v1.5.5", &offer) == OTA_OFFER_FORMAT);
     /* A digest one character short. */
     snprintf(text, sizeof(text), "%s", k_manifest);
     char *digest = strstr(text, "ffeeddcc");
     digest[0] = '"';
-    assert(ota_offer_parse(text, strlen(text), "ili9341_320_240", &offer) == OTA_OFFER_MALFORMED);
+    assert(ota_offer_parse(text, strlen(text), "ili9341_320_240", "v1.5.5", &offer) == OTA_OFFER_MALFORMED);
     /* A download that is not one. */
     snprintf(text, sizeof(text), "%s", k_manifest);
     memcpy(strstr(text, "https://github.com/o/jradio/releases/download/v1.6.0/ota-www"), "file:///", 8);
-    assert(ota_offer_parse(text, strlen(text), "st7789_320_240", &offer) == OTA_OFFER_MALFORMED);
+    assert(ota_offer_parse(text, strlen(text), "st7789_320_240", "v1.5.5", &offer) == OTA_OFFER_MALFORMED);
 }
 
 static void test_versions_order_as_git_describe_writes_them(void)
@@ -98,6 +130,7 @@ int main(void)
 {
     test_the_offer_is_this_displays_firmware_and_the_web_files();
     test_a_release_without_this_display_is_not_an_offer();
+    test_a_radio_that_skipped_releases_gets_all_it_skipped();
     test_broken_and_later_manifests_are_told_apart();
     test_versions_order_as_git_describe_writes_them();
     test_what_is_offered();

@@ -118,7 +118,7 @@ installed together.
 | `POST /api/sleep-timer` | `{"minutes":45}`, zero switches it off |
 | `GET /api/about` | The firmware, web interface and ESP-IDF versions |
 | `GET /api/backup`, `POST /api/restore` | The backup, see above |
-| `GET /api/ota` | The update's progress (`state`: `idle`, `receiving`, `confirm`, `restarting`, `failed`), the version and slot running; under `check`, the release's latest version, whether there is something to offer, the change lists `notes_ru`/`notes_en` |
+| `GET /api/ota` | The update's progress (`state`: `idle`, `receiving`, `confirm`, `restarting`, `failed`), the version and slot running; under `check`, the release's latest version, whether there is something to offer, and `history` - the changes of every version newer than the running one, newest first (`version`, `ru`, `en`) |
 | `POST /api/ota/app` | A firmware from a file, as the request body; answers `{"version":…}` or `{"error":"wrong_display"}` and the like |
 | `POST /api/ota/www?app=1` | The web archive; `app=1` says a firmware follows and the question is asked once |
 | `POST /api/ota/action?do=…` | `check` - check now, `install` - download and install the release, `skip` - skip it, `auto&on=0/1` - the daily check |

@@ -112,7 +112,7 @@ OpenWeatherMap), `remote.csv` (обученные кнопки пульта) и 
 | `POST /api/sleep-timer` | `{"minutes":45}`, ноль — выключить |
 | `GET /api/about` | Версии прошивки, веб-интерфейса и ESP-IDF |
 | `GET /api/backup`, `POST /api/restore` | Резервная копия, см. выше |
-| `GET /api/ota` | Ход обновления (`state`: `idle`, `receiving`, `confirm`, `restarting`, `failed`), работающая версия и раздел; в `check` — последняя версия релиза, есть ли что предложить, списки изменений `notes_ru`/`notes_en` |
+| `GET /api/ota` | Ход обновления (`state`: `idle`, `receiving`, `confirm`, `restarting`, `failed`), работающая версия и раздел; в `check` — последняя версия релиза, есть ли что предложить и `history` — изменения всех версий новее установленной, от новой к старой (`version`, `ru`, `en`) |
 | `POST /api/ota/app` | Прошивка из файла, телом запроса; ответ `{"version":…}` или `{"error":"wrong_display"}` и т. п. |
 | `POST /api/ota/www?app=1` | Архив веб-интерфейса; `app=1` — следом придёт прошивка и вопрос будет один |
 | `POST /api/ota/action?do=…` | `check` — проверить сейчас, `install` — скачать и поставить релиз, `skip` — пропустить его, `auto&on=0/1` — ежедневная проверка |

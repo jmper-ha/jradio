@@ -63,8 +63,34 @@ static char *dup_or_empty(const cJSON *item)
     return copy;
 }
 
+/* The change lists newer than `running`, in the manifest's order. An entry
+ * that is not a version, or no newer, is left out; so is everything past
+ * the table. */
+static ota_offer_result_t read_history(const cJSON *history, const char *running,
+                                       ota_offer_t *offer)
+{
+    if (!cJSON_IsArray(history)) return OTA_OFFER_MALFORMED;
+    const cJSON *entry = NULL;
+    cJSON_ArrayForEach(entry, history) {
+        if (offer->notes_count == OTA_OFFER_HISTORY_MAX) break;
+        ota_offer_notes_t *notes = &offer->notes[offer->notes_count];
+        if (!copy_string(notes->version, sizeof(notes->version),
+                         cJSON_GetObjectItemCaseSensitive(entry, "version"))) {
+            continue;
+        }
+        bool known = false;
+        const int order = ota_version_compare(notes->version, running, &known);
+        if (known && order <= 0) continue;
+        notes->ru = dup_or_empty(cJSON_GetObjectItemCaseSensitive(entry, "ru"));
+        notes->en = dup_or_empty(cJSON_GetObjectItemCaseSensitive(entry, "en"));
+        ++offer->notes_count;
+        if (notes->ru == NULL || notes->en == NULL) return OTA_OFFER_MEMORY;
+    }
+    return OTA_OFFER_OK;
+}
+
 ota_offer_result_t ota_offer_parse(const char *json, size_t length, const char *display,
-                                   ota_offer_t *offer)
+                                   const char *running, ota_offer_t *offer)
 {
     memset(offer, 0, sizeof(*offer));
     if (json == NULL || display == NULL) return OTA_OFFER_MALFORMED;
@@ -73,7 +99,6 @@ ota_offer_result_t ota_offer_parse(const char *json, size_t length, const char *
     ota_offer_result_t result = OTA_OFFER_OK;
     const cJSON *format = cJSON_GetObjectItemCaseSensitive(root, "format");
     const cJSON *firmware = cJSON_GetObjectItemCaseSensitive(root, "firmware");
-    const cJSON *notes = cJSON_GetObjectItemCaseSensitive(root, "notes");
     if (!cJSON_IsNumber(format) || !cJSON_IsObject(firmware)) {
         result = OTA_OFFER_MALFORMED;
     } else if (format->valueint != OTA_OFFER_FORMAT_KNOWN) {
@@ -87,9 +112,8 @@ ota_offer_result_t ota_offer_parse(const char *json, size_t length, const char *
                !read_file(cJSON_GetObjectItemCaseSensitive(root, "www"), &offer->www)) {
         result = OTA_OFFER_MALFORMED;
     } else {
-        offer->notes_ru = dup_or_empty(cJSON_GetObjectItemCaseSensitive(notes, "ru"));
-        offer->notes_en = dup_or_empty(cJSON_GetObjectItemCaseSensitive(notes, "en"));
-        if (offer->notes_ru == NULL || offer->notes_en == NULL) result = OTA_OFFER_MEMORY;
+        result = read_history(cJSON_GetObjectItemCaseSensitive(root, "history"),
+                              running != NULL ? running : "", offer);
     }
     cJSON_Delete(root);
     if (result != OTA_OFFER_OK) ota_offer_free(offer);
@@ -98,8 +122,10 @@ ota_offer_result_t ota_offer_parse(const char *json, size_t length, const char *
 
 void ota_offer_free(ota_offer_t *offer)
 {
-    free(offer->notes_ru);
-    free(offer->notes_en);
+    for (size_t index = 0U; index < offer->notes_count; ++index) {
+        free(offer->notes[index].ru);
+        free(offer->notes[index].en);
+    }
     memset(offer, 0, sizeof(*offer));
 }
 

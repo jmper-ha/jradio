@@ -397,13 +397,15 @@ a password.
 
 Web interface only. Once a day the radio asks GitHub whether a new version is
 out - and tells it nothing about itself. When one is, a notice appears at the
-top of the main page and of the settings: the version, what is new in it, and
-Update and Skip.
+top of the main page and of the settings: the version, a "What's new" link,
+and Update and Skip. "What's new" opens, in the settings, the changes of
+every version newer than the installed one - the skipped ones included.
 
 Update stops the sound, downloads the firmware for your display and the web
 interface, checks them and restarts the radio; the screen shows the progress
 meanwhile. Stations, Wi-Fi, settings and the learned remote stay as they
-are. Skip hides the notice until the next version.
+are. Skip hides the notice until the next version; "Check now" in the
+settings brings a skipped one back.
 
 In the settings, under "Firmware update": the version running and the latest
 one, "Check now" and a switch for the daily check. The update **from a file**

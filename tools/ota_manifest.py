@@ -16,10 +16,12 @@ ota.json is uploaded last, after everything it names: a radio reads it from
 releases/latest/download/ota.json, and a manifest that arrived before its
 files would send radios to a 404.
 
-The change list comes from doc/changelog.md and changelog.en.md - the
-version's own section, so there is one place it is written. A tag with no
-section stops the release here rather than shipping an update that cannot
-say what it changes.
+The change list comes from doc/changelog.md and changelog.en.md, so there is
+one place it is written: the sections of this version and the HISTORY_MAX - 1
+released before it, newest first. A radio that skipped a few releases is
+shown every one it is about to get, not only the last - it keeps the ones
+newer than itself. A tag with no section of its own stops the release here
+rather than shipping an update that cannot say what it changes.
 
 Usage:
     ota_manifest.py --version v1.6.0 --builds builds --repo jmper-ha/jradio
@@ -44,6 +46,24 @@ MARK_MAGIC = b"JRD1"
 
 def fail(message):
     sys.exit("ota_manifest.py: " + message)
+
+
+# Sections in one ota.json: room for a radio a good while behind, at about a
+# kilobyte a version in two languages, inside the 24 KB the radio reads.
+HISTORY_MAX = 10
+
+RELEASE_HEADING = re.compile(r"^##\s+(v\d+\.\d+\.\d+)(\s|$)")
+
+
+def version_key(version):
+    return tuple(int(part) for part in version[1:].split("."))
+
+
+def released_versions(path):
+    """The vX.Y.Z of every "## vX.Y.Z ..." heading - "Unreleased" is not one."""
+    with open(path, encoding="utf-8") as handle:
+        return [match.group(1) for match in
+                (RELEASE_HEADING.match(line) for line in handle.read().splitlines()) if match]
 
 
 def changelog_section(path, version):
@@ -102,10 +122,21 @@ def main(argv=None):
     # A release, not a commit between them: radios compare these.
     if not re.fullmatch(r"v\d+\.\d+\.\d+", args.version):
         fail("%s is not a release version (vX.Y.Z)" % args.version)
-    notes = {
-        "ru": changelog_section(args.changelog_ru, args.version),
-        "en": changelog_section(args.changelog_en, args.version),
-    }
+    # This version and the ones before it, newest first. The English file may
+    # lack an old section the Russian one has; such a version goes out with
+    # its Russian text alone rather than not at all.
+    older = sorted({version for version in released_versions(args.changelog_ru)
+                    if version_key(version) < version_key(args.version)},
+                   key=version_key, reverse=True)
+    english = set(released_versions(args.changelog_en))
+    history = []
+    for version in [args.version] + older[:HISTORY_MAX - 1]:
+        history.append({
+            "version": version,
+            "ru": changelog_section(args.changelog_ru, version),
+            "en": changelog_section(args.changelog_en, version)
+            if version in english or version == args.version else "",
+        })
 
     base = "https://github.com/%s/releases/download/%s/" % (args.repo, args.version)
     os.makedirs(args.out, exist_ok=True)
@@ -130,7 +161,7 @@ def main(argv=None):
     manifest = {
         "format": 1,
         "version": args.version,
-        "notes": notes,
+        "history": history,
         "www": describe(www_source, base + "ota-www.tar"),
         "firmware": firmware,
     }

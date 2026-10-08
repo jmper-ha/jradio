@@ -60,13 +60,15 @@
        same block on the player and the settings page. -->
   <section id="update-banner" class="update-banner" aria-live="polite" hidden>
     <div class="update-banner-head">
-      <strong id="update-banner-title"></strong>
+      <p class="update-banner-line">
+        <strong id="update-banner-title"></strong>
+        <a id="update-banner-more" href="/settings#update" data-i18n="update.whats_new">Что нового</a>
+      </p>
       <div class="update-banner-actions">
         <button id="update-banner-install" class="primary-button" type="button" data-i18n="update.install">Обновить</button>
         <button id="update-banner-skip" class="secondary-button" type="button" data-i18n="update.skip">Пропустить</button>
       </div>
     </div>
-    <ul id="update-banner-notes" class="update-banner-notes"></ul>
     <p id="update-banner-status" class="settings-status update-status"></p>
   </section>
 
@@ -525,7 +527,7 @@
           </div>
         </section>
 
-        <section class="card is-collapsed" data-section="update" aria-labelledby="update-title">
+        <section id="update" class="card is-collapsed" data-section="update" aria-labelledby="update-title">
           <div class="card-head">
             <button class="card-toggle" type="button" aria-expanded="false" aria-controls="update-body">
               <svg class="card-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7"/></svg>
@@ -538,6 +540,14 @@
               <dt data-i18n="update.current">Сейчас</dt><dd id="update-current">—</dd>
               <dt data-i18n="update.latest">Последняя</dt><dd id="update-latest">—</dd>
             </dl>
+
+            <!-- Every version newer than the running one, newest first: one
+                 skipped release or several, the update brings them all. -->
+            <div id="update-history-block" hidden>
+              <h3 class="update-subtitle" data-i18n="update.whats_new">Что нового</h3>
+              <div id="update-history" class="update-history"></div>
+              <p class="field-note"><a id="update-changelog" href="https://github.com/jmper-ha/jradio/blob/main/doc/changelog.md" target="_blank" rel="noopener" data-i18n="update.full_history">Вся история изменений</a></p>
+            </div>
 
             <div class="device-row">
               <label for="update-auto" data-i18n="update.auto">Проверять обновления</label>

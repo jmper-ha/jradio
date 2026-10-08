@@ -54,6 +54,8 @@ static const char *TAG = "ota_check";
 
 #define KEY_ENABLED "update_check"
 #define KEY_SKIPPED "update_skip"
+/* settings.csv takes no empty value; this is "nothing skipped". */
+#define SKIPPED_NONE "-"
 
 typedef enum { JOB_CHECK, JOB_INSTALL } job_t;
 
@@ -78,21 +80,20 @@ void ota_check_get(ota_check_status_t *status)
     portEXIT_CRITICAL(&s_lock);
 }
 
-size_t ota_check_copy_notes(bool english, char *out, size_t size)
+size_t ota_check_each_notes(ota_check_notes_fn each, void *context)
 {
-    if (size == 0U) return 0U;
-    out[0] = '\0';
-    /* The notes are only replaced by the worker, which holds s_busy while it
-     * does; a reader that finds it busy gets nothing this time rather than a
-     * string freed under it. */
+    /* The lists are only replaced by the worker, which holds s_busy while it
+     * does; a reader that finds it busy gets nothing this time rather than
+     * strings freed under it. */
     portENTER_CRITICAL(&s_lock);
     const bool busy = s_busy;
     portEXIT_CRITICAL(&s_lock);
     if (busy) return 0U;
-    const char *notes = english ? s_offer.notes_en : s_offer.notes_ru;
-    if (notes == NULL) return 0U;
-    snprintf(out, size, "%s", notes);
-    return strlen(out);
+    for (size_t index = 0U; index < s_offer.notes_count; ++index) {
+        const ota_offer_notes_t *notes = &s_offer.notes[index];
+        each(context, notes->version, notes->ru, notes->en);
+    }
+    return s_offer.notes_count;
 }
 
 static void recompute_available(void)
@@ -178,7 +179,8 @@ static void run_check(void)
         return;
     }
     ota_offer_t offer;
-    const ota_offer_result_t result = ota_offer_parse(body, used, own_display(), &offer);
+    const ota_offer_result_t result = ota_offer_parse(body, used, own_display(),
+                                                      esp_app_get_description()->version, &offer);
     free(body);
     if (result != OTA_OFFER_OK) {
         ESP_LOGW(TAG, "ota.json: %s", ota_offer_result_code(result));
@@ -373,6 +375,7 @@ esp_err_t ota_check_start(void)
                          strcmp(value, "0") != 0;
     char skipped[32] = "";
     (void)settings_csv_get(DEVICE_SETTINGS_PATH, KEY_SKIPPED, skipped, sizeof(skipped));
+    if (strcmp(skipped, SKIPPED_NONE) == 0) skipped[0] = '\0';
     portENTER_CRITICAL(&s_lock);
     s_status.enabled = enabled;
     memcpy(s_status.skipped, skipped, sizeof(s_status.skipped));
@@ -384,8 +387,20 @@ esp_err_t ota_check_start(void)
     return err;
 }
 
+/* Asked for by hand, the check also forgets a skipped version: somebody
+ * who presses "Check now" wants to know what is out, and a skip had no other
+ * way back - the card said "up to date" over a release that was there. */
 esp_err_t ota_check_now(void)
 {
+    ota_check_status_t now;
+    ota_check_get(&now);
+    if (now.skipped[0] != '\0') {
+        if (!settings_csv_set(DEVICE_SETTINGS_PATH, KEY_SKIPPED, SKIPPED_NONE)) return ESP_FAIL;
+        portENTER_CRITICAL(&s_lock);
+        s_status.skipped[0] = '\0';
+        portEXIT_CRITICAL(&s_lock);
+        recompute_available();
+    }
     return start_job(JOB_CHECK);
 }
 

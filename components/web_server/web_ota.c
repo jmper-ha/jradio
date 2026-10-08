@@ -34,9 +34,17 @@ static const char *state_name(ota_state_t state)
     return "idle";
 }
 
-/* The change list goes out in both languages: the page switches language
- * without asking again. Each is a few hundred bytes in a release. */
-#define WEB_OTA_NOTES_MAX 4096U
+/* One version of the change history into the answer's array. Both
+ * languages go out: the page switches language without asking again. */
+static void add_notes(void *context, const char *version, const char *ru, const char *en)
+{
+    cJSON *entry = cJSON_CreateObject();
+    if (entry == NULL) return;
+    cJSON_AddStringToObject(entry, "version", version);
+    cJSON_AddStringToObject(entry, "ru", ru != NULL ? ru : "");
+    cJSON_AddStringToObject(entry, "en", en != NULL ? en : "");
+    cJSON_AddItemToArray((cJSON *)context, entry);
+}
 
 static const char *check_state_name(ota_check_state_t state)
 {
@@ -60,10 +68,8 @@ esp_err_t web_ota_get(httpd_req_t *request)
     ota_check_get(&check);
     cJSON *root = cJSON_CreateObject();
     cJSON *offer = root == NULL ? NULL : cJSON_AddObjectToObject(root, "check");
-    char *notes = heap_caps_malloc(WEB_OTA_NOTES_MAX, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (root == NULL || offer == NULL || notes == NULL) {
+    if (root == NULL || offer == NULL) {
         cJSON_Delete(root);
-        free(notes);
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
         return ESP_FAIL;
     }
@@ -87,11 +93,8 @@ esp_err_t web_ota_get(httpd_req_t *request)
     cJSON_AddBoolToObject(offer, "available", check.available);
     cJSON_AddStringToObject(offer, "skipped", check.skipped);
     cJSON_AddNumberToObject(offer, "checked_at", (double)check.checked_at);
-    (void)ota_check_copy_notes(false, notes, WEB_OTA_NOTES_MAX);
-    cJSON_AddStringToObject(offer, "notes_ru", notes);
-    (void)ota_check_copy_notes(true, notes, WEB_OTA_NOTES_MAX);
-    cJSON_AddStringToObject(offer, "notes_en", notes);
-    free(notes);
+    cJSON *history = cJSON_AddArrayToObject(offer, "history");
+    if (history != NULL) (void)ota_check_each_notes(add_notes, history);
 
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);

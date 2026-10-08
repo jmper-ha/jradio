@@ -10,6 +10,11 @@ import ota_manifest  # noqa: E402
 
 CHANGELOG_RU = """# История изменений
 
+## Не выпущено
+
+Новое:
+- Ещё не вышло.
+
 ## v1.6.0 — 20 октября 2026
 
 Новое:
@@ -75,11 +80,14 @@ def test_every_display_gets_its_two_names_and_one_manifest():
         with open(os.path.join(out, "ota.json"), encoding="utf-8") as handle:
             manifest = json.load(handle)
         assert manifest["version"] == "v1.6.0"
-        # Only this version's section, without its heading.
-        # The wrapped item comes out as one line.
-        assert manifest["notes"]["ru"] == ("Новое:\n- Обновление по сети.\n"
-                                           "- Длинный пункт, перенесённый на вторую строку.")
-        assert manifest["notes"]["en"].startswith("New:\n- Updates.\n")
+        # This version and the released ones before it, newest first, without
+        # their headings; nothing unreleased. The wrapped item is one line.
+        history = manifest["history"]
+        assert [entry["version"] for entry in history] == ["v1.6.0", "v1.5.5"]
+        assert history[0]["ru"] == ("Новое:\n- Обновление по сети.\n"
+                                    "- Длинный пункт, перенесённый на вторую строку.")
+        assert history[0]["en"].startswith("New:\n- Updates.\n")
+        assert history[1]["ru"] == "Новое:\n- Темы."
         entry = manifest["firmware"]["st7789_320_240"]
         # The radio's own name, so its downloads are counted apart.
         assert entry["url"] == ("https://github.com/owner/jradio/releases/download/v1.6.0/"
@@ -107,9 +115,27 @@ def test_a_build_without_the_display_mark_is_not_released():
         assert "no display mark" in refused(root)
 
 
+def test_the_history_stops_at_its_limit_and_skips_later_sections():
+    with tempfile.TemporaryDirectory() as root:
+        lay_out(root)
+        sections = "".join("## v1.%d.0 — 2026\n\nНовое:\n- Пункт %d.\n\n" % (minor, minor)
+                           for minor in range(20, 0, -1))
+        for name in ("ru.md", "en.md"):
+            with open(os.path.join(root, name), "w", encoding="utf-8") as handle:
+                handle.write("# История\n\n" + sections)
+        run(root, "v1.12.0")
+        with open(os.path.join(root, "out", "ota.json"), encoding="utf-8") as handle:
+            history = json.load(handle)["history"]
+        # A tag cut from an older commit than the newest section still starts
+        # at its own version, and takes ten.
+        assert [entry["version"] for entry in history] == [
+            "v1.%d.0" % minor for minor in range(12, 2, -1)]
+
+
 if __name__ == "__main__":
     test_every_display_gets_its_two_names_and_one_manifest()
     test_a_tag_without_a_changelog_section_is_not_released()
     test_only_a_release_version_goes_out()
     test_a_build_without_the_display_mark_is_not_released()
+    test_the_history_stops_at_its_limit_and_skips_later_sections()
     print("ota manifest tests passed")

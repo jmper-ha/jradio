@@ -58,14 +58,20 @@
 #define TFT_PIXEL_BYTE_SWAP 1
 #endif
 
-/* How many rows of the panel one transfer carries. A band is two static
- * buffers plus, on a converting driver, a third one inside it, so this is a
- * memory decision as much as a bus one - and the memory it spends is the
- * internal SRAM this firmware is short of. Twenty is what the 320 px panels
- * have always used; a wider panel says so in its own profile rather than
- * making every board pay for its width. */
+/* How many rows of the panel one transfer carries. A band is two buffers -
+ * the board's DMA band and LVGL's - plus, on a converting driver, a third one
+ * inside it, so this is a memory decision as much as a bus one, and the
+ * memory it spends is the internal SRAM this firmware is short of.
+ *
+ * Ten, on every panel. The 320 px panels used twenty until 2026-10-09, and
+ * that is what clicked: on the bench a PCM5102 clicked with the 320x240 build
+ * - with the ST7789 module or with none - and played clean with the 480x320
+ * build on the same wires, whose bands were already ten rows. Ten rows on the
+ * small build, together with the gentler pin drive in board.c, took the
+ * clicks away; either alone did not. Half the band is also 12.8 KB of
+ * internal RAM back on those panels. */
 #ifndef LCD_DRAW_LINES
-#define LCD_DRAW_LINES 20
+#define LCD_DRAW_LINES 10
 #endif
 
 /* Which way the controller's scroll register moves the picture. Every panel

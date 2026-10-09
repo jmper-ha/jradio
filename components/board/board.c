@@ -1351,21 +1351,23 @@ static esp_err_t board_display_init(bool flip_vertical, bool flip_horizontal, bo
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST,
                                                   &io_config, &io_handle), TAG,
                         "create LCD SPI I/O failed");
-    /* The panel's lines one step below the default drive (GPIO_DRIVE_CAP_1).
-     * At full drive the edges of a 40 MHz clock and of the burst of commands
-     * every redraw sends couple into the audio: a PCM5102 on the bench clicked
-     * while the screen was lit - none with it dark, none at 100 % backlight
-     * either, so not the PWM - and clicked more while the volume was being
-     * changed, which redraws. Softer edges and the ten-row bands in
-     * board_display_profile.h together made it quiet; each alone did not. The
-     * picture stays clean at 40 MHz on the ST7789 320x240 and the ST7796S
-     * 480x320 - the same remedy as the PCM1808's master clock, which at full
-     * drive jammed the Wi-Fi. */
+    /* The panel's lines at the weakest drive (GPIO_DRIVE_CAP_0). At the
+     * default the edges of a 40 MHz clock and of the burst of commands every
+     * redraw sends couple into the audio: a PCM5102 on the bench clicked while
+     * the screen was lit - none with it dark, none at 100 % backlight either,
+     * so not the PWM - and clicked more while the volume was being changed,
+     * which redraws. Softer edges and the ten-row bands in
+     * board_display_profile.h together made it quiet; each alone did not. One
+     * step down still left a click every five or ten minutes, the weakest
+     * none. The picture stays clean at 40 MHz on the ST7789 320x240 and the
+     * ST7796S 480x320 on the bench; a panel on long wires may want more, and
+     * that waits for somebody who has one. The same remedy as the PCM1808's
+     * master clock, which at full drive jammed the Wi-Fi. */
     {
         const int lines[] = {wiring()->spi2_sclk, wiring()->spi2_mosi, wiring()->tft_dc,
                              wiring()->tft_cs};
         for (size_t index = 0; index < sizeof(lines) / sizeof(lines[0]); ++index) {
-            if (lines[index] >= 0) (void)gpio_set_drive_capability(lines[index], GPIO_DRIVE_CAP_1);
+            if (lines[index] >= 0) (void)gpio_set_drive_capability(lines[index], GPIO_DRIVE_CAP_0);
         }
     }
 

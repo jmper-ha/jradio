@@ -1,6 +1,7 @@
 #include "device_settings.h"
 
 #include "settings_csv.h"
+#include "settings_nvs.h"
 #include "device_timezone.h"
 
 #ifdef ESP_PLATFORM
@@ -18,6 +19,13 @@ static bool read_value(const settings_csv_snapshot_t *csv, const char *key, char
                        size_t value_size)
 {
     return settings_csv_snapshot_get(csv, key, value, value_size);
+}
+
+/* The volume lives in NVS for the device's own settings file only: a test or
+ * a second instance on another path keeps everything in its file. */
+static bool volume_in_nvs(const device_settings_t *settings)
+{
+    return settings != NULL && strcmp(settings->storage_path, DEVICE_SETTINGS_PATH) == 0;
 }
 
 static bool save_value(device_settings_t *settings, const char *key, const char *value)
@@ -355,6 +363,13 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         if (end != NULL && *end == '\0' && parsed >= 0 && parsed <= 100) {
             settings->volume = (unsigned char)parsed;
         }
+    }
+    /* NVS, where the volume has been kept since 2026-10-09, over the file:
+     * the file's line is what an older firmware left, or a restore wrote. */
+    uint8_t stored_volume = 0U;
+    if (volume_in_nvs(settings) && settings_nvs_get_u8("volume", &stored_volume) &&
+        stored_volume <= 100U) {
+        settings->volume = stored_volume;
     }
     if (read_value(&csv, "brightness", value, sizeof(value))) {
         char *end = NULL;
@@ -751,6 +766,10 @@ bool device_settings_set_bt_speaker(device_settings_t *settings, const char *add
 bool device_settings_set_volume(device_settings_t *settings, unsigned char volume)
 {
     if (volume > 100U) return false;
+    if (volume_in_nvs(settings) && settings_nvs_set_u8("volume", volume)) {
+        settings->volume = volume;
+        return true;
+    }
     char text[8];
     snprintf(text, sizeof(text), "%u", (unsigned int)volume);
     if (!save_value(settings, "volume", text)) return false;
@@ -763,6 +782,11 @@ bool device_settings_set_volume(device_settings_t *settings, unsigned char volum
 bool device_settings_save_volume_later(device_settings_t *settings, unsigned char volume)
 {
     if (settings == NULL || settings->storage_path[0] == '\0' || volume > 100U) return false;
+    /* In NVS it is cheap enough to write at once. */
+    if (volume_in_nvs(settings) && settings_nvs_set_u8("volume", volume)) {
+        settings->volume = volume;
+        return true;
+    }
     char text[8];
     snprintf(text, sizeof(text), "%u", (unsigned int)volume);
     if (!settings_csv_set_later(settings->storage_path, "volume", text)) return false;

@@ -19,6 +19,9 @@
 #include "miniz.h"
 
 #include "config_archive.h"
+#include "device_settings.h"
+#include "settings_nvs.h"
+#include "settings_csv.h"
 #include "player_control.h"
 #include "station_catalog.h"
 #include "wifi_settings.h"
@@ -180,6 +183,15 @@ static void web_backup_filename(char *name, size_t size)
 
 esp_err_t web_backup_get(httpd_req_t *request)
 {
+    /* The volume is kept in NVS, not in settings.csv (settings_nvs.h); the
+     * archive is read from the files, so it is written into its line first,
+     * or a restore would bring back whatever volume an older firmware left. */
+    uint8_t volume = 0U;
+    if (settings_nvs_get_u8("volume", &volume) && volume <= 100U) {
+        char text[8];
+        snprintf(text, sizeof(text), "%u", (unsigned)volume);
+        (void)settings_csv_set(DEVICE_SETTINGS_PATH, "volume", text);
+    }
     web_backup_picture_t *pictures =
         web_backup_alloc(CONFIG_ARCHIVE_PICTURES_MAX * sizeof(*pictures));
     config_archive_writer_t *writer = web_backup_alloc(sizeof(*writer));
@@ -671,6 +683,8 @@ esp_err_t web_backup_restore_post(httpd_req_t *request)
             web_backup_append(warnings, sizeof(warnings), &warnings_length, "\"");
         }
         ESP_LOGI(TAG, "restored %s, %u bytes", file, (unsigned)pending[index].size);
+        /* The restored file's volume, not the one NVS still holds. */
+        if (strcmp(file, "settings.csv") == 0) settings_nvs_erase("volume");
     }
     /* The pictures after the files: a playlist that names one is restored
      * already, and a picture that cannot be written is one logo lost, not a

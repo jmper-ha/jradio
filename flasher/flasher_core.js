@@ -58,6 +58,17 @@
     return out;
   }
 
+  /* Whether this browser is one to flash from. Having navigator.serial is not
+     enough: Firefox has grown one, the page let it through, and a user's
+     board came out of it written wrong - the splash blinked once and the
+     radio never came up; the same files from Chrome worked. Until its port
+     behaves like Chrome's and Edge's, Firefox gets the same notice as a
+     browser with no port at all. */
+  function serialSupported(nav) {
+    if (!nav || !('serial' in nav)) return false;
+    return !/Firefox\//.test(String(nav.userAgent || ''));
+  }
+
   /* The build for a display, or null when the site has none for it. */
   function buildFor(manifest, display) {
     if (!manifest || !Array.isArray(manifest.displays)) return null;
@@ -113,5 +124,6 @@
   const DRAFT_KEY = 'jradio.board.csv';
 
   return {BLOB_HEADER, BLOB_MAX, DRAFT_KEY, PIECE, crc32, boardBlob, buildFor, firmwareParts,
+    serialSupported,
           littlefsParts, pieces};
 });

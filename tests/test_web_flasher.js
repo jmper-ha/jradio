@@ -115,9 +115,26 @@ function test_a_file_is_written_in_pieces() {
 
 test_every_message_is_in_the_dictionary();
 test_a_file_is_written_in_pieces();
+/* Firefox has a navigator.serial of its own now, and a board flashed through
+   it came out broken; it is turned away like a browser with no port. */
+function test_only_chrome_and_edge_flash() {
+  const chrome = {serial: {}, userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'};
+  const edge = {serial: {}, userAgent: chrome.userAgent + ' Edg/141.0.0.0'};
+  const firefox = {serial: {}, userAgent: 'Mozilla/5.0 (X11; Linux x86_64; rv:144.0) ' +
+    'Gecko/20100101 Firefox/144.0'};
+  const safari = {userAgent: 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15'};
+  assert.strictEqual(fl.serialSupported(chrome), true);
+  assert.strictEqual(fl.serialSupported(edge), true);
+  assert.strictEqual(fl.serialSupported(firefox), false);
+  assert.strictEqual(fl.serialSupported(safari), false);
+  assert.strictEqual(fl.serialSupported(undefined), false);
+}
+
 test_the_crc_is_zlibs();
 test_the_board_image_is_what_the_firmware_reads();
 test_the_firmware_button_never_touches_the_data();
 test_the_littlefs_button_writes_the_data_alone();
 test_the_draft_is_the_editors();
+test_only_chrome_and_edge_flash();
 console.log('web flasher tests passed');

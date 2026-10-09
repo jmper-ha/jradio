@@ -102,7 +102,7 @@ function render() {
     item.textContent = text;
     problems.append(item);
   }
-  const serial = 'serial' in navigator;
+  const serial = fl.serialSupported(navigator);
   // Nothing is written while the Wi-Fi step holds the port.
   const portFree = wifi === null;
   $('fl-flash-firmware').disabled = busy || !serial || !portFree || blocking.length > 0;
@@ -458,7 +458,7 @@ window.addEventListener('pagehide', () => { wifiClose(); });
 $('fl-flash-firmware').addEventListener('click', flashFirmware);
 $('fl-flash-littlefs').addEventListener('click', flashLittlefs);
 $('fl-littlefs-agree').addEventListener('change', render);
-$('fl-unsupported').hidden = 'serial' in navigator;
+$('fl-unsupported').hidden = fl.serialSupported(navigator);
 i18n.onChange(render);
 // The editor on another tab can change the draft while this one is open.
 window.addEventListener('storage', (event) => { if (event.key === fl.DRAFT_KEY) render(); });

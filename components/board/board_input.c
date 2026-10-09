@@ -442,6 +442,11 @@ bool board_input_inject(board_input_action_t action)
     return xQueueSend(s_event_queue, &action, 0) == pdTRUE;
 }
 
+QueueHandle_t board_input_queue(void)
+{
+    return s_event_queue;
+}
+
 bool board_input_read(board_input_action_t *action, TickType_t timeout)
 {
     return s_event_queue != NULL && action != NULL &&

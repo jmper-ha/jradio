@@ -27,7 +27,7 @@ static const char *TAG = "health";
  * keeps idle and system tasks out of a report meant to be read at a glance. */
 static const char *const s_watched_tasks[] = {
     "player_control", "ui",       "radio_decode", "usb_play", "usb_msc",
-    "usb_lib",        "input_log", "board_input", "httpd",    "wifi_reconnect",
+    "usb_lib",        "board_input", "httpd",  "wifi_reconnect",
     "weather",        "ir",
 };
 

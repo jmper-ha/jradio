@@ -150,17 +150,6 @@ static void remote_quiet_wake(const device_settings_t *settings, bool settings_r
     board_deep_sleep_again(wake_after);  /* does not return */
 }
 
-static void input_log_task(void *arg)
-{
-    (void)arg;
-    board_input_action_t action;
-    while (true) {
-        if (board_input_read(&action, portMAX_DELAY)) {
-            (void)ui_post_input(action);
-        }
-    }
-}
-
 void app_main(void)
 {
     // First, so the reset reason is the first thing in the log after a crash,
@@ -295,7 +284,4 @@ void app_main(void)
     player_control_get_snapshot(&snapshot);
     ESP_LOGI(TAG, "jradio booted; active audio source=%d",
              (int)snapshot.active_source);
-    ESP_ERROR_CHECK(xTaskCreate(input_log_task, "input_log", 3072, NULL, 4, NULL) == pdPASS
-                        ? ESP_OK
-                        : ESP_ERR_NO_MEM);
 }

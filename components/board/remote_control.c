@@ -1,8 +1,10 @@
 #include "remote_control.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -58,18 +60,33 @@ static uint32_t now_ms(void)
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
 
+/* The table as text, in PSRAM for the moment it takes: it is needed when a
+ * key is taught and once at boot, and 2 KB of internal RAM held for each of
+ * the two all the time was most of what this file cost. */
+static char *map_text_alloc(void)
+{
+    char *text = heap_caps_malloc(REMOTE_MAP_TEXT_MAX, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return text != NULL ? text : malloc(REMOTE_MAP_TEXT_MAX);
+}
+
 static bool map_save_locked(void)
 {
-    static char text[REMOTE_MAP_TEXT_MAX];
-    remote_map_format(&s_map, text, sizeof(text));
+    char *text = map_text_alloc();
+    if (text == NULL) {
+        ESP_LOGE(TAG, "no memory to write %s", REMOTE_MAP_PATH);
+        return false;
+    }
+    remote_map_format(&s_map, text, REMOTE_MAP_TEXT_MAX);
     FILE *file = fopen(REMOTE_MAP_TEMP_PATH, "w");
     if (file == NULL) {
         ESP_LOGE(TAG, "cannot write %s", REMOTE_MAP_TEMP_PATH);
+        free(text);
         return false;
     }
     const size_t length = strlen(text);
     const bool written = fwrite(text, 1, length, file) == length;
     fclose(file);
+    free(text);
     if (!written) {
         remove(REMOTE_MAP_TEMP_PATH);
         return false;
@@ -87,17 +104,23 @@ static bool map_save_locked(void)
 
 static void map_load(void)
 {
-    static char text[REMOTE_MAP_TEXT_MAX];
     FILE *file = fopen(REMOTE_MAP_PATH, "r");
-    if (file == NULL) {
+    char *text = file != NULL ? map_text_alloc() : NULL;
+    if (text == NULL) {
+        if (file != NULL) {
+            fclose(file);
+            ESP_LOGE(TAG, "no memory to read %s; the kit remote's table", REMOTE_MAP_PATH);
+        } else {
+            ESP_LOGI(TAG, "no %s; the kit remote's table", REMOTE_MAP_PATH);
+        }
         remote_map_init(&s_map);
-        ESP_LOGI(TAG, "no %s; the kit remote's table", REMOTE_MAP_PATH);
         return;
     }
-    const size_t length = fread(text, 1, sizeof(text) - 1U, file);
+    const size_t length = fread(text, 1, REMOTE_MAP_TEXT_MAX - 1U, file);
     fclose(file);
     text[length] = '\0';
     const size_t skipped = remote_map_parse(&s_map, text);
+    free(text);
     unsigned bound = 0U;
     for (unsigned index = 0U; index < (unsigned)REMOTE_FUNCTION_COUNT; ++index) {
         if (s_map.bound[index]) ++bound;

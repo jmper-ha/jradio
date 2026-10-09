@@ -137,9 +137,14 @@ board_input_action_t board_button_gesture_update(board_button_gesture_t *gesture
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 
 esp_err_t board_input_init(void);
 bool board_input_read(board_input_action_t *action, TickType_t timeout);
+/* The queue the actions arrive on - the buttons, the encoder and whatever
+ * board_input_inject() is handed (the remote). The screen reads it directly;
+ * NULL before board_input_init(). */
+QueueHandle_t board_input_queue(void);
 /* An action from somewhere other than the pins - the remote control - put on
  * the same queue, so it reaches the screen the way a key does. False when the
  * queue is full or not yet there. */

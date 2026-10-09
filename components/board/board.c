@@ -105,7 +105,6 @@ static gpio_num_t wired(int8_t pin)
 
 static const char *TAG = "board";
 static uint16_t s_draw_buffer[TFT_WIDTH * LCD_DRAW_LINES];
-static uint16_t s_fill_buffer[TFT_WIDTH * LCD_DRAW_LINES];
 static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_panel_io_handle_t s_panel_io;
 /* Whether the user's flip along the scroll axis is currently on, which turns
@@ -1270,9 +1269,12 @@ esp_err_t board_display_draw_rgb565(int x1, int y1, int x2, int y2, const uint16
  * as well as a flat colour did, and it stays up until ui_init() builds the
  * LVGL screens a second or two later.
  *
- * Decoded a band at a time straight into the fill buffer, so the picture
- * needs no buffer of its own - the runs arrive in raster order, which is the
- * order the bands are drawn in. */
+ * Decoded a band at a time straight into the band buffer the DMA sends from,
+ * byte-swapped there for the panels that want it, so the picture needs no
+ * buffer of its own - the runs arrive in raster order, which is the order the
+ * bands are drawn in. It used to go through a second band-sized buffer kept
+ * for this alone: 12.8 KB of internal RAM held for the whole run of the
+ * firmware to draw one picture at boot. */
 static esp_err_t board_display_splash(void)
 {
     size_t pair = 0;
@@ -1293,11 +1295,16 @@ static esp_err_t board_display_splash(void)
                 colour = boot_splash_rle[pair * 2U + 1U];
                 ++pair;
             }
-            s_fill_buffer[index] = colour;
+            s_draw_buffer[index] = TFT_PIXEL_BYTE_SWAP ? __builtin_bswap16(colour) : colour;
             --remaining;
         }
-        ESP_RETURN_ON_ERROR(board_display_draw_rgb565(0, y, TFT_WIDTH, y_end, s_fill_buffer), TAG,
-                            "draw boot splash failed");
+        ESP_RETURN_ON_ERROR(esp_lcd_panel_draw_bitmap(s_panel, 0, y, TFT_WIDTH, y_end, s_draw_buffer),
+                            TAG, "draw boot splash failed");
+        if (LCD_WAIT_FOR_TRANSFER &&
+            xSemaphoreTake(s_lcd_transfer_done, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            ESP_LOGE(TAG, "timed out waiting for LCD DMA transfer");
+            return ESP_ERR_TIMEOUT;
+        }
     }
     return ESP_OK;
 }

@@ -268,6 +268,16 @@ static void ui_list_decor_update(ui_list_decor_t *decor, const bool *shown, size
 
 static const char *TAG = "ui";
 static QueueHandle_t s_input_queue;
+/* Whether the queue above is the screen's own, made because the board has
+ * none; the board's is not the screen's to delete. */
+static bool s_input_queue_owned;
+
+static void ui_release_input_queue(void)
+{
+    if (s_input_queue_owned && s_input_queue != NULL) vQueueDelete(s_input_queue);
+    s_input_queue = NULL;
+    s_input_queue_owned = false;
+}
 static ui_menu_state_t s_menu;
 static lv_display_t *s_display;
 static lv_obj_t *s_menu_screen;
@@ -7863,7 +7873,15 @@ esp_err_t ui_init(void)
      * watches it starts. */
     sleep_timer_service_init();
 
-    s_input_queue = xQueueCreate(UI_INPUT_QUEUE_LENGTH, sizeof(board_input_action_t));
+    /* The board's own queue, read here directly. A task in main used to
+     * move every action from that queue into one of the screen's own, which
+     * cost 3 KB of internal stack to copy a byte at a time. A board with no
+     * input at all still gets a queue, for ui_post_input(). */
+    s_input_queue = board_input_queue();
+    s_input_queue_owned = s_input_queue == NULL;
+    if (s_input_queue_owned) {
+        s_input_queue = xQueueCreate(UI_INPUT_QUEUE_LENGTH, sizeof(board_input_action_t));
+    }
     if (s_input_queue == NULL) {
         ESP_LOGE(TAG, "input queue allocation failed");
         return ESP_ERR_NO_MEM;
@@ -7898,8 +7916,7 @@ esp_err_t ui_init(void)
                  buffer1,
                  (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
         heap_caps_free(buffer1);
-        vQueueDelete(s_input_queue);
-        s_input_queue = NULL;
+        ui_release_input_queue();
         return ESP_ERR_NO_MEM;
     }
 
@@ -7908,8 +7925,7 @@ esp_err_t ui_init(void)
         ESP_LOGE(TAG, "LVGL display allocation failed: internal_largest=%u",
                  (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
         heap_caps_free(buffer1);
-        vQueueDelete(s_input_queue);
-        s_input_queue = NULL;
+        ui_release_input_queue();
         return ESP_ERR_NO_MEM;
     }
     lv_display_set_color_format(s_display, LV_COLOR_FORMAT_RGB565);
@@ -7993,8 +8009,7 @@ esp_err_t ui_init(void)
         lv_display_delete(s_display);
         s_display = NULL;
         heap_caps_free(buffer1);
-        vQueueDelete(s_input_queue);
-        s_input_queue = NULL;
+        ui_release_input_queue();
         return ESP_ERR_NO_MEM;
     }
     ESP_LOGI(TAG, "LVGL UI initialized");

@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "mbedtls/sha256.h"
 #include "ota_offer.h"
@@ -62,6 +63,11 @@ typedef enum { JOB_CHECK, JOB_INSTALL } job_t;
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 static ota_check_status_t s_status;
 static ota_offer_t s_offer;
+/* Held to read the change lists or to replace them. A check used to free the
+ * old lists while a page's request could be walking them - the flag it was
+ * guarded by was looked at once, before the walk, not during it. */
+static SemaphoreHandle_t s_offer_lock;
+static StaticSemaphore_t s_offer_lock_buffer;
 static bool s_busy;
 static esp_timer_handle_t s_timer;
 
@@ -82,18 +88,14 @@ void ota_check_get(ota_check_status_t *status)
 
 size_t ota_check_each_notes(ota_check_notes_fn each, void *context)
 {
-    /* The lists are only replaced by the worker, which holds s_busy while it
-     * does; a reader that finds it busy gets nothing this time rather than
-     * strings freed under it. */
-    portENTER_CRITICAL(&s_lock);
-    const bool busy = s_busy;
-    portEXIT_CRITICAL(&s_lock);
-    if (busy) return 0U;
-    for (size_t index = 0U; index < s_offer.notes_count; ++index) {
+    if (s_offer_lock == NULL || xSemaphoreTake(s_offer_lock, portMAX_DELAY) != pdTRUE) return 0U;
+    const size_t count = s_offer.notes_count;
+    for (size_t index = 0U; index < count; ++index) {
         const ota_offer_notes_t *notes = &s_offer.notes[index];
         each(context, notes->version, notes->ru, notes->en);
     }
-    return s_offer.notes_count;
+    xSemaphoreGive(s_offer_lock);
+    return count;
 }
 
 static void recompute_available(void)
@@ -187,8 +189,10 @@ static void run_check(void)
         set_error(OTA_CHECK_FAILED, ota_offer_result_code(result));
         return;
     }
+    xSemaphoreTake(s_offer_lock, portMAX_DELAY);
     ota_offer_free(&s_offer);
     s_offer = offer;
+    xSemaphoreGive(s_offer_lock);
     struct timeval now;
     gettimeofday(&now, NULL);
     portENTER_CRITICAL(&s_lock);
@@ -369,6 +373,7 @@ static void timer_fired(void *arg)
 
 esp_err_t ota_check_start(void)
 {
+    if (s_offer_lock == NULL) s_offer_lock = xSemaphoreCreateMutexStatic(&s_offer_lock_buffer);
     char value[32] = "";
     const bool enabled = !settings_csv_get(DEVICE_SETTINGS_PATH, KEY_ENABLED, value,
                                            sizeof(value)) ||

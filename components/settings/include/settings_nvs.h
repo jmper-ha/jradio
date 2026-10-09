@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 /* A few small values kept in NVS instead of settings.csv: the ones that
- * change while a hand is on a control.
+ * change while a hand is on a control - the volume and the brightness.
  *
  * A settings.csv write is a read-modify-write of the whole file on LittleFS -
  * 80 to 720 ms measured - with the flash erasing under it; the cache is off

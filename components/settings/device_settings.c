@@ -21,9 +21,10 @@ static bool read_value(const settings_csv_snapshot_t *csv, const char *key, char
     return settings_csv_snapshot_get(csv, key, value, value_size);
 }
 
-/* The volume lives in NVS for the device's own settings file only: a test or
- * a second instance on another path keeps everything in its file. */
-static bool volume_in_nvs(const device_settings_t *settings)
+/* The volume and the brightness live in NVS (settings_nvs.h) for the
+ * device's own settings file only: a test or a second instance on another
+ * path keeps everything in its file. */
+static bool kept_in_nvs(const device_settings_t *settings)
 {
     return settings != NULL && strcmp(settings->storage_path, DEVICE_SETTINGS_PATH) == 0;
 }
@@ -367,7 +368,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     /* NVS, where the volume has been kept since 2026-10-09, over the file:
      * the file's line is what an older firmware left, or a restore wrote. */
     uint8_t stored_volume = 0U;
-    if (volume_in_nvs(settings) && settings_nvs_get_u8("volume", &stored_volume) &&
+    if (kept_in_nvs(settings) && settings_nvs_get_u8("volume", &stored_volume) &&
         stored_volume <= 100U) {
         settings->volume = stored_volume;
     }
@@ -379,6 +380,11 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         if (end != NULL && *end == '\0' && parsed > 0 && parsed <= 100) {
             settings->brightness = (unsigned char)parsed;
         }
+    }
+    uint8_t stored_brightness = 0U;
+    if (kept_in_nvs(settings) && settings_nvs_get_u8("brightness", &stored_brightness) &&
+        stored_brightness > 0U && stored_brightness <= 100U) {
+        settings->brightness = stored_brightness;
     }
     if (read_value(&csv, "volume_step", value, sizeof(value))) {
         char *end = NULL;
@@ -766,7 +772,7 @@ bool device_settings_set_bt_speaker(device_settings_t *settings, const char *add
 bool device_settings_set_volume(device_settings_t *settings, unsigned char volume)
 {
     if (volume > 100U) return false;
-    if (volume_in_nvs(settings) && settings_nvs_set_u8("volume", volume)) {
+    if (kept_in_nvs(settings) && settings_nvs_set_u8("volume", volume)) {
         settings->volume = volume;
         return true;
     }
@@ -783,7 +789,7 @@ bool device_settings_save_volume_later(device_settings_t *settings, unsigned cha
 {
     if (settings == NULL || settings->storage_path[0] == '\0' || volume > 100U) return false;
     /* In NVS it is cheap enough to write at once. */
-    if (volume_in_nvs(settings) && settings_nvs_set_u8("volume", volume)) {
+    if (kept_in_nvs(settings) && settings_nvs_set_u8("volume", volume)) {
         settings->volume = volume;
         return true;
     }
@@ -800,6 +806,10 @@ bool device_settings_save_brightness_later(device_settings_t *settings, unsigned
         brightness > 100U) {
         return false;
     }
+    if (kept_in_nvs(settings) && settings_nvs_set_u8("brightness", brightness)) {
+        settings->brightness = brightness;
+        return true;
+    }
     char text[8];
     snprintf(text, sizeof(text), "%u", (unsigned int)brightness);
     if (!settings_csv_set_later(settings->storage_path, "brightness", text)) return false;
@@ -812,6 +822,10 @@ bool device_settings_set_brightness(device_settings_t *settings, unsigned char b
     /* Zero is refused along with over-100: a backlight at 0 is a dark panel,
      * and nothing on a dark panel can turn it back up. */
     if (brightness == 0U || brightness > 100U) return false;
+    if (kept_in_nvs(settings) && settings_nvs_set_u8("brightness", brightness)) {
+        settings->brightness = brightness;
+        return true;
+    }
     char text[8];
     snprintf(text, sizeof(text), "%u", (unsigned int)brightness);
     if (!save_value(settings, "brightness", text)) return false;

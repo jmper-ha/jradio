@@ -6,6 +6,8 @@
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "yandex_auth.h"
 
 /* The header every unofficial client sends; the API answers differently, and
@@ -21,6 +23,11 @@
 #define YANDEX_API_TX_BUFFER_SIZE 2048
 
 static const char *TAG = "yandex_api";
+
+/* Three tries, a second and a half apart: enough to cover a lookup made the
+ * moment the network came up, short enough not to hold a start for long. */
+#define YANDEX_API_CONNECT_ATTEMPTS 3
+#define YANDEX_API_CONNECT_RETRY_MS 1500
 
 static esp_err_t yandex_api_request(const char *url, bool with_token, bool post,
                                     const char *body, char *response, size_t response_size,
@@ -112,8 +119,24 @@ esp_err_t yandex_api_get(const char *path, char *response, size_t response_size,
     char url[YANDEX_API_URL_MAX];
     const int length = snprintf(url, sizeof(url), "https://" YANDEX_API_HOST "%s", path);
     if (length < 0 || (size_t)length >= sizeof(url)) return ESP_ERR_INVALID_ARG;
-    return yandex_api_request(url, true, false, NULL, response, response_size, status_code,
-                              NULL);
+    /* A GET that could not even connect is tried again, a little later. The
+     * first requests of a boot go out the moment the address arrives, and a
+     * DNS lookup in that moment can still fail ("getaddrinfo() returns 202"):
+     * the station's first tracks and the dashboard both failed that way, the
+     * station dropped out and the radio stayed silent with nothing said. A
+     * GET changes nothing on the server, so asking twice is safe; a server
+     * that answered with an error is not asked again. */
+    esp_err_t err = ESP_FAIL;
+    for (int attempt = 0; attempt < YANDEX_API_CONNECT_ATTEMPTS; ++attempt) {
+        if (attempt > 0) {
+            ESP_LOGW(TAG, "no connection for %s; trying again", path);
+            vTaskDelay(pdMS_TO_TICKS(YANDEX_API_CONNECT_RETRY_MS));
+        }
+        err = yandex_api_request(url, true, false, NULL, response, response_size, status_code,
+                                 NULL);
+        if (err != ESP_ERR_HTTP_CONNECT) break;
+    }
+    return err;
 }
 
 esp_err_t yandex_api_post_json(const char *path, const char *body, char *response,

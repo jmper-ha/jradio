@@ -6,19 +6,29 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
-## Unreleased
+## v1.6.0 — 10 October 2026
 
 New:
 - Firmware updates over the network: once a day the radio learns about a new
   version, the web interface shows what is new and installs it with one
-  button.
+  button. Versions that were skipped are listed together.
 - An update from a file in the web interface, confirmed with the encoder on
   the radio.
+- The settings sections of the web interface in a new order.
 
 Fixed:
+- Crackle on some boards: HTTPS is decrypted in hardware again.
+- Clicks on the ILI9341 and ST7789 displays: the data goes to the screen in
+  shorter, gentler bursts.
+- Clicks while the volume changes: it now changes smoothly, and the volume
+  and the brightness are saved without a pause in the sound.
+- The screen no longer freezes after a turn of the encoder or while a browser
+  downloads the backup.
+- Yandex Music starts even when the network came up a moment late.
 - N16R8 boards with two Type-C connectors start (the flash runs in QIO).
-- The flasher finishes writing the data to a slow flash in time.
-- The screen no longer freezes while a browser downloads the backup.
+- The flasher finishes writing the data to a slow flash in time, and refuses
+  Firefox, where the write came out broken.
+- More free memory: steadier HTTPS and updates.
 
 ## v1.5.5 — 6 October 2026
 

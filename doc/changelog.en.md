@@ -6,6 +6,12 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.6.2 — 10 October 2026
+
+Fixed:
+- Noise on the ILI9488 screen since 1.6.0: its lines have their former
+  drive strength back.
+
 ## v1.6.1 — 10 October 2026
 
 New:

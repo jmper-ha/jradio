@@ -120,7 +120,7 @@ write had failed. The flasher and `idf.py flash` write it themselves.
 
 The data partition stays yours. If the release also changed the web interface,
 the device says so on its About screen - then also write
-`jradio-<version>-littlefs.bin` at offset `0x620000`, after taking a backup
+`jradio-<version>-littlefs.bin` at offset `0x820000`, after taking a backup
 (see [The data on the device](#the-data-on-the-device)).
 
 ## The full way: a build from source
@@ -267,6 +267,17 @@ point, as if new. So the order is:
 5. Bring the station list back with Import on the Stations page.
 
 The keys the remote was taught are in the backup and come back with it.
+
+**The memory layout since 1.6.1.** The firmware now has two partitions of
+4 MB (`ota_0` and `ota_1`, the firmware still written at `0x20000`), and the
+data starts at `0x820000` instead of `0x620000`. It was 3 MB before, and the
+firmware filled 94 % of it. The two OTA partitions are also what the rollback
+needs: when a new firmware does not confirm it is alive, the bootloader goes
+back to the one before. A board flashed before 1.6.1 changes its layout at its
+first flash by cable or from the flasher, and its data is not kept - the steps
+above are needed: backup, firmware with data, restore. The flasher notices the
+old layout and warns by itself. An update over the network does not change the
+layout: such a board keeps the old one until its next flash by cable.
 
 Everything under `data/` goes into the image and onto every board you flash -
 keep passwords, tokens and keys out of it. The device's own files (`wifi.json`,

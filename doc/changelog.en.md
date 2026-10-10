@@ -6,6 +6,23 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.6.1 — 10 October 2026
+
+New:
+- A new memory layout: 4 MB for the firmware instead of 3 - room for new
+  features.
+- Update rollback: when a new firmware does not start, the radio goes back to
+  the one before by itself.
+
+When moving to it:
+- Flashing by cable or from the flasher onto a board with a version before
+  1.6.1 changes the layout and erases the settings, the Wi-Fi networks and
+  the stations. Download a backup and an export of the stations first and
+  restore them after. The flasher warns and writes everything needed by
+  itself.
+- A radio on 1.6.0 updates over the network as usual, keeping its data; it
+  gets the new layout at its next flash by cable.
+
 ## v1.6.0 — 10 October 2026
 
 New:

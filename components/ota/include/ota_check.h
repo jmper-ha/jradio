@@ -43,8 +43,9 @@ typedef struct {
 esp_err_t ota_check_start(void);
 void ota_check_get(ota_check_status_t *status);
 /* The change lists of every release newer than this firmware, newest first,
- * handed to `each` one version at a time. Nothing while a check is replacing
- * them. Returns how many were handed over. */
+ * handed to `each` one version at a time, under the lock a check takes to
+ * replace them - a reader waits for that, it is never handed freed ones.
+ * Returns how many were handed over. */
 typedef void (*ota_check_notes_fn)(void *context, const char *version, const char *ru,
                                    const char *en);
 size_t ota_check_each_notes(ota_check_notes_fn each, void *context);

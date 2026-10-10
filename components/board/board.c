@@ -1362,15 +1362,17 @@ static esp_err_t board_display_init(bool flip_vertical, bool flip_horizontal, bo
      * none. The picture stays clean at 40 MHz on every panel there is a
      * firmware for, seen on the bench on 2026-10-11: ST7789 320x240 (also with
      * the wires 10 cm longer) and 320x170, ILI9341 320x240, ST7796S 480x320
-     * and ILI9488 480x320, the last three bytes a pixel. A panel on longer
-     * wires still may want more, and that waits for somebody who has one. The
-     * same remedy as the PCM1808's master clock, which at full drive jammed
-     * the Wi-Fi. */
+     * and ILI9488 480x320. A user's ILI9488 module did not hold it, so that
+     * profile asks for the default back (DISPLAY_PIN_DRIVE). The same remedy
+     * as the PCM1808's master clock, which at full drive jammed the Wi-Fi. */
     {
         const int lines[] = {wiring()->spi2_sclk, wiring()->spi2_mosi, wiring()->tft_dc,
                              wiring()->tft_cs};
         for (size_t index = 0; index < sizeof(lines) / sizeof(lines[0]); ++index) {
-            if (lines[index] >= 0) (void)gpio_set_drive_capability(lines[index], GPIO_DRIVE_CAP_0);
+            if (lines[index] >= 0) {
+                (void)gpio_set_drive_capability(lines[index],
+                                                (gpio_drive_cap_t)DISPLAY_PIN_DRIVE);
+            }
         }
     }
 

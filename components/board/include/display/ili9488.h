@@ -117,6 +117,16 @@
  * this line is the first thing to put back to 20. */
 #define DISPLAY_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
 
+/* The drive of the panel's SPI lines, as a gpio_drive_cap_t. Every other panel
+ * runs at the weakest, which ended the bench's clicks (board.c); this one runs
+ * at the ESP32-S3's default. A user's red 3.5" ILI9488 module on 10 cm wires
+ * showed v1.6.1 as noise from edge to edge - the layout in place, the pixels
+ * wrong, so the commands got through and the data did not - and a build with
+ * only this put back to 2 was clean. Three bytes a pixel keep this bus busier
+ * than any other panel's, and such modules hang touch and card inputs on the
+ * same lines. */
+#define DISPLAY_PIN_DRIVE 2
+
 /* Named for the log line and the error messages, so a boot log says which
  * panel the firmware was built for without anyone reading board_options.h. */
 #define BOARD_PANEL_NAME "ILI9488"

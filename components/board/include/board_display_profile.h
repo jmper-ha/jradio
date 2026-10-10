@@ -74,6 +74,12 @@
 #define LCD_DRAW_LINES 10
 #endif
 
+/* The drive of the panel's SPI lines (gpio_drive_cap_t, 0-3): the weakest
+ * unless a profile asks for more - see board.c and display/ili9488.h. */
+#ifndef DISPLAY_PIN_DRIVE
+#define DISPLAY_PIN_DRIVE 0
+#endif
+
 /* Which way the controller's scroll register moves the picture. Every panel
  * in the catalogue can shift its whole frame along its gate axis in hardware
  * (VSCRDEF/VSCRSAD - "vertical" in the datasheet, which is the panel's own

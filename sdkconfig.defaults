@@ -166,3 +166,12 @@ CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP=y
 # failure, down to a largest DMA block of 1728 bytes. The driver no longer
 # wants a record-sized contiguous block.
 CONFIG_MBEDTLS_HARDWARE_AES=y
+
+# The bootloader keeps an update on probation until the new firmware says it
+# is well (ota_update_confirm_after_boot, thirty seconds after app_main); a
+# reset before that starts the previous firmware again. Since v1.6.1, with
+# the two OTA slots of partitions.csv - a factory slot would wipe the state
+# this keeps. The bootloader is only written by cable, so a board updated
+# over the network from an older one has no rollback until its next cable
+# flash.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

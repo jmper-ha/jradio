@@ -284,4 +284,7 @@ void app_main(void)
     player_control_get_snapshot(&snapshot);
     ESP_LOGI(TAG, "jradio booted; active audio source=%d",
              (int)snapshot.active_source);
+    /* Last: a firmware that got this far is given thirty more seconds to fall
+     * over before it tells the bootloader to keep it. */
+    ota_update_confirm_after_boot();
 }

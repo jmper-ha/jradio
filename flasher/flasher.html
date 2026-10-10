@@ -91,6 +91,12 @@
           <label class="field-note"><input id="fl-erase" type="checkbox"> <span data-i18n="fl.erase">стереть всю память (на плате была чужая прошивка)</span></label>
         </div>
         <p class="field-note" data-i18n="fl.erase_note">Стирание удаляет и файловую систему: после него запишите и её, кнопкой ниже.</p>
+        <!-- Shown when the board's table is from before v1.6.1: see
+             fl.layoutChange() in flasher_core.js. -->
+        <div class="fl-warn" id="fl-layout-box" hidden>
+          <p data-i18n="fl.layout_warn">С версии 1.6.1 память радио размечена по-новому, и на этой плате разметка старая. После записи настройки, сети Wi-Fi, станции и их картинки на радио не сохранятся. Если радио работает, сначала скачайте в его веб-интерфейсе резервную копию (Настройки → Резервная копия) и экспорт станций (Станции → Экспорт). Прошивальщик запишет прошивку и файловую систему, после этого восстановите копию и станции.</p>
+          <label class="field-note"><input id="fl-layout-agree" type="checkbox"> <span data-i18n="fl.layout_agree">копию сохранил (или сохранять нечего) — записать прошивку и файловую систему</span></label>
+        </div>
       </div>
     </section>
 

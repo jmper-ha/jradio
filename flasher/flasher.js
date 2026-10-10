@@ -133,7 +133,9 @@ async function load(part) {
   return {data: new Uint8Array(await response.arrayBuffer()), address: part.address};
 }
 
-async function write(parts, eraseAll, done) {
+/* checkLayout: the firmware button's write, which looks at the board's
+   partition table first - see fl.layoutChange(). */
+async function write(parts, eraseAll, done, checkLayout) {
   busy = true;
   render();
   const progress = $('fl-progress');
@@ -160,6 +162,27 @@ async function write(parts, eraseAll, done) {
        460800 is what the jradio-bt flasher uses, and within what the
        CP2102, the CH340 and the CH343 all take. */
     await stub.setBaudrate(460800);
+    /* Read before anything is written. Since v1.6.1 the data partition
+       starts elsewhere (partitions.csv), and on a board flashed before it the
+       firmware alone would come up with no settings, no networks and no web
+       pages - the old data is not where it looks any more. Then the data is
+       written too, once the user has said the backup is taken. An erase
+       clears the table anyway, so there is nothing to ask about. */
+    if (checkLayout && !eraseAll) {
+      const change = fl.layoutChange(
+        fl.partitionTable(await stub.readFlash(fl.TABLE_ADDRESS, fl.TABLE_LENGTH)),
+        manifest.offsets);
+      line(`${t('fl.layout')}: ${change}`);
+      if (change === 'moved') {
+        if (!$('fl-layout-agree').checked) {
+          $('fl-layout-box').hidden = false;
+          status(t('fl.layout_stop'));
+          return;
+        }
+        parts = parts.concat(fl.littlefsParts(manifest));
+        done = t('fl.done_moved', {version: manifest.version || ''});
+      }
+    }
     status(t('fl.downloading'));
     const files = [];
     for (const part of parts) {
@@ -231,7 +254,8 @@ function flashFirmware() {
   if (blockers().length > 0) return;
   const csv = hw.toCsv(wiring.values);
   const parts = fl.firmwareParts(manifest, String(wiring.values.display), fl.boardBlob(csv));
-  write(parts, $('fl-erase').checked, t('fl.done_firmware', {version: manifest.version || ''}));
+  write(parts, $('fl-erase').checked, t('fl.done_firmware', {version: manifest.version || ''}),
+        true);
 }
 
 function flashLittlefs() {

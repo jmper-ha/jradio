@@ -131,10 +131,49 @@ function test_only_chrome_and_edge_flash() {
   assert.strictEqual(fl.serialSupported(undefined), false);
 }
 
+/* A table as esptool writes it: 32-byte entries, the MD5 entry after them. */
+function table(rows) {
+  const bytes = new Uint8Array(0xC00).fill(0xFF);
+  rows.forEach(([type, subtype, offset, size, label], index) => {
+    const at = index * 32;
+    bytes[at] = 0xAA; bytes[at + 1] = 0x50; bytes[at + 2] = type; bytes[at + 3] = subtype;
+    for (let byte = 0; byte < 4; ++byte) {
+      bytes[at + 4 + byte] = (offset >>> (8 * byte)) & 0xFF;
+      bytes[at + 8 + byte] = (size >>> (8 * byte)) & 0xFF;
+    }
+    for (let char = 0; char < 16; ++char) bytes[at + 12 + char] = char < label.length ? label.charCodeAt(char) : 0;
+    for (let flag = 28; flag < 32; ++flag) bytes[at + flag] = 0;
+  });
+  const md5 = rows.length * 32;
+  bytes[md5] = 0xEB; bytes[md5 + 1] = 0xEB;
+  return bytes;
+}
+
+/* Before v1.6.1 the data partition sat at 0x620000; since, at 0x820000. A
+   board on the old table loses what is on it when the firmware is written,
+   and the page has to know before it writes. */
+function test_the_page_knows_when_the_data_would_be_lost() {
+  const before = table([[1, 2, 0x9000, 0x6000, 'nvs'], [0, 0, 0x20000, 0x300000, 'factory'],
+                        [0, 0x10, 0x320000, 0x300000, 'ota_0'], [1, 0x83, 0x620000, 0x9e0000, 'littlefs']]);
+  const since = table([[1, 2, 0x9000, 0x6000, 'nvs'], [0, 0x10, 0x20000, 0x400000, 'ota_0'],
+                       [0, 0x11, 0x420000, 0x400000, 'ota_1'], [1, 0x83, 0x820000, 0x7e0000, 'littlefs']]);
+  const offsets = {littlefs: 0x820000};
+  const entries = fl.partitionTable(before);
+  assert.strictEqual(entries.length, 4);
+  assert.deepStrictEqual(entries[3], {type: 1, subtype: 0x83, offset: 0x620000, size: 0x9e0000,
+                                      label: 'littlefs'});
+  assert.strictEqual(fl.layoutChange(entries, offsets), 'moved');
+  assert.strictEqual(fl.layoutChange(fl.partitionTable(since), offsets), 'same');
+  // A new or erased board has no table: nothing on it to lose.
+  assert.strictEqual(fl.layoutChange(fl.partitionTable(new Uint8Array(0xC00).fill(0xFF)), offsets),
+                     'fresh');
+}
+
 test_the_crc_is_zlibs();
 test_the_board_image_is_what_the_firmware_reads();
 test_the_firmware_button_never_touches_the_data();
 test_the_littlefs_button_writes_the_data_alone();
 test_the_draft_is_the_editors();
 test_only_chrome_and_edge_flash();
+test_the_page_knows_when_the_data_would_be_lost();
 console.log('web flasher tests passed');

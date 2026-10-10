@@ -79,21 +79,28 @@ void ota_update_get_status(ota_status_t *status)
 const char *ota_update_running_slot(void)
 {
     const esp_partition_t *running = esp_ota_get_running_partition();
-    return running != NULL && running->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY ? "factory"
-                                                                                    : "ota_0";
+    return running != NULL ? running->label : "";
 }
 
-/* The app slot that is not running. */
+/* The app slot that is not running. The table is the one on the board, not
+ * the one this firmware was built with, and there are two of them about:
+ * ota_0 + ota_1 since v1.6.1, factory + ota_0 on a board last flashed by
+ * cable before it. ESP-IDF's helper picks between OTA slots but never
+ * answers factory, so the old pair is decided here. */
 static const esp_partition_t *other_slot(void)
 {
     const esp_partition_t *running = esp_ota_get_running_partition();
-    const esp_partition_subtype_t wanted = running != NULL &&
-                                                   running->subtype ==
-                                                       ESP_PARTITION_SUBTYPE_APP_FACTORY
-                                               ? ESP_PARTITION_SUBTYPE_APP_OTA_0
-                                               : ESP_PARTITION_SUBTYPE_APP_FACTORY;
-    return esp_partition_find_first(ESP_PARTITION_TYPE_APP, wanted, NULL);
+    if (running != NULL && running->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY) {
+        return esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0,
+                                        NULL);
+    }
+    const esp_partition_t *factory =
+        esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
+    if (factory != NULL) return factory;
+    return esp_ota_get_next_update_partition(NULL);
 }
+
+static void confirm_running(void *arg);
 
 static void release_handle(void)
 {
@@ -133,6 +140,10 @@ esp_err_t ota_update_begin(const uint8_t *head, size_t head_length, size_t total
     /* Whatever an earlier upload left open, this one replaces it - a page
      * reloaded mid-upload never sends the end of the first one. */
     release_handle();
+    /* An update started inside the first thirty seconds comes from a radio
+     * well enough to take one: it is confirmed now, or the bootloader would
+     * treat the restart into the new firmware as this one failing. */
+    confirm_running(NULL);
 
     ota_image_info_t info;
     const unsigned own_display = *(const volatile uint16_t *)&ota_image_mark.display;
@@ -241,6 +252,7 @@ esp_err_t ota_update_www_begin(size_t total)
     if (now.state == OTA_STATE_RESTARTING) return ESP_ERR_INVALID_STATE;
     release_handle();
     drop_staged();
+    confirm_running(NULL);
     if (s_www == NULL) {
         s_www = heap_caps_malloc(sizeof(*s_www), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (s_www == NULL) s_www = malloc(sizeof(*s_www));
@@ -354,6 +366,42 @@ esp_err_t ota_update_confirm(void)
         return ESP_ERR_INVALID_STATE;
     }
     return install_staged(now.version);
+}
+
+/* Thirty seconds of a boot that got through app_main: a firmware that resets
+ * at start, in the first stream or on the first redraw has done so by then.
+ * One that is broken later - a source that fails, say - is not caught; the
+ * point is a radio that comes back up, not one that is perfect. */
+#define OTA_CONFIRM_AFTER_US (30LL * 1000 * 1000)
+
+static void confirm_running(void *arg)
+{
+    (void)arg;
+    esp_ota_img_states_t state;
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    if (running == NULL || esp_ota_get_state_partition(running, &state) != ESP_OK ||
+        state != ESP_OTA_IMG_PENDING_VERIFY) {
+        return;
+    }
+    const esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "%s confirmed; the bootloader keeps it", running->label);
+    } else {
+        ESP_LOGE(TAG, "cannot confirm %s: %s", running->label, esp_err_to_name(err));
+    }
+}
+
+void ota_update_confirm_after_boot(void)
+{
+    static esp_timer_handle_t timer;
+    if (timer != NULL) return;
+    const esp_timer_create_args_t args = {.callback = confirm_running, .name = "ota_confirm"};
+    if (esp_timer_create(&args, &timer) != ESP_OK ||
+        esp_timer_start_once(timer, OTA_CONFIRM_AFTER_US) != ESP_OK) {
+        /* No timer, no probation to wait out: confirmed now rather than left
+         * for the bootloader to undo at the next reset. */
+        confirm_running(NULL);
+    }
 }
 
 esp_err_t ota_update_install(void)

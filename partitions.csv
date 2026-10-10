@@ -1,8 +1,16 @@
 # Name,     Type, SubType, Offset,   Size,     Flags
+# Since v1.6.1: two OTA slots of 4 MB and no factory. The app had grown to
+# 94 % of the 3 MB slots it had, and the bootloader's rollback - an update
+# that does not confirm itself is replaced by the one before it - keeps its
+# state in otadata, which a factory boot erases, so it needs two OTA slots.
+# ota_0 starts where factory did, so an app-only write at 0x20000 still
+# lands in the slot a fresh otadata boots. A board flashed before v1.6.1
+# keeps its own table (factory + ota_0 + littlefs at 0x620000) until it is
+# next flashed by cable; the firmware works with either.
 nvs,        data, nvs,     0x9000,   0x6000,
 otadata,    data, ota,     0xf000,   0x2000,
 phy_init,   data, phy,     0x11000,  0x1000,
 board,      data, 0x40,    0x12000,  0x1000,
-factory,    app,  factory, 0x20000,  0x300000,
-ota_0,      app,  ota_0,   0x320000, 0x300000,
-littlefs,   data, littlefs, 0x620000, 0x9e0000,
+ota_0,      app,  ota_0,   0x20000,  0x400000,
+ota_1,      app,  ota_1,   0x420000, 0x400000,
+littlefs,   data, littlefs, 0x820000, 0x7e0000,

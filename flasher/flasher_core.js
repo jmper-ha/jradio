@@ -91,6 +91,44 @@
     ];
   }
 
+  /* The partition table as the board has it, read before anything is
+     written: 32-byte entries from 0x8000, magic 0x50AA little-endian, up to
+     the MD5 entry (0xEBEB) or erased flash. An empty list is a board with no
+     table at all - new, or erased. */
+  const TABLE_ADDRESS = 0x8000;
+  const TABLE_LENGTH = 0xC00;
+
+  function partitionTable(bytes) {
+    const entries = [];
+    for (let at = 0; at + 32 <= bytes.length; at += 32) {
+      const magic = bytes[at] | (bytes[at + 1] << 8);
+      if (magic !== 0x50AA) break;
+      const u32 = (from) => (bytes[from] | (bytes[from + 1] << 8) | (bytes[from + 2] << 16) |
+                             (bytes[from + 3] << 24)) >>> 0;
+      let label = '';
+      for (let index = at + 12; index < at + 28 && bytes[index] !== 0; ++index) {
+        label += String.fromCharCode(bytes[index]);
+      }
+      entries.push({type: bytes[at + 2], subtype: bytes[at + 3], offset: u32(at + 4),
+                    size: u32(at + 8), label});
+    }
+    return entries;
+  }
+
+  /* What writing the firmware does to the data on this board. "fresh": no
+     table, nothing to keep. "same": the data partition stays where it is, so
+     the settings, the networks and the stations survive the update.
+     "moved": v1.6.1 moved it (partitions.csv), and on the new table the old
+     data is not where the firmware looks - the radio would come up with
+     nothing; the data has to be written as well, and the user's own taken
+     out before as a backup. */
+  function layoutChange(entries, offsets) {
+    if (!Array.isArray(entries) || entries.length === 0) return 'fresh';
+    const data = entries.find((entry) => entry.label === 'littlefs');
+    if (!data || !offsets) return 'moved';
+    return data.offset === offsets.littlefs ? 'same' : 'moved';
+  }
+
   /* What the LittleFS button writes: the data partition, and only it. */
   function littlefsParts(manifest) {
     return [{path: 'firmware/littlefs.bin', address: manifest.offsets.littlefs}];
@@ -124,6 +162,6 @@
   const DRAFT_KEY = 'jradio.board.csv';
 
   return {BLOB_HEADER, BLOB_MAX, DRAFT_KEY, PIECE, crc32, boardBlob, buildFor, firmwareParts,
-    serialSupported,
+    serialSupported, TABLE_ADDRESS, TABLE_LENGTH, partitionTable, layoutChange,
           littlefsParts, pieces};
 });

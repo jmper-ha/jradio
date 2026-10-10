@@ -15,11 +15,11 @@ extern "C" {
 /* Writing a new firmware into the app slot that is not running, and
  * switching to it.
  *
- * The slots are factory and ota_0 and an update goes to whichever of the two
- * the device did not boot from - ESP-IDF's own next-slot helper never
- * answers factory, so the choice is made here. Nothing the device boots
- * changes until ota_update_confirm(): a file written and then declined only
- * leaves bytes in a slot nobody starts.
+ * An update goes to whichever app slot the device did not boot from: ota_0 or
+ * ota_1 on the layout of v1.6.1 and later, factory or ota_0 on a board whose
+ * table is older (see partitions.csv). Nothing the device boots changes until
+ * ota_update_confirm(): a file written and then declined only leaves bytes in
+ * a slot nobody starts.
  *
  * The writer is called from the HTTP worker for an upload. The confirm and
  * cancel come from the panel: the LAN web has no password, so a firmware sent
@@ -78,8 +78,16 @@ void ota_update_cancel(void);
  * on the page, and it can only ever be the official build. */
 esp_err_t ota_update_install(void);
 
-/* "factory" or "ota_0": which slot this firmware runs from, for the page. */
+/* The label of the slot this firmware runs from - "ota_0", "ota_1" or, on an
+ * older table, "factory" - for the page. */
 const char *ota_update_running_slot(void);
+
+/* The bootloader's rollback: a firmware started from an OTA slot for the
+ * first time is on probation, and if the board resets before it says it is
+ * well, the bootloader starts the one before it again. This says so thirty
+ * seconds after it is called - long enough for a firmware that crashes at
+ * start to have crashed. Call once from app_main, after everything is up. */
+void ota_update_confirm_after_boot(void);
 
 #ifdef __cplusplus
 }

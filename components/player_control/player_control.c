@@ -632,16 +632,28 @@ static void player_yandex_remember(const yandex_station_t *station)
  * resume point instead and the dashboard has not been read yet. */
 static bool player_yandex_start_station(const yandex_station_t *station, size_t index)
 {
+    /* The row goes in before the API calls, not after them. They take a
+     * couple of seconds, and the snapshot names the station by this row: the
+     * web page, which has only the snapshot, showed the station being left
+     * for all that time - Jazz picked, "Моя волна" still on top - while the
+     * panel, which remembers its own pick, was already right. A start that
+     * fails puts the previous row back. */
+    const size_t previous =
+        atomic_exchange_explicit(&s_yandex_item_index, index, memory_order_acq_rel);
     /* idForFrom travels with the station from the dashboard precisely so this
      * call does not have to fetch it again to name where the listening began. */
     if (yandex_rotor_start(station->id, station->from) != ESP_OK) {
         ESP_LOGE(TAG, "yandex rotor did not start for %s", station->id);
+        atomic_store_explicit(&s_yandex_item_index, previous, memory_order_release);
         return false;
     }
     if (!internet_radio_start_track_chain(station->name, yandex_rotor_next_url,
                                           yandex_rotor_current_url)) {
+        atomic_store_explicit(&s_yandex_item_index, previous, memory_order_release);
         return false;
     }
+    /* Again, for a resumed station with no row: meanwhile the snapshot may have
+     * looked the old station up and written its row here. */
     atomic_store_explicit(&s_yandex_item_index, index, memory_order_release);
     player_yandex_remember(station);
     return true;

@@ -39,6 +39,7 @@ typedef enum {
     DEV_BLUETOOTH,
     DEV_FM,
     DEV_ADC,
+    DEV_RTC,
     DEV_FEATURES,
 } device_t;
 
@@ -135,6 +136,10 @@ static const field_t k_fields[] = {
     {"adc", KIND_CHOICE, DEV_ADC, AT(adc), false, NULL,
      {{"none", AUDIO_ADC_NONE}, {"pcm1808", AUDIO_ADC_PCM1808}, {NULL, 0}}},
     {"adc_i2s", KIND_CHOICE, DEV_ADC, AT(adc_i2s), false, NULL, {{"0", 0}, {NULL, 0}}},
+    {"rtc", KIND_CHOICE, DEV_RTC, AT(rtc), false, NULL,
+     {{"none", RTC_CHIP_NONE}, {"ds3231", RTC_CHIP_DS3231}, {"ds1307", RTC_CHIP_DS1307},
+      {NULL, 0}}},
+    {"rtc_i2c", KIND_CHOICE, DEV_RTC, AT(rtc_i2c), false, NULL, {{"0", 0}, {NULL, 0}}},
     {"yandex_music", KIND_BOOL, DEV_FEATURES, AT(yandex_music), false, NULL, {{NULL, 0}}},
     {"dlna", KIND_BOOL, DEV_FEATURES, AT(dlna), false, NULL, {{NULL, 0}}},
 };
@@ -191,6 +196,8 @@ void board_config_clear(board_config_t *config)
     config->dac = DAC_PCM5102;
     config->bluetooth = BLUETOOTH_NONE;
     config->fm_tuner = FM_TUNER_NONE;
+    config->rtc = RTC_CHIP_NONE;
+    config->rtc_i2c = 0U;
     config->fm_i2s = BOARD_BUS_NONE;
     config->adc = AUDIO_ADC_NONE;
     config->adc_i2s = 0U;
@@ -336,6 +343,7 @@ static bool device_enabled(const board_config_t *config, device_t device)
     case DEV_BLUETOOTH: return config->bluetooth != BLUETOOTH_NONE;
     case DEV_FM: return config->fm_tuner != FM_TUNER_NONE;
     case DEV_ADC: return config->adc != AUDIO_ADC_NONE;
+    case DEV_RTC: return config->rtc != RTC_CHIP_NONE;
     default: return true;
     }
 }
@@ -352,7 +360,9 @@ static bool bus_used(const board_config_t *config, device_t bus)
         return config->dac_i2s == 0U || (bt && config->bt_i2s == 0U) ||
                (device_enabled(config, DEV_ADC) && config->adc_i2s == 0U);
     case DEV_UART1: return bt && config->bt_uart == 1U;
-    case DEV_I2C0: return device_enabled(config, DEV_FM) && config->fm_i2c == 0U;
+    case DEV_I2C0:
+        return (device_enabled(config, DEV_FM) && config->fm_i2c == 0U) ||
+               (device_enabled(config, DEV_RTC) && config->rtc_i2c == 0U);
     default: return false;
     }
 }
@@ -427,6 +437,7 @@ static const char *device_name(device_t device)
     case DEV_BLUETOOTH: return "bluetooth";
     case DEV_FM: return "fm";
     case DEV_ADC: return "adc";
+    case DEV_RTC: return "rtc";
     default: return "";
     }
 }
@@ -525,6 +536,9 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     }
     if (device_enabled(config, DEV_FM) && config->fm_i2s == 0U) {
         check_bus(config, report, DEV_FM, k_i2s0_in, 3U);
+    }
+    if (device_enabled(config, DEV_RTC) && config->rtc_i2c == 0U) {
+        check_bus(config, report, DEV_RTC, k_i2c0, 2U);
     }
     if (device_enabled(config, DEV_ADC) && config->adc_i2s == 0U) {
         check_bus(config, report, DEV_ADC, k_i2s0_adc, 4U);

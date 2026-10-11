@@ -124,6 +124,29 @@ function test_the_header_round_trips_and_names_every_option() {
   assert.ok(fmI2sHeader.includes('#define I2S_DIN_GPIO 39'));
   assert.deepStrictEqual(hw.parseHeader(fmI2sHeader).values, fmI2s);
   assert.deepStrictEqual(hw.validate(fmI2s).errors, []);
+  /* The clock alone names I2C0's pins itself - the tuner's two defines. */
+  const rtc = {...hw.setDeviceEnabled(hw.defaults(), 'rtc', true), i2c0_sda: 8, i2c0_scl: 3};
+  assert.strictEqual(rtc.rtc, 'ds3231');
+  const rtcHeader = hw.toHeader(rtc);
+  for (const line of ['#define RTC_CHIP RTC_CHIP_DS3231', '#define RTC_I2C_PERIPHERAL 0',
+                      '#define FM_I2C_SDA_GPIO 8', '#define FM_I2C_SCL_GPIO 3']) {
+    assert.ok(rtcHeader.includes(line), line);
+  }
+  assert.ok(!/#define FM_TUNER/.test(rtcHeader));
+  assert.deepStrictEqual(hw.parseHeader(rtcHeader).values, rtc);
+  assert.deepStrictEqual(hw.parseHeader(rtcHeader).unknown, []);
+  assert.deepStrictEqual(hw.validate(rtc).errors, []);
+  assert.ok(!/#define RTC_CHIP/.test(hw.toHeader(hw.defaults())));
+  /* Beside the tuner the pins are written once, in the tuner's block. */
+  const both = {...fm, rtc: 'ds1307'};
+  const bothHeader = hw.toHeader(both);
+  assert.strictEqual(bothHeader.split('#define FM_I2C_SDA_GPIO').length - 1, 1);
+  assert.ok(bothHeader.includes('#define RTC_CHIP RTC_CHIP_DS1307'));
+  assert.deepStrictEqual(hw.parseHeader(bothHeader).values, both);
+  assert.deepStrictEqual(hw.validate(both).errors, []);
+  /* Switched off, the clock leaves the bus to whoever else is on it. */
+  assert.strictEqual(hw.busUsed(hw.setDeviceEnabled(rtc, 'rtc', false), 'i2c0'), false);
+  assert.strictEqual(hw.busUsed(hw.setDeviceEnabled(both, 'rtc', false), 'i2c0'), true);
 }
 
 function test_a_partial_file_means_the_defaults_for_the_rest() {

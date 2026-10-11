@@ -49,3 +49,9 @@ bool device_clock_wait_sync(uint32_t timeout_ms);
  * `month` is 1..12 and `weekday` counts from Sunday as 0, the way struct tm
  * does, because that is what every reader has to feed a name table with. */
 bool device_clock_today(int *day, int *month, int *weekday);
+
+/* Called after every answer from the time server, on lwIP's task - the
+ * real-time clock's chance to take the corrected time. One callback; set it
+ * before device_clock_init(). Lives here rather than calling the board, which
+ * this component does not depend on. */
+void device_clock_on_sync(void (*callback)(void));

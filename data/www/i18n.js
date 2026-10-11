@@ -327,6 +327,7 @@
     'hw.dev.uart1': ['Шина UART1', 'UART1 bus'],
     'hw.dev.fm': ['FM-тюнер', 'FM tuner'],
     'hw.dev.adc': ['АЦП', 'ADC'],
+    'hw.dev.rtc': ['Часы реального времени', 'Real-time clock'],
     'hw.dev.i2c0': ['Шина I2C', 'I2C bus'],
 
     'hw.f.board_name': ['Название платы', 'Board name'],
@@ -357,6 +358,7 @@
     'hw.f.fm_chip': ['Микросхема', 'Chip'], 'hw.f.fm_sound': ['Звук', 'Audio'],
     'hw.f.adc': ['Микросхема', 'Chip'], 'hw.f.adc_i2s': ['Звук', 'Audio'],
     'hw.f.fm_i2s': ['Звук', 'Audio'],
+    'hw.f.rtc': ['Микросхема', 'Chip'], 'hw.f.rtc_i2c': ['Шина', 'Bus'],
 
     /* The short names the picture writes beside a pin. */
     'hw.s.spi2_sclk': ['SPI2 SCLK', 'SPI2 SCLK'], 'hw.s.spi2_mosi': ['SPI2 MOSI', 'SPI2 MOSI'],
@@ -378,6 +380,8 @@
     'hw.opt.pcm5102': ['PCM5102', 'PCM5102'],
     'hw.opt.rda5807': ['RDA5807 (M, FP)', 'RDA5807 (M, FP)'],
     'hw.opt.pcm1808': ['PCM1808', 'PCM1808'],
+    'hw.opt.ds3231': ['DS3231 (питание 3,3 В)', 'DS3231 (3.3 V supply)'],
+    'hw.opt.ds1307': ['DS1307 (питание 5 В, подтяжки модуля снять)', 'DS1307 (5 V supply, its module\'s pull-ups off)'],
     'hw.opt.rda5807fp': ['RDA5807FP', 'RDA5807FP'], 'hw.opt.rda5807m': ['RDA5807M', 'RDA5807M'],
     'hw.opt.analog': ['Аналоговый выход', 'Analogue output'], 'hw.opt.adc': ['Через АЦП PCM1808', 'Through a PCM1808 ADC'],
     'hw.opt.jradio_bt': ['jradio-bt (ESP32 по UART)', 'jradio-bt (an ESP32 over UART)'],

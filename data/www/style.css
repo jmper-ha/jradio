@@ -2133,6 +2133,7 @@ a.secondary-button { text-decoration: none; color: inherit; }
 .hw-dev-i2s0 { --dev: #d08cff; }
 .hw-dev-uart1 { --dev: #38bdf8; }
 .hw-dev-fm { --dev: #f4a261; }
+.hw-dev-rtc { --dev: #8ecae6; }
 .hw-dev-i2c0 { --dev: #e9c46a; }
 .hw-dev-features { --dev: var(--muted); }
 .hw-dev-board { --dev: var(--muted); }

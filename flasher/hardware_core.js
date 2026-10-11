@@ -215,6 +215,11 @@
     {key: 'adc', kind: 'choice', device: 'adc', options: [NONE, 'pcm1808'], dflt: NONE, enables: true, define: 'AUDIO_ADC'},
     {key: 'adc_i2s', kind: 'choice', device: 'adc', options: ['0'], dflt: '0', bus: 'i2s'},
 
+    /* A real-time clock on I2C0, beside the tuner if there is one: the time
+       at power-up with no network, and an alarm that wakes without Wi-Fi. */
+    {key: 'rtc', kind: 'choice', device: 'rtc', options: [NONE, 'ds3231', 'ds1307'], dflt: NONE, enables: true, define: 'RTC_CHIP'},
+    {key: 'rtc_i2c', kind: 'choice', device: 'rtc', options: ['0'], dflt: '0', bus: 'i2c'},
+
     /* Software sources, built in or left out: no pins, but a line in the
        header each. Both are on in the README board. They have no card: the
        firmware on this site is built with both, and the device does not read
@@ -231,7 +236,7 @@
      UART - so the wires sit next to what they serve. */
   const DEVICES = [
     'board', 'tft', 'spi2', 'encoder', 'buttons', 'ir', 'dac', 'i2s0', 'amp', 'power',
-    'usb', 'sd', 'spi3', 'bluetooth', 'uart1', 'fm', 'i2c0',
+    'usb', 'sd', 'spi3', 'bluetooth', 'uart1', 'fm', 'rtc', 'i2c0',
   ];
   const BUSES = ['spi2', 'spi3', 'i2s0', 'uart1', 'i2c0'];
 
@@ -243,6 +248,7 @@
     bluetooth: {uart: ['tx', 'rx'], i2s: ['bclk', 'lrck', 'dout']},
     fm: {i2c: ['sda', 'scl'], i2s: ['bclk', 'lrck', 'din']},
     adc: {i2s: ['bclk', 'lrck', 'din', 'mclk']},
+    rtc: {i2c: ['sda', 'scl']},
   };
 
   /* What a device switched on from "none" comes up with. No pin is guessed:
@@ -265,6 +271,7 @@
     bluetooth: {bluetooth: 'jradio_bt'},
     fm: {fm_tuner: 'rda5807'},
     adc: {adc: 'pcm1808'},
+    rtc: {rtc: 'ds3231'},
   };
 
   function isNone(value) {
@@ -626,6 +633,15 @@
            ...gpio('I2S_MCLK_GPIO', 'i2s0_mclk')]
         : ['/* No ADC: AUDIO_ADC and I2S_MCLK_GPIO would go here. */']),
       '',
+      ...(deviceEnabled(values, 'rtc')
+        ? ['/* A real-time clock on I2C0. The bus\'s pins are the tuner\'s two defines, named here when there is no tuner. */',
+           `#define RTC_CHIP RTC_CHIP_${String(values.rtc).toUpperCase()}`,
+           `#define RTC_I2C_PERIPHERAL ${values.rtc_i2c}`,
+           ...(deviceEnabled(values, 'fm')
+             ? []
+             : [...gpio('FM_I2C_SDA_GPIO', 'i2c0_sda'), ...gpio('FM_I2C_SCL_GPIO', 'i2c0_scl')])]
+        : ['/* No real-time clock: RTC_CHIP would go here. */']),
+      '',
       '/* Sources that need no wiring; a built-in one also has a switch in the settings. */',
       `#define YANDEX_MUSIC ${on('yandex_music') ? 'FEATURE_ON' : 'FEATURE_OFF'}`,
       `#define DLNA ${on('dlna') ? 'FEATURE_ON' : 'FEATURE_OFF'}`,
@@ -730,6 +746,14 @@
       if (FIELD_BY_KEY.adc.options.includes(id)) values.adc = id; else unknown.push({key: 'AUDIO_ADC', value: adc});
     }
     asPin('i2s0_mclk', 'I2S_MCLK_GPIO');
+    const rtc = take('RTC_CHIP');
+    if (rtc === undefined) values.rtc = NONE;
+    else {
+      const id = rtc.replace(/^RTC_CHIP_/, '').toLowerCase();
+      if (FIELD_BY_KEY.rtc.options.includes(id)) values.rtc = id; else unknown.push({key: 'RTC_CHIP', value: rtc});
+    }
+    const rtcBus = take('RTC_I2C_PERIPHERAL');
+    if (rtcBus !== undefined && rtcBus !== '0') unknown.push({key: 'RTC_I2C_PERIPHERAL', value: rtcBus});
     const asFeature = (key, name) => {
       const value = take(name);
       if (value !== undefined) values[key] = value === 'FEATURE_ON' ? 1 : 0;

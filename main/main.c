@@ -7,6 +7,7 @@
 
 #include "album_art.h"
 #include "alarm_schedule.h"
+#include "board_rtc.h"
 #include "board.h"
 #include "board_config.h"
 #include "board_features.h"
@@ -84,14 +85,24 @@ static bool alarm_quiet_wake(const device_settings_t *settings, bool settings_re
         return false;
     }
 
-    ESP_LOGI(TAG, "alarm check: bringing up Wi-Fi to correct the clock");
-    start_optional("Wi-Fi", wifi_provisioning_init());
-    start_optional("Wi-Fi", wifi_provisioning_start());
-    device_clock_init(settings->ntp_server, settings->timezone);
-    /* A failure here is not fatal: the clock the board woke with is the one it
-     * went to sleep with plus however far the oscillator drifted, which is
-     * still close enough to ring on. */
-    (void)device_clock_wait_sync(ALARM_SYNC_WAIT_MS);
+    /* A real-time clock on its own crystal - a DS3231 drifts seconds a month,
+     * not minutes a night - is the correction this hop exists for, with no
+     * network to bring up. One that does not answer (on a board whose
+     * peripheral rail feeds it, the rail is still down) leaves the Wi-Fi way. */
+    const bool rtc = board_rtc_restore();
+    if (rtc) {
+        ESP_LOGI(TAG, "alarm check: the clock from the RTC, no Wi-Fi");
+        device_clock_set_timezone(settings->timezone);
+    } else {
+        ESP_LOGI(TAG, "alarm check: bringing up Wi-Fi to correct the clock");
+        start_optional("Wi-Fi", wifi_provisioning_init());
+        start_optional("Wi-Fi", wifi_provisioning_start());
+        device_clock_init(settings->ntp_server, settings->timezone);
+        /* A failure here is not fatal: the clock the board woke with is the one
+         * it went to sleep with plus however far the oscillator drifted, which
+         * is still close enough to ring on. */
+        (void)device_clock_wait_sync(ALARM_SYNC_WAIT_MS);
+    }
 
     int weekday = 0;
     int hour = 0;
@@ -111,14 +122,15 @@ static bool alarm_quiet_wake(const device_settings_t *settings, bool settings_re
                  (unsigned int)sleep_seconds);
         /* Or the radio going down raises a disconnect that the reconnect
          * machinery answers by bringing Wi-Fi straight back up. */
-        (void)wifi_provisioning_stop();
+        if (!rtc) (void)wifi_provisioning_stop();
         board_deep_sleep_again(sleep_seconds);  /* does not return */
     }
     if (action == ALARM_BOOT_PROCEED) {
         ESP_LOGI(TAG, "alarm in %u s; staying up for it", (unsigned int)ahead);
         alarm_boot_mark_pending();
     }
-    return true;
+    // Wi-Fi and the clock are started only on the way without the RTC.
+    return !rtc;
 }
 
 /* The other quiet wake: the infrared receiver's pin. Any remote in the room
@@ -139,6 +151,8 @@ static void remote_quiet_wake(const device_settings_t *settings, bool settings_r
     uint32_t wake_after = 0U;
     if (settings_read) {
         device_clock_set_timezone(settings->timezone);
+        // Better than the chip's own count of the sleep, where there is one.
+        (void)board_rtc_restore();
         int weekday = 0;
         int hour = 0;
         int minute = 0;
@@ -191,6 +205,9 @@ void app_main(void)
      * all but a hop in the night, and a hop that lights the panel has already
      * failed at being quiet. It either does not return or leaves the ordinary
      * boot to carry on below. */
+    /* Every time-server answer is written into the real-time clock, if the
+     * wiring has one - set before either place below starts the clock. */
+    device_clock_on_sync(board_rtc_store);
     const bool network_started = alarm_quiet_wake(&boot_settings, settings_read);
     remote_quiet_wake(&boot_settings, settings_read);
     // Fatal on purpose: without the board there is no screen, no sound and no
@@ -202,6 +219,10 @@ void app_main(void)
                                alarm_boot_pending()));
     /* Both may already be up: the alarm check above needs the network and the
      * clock before the board exists, and neither is started twice. */
+    /* The time off the real-time clock, now the board - and its peripheral
+     * rail, which may feed the chip - is up: the clock reads right from the
+     * first screen, network or not. SNTP corrects it when an answer comes. */
+    (void)board_rtc_restore();
     if (!network_started) {
         start_optional("Wi-Fi", wifi_provisioning_init());
         start_optional("Wi-Fi", wifi_provisioning_start());

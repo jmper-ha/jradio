@@ -105,6 +105,15 @@ void board_config_compiled(board_config_t *config)
     config->i2s0_din = PIN(I2S_DIN_GPIO);
 #endif
 #endif
+/* The clock shares I2C0 with the tuner, so its pins are the same two
+ * defines; a board with a clock and no tuner names them all the same. */
+#if defined(RTC_CHIP) && (RTC_CHIP == RTC_CHIP_DS3231 || RTC_CHIP == RTC_CHIP_DS1307)
+    config->rtc = (uint8_t)RTC_CHIP;
+#if defined(FM_I2C_SDA_GPIO) && defined(FM_I2C_SCL_GPIO)
+    config->i2c0_sda = PIN(FM_I2C_SDA_GPIO);
+    config->i2c0_scl = PIN(FM_I2C_SCL_GPIO);
+#endif
+#endif
 #if defined(AUDIO_ADC) && AUDIO_ADC == AUDIO_ADC_PCM1808
     config->adc = AUDIO_ADC_PCM1808;
     config->i2s0_din = PIN(I2S_DIN_GPIO);

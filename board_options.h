@@ -247,6 +247,27 @@
 // #define I2S_MCLK_GPIO 38
 
 /* ======================================================================
+ * Real-time clock - a DS3231 or DS1307 on I2C  (not fitted)
+ * ====================================================================== */
+
+/* Without one the board learns the time from the network after every power
+ * cut, and the alarm's quiet wake brings up Wi-Fi to correct the night's
+ * drift. With one the time is there at once, network or not: read at boot,
+ * written back after every time-server answer.
+ *
+ * It shares I2C0 with the tuner - the same two pins, FM_I2C_SDA_GPIO and
+ * FM_I2C_SCL_GPIO above, named whether a tuner is fitted or not. Both chips
+ * answer at 0x68, so a board has one of them.
+ *
+ * Power: a DS3231 runs on 3.3 V - feed it that, since a module's own pull-ups
+ * go to its supply and the S3's pins do not take 5 V. A DS1307 needs 5 V and
+ * goes to its battery below about 4.5 V, I2C and all; feed it 5 V and take its
+ * module's pull-ups off, leaving 3.3 V ones, which it reads fine. A module
+ * built to charge a LIR cell must not hold a plain CR one. */
+// #define RTC_CHIP RTC_CHIP_DS3231
+// #define RTC_I2C_PERIPHERAL 0
+
+/* ======================================================================
  * The module's own RGB LED
  * ====================================================================== */
 

@@ -1,6 +1,7 @@
 #include "fm_tuner.h"
 
 #include "board_config.h"
+#include "board_i2c.h"
 #include "driver/i2c_master.h"
 #include "esp_check.h"
 #include "esp_log.h"
@@ -19,9 +20,7 @@ static const char *TAG = "fm_tuner";
  * up. Too short and the first tune is lost without an error. */
 #define FM_POWER_UP_MS 100
 
-/* The bus is created here because the tuner is its only device so far. The
- * PCM5122 will share it, and then it moves to the board with a getter. */
-static i2c_master_bus_handle_t s_bus;
+/* The bus is the board's (board_i2c.h): the real-time clock shares it. */
 static i2c_master_dev_handle_t s_device;
 static SemaphoreHandle_t s_lock;
 static rda5807_state_t s_state = {.volume = RDA5807_VOLUME_MAX};
@@ -78,33 +77,23 @@ esp_err_t fm_tuner_init(void)
     const board_config_t *board = board_config_get();
     s_lock = xSemaphoreCreateMutex();
     ESP_RETURN_ON_FALSE(s_lock != NULL, ESP_ERR_NO_MEM, TAG, "lock");
-    const i2c_master_bus_config_t bus_config = {
-        .i2c_port = I2C_NUM_0,
-        .sda_io_num = board->i2c0_sda,
-        .scl_io_num = board->i2c0_scl,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .glitch_ignore_cnt = 7,
-        /* On as well as the board's own: they cost nothing beside 4.7 k, and
-         * a bench tuner without any still answers at this speed. */
-        .flags.enable_internal_pullup = true,
-    };
-    ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_config, &s_bus), TAG, "bus");
+    i2c_master_bus_handle_t bus = NULL;
+    ESP_RETURN_ON_ERROR(board_i2c0_bus(&bus), TAG, "bus");
     const i2c_device_config_t device_config = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = RDA5807_I2C_ADDRESS,
         .scl_speed_hz = FM_I2C_HZ,
     };
-    esp_err_t err = i2c_master_bus_add_device(s_bus, &device_config, &s_device);
+    esp_err_t err = i2c_master_bus_add_device(bus, &device_config, &s_device);
     uint16_t chip_id = 0U;
     if (err == ESP_OK) err = read_register(RDA5807_REG_CHIP_ID, &chip_id);
     if (err == ESP_OK && (chip_id >> 8) != RDA5807_CHIP_ID_FAMILY) err = ESP_ERR_NOT_FOUND;
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "no RDA5807 on SDA %d / SCL %d (chip id 0x%04x): %s", board->i2c0_sda,
                  board->i2c0_scl, chip_id, esp_err_to_name(err));
+        // The bus stays: the clock may be on it.
         if (s_device != NULL) (void)i2c_master_bus_rm_device(s_device);
-        (void)i2c_del_master_bus(s_bus);
         s_device = NULL;
-        s_bus = NULL;
         return err;
     }
     /* The wiring says whether its I2S output reaches the S3: the chip id is

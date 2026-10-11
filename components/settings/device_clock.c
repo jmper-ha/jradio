@@ -20,6 +20,18 @@ static bool s_started;
 /* What SNTP was last given, so a settings write that did not touch the server
  * does not cost it a restart - and so a restart happens at all when it did. */
 static char s_server[DEVICE_NTP_SERVER_MAX];
+static void (*s_on_sync)(void);
+
+void device_clock_on_sync(void (*callback)(void))
+{
+    s_on_sync = callback;
+}
+
+static void device_clock_synced(struct timeval *tv)
+{
+    (void)tv;
+    if (s_on_sync != NULL) s_on_sync();
+}
 
 static void device_clock_set_zone(const char *timezone_id)
 {
@@ -58,6 +70,7 @@ static void device_clock_start_sntp(const char *server)
      * on a connection would mean re-plumbing it through the Wi-Fi events for
      * no benefit. Until a reply arrives the clock simply reads unset. */
     config.start = true;
+    config.sync_cb = device_clock_synced;
     const esp_err_t err = esp_netif_sntp_init(&config);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "SNTP init failed for %s: %s", host, esp_err_to_name(err));
@@ -155,6 +168,11 @@ bool device_clock_today(int *day, int *month, int *weekday)
 
 /* The host build has no SNTP and no need for one; the screen logic that reads
  * this is tested through ui_status_bar, which takes the time as an argument. */
+void device_clock_on_sync(void (*callback)(void))
+{
+    (void)callback;
+}
+
 void device_clock_init(const char *server, const char *timezone_id)
 {
     (void)server;

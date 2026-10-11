@@ -307,6 +307,7 @@ run_test web_settings_api -I"${cjson_include}" tests/test_web_settings_api.c \
     "${cjson_source}"
 run_test web_cover tests/test_web_cover.c components/web_server/web_cover.c
 run_test web_icon_fetch tests/test_web_icon_fetch.c components/web_server/web_icon_fetch.c
+run_test rtc_chip tests/test_rtc_chip.c components/board/rtc_chip.c
 # The weather: three services' answers into one report, and the request each
 # one takes. Captured answers are the fixtures; the day/night split is the
 # part worth reading, since one service has to have it worked out for it.

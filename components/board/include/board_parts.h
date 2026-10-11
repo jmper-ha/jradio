@@ -94,6 +94,17 @@
  * DAC like any source. */
 #define FM_TUNER_RDA5807 1
 
+#define RTC_CHIP_NONE 0
+/* Real-time clocks on I2C0, both at address 0x68, both keeping the time with
+ * a coin cell while the board is off - so a radio that powers up with no
+ * network has the time anyway, and the alarm's quiet wake needs no Wi-Fi to
+ * correct the night's drift. The DS3231 has a temperature-compensated crystal
+ * of its own (a couple of seconds a month); the DS1307 runs on an external
+ * 32 kHz crystal and drifts more, and is a 5 V part whose I2C wants 3.3 V
+ * pull-ups here. See board_rtc.c. */
+#define RTC_CHIP_DS3231 1
+#define RTC_CHIP_DS1307 2
+
 #define AUDIO_ADC_NONE 0
 /* PCM1808 stereo ADC: line-level analogue in, I2S out. A slave of the DAC's
  * clocks, and it wants a master clock of 256 x fs on its SCKI pin, which the

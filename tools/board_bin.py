@@ -106,6 +106,13 @@ def board_csv(macros):
     fm = defined("FM_TUNER") and value(macros, "FM_TUNER") == value(macros, "FM_TUNER_RDA5807")
     fm_i2s = fm and defined("FM_I2S_PERIPHERAL") and defined("I2S_DIN_GPIO")
     adc = defined("AUDIO_ADC") and value(macros, "AUDIO_ADC") == value(macros, "AUDIO_ADC_PCM1808")
+    # The clock shares I2C0 - and its two pin defines - with the tuner.
+    rtc = "none"
+    if defined("RTC_CHIP"):
+        for name in ("ds3231", "ds1307"):
+            if value(macros, "RTC_CHIP") == value(macros, f"RTC_CHIP_{name.upper()}"):
+                rtc = name
+    i2c0 = (fm or rtc != "none") and defined("FM_I2C_SDA_GPIO") and defined("FM_I2C_SCL_GPIO")
     reset = pin(macros, "TFT_RESET_GPIO") if defined("TFT_RESET_GPIO") else "rst"
     feature_on = value(macros, "FEATURE_ON")
     rows = [
@@ -125,8 +132,8 @@ def board_csv(macros):
         ("i2s0_mclk", pin(macros, "I2S_MCLK_GPIO") if adc else "none"),
         ("uart1_tx", pin(macros, "BT_UART_TX_GPIO") if bt else "none"),
         ("uart1_rx", pin(macros, "BT_UART_RX_GPIO") if bt else "none"),
-        ("i2c0_sda", pin(macros, "FM_I2C_SDA_GPIO") if fm else "none"),
-        ("i2c0_scl", pin(macros, "FM_I2C_SCL_GPIO") if fm else "none"),
+        ("i2c0_sda", pin(macros, "FM_I2C_SDA_GPIO") if i2c0 else "none"),
+        ("i2c0_scl", pin(macros, "FM_I2C_SCL_GPIO") if i2c0 else "none"),
         ("tft_spi", "2"),
         ("tft_cs", pin(macros, "TFT_CS_GPIO")),
         ("tft_dc", pin(macros, "TFT_DC_GPIO")),
@@ -162,6 +169,8 @@ def board_csv(macros):
         ("fm_i2s", "0" if fm_i2s else "none"),
         ("adc", "pcm1808" if adc else "none"),
         ("adc_i2s", "0"),
+        ("rtc", rtc),
+        ("rtc_i2c", "0"),
         ("yandex_music", "1" if defined("YANDEX_MUSIC") and
          value(macros, "YANDEX_MUSIC") == feature_on else "0"),
         ("dlna", "1" if defined("DLNA") and value(macros, "DLNA") == feature_on else "0"),

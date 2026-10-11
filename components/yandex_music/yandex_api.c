@@ -29,6 +29,15 @@ static const char *TAG = "yandex_api";
 #define YANDEX_API_CONNECT_ATTEMPTS 3
 #define YANDEX_API_CONNECT_RETRY_MS 1500
 
+/* Whatever went wrong on the way - connect, TLS, a cut-off answer, a
+ * timeout. Not the token missing, an address too long or no memory: asking
+ * again changes none of those. An answer with an HTTP error is ESP_OK here. */
+static bool yandex_api_worth_retrying(esp_err_t err)
+{
+    return err != ESP_OK && err != ESP_ERR_INVALID_STATE && err != ESP_ERR_INVALID_ARG &&
+           err != ESP_ERR_NO_MEM;
+}
+
 static esp_err_t yandex_api_request(const char *url, bool with_token, bool post,
                                     const char *body, char *response, size_t response_size,
                                     int *status_code, size_t *out_length)
@@ -119,22 +128,26 @@ esp_err_t yandex_api_get(const char *path, char *response, size_t response_size,
     char url[YANDEX_API_URL_MAX];
     const int length = snprintf(url, sizeof(url), "https://" YANDEX_API_HOST "%s", path);
     if (length < 0 || (size_t)length >= sizeof(url)) return ESP_ERR_INVALID_ARG;
-    /* A GET that could not even connect is tried again, a little later. The
+    /* A GET that never got an answer is tried again, a little later. The
      * first requests of a boot go out the moment the address arrives, and a
      * DNS lookup in that moment can still fail ("getaddrinfo() returns 202"):
      * the station's first tracks and the dashboard both failed that way, the
-     * station dropped out and the radio stayed silent with nothing said. A
-     * GET changes nothing on the server, so asking twice is safe; a server
-     * that answered with an error is not asked again. */
+     * station dropped out and the radio stayed silent with nothing said. Not
+     * only the connect: on 2026-10-11 the TLS session came up and the answer
+     * was cut off - ESP_FAIL, a second after boot, the dashboard fine a
+     * moment later - and the saved station was given up all the same. A GET
+     * changes nothing on the server, so asking twice is safe; a server that
+     * answered, even with an error, is not asked again, and neither is a
+     * request that could not be made at all. */
     esp_err_t err = ESP_FAIL;
     for (int attempt = 0; attempt < YANDEX_API_CONNECT_ATTEMPTS; ++attempt) {
         if (attempt > 0) {
-            ESP_LOGW(TAG, "no connection for %s; trying again", path);
+            ESP_LOGW(TAG, "no answer for %s; trying again", path);
             vTaskDelay(pdMS_TO_TICKS(YANDEX_API_CONNECT_RETRY_MS));
         }
         err = yandex_api_request(url, true, false, NULL, response, response_size, status_code,
                                  NULL);
-        if (err != ESP_ERR_HTTP_CONNECT) break;
+        if (!yandex_api_worth_retrying(err)) break;
     }
     return err;
 }

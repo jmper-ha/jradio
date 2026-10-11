@@ -50,3 +50,9 @@ ir_code_t ir_decode(const ir_pulse_t *pulses, size_t count);
 void ir_code_format(const ir_code_t *code, char *out, size_t size);
 bool ir_code_parse(const char *text, ir_code_t *code);
 bool ir_code_same_key(const ir_code_t *left, const ir_code_t *right);
+
+/* The 32 bits an NEC key sends, least significant first - address, its
+ * complement or the address's high byte, command, its complement - which is
+ * what the wake stub reads off the pin before the app is up. False for
+ * anything but an NEC key. ir_decode() of that frame gives the key back. */
+bool ir_code_nec_frame(const ir_code_t *code, uint32_t *bits);

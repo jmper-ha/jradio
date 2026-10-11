@@ -124,8 +124,39 @@ static void test_the_text_form_round_trips(void)
     assert(text[0] == '\0');
 }
 
+/* The bits the wake stub compares against: built from a learned key, sent as
+   pulses, decoded - and the key comes back, plain address or extended. */
+static void test_a_keys_frame_decodes_to_the_key(void)
+{
+    const ir_code_t keys[] = {
+        {.kind = IR_CODE_NEC, .address = 0x04, .command = 0x08},   /* the bench LG's Power */
+        {.kind = IR_CODE_NEC, .address = 0x00, .command = 0xFF},
+        {.kind = IR_CODE_NEC, .address = 0x0804, .command = 0x12}, /* extended */
+        {.kind = IR_CODE_NEC, .address = 0xBF00, .command = 0x0D}, /* a Dune's */
+    };
+    for (size_t k = 0U; k < sizeof(keys) / sizeof(keys[0]); ++k) {
+        uint32_t bits = 0U;
+        assert(ir_code_nec_frame(&keys[k], &bits));
+        ir_pulse_t pulses[34];
+        size_t count = 0U;
+        pulses[count++] = (ir_pulse_t){9000, 4500};
+        for (unsigned bit = 0U; bit < 32U; ++bit) {
+            pulses[count++] = (ir_pulse_t){562, (uint16_t)(((bits >> bit) & 1U) ? 1687 : 562)};
+        }
+        pulses[count++] = (ir_pulse_t){562, 0};
+        const ir_code_t back = ir_decode(pulses, count);
+        assert(ir_code_same_key(&back, &keys[k]));
+    }
+    uint32_t bits = 0U;
+    assert(ir_code_nec_frame(&keys[0], &bits) && bits == 0xF708FB04U);
+    const ir_code_t raw = {.kind = IR_CODE_RAW, .hash = 0x12345678U};
+    assert(!ir_code_nec_frame(&raw, &bits));
+    assert(!ir_code_nec_frame(NULL, &bits));
+}
+
 int main(void)
 {
+    test_a_keys_frame_decodes_to_the_key();
     test_a_datasheet_frame_decodes();
     test_a_receivers_jitter_is_tolerated();
     test_the_repeat_frame_and_a_broken_one();

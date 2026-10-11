@@ -8,6 +8,7 @@
 #include "album_art.h"
 #include "alarm_schedule.h"
 #include "board_rtc.h"
+#include "ir_wake_stub.h"
 #include "board.h"
 #include "board_config.h"
 #include "board_features.h"
@@ -169,6 +170,14 @@ void app_main(void)
     // First, so the reset reason is the first thing in the log after a crash,
     // and before anything allocates, so the boot heap figure means something.
     system_report_boot();
+    /* How often the receiver woke the board for nothing, since the last boot
+     * that got this far: the stub sleeps through those itself and says so
+     * only here. */
+    const uint32_t slept_through = ir_wake_stub_slept_through();
+    if (slept_through > 0U) {
+        ESP_LOGI(TAG, "slept through %u wakes by the IR receiver that were not Power",
+                 (unsigned int)slept_through);
+    }
     /* The wiring out of the `board` partition, or the compiled one. Read
      * here, first, because every driver will ask for it; nothing does yet,
      * so for now it only says in the log which board it would be. */

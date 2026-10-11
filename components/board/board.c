@@ -1544,8 +1544,11 @@ static void board_arm_wake_sources(uint32_t wake_after_seconds)
         (void)rtc_gpio_pullup_en(receiver);
         (void)rtc_gpio_pulldown_dis(receiver);
         mask |= 1ULL << receiver;
-        /* And the stub that reads the rest of that frame before the boot. */
-        ir_wake_stub_arm();
+        /* And the stub that reads the rest of that frame before the boot -
+         * and, knowing Power's frame, sleeps on through anything else. */
+        uint32_t power_bits = 0U;
+        const bool power = remote_control_power_frame(&power_bits);
+        ir_wake_stub_arm(power ? &power_bits : NULL, wake_after_seconds > 0U);
     }
     ESP_ERROR_CHECK_WITHOUT_ABORT(esp_sleep_enable_ext1_wakeup_io(mask, ESP_EXT1_WAKEUP_ANY_LOW));
     if (wake_after_seconds > 0U) {

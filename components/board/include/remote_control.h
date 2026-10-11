@@ -41,6 +41,12 @@ esp_err_t remote_control_init(void);
 void remote_control_wake_listen(void);
 bool remote_control_wake_check(void);
 
+/* The NEC frame of the key bound to Power, for the wake stub to compare a
+ * wake with before the app is up. False when Power is not bound, or is bound
+ * to a key that is not NEC - raw keys are hashes of pulse trains, which the
+ * stub cannot take. */
+bool remote_control_power_frame(uint32_t *bits);
+
 /* The web page's side. */
 bool remote_control_learn(remote_function_t function);
 bool remote_control_forget(remote_function_t function);

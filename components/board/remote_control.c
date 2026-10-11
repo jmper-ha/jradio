@@ -308,6 +308,16 @@ static bool wake_keys_had_power(void)
     return power;
 }
 
+bool remote_control_power_frame(uint32_t *bits)
+{
+    if (!board_has_ir() || bits == NULL || load_once() != ESP_OK) return false;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const bool bound = s_map.bound[REMOTE_POWER];
+    const ir_code_t power = s_map.code[REMOTE_POWER];
+    xSemaphoreGive(s_lock);
+    return bound && ir_code_nec_frame(&power, bits);
+}
+
 bool remote_control_wake_check(void)
 {
     if (!board_has_ir()) return false;

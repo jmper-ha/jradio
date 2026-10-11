@@ -16,8 +16,22 @@
  * the pin, bit by bit, and leaves the 32 bits in RTC memory for the boot to
  * find. Arm it before every deep sleep; ask for the frame at boot. */
 
-/* Points the chip at the stub for the next wake and clears what it kept. */
-void ir_wake_stub_arm(void);
+/* Points the chip at the stub for the next wake and clears what it kept.
+ *
+ * `power_bits`, when not NULL, is the NEC frame of the remote's Power key
+ * (ir_code_nec_frame). With it the stub can tell a wake worth a boot from one
+ * that is not, and goes back to sleep on the second kind without one: noise
+ * on the receiver - which on the bench woke the board every twenty seconds
+ * through a sleep - or another key. NULL - Power not learned, or learned off
+ * a remote that is not NEC, which the stub cannot read - boots on every wake
+ * as before and leaves it to remote_control_wake_check(). `timer` says the
+ * sleep has the alarm's timer as well, which a sleep resumed from the stub
+ * has to keep. */
+void ir_wake_stub_arm(const uint32_t *power_bits, bool timer);
+
+/* How many wakes the stub slept through since this was last asked, for the
+ * log of the boot that finally came. Reading it resets it. */
+uint32_t ir_wake_stub_slept_through(void);
 
 /* The frame the stub read on this wake, decoded like any other; false when
  * this boot was not a wake, the wake was not the receiver's, or the stub

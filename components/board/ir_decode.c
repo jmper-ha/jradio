@@ -160,6 +160,19 @@ bool ir_code_parse(const char *text, ir_code_t *code)
     return false;
 }
 
+bool ir_code_nec_frame(const ir_code_t *code, uint32_t *bits)
+{
+    if (code == NULL || bits == NULL || code->kind != IR_CODE_NEC) return false;
+    /* An address that fits a byte is sent with its complement; a wider one
+     * is extended NEC, both bytes the address - the rule ir_decode() reads
+     * them back by. */
+    const uint32_t address = code->address <= 0xFFU
+                                 ? (uint32_t)code->address | ((uint32_t)(uint8_t)~code->address << 8)
+                                 : (uint32_t)code->address;
+    *bits = address | ((uint32_t)code->command << 16) | ((uint32_t)(uint8_t)~code->command << 24);
+    return true;
+}
+
 bool ir_code_same_key(const ir_code_t *left, const ir_code_t *right)
 {
     if (left == NULL || right == NULL || left->kind != right->kind) return false;

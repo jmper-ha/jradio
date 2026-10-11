@@ -5,7 +5,7 @@ and an SD card, a media server on the home network, Yandex Music and
 Bluetooth. Driven by the encoder and buttons on the box, by an infrared remote,
 or from a browser - a phone or a computer on the same network.
 
-*[Русская версия](README.md)*
+*[Русская версия](README.md)* · **[What it looks like - photos of the screens](doc/screens.en.md)**
 
 ---
 
@@ -119,6 +119,7 @@ The full list of limits is in [Diagnostics and limits](doc/diagnostics.en.md).
 
 | Page | About |
 |---|---|
+| [Screens](doc/screens.en.md) | Photos of the screens: home, stations, FM, files, the player, Bluetooth, settings |
 | [How to use it](doc/usage.en.md) | First boot, controls, screens, sources, settings, sleep and the alarm |
 | [Building and flashing](doc/build.en.md) | Flashing from the browser, a ready image or a build from source, the first flash, updates, the data on the device, tests |
 | [Installing the toolchain](doc/toolchain.en.md) | VS Code, the ESP-IDF extension, Python, the board's port |

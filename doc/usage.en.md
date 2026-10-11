@@ -282,15 +282,29 @@ Play a station at a set time: the switch, the time, the weekdays, the station
 The alarm's volume applies to the ring only and does not overwrite yours. At
 least one day is always selected.
 
+On a board with an FM tuner there is a choice, "What to play": internet radio
+or FM radio, each with its own station. FM starts on the very minute - it needs
+no network. If the tuner is gone or the preset deleted, the alarm plays the
+internet radio station.
+
 At the appointed minute the device raises the backlight, leaves the
-screensaver and starts the station. There is no auto-off - it plays until you
-stop it.
+screensaver and starts the station.
+
+**Switching off at a set time.** "Switch off" and "Switch off at" - say, the
+alarm at 7:00 and off at 11:00. It works only when the alarm woke the radio:
+if it was already playing at the alarm's minute, somebody is listening, and it
+is not switched off. The time counts from the ring (over midnight too: 23:00 to
+01:00 is two hours). It goes off the way the sleep timer does: the sound fades
+over ten seconds and the radio sleeps until the next alarm; any key pressed in
+those seconds keeps it on.
 
 **A sleeping device wakes itself.** First ten minutes before the ring,
 quietly, with the screen dark: only to check the clock against the time server
 (over a night the internal clock drifts by minutes). Then a minute before the
 ring, for real, with the screen still dark, so that the sound starts exactly
-on its minute. The backlight comes on with the ring.
+on its minute. The backlight comes on with the ring. With a real-time clock
+([a DS3231 or DS1307](hardware.en.md#real-time-clock-ds3231-or-ds1307)) the
+quiet wake takes the time from it and does not switch Wi-Fi on.
 
 On the screen an armed alarm shows as a bell next to the clock; on the player
 page as a line with the time and the days.

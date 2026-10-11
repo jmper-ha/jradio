@@ -44,6 +44,31 @@ to the device on Save. The order is changed by
 dragging the handle left of the name (or with the arrow keys). Everything
 goes to the device on Save. Up to 99 stations.
 
+**Find stations.** A search of the open
+[Radio Browser](https://www.radio-browser.info/) catalogue - about 50 000
+stations: by name and genre at once, optionally by country, the most popular
+first. A station can be listened to in the browser (▶) and added to the list;
+its picture comes along by itself. The browser searches, not the radio. The
+catalogue is a choice: the **jRadio copy** (the default) - a copy on GitHub Pages
+([jradio-stations](https://github.com/jmper-ha/jradio-stations)), refreshed
+once a day, which opens where the catalogue itself does not (from Russia its
+server does not always answer) - or **radio-browser.info** directly, fresher.
+If the chosen one does not answer, the page asks the other. Stations whose
+address is longer than the radio can store are left out of the results.
+
+**Find pictures.** For stations without a picture the page looks in the
+catalogue: by the stream address first (reliable), then by name (worth a look;
+similar stations are left unticked). "Use the ticked ones", and Save sends them
+to the radio. The copy keeps the pictures of the stations most looked for (all
+Russian, Ukrainian, Belarusian and Kazakh ones and the 5000 most popular
+elsewhere) already scaled. The rest the radio fetches itself: stations' sites
+mostly do not let a browser read their pictures. The radio refuses pictures
+over 512 KB: fetching one would break up the sound.
+
+Mind that the browser may reach the internet another way than the radio (a VPN,
+say), and a station that plays in the browser may not open on the radio. The
+"On the radio" button in a station's card checks that before saving.
+
 ## FM stations
 
 The "FM" tab of the Stations page is there when the build has a tuner; the
@@ -106,7 +131,7 @@ installed together.
 | `GET /api/status` | Wi-Fi and player state in one snapshot |
 | `GET /api/playlist` | The station list as CSV |
 | `POST /api/playlist` | Replace the whole list |
-| `GET /api/stations` | The names of the active source's stations (on FM, rows "frequency name") and their pictures' names (`icon`); `?source=internet_radio` - always the radio |
+| `GET /api/stations` | The names of the active source's stations (on FM, rows "frequency name") and their pictures' names (`icon`); `?source=internet_radio` - always the radio, `?source=fm` - always the FM presets |
 | `GET /api/fm/presets`, `POST /api/fm/presets` | The FM stations as `name<TAB>kHz[<TAB>picture]` text; the answer to a write is `{"count":…,"skipped":…}` |
 | `POST /api/fm/scan`, `GET /api/fm/scan` | Start a pass up the band (409 if one is already running) and ask whether it is running, at which frequency, and what it has found |
 | `GET /api/files` | The current folder of the drive |
@@ -124,6 +149,7 @@ installed together.
 | `POST /api/ota/action?do=…` | `check` - check now, `install` - download and install the release, `skip` - skip it, `auto&on=0/1` - the daily check |
 | `POST /api/station-test` | Play an address on the device without touching the playlist |
 | `POST /api/station-icon`, `GET /api/station-icon` | Upload / fetch a station's picture |
+| `GET /api/icon-fetch?url=…` | The radio fetches a picture off another site: the first ask answers 202 "working", the next with the same address the picture itself or an error (413 over 512 KB, 415 not a picture, 502 the site would not give it, 409 busy with another address) |
 | `GET /api/yandex`, `POST /api/yandex` | Link state and the account's stations; link, unlink, refresh |
 | `GET /api/remote`, `GET /api/remote/last` | The remote's table; the last key received |
 | `POST /api/remote/learn`, `POST /api/remote/forget` | `{"function":"volume_up"}` - learn / forget |
@@ -142,9 +168,11 @@ not to load the socket.
 Remote codes are written as `nec:<address>:<command>` (`nec:4:08`) or
 `raw:<hash>` for a protocol the decoder does not know.
 
-The alarm in the settings is five fields: `alarm_enabled`, `alarm_time`
+The alarm in the settings is nine fields: `alarm_enabled`, `alarm_time`
 (`"07:30"`), `alarm_days` (a mask, bit 0 is Sunday, zero is refused),
-`alarm_station` (a number counting from one), `alarm_volume`.
+`alarm_station` (a number counting from one), `alarm_volume`, `alarm_source`
+(`"radio"` or `"fm"`), `alarm_fm_station` (a preset number counting from one),
+`alarm_stop_enabled` and `alarm_stop_time` (`"11:00"`).
 
 ## How it works
 

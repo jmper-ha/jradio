@@ -6,6 +6,30 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.7.0 — 11 October 2026
+
+New:
+- A station search on the Stations page: the open Radio Browser catalogue
+  (about 50 000 stations) by name, genre and country; a station can be
+  listened to in the browser and added to the list with its picture.
+- "Find pictures" - pictures for stations that have none, by stream address
+  or by name.
+- The catalogue is searched through a jRadio copy on GitHub, which opens
+  where the catalogue itself does not; the catalogue directly is a choice too.
+- A DS3231 or DS1307 real-time clock: the time is there right after power-up,
+  even with no network, and the alarm wakes without Wi-Fi.
+- The alarm can play FM radio when there is a tuner.
+- The alarm can switch the radio off at a set time - only when the alarm woke
+  it.
+
+Fixed:
+- A sleeping radio no longer wakes on noise from the IR receiver, only on the
+  remote's Power key.
+- Switching Yandex Music stations, the web page showed the previous station
+  for a couple of seconds.
+- The saved Yandex Music station sometimes did not start at power-up after a
+  network hiccup in the first seconds - the request is now repeated.
+
 ## v1.6.2 — 10 October 2026
 
 Fixed:

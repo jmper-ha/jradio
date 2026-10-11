@@ -16,6 +16,7 @@
 | IR receiver | a three-pin 38 kHz one: TSOP38238, VS1838B, HX1838 | no |
 | Bluetooth | a second ESP32 module (WROOM-32) running [jradio-bt](https://github.com/jmper-ha/jradio-bt) | no |
 | FM tuner | an RDA5807FP (digital sound over I2S) or a module on an RDA5807M (analogue output, or over I2S through a PCM1808 ADC) | no |
+| Real-time clock | a DS3231 or DS1307 on I2C, with a cell - the time without a network and an alarm without Wi-Fi | no |
 | Amplifier | any with a MUTE / SD input - the firmware mutes it on pause | no |
 | Peripheral power switch | a load switch or a P-MOSFET - cuts the periphery in sleep | no |
 
@@ -333,6 +334,38 @@ needed - while FM is received. So the wire to SCKI is best short, with a
 softens the edges, and the high harmonics get weaker. While anything other than
 FM plays, the ADC needs no clock, and the firmware turns it off. The tuner's
 volume for this variant is 15 (the maximum), and the level is set by ear.
+
+## Real-time clock: DS3231 or DS1307
+
+Without one, after a power cut the radio does not know the time until a time
+server answers, and the alarm switches Wi-Fi on ten minutes before the ring to
+correct its clock. With one the time is there at power-up, network or not, and
+the alarm's quiet wake needs no Wi-Fi. The time is read from the chip at boot
+and written to it after every time-server answer (the chip holds UTC, so the
+time zone never touches it).
+
+The clock sits on the FM tuner's I2C0, on the same two pins - tuner or not:
+
+```c
+#define RTC_CHIP RTC_CHIP_DS3231      // or RTC_CHIP_DS1307
+#define RTC_I2C_PERIPHERAL 0
+#define FM_I2C_SDA_GPIO 8
+#define FM_I2C_SCL_GPIO 3
+```
+
+In the hardware editor it is the "Real-time clock" card. Both chips answer at
+0x68, so a board has one of them.
+
+- **DS3231** runs on 3.3 V - power it so: the module's pull-ups go to its supply,
+  and the S3's pins do not take 5 V. Its own temperature-compensated crystal
+  drifts seconds a month. The module's pull-ups beside the tuner bus's own
+  (4.7 k) come to about 2.2 k, which is fine.
+- **DS1307** needs 5 V: below about 4.5 V it goes to its battery and drops
+  I2C. Then take its module's pull-ups off and keep 3.3 V ones - it reads them
+  fine. An external crystal, it drifts more.
+- **The cell.** Many modules carry a charging circuit for a LIR cell (a
+  resistor and a diode by the holder). With a plain CR cell it must come off.
+  If the log says "DS3231 lost the time" after a power cut, the cell is flat.
 
 ## What the home screen shows
 

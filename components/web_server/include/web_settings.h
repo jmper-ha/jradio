@@ -81,6 +81,12 @@ typedef enum {
     WEB_SETTINGS_FIELD_ALARM_DAYS,
     WEB_SETTINGS_FIELD_ALARM_STATION,
     WEB_SETTINGS_FIELD_ALARM_VOLUME,
+    /* What it plays - "radio" or "fm" - and the FM preset; and the
+     * switch-off, a switch and its own time. */
+    WEB_SETTINGS_FIELD_ALARM_SOURCE,
+    WEB_SETTINGS_FIELD_ALARM_FM_STATION,
+    WEB_SETTINGS_FIELD_ALARM_STOP_ENABLED,
+    WEB_SETTINGS_FIELD_ALARM_STOP_TIME,
     /* Not a device setting at all - a secret that goes to its own file - but
      * it arrives on the same page in the same shape, so it is parsed here and
      * routed by the handler: web_settings_apply() refuses it. */

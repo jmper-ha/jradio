@@ -235,9 +235,67 @@ static void test_the_time_text(void)
     assert(strcmp(text, "23:59") == 0);
 }
 
+/* FM rings its own preset, and only where there is a tuner; the radio's
+   station stands in for a tuner that is gone. */
+static void test_the_source_and_its_station(void)
+{
+    alarm_config_t config = weekday_alarm();
+    config.fm_station = 5U;
+    assert(alarm_play_source(&config, true) == ALARM_SOURCE_RADIO);
+    assert(alarm_play_station(&config, true) == 3U);
+    config.source = ALARM_SOURCE_FM;
+    assert(alarm_config_valid(&config));
+    assert(alarm_play_source(&config, true) == ALARM_SOURCE_FM);
+    assert(alarm_play_station(&config, true) == 5U);
+    assert(alarm_play_source(&config, false) == ALARM_SOURCE_RADIO);
+    assert(alarm_play_station(&config, false) == 3U);
+    // FM with no preset chosen cannot ring - its station is what is missing.
+    config.fm_station = 0U;
+    assert(!alarm_config_valid(&config));
+    // The radio's station is not asked for while FM is the source.
+    config.fm_station = 5U;
+    config.station = 0U;
+    assert(alarm_config_valid(&config));
+    config.source = 2U;
+    assert(!alarm_config_valid(&config));
+    assert(alarm_play_station(NULL, true) == 0U);
+}
+
+/* The stop, counted on the clock face from the alarm's time. */
+static void test_the_stop_after_the_alarm(void)
+{
+    alarm_config_t config = weekday_alarm();  // 07:30
+    assert(alarm_stop_after_minutes(&config) == 0U);
+    config.stop_enabled = true;
+    config.stop_hour = 11U;
+    config.stop_minute = 0U;
+    assert(alarm_stop_after_minutes(&config) == 210U);
+    // Over midnight.
+    config.hour = 23U;
+    config.minute = 0U;
+    config.stop_hour = 1U;
+    assert(alarm_stop_after_minutes(&config) == 120U);
+    // The same time for both is a whole day, not an alarm that stops at once.
+    config.stop_hour = 23U;
+    assert(alarm_stop_after_minutes(&config) == 1440U);
+    // A minute before is nearly a day.
+    config.stop_hour = 22U;
+    config.stop_minute = 59U;
+    assert(alarm_stop_after_minutes(&config) == 1439U);
+    config.stop_enabled = false;
+    assert(alarm_stop_after_minutes(&config) == 0U);
+    config.stop_enabled = true;
+    config.stop_hour = 24U;
+    assert(alarm_stop_after_minutes(&config) == 0U);
+    assert(!alarm_config_valid(&config));
+    assert(alarm_stop_after_minutes(NULL) == 0U);
+}
+
 int main(void)
 {
     test_an_alarm_that_cannot_ring();
+    test_the_source_and_its_station();
+    test_the_stop_after_the_alarm();
     test_later_today_and_tomorrow();
     test_the_week_wraps();
     test_its_own_minute_answers_with_the_next_one();

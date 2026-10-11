@@ -1001,10 +1001,15 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
     char query[48];
     if (httpd_req_get_url_query_str(request, query, sizeof(query)) == ESP_OK) {
         char value[24];
-        if (httpd_query_key_value(query, "source", value, sizeof(value)) == ESP_OK &&
-            strcmp(value, "internet_radio") == 0) {
-            rotor = false;
-            fm = false;
+        if (httpd_query_key_value(query, "source", value, sizeof(value)) == ESP_OK) {
+            if (strcmp(value, "internet_radio") == 0) {
+                rotor = false;
+                fm = false;
+            } else if (strcmp(value, "fm") == 0) {
+                // The tuner's presets, for the alarm's FM picker, the same way.
+                rotor = false;
+                fm = true;
+            }
         }
     }
     const size_t count = fm      ? player_control_fm_preset_count()

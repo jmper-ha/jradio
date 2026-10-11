@@ -49,6 +49,16 @@
   const alarmDayChips = Array.from(document.querySelectorAll('#device-alarm-days [data-day]'));
   const alarmDaysRow = document.querySelector('#device-alarm-days-row');
   const alarmStation = document.querySelector('#device-alarm-station');
+  const alarmFmStation = document.querySelector('#device-alarm-fm-station');
+  // Rows the field table cannot gate on its own: each hangs on two settings.
+  const alarmRows = {
+    source: document.querySelector('#device-alarm-source-row'),
+    station: document.querySelector('#device-alarm-station-row'),
+    fmStation: document.querySelector('#device-alarm-fm-station-row'),
+    stop: document.querySelector('#device-alarm-stop-row'),
+    stopTime: document.querySelector('#device-alarm-stop-time-row'),
+    stopNote: document.querySelector('#device-alarm-stop-note'),
+  };
   const backupStatus = document.querySelector('#backup-status');
   const backupFile = document.querySelector('#backup-file');
   const backupRestore = document.querySelector('#backup-restore');
@@ -118,12 +128,18 @@
      row: document.querySelector('#device-alarm-time-row'), whenOn: 'alarm_enabled'},
     /* The days are not here: seven buttons are one answer, and the rule that
        the last one cannot be turned off has nowhere to live in this table. */
-    {field: 'alarm_station', kind: 'number', node: alarmStation,
-     row: document.querySelector('#device-alarm-station-row'), whenOn: 'alarm_enabled'},
+    /* The source, its station and the switch-off have no `row` here: each
+       row hangs on two settings at once - the alarm being on and the source,
+       or the switch-off - and applyAlarmRows() below gates them. */
+    {field: 'alarm_source', kind: 'choice', node: document.querySelector('#device-alarm-source')},
+    {field: 'alarm_station', kind: 'number', node: alarmStation},
+    {field: 'alarm_fm_station', kind: 'number', node: alarmFmStation},
     {field: 'alarm_volume', kind: 'number',
      node: document.querySelector('#device-alarm-volume'),
      output: document.querySelector('#device-alarm-volume-value'),
      row: document.querySelector('#device-alarm-volume-row'), whenOn: 'alarm_enabled'},
+    {field: 'alarm_stop_enabled', kind: 'switch', node: document.querySelector('#device-alarm-stop')},
+    {field: 'alarm_stop_time', kind: 'text', node: document.querySelector('#device-alarm-stop-time')},
     {field: 'flip_vertical', kind: 'switch', node: document.querySelector('#device-flip-vertical')},
     {field: 'flip_horizontal', kind: 'switch',
      node: document.querySelector('#device-flip-horizontal')},
@@ -1091,6 +1107,78 @@
       .catch(() => {});
   }
 
+  /* The FM presets for the alarm, the same way and for the same reason as the
+     radio's stations above: the device numbers the rows. Asked once, and only
+     on a board with a tuner. */
+  let alarmFmWanted = 0;
+  let alarmFmFilled = false;
+  let alarmFmEmpty = false;
+  let alarmFmLoaded = false;
+
+  function fillAlarmFmStations(labels) {
+    alarmFmFilled = true;
+    alarmFmEmpty = labels.length === 0;
+    if (alarmFmEmpty) {
+      const option = document.createElement('option');
+      option.value = '0';
+      option.setAttribute('data-i18n', 'alarm.no_fm_stations');
+      option.textContent = t('alarm.no_fm_stations');
+      alarmFmStation.replaceChildren(option);
+      return;
+    }
+    alarmFmStation.replaceChildren(...labels.map((label, index) => {
+      const option = document.createElement('option');
+      option.value = String(index + 1);
+      option.textContent = `${index + 1}. ${label}`;
+      return option;
+    }));
+    alarmFmStation.value = String(alarmFmWanted);
+    if (alarmFmStation.value === '') alarmFmStation.value = '1';
+  }
+
+  function loadAlarmFmStations() {
+    window.fetch('/api/stations?source=fm', {headers: {Accept: 'application/json'}})
+      .then((response) => {
+        if (!response || response.ok !== true) throw new Error('request failed');
+        return response.json();
+      })
+      .then((payload) => {
+        if (!isObject(payload) || !Array.isArray(payload.items)) return;
+        fillAlarmFmStations(payload.items.map((item) => (
+          isObject(item) && typeof item.label === 'string' ? item.label : '')));
+      })
+      .catch(() => { alarmFmLoaded = false; });
+  }
+
+  /* The alarm's rows that hang on two settings. Remembered between frames:
+     a live update over the socket may carry the switch without the source,
+     and the rows must not fall back to a guess in between. */
+  const alarmState = {enabled: false, source: 'radio', stop: false, fm: false};
+
+  function applyAlarmRows(payload, available) {
+    if (typeof payload.alarm_enabled === 'boolean') alarmState.enabled = payload.alarm_enabled;
+    if (typeof payload.alarm_source === 'string') alarmState.source = payload.alarm_source;
+    if (typeof payload.alarm_stop_enabled === 'boolean') alarmState.stop = payload.alarm_stop_enabled;
+    if (typeof available.fm === 'boolean') alarmState.fm = available.fm;
+    const on = alarmState.enabled;
+    // FM is offered only where there is a tuner; without one it rings the radio.
+    const fm = alarmState.fm && alarmState.source === 'fm';
+    alarmRows.source.hidden = !on || !alarmState.fm;
+    alarmRows.station.hidden = !on || fm;
+    alarmRows.fmStation.hidden = !on || !fm;
+    alarmRows.stop.hidden = !on;
+    alarmRows.stopTime.hidden = !on || !alarmState.stop;
+    alarmRows.stopNote.hidden = !on || !alarmState.stop;
+    if (alarmState.fm && !alarmFmLoaded) {
+      alarmFmLoaded = true;
+      loadAlarmFmStations();
+    }
+    if (Number.isSafeInteger(payload.alarm_fm_station)) {
+      alarmFmWanted = payload.alarm_fm_station;
+      if (alarmFmFilled && !alarmFmEmpty) alarmFmStation.value = String(alarmFmWanted);
+    }
+  }
+
   function applyDeviceSettings(payload) {
     if (!isObject(payload)) return false;
     applyLanguage(payload);
@@ -1201,6 +1289,7 @@
         alarmStation.value = String(alarmStationWanted);
       }
     }
+    applyAlarmRows(payload, available);
     applyWeatherState(payload);
     return true;
   }

@@ -107,6 +107,9 @@ const ids = [
   'device-alarm', 'device-alarm-time', 'device-alarm-station', 'device-alarm-volume',
   'device-alarm-volume-value', 'device-alarm-time-row', 'device-alarm-days-row',
   'device-alarm-station-row', 'device-alarm-volume-row',
+  'device-alarm-source', 'device-alarm-source-row', 'device-alarm-fm-station',
+  'device-alarm-fm-station-row', 'device-alarm-stop', 'device-alarm-stop-row',
+  'device-alarm-stop-time', 'device-alarm-stop-time-row', 'device-alarm-stop-note',
   'device-weather', 'device-weather-latitude', 'device-weather-longitude',
   'device-weather-key', 'device-weather-key-row', 'device-weather-now-row',
   'device-weather-now',
@@ -324,6 +327,10 @@ const context = {
       if (String(url).startsWith('/api/remote')) {
         remoteFetches += 1;
         return Promise.resolve({ok: true, json: () => Promise.resolve(remoteReply)});
+      }
+      if (String(url).startsWith('/api/stations?source=fm')) {
+        return Promise.resolve({ok: true, json: () => Promise.resolve({
+          kind: 'stations', source: 'fm', items: [{label: '88.3 Ретро'}, {label: '101.7 Джаз'}]})});
       }
       if (String(url).startsWith('/api/stations')) {
         return Promise.resolve({ok: true, json: () => Promise.resolve(stationsReply)});
@@ -901,6 +908,69 @@ function lastYandexTimer() {
   assert.equal(elements['#device-alarm-time-row'].hidden, false);
   assert.equal(elements['#device-alarm-days-row'].hidden, false);
   assert.equal(elements['#device-alarm-time'].value, '06:40');
+
+  /* No tuner: no choice of source, and the radio's station. The switch-off
+     row is there, its time only once it is switched on. */
+  assert.equal(elements['#device-alarm-source-row'].hidden, true);
+  assert.equal(elements['#device-alarm-station-row'].hidden, false);
+  assert.equal(elements['#device-alarm-fm-station-row'].hidden, true);
+  assert.equal(elements['#device-alarm-stop-row'].hidden, false);
+  assert.equal(elements['#device-alarm-stop-time-row'].hidden, true);
+  assert.ok(!fetchCalls.some((call) => String(call.url).startsWith('/api/stations?source=fm')));
+
+  settingsReply = {...settingsReply, alarm_stop_enabled: true, alarm_stop_time: '11:00'};
+  elements['#device-alarm-stop'].checked = true;
+  elements['#device-alarm-stop'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' && call.options &&
+                                           call.options.method === 'POST').at(-1).options.body),
+    {field: 'alarm_stop_enabled', value: true});
+  assert.equal(elements['#device-alarm-stop-time-row'].hidden, false);
+  assert.equal(elements['#device-alarm-stop-note'].hidden, false);
+  assert.equal(elements['#device-alarm-stop-time'].value, '11:00');
+  settingsReply = {...settingsReply, alarm_stop_time: '10:30'};
+  elements['#device-alarm-stop-time'].value = '10:30';
+  elements['#device-alarm-stop-time'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' && call.options &&
+                                           call.options.method === 'POST').at(-1).options.body),
+    {field: 'alarm_stop_time', value: '10:30'});
+
+  /* A tuner: the choice appears, and FM swaps the station row for the
+     presets', filled from the device's own list. */
+  settingsReply = {...settingsReply, available: {...settingsReply.available, fm: true},
+                   alarm_source: 'fm', alarm_fm_station: 2};
+  elements['#device-alarm-source'].value = 'fm';
+  elements['#device-alarm-source'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' && call.options &&
+                                           call.options.method === 'POST').at(-1).options.body),
+    {field: 'alarm_source', value: 'fm'});
+  assert.equal(elements['#device-alarm-source-row'].hidden, false);
+  assert.equal(elements['#device-alarm-station-row'].hidden, true);
+  assert.equal(elements['#device-alarm-fm-station-row'].hidden, false);
+  assert.equal(elements['#device-alarm-fm-station'].children.length, 2);
+  assert.equal(elements['#device-alarm-fm-station'].children[1].textContent, '2. 101.7 Джаз');
+  assert.equal(elements['#device-alarm-fm-station'].value, '2');
+  settingsReply = {...settingsReply, alarm_fm_station: 1};
+  elements['#device-alarm-fm-station'].value = '1';
+  elements['#device-alarm-fm-station'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' && call.options &&
+                                           call.options.method === 'POST').at(-1).options.body),
+    {field: 'alarm_fm_station', value: 1});
+  // Back to the radio: its station again, as it was.
+  settingsReply = {...settingsReply, alarm_source: 'radio'};
+  elements['#device-alarm-source'].value = 'radio';
+  elements['#device-alarm-source'].emit('change');
+  await settle();
+  assert.equal(elements['#device-alarm-station-row'].hidden, false);
+  assert.equal(elements['#device-alarm-fm-station-row'].hidden, true);
+  assert.equal(elements['#device-alarm-station'].value, '2');
 
   /* A slider writes when it is let go, not while it is being dragged: the
      readout follows the handle on its own. Brightness is the page's only

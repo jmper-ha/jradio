@@ -205,6 +205,12 @@ typedef enum {
 #define DEVICE_ALARM_STATION_DEFAULT 1
 #define DEVICE_ALARM_STATION_MAX 99
 #define DEVICE_ALARM_VOLUME_DEFAULT 40
+/* The FM preset, the same way: FM_PRESETS_MAX written out. */
+#define DEVICE_ALARM_FM_STATION_DEFAULT 1
+#define DEVICE_ALARM_FM_STATION_MAX 40
+/* Where the switch-off stands before anyone has moved it: late morning, off. */
+#define DEVICE_ALARM_STOP_HOUR_DEFAULT 11
+#define DEVICE_ALARM_STOP_MINUTE_DEFAULT 0
 
 /* Loud enough to be obviously working, quiet enough that a fresh flash does
  * not startle anyone. */
@@ -424,6 +430,15 @@ bool device_settings_set_alarm_days(device_settings_t *settings, unsigned int da
  * means none is chosen, which is what a device with an empty playlist has. */
 bool device_settings_set_alarm_station(device_settings_t *settings, unsigned int number);
 bool device_settings_set_alarm_volume(device_settings_t *settings, unsigned char volume);
+// ALARM_SOURCE_RADIO or ALARM_SOURCE_FM; stored as "radio" or "fm".
+bool device_settings_set_alarm_source(device_settings_t *settings, unsigned int source);
+// The FM preset's number counting from 1; zero means none is chosen.
+bool device_settings_set_alarm_fm_station(device_settings_t *settings, unsigned int number);
+/* The switch-off: on or off, and its time, kept apart so that switching it
+ * off and on again brings back the time it had. */
+bool device_settings_set_alarm_stop_enabled(device_settings_t *settings, bool enabled);
+bool device_settings_set_alarm_stop_time(device_settings_t *settings, unsigned int hour,
+                                         unsigned int minute);
 /* Recorded as playback starts, so a power cut still leaves the last choice
  * behind. Writing "none" clears the resume point. */
 bool device_settings_set_last_source(device_settings_t *settings,

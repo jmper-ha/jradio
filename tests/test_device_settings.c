@@ -765,6 +765,31 @@ static void test_the_alarm_persists_and_is_checked(void)
     assert(reloaded.alarm.station == 12U);
     assert(reloaded.alarm.volume == 35U);
     assert(alarm_config_valid(&reloaded.alarm));
+
+    /* What it plays and when it switches off: the radio and no switch-off
+     * until somebody says otherwise, with a time ready for it. */
+    assert(reloaded.alarm.source == ALARM_SOURCE_RADIO);
+    assert(reloaded.alarm.fm_station == DEVICE_ALARM_FM_STATION_DEFAULT);
+    assert(!reloaded.alarm.stop_enabled);
+    assert(reloaded.alarm.stop_hour == DEVICE_ALARM_STOP_HOUR_DEFAULT);
+    assert(reloaded.alarm.stop_minute == DEVICE_ALARM_STOP_MINUTE_DEFAULT);
+    assert(device_settings_set_alarm_source(&reloaded, ALARM_SOURCE_FM));
+    assert(device_settings_set_alarm_fm_station(&reloaded, 7U));
+    assert(device_settings_set_alarm_stop_enabled(&reloaded, true));
+    assert(device_settings_set_alarm_stop_time(&reloaded, 10U, 30U));
+    assert(!device_settings_set_alarm_source(&reloaded, 2U));
+    assert(!device_settings_set_alarm_fm_station(&reloaded, DEVICE_ALARM_FM_STATION_MAX + 1U));
+    assert(!device_settings_set_alarm_stop_time(&reloaded, 24U, 0U));
+    assert(!device_settings_set_alarm_stop_time(&reloaded, 10U, 60U));
+    device_settings_t again;
+    assert(device_settings_init_at(&again, test_path));
+    assert(again.alarm.source == ALARM_SOURCE_FM);
+    assert(again.alarm.fm_station == 7U);
+    assert(again.alarm.stop_enabled);
+    assert(again.alarm.stop_hour == 10U && again.alarm.stop_minute == 30U);
+    // The radio's station is kept beside the preset, not replaced by it.
+    assert(again.alarm.station == 12U);
+    assert(alarm_config_valid(&again.alarm));
 }
 
 /* A hand-edited card: every damaged field falls back to what the device would
@@ -778,7 +803,10 @@ static void test_a_corrupt_alarm_leaves_the_defaults(void)
           "alarm_time,7-30\n"
           "alarm_days,0\n"
           "alarm_station,200\n"
-          "alarm_volume,abc\n",
+          "alarm_volume,abc\n"
+          "alarm_source,am\n"
+          "alarm_fm_station,41\n"
+          "alarm_stop_time,25:00\n",
           file);
     fclose(file);
 
@@ -790,6 +818,9 @@ static void test_a_corrupt_alarm_leaves_the_defaults(void)
     assert(settings.alarm.days == ALARM_DAYS_ALL);
     assert(settings.alarm.station == DEVICE_ALARM_STATION_DEFAULT);
     assert(settings.alarm.volume == DEVICE_ALARM_VOLUME_DEFAULT);
+    assert(settings.alarm.source == ALARM_SOURCE_RADIO);
+    assert(settings.alarm.fm_station == DEVICE_ALARM_FM_STATION_DEFAULT);
+    assert(settings.alarm.stop_hour == DEVICE_ALARM_STOP_HOUR_DEFAULT);
 }
 
 /* The custom theme: six colours in one key, all or none, starting as the

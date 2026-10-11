@@ -97,6 +97,14 @@
     'alarm.sun': ['Вс', 'Sun'],
     'alarm.one_day': ['Нужен хотя бы один день', 'At least one day is needed'],
     'alarm.no_stations': ['Плейлист пуст', 'The playlist is empty'],
+    'alarm.source': ['Что включать', 'What to play'],
+    'alarm.source_radio': ['Интернет-радио', 'Internet radio'],
+    'alarm.source_fm': ['FM-радио', 'FM radio'],
+    'alarm.fm_station': ['Станция FM', 'FM station'],
+    'alarm.no_fm_stations': ['Нет FM-станций — отсканируйте на странице «Станции»', 'No FM stations — scan on the Stations page'],
+    'alarm.stop': ['Выключать', 'Switch off'],
+    'alarm.stop_time': ['Выключить в', 'Switch off at'],
+    'alarm.stop_note': ['Выключение срабатывает, только если радио проснулось от будильника: звук плавно гаснет, и радио засыпает до следующего будильника.', 'The switch-off works only when the alarm woke the radio: the sound fades out and the radio sleeps until the next alarm.'],
     /* The player page's indicator: the bell, the time, and which days in
        short - "будильник 07:30, Пн–Пт" reads at a glance. */
     'alarm.at': ['Будильник {time}', 'Alarm {time}'],

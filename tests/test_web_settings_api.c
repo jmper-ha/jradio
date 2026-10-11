@@ -289,6 +289,23 @@ static void test_apply_writes_through_to_the_file(void)
     assert(!parse_one("{\"field\":\"alarm_days\",\"value\":128}", &no_days));
     assert(!parse_one("{\"field\":\"alarm_station\",\"value\":100}", &no_days));
 
+    /* The source by name, the preset by number, the switch-off as a switch
+     * and a time like the alarm's own. */
+    web_settings_change_t alarm_change;
+    assert(parse_one("{\"field\":\"alarm_source\",\"value\":\"fm\"}", &alarm_change));
+    assert(web_settings_apply(&settings, &alarm_change));
+    assert(!parse_one("{\"field\":\"alarm_source\",\"value\":\"am\"}", &alarm_change));
+    assert(parse_one("{\"field\":\"alarm_fm_station\",\"value\":4}", &alarm_change));
+    assert(web_settings_apply(&settings, &alarm_change));
+    assert(parse_one("{\"field\":\"alarm_stop_enabled\",\"value\":true}", &alarm_change));
+    assert(web_settings_apply(&settings, &alarm_change));
+    assert(parse_one("{\"field\":\"alarm_stop_time\",\"value\":\"10:45\"}", &alarm_change));
+    assert(web_settings_apply(&settings, &alarm_change));
+    assert(parse_one("{\"field\":\"alarm_stop_time\",\"value\":\"25:00\"}", &alarm_change));
+    assert(!web_settings_apply(&settings, &alarm_change));
+    const web_settings_change_t too_far = {WEB_SETTINGS_FIELD_ALARM_FM_STATION, 41, ""};
+    assert(!web_settings_apply(&settings, &too_far));
+
     device_settings_t reloaded;
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.brightness == 35);
@@ -311,6 +328,10 @@ static void test_apply_writes_through_to_the_file(void)
     assert(reloaded.alarm.days == 0x3EU);
     assert(reloaded.alarm.station == 7U);
     assert(reloaded.alarm.volume == 30U);
+    assert(reloaded.alarm.source == ALARM_SOURCE_FM);
+    assert(reloaded.alarm.fm_station == 4U);
+    assert(reloaded.alarm.stop_enabled);
+    assert(reloaded.alarm.stop_hour == 10U && reloaded.alarm.stop_minute == 45U);
     char nothing[8];
     assert(!settings_csv_get(test_path, "openweathermap_key", nothing, sizeof(nothing)));
 
@@ -392,6 +413,10 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"alarm_days\":127") != NULL);
     assert(strstr(document, "\"alarm_station\":1") != NULL);
     assert(strstr(document, "\"alarm_volume\":40") != NULL);
+    assert(strstr(document, "\"alarm_source\":\"radio\"") != NULL);
+    assert(strstr(document, "\"alarm_fm_station\":1") != NULL);
+    assert(strstr(document, "\"alarm_stop_enabled\":false") != NULL);
+    assert(strstr(document, "\"alarm_stop_time\":\"11:00\"") != NULL);
 
     /* The clock: the zone as an id and the server as it stands, plus the list
        to choose from - which is sent rather than written into the page, so

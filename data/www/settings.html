@@ -227,9 +227,22 @@
                     <button type="button" class="day-chip" data-day="0" data-i18n="alarm.sun">Вс</button>
                   </div>
                 </div>
+                <!-- What the alarm plays: only on a board with an FM tuner, and the
+                     station row below is the chosen source's own list. -->
+                <div class="device-row" id="device-alarm-source-row" hidden>
+                  <label for="device-alarm-source" data-i18n="alarm.source">Что включать</label>
+                  <select id="device-alarm-source" data-field="alarm_source">
+                    <option value="radio" data-i18n="alarm.source_radio">Интернет-радио</option>
+                    <option value="fm" data-i18n="alarm.source_fm">FM-радио</option>
+                  </select>
+                </div>
                 <div class="device-row" id="device-alarm-station-row" hidden>
                   <label for="device-alarm-station" data-i18n="alarm.station">Станция</label>
                   <select id="device-alarm-station" data-field="alarm_station"></select>
+                </div>
+                <div class="device-row" id="device-alarm-fm-station-row" hidden>
+                  <label for="device-alarm-fm-station" data-i18n="alarm.fm_station">Станция FM</label>
+                  <select id="device-alarm-fm-station" data-field="alarm_fm_station"></select>
                 </div>
                 <div class="device-row" id="device-alarm-volume-row" hidden>
                   <label for="device-alarm-volume" data-i18n="alarm.volume">Громкость</label>
@@ -239,6 +252,18 @@
                     <output id="device-alarm-volume-value">40</output>
                   </span>
                 </div>
+                <!-- Switching off again: only after a morning the alarm woke the
+                     radio for - one already playing at the alarm's minute is
+                     somebody listening, and is left alone. -->
+                <div class="device-row" id="device-alarm-stop-row" hidden>
+                  <label for="device-alarm-stop" data-i18n="alarm.stop">Выключать</label>
+                  <input id="device-alarm-stop" type="checkbox" data-field="alarm_stop_enabled">
+                </div>
+                <div class="device-row" id="device-alarm-stop-time-row" hidden>
+                  <label for="device-alarm-stop-time" data-i18n="alarm.stop_time">Выключить в</label>
+                  <input id="device-alarm-stop-time" type="time" required data-field="alarm_stop_time">
+                </div>
+                <p class="field-note" id="device-alarm-stop-note" hidden data-i18n="alarm.stop_note">Выключение срабатывает, только если радио проснулось от будильника: звук плавно гаснет, и радио засыпает до следующего будильника.</p>
               </div>
 
               <div class="device-group">

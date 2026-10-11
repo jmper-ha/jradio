@@ -27,6 +27,13 @@
  * in and the largest one there is: the same minute next week. */
 #define ALARM_WEEK_MINUTES 10080U
 
+/* What the alarm plays. FM only on a board with a tuner; the setting is kept
+ * either way, and a board that has lost its tuner rings the radio instead. */
+typedef enum {
+    ALARM_SOURCE_RADIO = 0,
+    ALARM_SOURCE_FM = 1,
+} alarm_source_t;
+
 typedef struct {
     bool enabled;
     uint8_t hour;   /* 0..23 */
@@ -40,11 +47,34 @@ typedef struct {
      * no station has been chosen and the alarm cannot ring. */
     uint8_t station;
     uint8_t volume; /* 0..100 */
+    uint8_t source; /* alarm_source_t */
+    /* The FM preset, counting from 1 like `station` - its own number, so
+     * switching the source back and forth loses neither choice. */
+    uint8_t fm_station;
+    /* Switching the radio off again, at a time of day: only after a morning
+     * it woke for the alarm - a radio already on at seven is somebody
+     * listening, and nobody asked for it to go off under them. */
+    bool stop_enabled;
+    uint8_t stop_hour;   /* 0..23 */
+    uint8_t stop_minute; /* 0..59 */
 } alarm_config_t;
 
-/* Whether this configuration could ever ring: switched on, a station chosen,
- * and the numbers in range. */
+/* Whether this configuration could ever ring: switched on, a station chosen
+ * for its source, and the numbers in range. */
 bool alarm_config_valid(const alarm_config_t *config);
+
+/* The station to play and from where: the FM preset when FM is chosen and the
+ * board has a tuner (`fm_present`), the radio's station otherwise - also when
+ * FM was chosen on a board that has lost its tuner since. 0 when there is
+ * nothing to play. */
+alarm_source_t alarm_play_source(const alarm_config_t *config, bool fm_present);
+uint8_t alarm_play_station(const alarm_config_t *config, bool fm_present);
+
+/* Minutes from the alarm going off to switching the radio off again, 0 when
+ * it stays on. Counted on the clock face from the alarm's time to the stop
+ * time, so 23:00 to 01:00 is two hours, and the same time for both is a whole
+ * day rather than no time at all. */
+uint16_t alarm_stop_after_minutes(const alarm_config_t *config);
 
 /* Is this very minute the one? The caller asks once a second and the guard
  * below is what turns that into one firing. */

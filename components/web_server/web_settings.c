@@ -80,6 +80,10 @@ static const field_descriptor_t k_fields[] = {
     {"alarm_days", WEB_SETTINGS_FIELD_ALARM_DAYS, {NULL}, true, false},
     {"alarm_station", WEB_SETTINGS_FIELD_ALARM_STATION, {NULL}, true, false},
     {"alarm_volume", WEB_SETTINGS_FIELD_ALARM_VOLUME, {NULL}, true, false},
+    {"alarm_source", WEB_SETTINGS_FIELD_ALARM_SOURCE, {"radio", "fm"}, false, false},
+    {"alarm_fm_station", WEB_SETTINGS_FIELD_ALARM_FM_STATION, {NULL}, true, false},
+    {"alarm_stop_enabled", WEB_SETTINGS_FIELD_ALARM_STOP_ENABLED, {NULL}, false, false},
+    {"alarm_stop_time", WEB_SETTINGS_FIELD_ALARM_STOP_TIME, {NULL}, false, true},
 };
 
 /* A provider the page has no name for - a newer card - reads as off, which is
@@ -300,6 +304,19 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_alarm_station(settings, (unsigned int)change->value);
     case WEB_SETTINGS_FIELD_ALARM_VOLUME:
         return device_settings_set_alarm_volume(settings, (unsigned char)change->value);
+    case WEB_SETTINGS_FIELD_ALARM_SOURCE:
+        // The choice's index: 0 "radio", 1 "fm", as alarm_source_t counts.
+        return device_settings_set_alarm_source(settings, (unsigned int)change->value);
+    case WEB_SETTINGS_FIELD_ALARM_FM_STATION:
+        return device_settings_set_alarm_fm_station(settings, (unsigned int)change->value);
+    case WEB_SETTINGS_FIELD_ALARM_STOP_ENABLED:
+        return device_settings_set_alarm_stop_enabled(settings, change->value != 0);
+    case WEB_SETTINGS_FIELD_ALARM_STOP_TIME: {
+        uint8_t hour = 0U;
+        uint8_t minute = 0U;
+        if (!alarm_time_parse(change->text, &hour, &minute)) return false;
+        return device_settings_set_alarm_stop_time(settings, hour, minute);
+    }
     case WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY:
         /* Not the card's: the handler routes it to the key file. */
         return false;
@@ -385,6 +402,11 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->alarm.days == right->alarm.days &&
            left->alarm.station == right->alarm.station &&
            left->alarm.volume == right->alarm.volume &&
+           left->alarm.source == right->alarm.source &&
+           left->alarm.fm_station == right->alarm.fm_station &&
+           left->alarm.stop_enabled == right->alarm.stop_enabled &&
+           left->alarm.stop_hour == right->alarm.stop_hour &&
+           left->alarm.stop_minute == right->alarm.stop_minute &&
            left->home_screen_available == right->home_screen_available &&
            left->yandex_available == right->yandex_available &&
            left->dlna_available == right->dlna_available &&
@@ -452,7 +474,7 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_format(writer, "%u", (unsigned)view->screensaver_seconds);
     web_json_literal(writer, ",\"screensaver_brightness\":");
     web_json_format(writer, "%u", (unsigned)view->screensaver_brightness);
-    /* Five flat members under the names the page posts back, the way every
+    /* Flat members under the names the page posts back, the way every
      * other setting here reads: the page's field table is then one line per
      * row and needs no special case, and the player's indicator reads the two
      * it cares about straight out of the frame. */
@@ -468,6 +490,16 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_format(writer, "%u", (unsigned)view->alarm.station);
     web_json_literal(writer, ",\"alarm_volume\":");
     web_json_format(writer, "%u", (unsigned)view->alarm.volume);
+    web_json_literal(writer, ",\"alarm_source\":");
+    web_json_string(writer, view->alarm.source == ALARM_SOURCE_FM ? "fm" : "radio");
+    web_json_literal(writer, ",\"alarm_fm_station\":");
+    web_json_format(writer, "%u", (unsigned)view->alarm.fm_station);
+    web_json_literal(writer, ",\"alarm_stop_enabled\":");
+    web_json_literal(writer, view->alarm.stop_enabled ? "true" : "false");
+    web_json_literal(writer, ",\"alarm_stop_time\":");
+    char stop_time[6];
+    alarm_time_format(stop_time, sizeof(stop_time), view->alarm.stop_hour, view->alarm.stop_minute);
+    web_json_string(writer, stop_time);
     /* What this build has, not what it is set to: a switch for a source the
      * firmware was compiled without would change a value nothing reads. */
     web_json_literal(writer, ",\"available\":{\"home_screen\":");

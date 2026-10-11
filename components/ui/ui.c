@@ -809,6 +809,16 @@ static bool s_alarm_boot_dark;
  * moves the volume off it, and from then on it is theirs. */
 static bool s_alarm_volume_held;
 static uint8_t s_alarm_volume;
+/* This boot is the alarm's, and its ringing has not come yet: the switch-off
+ * is armed by that ringing alone. A radio already on at the alarm's minute is
+ * somebody listening, and the alarm going off does not make their morning one
+ * that ends at eleven. Unlike the dark panel this survives a press. */
+static bool s_alarm_woke_board;
+/* The switch-off, once armed: when the alarm rang. The deadline is worked out
+ * from the setting on every check rather than fixed at the ringing, so a
+ * switch-off moved or switched off on the page in the meantime is obeyed. */
+static bool s_alarm_stop_armed;
+static uint32_t s_alarm_stop_from_ms;
 /* How long the ring waits for Wi-Fi before trying anyway: a station cannot be
  * selected while the network is down - player_control_decide() answers INVALID
  * - and an alarm that gives up silently is worse than one that tries and shows
@@ -5657,6 +5667,10 @@ static void ui_enter_deep_sleep(void)
 static void ui_sleep_fade_step(uint32_t now_ms)
 {
     const uint8_t chosen = s_device_settings.volume;
+    /* From the level that is playing: the alarm's, while it stands, is not
+     * the listener's, and a fade that jumped to theirs first would be heard
+     * as the radio getting louder before it went quiet. */
+    const uint8_t from = s_alarm_volume_held ? s_alarm_volume : chosen;
     const uint32_t elapsed_ms = now_ms - s_sleep_fade_started_ms;
     if (elapsed_ms >= UI_SLEEP_FADE_MS) {
         /* Put back before anything else: ui_enter_deep_sleep() writes a
@@ -5668,7 +5682,7 @@ static void ui_sleep_fade_step(uint32_t now_ms)
         return;
     }
     board_audio_set_volume(
-        (uint8_t)((uint32_t)chosen * (UI_SLEEP_FADE_MS - elapsed_ms) / UI_SLEEP_FADE_MS));
+        (uint8_t)((uint32_t)from * (UI_SLEEP_FADE_MS - elapsed_ms) / UI_SLEEP_FADE_MS));
 }
 
 /* Whoever touches a control during those ten seconds is awake, and a device
@@ -7457,8 +7471,14 @@ static void ui_alarm_poll(uint32_t now_ms)
                               minute)) {
         return;
     }
-    ESP_LOGI(TAG, "alarm: %02d:%02d, station %u at volume %u", hour, minute,
-             (unsigned int)s_device_settings.alarm.station,
+    const bool fm = alarm_play_source(&s_device_settings.alarm,
+                                      board_has_fm_tuner() &&
+                                          player_control_fm_preset_count() > 0U) ==
+                    ALARM_SOURCE_FM;
+    ESP_LOGI(TAG, "alarm: %02d:%02d, %s %u at volume %u", hour, minute,
+             fm ? "FM preset" : "station",
+             (unsigned int)(fm ? s_device_settings.alarm.fm_station
+                               : s_device_settings.alarm.station),
              (unsigned int)s_device_settings.alarm.volume);
     s_alarm_ring_pending = true;
     s_alarm_ring_started_ms = now_ms;
@@ -7471,9 +7491,13 @@ static void ui_alarm_poll(uint32_t now_ms)
 static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
 {
     if (!s_alarm_ring_pending) return;
+    /* FM needs no network, so it rings at the minute; the radio waits for
+     * one, the way autoplay does. */
+    const bool fm_present = board_has_fm_tuner() && player_control_fm_preset_count() > 0U;
+    const alarm_source_t source = alarm_play_source(&s_device_settings.alarm, fm_present);
     const bool waited =
         (uint32_t)(ui_tick_get_ms() - s_alarm_ring_started_ms) >= UI_ALARM_NETWORK_WAIT_MS;
-    if (!snapshot->wifi_connected && !waited) return;
+    if (source == ALARM_SOURCE_RADIO && !snapshot->wifi_connected && !waited) return;
     s_alarm_ring_pending = false;
 
     /* The panel first, whatever else follows: the light is half of what an
@@ -7495,8 +7519,49 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
      * source over this morning's station. */
     s_autoplay_pending = false;
 
-    const size_t index = (size_t)s_device_settings.alarm.station - 1U;
-    if (player_control_station_at(index) == NULL) {
+    /* The switch-off counts from now, and only on a morning the alarm woke
+     * the board for. */
+    if (s_alarm_woke_board) {
+        s_alarm_woke_board = false;
+        s_alarm_stop_armed = true;
+        s_alarm_stop_from_ms = ui_tick_get_ms();
+        const uint16_t minutes = alarm_stop_after_minutes(&s_device_settings.alarm);
+        if (minutes > 0U) ESP_LOGI(TAG, "alarm: switching off in %u min", (unsigned int)minutes);
+    }
+
+    const size_t index = (size_t)alarm_play_station(&s_device_settings.alarm, fm_present) - 1U;
+    if (source == ALARM_SOURCE_FM) {
+        fm_preset_t preset;
+        if (player_control_fm_preset_at(index, &preset)) {
+            /* The tuner, then its preset, straight to the controller for the
+             * reason the radio's two below go that way. Choosing the tuner
+             * starts it on the last frequency; the preset follows at once. */
+            (void)ui_menu_select_source(&s_menu, AUDIO_SOURCE_FM);
+            const player_command_t select = {
+                .kind = PLAYER_COMMAND_SELECT_SOURCE,
+                .source = AUDIO_SOURCE_FM,
+                .item_index = PLAYER_ITEM_NONE,
+            };
+            const player_command_t tune = {
+                .kind = PLAYER_COMMAND_SELECT_ITEM,
+                .source = AUDIO_SOURCE_FM,
+                .item_index = index,
+            };
+            if (!player_control_post(&select) || !player_control_post(&tune)) {
+                ESP_LOGW(TAG, "alarm: the player queue is full");
+                return;
+            }
+            ui_load_source_screen(AUDIO_SOURCE_FM);
+            s_waiting_for_source_item = false;
+            return;
+        }
+        /* The presets were edited down since the alarm was set; the radio's
+         * station is the other thing the alarm knows how to play. */
+        ESP_LOGW(TAG, "alarm: FM preset %u is not in the list; the radio instead",
+                 (unsigned int)s_device_settings.alarm.fm_station);
+    }
+    const size_t radio_index = (size_t)s_device_settings.alarm.station - 1U;
+    if (player_control_station_at(radio_index) == NULL) {
         /* The playlist was edited down since the alarm was set. The screen is
          * lit and the volume is up, which is as much of an alarm as there is
          * to give. */
@@ -7514,7 +7579,7 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
      * route, so it lives in ui_start_station_index(). The station by its row,
      * not PLAYER_COMMAND_PLAY: play resumes whatever was last on, and the
      * alarm names its own. */
-    if (!ui_start_station_index(index)) {
+    if (!ui_start_station_index(radio_index)) {
         ESP_LOGW(TAG, "alarm: the player queue is full");
         return;
     }
@@ -7522,6 +7587,33 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
     /* That screen arms the "no station to play" fallback, which opens the list
      * after a moment; the alarm has a station. */
     s_waiting_for_source_item = false;
+}
+
+/* The switch-off: the alarm's setting, counted from the ringing. It ends the
+ * way the sleep timer does - ten seconds of fading, then the deep sleep the
+ * next alarm wakes the board from, and a key pressed in those seconds keeps
+ * the radio on. A board with no way to wake has no sleep to go to, and its
+ * sound is stopped instead. */
+static void ui_alarm_stop_poll(uint32_t now_ms)
+{
+    if (!s_alarm_stop_armed || s_sleep_fading) return;
+    const uint16_t minutes = alarm_stop_after_minutes(&s_device_settings.alarm);
+    if (minutes == 0U) return;  // switched off on the page meanwhile: stays armed
+    if ((uint32_t)(now_ms - s_alarm_stop_from_ms) < (uint32_t)minutes * 60000U) return;
+    s_alarm_stop_armed = false;
+    if (!board_deep_sleep_supported()) {
+        ESP_LOGI(TAG, "alarm: switch-off time; stopping the sound");
+        const player_command_t stop = {
+            .kind = PLAYER_COMMAND_STOP_SOURCE,
+            .source = AUDIO_SOURCE_NONE,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        (void)player_control_post(&stop);
+        return;
+    }
+    ESP_LOGI(TAG, "alarm: switch-off time; fading out");
+    s_sleep_fading = true;
+    s_sleep_fade_started_ms = now_ms;
 }
 
 /* Runs every poll, not only when something changed: the meter is an animation,
@@ -7656,6 +7748,7 @@ static void ui_task(void *arg)
          * sleep timer is fading out: that ends in a deep sleep a few seconds
          * from now, and whatever the alarm started would be stopped again. */
         if (!s_sleep_fading) ui_alarm_poll(ui_tick_get_ms());
+        ui_alarm_stop_poll(ui_tick_get_ms());
         ui_screensaver_poll(ui_tick_get_ms());
         ui_quick_poll(ui_tick_get_ms());
         ui_ota_poll(ui_tick_get_ms());
@@ -7952,6 +8045,7 @@ esp_err_t ui_init(void)
      * until the alarm rings, and autoplay does not resume last night's source
      * over this morning's station. */
     s_alarm_boot_dark = alarm_boot_take_pending();
+    s_alarm_woke_board = s_alarm_boot_dark;
     if (!device_settings_init(&s_device_settings)) {
         lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
     } else {

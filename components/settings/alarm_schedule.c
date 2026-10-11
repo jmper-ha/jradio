@@ -24,10 +24,41 @@ bool alarm_config_valid(const alarm_config_t *config)
 {
     if (config == NULL) return false;
     if (!config->enabled) return false;
-    if (config->station == 0U) return false;
+    if (config->source == ALARM_SOURCE_FM ? config->fm_station == 0U : config->station == 0U) {
+        return false;
+    }
+    if (config->source > ALARM_SOURCE_FM) return false;
+    if (config->stop_hour > 23U || config->stop_minute > 59U) return false;
     if (config->days == 0U || config->days > ALARM_DAYS_ALL) return false;
     if (config->hour > 23U || config->minute > 59U) return false;
     return config->volume <= 100U;
+}
+
+alarm_source_t alarm_play_source(const alarm_config_t *config, bool fm_present)
+{
+    if (config == NULL) return ALARM_SOURCE_RADIO;
+    return config->source == ALARM_SOURCE_FM && fm_present && config->fm_station != 0U
+               ? ALARM_SOURCE_FM
+               : ALARM_SOURCE_RADIO;
+}
+
+uint8_t alarm_play_station(const alarm_config_t *config, bool fm_present)
+{
+    if (config == NULL) return 0U;
+    return alarm_play_source(config, fm_present) == ALARM_SOURCE_FM ? config->fm_station
+                                                                    : config->station;
+}
+
+uint16_t alarm_stop_after_minutes(const alarm_config_t *config)
+{
+    if (config == NULL || !config->stop_enabled || config->stop_hour > 23U ||
+        config->stop_minute > 59U || config->hour > 23U || config->minute > 59U) {
+        return 0U;
+    }
+    const unsigned int start = (unsigned int)config->hour * 60U + config->minute;
+    const unsigned int stop = (unsigned int)config->stop_hour * 60U + config->stop_minute;
+    const unsigned int after = (stop + MINUTES_PER_DAY - start) % MINUTES_PER_DAY;
+    return (uint16_t)(after == 0U ? MINUTES_PER_DAY : after);
 }
 
 bool alarm_schedule_due(const alarm_config_t *config, int weekday, int hour, int minute)

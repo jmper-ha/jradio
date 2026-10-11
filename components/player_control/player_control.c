@@ -1870,6 +1870,12 @@ static void player_control_task(void *arg)
             } else if (snapshot.active_source == AUDIO_SOURCE_FM) {
                 fm_preset_t preset;
                 if (player_control_fm_preset_at(command.item_index, &preset)) {
+                    /* Said here and not in the tune itself, which the
+                     * encoder's every step goes through: a preset picked is
+                     * one line, and without it a log shows the tuner coming
+                     * on at the last frequency and nothing after. */
+                    ESP_LOGI(TAG, "fm: preset %u, %u kHz", (unsigned)command.item_index + 1U,
+                             (unsigned)preset.khz);
                     player_fm_tune(preset.khz);
                 }
             } else if (player_adopt_internet_radio(snapshot.active_source)) {

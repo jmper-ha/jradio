@@ -241,7 +241,12 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
                   .minute = DEVICE_ALARM_MINUTE_DEFAULT,
                   .days = ALARM_DAYS_ALL,
                   .station = DEVICE_ALARM_STATION_DEFAULT,
-                  .volume = DEVICE_ALARM_VOLUME_DEFAULT},
+                  .volume = DEVICE_ALARM_VOLUME_DEFAULT,
+                  .source = ALARM_SOURCE_RADIO,
+                  .fm_station = DEVICE_ALARM_FM_STATION_DEFAULT,
+                  .stop_enabled = false,
+                  .stop_hour = DEVICE_ALARM_STOP_HOUR_DEFAULT,
+                  .stop_minute = DEVICE_ALARM_STOP_MINUTE_DEFAULT},
     };
     memcpy(settings->storage_path, path, strlen(path) + 1U);
     memcpy(settings->theme_colors, device_theme_default_colors,
@@ -458,6 +463,30 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         const long parsed = strtol(value, &end, 10);
         if (end != NULL && *end == '\0' && parsed >= 0 && parsed <= 100) {
             settings->alarm.volume = (unsigned char)parsed;
+        }
+    }
+    // Anything but "fm" is the radio, which every board has.
+    if (read_value(&csv, "alarm_source", value, sizeof(value))) {
+        settings->alarm.source =
+            strcmp(value, "fm") == 0 ? (uint8_t)ALARM_SOURCE_FM : (uint8_t)ALARM_SOURCE_RADIO;
+    }
+    if (read_value(&csv, "alarm_fm_station", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        if (end != NULL && *end == '\0' && parsed >= 0 &&
+            parsed <= (long)DEVICE_ALARM_FM_STATION_MAX) {
+            settings->alarm.fm_station = (uint8_t)parsed;
+        }
+    }
+    if (read_value(&csv, "alarm_stop_enabled", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->alarm.stop_enabled);
+    }
+    if (read_value(&csv, "alarm_stop_time", value, sizeof(value))) {
+        uint8_t hour = 0U;
+        uint8_t minute = 0U;
+        if (alarm_time_parse(value, &hour, &minute)) {
+            settings->alarm.stop_hour = hour;
+            settings->alarm.stop_minute = minute;
         }
     }
     if (read_value(&csv, "fm_frequency", value, sizeof(value))) {
@@ -1053,6 +1082,50 @@ bool device_settings_set_alarm_volume(device_settings_t *settings, unsigned char
     snprintf(text, sizeof(text), "%u", (unsigned int)volume);
     if (!save_value(settings, "alarm_volume", text)) return false;
     settings->alarm.volume = volume;
+    return true;
+}
+
+bool device_settings_set_alarm_source(device_settings_t *settings, unsigned int source)
+{
+    if (settings == NULL || source > ALARM_SOURCE_FM) return false;
+    if (settings->alarm.source == source) return true;
+    if (!save_value(settings, "alarm_source", source == ALARM_SOURCE_FM ? "fm" : "radio")) {
+        return false;
+    }
+    settings->alarm.source = (uint8_t)source;
+    return true;
+}
+
+bool device_settings_set_alarm_fm_station(device_settings_t *settings, unsigned int number)
+{
+    if (settings == NULL || number > DEVICE_ALARM_FM_STATION_MAX) return false;
+    if (settings->alarm.fm_station == number) return true;
+    char text[8];
+    snprintf(text, sizeof(text), "%u", number);
+    if (!save_value(settings, "alarm_fm_station", text)) return false;
+    settings->alarm.fm_station = (uint8_t)number;
+    return true;
+}
+
+bool device_settings_set_alarm_stop_enabled(device_settings_t *settings, bool enabled)
+{
+    if (settings == NULL) return false;
+    if (settings->alarm.stop_enabled == enabled) return true;
+    if (!save_value(settings, "alarm_stop_enabled", enabled ? "1" : "0")) return false;
+    settings->alarm.stop_enabled = enabled;
+    return true;
+}
+
+bool device_settings_set_alarm_stop_time(device_settings_t *settings, unsigned int hour,
+                                         unsigned int minute)
+{
+    if (settings == NULL || hour > 23U || minute > 59U) return false;
+    if (settings->alarm.stop_hour == hour && settings->alarm.stop_minute == minute) return true;
+    char text[6];
+    alarm_time_format(text, sizeof(text), (uint8_t)hour, (uint8_t)minute);
+    if (!save_value(settings, "alarm_stop_time", text)) return false;
+    settings->alarm.stop_hour = (uint8_t)hour;
+    settings->alarm.stop_minute = (uint8_t)minute;
     return true;
 }
 

@@ -85,6 +85,11 @@ MUTE усилителя или XSMT ЦАПа, заведённый на GPIO, н
 | microSD MISO | 40 | | UART для прошивки | 43, 44 |
 | microSD MOSI | 42 | | | |
 
+Типовая схема с этой распиновкой: ESP32-S3-DevKitC-1, дисплей ST7796S,
+ЦАП PCM5102, энкодер, четыре кнопки и гнездо USB-A для флешки.
+
+![Типовая схема: ESP32-S3, ST7796S, PCM5102, энкодер, кнопки, USB](common_connections.png)
+
 Что важно при разводке:
 
 - **Прошивка идёт через UART (GPIO 43, 44), а не через USB-разъём.** USB
@@ -203,6 +208,8 @@ I2S, что и ЦАП, и слушается по UART. Включается т�
 | GPIO 17 (LRCK) | GPIO 25 | |
 | GPIO 16 (DOUT) | GPIO 22 | тот же провод идёт и в DIN ЦАПа |
 | GND | GND | |
+
+![Подключение модуля jradio-bt (ESP32-WROOM-32) к ESP32-S3 и ЦАПу PCM5102](BT_module_connect.png)
 
 На модуле **ESP32-WROVER** ножки 16 и 17 заняты памятью PSRAM, и прошивка для
 него ведёт UART по другим: S3 GPIO 13 → WROVER GPIO 33 (RX), S3 GPIO 14 →

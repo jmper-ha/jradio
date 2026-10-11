@@ -86,6 +86,12 @@ without hardware - Yandex Music and DLNA - are switched with the
 | microSD MISO | 40 | | UART for flashing | 43, 44 |
 | microSD MOSI | 42 | | | |
 
+The typical schematic with this pinout: an ESP32-S3-DevKitC-1, an ST7796S
+display, a PCM5102 DAC, the encoder, four buttons and a USB-A socket for a
+drive.
+
+![Typical schematic: ESP32-S3, ST7796S, PCM5102, encoder, buttons, USB](common_connections.png)
+
 What matters when wiring:
 
 - **Flashing goes through UART (GPIO 43, 44), not the USB connector.** USB
@@ -209,6 +215,8 @@ bus as the DAC and is driven over UART. Three lines enable it:
 | GPIO 17 (LRCK) | GPIO 25 | |
 | GPIO 16 (DOUT) | GPIO 22 | the same wire also goes to the DAC's DIN |
 | GND | GND | |
+
+![Wiring the jradio-bt module (ESP32-WROOM-32) to the ESP32-S3 and the PCM5102 DAC](BT_module_connect.png)
 
 On an **ESP32-WROVER** module pins 16 and 17 belong to the PSRAM, and its
 firmware runs the UART on others: S3 GPIO 13 to WROVER GPIO 33 (RX), S3 GPIO 14

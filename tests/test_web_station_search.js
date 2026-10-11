@@ -58,8 +58,12 @@ function station(fields) {
   assert.strictEqual(search.normalizeStation(null, limits), null);
   // A tab would split the playlist line; it becomes a space.
   assert.strictEqual(search.normalizeStation(station({name: 'A\tB\n'}), limits).name, 'A B');
-  assert.strictEqual(search.normalizeStation(station({favicon: 'data:image/png;base64,AA'}), limits).favicon, '');
-  assert.strictEqual(search.normalizeStation(station({favicon: null}), limits).favicon, '');
+  // The catalogue's picture is on the station's own site: the device fetches it.
+  assert.strictEqual(found.picture, 'https://a.ru/logo.png');
+  assert.strictEqual(found.direct, false);
+  assert.strictEqual(found.live, true);
+  assert.strictEqual(search.normalizeStation(station({favicon: 'data:image/png;base64,AA'}), limits).picture, '');
+  assert.strictEqual(search.normalizeStation(station({favicon: null}), limits).picture, '');
   const long = search.normalizeStation(station({url_resolved: 'http://a.ru/' + 'x'.repeat(250)}), limits);
   assert.strictEqual(long.fits, false, 'an address the device cannot store');
 }
@@ -94,20 +98,72 @@ function station(fields) {
   assert.strictEqual(search.normalizeName('«Радио Джаз»'), 'радиоджаз');
 }
 
+// mirrorStation: the copy's array, its own picture read directly.
+{
+  const base = 'https://m.test';
+  const own = search.mirrorStation(['Jazz', 'http://a.ru/j', 'mp3', 128, 'RU', 'jazz,smooth', 9,
+                                    'https://a.ru/f.ico', '0123abcd.png'], base, limits);
+  assert.strictEqual(own.picture, 'https://m.test/icons/0123abcd.png');
+  assert.strictEqual(own.direct, true);
+  assert.strictEqual(own.live, false);
+  assert.strictEqual(own.codec, 'MP3');
+  assert.deepStrictEqual(Array.from(own.tags), ['jazz', 'smooth']);
+  // No picture of its own: the station's site, through the device.
+  const site = search.mirrorStation(['Jazz', 'http://a.ru/j', '', 0, '', '', 0, 'https://a.ru/f.ico', ''],
+                                    base, limits);
+  assert.strictEqual(site.picture, 'https://a.ru/f.ico');
+  assert.strictEqual(site.direct, false);
+  // A file name that is not the copy's own shape is not trusted into a URL.
+  assert.strictEqual(search.mirrorStation(['J', 'http://a.ru/j', '', 0, '', '', 0, '', '../x.png'],
+                                          base, limits).picture, '');
+  assert.strictEqual(search.mirrorStation(['', 'http://a.ru/j', '', 0, '', '', 0, '', ''], base, limits), null);
+  assert.strictEqual(search.mirrorStation(['J', 'ftp://x', '', 0, '', '', 0, '', ''], base, limits), null);
+  assert.strictEqual(search.mirrorStation('nope', base, limits), null);
+}
+
+// searchMirror: the query in the name or among the genres, in the copy's order.
+{
+  const items = [
+    ['Rock FM', 'http://r/1', 'MP3', 128, 'RU', 'rock,classic rock', 90, '', ''],
+    ['Jazz Lounge', 'http://j/1', 'MP3', 128, 'RU', 'jazz', 50, '', ''],
+    ['Radio X', 'http://x/1', 'AAC', 64, 'RU', 'jazz,pop', 10, '', ''],
+  ];
+  const names = (list) => Array.from(list, (item) => item.name);
+  assert.deepStrictEqual(names(search.searchMirror(items, 'JAZZ', 10, 'b', limits)), ['Jazz Lounge', 'Radio X']);
+  assert.deepStrictEqual(names(search.searchMirror(items, 'rock', 10, 'b', limits)), ['Rock FM']);
+  // A genre matches whole, not inside another: "rock" is not "classic rock" twice.
+  assert.deepStrictEqual(names(search.searchMirror(items, 'classic rock', 10, 'b', limits)), ['Rock FM']);
+  assert.deepStrictEqual(names(search.searchMirror(items, '', 2, 'b', limits)), ['Rock FM', 'Jazz Lounge']);
+  assert.deepStrictEqual(names(search.searchMirror(null, 'x', 10, 'b', limits)), []);
+}
+
+// mirrorLookup: the station with the stream, and names that contain the row's.
+{
+  const stations = [
+    {name: 'Радио Джаз 89.1', url: 'http://j/1'},
+    {name: 'Jazz FM', url: 'http://a.ru/jazz'},
+    {name: 'Другое', url: 'http://o/1'},
+  ];
+  const {byUrl, byName} = search.mirrorLookup(stations, {name: 'радио джаз', url: 'http://a.ru/jazz'});
+  assert.deepStrictEqual(Array.from(byUrl, (item) => item.name), ['Jazz FM']);
+  assert.deepStrictEqual(Array.from(byName, (item) => item.name), ['Радио Джаз 89.1']);
+  assert.strictEqual(search.mirrorLookup(stations, {name: '...', url: ''}).byName.length, 0);
+}
+
 // pickIcon: the stream address first, then a name that agrees, then a guess.
 {
   const row = {name: 'Радио Джаз', url: 'http://a.ru/jazz'};
-  const withIcon = (name, favicon) => ({name, favicon});
+  const withIcon = (name, picture, direct = false) => ({name, picture, direct});
   // The answer is an object of the script's own context; compared as a copy.
   const plain = (value) => ({...value});
-  assert.deepStrictEqual(plain(search.pickIcon(row, [withIcon('X', ''), withIcon('Jazz', 'https://u/1.png')], [])),
-                         {favicon: 'https://u/1.png', name: 'Jazz', how: 'url'});
+  assert.deepStrictEqual(plain(search.pickIcon(row, [withIcon('X', ''), withIcon('Jazz', 'https://u/1.png', true)], [])),
+                         {picture: 'https://u/1.png', direct: true, name: 'Jazz', how: 'url'});
   assert.deepStrictEqual(
     plain(search.pickIcon(row, [], [withIcon('Jazz Radio', 'https://u/2.png'),
                                     withIcon('радио джаз', 'https://u/3.png')])),
-    {favicon: 'https://u/3.png', name: 'радио джаз', how: 'name'});
+    {picture: 'https://u/3.png', direct: false, name: 'радио джаз', how: 'name'});
   assert.deepStrictEqual(plain(search.pickIcon(row, [], [withIcon('Jazz Radio', 'https://u/2.png')])),
-                         {favicon: 'https://u/2.png', name: 'Jazz Radio', how: 'guess'});
+                         {picture: 'https://u/2.png', direct: false, name: 'Jazz Radio', how: 'guess'});
   assert.strictEqual(search.pickIcon(row, [withIcon('A', '')], [withIcon('B', '')]), null);
   // A row with no name matches nothing by name, however empty the other is.
   assert.strictEqual(search.pickIcon({name: '...', url: ''}, [], [withIcon('!!!', 'https://u/4.png')]).how,

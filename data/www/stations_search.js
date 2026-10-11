@@ -1,12 +1,21 @@
 /* Finding stations, and pictures for the ones already in the list, in Radio
-   Browser's open catalogue (radio-browser.info).
+   Browser's open catalogue - asked directly (radio-browser.info) or through
+   jRadio's own copy of it on GitHub Pages (github.com/jmper-ha/jradio-stations).
 
-   Asked from this browser, not from the device: the catalogue answers any page
-   (Access-Control-Allow-Origin: *), the phone or the computer has the time and
-   the memory for a search, and the device has neither to spare while it plays.
-   The one thing the browser cannot do is read a picture off a station's own
-   site - most of them do not allow it, so a canvas holding one is closed to the
-   page - and that is what the device's /api/icon-fetch is for.
+   Two sources because of where the radios are. The catalogue's API answers
+   from one German host, and from Russia that host is sometimes not reachable
+   at all: three Russian nodes got 502 from it on 2026-10-11, the day after
+   most requests got through. GitHub Pages was reachable from all three. The
+   copy is rebuilt once a day, so it is at most a day behind, and it carries
+   the pictures of the stations most likely to be looked for already scaled.
+   Whichever source is chosen, the other is asked when it does not answer.
+
+   Asked from this browser, not from the device: both answer any page, the
+   phone or the computer has the time and the memory for a search, and the
+   device has neither to spare while it plays. What the browser cannot do is
+   read a picture off a station's own site - most of them do not allow it, so
+   a canvas holding one is closed to the page - and that is what the device's
+   /api/icon-fetch is for, when the copy has no picture of its own.
 
    The list itself is playlist.js's; this file only adds to it through
    window.jradioStations.radio, and nothing reaches the device before the list
@@ -16,19 +25,22 @@
 
   const t = (key, values) => window.jradioI18n.t(key, values);
 
+  const MIRROR = 'https://jmper-ha.github.io/jradio-stations';
   /* The catalogue lists its own mirrors. Asked once; if that fails too, the
      names it has had for years. */
   const SERVER_LIST = 'https://all.api.radio-browser.info/json/servers';
   const FALLBACK_SERVERS = ['de1.api.radio-browser.info', 'all.api.radio-browser.info'];
   const REQUEST_TIMEOUT_MS = 10000;
-  /* Three tries, across the mirrors: from Russia without a VPN about one
-     request in ten to the catalogue's German host is reset on the way
-     (measured from three Russian nodes, 2026-10-10), and a second try mostly
-     gets through. */
+  // The copy's file for "any country" is 2.9 MB compressed.
+  const MIRROR_TIMEOUT_MS = 60000;
+  /* Three tries, across the catalogue's mirrors: from Russia without a VPN a
+     request to its German host is often reset on the way, and a second try
+     sometimes gets through. */
   const ATTEMPTS = 3;
   const RESULT_LIMIT = 40;
   // Countries with fewer stations than this make the list longer, not better.
   const COUNTRY_MIN_STATIONS = 20;
+  const SOURCE_KEY = 'jradio.stationSource';
 
   const encoder = new TextEncoder();
   const byteLength = (value) => encoder.encode(value).length;
@@ -52,27 +64,56 @@
 
   /* One station out of the catalogue's answer, in the shape this page uses, or
      null when there is nothing to add: no name, or no address the device can
-     open. `limits` are the device's field sizes, from playlist.js. */
+     open. `limits` are the device's field sizes, from playlist.js.
+
+     `picture` is where its picture is to be had and `direct` whether this page
+     may read it itself; from the catalogue it is the station's own site, so
+     the device fetches it. */
   function normalizeStation(raw, limits) {
     if (raw === null || typeof raw !== 'object') return null;
     const name = String(raw.name || '').replace(/[\t\r\n]+/g, ' ').trim();
     // url_resolved is the stream behind a .pls or .m3u; the device wants that.
     const url = String(raw.url_resolved || raw.url || '').trim();
     if (name === '' || !isWebAddress(url)) return null;
-    const codec = String(raw.codec || '').toUpperCase();
     const favicon = String(raw.favicon || '').trim();
     return {
       uuid: String(raw.stationuuid || url),
       name: fitBytes(name, limits.nameBytes),
       url,
-      // An address the device cannot store is shown, but cannot be added.
       fits: !url.includes('\t') && byteLength(url) < limits.urlBytes,
-      favicon: isWebAddress(favicon) ? favicon : '',
-      codec,
+      picture: isWebAddress(favicon) ? favicon : '',
+      direct: false,
+      codec: String(raw.codec || '').toUpperCase(),
       bitrate: Number.isFinite(Number(raw.bitrate)) ? Number(raw.bitrate) : 0,
       country: String(raw.countrycode || ''),
       tags: String(raw.tags || '').split(',').map((tag) => tag.trim()).filter(Boolean).slice(0, 3),
       votes: Number(raw.votes) || 0,
+      live: true,
+    };
+  }
+
+  /* One station out of the copy: [name, url, codec, bitrate, country, tags,
+     votes, favicon, icon] - see the copy's README. Its own picture, where it
+     has one, the page reads itself; otherwise the station's site, through the
+     device, as for the catalogue. */
+  function mirrorStation(item, base, limits) {
+    if (!Array.isArray(item) || item.length < 9) return null;
+    const [name, url, codec, bitrate, country, tags, votes, favicon, icon] = item;
+    if (typeof name !== 'string' || name === '' || !isWebAddress(String(url))) return null;
+    const own = typeof icon === 'string' && /^[0-9a-f]+\.(png|jpg)$/.test(icon);
+    return {
+      uuid: url,
+      name: fitBytes(name, limits.nameBytes),
+      url,
+      fits: !url.includes('\t') && byteLength(url) < limits.urlBytes,
+      picture: own ? `${base}/icons/${icon}` : (isWebAddress(String(favicon)) ? favicon : ''),
+      direct: own,
+      codec: String(codec || '').toUpperCase(),
+      bitrate: Number(bitrate) || 0,
+      country: String(country || ''),
+      tags: String(tags || '').split(',').filter(Boolean).slice(0, 3),
+      votes: Number(votes) || 0,
+      live: false,
     };
   }
 
@@ -93,6 +134,26 @@
     return merged.sort((a, b) => b.votes - a.votes);
   }
 
+  /* The copy has no search of its own - it is files - so it is searched here:
+     the query in the name or among the genres, as the catalogue's two
+     searches together would find it. The list comes most voted first and
+     stays so. */
+  function searchMirror(items, query, limit, base, limits) {
+    const wanted = query.trim().toLowerCase();
+    const out = [];
+    for (const item of Array.isArray(items) ? items : []) {
+      if (wanted !== '' && !(String(item[0]).toLowerCase().includes(wanted) ||
+                             String(item[5]).split(',').includes(wanted))) {
+        continue;
+      }
+      const station = mirrorStation(item, base, limits);
+      if (station === null) continue;
+      out.push(station);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
   /* Only what the radio can store: an address past its 255 bytes was listed
      with a warning at first, and a list of things one cannot add is only
      noise; how many were left out is said instead. Every codec the catalogue
@@ -107,24 +168,38 @@
   // Case, spaces and punctuation aside: "Radio Jazz 89.1" is "radiojazz891".
   const normalizeName = (name) => String(name).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
+  /* What the copy knows of a station in the list: the one with its stream
+     address, and the most voted ten whose names contain its name - the
+     catalogue's own name search, done here. */
+  function mirrorLookup(stations, row) {
+    const byUrl = stations.filter((station) => station.url === row.url);
+    const wanted = normalizeName(row.name);
+    const byName = wanted === '' ? [] : stations
+      .filter((station) => normalizeName(station.name).includes(wanted)).slice(0, 10);
+    return {byUrl, byName};
+  }
+
   /* A picture for a station already in the list. The stream address is the
      catalogue's own key, so a station found by it is that station; one found
      by name is that station when the names agree, and only a guess when they
      do not - which the page leaves unticked. */
   function pickIcon(row, byUrl, byName) {
-    const exact = byUrl.find((station) => station.favicon !== '');
-    if (exact) return {favicon: exact.favicon, name: exact.name, how: 'url'};
+    const found = (station, how) =>
+      ({picture: station.picture, direct: station.direct, name: station.name, how});
+    const exact = byUrl.find((station) => station.picture !== '');
+    if (exact) return found(exact, 'url');
     const wanted = normalizeName(row.name);
     const same = byName.find((station) =>
-      station.favicon !== '' && wanted !== '' && normalizeName(station.name) === wanted);
-    if (same) return {favicon: same.favicon, name: same.name, how: 'name'};
-    const guess = byName.find((station) => station.favicon !== '');
-    if (guess) return {favicon: guess.favicon, name: guess.name, how: 'guess'};
+      station.picture !== '' && wanted !== '' && normalizeName(station.name) === wanted);
+    if (same) return found(same, 'name');
+    const guess = byName.find((station) => station.picture !== '');
+    if (guess) return found(guess, 'guess');
     return null;
   }
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {fitBytes, normalizeStation, mergeResults, usableOnly, normalizeName, pickIcon};
+    module.exports = {fitBytes, normalizeStation, mirrorStation, mergeResults, searchMirror,
+                      usableOnly, normalizeName, mirrorLookup, pickIcon};
   }
 
   const searchPanel = document.querySelector('#search-panel');
@@ -135,6 +210,7 @@
   const searchForm = document.querySelector('#search-form');
   const searchQuery = document.querySelector('#search-query');
   const searchCountry = document.querySelector('#search-country');
+  const searchSource = document.querySelector('#search-source');
   const searchGo = document.querySelector('#search-go');
   const searchStatus = document.querySelector('#search-status');
   const searchResults = document.querySelector('#search-results');
@@ -150,20 +226,20 @@
     element.classList.toggle('is-error', isError);
   }
 
-  /* --- the catalogue ---------------------------------------------------- */
-
-  let servers = null;
-
-  function fetchJson(url) {
+  function fetchJson(url, timeout = REQUEST_TIMEOUT_MS, cache = 'no-store') {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    return fetch(url, {signal: controller.signal, cache: 'no-store'})
+    const timer = setTimeout(() => controller.abort(), timeout);
+    return fetch(url, {signal: controller.signal, cache})
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
       })
       .finally(() => clearTimeout(timer));
   }
+
+  /* --- the catalogue, directly ------------------------------------------- */
+
+  let servers = null;
 
   async function serverNames() {
     if (servers !== null) return servers;
@@ -192,6 +268,90 @@
     throw lastError || new Error('no answer');
   }
 
+  /* --- the copy ------------------------------------------------------------ */
+
+  /* Files, kept for as long as the page is open: the copy changes once a day,
+     and a second search of the same country should not fetch it again. The
+     browser's own cache keeps them between visits. */
+  const mirrorFiles = new Map();
+  function mirrorFile(path) {
+    if (!mirrorFiles.has(path)) {
+      const loading = fetchJson(`${MIRROR}/${path}`, MIRROR_TIMEOUT_MS, 'default');
+      loading.catch(() => mirrorFiles.delete(path));
+      mirrorFiles.set(path, loading);
+    }
+    return mirrorFiles.get(path);
+  }
+
+  /* --- the two, behind one face ------------------------------------------ */
+
+  const sources = {
+    mirror: {
+      async countries() {
+        return (await mirrorFile('countries.json'))
+          .map(([code, count]) => ({code, count}));
+      },
+      async search(query, country) {
+        const items = await mirrorFile(`stations/${country || 'all'}.json`);
+        return searchMirror(items, query, RESULT_LIMIT * 2, MIRROR, limits);
+      },
+      async lookup(row) {
+        const all = await mirrorFile('stations/all.json');
+        if (!this.stations) {
+          this.stations = all.map((item) => mirrorStation(item, MIRROR, limits)).filter(Boolean);
+        }
+        return mirrorLookup(this.stations, row);
+      },
+    },
+    live: {
+      async countries() {
+        return (await catalogue('/json/countries?hidebroken=true'))
+          .map((country) => ({code: country.iso_3166_1, count: Number(country.stationcount)}));
+      },
+      async search(query, country) {
+        const common = `limit=${RESULT_LIMIT}&hidebroken=true&order=votes&reverse=true` +
+          (country !== '' ? `&countrycode=${encodeURIComponent(country)}` : '');
+        /* By name and by genre at once: "jazz" is a genre to one station and
+           part of the name of another, and a person typing it means both. */
+        const lists = query === ''
+          ? [await catalogue(`/json/stations/search?${common}`)]
+          : await Promise.all([
+            catalogue(`/json/stations/search?name=${encodeURIComponent(query)}&${common}`),
+            catalogue(`/json/stations/search?tag=${encodeURIComponent(query.toLowerCase())}&${common}`),
+          ]);
+        return mergeResults(lists, limits);
+      },
+      async lookup(row) {
+        const byUrl = mergeResults(
+          [await catalogue(`/json/stations/byurl?url=${encodeURIComponent(row.url)}`)], limits);
+        const byName = byUrl.some((station) => station.picture !== '') ? [] : mergeResults(
+          [await catalogue(`/json/stations/search?name=${encodeURIComponent(row.name)}` +
+                           '&limit=10&hidebroken=true&order=votes&reverse=true')], limits);
+        return {byUrl, byName};
+      },
+    },
+  };
+
+  function chosenSource() {
+    return searchSource && searchSource.value === 'live' ? 'live' : 'mirror';
+  }
+
+  /* The chosen source, and the other when it does not answer. Says which one
+     answered, so the page can tell the reader it was not the one chosen. */
+  async function ask(what, ...args) {
+    const first = chosenSource();
+    const second = first === 'mirror' ? 'live' : 'mirror';
+    try {
+      return {value: await sources[first][what](...args), source: first};
+    } catch (error) {
+      return {value: await sources[second][what](...args), source: second};
+    }
+  }
+
+  const sourceName = (source) => t(source === 'live' ? 'search.source_live_short' : 'search.source_mirror_short');
+
+  /* --- pictures ------------------------------------------------------------ */
+
   /* The device fetches one picture at a time, and does not keep the request
      open while it does: 202 means "still at it, ask again". A 1.37 MB favicon
      took fourteen seconds on a playing board before the device stopped taking
@@ -219,14 +379,28 @@
     return job;
   }
 
+  /* The copy's own pictures straight from it; anything else through the
+     device. */
+  function pictureOf(found) {
+    if (!found.direct) return pictureViaDevice(found.picture);
+    return fetch(found.picture).then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.blob();
+    });
+  }
+
   /* --- search ------------------------------------------------------------ */
 
-  let countriesLoaded = false;
+  let countriesFor = '';
   async function loadCountries() {
-    if (countriesLoaded) return;
-    countriesLoaded = true;
+    const wanted = chosenSource();
+    if (countriesFor === wanted) return;
+    countriesFor = wanted;
+    const keep = searchCountry.value;
+    // Everything but the first option, "any country".
+    while (searchCountry.options && searchCountry.options.length > 1) searchCountry.remove(1);
     try {
-      const list = await catalogue('/json/countries?hidebroken=true');
+      const {value: list} = await ask('countries');
       const language = window.jradioI18n.language ? window.jradioI18n.language() : 'ru';
       let names = null;
       try {
@@ -235,12 +409,8 @@
         names = null;
       }
       const options = list
-        .filter((country) => country && /^[A-Z]{2}$/.test(country.iso_3166_1) &&
-          Number(country.stationcount) >= COUNTRY_MIN_STATIONS)
-        .map((country) => ({
-          code: country.iso_3166_1,
-          label: (names && names.of(country.iso_3166_1)) || country.name,
-        }))
+        .filter((country) => /^[A-Z]{2}$/.test(country.code) && country.count >= COUNTRY_MIN_STATIONS)
+        .map((country) => ({code: country.code, label: (names && names.of(country.code)) || country.code}))
         .sort((a, b) => a.label.localeCompare(b.label, language));
       for (const country of options) {
         const option = document.createElement('option');
@@ -248,9 +418,11 @@
         option.textContent = country.label;
         searchCountry.appendChild(option);
       }
+      searchCountry.value = keep;
+      if (searchCountry.value !== keep) searchCountry.value = '';
     } catch (error) {
       // Searching without a country still works; the list stays at "any".
-      countriesLoaded = false;
+      countriesFor = '';
     }
   }
 
@@ -323,15 +495,18 @@
     button.disabled = true;
     button.textContent = t('search.added_button');
     // The catalogue counts what people pick; the request is all it asks.
-    fetch(`https://${(await serverNames())[0]}/json/url/${encodeURIComponent(station.uuid)}`)
-      .catch(() => {});
-    if (station.favicon === '') {
+    if (station.live) {
+      serverNames().then((names) =>
+        fetch(`https://${names[0]}/json/url/${encodeURIComponent(station.uuid)}`))
+        .catch(() => {});
+    }
+    if (station.picture === '') {
       setText(searchStatus, t('search.added', {name: station.name}));
       return;
     }
     setText(searchStatus, t('search.added_fetching', {name: station.name}));
     try {
-      await radio.setPicture(id, await pictureViaDevice(station.favicon));
+      await radio.setPicture(id, await pictureOf(station));
       setText(searchStatus, t('search.added', {name: station.name}));
     } catch (error) {
       const tooLarge = error && error.message === 'HTTP 413';
@@ -367,7 +542,7 @@
       add.textContent = known ? t('search.added_button') : t('search.add');
       add.disabled = known;
       add.addEventListener('click', () => { addStation(station, add); });
-      item.append(thumbnail(station.favicon), text, play, add);
+      item.append(thumbnail(station.picture), text, play, add);
       return item;
     }));
   }
@@ -379,25 +554,18 @@
       setText(searchStatus, t('search.need_query'), true);
       return;
     }
-    const common = `limit=${RESULT_LIMIT}&hidebroken=true&order=votes&reverse=true` +
-      (country !== '' ? `&countrycode=${encodeURIComponent(country)}` : '');
     searchGo.disabled = true;
     setText(searchStatus, t('search.searching'));
     try {
-      /* By name and by genre at once: "jazz" is a genre to one station and
-         part of the name of another, and a person typing it means both. */
-      const lists = query === ''
-        ? [await catalogue(`/json/stations/search?${common}`)]
-        : await Promise.all([
-          catalogue(`/json/stations/search?name=${encodeURIComponent(query)}&${common}`),
-          catalogue(`/json/stations/search?tag=${encodeURIComponent(query.toLowerCase())}&${common}`),
-        ]);
-      const {usable: stations, hidden} = usableOnly(mergeResults(lists, limits));
+      const {value, source} = await ask('search', query, country);
+      const {usable: stations, hidden} = usableOnly(value);
       renderResults(stations);
-      const found = stations.length > 0
-        ? t('search.found', {n: stations.length})
-        : t('search.nothing');
-      setText(searchStatus, hidden > 0 ? `${found} ${t('search.hidden', {n: hidden})}` : found);
+      let text = stations.length > 0 ? t('search.found', {n: stations.length}) : t('search.nothing');
+      if (hidden > 0) text += ` ${t('search.hidden', {n: hidden})}`;
+      if (source !== chosenSource()) {
+        text += ` ${t('search.fell_back', {source: sourceName(chosenSource()), other: sourceName(source)})}`;
+      }
+      setText(searchStatus, text);
     } catch (error) {
       setText(searchStatus, t('search.failed'), true);
     } finally {
@@ -435,7 +603,7 @@
       meta.className = 'search-result-meta';
       meta.textContent = t(`icons.how_${candidate.match.how}`, {name: candidate.match.name});
       text.append(name, meta);
-      item.append(box, thumbnail(candidate.match.favicon), text);
+      item.append(box, thumbnail(candidate.match.picture), text);
       return item;
     }));
     updateApply();
@@ -460,11 +628,7 @@
     for (const [index, row] of rows.entries()) {
       setText(iconsStatus, t('icons.looking', {k: index + 1, n: rows.length}));
       try {
-        const byUrl = mergeResults(
-          [await catalogue(`/json/stations/byurl?url=${encodeURIComponent(row.url)}`)], limits);
-        const byName = byUrl.some((station) => station.favicon !== '') ? [] : mergeResults(
-          [await catalogue(`/json/stations/search?name=${encodeURIComponent(row.name)}` +
-                           '&limit=10&hidebroken=true&order=votes&reverse=true')], limits);
+        const {value: {byUrl, byName}} = await ask('lookup', row);
         const match = pickIcon(row, byUrl, byName);
         if (match !== null) {
           iconCandidates.push({row, match, checked: match.how !== 'guess'});
@@ -491,7 +655,7 @@
     for (const [index, candidate] of chosen.entries()) {
       setText(iconsStatus, t('icons.fetching', {k: index + 1, n: chosen.length}));
       try {
-        await radio.setPicture(candidate.row.id, await pictureViaDevice(candidate.match.favicon));
+        await radio.setPicture(candidate.row.id, await pictureOf(candidate.match));
         done += 1;
       } catch (error) {
         failed += 1;
@@ -512,6 +676,24 @@
     panel.hidden = !open;
     button.setAttribute('aria-expanded', String(open));
     button.classList.toggle('is-active', open);
+  }
+
+  // The choice of source is this browser's, not the device's.
+  try {
+    const remembered = window.localStorage.getItem(SOURCE_KEY);
+    if (searchSource && (remembered === 'live' || remembered === 'mirror')) searchSource.value = remembered;
+  } catch (error) {
+    // No storage, as in a private window: the copy, as by default.
+  }
+  if (searchSource) {
+    searchSource.addEventListener('change', () => {
+      try {
+        window.localStorage.setItem(SOURCE_KEY, chosenSource());
+      } catch (error) {
+        // Remembered for this page only.
+      }
+      loadCountries();
+    });
   }
 
   searchOpen.addEventListener('click', () => {

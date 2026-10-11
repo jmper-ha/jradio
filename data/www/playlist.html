@@ -110,11 +110,15 @@
           <select id="search-country" data-i18n-aria="search.country" aria-label="Страна">
             <option value="" data-i18n="search.any_country">Любая страна</option>
           </select>
+          <select id="search-source" data-i18n-aria="search.source" aria-label="Каталог">
+            <option value="mirror" data-i18n="search.source_mirror">Зеркало jRadio</option>
+            <option value="live" data-i18n="search.source_live">radio-browser.info</option>
+          </select>
           <button id="search-go" class="primary-button" type="submit" data-i18n="search.go">Искать</button>
         </form>
         <p id="search-status" class="settings-status" role="status" aria-live="polite"></p>
         <ul id="search-results" class="search-results" data-i18n-aria="search.results" aria-label="Найденные станции"></ul>
-        <p class="field-note" data-i18n="search.note">Станции из открытого каталога radio-browser.info. Добавленная станция появится в списке ниже; чтобы она попала на радио, нажмите «Сохранить на устройстве».</p>
+        <p class="field-note" data-i18n="search.note">Станции из открытого каталога radio-browser.info — напрямую или из зеркала jRadio на GitHub, которое обновляется раз в сутки и открывается там, где сам каталог недоступен. Если выбранный не отвечает, страница спросит другой. Добавленная станция появится в списке ниже; чтобы она попала на радио, нажмите «Сохранить на устройстве».</p>
       </div>
 
       <!-- Pictures for stations that have none, found in the same catalogue. -->
@@ -130,7 +134,7 @@
         <div class="settings-actions">
           <button id="icons-apply" class="primary-button" type="button" disabled data-i18n="icons.apply">Поставить отмеченные</button>
         </div>
-        <p class="field-note" data-i18n="icons.note">Совпадение по адресу потока надёжно, по названию — проверьте глазами. Картинки скачивает само радио и уменьшает эта страница; на радио они попадут после «Сохранить на устройстве».</p>
+        <p class="field-note" data-i18n="icons.note">Совпадение по адресу потока надёжно, по названию — проверьте глазами. Ищется в каталоге, выбранном в поиске станций. Картинки из зеркала берутся сразу, остальные скачивает само радио; на радио они попадут после «Сохранить на устройстве».</p>
       </div>
 
       <ul id="playlist-rows" class="playlist-rows" data-i18n-aria="playlist.rows" aria-label="Станции плейлиста"></ul>

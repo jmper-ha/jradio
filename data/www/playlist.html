@@ -86,8 +86,51 @@
         <h2 id="playlist-title" data-i18n="stations.tab_radio">Интернет-радио</h2>
         <span id="playlist-status" class="settings-status" role="status" aria-live="polite" data-i18n="common.loading">Загрузка…</span>
         <div class="playlist-toolbar">
+          <button id="search-open" class="secondary-button" type="button" aria-expanded="false"
+                  aria-controls="search-panel" data-i18n="search.open">Найти станции</button>
+          <button id="icons-open" class="secondary-button" type="button" aria-expanded="false"
+                  aria-controls="icons-panel" data-i18n="icons.open">Подобрать иконки</button>
           <button id="playlist-add" class="secondary-button" type="button" data-i18n="playlist.add">Добавить</button>
         </div>
+      </div>
+
+      <!-- The station search: Radio Browser's open catalogue, asked from this
+           browser. stations_search.js. -->
+      <div id="search-panel" class="search-panel" hidden>
+        <div class="search-panel-head">
+          <h3 data-i18n="search.title">Поиск станций</h3>
+          <button class="icon-button search-close" type="button" data-i18n-aria="search.close" aria-label="Закрыть" data-close="search">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+        </div>
+        <form id="search-form" class="search-form" role="search">
+          <input id="search-query" type="search" autocomplete="off"
+                 data-i18n-placeholder="search.placeholder" placeholder="Название или жанр: jazz, rock, новости"
+                 data-i18n-aria="search.placeholder" aria-label="Название или жанр">
+          <select id="search-country" data-i18n-aria="search.country" aria-label="Страна">
+            <option value="" data-i18n="search.any_country">Любая страна</option>
+          </select>
+          <button id="search-go" class="primary-button" type="submit" data-i18n="search.go">Искать</button>
+        </form>
+        <p id="search-status" class="settings-status" role="status" aria-live="polite"></p>
+        <ul id="search-results" class="search-results" data-i18n-aria="search.results" aria-label="Найденные станции"></ul>
+        <p class="field-note" data-i18n="search.note">Станции из открытого каталога radio-browser.info. Добавленная станция появится в списке ниже; чтобы она попала на радио, нажмите «Сохранить на устройстве».</p>
+      </div>
+
+      <!-- Pictures for stations that have none, found in the same catalogue. -->
+      <div id="icons-panel" class="search-panel" hidden>
+        <div class="search-panel-head">
+          <h3 data-i18n="icons.title">Иконки для станций без них</h3>
+          <button class="icon-button search-close" type="button" data-i18n-aria="search.close" aria-label="Закрыть" data-close="icons">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+        </div>
+        <p id="icons-status" class="settings-status" role="status" aria-live="polite"></p>
+        <ul id="icons-results" class="search-results" data-i18n-aria="icons.results" aria-label="Найденные иконки"></ul>
+        <div class="settings-actions">
+          <button id="icons-apply" class="primary-button" type="button" disabled data-i18n="icons.apply">Поставить отмеченные</button>
+        </div>
+        <p class="field-note" data-i18n="icons.note">Совпадение по адресу потока надёжно, по названию — проверьте глазами. Картинки скачивает само радио и уменьшает эта страница; на радио они попадут после «Сохранить на устройстве».</p>
       </div>
 
       <ul id="playlist-rows" class="playlist-rows" data-i18n-aria="playlist.rows" aria-label="Станции плейлиста"></ul>
@@ -134,5 +177,6 @@
   <noscript><p class="noscript-message">Для редактора плейлиста требуется JavaScript. / JavaScript is required for the playlist editor.</p></noscript>
   <script src="/playlist.js"></script>
   <script src="/fm.js"></script>
+  <script src="/stations_search.js"></script>
 </body>
 </html>

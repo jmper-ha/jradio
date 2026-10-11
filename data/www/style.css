@@ -1611,6 +1611,89 @@ a.secondary-button { text-decoration: none; color: inherit; }
   counter-reset: prow;
 }
 
+/* The station search and the picture finder: a panel between the card's head
+   and the list, one of the two open at a time. */
+.search-panel {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.search-panel-head {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .5rem .5rem 0 .8rem;
+}
+
+.search-panel-head h3 {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.search-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  padding: .4rem .8rem .3rem;
+}
+
+.search-form input[type="search"] { flex: 1 1 14rem; min-width: 0; }
+.search-form select { flex: 0 1 12rem; min-width: 0; }
+
+.search-panel > .settings-status {
+  margin: 0;
+  padding: .2rem .8rem .4rem;
+  text-align: left;
+}
+
+.search-results {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.search-result {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  min-height: var(--row);
+  padding: .35rem .8rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.search-result-thumb {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 6px;
+  object-fit: contain;
+  background: var(--surface-3);
+}
+
+.search-result-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.search-result-name,
+.search-result-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-result-meta { color: var(--muted); font-size: .75rem; }
+.search-result-add { flex: none; }
+.search-panel .settings-actions { padding: .5rem .8rem; }
+.secondary-button.is-active { border-color: var(--accent-line); color: var(--accent); }
+
 .playlist-row {
   border-bottom: 1px solid var(--line-soft);
   counter-increment: prow;
@@ -1875,11 +1958,11 @@ a.secondary-button { text-decoration: none; color: inherit; }
     white-space: nowrap;
   }
 
-  /* The three buttons keep one row of their own rather than breaking across
-     two: at this width the heading and the status leave less than one button
-     of space beside them. */
+  /* The buttons take a row of their own: at this width the heading and the
+     status leave less than one button of space beside them. Three of them may
+     wrap onto a second. */
   .card-head { flex-wrap: wrap; }
-  .playlist-toolbar { flex: 1 0 100%; flex-wrap: nowrap; justify-content: flex-end; }
+  .playlist-toolbar { flex: 1 0 100%; justify-content: flex-end; }
 
   .list-search { width: 100%; }
   .list-head { flex-wrap: wrap; }

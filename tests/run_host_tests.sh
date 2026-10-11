@@ -306,6 +306,7 @@ run_test web_settings_api -I"${cjson_include}" tests/test_web_settings_api.c \
     components/settings/device_settings.c components/settings/settings_nvs.c components/settings/alarm_schedule.c components/settings/device_timezone.c components/settings/settings_csv.c \
     "${cjson_source}"
 run_test web_cover tests/test_web_cover.c components/web_server/web_cover.c
+run_test web_icon_fetch tests/test_web_icon_fetch.c components/web_server/web_icon_fetch.c
 # The weather: three services' answers into one report, and the request each
 # one takes. Captured answers are the fixtures; the day/night split is the
 # part worth reading, since one service has to have it worked out for it.
@@ -348,6 +349,7 @@ node tests/test_web_player.js
 node tests/test_web_i18n.js
 node tests/test_web_settings.js
 node tests/test_web_playlist.js
+node tests/test_web_station_search.js
 node tests/test_web_files.js
 node tests/test_web_hardware.js
 node tests/test_web_flasher.js

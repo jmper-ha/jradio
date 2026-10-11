@@ -1244,6 +1244,47 @@
       .catch(() => {});
   }
 
+  /* What the station search (stations_search.js) may do to the list: add a
+     station and give one a picture. Both only change the page, as typing would;
+     the device hears of it when the list is saved. */
+  window.jradioStations = window.jradioStations || {};
+  window.jradioStations.radio = {
+    nameBytes: STATION_NAME_BUFFER_BYTES,
+    urlBytes: STATION_URL_BUFFER_BYTES,
+    loaded: () => state.loaded,
+    has: (url) => state.rows.some((row) => row.url === url),
+    /* The id of the new row, or 0 when the list is full. The name the search
+       found is the one to show - a catalogue name is usually tidier than what
+       a stream calls itself - so the flag is set. */
+    add(name, url) {
+      if (state.rows.length >= STATION_MAX_ENTRIES) {
+        setStatus(t('playlist.limit_reached', {n: STATION_MAX_ENTRIES}), true);
+        return 0;
+      }
+      const row = makeRow(name, url, 1);
+      state.rows.push(row);
+      renderRows();
+      updateSaveAvailability();
+      return row.id;
+    },
+    withoutPicture: () => state.rows
+      .filter((row) => row.icon === '' && row.picture === null && row.url !== '')
+      .map((row) => ({id: row.id, name: row.name, url: row.url})),
+    /* Always through the canvas: what a site calls its favicon may be a
+       1000 px PNG, an ICO or an SVG, and the device wants none of those. */
+    setPicture(id, blob) {
+      return scaleImage(blob).then((scaled) => {
+        const row = state.rows.find((candidate) => candidate.id === id);
+        if (!row) return;
+        dropPicture(row);
+        row.picture = makePicture(scaled);
+        row.icon = '';
+        renderRows();
+        updateSaveAvailability();
+      });
+    },
+  };
+
   renderRows();
   updateSaveAvailability();
   loadPlaylist();

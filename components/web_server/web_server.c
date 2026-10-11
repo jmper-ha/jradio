@@ -53,6 +53,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "ui_menu.h"
 #include "web_backup.h"
 #include "web_cover.h"
+#include "web_icon_fetch.h"
 #include "web_json.h"
 #include "web_ota.h"
 #include "web_settings.h"
@@ -436,6 +437,12 @@ static esp_err_t web_server_remote_js_get(httpd_req_t *request)
 static esp_err_t web_server_fm_js_get(httpd_req_t *request)
 {
     return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/fm.js",
+                                "application/javascript; charset=utf-8");
+}
+
+static esp_err_t web_server_stations_search_js_get(httpd_req_t *request)
+{
+    return web_server_send_file(request, WEB_SERVER_WEB_ROOT "/stations_search.js",
                                 "application/javascript; charset=utf-8");
 }
 
@@ -2376,7 +2383,7 @@ esp_err_t web_server_start(void)
          * waits on its input queue every pass, so the server still gets the
          * core; a request now waits for at most one screen pass instead. */
         config.task_priority = 3;
-        // Fifty are registered below plus /ws; the spare ones exist
+        // Fifty-two are registered below plus /ws; the spare ones exist
         // because running out is not a build error - httpd_register_uri_handler
         // fails at startup and takes the whole web server down with it.
         config.max_uri_handlers = 56;
@@ -2419,6 +2426,8 @@ esp_err_t web_server_start(void)
             {.uri = "/api/station-test", .method = HTTP_POST, .handler = web_server_station_test_post},
             {.uri = "/api/station-icon", .method = HTTP_POST, .handler = web_server_station_icon_post},
             {.uri = "/api/station-icon", .method = HTTP_GET, .handler = web_server_station_icon_get},
+            {.uri = "/api/icon-fetch", .method = HTTP_GET, .handler = web_icon_fetch_get},
+            {.uri = "/stations_search.js", .method = HTTP_GET, .handler = web_server_stations_search_js_get},
             {.uri = "/api/progress", .method = HTTP_GET, .handler = web_server_progress_get},
             {.uri = "/api/sleep-timer", .method = HTTP_POST,
              .handler = web_server_sleep_timer_post},

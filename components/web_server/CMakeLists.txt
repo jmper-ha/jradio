@@ -1,7 +1,8 @@
 idf_component_register(SRCS "web_server.c" "web_socket.c" "web_protocol.c"
                             "web_view_model.c" "web_json.c" "web_settings.c"
-                            "web_cover.c" "web_backup.c" "web_ota.c"
+                            "web_cover.c" "web_backup.c" "web_ota.c" "web_icon_fetch.c"
                        INCLUDE_DIRS "include"
                        REQUIRES settings player_control file_storage dlna yandex_music version_info weather bt_link board
                        PRIV_REQUIRES esp_http_server esp_timer jradio_wifi_provisioning
-                                     internet_radio json audio_tags ui ota app_update)
+                                     internet_radio json audio_tags ui ota app_update
+                                     esp_http_client mbedtls)

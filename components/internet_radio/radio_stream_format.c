@@ -93,9 +93,11 @@ bool radio_stream_format_from_content_type(const char *content_type,
         {"audio/x-aac", RADIO_STREAM_FORMAT_AAC},
         {"audio/flac", RADIO_STREAM_FORMAT_FLAC},
         {"audio/x-flac", RADIO_STREAM_FORMAT_FLAC},
-        /* Ogg carries FLAC on the stations this project targets. Vorbis
-         * announces the same media types and has no decoder here, so it stays
-         * broken either way - only the error it produces changes. */
+        /* Any Ogg is opened as Ogg FLAC first; the decoder looks at the
+         * first packet and says what the stream really carries - Vorbis and
+         * Opus as often as FLAC, and both play (cb5c4e8). This comment once
+         * said Vorbis had no decoder, outlived the commit that gave it one,
+         * and a page took its word and hid every Ogg station. */
         {"audio/ogg", RADIO_STREAM_FORMAT_OGG_FLAC},
         {"application/ogg", RADIO_STREAM_FORMAT_OGG_FLAC},
         {"audio/x-ogg", RADIO_STREAM_FORMAT_OGG_FLAC},

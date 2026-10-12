@@ -40,6 +40,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_SETTINGS] = {"Настройки", "Settings"},
     [DEVICE_TEXT_GROUP_LANGUAGE] = {"Язык", "Language"},
     [DEVICE_TEXT_GROUP_GENERAL] = {"Общие", "General"},
+    [DEVICE_TEXT_GROUP_SOUND] = {"Звук", "Sound"},
     [DEVICE_TEXT_GROUP_DISPLAY] = {"Экран", "Display"},
     [DEVICE_TEXT_ROW_LANGUAGE] = {"Язык", "Language"},
     /* Each language names itself in itself, the way every picker does it: a
@@ -66,6 +67,14 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_ROW_DLNA] = {"DLNA", "DLNA"},
     [DEVICE_TEXT_ROW_BRIGHTNESS] = {"Яркость", "Brightness"},
     [DEVICE_TEXT_ROW_VOLUME_STEP] = {"Шаг громкости", "Volume step"},
+    [DEVICE_TEXT_ROW_TONE_BASS] = {"Низкие", "Bass"},
+    [DEVICE_TEXT_ROW_TONE_TREBLE] = {"Высокие", "Treble"},
+    [DEVICE_TEXT_ROW_LOUDNESS] = {"Тонкомпенсация", "Loudness"},
+    [DEVICE_TEXT_LOUDNESS_WEAK] = {"слабая", "weak"},
+    [DEVICE_TEXT_LOUDNESS_MEDIUM] = {"средняя", "medium"},
+    [DEVICE_TEXT_LOUDNESS_STRONG] = {"сильная", "strong"},
+    /* Right under loudness, which is what makes "lift" mean its lift. */
+    [DEVICE_TEXT_ROW_LOUDNESS_TREBLE] = {"Подъём высоких", "Treble lift"},
     [DEVICE_TEXT_ROW_SLEEP_TIMER] = {"Таймер сна", "Sleep timer"},
     [DEVICE_TEXT_ROW_ALARM] = {"Будильник", "Alarm"},
     [DEVICE_TEXT_ROW_BT_SPEAKER] = {"Колонка BT", "BT speaker"},

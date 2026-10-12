@@ -918,7 +918,9 @@ static void player_fm_tune(uint32_t khz)
  * in is exactly what goes out and nothing can drift or need buffering. A
  * pause stops the output the way a paused stream's does, rather than sending
  * the chip's silence to a DAC that would log it as a fault. */
-#define PLAYER_FM_PIPE_STACK 3072
+/* 3072 left 816 bytes once the tone shelves ran on this stack (a 256-byte
+ * chunk and the coefficient maths); it is in PSRAM, so the margin is free. */
+#define PLAYER_FM_PIPE_STACK 4096
 #define PLAYER_FM_PIPE_BYTES 1024U
 #define PLAYER_FM_PIPE_IO_MS 100U
 #define PLAYER_FM_PIPE_IDLE_MS 50U

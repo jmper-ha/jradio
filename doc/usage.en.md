@@ -314,7 +314,7 @@ page as a line with the time and the days.
 On the device: language, home screen style, scrolling of long lines, the
 buffer readout, resume, end of folder, Yandex Music, DLNA, weather, brightness, picture
 mirroring, colour inversion, theme, screensaver, sound over Bluetooth, volume step,
-volume. They apply at once and
+bass and treble, loudness, volume. They apply at once and
 are saved. The same settings are in the web interface, in the same words;
 changes either way show at once.
 
@@ -337,6 +337,24 @@ detail, the alarm, the sleep timer, the backup.
   volume: 1 to 20, 5 by default. On the device it is changed with the encoder
   right on the row, on the web with a slider in the Encoder group. The
   remote's volume keys always step by 5.
+- **Sound** - a group of its own on the device and on the web:
+  - **Bass** and **Treble** - tone controls, -12 to +12 dB (bass below
+    250 Hz, treble above 4 kHz). On the device they are turned with the
+    encoder right on the row, and the sound changes as you turn. A lift adds
+    to the sound and leaves the rest alone. Only at the very top of the
+    volume, where the lift has no room left, does the radio stop getting
+    louder by that much - so that it does not distort;
+  - **Loudness** - off, weak, medium, strong. The ear hears less bass in
+    quiet sound, and loudness lifts it the more the quieter the volume: not
+    at all at full volume, up to +6, +10 or +15 dB towards quiet. A click
+    steps round;
+  - **Treble lift** - loudness lifts the treble too, less than the bass (up
+    to +3, +6 or +10 dB).
+
+  They act on everything that plays through the radio itself: internet
+  radio, Yandex Music, files, DLNA, FM through the ADC. Sound from a phone
+  over Bluetooth goes around them and stays as it is for now. With
+  everything at zero and loudness off, the sound passes through unchanged.
 - **Invert colours** - if the picture looks like a negative (a dark
   background gone light, colours turned inside out), your display has the
   other kind of glass from the author's: IPS and TN on the same controller

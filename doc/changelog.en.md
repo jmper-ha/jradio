@@ -6,6 +6,12 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## Next version
+
+New:
+- Tone controls (bass and treble, ±12 dB) and loudness in three strengths -
+  on the device in a new Sound group, and in the web interface.
+
 ## v1.7.0 — 11 October 2026
 
 New:

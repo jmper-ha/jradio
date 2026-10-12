@@ -20,6 +20,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#include "audio_tone.h"
 #include "audio_volume.h"
 #include "board.h"
 #include "board_amplifier.h"
@@ -179,6 +180,22 @@ static void board_audio_level_note(unsigned int value, atomic_uint *slot)
                                                   memory_order_relaxed,
                                                   memory_order_relaxed)) {
     }
+}
+
+/* Tone and loudness, as the settings last said. Written by the UI task and
+ * read by whichever task writes audio, so it travels under its own spinlock
+ * and is picked up at the next block - the filters themselves belong to the
+ * audio side alone (s_audio_mutex). */
+static portMUX_TYPE s_tone_lock = portMUX_INITIALIZER_UNLOCKED;
+static audio_tone_settings_t s_tone_wanted;
+static audio_tone_t s_tone;
+
+void board_audio_set_tone(const audio_tone_settings_t *settings)
+{
+    if (!audio_tone_settings_valid(settings)) return;
+    taskENTER_CRITICAL(&s_tone_lock);
+    s_tone_wanted = *settings;
+    taskEXIT_CRITICAL(&s_tone_lock);
 }
 
 void board_audio_set_volume(uint8_t percent)
@@ -632,13 +649,26 @@ static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
     const uint32_t frames = (uint32_t)(pcm_length / AUDIO_VOLUME_FRAME_BYTES);
     uint16_t gain_start;
     uint16_t gain_end;
+    /* The start of a stream - the fade's first block - is where the tone
+     * filters forget the last one: its tail is not this stream's. */
+    const bool stream_start = s_audio_fade_frames == 0U;
     audio_volume_block_gains(s_audio_gain_end, gain, s_audio_fade_frames,
                              AUDIO_VOLUME_FADE_FRAMES, frames, &gain_start, &gain_end);
     s_audio_gain_end = gain_end;
     if (s_audio_fade_frames < AUDIO_VOLUME_FADE_FRAMES) {
         s_audio_fade_frames += frames;
     }
-    if (gain_start == AUDIO_VOLUME_UNITY && gain_end == AUDIO_VOLUME_UNITY) {
+    audio_tone_settings_t tone;
+    taskENTER_CRITICAL(&s_tone_lock);
+    tone = s_tone_wanted;
+    taskEXIT_CRITICAL(&s_tone_lock);
+    audio_tone_set(&s_tone, &tone);
+    if (stream_start) audio_tone_reset(&s_tone);
+    /* Tone or loudness on, or still sloping back to off: every block goes
+     * through the filters, full volume included. Otherwise the path below is
+     * the one it always was. */
+    const bool shaped = audio_tone_active(&tone) || !audio_tone_idle(&s_tone);
+    if (!shaped && gain_start == AUDIO_VOLUME_UNITY && gain_end == AUDIO_VOLUME_UNITY) {
         // Full volume, fade over: bit-exact, and no copy.
         board_audio_remember_tail(pcm, pcm_length);
         return pcm;
@@ -664,7 +694,12 @@ static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
         board_audio_remember_tail(pcm, pcm_length);
         return pcm;
     }
-    audio_volume_apply_ramp(pcm, s_audio_gain_scratch, pcm_length, gain_start, gain_end);
+    if (shaped) {
+        audio_tone_process(&s_tone, s_audio_sample_rate, (const int16_t *)pcm,
+                           (int16_t *)s_audio_gain_scratch, frames, gain_start, gain_end);
+    } else {
+        audio_volume_apply_ramp(pcm, s_audio_gain_scratch, pcm_length, gain_start, gain_end);
+    }
     board_audio_remember_tail(s_audio_gain_scratch, pcm_length);
     return s_audio_gain_scratch;
 }

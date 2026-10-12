@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "audio_tone.h"
 #include "esp_err.h"
 
 /* The display's two flip settings are arguments, and so is the colour
@@ -127,3 +128,7 @@ void board_audio_level_put(uint16_t left, uint16_t right);
  * 100 is bit-exact: the scaling is skipped rather than multiplied by one. */
 void board_audio_set_volume(uint8_t percent);
 uint8_t board_audio_volume(void);
+
+/* Tone controls and loudness (audio_tone.h), applied from the next block on.
+ * Not the Bluetooth module's sound, which reaches the DAC past this board. */
+void board_audio_set_tone(const audio_tone_settings_t *settings);

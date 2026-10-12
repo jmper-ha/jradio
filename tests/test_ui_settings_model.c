@@ -12,12 +12,14 @@ static void test_collapsed_groups_and_cursor(void)
 {
     ui_settings_model_t model;
     ui_settings_model_init(&model, true);
-    /* Three headings and About, which is always the last row of the list. */
-    assert(ui_settings_model_row_count(&model) == 4U);
+    /* Four headings and About, which is always the last row of the list. */
+    assert(ui_settings_model_row_count(&model) == 5U);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_LANGUAGE_GROUP);
 
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_GENERAL_GROUP);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_SOUND_GROUP);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DISPLAY_GROUP);
     /* Then About, the last row that is drawn... */
@@ -41,10 +43,10 @@ static void test_the_address_band_is_a_stop_not_a_row(void)
     const size_t count = ui_settings_model_row_count(&model);
     /* The band is not counted among the rows the screen draws: it is painted
      * along the bottom whatever the list is doing, and counting it would make
-     * the window scroll to reveal something already on screen. Three headings
+     * the window scroll to reveal something already on screen. Four headings
      * and About are what is counted - About *is* drawn, which is exactly the
      * difference between the two. */
-    assert(count == 4U);
+    assert(count == 5U);
     const ui_settings_row_t band = ui_settings_model_row_at(&model, count);
     assert(band.id == UI_SETTINGS_ROW_ADDRESS_BAND);
     assert(band.kind == UI_SETTINGS_ROW_BAND);
@@ -133,7 +135,7 @@ static void test_expand_limits_cursor_to_group(void)
     ui_settings_model_t model;
     ui_settings_model_init(&model, true);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_row_count(&model) == 5U);
+    assert(ui_settings_model_row_count(&model) == 6U);
     assert(ui_settings_model_row_at(&model, 0U).id == UI_SETTINGS_ROW_LANGUAGE_GROUP);
     assert(ui_settings_model_row_at(&model, 1U).id == UI_SETTINGS_ROW_LANGUAGE_FIELD);
     assert(ui_settings_model_row_at(&model, 1U).kind == UI_SETTINGS_ROW_FIELD);
@@ -145,7 +147,7 @@ static void test_expand_limits_cursor_to_group(void)
     assert(ui_settings_model_move(&model, -1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_LANGUAGE_GROUP);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_row_count(&model) == 4U);
+    assert(ui_settings_model_row_count(&model) == 5U);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_LANGUAGE_GROUP);
 }
 
@@ -160,7 +162,7 @@ static void test_each_group_has_expected_fields(void)
      * that has those features - the rows here that a board option can take
      * away. */
     assert(ui_settings_model_row_count(&model) ==
-           11U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
+           12U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
     assert(ui_settings_model_row_at(&model, 2U).id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_SCROLL_FIELD);
     assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_BUFFER_FIELD);
@@ -230,17 +232,18 @@ static void test_the_display_group_holds_a_number_the_knob_edits(void)
      * then the two flips. */
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_DISPLAY_GROUP);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    assert(ui_settings_model_row_count(&model) == 10U);
-    assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD);
-    assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_SCREENSAVER_FIELD);
-    assert(ui_settings_model_row_at(&model, 5U).id == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD);
-    assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD);
-    assert(ui_settings_model_row_at(&model, 7U).id == UI_SETTINGS_ROW_INVERT_COLORS_FIELD);
+    assert(ui_settings_model_row_count(&model) == 11U);
+    assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD);
+    assert(ui_settings_model_row_at(&model, 5U).id == UI_SETTINGS_ROW_SCREENSAVER_FIELD);
+    assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD);
+    assert(ui_settings_model_row_at(&model, 7U).id == UI_SETTINGS_ROW_FLIP_HORIZONTAL_FIELD);
+    assert(ui_settings_model_row_at(&model, 8U).id == UI_SETTINGS_ROW_INVERT_COLORS_FIELD);
     /* The theme last, a choice the click steps through - not a number the
      * knob takes. */
-    assert(ui_settings_model_row_at(&model, 8U).id == UI_SETTINGS_ROW_THEME_FIELD);
+    assert(ui_settings_model_row_at(&model, 9U).id == UI_SETTINGS_ROW_THEME_FIELD);
     assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_THEME_FIELD));
 
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
@@ -270,6 +273,33 @@ static void test_the_display_group_holds_a_number_the_knob_edits(void)
      * click a toggle on every other field. */
     assert(ui_settings_model_toggle_edit(&model) == UI_SETTINGS_MODEL_NO_CHANGE);
     assert(!ui_settings_model_is_editing(&model));
+}
+
+static void test_the_sound_group_holds_two_numbers_and_a_choice(void)
+{
+    ui_settings_model_t model;
+    ui_settings_model_init(&model, true);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_SOUND_GROUP);
+    assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
+    // Four headings, four fields, About.
+    assert(ui_settings_model_row_count(&model) == 9U);
+    assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_TONE_BASS_FIELD);
+    assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_TONE_TREBLE_FIELD);
+    assert(ui_settings_model_row_at(&model, 5U).id == UI_SETTINGS_ROW_LOUDNESS_FIELD);
+    assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD);
+    // The tone controls take the knob; loudness and its switch are clicked.
+    assert(ui_settings_row_is_number(UI_SETTINGS_ROW_TONE_BASS_FIELD));
+    assert(ui_settings_row_is_number(UI_SETTINGS_ROW_TONE_TREBLE_FIELD));
+    assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_LOUDNESS_FIELD));
+    assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD));
+
+    assert(ui_settings_tone_step(0, 1) == 1);
+    assert(ui_settings_tone_step(0, -1) == -1);
+    assert(ui_settings_tone_step(UI_SETTINGS_TONE_MAX, 1) == UI_SETTINGS_TONE_MAX);
+    assert(ui_settings_tone_step(UI_SETTINGS_TONE_MIN, -1) == UI_SETTINGS_TONE_MIN);
+    assert(ui_settings_tone_step(40, 0) == UI_SETTINGS_TONE_MAX);
 }
 
 static void test_brightness_steps_and_stops_at_the_ends(void)
@@ -319,13 +349,14 @@ static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
     assert(!ui_settings_model_has_rows_above(&model));
     assert(!ui_settings_model_has_rows_below(&model, visible));
 
-    /* Open Display, a group that overflows five rows: 3 headings + 6 fields
+    /* Open Display, a group that overflows five rows: 4 headings + 6 fields
      * + About. */
+    assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
     const size_t count = ui_settings_model_row_count(&model);
-    assert(count == 10U);
+    assert(count == 11U);
     /* The furthest the cursor goes: the last field of the open group. About
      * is the row after it and belongs to no group, so an open group cannot
      * reach it - hence "count - 2" rather than "count - 1". */
@@ -333,15 +364,15 @@ static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
     /* And how far the window has to move to show that row: just enough, which
      * is what "follows the cursor and otherwise holds still" means. */
     const size_t scrolled = bottom - visible + 1U;
-    /* The cursor is still on the heading at row 2, which is on screen, so the
+    /* The cursor is still on the heading at row 3, which is on screen, so the
      * window has not moved. */
     assert(ui_settings_model_window_top(&model, visible) == 0U);
     assert(ui_settings_model_has_rows_below(&model, visible));
     assert(!ui_settings_model_has_rows_above(&model));
 
-    /* The cursor sits on the Display heading at row 2, so the two fields under
-     * it are still on screen and the window holds. */
-    for (size_t step = 0U; step < 2U; ++step) {
+    /* The cursor sits on the Display heading at row 3, so the field under it
+     * is still on screen and the window holds. */
+    for (size_t step = 0U; step < 1U; ++step) {
         assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
         assert(ui_settings_model_window_top(&model, visible) == 0U);
     }
@@ -456,8 +487,8 @@ static void test_the_longest_list_needs_the_window(void)
         const size_t count = ui_settings_model_row_count(&model);
         if (count > longest) longest = count;
     }
-    /* Three headings, the deepest group's fields, and About. */
-    assert(longest == 11U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
+    /* Four headings, the deepest group's fields, and About. */
+    assert(longest == 12U + BOARD_HAS_YANDEX_MUSIC + BOARD_HAS_DLNA + BOARD_HAS_BLUETOOTH);
     /* Whatever the longest is, every row of it is reachable with the window. */
     ui_settings_model_init(&model, true);
     model.expanded_group = (int)UI_SETTINGS_GROUP_GENERAL;
@@ -477,6 +508,7 @@ int main(void)
     test_expand_limits_cursor_to_group();
     test_each_group_has_expected_fields();
     test_the_display_group_holds_a_number_the_knob_edits();
+    test_the_sound_group_holds_two_numbers_and_a_choice();
     test_brightness_steps_and_stops_at_the_ends();
     test_the_window_follows_the_cursor_and_otherwise_holds_still();
     test_a_device_with_no_home_screen_drops_that_row();

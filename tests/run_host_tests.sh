@@ -121,6 +121,7 @@ if grep -Ein '0x(101820|1E2C3A|18242E|26343F|334454|F2A33C|FFFFFF|B0BEC5|78909C|
 fi
 run_test audio_pcm_convert tests/test_audio_pcm_convert.c components/board/audio_pcm_convert.c
 run_test audio_volume tests/test_audio_volume.c components/board/audio_volume.c
+run_test audio_tone tests/test_audio_tone.c components/board/audio_tone.c components/board/audio_volume.c -lm
 run_test audio_source tests/test_audio_source.c components/audio/audio_source_manager.c
 run_test rda5807 tests/test_rda5807.c components/fm_tuner/rda5807.c
 run_test fm_presets tests/test_fm_presets.c components/fm_tuner/fm_presets.c

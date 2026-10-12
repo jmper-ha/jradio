@@ -154,6 +154,17 @@ static void test_numbers_are_range_checked(void)
     assert(parse_one("{\"field\":\"volume_step\",\"value\":20}", &change));
     assert(!parse_one("{\"field\":\"volume_step\",\"value\":0}", &change));
     assert(!parse_one("{\"field\":\"volume_step\",\"value\":21}", &change));
+    // The tone controls are the one signed range: a cut is a setting too.
+    assert(parse_one("{\"field\":\"tone_bass\",\"value\":-12}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_TONE_BASS && change.value == -12);
+    assert(parse_one("{\"field\":\"tone_treble\",\"value\":12}", &change));
+    assert(!parse_one("{\"field\":\"tone_bass\",\"value\":-13}", &change));
+    assert(!parse_one("{\"field\":\"tone_treble\",\"value\":13}", &change));
+    assert(!parse_one("{\"field\":\"tone_bass\",\"value\":1.5}", &change));
+    assert(parse_one("{\"field\":\"loudness\",\"value\":\"strong\"}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_LOUDNESS && change.value == DEVICE_LOUDNESS_STRONG);
+    assert(!parse_one("{\"field\":\"loudness\",\"value\":2}", &change));
+    assert(!parse_one("{\"field\":\"loudness_treble\",\"value\":1}", &change));
     // The theme by name, its colours as text, and the reset as `true` only.
     assert(parse_one("{\"field\":\"theme\",\"value\":\"custom\"}", &change));
     assert(change.field == WEB_SETTINGS_FIELD_THEME && change.value == 2);
@@ -306,6 +317,16 @@ static void test_apply_writes_through_to_the_file(void)
     const web_settings_change_t too_far = {WEB_SETTINGS_FIELD_ALARM_FM_STATION, 41, ""};
     assert(!web_settings_apply(&settings, &too_far));
 
+    web_settings_change_t tone_change;
+    assert(parse_one("{\"field\":\"tone_bass\",\"value\":-4}", &tone_change));
+    assert(web_settings_apply(&settings, &tone_change));
+    assert(parse_one("{\"field\":\"tone_treble\",\"value\":6}", &tone_change));
+    assert(web_settings_apply(&settings, &tone_change));
+    assert(parse_one("{\"field\":\"loudness\",\"value\":\"medium\"}", &tone_change));
+    assert(web_settings_apply(&settings, &tone_change));
+    assert(parse_one("{\"field\":\"loudness_treble\",\"value\":true}", &tone_change));
+    assert(web_settings_apply(&settings, &tone_change));
+
     device_settings_t reloaded;
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.brightness == 35);
@@ -332,6 +353,8 @@ static void test_apply_writes_through_to_the_file(void)
     assert(reloaded.alarm.fm_station == 4U);
     assert(reloaded.alarm.stop_enabled);
     assert(reloaded.alarm.stop_hour == 10U && reloaded.alarm.stop_minute == 45U);
+    assert(reloaded.tone_bass == -4 && reloaded.tone_treble == 6);
+    assert(reloaded.loudness == DEVICE_LOUDNESS_MEDIUM && reloaded.loudness_treble);
     char nothing[8];
     assert(!settings_csv_get(test_path, "openweathermap_key", nothing, sizeof(nothing)));
 
@@ -417,6 +440,12 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"alarm_fm_station\":1") != NULL);
     assert(strstr(document, "\"alarm_stop_enabled\":false") != NULL);
     assert(strstr(document, "\"alarm_stop_time\":\"11:00\"") != NULL);
+    assert(strstr(document, "\"tone_bass\":0") != NULL);
+    assert(strstr(document, "\"tone_treble\":0") != NULL);
+    assert(strstr(document, "\"loudness\":\"off\"") != NULL);
+    assert(strstr(document, "\"loudness_treble\":false") != NULL);
+    assert(strstr(document, "\"tone_min\":-12") != NULL);
+    assert(strstr(document, "\"tone_max\":12") != NULL);
 
     /* The clock: the zone as an id and the server as it stands, plus the list
        to choose from - which is sent rather than written into the page, so
@@ -488,6 +517,18 @@ static void test_view_comparison_notices_every_field(void)
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.volume_step = (uint8_t)(base.volume_step + 1U);
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.tone_bass = (int8_t)(base.tone_bass - 1);
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.tone_treble = (int8_t)(base.tone_treble + 1);
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.loudness = (uint8_t)(base.loudness + 1U);
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.loudness_treble = !base.loudness_treble;
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.theme = (uint8_t)(base.theme + 1U);

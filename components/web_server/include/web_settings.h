@@ -87,6 +87,12 @@ typedef enum {
     WEB_SETTINGS_FIELD_ALARM_FM_STATION,
     WEB_SETTINGS_FIELD_ALARM_STOP_ENABLED,
     WEB_SETTINGS_FIELD_ALARM_STOP_TIME,
+    /* The tone controls in dB, DEVICE_TONE_DB_MIN..MAX; loudness as
+     * "off"/"weak"/"medium"/"strong", and whether it lifts the treble too. */
+    WEB_SETTINGS_FIELD_TONE_BASS,
+    WEB_SETTINGS_FIELD_TONE_TREBLE,
+    WEB_SETTINGS_FIELD_LOUDNESS,
+    WEB_SETTINGS_FIELD_LOUDNESS_TREBLE,
     /* Not a device setting at all - a secret that goes to its own file - but
      * it arrives on the same page in the same shape, so it is parsed here and
      * routed by the handler: web_settings_apply() refuses it. */
@@ -172,6 +178,10 @@ typedef struct web_settings_view {
      * what that costs per queued frame. It goes out as five flat members named
      * the way they are posted back, not as an object. */
     alarm_config_t alarm;
+    int8_t tone_bass;
+    int8_t tone_treble;
+    uint8_t loudness;
+    bool loudness_treble;
     bool home_screen_available;
     bool yandex_available;
     bool dlna_available;

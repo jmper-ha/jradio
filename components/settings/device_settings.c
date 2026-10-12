@@ -232,6 +232,10 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         .volume = DEVICE_VOLUME_DEFAULT,
         .brightness = DEVICE_BRIGHTNESS_DEFAULT,
         .volume_step = DEVICE_VOLUME_STEP_DEFAULT,
+        .tone_bass = 0,
+        .tone_treble = 0,
+        .loudness = DEVICE_LOUDNESS_OFF,
+        .loudness_treble = false,
         .screensaver_seconds = DEVICE_SCREENSAVER_SECONDS_DEFAULT,
         .screensaver_brightness = DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT,
         .yandex_music = true,
@@ -398,6 +402,32 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
             parsed <= DEVICE_VOLUME_STEP_MAX) {
             settings->volume_step = (unsigned char)parsed;
         }
+    }
+    if (read_value(&csv, "tone_bass", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        if (end != NULL && *end == '\0' && parsed >= DEVICE_TONE_DB_MIN &&
+            parsed <= DEVICE_TONE_DB_MAX) {
+            settings->tone_bass = (signed char)parsed;
+        }
+    }
+    if (read_value(&csv, "tone_treble", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        if (end != NULL && *end == '\0' && parsed >= DEVICE_TONE_DB_MIN &&
+            parsed <= DEVICE_TONE_DB_MAX) {
+            settings->tone_treble = (signed char)parsed;
+        }
+    }
+    if (read_value(&csv, "loudness", value, sizeof(value))) {
+        static const char *const k_loudness[] = {"off", "weak", "medium", "strong"};
+        for (unsigned int index = 0U; index < sizeof(k_loudness) / sizeof(k_loudness[0]);
+             ++index) {
+            if (strcmp(value, k_loudness[index]) == 0) settings->loudness = (unsigned char)index;
+        }
+    }
+    if (read_value(&csv, "loudness_treble", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->loudness_treble);
     }
     if (read_value(&csv, "screensaver", value, sizeof(value))) {
         settings->screensaver = screensaver_from_text(value);
@@ -872,6 +902,66 @@ bool device_settings_set_volume_step(device_settings_t *settings, unsigned char 
     snprintf(text, sizeof(text), "%u", (unsigned int)step);
     if (!save_value(settings, "volume_step", text)) return false;
     settings->volume_step = step;
+    return true;
+}
+
+static bool set_tone_db(device_settings_t *settings, const char *key, signed char *field, int db)
+{
+    if (settings == NULL || db < DEVICE_TONE_DB_MIN || db > DEVICE_TONE_DB_MAX) return false;
+    if (*field == db) return true;
+    char text[8];
+    snprintf(text, sizeof(text), "%d", db);
+    if (!save_value(settings, key, text)) return false;
+    *field = (signed char)db;
+    return true;
+}
+
+/* The screen's knob: heard at once, written once it settles - like the
+ * brightness, and for the same reason. Unconditional, since the caller has
+ * already moved the fields it is saving. */
+bool device_settings_save_tone_later(device_settings_t *settings, int bass_db, int treble_db)
+{
+    if (settings == NULL || settings->storage_path[0] == '\0' ||
+        bass_db < DEVICE_TONE_DB_MIN || bass_db > DEVICE_TONE_DB_MAX ||
+        treble_db < DEVICE_TONE_DB_MIN || treble_db > DEVICE_TONE_DB_MAX) {
+        return false;
+    }
+    char text[8];
+    snprintf(text, sizeof(text), "%d", bass_db);
+    if (!settings_csv_set_later(settings->storage_path, "tone_bass", text)) return false;
+    snprintf(text, sizeof(text), "%d", treble_db);
+    if (!settings_csv_set_later(settings->storage_path, "tone_treble", text)) return false;
+    settings->tone_bass = (signed char)bass_db;
+    settings->tone_treble = (signed char)treble_db;
+    return true;
+}
+
+bool device_settings_set_tone_bass(device_settings_t *settings, int db)
+{
+    return settings != NULL && set_tone_db(settings, "tone_bass", &settings->tone_bass, db);
+}
+
+bool device_settings_set_tone_treble(device_settings_t *settings, int db)
+{
+    return settings != NULL && set_tone_db(settings, "tone_treble", &settings->tone_treble, db);
+}
+
+bool device_settings_set_loudness(device_settings_t *settings, unsigned int loudness)
+{
+    static const char *const k_loudness[] = {"off", "weak", "medium", "strong"};
+    if (settings == NULL || loudness > DEVICE_LOUDNESS_STRONG) return false;
+    if (settings->loudness == loudness) return true;
+    if (!save_value(settings, "loudness", k_loudness[loudness])) return false;
+    settings->loudness = (unsigned char)loudness;
+    return true;
+}
+
+bool device_settings_set_loudness_treble(device_settings_t *settings, bool enabled)
+{
+    if (settings == NULL) return false;
+    if (settings->loudness_treble == enabled) return true;
+    if (!save_value(settings, "loudness_treble", enabled ? "1" : "0")) return false;
+    settings->loudness_treble = enabled;
     return true;
 }
 

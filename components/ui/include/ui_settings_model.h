@@ -8,6 +8,7 @@
 typedef enum {
     UI_SETTINGS_GROUP_LANGUAGE = 0,
     UI_SETTINGS_GROUP_GENERAL,
+    UI_SETTINGS_GROUP_SOUND,
     UI_SETTINGS_GROUP_DISPLAY,
     UI_SETTINGS_GROUP_COUNT,
 } ui_settings_group_t;
@@ -36,6 +37,16 @@ typedef enum {
     /* How far one encoder detent moves the volume. Last in General: set once
      * for the amplifier, then left. */
     UI_SETTINGS_ROW_VOLUME_STEP_FIELD,
+    /* The tone controls - two numbers the knob edits a decibel a detent -
+     * and loudness, a strength the click steps through and a switch for
+     * whether it lifts the treble as well. Their own group rather than more
+     * of General: they are what gets touched again, with a new speaker or a
+     * new room, long after the rest was set once. */
+    UI_SETTINGS_ROW_SOUND_GROUP,
+    UI_SETTINGS_ROW_TONE_BASS_FIELD,
+    UI_SETTINGS_ROW_TONE_TREBLE_FIELD,
+    UI_SETTINGS_ROW_LOUDNESS_FIELD,
+    UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD,
     UI_SETTINGS_ROW_DISPLAY_GROUP,
     UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
     /* The mode only. Its wait and its idle level are numbers nobody sets
@@ -160,3 +171,7 @@ int ui_settings_brightness_clamp(int value);
 #define UI_SETTINGS_VOLUME_STEP_MIN 1
 #define UI_SETTINGS_VOLUME_STEP_MAX 20
 int ui_settings_volume_step_step(int value, int direction);
+/* A tone control, one decibel per detent. Mirrors DEVICE_TONE_DB_MIN/MAX. */
+#define UI_SETTINGS_TONE_MIN (-12)
+#define UI_SETTINGS_TONE_MAX 12
+int ui_settings_tone_step(int value, int direction);

@@ -496,7 +496,7 @@ static lv_obj_t *s_settings_more_above;
 static lv_obj_t *s_settings_more_below;
 /* One per boolean setting, not per row on screen: only one group is open at
  * a time, so at most three are ever visible, but each keeps its own object. */
-#define UI_SETTINGS_SWITCH_COUNT 8U
+#define UI_SETTINGS_SWITCH_COUNT 9U
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
@@ -790,6 +790,10 @@ static bool s_sleep_fading;
 static uint32_t s_sleep_fade_started_ms;
 static bool s_brightness_save_pending;
 static uint32_t s_brightness_changed_ms;
+/* The tone controls turned on this screen: heard at once, saved once the
+ * knob settles, the way the brightness is. */
+static bool s_tone_save_pending;
+static uint32_t s_tone_changed_ms;
 
 /* The alarm clock. The guard turns "is it the alarm's minute" - asked on every
  * pass - into one firing; the ring is then pending until there is a network to
@@ -3328,6 +3332,7 @@ static const char *ui_settings_group_text(ui_settings_group_t group)
     switch (group) {
     case UI_SETTINGS_GROUP_LANGUAGE: return ui_text(DEVICE_TEXT_GROUP_LANGUAGE);
     case UI_SETTINGS_GROUP_GENERAL: return ui_text(DEVICE_TEXT_GROUP_GENERAL);
+    case UI_SETTINGS_GROUP_SOUND: return ui_text(DEVICE_TEXT_GROUP_SOUND);
     case UI_SETTINGS_GROUP_DISPLAY: return ui_text(DEVICE_TEXT_GROUP_DISPLAY);
     default: return "";
     }
@@ -3412,6 +3417,30 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         snprintf(text, text_size,
                  ui_settings_model_is_editing(&s_settings_model) ? "  %s: <%d%%>" : "  %s: %d%%",
                  ui_text(DEVICE_TEXT_ROW_VOLUME_STEP), ui_encoder_volume_step());
+        break;
+    case UI_SETTINGS_ROW_TONE_BASS_FIELD:
+    case UI_SETTINGS_ROW_TONE_TREBLE_FIELD: {
+        const bool bass = row->id == UI_SETTINGS_ROW_TONE_BASS_FIELD;
+        const bool editing = ui_settings_model_is_editing(&s_settings_model) &&
+                             ui_settings_model_selected(&s_settings_model) == row->id;
+        snprintf(text, text_size, editing ? "  %s: <%+d>" : "  %s: %+d",
+                 ui_text(bass ? DEVICE_TEXT_ROW_TONE_BASS : DEVICE_TEXT_ROW_TONE_TREBLE),
+                 bass ? (int)s_device_settings.tone_bass : (int)s_device_settings.tone_treble);
+        break;
+    }
+    case UI_SETTINGS_ROW_LOUDNESS_FIELD:
+        ui_settings_field(text, text_size, DEVICE_TEXT_ROW_LOUDNESS,
+                          s_device_settings.loudness == DEVICE_LOUDNESS_WEAK
+                              ? DEVICE_TEXT_LOUDNESS_WEAK
+                          : s_device_settings.loudness == DEVICE_LOUDNESS_MEDIUM
+                              ? DEVICE_TEXT_LOUDNESS_MEDIUM
+                          : s_device_settings.loudness == DEVICE_LOUDNESS_STRONG
+                              ? DEVICE_TEXT_LOUDNESS_STRONG
+                              : DEVICE_TEXT_OFF);
+        break;
+    case UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD:
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_LOUDNESS_TREBLE,
+                                 s_device_settings.loudness_treble);
         break;
     case UI_SETTINGS_ROW_BRIGHTNESS_FIELD:
         /* Angle brackets while the knob owns the value: the cursor already
@@ -3500,6 +3529,10 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     case UI_SETTINGS_ROW_INVERT_COLORS_FIELD:
         *index = 7U;
         *value = s_device_settings.invert_colors;
+        return true;
+    case UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD:
+        *index = 8U;
+        *value = s_device_settings.loudness_treble;
         return true;
     default:
         return false;
@@ -3866,6 +3899,20 @@ static void ui_apply_files_end(void)
     player_control_set_files_repeat(s_device_settings.files_end == DEVICE_FILES_END_REPEAT);
 }
 
+/* The tone controls and loudness, as the settings say. The board keeps them
+ * and slopes towards them a block at a time, so this is safe to call on every
+ * settings change. */
+static void ui_apply_tone(void)
+{
+    const audio_tone_settings_t tone = {
+        .bass_db = (int8_t)s_device_settings.tone_bass,
+        .treble_db = (int8_t)s_device_settings.tone_treble,
+        .loudness = s_device_settings.loudness,
+        .loudness_treble = s_device_settings.loudness_treble,
+    };
+    board_audio_set_tone(&tone);
+}
+
 static void ui_reload_settings(void)
 {
     /* A knob being turned right now has not reached the file yet - the write
@@ -3875,6 +3922,9 @@ static void ui_reload_settings(void)
     const bool brightness_pending = s_brightness_save_pending;
     const unsigned char turning_volume = board_audio_volume();
     const unsigned char turning_brightness = s_device_settings.brightness;
+    const bool tone_pending = s_tone_save_pending;
+    const signed char turning_bass = s_device_settings.tone_bass;
+    const signed char turning_treble = s_device_settings.tone_treble;
 
     if (!device_settings_init(&s_device_settings)) {
         lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
@@ -3882,11 +3932,16 @@ static void ui_reload_settings(void)
     }
     if (volume_pending) s_device_settings.volume = turning_volume;
     if (brightness_pending) s_device_settings.brightness = turning_brightness;
+    if (tone_pending) {
+        s_device_settings.tone_bass = turning_bass;
+        s_device_settings.tone_treble = turning_treble;
+    }
 
     ui_apply_display_rotation();
     ui_apply_theme();
     ui_backlight_apply(s_device_settings.brightness);
     if (!volume_pending) board_audio_set_volume(s_device_settings.volume);
+    ui_apply_tone();
     /* The zone applies to the next reading of the clock and the server only
      * costs SNTP a restart if it actually changed - so this is cheap enough to
      * call on every settings change rather than working out which one it
@@ -4386,6 +4441,17 @@ static void ui_settings_change_selected(void)
          * to invalidate. */
         if (changed) (void)board_display_set_invert(s_device_settings.invert_colors);
         break;
+    case UI_SETTINGS_ROW_LOUDNESS_FIELD:
+        // Round the four, off included: one click from strong is off again.
+        changed = device_settings_set_loudness(
+            &s_device_settings, (s_device_settings.loudness + 1U) % (DEVICE_LOUDNESS_STRONG + 1U));
+        if (changed) ui_apply_tone();
+        break;
+    case UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD:
+        changed = device_settings_set_loudness_treble(&s_device_settings,
+                                                      !s_device_settings.loudness_treble);
+        if (changed) ui_apply_tone();
+        break;
     case UI_SETTINGS_ROW_THEME_FIELD:
         /* Round the three. Custom is on the ring even before anyone has set
          * its colours: they start as the standard ones, so it is never a
@@ -4435,6 +4501,20 @@ static void ui_volume_step_setting_step(int direction)
     if (changed) device_settings_publish(&s_device_settings);
 }
 
+/* A tone control, a decibel a detent: to the board at once so the turn is
+ * heard as it is made, to the card once it settles. */
+static void ui_tone_setting_step(bool bass, int direction)
+{
+    signed char *const field = bass ? &s_device_settings.tone_bass : &s_device_settings.tone_treble;
+    const int next = ui_settings_tone_step((int)*field, direction);
+    if (next == (int)*field) return;
+    *field = (signed char)next;
+    ui_apply_tone();
+    s_tone_save_pending = true;
+    s_tone_changed_ms = ui_tick_get_ms();
+    device_settings_publish(&s_device_settings);
+}
+
 /* The number fields. Separate from ui_settings_change_selected() because a
  * click and a detent mean different things here: the click only decides who
  * the knob belongs to, and this is the turn that moves the value. */
@@ -4443,6 +4523,11 @@ static void ui_settings_change_number(int direction)
     const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
     if (selected == UI_SETTINGS_ROW_VOLUME_STEP_FIELD) {
         ui_volume_step_setting_step(direction);
+        return;
+    }
+    if (selected == UI_SETTINGS_ROW_TONE_BASS_FIELD ||
+        selected == UI_SETTINGS_ROW_TONE_TREBLE_FIELD) {
+        ui_tone_setting_step(selected == UI_SETTINGS_ROW_TONE_BASS_FIELD, direction);
         return;
     }
     if (selected != UI_SETTINGS_ROW_BRIGHTNESS_FIELD) {
@@ -5633,6 +5718,11 @@ static void ui_enter_deep_sleep(void)
     if (s_brightness_save_pending) {
         s_brightness_save_pending = false;
         (void)device_settings_set_brightness(&s_device_settings, s_device_settings.brightness);
+    }
+    if (s_tone_save_pending) {
+        s_tone_save_pending = false;
+        (void)device_settings_save_tone_later(&s_device_settings, s_device_settings.tone_bass,
+                                              s_device_settings.tone_treble);
     }
     /* And whatever the background writer has not reached yet: a sleep is a
      * reset, and a value still in its queue would be gone with it. */
@@ -7730,6 +7820,12 @@ static void ui_task(void *arg)
             (void)device_settings_save_brightness_later(&s_device_settings,
                                                         s_device_settings.brightness);
         }
+        if (ui_volume_commit_due(s_tone_save_pending, s_tone_changed_ms, ui_tick_get_ms(),
+                                 UI_BRIGHTNESS_SETTLE_MS)) {
+            s_tone_save_pending = false;
+            (void)device_settings_save_tone_later(&s_device_settings, s_device_settings.tone_bass,
+                                                  s_device_settings.tone_treble);
+        }
         // After the two commits above, so a change of our own is already on the
         // card and cannot be read back as if it were somebody else's.
         if (device_settings_take_changed()) {
@@ -8067,6 +8163,7 @@ esp_err_t ui_init(void)
     // back from a power cut at full blast when the user had it at 20 is the
     // kind of surprise a saved setting exists to prevent.
     board_audio_set_volume(s_device_settings.volume);
+    ui_apply_tone();
     ui_apply_bt_output();
     // Before the task starts: a browser that connects first would otherwise be
     // told the device has no settings at all.

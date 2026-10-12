@@ -222,6 +222,15 @@ typedef enum {
  * be changed; 1 lets a sensitive amplifier be set finely, 20 crosses the
  * whole range in five clicks. */
 #define DEVICE_VOLUME_STEP_DEFAULT 5
+/* The tone controls' range, as audio_tone.h has it. */
+#define DEVICE_TONE_DB_MIN (-12)
+#define DEVICE_TONE_DB_MAX 12
+typedef enum {
+    DEVICE_LOUDNESS_OFF = 0,
+    DEVICE_LOUDNESS_WEAK,
+    DEVICE_LOUDNESS_MEDIUM,
+    DEVICE_LOUDNESS_STRONG,
+} device_loudness_t;
 #define DEVICE_VOLUME_STEP_MIN 1
 #define DEVICE_VOLUME_STEP_MAX 20
 
@@ -272,6 +281,14 @@ typedef struct {
     unsigned char brightness;
     /* DEVICE_VOLUME_STEP_MIN..MAX. */
     unsigned char volume_step;
+    /* Tone controls, dB, DEVICE_TONE_DB_MIN..MAX; and loudness, a strength out
+     * of device_loudness_t and whether it lifts the treble as well as the
+     * bass. The numbers only: what they do to the sound is board's
+     * audio_tone.c, which this layer does not reach. */
+    signed char tone_bass;
+    signed char tone_treble;
+    unsigned char loudness;
+    bool loudness_treble;
     /* The time zone as an id out of device_timezone.h, not a POSIX string:
      * every summer-time rule carries commas, and settings.csv splits a line on
      * the first one. */
@@ -363,6 +380,14 @@ bool device_settings_set_brightness(device_settings_t *settings, unsigned char b
 bool device_settings_save_volume_later(device_settings_t *settings, unsigned char volume);
 bool device_settings_save_brightness_later(device_settings_t *settings, unsigned char brightness);
 bool device_settings_set_volume_step(device_settings_t *settings, unsigned char step);
+// Refused outside DEVICE_TONE_DB_MIN..MAX.
+bool device_settings_set_tone_bass(device_settings_t *settings, int db);
+bool device_settings_set_tone_treble(device_settings_t *settings, int db);
+// Both, in the background, for the screen's knob once it settles.
+bool device_settings_save_tone_later(device_settings_t *settings, int bass_db, int treble_db);
+// A device_loudness_t; stored as "off", "weak", "medium", "strong".
+bool device_settings_set_loudness(device_settings_t *settings, unsigned int loudness);
+bool device_settings_set_loudness_treble(device_settings_t *settings, bool enabled);
 /* An id this build knows, out of device_timezone.h; anything else is refused
  * rather than stored, since a zone the firmware cannot translate is a clock
  * that silently stays on the old one. */

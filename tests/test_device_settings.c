@@ -878,8 +878,50 @@ static void test_the_custom_theme_colors_persist_all_or_none(void)
     assert(!device_settings_parse_color("", &rgb));
 }
 
+/* Tone and loudness: flat and off until set, refused out of range, and back
+ * from the card as they went in - a cut as a negative number. */
+static void test_tone_and_loudness_persist(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    assert(settings.tone_bass == 0 && settings.tone_treble == 0);
+    assert(settings.loudness == DEVICE_LOUDNESS_OFF && !settings.loudness_treble);
+    assert(device_settings_set_tone_bass(&settings, -4));
+    assert(device_settings_set_tone_treble(&settings, 7));
+    assert(device_settings_set_loudness(&settings, DEVICE_LOUDNESS_MEDIUM));
+    assert(device_settings_set_loudness_treble(&settings, true));
+    assert(!device_settings_set_tone_bass(&settings, 13));
+    assert(!device_settings_set_tone_treble(&settings, -13));
+    assert(!device_settings_set_loudness(&settings, 4U));
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.tone_bass == -4 && reloaded.tone_treble == 7);
+    assert(reloaded.loudness == DEVICE_LOUDNESS_MEDIUM && reloaded.loudness_treble);
+    char value[16];
+    assert(settings_csv_get(test_path, "loudness", value, sizeof(value)));
+    assert(strcmp(value, "medium") == 0);
+    // The knob's deferred save writes both, and refuses an out-of-range one.
+    assert(device_settings_save_tone_later(&settings, 5, -2));
+    assert(settings.tone_bass == 5 && settings.tone_treble == -2);
+    assert(!device_settings_save_tone_later(&settings, 13, 0));
+    assert(settings_csv_flush_pending() == 2U);
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.tone_bass == 5 && reloaded.tone_treble == -2);
+    // A hand-damaged line leaves the default rather than a guess.
+    (void)unlink(test_path);
+    FILE *file = fopen(test_path, "w");
+    assert(file != NULL);
+    fputs("tone_bass,20\ntone_treble,x\nloudness,loud\n", file);
+    fclose(file);
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.tone_bass == 0 && reloaded.tone_treble == 0);
+    assert(reloaded.loudness == DEVICE_LOUDNESS_OFF);
+}
+
 int main(void)
 {
+    test_tone_and_loudness_persist();
     test_the_custom_theme_colors_persist_all_or_none();
     test_the_bluetooth_output_persists_and_forgets();
     test_the_fm_frequency_persists_and_stays_in_the_band();

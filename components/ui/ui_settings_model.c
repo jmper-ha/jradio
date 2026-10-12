@@ -15,6 +15,11 @@ static const ui_settings_row_t s_group_rows[UI_SETTINGS_GROUP_COUNT] = {
         .group = UI_SETTINGS_GROUP_GENERAL,
         .kind = UI_SETTINGS_ROW_GROUP,
     },
+    [UI_SETTINGS_GROUP_SOUND] = {
+        .id = UI_SETTINGS_ROW_SOUND_GROUP,
+        .group = UI_SETTINGS_GROUP_SOUND,
+        .kind = UI_SETTINGS_ROW_GROUP,
+    },
     [UI_SETTINGS_GROUP_DISPLAY] = {
         .id = UI_SETTINGS_ROW_DISPLAY_GROUP,
         .group = UI_SETTINGS_GROUP_DISPLAY,
@@ -81,6 +86,26 @@ static const ui_settings_row_t s_field_rows[] = {
     {
         .id = UI_SETTINGS_ROW_VOLUME_STEP_FIELD,
         .group = UI_SETTINGS_GROUP_GENERAL,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
+        .id = UI_SETTINGS_ROW_TONE_BASS_FIELD,
+        .group = UI_SETTINGS_GROUP_SOUND,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
+        .id = UI_SETTINGS_ROW_TONE_TREBLE_FIELD,
+        .group = UI_SETTINGS_GROUP_SOUND,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
+        .id = UI_SETTINGS_ROW_LOUDNESS_FIELD,
+        .group = UI_SETTINGS_GROUP_SOUND,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
+        .id = UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD,
+        .group = UI_SETTINGS_GROUP_SOUND,
         .kind = UI_SETTINGS_ROW_FIELD,
     },
     {
@@ -272,7 +297,8 @@ bool ui_settings_model_has_rows_below(const ui_settings_model_t *model, size_t v
 
 bool ui_settings_row_is_number(ui_settings_row_id_t id)
 {
-    return id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD || id == UI_SETTINGS_ROW_VOLUME_STEP_FIELD;
+    return id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD || id == UI_SETTINGS_ROW_VOLUME_STEP_FIELD ||
+           id == UI_SETTINGS_ROW_TONE_BASS_FIELD || id == UI_SETTINGS_ROW_TONE_TREBLE_FIELD;
 }
 
 bool ui_settings_model_is_editing(const ui_settings_model_t *model)
@@ -398,5 +424,13 @@ int ui_settings_volume_step_step(int value, int direction)
     int stepped = value + (direction > 0 ? 1 : direction < 0 ? -1 : 0);
     if (stepped < UI_SETTINGS_VOLUME_STEP_MIN) stepped = UI_SETTINGS_VOLUME_STEP_MIN;
     if (stepped > UI_SETTINGS_VOLUME_STEP_MAX) stepped = UI_SETTINGS_VOLUME_STEP_MAX;
+    return stepped;
+}
+
+int ui_settings_tone_step(int value, int direction)
+{
+    int stepped = value + (direction > 0 ? 1 : direction < 0 ? -1 : 0);
+    if (stepped < UI_SETTINGS_TONE_MIN) stepped = UI_SETTINGS_TONE_MIN;
+    if (stepped > UI_SETTINGS_TONE_MAX) stepped = UI_SETTINGS_TONE_MAX;
     return stepped;
 }

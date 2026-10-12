@@ -52,6 +52,7 @@ typedef enum {
     DEVICE_TEXT_SETTINGS,
     DEVICE_TEXT_GROUP_LANGUAGE,
     DEVICE_TEXT_GROUP_GENERAL,
+    DEVICE_TEXT_GROUP_SOUND,
     DEVICE_TEXT_GROUP_DISPLAY,
     DEVICE_TEXT_ROW_LANGUAGE,
     DEVICE_TEXT_LANGUAGE_RUSSIAN,
@@ -75,6 +76,13 @@ typedef enum {
     DEVICE_TEXT_ROW_DLNA,
     DEVICE_TEXT_ROW_BRIGHTNESS,
     DEVICE_TEXT_ROW_VOLUME_STEP,
+    DEVICE_TEXT_ROW_TONE_BASS,
+    DEVICE_TEXT_ROW_TONE_TREBLE,
+    DEVICE_TEXT_ROW_LOUDNESS,
+    DEVICE_TEXT_LOUDNESS_WEAK,
+    DEVICE_TEXT_LOUDNESS_MEDIUM,
+    DEVICE_TEXT_LOUDNESS_STRONG,
+    DEVICE_TEXT_ROW_LOUDNESS_TREBLE,
     /* The two the quick panel names that no settings row does: the sleep
      * timer is set from the panel and from the web page, never from the
      * settings screen, and the alarm's own rows live in the browser. */

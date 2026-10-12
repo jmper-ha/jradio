@@ -36,6 +36,9 @@ static const char *const k_screensaver_names[] = {WEB_SETTINGS_SCREENSAVER_NAMES
 /* device_theme_t's order, and the names settings.csv stores. */
 #define WEB_SETTINGS_THEME_NAMES "standard", "contrast", "custom"
 static const char *const k_theme_names[] = {WEB_SETTINGS_THEME_NAMES};
+/* device_loudness_t's order, and the names settings.csv stores. */
+#define WEB_SETTINGS_LOUDNESS_NAMES "off", "weak", "medium", "strong"
+static const char *const k_loudness_names[] = {WEB_SETTINGS_LOUDNESS_NAMES};
 /* The custom colours' names on the page, in the order they are stored. */
 static const char *const k_theme_color_names[DEVICE_THEME_COLORS] = {
     "theme_ground", "theme_text", "theme_artist", "theme_secondary", "theme_dim", "theme_accent",
@@ -84,6 +87,10 @@ static const field_descriptor_t k_fields[] = {
     {"alarm_fm_station", WEB_SETTINGS_FIELD_ALARM_FM_STATION, {NULL}, true, false},
     {"alarm_stop_enabled", WEB_SETTINGS_FIELD_ALARM_STOP_ENABLED, {NULL}, false, false},
     {"alarm_stop_time", WEB_SETTINGS_FIELD_ALARM_STOP_TIME, {NULL}, false, true},
+    {"tone_bass", WEB_SETTINGS_FIELD_TONE_BASS, {NULL}, true, false},
+    {"tone_treble", WEB_SETTINGS_FIELD_TONE_TREBLE, {NULL}, true, false},
+    {"loudness", WEB_SETTINGS_FIELD_LOUDNESS, {WEB_SETTINGS_LOUDNESS_NAMES}, false, false},
+    {"loudness_treble", WEB_SETTINGS_FIELD_LOUDNESS_TREBLE, {NULL}, false, false},
 };
 
 /* A provider the page has no name for - a newer card - reads as off, which is
@@ -174,6 +181,10 @@ static bool parse_value(const field_descriptor_t *descriptor, const cJSON *value
         if (number <= 0 || number > (int)ALARM_DAYS_ALL) return false;
     } else if (descriptor->field == WEB_SETTINGS_FIELD_VOLUME_STEP) {
         if (number < DEVICE_VOLUME_STEP_MIN || number > DEVICE_VOLUME_STEP_MAX) return false;
+    } else if (descriptor->field == WEB_SETTINGS_FIELD_TONE_BASS ||
+               descriptor->field == WEB_SETTINGS_FIELD_TONE_TREBLE) {
+        // The one signed number here: a cut is as much a setting as a lift.
+        if (number < DEVICE_TONE_DB_MIN || number > DEVICE_TONE_DB_MAX) return false;
     } else if (descriptor->field == WEB_SETTINGS_FIELD_ALARM_STATION) {
         if (number < 0 || number > DEVICE_ALARM_STATION_MAX) return false;
     } else if (number < 0 || number > 100) {
@@ -317,6 +328,14 @@ bool web_settings_apply(device_settings_t *settings,
         if (!alarm_time_parse(change->text, &hour, &minute)) return false;
         return device_settings_set_alarm_stop_time(settings, hour, minute);
     }
+    case WEB_SETTINGS_FIELD_TONE_BASS:
+        return device_settings_set_tone_bass(settings, change->value);
+    case WEB_SETTINGS_FIELD_TONE_TREBLE:
+        return device_settings_set_tone_treble(settings, change->value);
+    case WEB_SETTINGS_FIELD_LOUDNESS:
+        return device_settings_set_loudness(settings, (unsigned int)change->value);
+    case WEB_SETTINGS_FIELD_LOUDNESS_TREBLE:
+        return device_settings_set_loudness_treble(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY:
         /* Not the card's: the handler routes it to the key file. */
         return false;
@@ -358,6 +377,10 @@ void web_settings_make_view(web_settings_view_t *view,
         .screensaver_seconds = settings->screensaver_seconds,
         .screensaver_brightness = settings->screensaver_brightness,
         .alarm = settings->alarm,
+        .tone_bass = (int8_t)settings->tone_bass,
+        .tone_treble = (int8_t)settings->tone_treble,
+        .loudness = settings->loudness,
+        .loudness_treble = settings->loudness_treble,
         .home_screen_available = home_screen_available,
         .yandex_available = yandex_available,
         .dlna_available = dlna_available,
@@ -407,6 +430,9 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->alarm.stop_enabled == right->alarm.stop_enabled &&
            left->alarm.stop_hour == right->alarm.stop_hour &&
            left->alarm.stop_minute == right->alarm.stop_minute &&
+           left->tone_bass == right->tone_bass && left->tone_treble == right->tone_treble &&
+           left->loudness == right->loudness &&
+           left->loudness_treble == right->loudness_treble &&
            left->home_screen_available == right->home_screen_available &&
            left->yandex_available == right->yandex_available &&
            left->dlna_available == right->dlna_available &&
@@ -500,6 +526,16 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     char stop_time[6];
     alarm_time_format(stop_time, sizeof(stop_time), view->alarm.stop_hour, view->alarm.stop_minute);
     web_json_string(writer, stop_time);
+    web_json_literal(writer, ",\"tone_bass\":");
+    web_json_format(writer, "%d", (int)view->tone_bass);
+    web_json_literal(writer, ",\"tone_treble\":");
+    web_json_format(writer, "%d", (int)view->tone_treble);
+    web_json_literal(writer, ",\"loudness\":");
+    web_json_string(writer, view->loudness < sizeof(k_loudness_names) / sizeof(k_loudness_names[0])
+                                ? k_loudness_names[view->loudness]
+                                : k_loudness_names[0]);
+    web_json_literal(writer, ",\"loudness_treble\":");
+    web_json_literal(writer, view->loudness_treble ? "true" : "false");
     /* What this build has, not what it is set to: a switch for a source the
      * firmware was compiled without would change a value nothing reads. */
     web_json_literal(writer, ",\"available\":{\"home_screen\":");
@@ -534,6 +570,10 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_format(writer, "%d", DEVICE_VOLUME_STEP_MIN);
     web_json_literal(writer, ",\"volume_step_max\":");
     web_json_format(writer, "%d", DEVICE_VOLUME_STEP_MAX);
+    web_json_literal(writer, ",\"tone_min\":");
+    web_json_format(writer, "%d", DEVICE_TONE_DB_MIN);
+    web_json_literal(writer, ",\"tone_max\":");
+    web_json_format(writer, "%d", DEVICE_TONE_DB_MAX);
     /* The waits the device offers, so the page's list is the device's and a
      * step added in the firmware is one line here and none on the page. */
     web_json_literal(writer, ",\"screensaver_seconds_choices\":[");

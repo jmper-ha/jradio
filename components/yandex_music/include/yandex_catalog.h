@@ -8,17 +8,29 @@
  * dashboard and not the full catalogue: /rotor/stations/list is 696 entries
  * and 2.4 MB, which is minutes over TLS and unreadable on an encoder, while
  * the dashboard is a handful of personalised stations in 13 KB - and it is the
- * only place the personal wave appears at all. */
+ * only place the personal wave appears at all.
+ *
+ * By 2026-10-13 the dashboard had shrunk to "Моя волна" alone and the list
+ * came back empty: the genres, moods and artists moved to the waves the web
+ * client shows under "Моя волна", which POST /wheel/new hands out - 24 of
+ * them, 10.6 KB, personal and reshuffled on every call. They follow the
+ * dashboard's stations here. */
 
 #define YANDEX_STATION_ID_MAX 47
 /* Long enough for the longest name in the catalogue, which is 37 Cyrillic
  * characters - and those are two bytes each in UTF-8. */
 #define YANDEX_STATION_NAME_MAX 95
 #define YANDEX_STATION_FROM_MAX 47
-#define YANDEX_CATALOG_MAX_STATIONS 12
+/* The dashboard's one or few and the wheel's 24, measured. */
+#define YANDEX_CATALOG_MAX_STATIONS 32
+/* What joins the seeds of a wave that has more than one ("mood:happy" and
+ * "activity:party") into one station id. Not a comma: settings.csv turns a
+ * comma in the remembered station into a space. */
+#define YANDEX_STATION_SEED_SEPARATOR '+'
 
 typedef struct {
-    /* "user:onyourwave", "genre:jazz" - the form the rotor endpoints take. */
+    /* "user:onyourwave", "genre:jazz" - the form the rotor endpoints take;
+     * a wave of several seeds joins them with YANDEX_STATION_SEED_SEPARATOR. */
     char id[YANDEX_STATION_ID_MAX + 1];
     char name[YANDEX_STATION_NAME_MAX + 1];
     /* idForFrom, "user-onyourwave". The same identity with dashes, which is
@@ -43,6 +55,13 @@ typedef struct {
  * own ("По языку", "Бодрее"), so anything that merely scans for a key finds
  * the wrong one. */
 bool yandex_catalog_parse_dashboard(const char *json, yandex_catalog_t *catalog);
+
+/* Adds the waves of a /wheel/new answer to `catalog`, after what is already
+ * there and up to the limit. A wave whose seeds are already a station is left
+ * out, and so are the wheel's controls ("Назад к привычному", "Встряхнуть
+ * Мою волну"), which steer the personal wave rather than being stations.
+ * Returns how many were added. */
+size_t yandex_catalog_parse_wheel(const char *json, yandex_catalog_t *catalog);
 
 /* True when the two hold the same stations in the same order, so a refresh
  * that changed nothing does not have to disturb a screen. */

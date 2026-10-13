@@ -12,6 +12,9 @@
 #include "yandex_auth.h"
 
 #define YANDEX_DASHBOARD_PATH "/rotor/stations/dashboard"
+/* POST with an empty object, as the web client asks it; a GET is refused
+ * with 405. */
+#define YANDEX_WHEEL_PATH "/wheel/new"
 /* The answer measured 14268 bytes on a four-station dashboard. Twice that
  * leaves room for a longer list without the truncation warning in yandex_api,
  * and it lives in PSRAM for the length of one fetch. */
@@ -69,15 +72,26 @@ static void yandex_catalog_task(void *context)
         yandex_catalog_set_state(YANDEX_CATALOG_FAILED);
     } else {
         int status_code = 0;
-        const esp_err_t err = yandex_api_get(YANDEX_DASHBOARD_PATH, response,
-                                             YANDEX_CATALOG_RESPONSE_MAX, &status_code);
-        if (err != ESP_OK) {
-            yandex_catalog_set_state(YANDEX_CATALOG_FAILED);
-        } else if (status_code != 200) {
+        esp_err_t err = yandex_api_get(YANDEX_DASHBOARD_PATH, response,
+                                       YANDEX_CATALOG_RESPONSE_MAX, &status_code);
+        *parsed = (yandex_catalog_t){0};
+        if (err == ESP_OK && status_code != 200) {
             ESP_LOGE(TAG, "dashboard returned HTTP %d", status_code);
-            yandex_catalog_set_state(YANDEX_CATALOG_FAILED);
-        } else if (!yandex_catalog_parse_dashboard(response, parsed)) {
+        } else if (err == ESP_OK && !yandex_catalog_parse_dashboard(response, parsed)) {
             ESP_LOGE(TAG, "dashboard answer could not be read");
+        }
+        /* The waves after the dashboard, and either one is enough for a list:
+         * the dashboard is down to "Моя волна", and the waves are where the
+         * rest went. */
+        const uint8_t from_dashboard = parsed->count;
+        err = yandex_api_post_json(YANDEX_WHEEL_PATH, "{}", response,
+                                   YANDEX_CATALOG_RESPONSE_MAX, &status_code);
+        if (err == ESP_OK && status_code == 200) {
+            (void)yandex_catalog_parse_wheel(response, parsed);
+        } else if (err == ESP_OK) {
+            ESP_LOGW(TAG, "wheel returned HTTP %d", status_code);
+        }
+        if (parsed->count == 0U) {
             yandex_catalog_set_state(YANDEX_CATALOG_FAILED);
         } else {
             yandex_catalog_lock();
@@ -92,8 +106,8 @@ static void yandex_catalog_task(void *context)
             s_state = YANDEX_CATALOG_READY;
             const uint8_t count = s_catalog->count;
             yandex_catalog_unlock();
-            ESP_LOGI(TAG, "dashboard: %u stations%s", (unsigned int)count,
-                     changed ? "" : " (unchanged)");
+            ESP_LOGI(TAG, "stations: %u, %u of them waves%s", (unsigned int)count,
+                     (unsigned int)(count - from_dashboard), changed ? "" : " (unchanged)");
         }
     }
 

@@ -367,6 +367,9 @@ static esp_err_t yandex_rotor_refill_session(void)
 static esp_err_t yandex_rotor_refill(void)
 {
     if (!s_rotor.session_refused && yandex_rotor_refill_session() == ESP_OK) return ESP_OK;
+    /* A wave of several seeds exists only as a session: the station endpoint
+     * takes one id in its path. */
+    if (strchr(s_rotor.station, YANDEX_STATION_SEED_SEPARATOR) != NULL) return ESP_FAIL;
     /* The old chain carries on from the last track handed out, whichever way
      * that track came. */
     return yandex_rotor_refill_station();

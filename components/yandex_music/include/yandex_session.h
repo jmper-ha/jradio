@@ -22,8 +22,9 @@
  *   POST /rotor/session/{id}/feedback - see yandex_feedback.h.
  * Each call measured 0.5-0.85 s from a PC. */
 
-/* The body that opens a session on `station`. Returns its length, or 0 when
- * the station is not an identifier or the buffer will not hold it. */
+/* The body that opens a session on `station` - one seed, or a wave's seeds
+ * joined by YANDEX_STATION_SEED_SEPARATOR. Returns its length, or 0 when a
+ * seed is not an identifier or the buffer will not hold it. */
 size_t yandex_session_new_body(const char *station, char *out, size_t out_size);
 
 /* The path that asks session `session_id` for its next batch. 0 when the id

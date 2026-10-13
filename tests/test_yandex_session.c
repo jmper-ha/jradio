@@ -24,6 +24,13 @@ static void test_a_station_opens_a_session_as_its_only_seed(void)
            0);
     assert(yandex_session_new_body("genre:rock", body, sizeof(body)) > 0U);
     assert(strstr(body, "[\"genre:rock\"]") != NULL);
+
+    /* A wave of two seeds, as /wheel/new lists "Веселюсь на вечеринке". */
+    assert(yandex_session_new_body("mood:happy+activity:party", body, sizeof(body)) > 0U);
+    assert(strcmp(body, "{\"seeds\":[\"mood:happy\",\"activity:party\"],"
+                        "\"includeTracksInResponse\":true}") == 0);
+    assert(yandex_session_new_body("mood:happy+", body, sizeof(body)) == 0U);
+    assert(yandex_session_new_body("+mood:happy", body, sizeof(body)) == 0U);
 }
 
 static void test_the_next_batch_names_the_tracks_handed_out(void)

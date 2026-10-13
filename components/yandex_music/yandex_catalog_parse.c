@@ -91,6 +91,123 @@ bool yandex_catalog_parse_dashboard(const char *json, yandex_catalog_t *catalog)
     return catalog->count > 0U;
 }
 
+/* The seeds of a wave, joined into a station id. False when one is not a
+ * string or the whole will not fit - a station id cut short is a different
+ * station. */
+static bool yandex_parse_seeds(json_reader_t *reader, char *id, size_t capacity)
+{
+    if (!json_accept(reader, '[')) return false;
+    id[0] = '\0';
+    size_t length = 0U;
+    json_skip_whitespace(reader);
+    if (json_accept(reader, ']')) return false;
+    bool fits = true;
+    while (true) {
+        char seed[YANDEX_STATION_ID_MAX + 1];
+        if (!json_read_string(reader, seed, sizeof(seed))) {
+            fits = false;
+            if (!json_skip_value(reader)) return false;
+        } else {
+            const size_t separator = length > 0U ? 1U : 0U;
+            const size_t seed_length = strlen(seed);
+            if (seed_length == 0U || length + separator + seed_length >= capacity) {
+                fits = false;
+            } else {
+                if (separator > 0U) id[length++] = YANDEX_STATION_SEED_SEPARATOR;
+                memcpy(id + length, seed, seed_length + 1U);
+                length += seed_length;
+            }
+        }
+        json_skip_whitespace(reader);
+        if (json_accept(reader, ',')) continue;
+        if (!json_accept(reader, ']')) return false;
+        return fits && length > 0U;
+    }
+}
+
+/* One item of the wheel: {"type":"WAVE","style":...,"data":{"wave":{"name",
+ * "seeds"}}}. The wave's own "description" and the agent's cover sit beside
+ * them, so the walk goes by structure here too. */
+static bool yandex_parse_wave(json_reader_t *reader, yandex_station_t *station)
+{
+    *station = (yandex_station_t){0};
+    char type[16] = {0};
+    char style[32] = {0};
+    bool have_wave = false;
+
+    if (!json_accept(reader, '{')) return false;
+    json_skip_whitespace(reader);
+    if (json_accept(reader, '}')) return false;
+    while (true) {
+        char key[32];
+        if (!json_read_string(reader, key, sizeof(key))) key[0] = '\0';
+        if (!json_accept(reader, ':')) return false;
+
+        if (strcmp(key, "type") == 0) {
+            if (!json_read_string(reader, type, sizeof(type))) type[0] = '\0';
+        } else if (strcmp(key, "style") == 0) {
+            if (!json_read_string(reader, style, sizeof(style))) style[0] = '\0';
+        } else if (strcmp(key, "data") == 0) {
+            json_reader_t wave = *reader;
+            if (json_enter_object_key(&wave, "wave")) {
+                json_reader_t name = wave;
+                json_reader_t seeds = wave;
+                have_wave = json_enter_object_key(&name, "name") &&
+                            json_read_string_clipped(&name, station->name,
+                                                     sizeof(station->name)) &&
+                            station->name[0] != '\0' &&
+                            json_enter_object_key(&seeds, "seeds") &&
+                            yandex_parse_seeds(&seeds, station->id, sizeof(station->id));
+            }
+            if (!json_skip_value(reader)) return false;
+        } else if (!json_skip_value(reader)) {
+            return false;
+        }
+
+        json_skip_whitespace(reader);
+        if (json_accept(reader, ',')) continue;
+        if (!json_accept(reader, '}')) return false;
+        break;
+    }
+    /* "CONTROL_ACCENT" is how the wheel marks its two controls; a style the
+     * wheel has not used yet is taken as a station. */
+    return have_wave && strcmp(type, "WAVE") == 0 && strncmp(style, "CONTROL", 7) != 0;
+}
+
+size_t yandex_catalog_parse_wheel(const char *json, yandex_catalog_t *catalog)
+{
+    if (json == NULL || catalog == NULL) return 0U;
+    json_reader_t reader = {.cursor = json};
+    json_reader_t probe = reader;
+    if (json_enter_object_key(&probe, "result")) reader = probe;
+    if (!json_enter_object_key(&reader, "items")) return 0U;
+    if (!json_accept(&reader, '[')) return 0U;
+    json_skip_whitespace(&reader);
+    if (json_accept(&reader, ']')) return 0U;
+
+    size_t added = 0U;
+    while (true) {
+        json_reader_t entry = reader;
+        yandex_station_t station;
+        if (catalog->count < YANDEX_CATALOG_MAX_STATIONS &&
+            yandex_parse_wave(&entry, &station)) {
+            bool listed = false;
+            for (uint8_t index = 0U; index < catalog->count && !listed; ++index) {
+                listed = strcmp(catalog->stations[index].id, station.id) == 0;
+            }
+            if (!listed) {
+                catalog->stations[catalog->count++] = station;
+                ++added;
+            }
+        }
+        if (!json_skip_value(&reader)) return added;
+        json_skip_whitespace(&reader);
+        if (json_accept(&reader, ',')) continue;
+        break;
+    }
+    return added;
+}
+
 bool yandex_catalog_equal(const yandex_catalog_t *left, const yandex_catalog_t *right)
 {
     if (left == NULL || right == NULL) return left == right;

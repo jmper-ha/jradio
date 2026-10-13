@@ -164,8 +164,74 @@ static void test_two_identical_answers_compare_equal(void)
     assert(!yandex_catalog_equal(&first, NULL));
 }
 
+/* Trimmed from POST /wheel/new, 2026-10-13: an artist wave, the two
+ * controls, a genre, a wave of two seeds, and one the dashboard already has. */
+static const char *const WHEEL =
+    "{\"wheelId\":\"8cf7ffd1\",\"items\":["
+    "{\"id\":\"artist:36810\",\"type\":\"WAVE\",\"style\":\"DEFAULT\","
+    "\"description\":\"В стиле артиста\",\"data\":{\"wave\":{\"name\":\"Depeche Mode\","
+    "\"description\":\"Моя волна по артисту\",\"seeds\":[\"artist:36810\"]},"
+    "\"agent\":{\"cover\":{\"uri\":\"avatars/%%\",\"color\":\"#7C7C7C\"},"
+    "\"entity\":{\"type\":\"artist\"}}}},"
+    "{\"id\":\"user:onyourwave\",\"type\":\"WAVE\",\"style\":\"CONTROL_ACCENT\","
+    "\"data\":{\"wave\":{\"name\":\"Назад к привычному\",\"seeds\":[\"user:onyourwave\"]}}},"
+    "{\"id\":\"diversity:reshuffle_1\",\"type\":\"WAVE\",\"style\":\"CONTROL_ACCENT\","
+    "\"data\":{\"wave\":{\"name\":\"Встряхнуть Мою волну\","
+    "\"seeds\":[\"diversity:reshuffle_1791917855515\"]}}},"
+    "{\"id\":\"genre:jazz\",\"type\":\"WAVE\",\"style\":\"DEFAULT\","
+    "\"data\":{\"wave\":{\"name\":\"Весь этот джаз\",\"seeds\":[\"genre:jazz\"]}}},"
+    "{\"id\":\"x\",\"type\":\"WAVE\",\"style\":\"DEFAULT\",\"data\":{\"wave\":{"
+    "\"name\":\"Веселюсь на вечеринке под лучшие треки\","
+    "\"seeds\":[\"mood:happy\",\"activity:party\"]}}},"
+    "{\"id\":\"y\",\"type\":\"BANNER\",\"style\":\"DEFAULT\","
+    "\"data\":{\"wave\":{\"name\":\"Реклама\",\"seeds\":[\"genre:ad\"]}}}"
+    "]}";
+
+static void test_the_wheel_adds_its_waves_after_the_dashboard(void)
+{
+    yandex_catalog_t catalog;
+    assert(yandex_catalog_parse_dashboard(DASHBOARD, &catalog));
+    assert(catalog.count == 3U);
+    /* Depeche Mode and the party; jazz is already the dashboard's, the
+     * controls steer the personal wave, and a banner is not a wave. */
+    assert(yandex_catalog_parse_wheel(WHEEL, &catalog) == 2U);
+    assert(catalog.count == 5U);
+    assert(strcmp(catalog.stations[3].id, "artist:36810") == 0);
+    assert(strcmp(catalog.stations[3].name, "Depeche Mode") == 0);
+    assert(catalog.stations[3].from[0] == '\0');
+    assert(strcmp(catalog.stations[4].id, "mood:happy+activity:party") == 0);
+    assert(strcmp(catalog.stations[4].name, "Веселюсь на вечеринке под лучшие треки") == 0);
+
+    /* On its own, with nothing from the dashboard. */
+    catalog = (yandex_catalog_t){0};
+    assert(yandex_catalog_parse_wheel(WHEEL, &catalog) == 3U);
+    assert(strcmp(catalog.stations[1].id, "genre:jazz") == 0);
+}
+
+static void test_a_wave_that_does_not_fit_is_left_out(void)
+{
+    /* Seeds that join past the id's room would name a different wave if cut. */
+    char json[512];
+    snprintf(json, sizeof(json),
+             "{\"items\":[{\"type\":\"WAVE\",\"style\":\"DEFAULT\",\"data\":{\"wave\":{"
+             "\"name\":\"Длинная\",\"seeds\":[\"%040d\",\"%040d\"]}}},"
+             "{\"type\":\"WAVE\",\"data\":{\"wave\":{\"name\":\"Без сидов\",\"seeds\":[]}}},"
+             "{\"type\":\"WAVE\",\"data\":{\"wave\":{\"name\":\"Поп\",\"seeds\":[\"genre:pop\"]}}}]}",
+             0, 0);
+    yandex_catalog_t catalog = {0};
+    assert(yandex_catalog_parse_wheel(json, &catalog) == 1U);
+    assert(strcmp(catalog.stations[0].id, "genre:pop") == 0);
+
+    assert(yandex_catalog_parse_wheel("{\"items\":[{\"type\":", &catalog) == 0U);
+    assert(yandex_catalog_parse_wheel("{\"error\":{}}", &catalog) == 0U);
+    assert(yandex_catalog_parse_wheel(NULL, &catalog) == 0U);
+    assert(catalog.count == 1U);
+}
+
 int main(void)
 {
+    test_the_wheel_adds_its_waves_after_the_dashboard();
+    test_a_wave_that_does_not_fit_is_left_out();
     test_the_real_shape_yields_exactly_the_stations();
     test_the_settings_inside_a_station_do_not_leak_into_it();
     test_the_envelope_is_optional();

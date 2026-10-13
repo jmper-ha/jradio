@@ -228,8 +228,18 @@ static void test_a_wave_that_does_not_fit_is_left_out(void)
     assert(catalog.count == 1U);
 }
 
+static void test_an_artist_wave_is_told_apart(void)
+{
+    assert(yandex_station_is_artist_wave("artist:36810"));
+    assert(!yandex_station_is_artist_wave("genre:jazz"));
+    assert(!yandex_station_is_artist_wave("artist"));
+    assert(!yandex_station_is_artist_wave("artist:1+mood:sad"));
+    assert(!yandex_station_is_artist_wave(NULL));
+}
+
 int main(void)
 {
+    test_an_artist_wave_is_told_apart();
     test_the_wheel_adds_its_waves_after_the_dashboard();
     test_a_wave_that_does_not_fit_is_left_out();
     test_the_real_shape_yields_exactly_the_stations();

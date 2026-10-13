@@ -140,6 +140,8 @@ typedef enum {
     DEVICE_TEXT_SETTINGS_READ_FAILED,
     DEVICE_TEXT_SETTINGS_WRITE_FAILED,
     DEVICE_TEXT_STATION_START_FAILED,
+    /* After a Yandex wave named for an artist: it plays music like theirs. */
+    DEVICE_TEXT_ARTIST_WAVE_NOTE,
 
     /* What a drive or a card has to say for itself. */
     DEVICE_TEXT_INSERT_USB,

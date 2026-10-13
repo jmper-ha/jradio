@@ -4141,7 +4141,16 @@ static void ui_update_yandex_rows(void)
         // Only the row being pointed at scrolls its full name; a screen of
         // marquees is unreadable, which is the same call the station list made.
         ui_scroller_set_scrolling(&s_yandex_rows[row], selected);
-        ui_scroller_set_text(&s_yandex_rows[row], station.name);
+        if (yandex_station_is_artist_wave(station.id)) {
+            /* The wheel names such a wave after the artist alone, which reads
+             * as the artist's own records. Short, so the name keeps the row. */
+            char text[YANDEX_STATION_NAME_MAX + 32];
+            snprintf(text, sizeof(text), "%s \u00b7 %s", station.name,
+                     ui_text(DEVICE_TEXT_ARTIST_WAVE_NOTE));
+            ui_scroller_set_text(&s_yandex_rows[row], text);
+        } else {
+            ui_scroller_set_text(&s_yandex_rows[row], station.name);
+        }
     }
     ui_list_decor_update(&s_yandex_decor, shown, cursor_row, UI_CONTENT_X);
     lv_bar_set_value(s_yandex_progress, station_list_progress_percent(&s_yandex_list),

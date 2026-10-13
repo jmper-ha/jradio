@@ -208,6 +208,13 @@ size_t yandex_catalog_parse_wheel(const char *json, yandex_catalog_t *catalog)
     return added;
 }
 
+bool yandex_station_is_artist_wave(const char *id)
+{
+    static const char prefix[] = "artist:";
+    return id != NULL && strncmp(id, prefix, sizeof(prefix) - 1U) == 0 &&
+           strchr(id, YANDEX_STATION_SEED_SEPARATOR) == NULL;
+}
+
 bool yandex_catalog_equal(const yandex_catalog_t *left, const yandex_catalog_t *right)
 {
     if (left == NULL || right == NULL) return left == right;

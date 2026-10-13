@@ -63,6 +63,11 @@ bool yandex_catalog_parse_dashboard(const char *json, yandex_catalog_t *catalog)
  * Returns how many were added. */
 size_t yandex_catalog_parse_wheel(const char *json, yandex_catalog_t *catalog);
 
+/* True for a wave "in the style of" an artist - "artist:36810", which the
+ * wheel names after the artist alone ("Depeche Mode"). Without a word beside
+ * it the row reads as the artist's own music, which it is not. */
+bool yandex_station_is_artist_wave(const char *id);
+
 /* True when the two hold the same stations in the same order, so a refresh
  * that changed nothing does not have to disturb a screen. */
 bool yandex_catalog_equal(const yandex_catalog_t *left, const yandex_catalog_t *right);

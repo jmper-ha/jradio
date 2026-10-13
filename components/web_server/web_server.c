@@ -1070,6 +1070,12 @@ static esp_err_t web_server_stations_get(httpd_req_t *request)
             web_json_literal(&writer, ",\"icon\":");
             web_json_string(&writer, icon);
         }
+        /* A Yandex wave named for an artist plays music like theirs, not
+         * theirs; the page says so beside the name. A word, not the text, so
+         * the page puts it in its own language. */
+        if (rotor && yandex_station_is_artist_wave(station.id)) {
+            web_json_literal(&writer, ",\"note\":\"artist\"");
+        }
         web_json_literal(&writer, "}");
         if (!web_json_valid(&writer)) {
             ESP_LOGE(TAG, "station %u did not fit the chunk buffer", (unsigned)index);

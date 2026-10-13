@@ -805,6 +805,7 @@
   function listSignature(items) {
     return items
       .map((item) => `${item.index}\u0000${item.label}\u0000${item.meta || ''}` +
+                     `\u0000${item.note || ''}` +
                      `\u0000${item.icon === undefined ? '-' : item.icon}` +
                      `\u0000${item.isPlaylist ? 'p' : item.isDirectory ? 'd' : 'f'}` +
                      `\u0000${item.isPlayable === false ? '0' : '1'}`)
@@ -873,6 +874,7 @@
       .filter((item) => isObject(item) && Number.isSafeInteger(item.index) &&
                         typeof item.label === 'string')
       .map((item) => ({index: item.index, label: item.label, meta: '',
+                       note: item.note === 'artist' ? t('list.note_artist') : '',
                        icon: !pictured ? undefined
                          : typeof item.icon === 'string' ? item.icon : ''}));
   }
@@ -1127,6 +1129,14 @@
       button.dataset.index = String(item.index);
       label.className = 'list-item-label';
       label.textContent = item.label || t('player.untitled');
+      /* Yandex names a wave "in the style of" an artist after the artist
+         alone; said beside the name, in grey, so it is not read as theirs. */
+      if (safeString(item.note) !== '') {
+        const note = document.createElement('span');
+        note.className = 'list-item-note';
+        note.textContent = item.note;
+        label.append(note);
+      }
       marker.className = 'active-marker';
       // A directory is opened, never played, so the playing marker would be
       // meaningless on one.

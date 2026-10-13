@@ -585,6 +585,14 @@ button:disabled { cursor: not-allowed; opacity: .45; }
     linear-gradient(var(--muted) 0 0) no-repeat 0 7.4px / 12px 1.6px;
 }
 
+/* Beside a name rather than in the meta column: it qualifies the name. */
+.list-item-note {
+  margin-left: .5em;
+  font-weight: 400;
+  font-size: .85em;
+  color: var(--muted);
+}
+
 .list-item-meta {
   flex: none;
   padding: 1px 5px;

@@ -452,6 +452,7 @@
     'list.parent': ['.. (наверх)', '.. (up)'],
     'list.open': ['Открыть', 'Open'],
     'list.playing': ['Играет', 'Playing'],
+    'list.note_artist': ['в стиле артиста', 'artist-style wave'],
     'list.unsupported': ['Не поддерживается', 'Not supported'],
     'list.read_failed_dlna': ['Не удалось прочитать медиасервер',
                               'Could not read the media server'],

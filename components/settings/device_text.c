@@ -141,6 +141,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
      "Cannot write settings.csv"},
     [DEVICE_TEXT_STATION_START_FAILED] = {"Не удалось запустить станцию",
      "The station would not start"},
+    [DEVICE_TEXT_ARTIST_WAVE_NOTE] = {"в стиле", "alike"},
 
     [DEVICE_TEXT_INSERT_USB] = {"Вставьте USB-флешку", "Insert a USB drive"},
     [DEVICE_TEXT_INSERT_CARD] = {"Вставьте карту памяти", "Insert a memory card"},

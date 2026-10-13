@@ -589,6 +589,8 @@ static void player_file_cue_track_changed(size_t track)
  * it: a chain of tracks has no index in the station catalog, and reports
  * SIZE_MAX on purpose so that a reconnect never tries to reopen it by one. */
 static atomic_size_t s_yandex_item_index = ATOMIC_VAR_INIT(PLAYER_ITEM_NONE);
+// The catalog revision the row above was last checked against, by id.
+static atomic_uint s_yandex_row_revision = ATOMIC_VAR_INIT(0U);
 
 /* Which station that is, by identity - the three strings starting one takes.
  *
@@ -2544,14 +2546,24 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
         /* Only while something is on: stopping a station clears the row on
          * purpose, and looking it up again here would put the mark straight
          * back on a station that is no longer playing. */
-        if (row == PLAYER_ITEM_NONE && snapshot->playback_state != PLAYER_PLAYBACK_STOPPED) {
+        /* And looked up again whenever the list has been replaced: a station
+         * is the row it was started from only until the next refresh, which
+         * can put another wave there. The row then named the wrong station
+         * under the player - a refresh took "Биг-бит" off row 8 while it
+         * played, and the page called it what had moved in. */
+        const unsigned int revision = yandex_catalog_revision();
+        if (snapshot->playback_state != PLAYER_PLAYBACK_STOPPED &&
+            (row == PLAYER_ITEM_NONE ||
+             revision != atomic_load_explicit(&s_yandex_row_revision, memory_order_acquire))) {
             char id[YANDEX_STATION_ID_MAX + 1U];
             if (player_control_playing_yandex_station(id, sizeof(id), NULL, 0U, NULL, 0U)) {
-                row = player_yandex_row_of(id);
-                if (row != PLAYER_ITEM_NONE) {
+                const size_t found = player_yandex_row_of(id);
+                if (found != PLAYER_ITEM_NONE || row != PLAYER_ITEM_NONE) {
+                    row = found;
                     atomic_store_explicit(&s_yandex_item_index, row, memory_order_release);
                 }
             }
+            atomic_store_explicit(&s_yandex_row_revision, revision, memory_order_release);
         }
         snapshot->active_item_index = row;
         snapshot->item_count = yandex_catalog_count();

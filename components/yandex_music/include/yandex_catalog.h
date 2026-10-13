@@ -63,6 +63,16 @@ bool yandex_catalog_parse_dashboard(const char *json, yandex_catalog_t *catalog)
  * Returns how many were added. */
 size_t yandex_catalog_parse_wheel(const char *json, yandex_catalog_t *catalog);
 
+/* Puts `fresh` in the order `previous` had: the stations the two share keep
+ * their places relative to each other and come first, the new ones follow in
+ * the order they arrived, and the ones gone are gone.
+ *
+ * The wheel reshuffles its waves on every call, and the list is fetched
+ * whenever the screen or the page opens it - so without this the rows moved
+ * under the cursor, and a row picked on a page drawn a moment earlier started
+ * another wave than the one pressed. */
+void yandex_catalog_keep_order(const yandex_catalog_t *previous, yandex_catalog_t *fresh);
+
 /* True for a wave "in the style of" an artist - "artist:36810", which the
  * wheel names after the artist alone ("Depeche Mode"). Without a word beside
  * it the row reads as the artist's own music, which it is not. */

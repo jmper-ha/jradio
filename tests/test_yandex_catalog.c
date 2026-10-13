@@ -237,8 +237,48 @@ static void test_an_artist_wave_is_told_apart(void)
     assert(!yandex_station_is_artist_wave(NULL));
 }
 
+static yandex_catalog_t catalog_of(const char *const *ids, uint8_t count)
+{
+    yandex_catalog_t catalog = {0};
+    for (uint8_t index = 0U; index < count; ++index) {
+        snprintf(catalog.stations[index].id, sizeof(catalog.stations[index].id), "%s", ids[index]);
+        snprintf(catalog.stations[index].name, sizeof(catalog.stations[index].name), "n%s",
+                 ids[index]);
+    }
+    catalog.count = count;
+    return catalog;
+}
+
+static void test_a_reshuffled_wheel_keeps_the_rows_where_they_were(void)
+{
+    static const char *const before[] = {"user:onyourwave", "genre:jazz", "mood:happy",
+                                         "artist:1"};
+    // Reshuffled, one gone (genre:jazz), one new (genre:pop).
+    static const char *const after[] = {"mood:happy", "genre:pop", "artist:1",
+                                        "user:onyourwave"};
+    const yandex_catalog_t previous = catalog_of(before, 4U);
+    yandex_catalog_t fresh = catalog_of(after, 4U);
+    yandex_catalog_keep_order(&previous, &fresh);
+    assert(fresh.count == 4U);
+    assert(strcmp(fresh.stations[0].id, "user:onyourwave") == 0);
+    assert(strcmp(fresh.stations[1].id, "mood:happy") == 0);
+    assert(strcmp(fresh.stations[2].id, "artist:1") == 0);
+    assert(strcmp(fresh.stations[3].id, "genre:pop") == 0);
+    assert(strcmp(fresh.stations[3].name, "ngenre:pop") == 0);
+    // The same stations again: equal, so a refresh moves nothing at all.
+    yandex_catalog_t again = catalog_of(after, 4U);
+    yandex_catalog_keep_order(&fresh, &again);
+    assert(yandex_catalog_equal(&fresh, &again));
+    // Nothing before: the order that came.
+    const yandex_catalog_t empty = {0};
+    yandex_catalog_t first = catalog_of(after, 4U);
+    yandex_catalog_keep_order(&empty, &first);
+    assert(strcmp(first.stations[0].id, "mood:happy") == 0);
+}
+
 int main(void)
 {
+    test_a_reshuffled_wheel_keeps_the_rows_where_they_were();
     test_an_artist_wave_is_told_apart();
     test_the_wheel_adds_its_waves_after_the_dashboard();
     test_a_wave_that_does_not_fit_is_left_out();

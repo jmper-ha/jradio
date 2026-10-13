@@ -95,6 +95,7 @@ static void yandex_catalog_task(void *context)
             yandex_catalog_set_state(YANDEX_CATALOG_FAILED);
         } else {
             yandex_catalog_lock();
+            yandex_catalog_keep_order(s_catalog, parsed);
             /* The revision moves only on a real change, so a refresh that
              * found the same stations leaves an open list alone instead of
              * making it blink. */

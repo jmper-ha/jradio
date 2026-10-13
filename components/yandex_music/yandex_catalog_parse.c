@@ -208,6 +208,26 @@ size_t yandex_catalog_parse_wheel(const char *json, yandex_catalog_t *catalog)
     return added;
 }
 
+void yandex_catalog_keep_order(const yandex_catalog_t *previous, yandex_catalog_t *fresh)
+{
+    if (previous == NULL || fresh == NULL || previous->count == 0U) return;
+    bool taken[YANDEX_CATALOG_MAX_STATIONS] = {false};
+    yandex_catalog_t ordered = {0};
+    for (uint8_t old = 0U; old < previous->count; ++old) {
+        for (uint8_t index = 0U; index < fresh->count; ++index) {
+            if (!taken[index] && strcmp(previous->stations[old].id, fresh->stations[index].id) == 0) {
+                ordered.stations[ordered.count++] = fresh->stations[index];
+                taken[index] = true;
+                break;
+            }
+        }
+    }
+    for (uint8_t index = 0U; index < fresh->count; ++index) {
+        if (!taken[index]) ordered.stations[ordered.count++] = fresh->stations[index];
+    }
+    *fresh = ordered;
+}
+
 bool yandex_station_is_artist_wave(const char *id)
 {
     static const char prefix[] = "artist:";

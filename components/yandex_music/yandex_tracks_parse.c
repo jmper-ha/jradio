@@ -109,6 +109,17 @@ bool yandex_tracks_parse_batch(const char *json, yandex_track_batch_t *batch)
     if (json_enter_object_key(&batch_id, "batchId")) {
         (void)json_read_string(&batch_id, batch->batch_id, sizeof(batch->batch_id));
     }
+    /* Neither is clipped: a session id is part of a path, and half of one
+     * names nobody's session. Too long leaves it empty. */
+    json_reader_t session = reader;
+    if (json_enter_object_key(&session, "radioSessionId") &&
+        !json_read_string(&session, batch->session_id, sizeof(batch->session_id))) {
+        batch->session_id[0] = '\0';
+    }
+    json_reader_t unknown = reader;
+    if (json_enter_object_key(&unknown, "unknownSession")) {
+        (void)json_read_bool(&unknown, &batch->unknown_session);
+    }
 
     if (!json_enter_object_key(&reader, "sequence")) return false;
     if (!json_accept(&reader, '[')) return false;

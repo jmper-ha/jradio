@@ -9,10 +9,12 @@
 
 /* One station, played as an endless chain of tracks.
  *
- * The rotor hands out a short batch at a time - five tracks, measured - and
- * the chain moves on by asking again with ?queue=<the track just played>.
- * That alone is enough to advance it within one session, but it tells Yandex
- * nothing: what was heard, skipped or played to the end is reported separately
+ * The rotor hands out a short batch at a time - five tracks, measured. The
+ * station is played as a rotor session (yandex_session.h), the way the
+ * official clients play one now; a server that will not open a session gets
+ * the old chain, asked again with ?queue=<the track just played>. Either way
+ * the batches only move the chain along and tell Yandex nothing: what was
+ * heard, skipped or played to the end is reported separately
  * through yandex_feedback, which is what stops a station opened tomorrow from
  * beginning where it began today.
  *

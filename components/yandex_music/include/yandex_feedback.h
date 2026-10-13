@@ -28,7 +28,14 @@
  *   - `totalPlayedSeconds` is required for trackFinished and skip.
  *   - `from` on radioStarted and the batch-id query are both optional.
  *   - an unknown `type` is refused with HTTP 400.
- * Each POST measured 90-240 ms from a PC. */
+ * Each POST measured 90-240 ms from a PC.
+ *
+ * A station played as a rotor session (yandex_session.h) reports to the
+ * session instead, measured 2026-10-13 - HTTP 200 for all three events tried:
+ *   POST /rotor/session/{sessionId}/feedback
+ *     {"event":{<the same event>},"batchId":"...","from":"..."}
+ *   - batchId and from move out of the query and the event into the body;
+ *     both stay optional. */
 
 typedef enum {
     /* The station was opened. */
@@ -51,6 +58,9 @@ typedef struct {
     /* idForFrom, for radioStarted only. Empty is accepted by the API. */
     char from[YANDEX_STATION_FROM_MAX + 1];
     char batch_id[YANDEX_TRACK_BATCH_ID_MAX + 1U];
+    /* The rotor session the station is played through; empty when it is
+     * played the old way, which is what picks the station's endpoint. */
+    char session[YANDEX_SESSION_ID_MAX + 1U];
     char track_id[YANDEX_TRACK_ID_MAX + 1U];
     uint32_t played_ms;
     /* Unix seconds, 0 when the clock has not been set yet. Filled in by
@@ -63,8 +73,9 @@ typedef struct {
  * makes no sense (a track event with no track) or will not fit. */
 size_t yandex_feedback_body(const yandex_feedback_event_t *event, char *out, size_t out_size);
 
-/* Builds the request path, with ?batch-id= when the event carries one.
- * Returns its length, or 0 when there is no station or it will not fit. */
+/* Builds the request path: the session's when the event carries one,
+ * otherwise the station's with ?batch-id= when there is a batch. Returns its
+ * length, or 0 when there is nothing to address or it will not fit. */
 size_t yandex_feedback_path(const yandex_feedback_event_t *event, char *out, size_t out_size);
 
 #ifdef ESP_PLATFORM

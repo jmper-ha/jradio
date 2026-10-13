@@ -322,6 +322,8 @@ run_test yandex_tracks tests/test_yandex_tracks.c \
     components/yandex_music/yandex_json_reader.c
 run_test yandex_feedback tests/test_yandex_feedback.c \
     components/yandex_music/yandex_feedback.c
+run_test yandex_session tests/test_yandex_session.c \
+    components/yandex_music/yandex_session.c
 run_test yandex_likes tests/test_yandex_likes.c \
     components/yandex_music/yandex_likes.c \
     components/yandex_music/yandex_json_reader.c

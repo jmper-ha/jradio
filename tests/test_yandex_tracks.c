@@ -97,6 +97,40 @@ static void test_the_batch_id_comes_out_with_the_tracks(void)
     assert(batch.batch_id[0] == '\0');
 }
 
+static void test_a_session_answer_carries_its_id_and_whether_it_expired(void)
+{
+    /* Trimmed from /rotor/session/new, 2026-10-13: the id sits beside the
+     * sequence, after it. */
+    yandex_track_batch_t batch;
+    assert(yandex_tracks_parse_batch(
+        "{\"result\":{\"acceptedSeeds\":[{\"type\":\"user\",\"value\":\"onyourwave\"}],"
+        "\"batchId\":\"1791915944905323-12223106219602804048.zyr1\",\"sequence\":["
+        "{\"liked\":false,\"track\":{\"id\":\"986\",\"title\":\"A\",\"available\":true,"
+        "\"durationMs\":1000,\"artists\":[{\"name\":\"B\"}]},\"type\":\"track\"}],"
+        "\"radioSessionId\":\"QCUj-2ju8hq5hIlJ9yQ-rDu4\",\"terminated\":false}}",
+        &batch));
+    assert(strcmp(batch.session_id, "QCUj-2ju8hq5hIlJ9yQ-rDu4") == 0);
+    assert(!batch.unknown_session);
+
+    /* An expired session still answers 200 with tracks; only the flag tells. */
+    assert(yandex_tracks_parse_batch(
+        "{\"result\":{\"batchId\":\"1.rjHH\",\"pumpkin\":true,\"sequence\":["
+        "{\"track\":{\"id\":\"1\",\"title\":\"A\",\"available\":true,"
+        "\"durationMs\":1000,\"artists\":[]}}],\"unknownSession\":true}}",
+        &batch));
+    assert(batch.unknown_session);
+    assert(batch.session_id[0] == '\0');
+
+    /* A session id too long to carry is dropped whole, never clipped. */
+    char json[256];
+    snprintf(json, sizeof(json),
+             "{\"radioSessionId\":\"%080d\",\"sequence\":[{\"track\":{\"id\":\"1\","
+             "\"available\":true}}]}",
+             0);
+    assert(yandex_tracks_parse_batch(json, &batch));
+    assert(batch.session_id[0] == '\0');
+}
+
 static void test_an_unreadable_track_does_not_cost_the_others(void)
 {
     yandex_track_batch_t batch;
@@ -179,6 +213,7 @@ int main(void)
     test_the_real_shape_yields_the_playable_tracks();
     test_the_envelope_is_optional();
     test_the_batch_id_comes_out_with_the_tracks();
+    test_a_session_answer_carries_its_id_and_whether_it_expired();
     test_an_unreadable_track_does_not_cost_the_others();
     test_a_long_title_is_clipped_on_a_character_boundary();
     test_a_batch_with_nothing_playable_fails();

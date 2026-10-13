@@ -152,6 +152,51 @@ static void test_identifiers_that_are_not_identifiers_are_dropped(void)
     assert(strcmp(body, "{\"type\":\"radioStarted\",\"timestamp\":\"2026-08-24T17:07:45.000Z\"}") == 0);
 }
 
+static void test_a_session_event_goes_to_the_session_wrapped(void)
+{
+    /* The shape the server answered 200 to on 2026-10-13: the event inside,
+     * batchId and from beside it, the station nowhere. */
+    char body[320];
+    char path[128];
+    yandex_feedback_event_t event = make(YANDEX_FEEDBACK_TRACK_FINISHED);
+    snprintf(event.session, sizeof(event.session), "QCUj-2ju8hq5hIlJ9yQ-rDu4");
+    event.played_ms = 30000U;
+    assert(yandex_feedback_path(&event, path, sizeof(path)) == strlen(path));
+    assert(strcmp(path, "/rotor/session/QCUj-2ju8hq5hIlJ9yQ-rDu4/feedback") == 0);
+    assert(yandex_feedback_body(&event, body, sizeof(body)) == strlen(body));
+    assert(strcmp(body, "{\"event\":{\"type\":\"trackFinished\","
+                        "\"timestamp\":\"2026-08-24T17:07:45.000Z\",\"trackId\":\"6386262\","
+                        "\"totalPlayedSeconds\":30},"
+                        "\"batchId\":\"1787591264830687-16297747482082378090.p6O1\"}") == 0);
+
+    event = make(YANDEX_FEEDBACK_RADIO_STARTED);
+    snprintf(event.session, sizeof(event.session), "QCUj-2ju8hq5hIlJ9yQ-rDu4");
+    (void)yandex_feedback_body(&event, body, sizeof(body));
+    assert(strcmp(body, "{\"event\":{\"type\":\"radioStarted\","
+                        "\"timestamp\":\"2026-08-24T17:07:45.000Z\"},"
+                        "\"batchId\":\"1787591264830687-16297747482082378090.p6O1\","
+                        "\"from\":\"user-onyourwave\"}") == 0);
+
+    /* Optional parts drop out here too. */
+    event.batch_id[0] = '\0';
+    event.from[0] = '\0';
+    (void)yandex_feedback_body(&event, body, sizeof(body));
+    assert(strcmp(body, "{\"event\":{\"type\":\"radioStarted\","
+                        "\"timestamp\":\"2026-08-24T17:07:45.000Z\"}}") == 0);
+
+    /* A session that is not an identifier is not quietly swapped for the
+     * station: the event belonged to the session. */
+    snprintf(event.session, sizeof(event.session), "ab/../cd");
+    assert(yandex_feedback_path(&event, path, sizeof(path)) == 0U);
+
+    /* Too small for the wrapper is nothing at all, as for a station. */
+    char small[64];
+    event = make(YANDEX_FEEDBACK_TRACK_STARTED);
+    snprintf(event.session, sizeof(event.session), "QCUj-2ju8hq5hIlJ9yQ-rDu4");
+    assert(yandex_feedback_body(&event, small, sizeof(small)) == 0U);
+    assert(small[0] == '\0');
+}
+
 static void test_a_buffer_that_will_not_hold_it_yields_nothing(void)
 {
     /* Never a half-written body: a truncated JSON document is refused by the
@@ -176,6 +221,7 @@ int main(void)
     test_the_optional_fields_are_dropped_not_faked();
     test_an_event_with_no_track_is_refused_here();
     test_identifiers_that_are_not_identifiers_are_dropped();
+    test_a_session_event_goes_to_the_session_wrapped();
     test_a_buffer_that_will_not_hold_it_yields_nothing();
     puts("yandex_feedback tests passed");
     return 0;

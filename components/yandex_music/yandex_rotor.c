@@ -13,12 +13,14 @@
 #include "internet_radio.h"
 #include "yandex_api.h"
 #include "yandex_feedback.h"
+#include "yandex_session.h"
 #include "yandex_track.h"
 
 static const char *TAG = "yandex_rotor";
 
 /* Measured 2026-08-23: a batch of five tracks is 12.4 KB of JSON, and asking
- * again with ?queue= returned 12.0 KB. The margin is for a longer batch, not
+ * again with ?queue= returned 12.0 KB; 2026-10-13, a new session's opening
+ * batch 15.5 KB and its next one 14.9 KB. The margin is for a longer batch, not
  * for comfort - a body that fills the buffer is a body cut in half, and half a
  * JSON document parses as nothing. */
 #define YANDEX_ROTOR_RESPONSE_SIZE 24576U
@@ -32,6 +34,19 @@ typedef struct {
      * the first request of a station, which is what asks for its opening
      * batch. */
     char queue_from[YANDEX_TRACK_ID_MAX + 1U];
+    /* The rotor session the station is played through, empty until one is
+     * opened. Kept across a stop like the position is, and replaced when the
+     * server says it has expired. */
+    char session[YANDEX_SESSION_ID_MAX + 1U];
+    /* The server answered /rotor/session/new with something other than a
+     * session, so this station is played the old way until another one is
+     * chosen. A request that never got an answer does not set it: that is
+     * the network, and the next batch tries a session again. */
+    bool session_refused;
+    /* radioStarted is owed. It waits for the first track rather than going
+     * out from yandex_rotor_start(), because a session's events are filed
+     * against the session, and there is none until the first batch. */
+    bool announce;
     yandex_track_batch_t batch;
     uint8_t next_index;
     /* What is on the air, so that leaving it can be reported. Cleared as soon
@@ -94,6 +109,7 @@ static void yandex_rotor_event_init(yandex_feedback_event_t *event,
     *event = (yandex_feedback_event_t){0};
     event->kind = kind;
     snprintf(event->station, sizeof(event->station), "%s", s_rotor.station);
+    snprintf(event->session, sizeof(event->session), "%s", s_rotor.session);
 }
 
 /* Reports leaving whatever is on the air, as a skip when the listener asked
@@ -143,6 +159,8 @@ esp_err_t yandex_rotor_start(const char *station_id, const char *from)
         s_rotor.batch.count = 0U;
         s_rotor.next_index = 0U;
         s_rotor.queue_from[0] = '\0';
+        s_rotor.session[0] = '\0';
+        s_rotor.session_refused = false;
         strcpy(s_rotor.station, station_id);
     }
     snprintf(s_rotor.from, sizeof(s_rotor.from), "%s", from != NULL ? from : "");
@@ -156,13 +174,10 @@ esp_err_t yandex_rotor_start(const char *station_id, const char *from)
     }
     s_rotor.last_error = ESP_OK;
 
-    /* Sent on every start rather than only on a new station: this is the event
-     * that says the listener chose to put this station on, and choosing it
-     * again tomorrow is exactly the signal it exists to carry. */
-    yandex_feedback_event_t event;
-    yandex_rotor_event_init(&event, YANDEX_FEEDBACK_RADIO_STARTED);
-    snprintf(event.from, sizeof(event.from), "%s", s_rotor.from);
-    (void)yandex_feedback_post(&event);
+    /* Owed on every start rather than only on a new station: this is the
+     * event that says the listener chose to put this station on, and choosing
+     * it again tomorrow is exactly the signal it exists to carry. */
+    s_rotor.announce = true;
     return ESP_OK;
 }
 
@@ -246,7 +261,10 @@ void yandex_rotor_stop(void)
      * station again should not replay the tracks already heard. */
 }
 
-static esp_err_t yandex_rotor_refill(void)
+/* The old way: the station's own endpoint, moved on by ?queue=<the track
+ * just handed out>. Still answered, measured 2026-10-13, and kept for a
+ * server that will not open a session. */
+static esp_err_t yandex_rotor_refill_station(void)
 {
     /* Station id, track id and the fixed parts, with room to spare: a
      * truncated path would fetch a different station's tracks. */
@@ -279,6 +297,79 @@ static esp_err_t yandex_rotor_refill(void)
     }
     s_rotor.next_index = 0U;
     return ESP_OK;
+}
+
+/* The next batch of the session, opening one first when there is none or the
+ * server has let it expire. ESP_OK leaves a batch in s_rotor.batch; anything
+ * else leaves the caller to ask the station the old way. */
+static esp_err_t yandex_rotor_refill_session(void)
+{
+    char body[320];
+    int status = 0;
+    esp_err_t err;
+    if (s_rotor.session[0] != '\0') {
+        char path[96];
+        /* Built from the batch before it is replaced: every track it held has
+         * been handed out, and naming them is what keeps them from coming
+         * back. */
+        if (yandex_session_tracks_path(s_rotor.session, path, sizeof(path)) > 0U &&
+            yandex_session_tracks_body(&s_rotor.batch, body, sizeof(body)) > 0U) {
+            err = yandex_api_post_json(path, body, s_rotor.response, YANDEX_ROTOR_RESPONSE_SIZE,
+                                       &status);
+            if (err == ESP_OK && status == 200 &&
+                yandex_tracks_parse_batch(s_rotor.response, &s_rotor.batch) &&
+                !s_rotor.batch.unknown_session) {
+                s_rotor.next_index = 0U;
+                return ESP_OK;
+            }
+            if (err != ESP_OK) return err;
+            if (s_rotor.batch.unknown_session) {
+                ESP_LOGI(TAG, "session %s has expired; opening another", s_rotor.session);
+            } else {
+                ESP_LOGW(TAG, "session %s tracks: HTTP %d", s_rotor.session, status);
+            }
+        }
+        s_rotor.session[0] = '\0';
+    }
+
+    if (yandex_session_new_body(s_rotor.station, body, sizeof(body)) == 0U) {
+        s_rotor.session_refused = true;
+        return ESP_ERR_INVALID_ARG;
+    }
+    err = yandex_api_post_json("/rotor/session/new", body, s_rotor.response,
+                               YANDEX_ROTOR_RESPONSE_SIZE, &status);
+    if (err != ESP_OK) return err;
+    if (status != 200) {
+        ESP_LOGW(TAG, "no session for %s: HTTP %d; playing it the old way", s_rotor.station,
+                 status);
+        s_rotor.session_refused = true;
+        return ESP_FAIL;
+    }
+    if (!yandex_tracks_parse_batch(s_rotor.response, &s_rotor.batch)) {
+        ESP_LOGW(TAG, "new session for %s held nothing playable", s_rotor.station);
+        s_rotor.batch.count = 0U;
+        return ESP_ERR_NOT_FOUND;
+    }
+    s_rotor.next_index = 0U;
+    if (s_rotor.batch.session_id[0] == '\0') {
+        /* Tracks without a session to ask for more: these are played, and the
+         * next batch comes from the station. */
+        ESP_LOGW(TAG, "new session for %s came without an id; playing it the old way",
+                 s_rotor.station);
+        s_rotor.session_refused = true;
+        return ESP_OK;
+    }
+    memcpy(s_rotor.session, s_rotor.batch.session_id, sizeof(s_rotor.session));
+    ESP_LOGI(TAG, "session %s opened for %s", s_rotor.session, s_rotor.station);
+    return ESP_OK;
+}
+
+static esp_err_t yandex_rotor_refill(void)
+{
+    if (!s_rotor.session_refused && yandex_rotor_refill_session() == ESP_OK) return ESP_OK;
+    /* The old chain carries on from the last track handed out, whichever way
+     * that track came. */
+    return yandex_rotor_refill_station();
 }
 
 static esp_err_t yandex_rotor_resolve(const char *track_id, char *url, size_t url_size)
@@ -355,6 +446,21 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track)
             ESP_LOGW(TAG, "rotor has no tracks to hand out: %s", esp_err_to_name(err));
             return err;
         }
+    }
+
+    if (s_rotor.announce) {
+        /* After the refill, which is what opens the session it belongs to,
+         * and before the track's own start. */
+        s_rotor.announce = false;
+        yandex_feedback_event_t event;
+        yandex_rotor_event_init(&event, YANDEX_FEEDBACK_RADIO_STARTED);
+        snprintf(event.from, sizeof(event.from), "%s", s_rotor.from);
+        /* A session's start names its batch, as the clients do; the station's
+         * never did, and is left as it was measured. */
+        if (s_rotor.session[0] != '\0') {
+            snprintf(event.batch_id, sizeof(event.batch_id), "%s", s_rotor.batch.batch_id);
+        }
+        (void)yandex_feedback_post(&event);
     }
 
     const yandex_track_t candidate = s_rotor.batch.tracks[s_rotor.next_index++];

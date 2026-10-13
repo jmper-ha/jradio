@@ -63,10 +63,12 @@ static void yandex_feedback_time(uint32_t timestamp, char *out, size_t out_size)
              (unsigned int)(seconds % 60U));
 }
 
-size_t yandex_feedback_body(const yandex_feedback_event_t *event, char *out, size_t out_size)
+/* The event itself - type, time, track, seconds - which is the whole body
+ * for a station and the "event" member of it for a session. `from` goes in
+ * only where it is asked for: a session carries it beside the event. */
+static size_t yandex_feedback_event_json(const yandex_feedback_event_t *event, bool with_from,
+                                         char *out, size_t out_size)
 {
-    if (event == NULL || out == NULL || out_size == 0U) return 0U;
-    out[0] = '\0';
     const char *type = yandex_feedback_type(event->kind);
     if (type == NULL) return 0U;
     // Quoted when it is a date, bare when it is the unset clock's 0.
@@ -77,7 +79,7 @@ size_t yandex_feedback_body(const yandex_feedback_event_t *event, char *out, siz
     if (event->kind == YANDEX_FEEDBACK_RADIO_STARTED) {
         /* `from` is optional - the API accepts radioStarted without it - so an
          * unknown or unusable one is left out rather than refused. */
-        if (event->from[0] != '\0' && yandex_feedback_safe(event->from, ":-_.")) {
+        if (with_from && event->from[0] != '\0' && yandex_feedback_safe(event->from, ":-_.")) {
             written = snprintf(out, out_size,
                                "{\"type\":\"%s\",\"timestamp\":%s,\"from\":\"%s\"}", type,
                                when, event->from);
@@ -103,20 +105,80 @@ size_t yandex_feedback_body(const yandex_feedback_event_t *event, char *out, siz
                                (unsigned int)(event->played_ms / 1000U));
         }
     }
-    if (written < 0 || (size_t)written >= out_size) {
+    if (written < 0 || (size_t)written >= out_size) return 0U;
+    return (size_t)written;
+}
+
+size_t yandex_feedback_body(const yandex_feedback_event_t *event, char *out, size_t out_size)
+{
+    if (event == NULL || out == NULL || out_size == 0U) return 0U;
+    out[0] = '\0';
+    if (event->session[0] == '\0') {
+        const size_t length = yandex_feedback_event_json(event, true, out, out_size);
+        if (length == 0U) out[0] = '\0';
+        return length;
+    }
+
+    /* The event goes in at the front and the wrapper is written around it,
+     * so the one buffer is enough: "{\"event\":" first, then the event, then
+     * the optional batch and origin. */
+    static const char head[] = "{\"event\":";
+    const size_t head_length = sizeof(head) - 1U;
+    if (out_size <= head_length) return 0U;
+    const size_t event_length =
+        yandex_feedback_event_json(event, false, out + head_length, out_size - head_length);
+    if (event_length == 0U) {
         out[0] = '\0';
         return 0U;
     }
-    return (size_t)written;
+    memcpy(out, head, head_length);
+    size_t length = head_length + event_length;
+    int written = 0;
+    if (event->batch_id[0] != '\0' && yandex_feedback_safe(event->batch_id, ":-_.")) {
+        written = snprintf(out + length, out_size - length, ",\"batchId\":\"%s\"", event->batch_id);
+        if (written < 0 || (size_t)written >= out_size - length) {
+            out[0] = '\0';
+            return 0U;
+        }
+        length += (size_t)written;
+    }
+    if (event->kind == YANDEX_FEEDBACK_RADIO_STARTED && event->from[0] != '\0' &&
+        yandex_feedback_safe(event->from, ":-_.")) {
+        written = snprintf(out + length, out_size - length, ",\"from\":\"%s\"", event->from);
+        if (written < 0 || (size_t)written >= out_size - length) {
+            out[0] = '\0';
+            return 0U;
+        }
+        length += (size_t)written;
+    }
+    written = snprintf(out + length, out_size - length, "}");
+    if (written < 0 || (size_t)written >= out_size - length) {
+        out[0] = '\0';
+        return 0U;
+    }
+    return length + (size_t)written;
 }
 
 size_t yandex_feedback_path(const yandex_feedback_event_t *event, char *out, size_t out_size)
 {
     if (event == NULL || out == NULL || out_size == 0U) return 0U;
     out[0] = '\0';
-    if (event->station[0] == '\0' || !yandex_feedback_safe(event->station, ":-_.")) return 0U;
 
     int written;
+    if (event->session[0] != '\0') {
+        /* A session that is not an identifier is not reported to the station
+         * instead: the events were the session's, and the station's endpoint
+         * would file them against a chain the device was never on. */
+        if (!yandex_feedback_safe(event->session, "-_.")) return 0U;
+        written = snprintf(out, out_size, "/rotor/session/%s/feedback", event->session);
+        if (written < 0 || (size_t)written >= out_size) {
+            out[0] = '\0';
+            return 0U;
+        }
+        return (size_t)written;
+    }
+    if (event->station[0] == '\0' || !yandex_feedback_safe(event->station, ":-_.")) return 0U;
+
     /* The batch id is optional - measured: feedback without it is accepted -
      * so one that is missing or oddly shaped costs the event nothing. */
     if (event->batch_id[0] != '\0' && yandex_feedback_safe(event->batch_id, ":-_.")) {
@@ -179,7 +241,9 @@ static UBaseType_t s_stack_low_water = (UBaseType_t)-1;
 static void yandex_feedback_send(const yandex_feedback_event_t *event)
 {
     char path[128];
-    char body[192];
+    /* A session's event carries its batch id in the body: measured at 42
+     * characters, it and the wrapper take the longest event to about 230. */
+    char body[320];
     if (yandex_feedback_path(event, path, sizeof(path)) == 0U ||
         yandex_feedback_body(event, body, sizeof(body)) == 0U) {
         ESP_LOGW(TAG, "event %d could not be addressed", (int)event->kind);

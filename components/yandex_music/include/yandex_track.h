@@ -34,6 +34,11 @@
  * API accepts feedback without it, so a batch id that does not fit is dropped
  * rather than allowed to cost the tracks. */
 #define YANDEX_TRACK_BATCH_ID_MAX 63U
+/* The radioSessionId a rotor session is addressed by, measured at 24
+ * characters ("QCUj-2ju8hq5hIlJ9yQ-rDu4"). It goes into the path of every
+ * later request, so one that does not fit is not clipped: the session is
+ * given up and the station asked the old way instead. */
+#define YANDEX_SESSION_ID_MAX 63U
 
 typedef struct {
     char id[YANDEX_TRACK_ID_MAX + 1U];
@@ -48,10 +53,18 @@ typedef struct {
 typedef struct {
     uint8_t count;
     char batch_id[YANDEX_TRACK_BATCH_ID_MAX + 1U];
+    /* Only in an answer of /rotor/session/new; empty in every other. */
+    char session_id[YANDEX_SESSION_ID_MAX + 1U];
+    /* The session asked for has expired on the server. Measured 2026-10-13:
+     * the answer is still HTTP 200 and still carries five tracks, marked
+     * "pumpkin" - a stand-in, not the station's next tracks - so this, and
+     * not the tracks, is what the caller has to look at. */
+    bool unknown_session;
     yandex_track_t tracks[YANDEX_TRACK_BATCH_MAX];
 } yandex_track_batch_t;
 
-/* Parses one answer of /rotor/station/{id}/tracks. Accepts it with or without
+/* Parses one answer of /rotor/station/{id}/tracks, /rotor/session/new or
+ * /rotor/session/{id}/tracks - the three carry the same "sequence". Accepts it with or without
  * the "result" envelope, so a test fixture need not carry one.
  *
  * Tracks the answer marks unavailable are left out: they have no download link

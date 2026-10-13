@@ -46,6 +46,8 @@
 #define RADIO_CATALOG_BUFFER_SIZE STATION_CATALOG_TEXT_MAX_LEN
 #define RADIO_HTTP_MAX_REDIRECTS 5U
 #define RADIO_HTTP_CONNECT_RETRIES 3U
+/* Times one track of a chain is reopened after its connection died. */
+#define RADIO_TRACK_DROP_RESUMES 2U
 /* A live stream that stops delivering has already silenced the DAC well
  * before this fires: even at 128 kbps the input buffer only holds about a
  * second of audio. Waiting 30 s to notice, as this used to, turned a server
@@ -615,6 +617,9 @@ static void radio_direct_task(void *arg)
     /* Set on a chain source when the body ran out; cleared once the next track
      * is open. Nothing is read from the network while it is set. */
     bool track_ended = false;
+    /* How many times the current track has been picked up again after its
+     * connection died; see RADIO_TRACK_DROP_RESUMES. */
+    unsigned int track_drop_resumes = 0U;
     /* A decoded block that has not fully reached the I2S DMA yet. The decoder
      * writes into the same buffer, so nothing new is decoded while this is
      * set. A pass normally places the whole block - see
@@ -770,6 +775,7 @@ static void radio_direct_task(void *arg)
                 break;
             }
             track_ended = false;
+            track_drop_resumes = 0U;
             compressed_offset = 0U;
             decode_error_retries = 0U;
             decoder_reset_tried = false;
@@ -1031,11 +1037,35 @@ static void radio_direct_task(void *arg)
                     continue;
                 }
                 if (radio->track_chain) {
-                    /* Complete or not, this track is over. A connection that
-                     * died mid-track costs its tail and no more: the chain
-                     * moves on, where reconnecting to a link that expires
-                     * after a minute would usually fail anyway. */
+                    /* A connection that died mid-track is picked up where it
+                     * stopped, with a link signed afresh and a Range - the
+                     * same reopening a pause uses. Measured 2026-10-13:
+                     * Yandex's strm-m9 nodes stopped sending about ten seconds
+                     * into a track and reset the connection ten seconds later,
+                     * track after track, while a PC behind the same router
+                     * read the same tracks through. Moving on, as this used
+                     * to, turned that into a radio skipping every 20 seconds.
+                     * Twice, then the chain moves on: a track that keeps
+                     * dying costs its tail and no more. */
                     if (!esp_http_client_is_complete_data_received(radio->http)) {
+                        if (track_drop_resumes < RADIO_TRACK_DROP_RESUMES) {
+                            ++track_drop_resumes;
+                            ESP_LOGW(TAG, "track cut off at %u bytes; picking it up there (%u)",
+                                     (unsigned int)radio->track_offset,
+                                     track_drop_resumes);
+                            radio_stream_close(radio);
+                            if (radio_direct_resume_track(radio)) {
+                                if (!radio->range_granted) {
+                                    radio_decoder_reset(radio->decoder);
+                                    available = 0U;
+                                    compressed_offset = 0U;
+                                    pcm_pending = 0U;
+                                    pcm_delivered = 0U;
+                                }
+                                decode_error_retries = 0U;
+                                continue;
+                            }
+                        }
                         ESP_LOGW(TAG, "track ended early; moving to the next one");
                     }
                     track_ended = true;
@@ -1933,12 +1963,12 @@ static bool radio_direct_reconnect(internet_radio_context_t *radio)
 static bool radio_direct_resume_track(internet_radio_context_t *radio)
 {
     if (radio->track_reopen == NULL) {
-        ESP_LOGW(TAG, "no way to reopen the paused track; moving on");
+        ESP_LOGW(TAG, "no way to reopen the track; moving on");
         return false;
     }
     const char *url = radio->track_reopen();
     if (url == NULL) {
-        ESP_LOGW(TAG, "the paused track could not be resolved again");
+        ESP_LOGW(TAG, "the track could not be resolved again");
         return false;
     }
     const bool output_was_started = radio->output_started;
@@ -1956,7 +1986,7 @@ static bool radio_direct_resume_track(internet_radio_context_t *radio)
     radio->pcm_bytes = played_bytes;
     radio->pcm_blocks = played_blocks;
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "the paused track did not reopen: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "the track did not reopen: %s", esp_err_to_name(err));
         return false;
     }
     // The open reset the counter to zero; the body it returned starts where

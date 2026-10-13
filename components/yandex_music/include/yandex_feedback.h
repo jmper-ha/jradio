@@ -20,7 +20,10 @@
  *   - the body must be JSON. Form-encoded is refused with HTTP 400
  *     "condition is not met" whatever the fields say.
  *   - `timestamp` is required (400 without it); an integer is accepted, and so
- *     is 0 - so an unsynchronised clock delays nothing.
+ *     is 0 - so an unsynchronised clock delays nothing. Sent as ISO 8601 UTC
+ *     ("2026-10-13T12:00:00.000Z") since 2026-10-13, the way yandex-music-api
+ *     3.1.0 and the official clients send it: accepted is not the same as
+ *     counted. An unset clock still sends 0.
  *   - `trackId` is required for everything except radioStarted.
  *   - `totalPlayedSeconds` is required for trackFinished and skip.
  *   - `from` on radioStarted and the batch-id query are both optional.

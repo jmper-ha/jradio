@@ -32,12 +32,46 @@ static const char *yandex_feedback_type(yandex_feedback_kind_t kind)
     return NULL;
 }
 
+/* The event's time as the API's own clients send it: ISO 8601, UTC, with
+ * milliseconds - "2026-10-13T12:00:00.000Z". The integer this used to send
+ * is accepted (measured, HTTP 200), but yandex-music-api 3.1.0 moved to the
+ * string after finding that the integer is not what the rotor reads, and an
+ * accepted event that is not counted is a station that keeps repeating
+ * itself. An unset clock still sends 0, which the API takes, rather than a
+ * date in 1970 that it might file. The day count is Howard Hinnant's
+ * civil_from_days, so nothing here needs gmtime_r, which C17 does not have. */
+static void yandex_feedback_time(uint32_t timestamp, char *out, size_t out_size)
+{
+    if (timestamp == 0U) {
+        snprintf(out, out_size, "0");
+        return;
+    }
+    const int64_t days = (int64_t)(timestamp / 86400U);
+    const uint32_t seconds = timestamp % 86400U;
+    const int64_t shifted = days + 719468;
+    const int64_t era = shifted / 146097;
+    const int64_t day_of_era = shifted - era * 146097;
+    const int64_t year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36524 - day_of_era / 146096) / 365;
+    const int64_t day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    const int64_t month_index = (5 * day_of_year + 2) / 153;
+    const int64_t day = day_of_year - (153 * month_index + 2) / 5 + 1;
+    const int64_t month = month_index < 10 ? month_index + 3 : month_index - 9;
+    const int64_t year = year_of_era + era * 400 + (month <= 2 ? 1 : 0);
+    snprintf(out, out_size, "\"%04d-%02d-%02dT%02u:%02u:%02u.000Z\"", (int)year, (int)month,
+             (int)day, (unsigned int)(seconds / 3600U), (unsigned int)(seconds / 60U % 60U),
+             (unsigned int)(seconds % 60U));
+}
+
 size_t yandex_feedback_body(const yandex_feedback_event_t *event, char *out, size_t out_size)
 {
     if (event == NULL || out == NULL || out_size == 0U) return 0U;
     out[0] = '\0';
     const char *type = yandex_feedback_type(event->kind);
     if (type == NULL) return 0U;
+    // Quoted when it is a date, bare when it is the unset clock's 0.
+    char when[32];
+    yandex_feedback_time(event->timestamp, when, sizeof(when));
 
     int written;
     if (event->kind == YANDEX_FEEDBACK_RADIO_STARTED) {
@@ -45,11 +79,11 @@ size_t yandex_feedback_body(const yandex_feedback_event_t *event, char *out, siz
          * unknown or unusable one is left out rather than refused. */
         if (event->from[0] != '\0' && yandex_feedback_safe(event->from, ":-_.")) {
             written = snprintf(out, out_size,
-                               "{\"type\":\"%s\",\"timestamp\":%u,\"from\":\"%s\"}", type,
-                               (unsigned int)event->timestamp, event->from);
+                               "{\"type\":\"%s\",\"timestamp\":%s,\"from\":\"%s\"}", type,
+                               when, event->from);
         } else {
-            written = snprintf(out, out_size, "{\"type\":\"%s\",\"timestamp\":%u}", type,
-                               (unsigned int)event->timestamp);
+            written = snprintf(out, out_size, "{\"type\":\"%s\",\"timestamp\":%s}", type,
+                               when);
         }
     } else {
         /* Every other event names a track, and the API refuses one that does
@@ -59,13 +93,13 @@ size_t yandex_feedback_body(const yandex_feedback_event_t *event, char *out, siz
         }
         if (event->kind == YANDEX_FEEDBACK_TRACK_STARTED) {
             written = snprintf(out, out_size,
-                               "{\"type\":\"%s\",\"timestamp\":%u,\"trackId\":\"%s\"}", type,
-                               (unsigned int)event->timestamp, event->track_id);
+                               "{\"type\":\"%s\",\"timestamp\":%s,\"trackId\":\"%s\"}", type,
+                               when, event->track_id);
         } else {
             written = snprintf(out, out_size,
-                               "{\"type\":\"%s\",\"timestamp\":%u,\"trackId\":\"%s\","
+                               "{\"type\":\"%s\",\"timestamp\":%s,\"trackId\":\"%s\","
                                "\"totalPlayedSeconds\":%u}",
-                               type, (unsigned int)event->timestamp, event->track_id,
+                               type, when, event->track_id,
                                (unsigned int)(event->played_ms / 1000U));
         }
     }

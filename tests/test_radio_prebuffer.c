@@ -229,8 +229,25 @@ static void test_the_shown_figure_rides_out_a_single_jump(void)
     assert(lowest >= 56U && highest <= 100U);
 }
 
+static void test_a_track_holds_more_once_it_has_started(void)
+{
+    radio_prebuffer_config_t config;
+    radio_prebuffer_config_init(&config, 262144U, 2048U);
+    // The start keeps the station's cushion: reading hard there drops buffers.
+    assert(radio_prebuffer_track_target(&config, 0U) == RADIO_PREBUFFER_TARGET_MAX);
+    assert(radio_prebuffer_track_target(&config, RADIO_PREBUFFER_TRACK_AFTER_MS - 1U) ==
+           RADIO_PREBUFFER_TARGET_MAX);
+    assert(radio_prebuffer_track_target(&config, RADIO_PREBUFFER_TRACK_AFTER_MS) ==
+           RADIO_PREBUFFER_TRACK_TARGET);
+    // A small buffer keeps a quarter free for the read.
+    radio_prebuffer_config_init(&config, 65536U, 2048U);
+    assert(radio_prebuffer_track_target(&config, 60000U) == 49152U);
+    assert(radio_prebuffer_track_target(NULL, 60000U) == 0U);
+}
+
 int main(void)
 {
+    test_a_track_holds_more_once_it_has_started();
     test_an_empty_buffer_is_allowed_to_wait_for_data();
     test_a_backlog_below_target_reads_without_blocking();
     test_a_comfortable_backlog_skips_the_read_entirely();

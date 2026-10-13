@@ -78,6 +78,24 @@ typedef struct {
 void radio_prebuffer_config_init(radio_prebuffer_config_t *config, size_t capacity,
                                  size_t chunk);
 
+/* The backlog to hold for a track of a chain - a file, which its server sends
+ * as fast as it is read - once `played_ms` of it has been read through.
+ *
+ * Not the station's 32 KB. That cap is right for a stream paced at its own
+ * bitrate (see RADIO_PREBUFFER_TARGET_MAX), but a file's server is always
+ * ahead, so a bigger cushion is there to be had - and needed: on 2026-10-13
+ * Yandex's strm-m9 nodes stopped sending about ten seconds into a track, and
+ * 32 KB of 192 kbps MP3 is 1.4 s. 192 KB is 8 s of it, longer than reopening
+ * the track takes (1.7 s measured).
+ *
+ * The first RADIO_PREBUFFER_TRACK_AFTER_MS keep the station's target: the
+ * start is the moment reading hard costs dropped DMA buffers, the measurement
+ * RADIO_PREBUFFER_TARGET_MAX records. Never more than three quarters of the
+ * buffer, so a read always has room. */
+#define RADIO_PREBUFFER_TRACK_TARGET (192U * 1024U)
+#define RADIO_PREBUFFER_TRACK_AFTER_MS 3000U
+size_t radio_prebuffer_track_target(const radio_prebuffer_config_t *config, uint32_t played_ms);
+
 /* `available` is the backlog the decoder still has; `need_input` is true when
  * it cannot proceed without more. */
 radio_prebuffer_plan_t radio_prebuffer_plan(const radio_prebuffer_config_t *config,

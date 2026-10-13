@@ -23,6 +23,16 @@ void radio_prebuffer_config_init(radio_prebuffer_config_t *config, size_t capaci
     config->urgent_budget_ms = 30U;
 }
 
+size_t radio_prebuffer_track_target(const radio_prebuffer_config_t *config, uint32_t played_ms)
+{
+    if (config == NULL) return 0U;
+    if (played_ms < RADIO_PREBUFFER_TRACK_AFTER_MS) return config->target;
+    const size_t ceiling = config->capacity / 4U * 3U;
+    const size_t target =
+        RADIO_PREBUFFER_TRACK_TARGET < ceiling ? RADIO_PREBUFFER_TRACK_TARGET : ceiling;
+    return target;
+}
+
 radio_prebuffer_plan_t radio_prebuffer_plan(const radio_prebuffer_config_t *config,
                                             size_t available, bool need_input)
 {

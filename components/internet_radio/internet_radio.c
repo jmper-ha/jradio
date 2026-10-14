@@ -1,6 +1,7 @@
 #include "internet_radio.h"
 
 #include <ctype.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -54,6 +55,9 @@
  * ten seconds later, by when the backlog had long run out. Well inside the
  * track's cushion (RADIO_PREBUFFER_TRACK_TARGET, 8 s of 192 kbps). */
 #define RADIO_TRACK_STALL_MS 3000U
+/* A read that was meant to take only what had arrived and took this long has
+ * held the decode task past what the I2S DMA (93 ms) can cover. */
+#define RADIO_READ_SLOW_US 50000U
 /* The reopening task: the API calls and a TLS handshake, on a PSRAM stack. */
 #define RADIO_REOPEN_STACK 12288
 /* A live stream that stops delivering has already silenced the DAC well
@@ -284,6 +288,11 @@ typedef struct {
      * open anything else of the chain, while one runs: the rotor's link
      * buffer is in use until it is done. */
     radio_reopen_t *reopen;
+    /* The longest a read that was meant not to wait took, and how many took
+     * RADIO_READ_SLOW_US or more, since the last health line. Such a read is
+     * time the decode task spends away from the DAC whatever the backlog. */
+    uint32_t read_max_us;
+    unsigned int read_slow;
 } internet_radio_context_t;
 
 static internet_radio_context_t s_radio;
@@ -299,6 +308,7 @@ static void radio_stream_close(internet_radio_context_t *radio);
 // Defined beside the HTTP connect they are built on.
 static bool radio_reopen_start(internet_radio_context_t *radio);
 static void radio_reopen_drop(internet_radio_context_t *radio);
+static void radio_http_stop_blocking(esp_http_client_handle_t client);
 static int radio_http_wait_readable(internet_radio_context_t *radio, uint32_t budget_ms);
 static int radio_stream_read_blocking(internet_radio_context_t *radio, uint8_t *buffer,
                                       int length);
@@ -422,7 +432,11 @@ static int radio_http_read_ready(internet_radio_context_t *radio, uint8_t *buffe
      * for the rest of the request even though the poll only promised one
      * segment. */
     if (length > RADIO_DIRECT_NETWORK_CHUNK) length = RADIO_DIRECT_NETWORK_CHUNK;
+    const int64_t started_us = esp_timer_get_time();
     const int received = esp_http_client_read(radio->http, (char *)buffer, length);
+    const uint32_t took_us = (uint32_t)(esp_timer_get_time() - started_us);
+    if (took_us > radio->read_max_us) radio->read_max_us = took_us;
+    if (took_us >= RADIO_READ_SLOW_US) ++radio->read_slow;
     switch (internet_radio_read_classify(received, -ESP_ERR_HTTP_EAGAIN)) {
     case INTERNET_RADIO_READ_DATA:
         return received;
@@ -726,6 +740,7 @@ static void radio_direct_task(void *arg)
                 job->client = NULL;
                 radio->range_granted = job->range_granted;
                 esp_http_client_set_timeout_ms(radio->http, RADIO_HTTP_STREAM_TIMEOUT_MS);
+                radio_http_stop_blocking(radio->http);
                 icy_metadata_init(&radio->icy, radio->icy_interval, radio_set_title, radio);
                 if (radio->range_granted) {
                     radio->track_offset = job->offset;
@@ -821,13 +836,17 @@ static void radio_direct_task(void *arg)
             taskEXIT_CRITICAL(&s_status_lock);
             ESP_LOGI(TAG,
                      "stream health: i2s_underruns=%u starvations=%u decode_stalls=%u "
-                     "min_backlog=%u/%u (%ums) target=%u (%ums) pcm=%u%% of realtime",
+                     "min_backlog=%u/%u (%ums) target=%u (%ums) pcm=%u%% of realtime "
+                     "read_max=%ums slow_reads=%u",
                      underruns - last_underruns, starvations, decode_stalls,
                      (unsigned int)min_available, (unsigned int)RADIO_DIRECT_INPUT_SIZE,
                      (unsigned int)radio_prebuffer_millis(min_available, bitrate),
                      (unsigned int)prebuffer.target,
                      (unsigned int)radio_prebuffer_millis(prebuffer.target, bitrate),
-                     expected > 0U ? (unsigned int)((pcm_delta * 100U) / expected) : 0U);
+                     expected > 0U ? (unsigned int)((pcm_delta * 100U) / expected) : 0U,
+                     (unsigned int)(radio->read_max_us / 1000U), radio->read_slow);
+            radio->read_max_us = 0U;
+            radio->read_slow = 0U;
             last_pcm_bytes = radio->pcm_bytes;
             last_underruns = underruns;
             starvations = 0U;
@@ -1567,6 +1586,31 @@ static void radio_stream_reset_status(internet_radio_context_t *radio)
     taskEXIT_CRITICAL(&s_status_lock);
 }
 
+/* Makes reads on the stream's socket return at once when nothing is there.
+ *
+ * Over TLS a read the socket says is ready can still wait: mbedTLS decrypts
+ * whole records, up to 16 KB, and once the first segments of one have arrived
+ * it blocks in recv() for the rest - bounded only by the receive timeout
+ * esp-tls set from the 10 s connect timeout. On a lossy link that is the
+ * decode task held for as long as TCP takes to retransmit, the DAC running
+ * dry after 93 ms, and the backlog meter frozen at 100% because the same task
+ * draws it: users reported exactly that - dropouts with a full buffer, where
+ * another player showed its buffer draining instead.
+ *
+ * On a non-blocking socket mbedTLS answers "want read" and keeps the partial
+ * record for the next call; esp_http_client reports that as EAGAIN, which the
+ * readers here already treat as "nothing yet". Only once the headers are in:
+ * the handshake and the request still want the blocking socket. */
+static void radio_http_stop_blocking(esp_http_client_handle_t client)
+{
+    const int fd = esp_http_client_get_socket(client);
+    if (fd < 0) return;
+    const int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+        ESP_LOGW(TAG, "stream socket stays blocking");
+    }
+}
+
 static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *url)
 {
     radio_stream_reset_status(radio);
@@ -1576,6 +1620,7 @@ static esp_err_t radio_http_open(internet_radio_context_t *radio, const char *ur
     /* Headers are in; from here the client only reads the body, so the long
      * connect timeout has to go - see RADIO_HTTP_STREAM_TIMEOUT_MS. */
     esp_http_client_set_timeout_ms(radio->http, RADIO_HTTP_STREAM_TIMEOUT_MS);
+    radio_http_stop_blocking(radio->http);
     icy_metadata_init(&radio->icy, radio->icy_interval, radio_set_title, radio);
     // Headers have been parsed by now, so Content-Type may have corrected the
     // format guessed from the URL; republish the codec name to match.
@@ -2423,6 +2468,13 @@ esp_err_t internet_radio_catalog_replace(const char *text, size_t length, size_t
 esp_err_t internet_radio_init(void)
 {
     if (s_radio.initialized) return ESP_OK;
+    /* A non-blocking stream socket (radio_http_stop_blocking) makes every
+     * partly arrived TLS record a "read error" to esp-tls's transport and a
+     * warning to the HTTP client - several a second on a healthy stream. Both
+     * are said again where they matter: a real read failure by esp-tls under
+     * its own tag and by this file, a failed request by its caller. */
+    esp_log_level_set("transport_base", ESP_LOG_NONE);
+    esp_log_level_set("HTTP_CLIENT", ESP_LOG_ERROR);
     s_radio.direct_done = xSemaphoreCreateBinary();
     if (s_radio.direct_done == NULL) {
         return ESP_ERR_NO_MEM;

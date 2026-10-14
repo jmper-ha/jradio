@@ -421,17 +421,12 @@ static int radio_http_wait_readable(internet_radio_context_t *radio, uint32_t bu
     return select(fd + 1, &readable, NULL, NULL, &timeout);
 }
 
-static int radio_http_read_ready(internet_radio_context_t *radio, uint8_t *buffer,
-                                 int length, uint32_t budget_ms)
+/* One read of what has arrived; 0 for nothing yet, -1 for the end or an
+ * error. The client polls the transport first, and over TLS that poll counts
+ * the decrypted bytes esp-tls already holds - which the socket alone does
+ * not show. */
+static int radio_http_read_once(internet_radio_context_t *radio, uint8_t *buffer, int length)
 {
-    if (length <= 0) return 0;
-    const int ready = radio_http_wait_readable(radio, budget_ms);
-    if (ready < 0) return -1;
-    if (ready == 0) return 0;
-    /* One MSS at a time: asking for more would make the client block waiting
-     * for the rest of the request even though the poll only promised one
-     * segment. */
-    if (length > RADIO_DIRECT_NETWORK_CHUNK) length = RADIO_DIRECT_NETWORK_CHUNK;
     const int64_t started_us = esp_timer_get_time();
     const int received = esp_http_client_read(radio->http, (char *)buffer, length);
     const uint32_t took_us = (uint32_t)(esp_timer_get_time() - started_us);
@@ -445,6 +440,29 @@ static int radio_http_read_ready(internet_radio_context_t *radio, uint8_t *buffe
     default:
         return -1;
     }
+}
+
+static int radio_http_read_ready(internet_radio_context_t *radio, uint8_t *buffer,
+                                 int length, uint32_t budget_ms)
+{
+    if (length <= 0) return 0;
+    /* One MSS at a time, to keep each read short. */
+    if (length > RADIO_DIRECT_NETWORK_CHUNK) length = RADIO_DIRECT_NETWORK_CHUNK;
+    /* Read first, wait second. This used to ask the socket before reading,
+     * and over TLS a quiet socket is not an empty stream: mbedTLS decrypts a
+     * whole record of up to 16 KB and hands it out a chunk at a time, so the
+     * rest of a record sat unread until the next segment arrived. At the end
+     * of a Yandex track no segment ever does - the last 12.7 KB of a file
+     * stayed in esp-tls, the track was taken for stalled and reopened, twice,
+     * and the next one began seconds late. The socket is non-blocking (see
+     * radio_http_stop_blocking), so a read with nothing to give returns at
+     * once. */
+    const int received = radio_http_read_once(radio, buffer, length);
+    if (received != 0 || budget_ms == 0U) return received;
+    const int ready = radio_http_wait_readable(radio, budget_ms);
+    if (ready < 0) return -1;
+    if (ready == 0) return 0;
+    return radio_http_read_once(radio, buffer, length);
 }
 
 static bool radio_delay_interruptible(internet_radio_context_t *radio, uint32_t delay_ms)

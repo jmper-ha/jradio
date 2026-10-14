@@ -47,8 +47,12 @@
 #define RADIO_CATALOG_BUFFER_SIZE STATION_CATALOG_TEXT_MAX_LEN
 #define RADIO_HTTP_MAX_REDIRECTS 5U
 #define RADIO_HTTP_CONNECT_RETRIES 3U
-/* Times one track of a chain is reopened after its connection died. */
-#define RADIO_TRACK_DROP_RESUMES 4U
+/* Reopenings of one track in a row that brought nothing before the next
+ * drop. Not a limit on drops: a track is picked up however often its
+ * connection dies, as long as each pickup plays on - Yandex's tracks are not
+ * broken, its servers are. This only stops a track whose every reopening
+ * fails at once from holding the chain silent for ever. */
+#define RADIO_TRACK_DEAD_RESUMES 3U
 /* A track whose server has sent nothing for this long while the loop was
  * asking is reopened, without waiting for the connection to die. Measured
  * 2026-10-13: Yandex's strm-m9 nodes went quiet and reset the connection only
@@ -705,9 +709,12 @@ static void radio_direct_task(void *arg)
     /* Set on a chain source when the body ran out; cleared once the next track
      * is open. Nothing is read from the network while it is set. */
     bool track_ended = false;
-    /* How many times the current track has been picked up again after its
-     * connection died; see RADIO_TRACK_DROP_RESUMES. */
+    /* Pickups of the current track in a row that brought nothing; see
+     * RADIO_TRACK_DEAD_RESUMES. */
     unsigned int track_drop_resumes = 0U;
+    // Where the last pickup started, to tell one that played on from one that
+    // brought nothing.
+    size_t track_resumed_at = SIZE_MAX;
     /* When the current track began, for its read target, and when the
      * socket last gave something the loop was asking for, for a track whose
      * server has stopped sending without closing - see RADIO_TRACK_STALL_MS. */
@@ -859,10 +866,25 @@ static void radio_direct_task(void *arg)
                 radio->reopen = NULL;
                 last_rx_tick = xTaskGetTickCount();
             } else if (state != RADIO_REOPEN_RUNNING) {
-                // Failed, or no longer wanted: the backlog plays out and the
-                // chain moves on.
-                if (state == RADIO_REOPEN_FAILED) track_ended = true;
+                // No longer wanted, or failed: a failure is tried again like a
+                // pickup that brought nothing, and only after those does the
+                // backlog play out and the chain move on.
+                const bool retry = state == RADIO_REOPEN_FAILED && !track_ended &&
+                                   !atomic_load_explicit(&radio->skip_requested,
+                                                         memory_order_acquire);
                 radio_reopen_drop(radio);
+                if (retry) {
+                    if (track_drop_resumes < RADIO_TRACK_DEAD_RESUMES) {
+                        ++track_drop_resumes;
+                        ESP_LOGW(TAG, "trying the track again at %u bytes (%u)",
+                                 (unsigned int)radio->track_offset, track_drop_resumes);
+                        // At once: a wait here would be the decoder's, and the
+                        // backlog is still playing.
+                        if (radio_reopen_start(radio)) continue;
+                    }
+                    ESP_LOGW(TAG, "the track would not reopen; moving to the next one");
+                    track_ended = true;
+                }
             } else if (available == 0U) {
                 // Nothing left to play while it runs.
                 vTaskDelay(pdMS_TO_TICKS(10));
@@ -981,6 +1003,7 @@ static void radio_direct_task(void *arg)
             }
             track_ended = false;
             track_drop_resumes = 0U;
+            track_resumed_at = SIZE_MAX;
             track_started_tick = xTaskGetTickCount();
             last_rx_tick = track_started_tick;
             compressed_offset = 0U;
@@ -1277,11 +1300,13 @@ static void radio_direct_task(void *arg)
                      * track after track, while a PC behind the same router
                      * read the same tracks through. Moving on, as this used
                      * to, turned that into a radio skipping every 20 seconds.
-                     * A few times, then the chain moves on: a track that
-                     * keeps dying costs its tail and no more. */
+                     * As often as it takes, while each pickup plays on; see
+                     * RADIO_TRACK_DEAD_RESUMES for the one that does not. */
                     if (!esp_http_client_is_complete_data_received(radio->http)) {
-                        if (track_drop_resumes < RADIO_TRACK_DROP_RESUMES) {
+                        if (radio->track_offset != track_resumed_at) track_drop_resumes = 0U;
+                        if (track_drop_resumes < RADIO_TRACK_DEAD_RESUMES) {
                             ++track_drop_resumes;
+                            track_resumed_at = radio->track_offset;
                             ESP_LOGW(TAG, "track %s at %u bytes (body %lld); picking it up there (%u)",
                                      track_stalled ? "stalled" : "cut off",
                                      (unsigned int)radio->track_offset,

@@ -92,6 +92,26 @@ void radio_prebuffer_config_init(radio_prebuffer_config_t *config, size_t capaci
  * start is the moment reading hard costs dropped DMA buffers, the measurement
  * RADIO_PREBUFFER_TARGET_MAX records. Never more than three quarters of the
  * buffer, so a read always has room. */
+/* The backlog a live station is let to hold, unless it is lossless.
+ *
+ * Remeasured 2026-10-14, after the reads stopped blocking (a non-blocking
+ * socket, the read before the wait): the cap above was set while a top-up
+ * read could still wait on the socket. Same stations, same procedure, a
+ * minute each, against a 128 KB target:
+ *
+ *   Montmartre, MP3 128:      2.05 s -> 7.8-8.0 s held, no DMA drops either way
+ *   Radio Paradise, MP3 320:  0.82 s -> 3.28 s held, none either way
+ *   WUVT, AAC:                2.05 s -> 8.19 s held, none either way
+ *   Radio Paradise, FLAC 1.4M: 5-160 ms held either way - the server paces
+ *     it - and DMA drops in both, 0-13 at 32 KB and 5-32 at 128 KB over a
+ *     run, in line with what the 2026-09-03 measurement found.
+ *
+ * So a station that sends ahead of real time - the Icecast burst on connect -
+ * is now taken up on it, which is seconds of network trouble ridden out, and
+ * a lossless one keeps the cap that measured best for it. */
+#define RADIO_PREBUFFER_LIVE_TARGET (128U * 1024U)
+size_t radio_prebuffer_live_target(const radio_prebuffer_config_t *config, bool lossless);
+
 #define RADIO_PREBUFFER_TRACK_TARGET (192U * 1024U)
 #define RADIO_PREBUFFER_TRACK_AFTER_MS 3000U
 size_t radio_prebuffer_track_target(const radio_prebuffer_config_t *config, uint32_t played_ms);

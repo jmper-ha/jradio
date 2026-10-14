@@ -1222,6 +1222,13 @@ static void radio_direct_task(void *arg)
                 &(radio_prebuffer_config_t){.capacity = prebuffer.capacity,
                                             .target = station_target},
                 (uint32_t)((xTaskGetTickCount() - track_started_tick) * portTICK_PERIOD_MS));
+        } else if (!radio->hls.active) {
+            const bool lossless = radio->stream_format == RADIO_STREAM_FORMAT_FLAC ||
+                                  radio->stream_format == RADIO_STREAM_FORMAT_OGG_FLAC;
+            prebuffer.target = radio_prebuffer_live_target(
+                &(radio_prebuffer_config_t){.capacity = prebuffer.capacity,
+                                            .target = station_target},
+                lossless);
         } else {
             prebuffer.target = station_target;
         }

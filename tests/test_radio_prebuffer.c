@@ -245,8 +245,22 @@ static void test_a_track_holds_more_once_it_has_started(void)
     assert(radio_prebuffer_track_target(NULL, 60000U) == 0U);
 }
 
+static void test_a_live_station_holds_what_its_server_sends_ahead(void)
+{
+    radio_prebuffer_config_t config;
+    radio_prebuffer_config_init(&config, 262144U, 2048U);
+    assert(radio_prebuffer_live_target(&config, false) == RADIO_PREBUFFER_LIVE_TARGET);
+    // Lossless keeps the station cap that measured best for it.
+    assert(radio_prebuffer_live_target(&config, true) == RADIO_PREBUFFER_TARGET_MAX);
+    // Never more than half a smaller buffer.
+    radio_prebuffer_config_init(&config, 65536U, 2048U);
+    assert(radio_prebuffer_live_target(&config, false) == 32768U);
+    assert(radio_prebuffer_live_target(NULL, false) == 0U);
+}
+
 int main(void)
 {
+    test_a_live_station_holds_what_its_server_sends_ahead();
     test_a_track_holds_more_once_it_has_started();
     test_an_empty_buffer_is_allowed_to_wait_for_data();
     test_a_backlog_below_target_reads_without_blocking();

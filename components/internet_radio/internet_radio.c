@@ -55,6 +55,11 @@
  * ten seconds later, by when the backlog had long run out. Well inside the
  * track's cushion (RADIO_PREBUFFER_TRACK_TARGET, 8 s of 192 kbps). */
 #define RADIO_TRACK_STALL_MS 3000U
+/* The same for a live station, whose server sends in real time and so is
+ * never long silent while the stream is healthy. Shorter, because its
+ * backlog is: 32 KB is 2 s of a 128 kbps station, and reconnecting takes
+ * about one. */
+#define RADIO_LIVE_STALL_MS 1500U
 /* A read that was meant to take only what had arrived and took this long has
  * held the decode task past what the I2S DMA (93 ms) can cover. */
 #define RADIO_READ_SLOW_US 50000U
@@ -223,10 +228,17 @@ typedef enum {
 } radio_reopen_state_t;
 
 typedef struct {
+    /* A track's link, signed afresh - or NULL for a live station, which is
+     * opened again at `url`, on its live edge, a few times over. */
     internet_radio_track_reopen_fn resolve;
+    bool live;
+    char url[STATION_CATALOG_URL_MAX_LEN + 1];
+    const atomic_bool *stop;
     // The byte the new body starts from, and whether the server agreed to it.
     size_t offset;
     bool range_granted;
+    // The new answer's ICY interval: a station's counts from its own start.
+    size_t icy_interval;
     esp_http_client_handle_t client;
     atomic_int state;
     char location[RADIO_HLS_URL_MAX];
@@ -288,6 +300,11 @@ typedef struct {
      * open anything else of the chain, while one runs: the rotor's link
      * buffer is in use until it is done. */
     radio_reopen_t *reopen;
+    /* The address the stream was started at, for reconnecting a station in
+     * the background - which then also works for one being tried from the
+     * station search, which has no row in the playlist to look it up by. In
+     * PSRAM, allocated at init: STATION_CATALOG_URL_MAX_LEN + 1 bytes. */
+    char *stream_url;
     /* The longest a read that was meant not to wait took, and how many took
      * RADIO_READ_SLOW_US or more, since the last health line. Such a read is
      * time the decode task spends away from the DAC whatever the backlog. */
@@ -299,6 +316,7 @@ static internet_radio_context_t s_radio;
 static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static bool radio_direct_reconnect(internet_radio_context_t *radio);
+static bool radio_show_reconnecting(internet_radio_context_t *radio);
 static bool radio_direct_advance(internet_radio_context_t *radio);
 static bool radio_direct_resume_track(internet_radio_context_t *radio);
 static bool radio_stream_is_open(const internet_radio_context_t *radio);
@@ -695,6 +713,9 @@ static void radio_direct_task(void *arg)
      * server has stopped sending without closing - see RADIO_TRACK_STALL_MS. */
     TickType_t track_started_tick = xTaskGetTickCount();
     TickType_t last_rx_tick = xTaskGetTickCount();
+    /* A station's background reconnect ran out of backlog and the screen was
+     * told; the new stream then starts the decoder and the output afresh. */
+    bool reconnect_shown = false;
     /* A decoded block that has not fully reached the I2S DMA yet. The decoder
      * writes into the same buffer, so nothing new is decoded while this is
      * set. A pass normally places the whole block - see
@@ -749,7 +770,64 @@ static void radio_direct_task(void *arg)
         /* A track reopened in the background: taken as the stream when it is
          * still wanted, dropped otherwise - a skip or the end of the track
          * came first. Until then the loop plays from the backlog. */
-        if (radio->reopen != NULL) {
+        if (radio->reopen != NULL && radio->reopen->live) {
+            radio_reopen_t *job = radio->reopen;
+            const int state = atomic_load_explicit(&job->state, memory_order_acquire);
+            /* MP3 and ADTS AAC find their next frame on their own, so the new
+             * stream goes on the end of the old one's backlog. Anything with
+             * headers of its own - FLAC, Ogg - cannot be spliced onto the
+             * middle of another stream: it waits for the backlog to play out
+             * and starts the decoder over. */
+            const bool splices = radio->stream_format == RADIO_STREAM_FORMAT_MP3 ||
+                                 radio->stream_format == RADIO_STREAM_FORMAT_AAC;
+            if (state == RADIO_REOPEN_READY && (splices || available == 0U)) {
+                radio->http = job->client;
+                job->client = NULL;
+                radio->range_granted = false;
+                esp_http_client_set_timeout_ms(radio->http, RADIO_HTTP_STREAM_TIMEOUT_MS);
+                radio_http_stop_blocking(radio->http);
+                radio->icy_interval = job->icy_interval;
+                icy_metadata_init(&radio->icy, radio->icy_interval, radio_set_title, radio);
+                if (!splices || reconnect_shown) {
+                    radio_decoder_reset(radio->decoder);
+                    available = 0U;
+                    compressed_offset = 0U;
+                    pcm_pending = 0U;
+                    pcm_delivered = 0U;
+                    decoder_synced = false;
+                    last_pcm_tick = xTaskGetTickCount();
+                }
+                ESP_LOGI(TAG, "station reconnected in the background with %u buffered",
+                         (unsigned int)available);
+                heap_caps_free(job);
+                radio->reopen = NULL;
+                reconnect_shown = false;
+                decode_error_retries = 0U;
+                last_rx_tick = xTaskGetTickCount();
+            } else if (state == RADIO_REOPEN_FAILED) {
+                // Its tries are spent: the reconnect that says so on screen
+                // has its own, and gives up the station after them.
+                radio_reopen_drop(radio);
+                reconnect_shown = false;
+                if (!radio_direct_reconnect(radio)) {
+                    fatal = !atomic_load_explicit(&radio->direct_stop_requested,
+                                                  memory_order_acquire);
+                    break;
+                }
+                available = 0U;
+                compressed_offset = 0U;
+                pcm_pending = 0U;
+                pcm_delivered = 0U;
+                decode_error_retries = 0U;
+                last_rx_tick = xTaskGetTickCount();
+                continue;
+            } else if (available == 0U) {
+                // The backlog is spent and the station is still not back.
+                if (!reconnect_shown) reconnect_shown = radio_show_reconnecting(radio);
+                vTaskDelay(pdMS_TO_TICKS(10));
+                continue;
+            }
+        } else if (radio->reopen != NULL) {
             radio_reopen_t *job = radio->reopen;
             const int state = atomic_load_explicit(&job->state, memory_order_acquire);
             if (state == RADIO_REOPEN_READY && !track_ended &&
@@ -1165,11 +1243,11 @@ static void radio_direct_task(void *arg)
             bool track_stalled = false;
             if (received == 0 && plan.budget_ms == 0U) {
                 // Nothing buffered yet and the decoder is not waiting: keep
-                // decoding rather than spinning on an idle socket - unless a
-                // track's server has gone quiet for long enough to call it.
-                if (!radio->track_chain || radio->hls.active ||
+                // decoding rather than spinning on an idle socket - unless the
+                // server has gone quiet for long enough to call it.
+                if (radio->hls.active ||
                     (uint32_t)((xTaskGetTickCount() - last_rx_tick) * portTICK_PERIOD_MS) <
-                        RADIO_TRACK_STALL_MS) {
+                        (radio->track_chain ? RADIO_TRACK_STALL_MS : RADIO_LIVE_STALL_MS)) {
                     continue;
                 }
                 track_stalled = true;
@@ -1224,6 +1302,20 @@ static void radio_direct_task(void *arg)
                     }
                     track_ended = true;
                     continue;
+                }
+                /* A station is reconnected in the background while what it
+                 * already sent plays out, as a track is reopened: done in
+                 * line, a dropped connection was silence from the first
+                 * moment, with the backlog thrown away. */
+                if (!radio->hls.active) {
+                    ESP_LOGW(TAG, "station %s; reconnecting in the background with %u buffered",
+                             track_stalled ? "went quiet" : "connection lost",
+                             (unsigned int)available);
+                    radio_stream_close(radio);
+                    if (radio_reopen_start(radio)) {
+                        last_rx_tick = xTaskGetTickCount();
+                        continue;
+                    }
                 }
                 if (radio_direct_reconnect(radio)) {
                     available = 0U;
@@ -1528,9 +1620,14 @@ static esp_err_t radio_http_connect(internet_radio_context_t *radio, const char 
 static esp_err_t radio_reopen_http_event(esp_http_client_event_t *event)
 {
     radio_reopen_t *job = event->user_data;
-    if (job != NULL && event->event_id == HTTP_EVENT_ON_HEADER && event->header_key != NULL &&
-        event->header_value != NULL && strcasecmp(event->header_key, "Location") == 0) {
+    if (job == NULL || event->event_id != HTTP_EVENT_ON_HEADER || event->header_key == NULL ||
+        event->header_value == NULL) {
+        return ESP_OK;
+    }
+    if (strcasecmp(event->header_key, "Location") == 0) {
         snprintf(job->location, sizeof(job->location), "%s", event->header_value);
+    } else if (strcasecmp(event->header_key, "icy-metaint") == 0) {
+        job->icy_interval = (size_t)strtoul(event->header_value, NULL, 10);
     }
     return ESP_OK;
 }
@@ -1539,15 +1636,33 @@ static void radio_reopen_task(void *arg)
 {
     radio_reopen_t *job = arg;
     int outcome = RADIO_REOPEN_FAILED;
-    const char *url = job->resolve();
-    if (url == NULL) {
-        ESP_LOGW(TAG, "the track could not be resolved again");
-    } else if (radio_http_connect_client(url, job->offset, &job->client, &job->range_granted,
-                                         job->location, radio_reopen_http_event,
-                                         job) == ESP_OK) {
-        outcome = RADIO_REOPEN_READY;
+    if (job->live) {
+        /* The tries radio_direct_reconnect() makes, half a second apart, and
+         * given up as soon as nobody wants the station any more. */
+        for (unsigned int attempt = 0U; attempt < RADIO_HTTP_CONNECT_RETRIES; ++attempt) {
+            if (attempt > 0U) vTaskDelay(pdMS_TO_TICKS(RADIO_HTTP_RECONNECT_DELAY_MS));
+            if (atomic_load_explicit(job->stop, memory_order_acquire)) break;
+            job->icy_interval = 0U;
+            if (radio_http_connect_client(job->url, 0U, &job->client, &job->range_granted,
+                                          job->location, radio_reopen_http_event,
+                                          job) == ESP_OK) {
+                outcome = RADIO_REOPEN_READY;
+                break;
+            }
+            ESP_LOGW(TAG, "background reconnect attempt %u/%u failed", attempt + 1U,
+                     RADIO_HTTP_CONNECT_RETRIES);
+        }
     } else {
-        ESP_LOGW(TAG, "the track did not reopen");
+        const char *url = job->resolve();
+        if (url == NULL) {
+            ESP_LOGW(TAG, "the track could not be resolved again");
+        } else if (radio_http_connect_client(url, job->offset, &job->client,
+                                             &job->range_granted, job->location,
+                                             radio_reopen_http_event, job) == ESP_OK) {
+            outcome = RADIO_REOPEN_READY;
+        } else {
+            ESP_LOGW(TAG, "the track did not reopen");
+        }
     }
     atomic_store_explicit(&job->state, outcome, memory_order_release);
     vTaskDeleteWithCaps(NULL);
@@ -1557,11 +1672,22 @@ static void radio_reopen_task(void *arg)
  * be started, which leaves the caller to reopen it in line. */
 static bool radio_reopen_start(internet_radio_context_t *radio)
 {
-    if (radio->track_reopen == NULL || radio->reopen != NULL) return false;
+    if (radio->reopen != NULL) return false;
+    if (radio->track_chain ? radio->track_reopen == NULL : radio->hls.active) return false;
     radio_reopen_t *job = heap_caps_calloc(1, sizeof(*job), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (job == NULL) return false;
-    job->resolve = radio->track_reopen;
-    job->offset = radio->track_offset;
+    job->stop = &radio->direct_stop_requested;
+    if (radio->track_chain) {
+        job->resolve = radio->track_reopen;
+        job->offset = radio->track_offset;
+    } else {
+        if (radio->stream_url == NULL || radio->stream_url[0] == '\0') {
+            heap_caps_free(job);
+            return false;
+        }
+        job->live = true;
+        snprintf(job->url, sizeof(job->url), "%s", radio->stream_url);
+    }
     atomic_init(&job->state, RADIO_REOPEN_RUNNING);
     /* In PSRAM, as the decode task's own: two API calls and a TLS handshake,
      * the same work that task did here before, with nothing written to
@@ -2166,16 +2292,12 @@ static int radio_stream_read_ready(internet_radio_context_t *radio, uint8_t *buf
     return radio_http_read_ready(radio, buffer, length, budget_ms);
 }
 
-static bool radio_direct_reconnect(internet_radio_context_t *radio)
+/* Says the station is being reconnected and takes the output down, the way a
+ * reconnect always has - so the screen says why it is silent, and the output
+ * starts again cleanly once there is something to play. False when the
+ * station was stopped or paused meanwhile. */
+static bool radio_show_reconnecting(internet_radio_context_t *radio)
 {
-    internet_radio_status_t status;
-    internet_radio_get_status(&status);
-    if (status.station_index >= radio->catalog->count ||
-        atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire) ||
-        atomic_load_explicit(&radio->direct_paused, memory_order_acquire)) {
-        return false;
-    }
-
     xSemaphoreTake(radio->direct_io_mutex, portMAX_DELAY);
     if (atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire) ||
         atomic_load_explicit(&radio->direct_paused, memory_order_acquire)) {
@@ -2186,6 +2308,20 @@ static bool radio_direct_reconnect(internet_radio_context_t *radio)
     (void)radio_sync_output(radio);
     radio->output_started = false;
     xSemaphoreGive(radio->direct_io_mutex);
+    return true;
+}
+
+static bool radio_direct_reconnect(internet_radio_context_t *radio)
+{
+    internet_radio_status_t status;
+    internet_radio_get_status(&status);
+    if (status.station_index >= radio->catalog->count ||
+        atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire) ||
+        atomic_load_explicit(&radio->direct_paused, memory_order_acquire)) {
+        return false;
+    }
+
+    if (!radio_show_reconnecting(radio)) return false;
 
     radio_stream_close(radio);
     radio_decoder_reset(radio->decoder);
@@ -2502,6 +2638,9 @@ esp_err_t internet_radio_init(void)
      * its own tag and by this file, a failed request by its caller. */
     esp_log_level_set("transport_base", ESP_LOG_NONE);
     esp_log_level_set("HTTP_CLIENT", ESP_LOG_ERROR);
+    // Without it a dropped station reconnects in line, as it always did.
+    s_radio.stream_url = heap_caps_calloc(1, STATION_CATALOG_URL_MAX_LEN + 1U,
+                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     s_radio.direct_done = xSemaphoreCreateBinary();
     if (s_radio.direct_done == NULL) {
         return ESP_ERR_NO_MEM;
@@ -2634,6 +2773,9 @@ static bool radio_start_stream(const char *url, const char *name, size_t station
     s_radio.track_chain = track_chain;
     atomic_store_explicit(&s_radio.skip_requested, false, memory_order_release);
     s_radio.stream_format = stream_format;
+    if (s_radio.stream_url != NULL) {
+        snprintf(s_radio.stream_url, STATION_CATALOG_URL_MAX_LEN + 1U, "%s", url);
+    }
     // Clear the stop flag before opening, not after. internet_radio_stop() has
     // already waited for the previous task to exit, so what is left here is a
     // stale true - and opening an HLS station reads a playlist over the

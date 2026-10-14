@@ -36,9 +36,12 @@ static const char *TAG = "ota_check";
 /* Not on the network when the time came: try again in a while rather than
  * wait a whole day. */
 #define OTA_CHECK_RETRY_US (10LL * 60 * 1000 * 1000)
-/* ota.json is a few kilobytes; this is room for a release with many more
- * displays and longer notes, and a bound on what a wrong answer can cost. */
-#define OTA_MANIFEST_MAX (24U * 1024U)
+/* ota.json carries the notes of the last ten releases in two languages, and
+ * the v1.8.0 one came to 22.4 KB - 91 % of the 24 KB this was. The radios
+ * that will read the next manifests are the ones this release puts out, so
+ * the room is made here: in PSRAM, held only for the check, and still a
+ * bound on what a wrong answer can cost. */
+#define OTA_MANIFEST_MAX (48U * 1024U)
 #define OTA_PIECE 4096U
 /* The install downloads over TLS and writes flash, which a task whose stack
  * is in PSRAM may not do - so internal, and only for as long as it runs. A

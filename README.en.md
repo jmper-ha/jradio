@@ -74,8 +74,8 @@ The full pinout and the choice of parts are in [Hardware](doc/hardware.en.md).
 | **Resume** | After power-on continues what was playing: the station, the track, the server folder |
 | **Two languages** | Russian and English - on the screen and in the browser, switched on the fly |
 
-Not there yet: the general Yandex Music catalogue of genres (only the
-account's stations).
+Not there yet: the full Yandex Music catalogue of genres - only "My Wave" and
+the waves Yandex picks for the account.
 
 ### Formats
 

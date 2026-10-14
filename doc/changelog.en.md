@@ -6,11 +6,33 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
-## Next version
+## v1.7.1 — 14 October 2026
 
 New:
 - Tone controls (bass and treble, ±12 dB) and loudness in three strengths -
   on the device in a new Sound group, and in the web interface.
+- Yandex Music: genres, moods, activities and artist waves are back - the same
+  ones the site shows under "My Wave". Yandex's station list shrank to "My
+  Wave" alone in the last days; the stations now come from where the site
+  takes them. Artist waves are marked "artist-style wave".
+- Yandex Music plays through radio "sessions", as the official apps do.
+- Ordinary MP3 and AAC stations keep everything the server sends ahead, up to
+  128 KB - usually 3-8 seconds instead of 1-2.
+
+Fixed:
+- Dropouts with a full buffer on HTTPS stations: with packet loss a read
+  waited for the missing part of a TLS record and held the decoder. Now the
+  buffer plays out, and the meter shows it draining.
+- A dropped station connection no longer means silence: the reconnect runs in
+  the background while the backlog plays, and a server gone quiet is noticed
+  after 1.5 s.
+- Yandex Music: a track cut off is fetched on from the same byte in the
+  background - no skipped track, no repeated stretch, no gap; no more extra
+  seconds of silence at the end of a track.
+- Yandex Music: the list no longer reshuffles on a refresh, and the wave
+  picked in the web page is the one pressed.
+- A Bluetooth module that answered late could stay on the bus with the board:
+  USB crackled and DLNA was silent until a restart.
 
 ## v1.7.0 — 11 October 2026
 

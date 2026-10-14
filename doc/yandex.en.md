@@ -9,8 +9,17 @@ device shows an address and a short code - open the address on a phone or a
 computer and enter the code. No password is typed on the device or stored
 anywhere. The account is unlinked in the same place.
 
-**Stations.** The ones Yandex offers your account: "My Wave" and a few to your
-taste. The list is the same as in the phone app.
+**Stations.** "My Wave" and the waves Yandex picks for you - the same ones the
+music.yandex.ru site shows under "My Wave": genres ("All that jazz"), moods and
+activities ("Run faster than the wind"), artist waves. An artist wave plays
+music in the artist's style, not only their songs, so the name carries
+"artist-style wave" (on the panel, "· alike"). The selection is personal and
+changes; stations already in the list keep their places.
+
+**Dropped connections.** A track is a file, and the radio holds about 8 s of
+it ahead. If the connection to Yandex's server breaks or goes quiet, the track
+is fetched on from the same byte in the background while that plays - a drop
+is usually not heard.
 
 **Controls.** Play, pause, next track - Next on the device or the button in the
 web interface. There is no "previous track": a station only goes forward.

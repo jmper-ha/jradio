@@ -15,7 +15,7 @@ Every 10 seconds, two lines about audio: the output and the stream intake.
 
 ```
 board: audio health: realtime=100% peak=21533 silent=0 zero_run=0 underruns=0
-internet_radio: stream health: i2s_underruns=0 starvations=0 min_backlog=131072/262144 (819ms) pcm=100%
+internet_radio: stream health: i2s_underruns=0 starvations=0 decode_stalls=0 min_backlog=131072/262144 (8192ms) target=131072 (8192ms) pcm=100% of realtime read_max=14ms slow_reads=0
 ```
 
 A healthy picture: `realtime` 99-100 %, the other counters zero. If there is
@@ -23,6 +23,16 @@ no sound anyway, the trouble is around the DAC, not in the firmware. Separate
 warnings - `audio gap`, `audio silence`, `audio zero-run` - mark the moment of
 an event; `decode_stalls` counts the times the decoder consumed data without
 producing sound - after two seconds of that the stream restarts itself.
+`min_backlog` is the least data held in 10 seconds, `target` what the radio
+tries to hold: up to 128 KB for MP3 and AAC stations (as much as the server
+sends ahead), 32 KB for FLAC, about 8 seconds for Yandex Music tracks.
+`read_max` is the longest network read, `slow_reads` how many took 50 ms or
+more: if dropouts line up with them, the network held the decoder.
+
+A dropped connection is logged as `station connection lost` / `went quiet` for
+a station and `track cut off` / `stalled` for a Yandex track, the return as
+`reconnected in the background` and `picked the track up`; the reconnect runs
+in the background while the backlog plays out.
 
 ### Memory and stacks
 

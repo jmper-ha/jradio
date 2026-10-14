@@ -15,14 +15,24 @@
 
 ```
 board: audio health: realtime=100% peak=21533 silent=0 zero_run=0 underruns=0
-internet_radio: stream health: i2s_underruns=0 starvations=0 min_backlog=131072/262144 (819ms) pcm=100%
+internet_radio: stream health: i2s_underruns=0 starvations=0 decode_stalls=0 min_backlog=131072/262144 (8192ms) target=131072 (8192ms) pcm=100% of realtime read_max=14ms slow_reads=0
 ```
 
 Исправная картина: `realtime` 99–100 %, остальные счётчики нулевые. Если при
 этом звука нет — дело в обвязке ЦАПа, а не в прошивке. Отдельные предупреждения
 `audio gap`, `audio silence`, `audio zero-run` отмечают момент события;
 `decode_stalls` считает случаи, когда декодер получал данные, но не выдавал
-звук — через две секунды такого поток перезапускается сам.
+звук — через две секунды такого поток перезапускается сам. `min_backlog` —
+меньше всего данных в запасе за 10 секунд, `target` — сколько радио старается
+держать: до 128 КБ у станций MP3 и AAC (сколько сервер присылает вперёд), 32 КБ
+у FLAC, около 8 секунд у треков Яндекс Музыки. `read_max` — самое долгое чтение
+из сети, `slow_reads` — сколько чтений заняли 50 мс и больше: если провалы
+звука совпадают с ними, декодер держала сеть.
+
+Обрыв соединения отмечается строками `station connection lost` / `went quiet`
+у станций и `track cut off` / `stalled` у треков Яндекса, возвращение —
+`reconnected in the background` и `picked the track up`; переподключение идёт
+в фоне, пока доигрывается запас.
 
 ### Память и стеки
 

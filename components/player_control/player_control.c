@@ -725,7 +725,10 @@ static void player_file_media_removing(void)
  * go and takes them back only once it has. The order is the whole point -
  * see board_audio_release_bus() - and both run on this task, which is the
  * one that already blocks to open a station. */
-#define PLAYER_BT_MODE_TIMEOUT_MS 3000U
+/* Five, not three: a module that is connecting a phone as it is asked -
+ * which is when a phone that knows it comes back - answered after the three
+ * (2026-10-14). A late answer is sent back by bt_link all the same. */
+#define PLAYER_BT_MODE_TIMEOUT_MS 5000U
 /* The phone's last word on the volume (its own 0..127) and the percent the
  * board was set to for it; the two directions must not chase each other.
  * The board is only told the knob moved when its percent differs from the

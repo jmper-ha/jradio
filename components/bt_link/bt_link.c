@@ -322,6 +322,18 @@ static void bt_link_on_frame(const jbt_frame_t *frame)
          * module itself calls the last speaker once; the three calls from
          * here start over too. */
         if (s_state.acked_mode == JBT_MODE_SOURCE) bt_link_output_calls_reset();
+        /* Sink mode taken after the wait for it was given up: the board has
+         * taken the bus back, and the module now drives it too - two outputs
+         * on one wire. Seen 2026-10-14: the module was busy connecting a
+         * phone, answered the switch after the 3 s wait, pressed play on the
+         * phone and put its sound on the bus under a USB track (crackling)
+         * and a DLNA one (silence). Sent straight back to what is wanted. */
+        if (s_state.acked_mode == JBT_MODE_SINK && s_wanted_mode != JBT_MODE_SINK) {
+            const uint8_t payload[1] = {s_wanted_mode};
+            ESP_LOGW(TAG, "module took sink mode after the wait; sending it back to mode %u",
+                     (unsigned)s_wanted_mode);
+            (void)bt_link_send(JBT_MSG_SET_MODE, 0U, payload, sizeof(payload));
+        }
         xSemaphoreGive(s_mode_ack);
         if (s_scan_pending && s_state.acked_mode == JBT_MODE_SOURCE) {
             s_scan_pending = false;

@@ -753,8 +753,11 @@ static void radio_direct_task(void *arg)
                     pcm_pending = 0U;
                     pcm_delivered = 0U;
                 }
-                ESP_LOGI(TAG, "picked the track up at %u bytes with %u buffered%s",
-                         (unsigned int)job->offset, (unsigned int)available,
+                ESP_LOGI(TAG, "picked the track up at %u bytes (HTTP %d, %lld more) with %u buffered%s",
+                         (unsigned int)job->offset,
+                         esp_http_client_get_status_code(radio->http),
+                         (long long)esp_http_client_get_content_length(radio->http),
+                         (unsigned int)available,
                          radio->range_granted ? "" : " - the server started it over");
                 heap_caps_free(job);
                 radio->reopen = NULL;
@@ -1176,9 +1179,10 @@ static void radio_direct_task(void *arg)
                     if (!esp_http_client_is_complete_data_received(radio->http)) {
                         if (track_drop_resumes < RADIO_TRACK_DROP_RESUMES) {
                             ++track_drop_resumes;
-                            ESP_LOGW(TAG, "track %s at %u bytes; picking it up there (%u)",
+                            ESP_LOGW(TAG, "track %s at %u bytes (body %lld); picking it up there (%u)",
                                      track_stalled ? "stalled" : "cut off",
                                      (unsigned int)radio->track_offset,
+                                     (long long)esp_http_client_get_content_length(radio->http),
                                      track_drop_resumes);
                             radio_stream_close(radio);
                             if (radio_reopen_start(radio)) {
@@ -1218,17 +1222,22 @@ static void radio_direct_task(void *arg)
                                               memory_order_acquire);
                 break;
             }
-            /* Counted before the ICY layer takes its bytes out, because a
-             * Range is in body coordinates. HLS is left out: its reads are
-             * segments, and a resumed byte offset would mean nothing across
-             * them - a live playlist is not something a pause holds a place
-             * in anyway. */
-            if (radio->track_chain && !radio->hls.active) {
-                radio->track_offset += (size_t)received;
-            }
             int chunk = received;
             const TickType_t topup_started = xTaskGetTickCount();
             for (;;) {
+                /* Counted before the ICY layer takes its bytes out, because a
+                 * Range is in body coordinates - and for every chunk of the
+                 * top-up, not only the read that started it. Counting the
+                 * first alone undercounted by whatever the top-up drained, so
+                 * a track picked up after a dropped connection asked for bytes
+                 * it had already played: the music jumped back, by seconds
+                 * once a track's backlog grew to 192 KB. HLS is left out: its
+                 * reads are segments, and a resumed byte offset would mean
+                 * nothing across them - a live playlist is not something a
+                 * pause holds a place in anyway. */
+                if (radio->track_chain && !radio->hls.active) {
+                    radio->track_offset += (size_t)chunk;
+                }
                 size_t audio_length = 0U;
                 const icy_metadata_result_t icy_result = icy_metadata_feed(
                     &radio->icy, network, (size_t)chunk, audio, RADIO_DIRECT_NETWORK_CHUNK,

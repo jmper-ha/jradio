@@ -1,6 +1,25 @@
 cmake_minimum_required(VERSION 3.16)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+
+# The version is `git describe`, which ESP-IDF runs for PROJECT_VER. A copy
+# downloaded as a ZIP has no .git, and ESP-IDF then stamps the firmware "1" -
+# a user building from one saw "1" on the web page where the release said
+# v1.8.0. Without git (and without a version.txt, which ESP-IDF would read)
+# the version is the newest release the changelog names, so a build from the
+# release's own source reads the same as the release.
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND
+   NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/doc/changelog.md")
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/doc/changelog.md" jradio_release
+         REGEX "^## v[0-9]+\\.[0-9]+\\.[0-9]+" LIMIT_COUNT 1)
+    string(REGEX MATCH "v[0-9]+\\.[0-9]+\\.[0-9]+" jradio_release "${jradio_release}")
+    if(jradio_release)
+        set(PROJECT_VER "${jradio_release}")
+        message(STATUS "No git here: the version is ${PROJECT_VER}, from doc/changelog.md")
+    endif()
+endif()
+
 project(jradio)
 
 # board_options.h ends by including board_options.local.h - a board's own

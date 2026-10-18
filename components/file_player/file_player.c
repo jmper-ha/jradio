@@ -27,6 +27,7 @@
 #include "radio_stream_format.h"
 #include "file_storage.h"
 #include "file_wav.h"
+#include "mp3_vbr.h"
 
 static const char *TAG = "file_player";
 
@@ -198,6 +199,10 @@ typedef struct {
     // Where the file's SEEKTABLE is and how many points it holds; 0 without one.
     uint64_t flac_seektable_offset;
     uint32_t flac_seektable_points;
+    /* A VBR MP3's own account of itself, read from its first frame: the
+     * length, the average rate and where each percent of the track starts. */
+    mp3_vbr_t mp3_vbr;
+    bool mp3_vbr_ready;
     /* Output samples to drop before the next one is played: a jump lands on
      * the frame that contains the target sample, and the samples of that
      * frame before it belong to the track before. */
@@ -337,6 +342,48 @@ static bool load_folder_cover(void)
  * measured from. Blocks are stepped over rather than read: one of them is the
  * cover, and it is hundreds of kilobytes.
  */
+/* Reads a VBR MP3's Xing, Info or VBRI header - see mp3_vbr.h - for the
+ * length, the bitrate to show and the table jumps are aimed with. A file
+ * without one keeps working from its frames' own bitrate, as before. */
+#define MP3_LAYOUT_READ 2048U
+static void read_mp3_layout(file_player_context_t *ctx)
+{
+    uint8_t head[MP3_LAYOUT_READ];
+    rewind(ctx->file);
+    size_t got = fread(head, 1U, sizeof(head), ctx->file);
+    // The header frame comes right after any ID3v2 tag, which can be large -
+    // it carries the cover.
+    const size_t tag = mp3_id3v2_length(head, got);
+    if (tag > 0U) {
+        if (tag > LONG_MAX || fseek(ctx->file, (long)tag, SEEK_SET) != 0) return;
+        got = fread(head, 1U, sizeof(head), ctx->file);
+    }
+    mp3_vbr_t vbr;
+    if (!mp3_vbr_parse(head, got, &vbr)) return;
+    const uint64_t milliseconds = mp3_vbr_duration_ms(&vbr);
+    if (milliseconds < 1000U) return;
+    const uint32_t seconds = (uint32_t)(milliseconds / 1000U);
+
+    ctx->header_bytes = (uint64_t)tag + vbr.frame_offset;
+    if (vbr.bytes == 0U && ctx->file_bytes > ctx->header_bytes) {
+        vbr.bytes = (uint32_t)(ctx->file_bytes - ctx->header_bytes);
+    }
+    ctx->mp3_vbr = vbr;
+    ctx->mp3_vbr_ready = true;
+    ctx->length_from_header = true;
+    atomic_store_explicit(&s_total_seconds, seconds, memory_order_relaxed);
+    /* The average over the whole file, as for FLAC: a VBR frame's own rate
+     * goes from 32 to 320 kbit/s within a bar, and the codec line jumped with
+     * it. */
+    const uint16_t bitrate = (uint16_t)((uint64_t)vbr.bytes * 8U / milliseconds);
+    taskENTER_CRITICAL(&s_status_lock);
+    s_status.bitrate_kbps = bitrate;
+    taskEXIT_CRITICAL(&s_status_lock);
+    ESP_LOGI(TAG, "track length: %us from %u frames (VBR header, %u kbps average%s)",
+             (unsigned int)seconds, (unsigned int)vbr.frames, (unsigned int)bitrate,
+             vbr.has_toc ? ", seek table" : "");
+}
+
 static void read_flac_layout(file_player_context_t *ctx)
 {
     uint8_t header[FLAC_BLOCK_HEADER_SIZE];
@@ -513,7 +560,10 @@ static esp_err_t apply_info(file_player_context_t *ctx, const radio_decoder_info
     }
 
     taskENTER_CRITICAL(&s_status_lock);
-    if (info->bitrate_kbps > 0U) s_status.bitrate_kbps = (uint16_t)info->bitrate_kbps;
+    // A rate from the file's header is the whole file's, and stays.
+    if (info->bitrate_kbps > 0U && !ctx->length_from_header) {
+        s_status.bitrate_kbps = (uint16_t)info->bitrate_kbps;
+    }
     if (info->sample_rate > 0U) s_status.sample_rate_hz = info->sample_rate;
     taskEXIT_CRITICAL(&s_status_lock);
     // The first frame is what reveals the bitrate, and the bitrate is what
@@ -905,6 +955,11 @@ static void apply_seek(file_player_context_t *ctx, radio_decoder_t *decoder)
                      (unsigned long long)samples);
             goal = landed;
         }
+    } else if (ctx->mp3_vbr_ready) {
+        // Where the header's table says that moment starts - a VBR file is
+        // not where its average rate would put it.
+        offset = ctx->header_bytes +
+                 mp3_vbr_seek_offset(&ctx->mp3_vbr, (uint64_t)target * 1000U / 75U);
     } else {
         offset = file_track_seek_offset(ctx->file_bytes, ctx->header_bytes, bitrate_kbps,
                                         target / 75U);
@@ -1120,6 +1175,7 @@ static void file_player_run_track(void)
         // The sheet names the track; the file's own tags name the side.
         if (cue) publish_cue_tags(s_cue->first);
         if (s_request.format == FILE_BROWSER_FORMAT_FLAC) read_flac_layout(&ctx);
+        if (s_request.format == FILE_BROWSER_FORMAT_MP3) read_mp3_layout(&ctx);
         // Whatever the reads above left behind: the decoder starts at zero.
         rewind(ctx.file);
         ESP_LOGI(TAG, "playing %s", s_request.path);

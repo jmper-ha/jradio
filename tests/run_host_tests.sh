@@ -284,6 +284,7 @@ run_test cue_sheet tests/test_cue_sheet.c components/file_storage/cue_sheet.c
 run_test file_track_progress tests/test_file_track_progress.c \
     components/file_player/file_track_progress.c
 run_test file_wav tests/test_file_wav.c components/file_player/file_wav.c
+run_test mp3_vbr tests/test_mp3_vbr.c components/file_player/mp3_vbr.c
 run_test wifi_provisioning tests/test_wifi_provisioning.c \
     components/jradio_wifi_provisioning/wifi_provisioning.c \
     components/settings/wifi_settings.c

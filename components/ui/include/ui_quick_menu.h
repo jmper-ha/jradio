@@ -29,6 +29,12 @@ typedef enum {
     UI_QUICK_ITEM_SLEEP = 0,
     UI_QUICK_ITEM_ALARM,
     UI_QUICK_ITEM_BRIGHTNESS,
+    /* The tone controls and loudness, here since 2026-10-18: users found them
+     * awkward to reach three levels down in the settings while the music they
+     * are adjusting for plays. */
+    UI_QUICK_ITEM_BASS,
+    UI_QUICK_ITEM_TREBLE,
+    UI_QUICK_ITEM_LOUDNESS,
     UI_QUICK_ITEM_BT_OUTPUT,
     UI_QUICK_ITEM_COUNT,
 } ui_quick_item_t;
@@ -42,15 +48,13 @@ typedef uint32_t ui_quick_mask_t;
 #define UI_QUICK_VISIBLE(item) ((ui_quick_mask_t)1U << (unsigned)(item))
 #define UI_QUICK_VISIBLE_ALL ((ui_quick_mask_t)~(ui_quick_mask_t)0U)
 
-/* How many functions the window shows at once - all of them, which is the
- * point: a panel that exists to be read at a glance should not hide a row
- * behind a scroll. It is four rather than UI_QUICK_ITEM_COUNT so that a fifth
- * function added later scrolls instead of silently running off the panel, and
- * ui.c asserts this against the height the layout leaves room for.
+/* How many rows the window shows at once. It was all of them until the sound
+ * moved in (2026-10-18): seven functions do not fit the height the layout
+ * leaves, so the list scrolls under a window of four, and ui.c asserts this
+ * against that height.
  *
  * The window is drawn only as tall as the functions it actually has, so a
- * board whose Bluetooth module is quiet gets three rows, not three and a
- * gap. */
+ * list shorter than four is not four and a gap. */
 #define UI_QUICK_ROWS 4U
 
 typedef struct {
@@ -77,6 +81,9 @@ typedef enum {
     UI_QUICK_RESULT_MOVED,
     UI_QUICK_RESULT_STEP_UP,
     UI_QUICK_RESULT_STEP_DOWN,
+    /* The click on a switch row: flip it. A switch has two states, so taking
+     * the knob for it first and turning it after was a step too many. */
+    UI_QUICK_RESULT_TOGGLE,
 } ui_quick_result_t;
 
 /* How long an untouched panel stays up.
@@ -103,7 +110,8 @@ void ui_quick_menu_close(ui_quick_menu_t *state);
  *
  *   quick menu button  - opens, and closes again
  *   knob turned        - the next row, or the value one step
- *   knob pressed       - takes the row, and gives it back
+ *   knob pressed       - takes the row, and gives it back; on a switch row,
+ *                        flips the switch instead
  *   knob held          - closes, because holding means "back" everywhere else
  *   any other button   - closes, and the press is spent on closing
  *
@@ -140,8 +148,8 @@ uint8_t ui_quick_menu_position(const ui_quick_menu_t *state);
 
 /* Whether the row's value is a switch rather than a reading. The panel draws
  * those as the settings screen does - a real switch, not the words "on" and
- * "off" - and the knob's detent flips them either way, which is why the model
- * answers this rather than ui.c deciding by item. */
+ * "off" - and a click flips them at once, which is why the model answers this
+ * rather than ui.c deciding by item. */
 bool ui_quick_item_is_switch(ui_quick_item_t item);
 
 /* The panel's own name for a function, which is not always the settings

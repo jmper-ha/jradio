@@ -6095,6 +6095,22 @@ static void ui_quick_value_text(ui_quick_item_t item, char *out, size_t size)
     case UI_QUICK_ITEM_BRIGHTNESS:
         snprintf(out, size, "%u%%", (unsigned)s_device_settings.brightness);
         break;
+    case UI_QUICK_ITEM_BASS:
+    case UI_QUICK_ITEM_TREBLE: {
+        const int db = item == UI_QUICK_ITEM_BASS ? (int)s_device_settings.tone_bass
+                                                  : (int)s_device_settings.tone_treble;
+        // Zero without a sign: "+0 dB" reads as a boost that is not there.
+        if (db == 0) snprintf(out, size, "0 %s", ui_text(DEVICE_TEXT_DB_SHORT));
+        else snprintf(out, size, "%+d %s", db, ui_text(DEVICE_TEXT_DB_SHORT));
+        break;
+    }
+    case UI_QUICK_ITEM_LOUDNESS:
+        snprintf(out, size, "%s",
+                 ui_text(s_device_settings.loudness == DEVICE_LOUDNESS_WEAK     ? DEVICE_TEXT_LOUDNESS_WEAK
+                         : s_device_settings.loudness == DEVICE_LOUDNESS_MEDIUM ? DEVICE_TEXT_LOUDNESS_MEDIUM
+                         : s_device_settings.loudness == DEVICE_LOUDNESS_STRONG ? DEVICE_TEXT_LOUDNESS_STRONG
+                                                                                : DEVICE_TEXT_OFF));
+        break;
     default:
         if (size > 0U) out[0] = '\0';
         break;
@@ -6276,7 +6292,7 @@ static void ui_quick_hide(void)
 
 /* One detent on the row the knob owns. Each row is applied the way its own
  * setting already is elsewhere in this file, deliberately: the quick panel is
- * another way to reach these four, not another place where they are written. */
+ * another way to reach these settings, not another place where they are written. */
 static void ui_quick_apply_step(int direction)
 {
     switch (s_quick.item) {
@@ -6287,8 +6303,9 @@ static void ui_quick_apply_step(int direction)
         break;
     }
     case UI_QUICK_ITEM_ALARM: {
-        /* A switch, so either direction flips it: a knob that only turned the
-         * alarm on clockwise would need a second guess to turn it off. */
+        /* A switch, so either direction flips it - and the click comes here
+         * as a step up. A knob that only turned the alarm on clockwise would
+         * need a second guess to turn it off. */
         const bool next = !s_device_settings.alarm.enabled;
         if (!device_settings_set_alarm_enabled(&s_device_settings, next)) {
             ESP_LOGW(TAG, "quick panel: the alarm switch was not saved");
@@ -6312,6 +6329,22 @@ static void ui_quick_apply_step(int direction)
     case UI_QUICK_ITEM_BRIGHTNESS:
         ui_brightness_step(direction);
         break;
+    case UI_QUICK_ITEM_BASS:
+    case UI_QUICK_ITEM_TREBLE:
+        ui_tone_setting_step(s_quick.item == UI_QUICK_ITEM_BASS, direction);
+        break;
+    case UI_QUICK_ITEM_LOUDNESS: {
+        // Round the four either way, off included, as the settings row does.
+        const unsigned count = DEVICE_LOUDNESS_STRONG + 1U;
+        const unsigned next = (s_device_settings.loudness + count + (direction > 0 ? 1U : count - 1U)) % count;
+        if (!device_settings_set_loudness(&s_device_settings, next)) {
+            ESP_LOGW(TAG, "quick panel: loudness was not saved");
+            break;
+        }
+        ui_apply_tone();
+        device_settings_publish(&s_device_settings);
+        break;
+    }
     default:
         break;
     }
@@ -6341,7 +6374,7 @@ static void ui_quick_poll(uint32_t now_ms)
         ui_quick_hide();
         return;
     }
-    /* Values move under the panel: the web page has the same four settings,
+    /* Values move under the panel: the web page has the same settings,
      * and the sleep timer counts down on its own. */
     ui_quick_refresh();
 }
@@ -6559,6 +6592,11 @@ static void ui_handle_input(board_input_action_t action)
             return;
         case UI_QUICK_RESULT_STEP_DOWN:
             ui_quick_apply_step(-1);
+            ui_quick_refresh();
+            return;
+        case UI_QUICK_RESULT_TOGGLE:
+            // A switch flips whichever way it is stepped.
+            ui_quick_apply_step(1);
             ui_quick_refresh();
             return;
         default:

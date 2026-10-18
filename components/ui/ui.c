@@ -430,9 +430,9 @@ static lv_obj_t *s_source_progress;
 /* Four rising bars. Drawn rather than taken from a font: LVGL's symbol set has
  * one Wi-Fi glyph with no strength in it, and the strength is the half worth
  * showing. */
-/* One click of a remote's volume key. Five percent is 2 dB on this curve - a
- * step you can hear without hunting, and 20 clicks from silence to full. The
- * encoder's own step is a setting, and starts out the same. */
+/* The volume step before the settings are read. Five percent is 2 dB on this
+ * curve - a step you can hear without hunting, and 20 clicks from silence to
+ * full - and it is where the setting starts out. */
 #define UI_VOLUME_STEP_PERCENT 5
 /* How long the knob has to be still before the setting is written to flash.
  * Long enough to cover a whole gesture, short enough that a power cut right
@@ -526,9 +526,11 @@ static lv_obj_t *s_settings_notice;
 static ui_settings_model_t s_settings_model;
 static device_settings_t s_device_settings;
 
-/* Volume percent per encoder detent. Read through here rather than straight
- * off the struct: before the settings are first read it is zero, and a knob
- * that does nothing looks broken. */
+/* Volume percent per encoder detent and per press of a remote's volume key -
+ * one setting for both, since a user asked why the remote went 1, 6, 11 with
+ * the encoder set to 1. Read through here rather than straight off the
+ * struct: before the settings are first read it is zero, and a knob that
+ * does nothing looks broken. */
 static int ui_encoder_volume_step(void)
 {
     const int step = (int)s_device_settings.volume_step;
@@ -6450,10 +6452,10 @@ static bool ui_handle_remote_action(board_input_action_t action)
 {
     switch (action) {
     case BOARD_INPUT_ACTION_VOLUME_UP:
-        ui_volume_step(UI_VOLUME_STEP_PERCENT);
+        ui_volume_step(ui_encoder_volume_step());
         return true;
     case BOARD_INPUT_ACTION_VOLUME_DOWN:
-        ui_volume_step(-UI_VOLUME_STEP_PERCENT);
+        ui_volume_step(-ui_encoder_volume_step());
         return true;
     case BOARD_INPUT_ACTION_MUTE:
         ui_mute_toggle();

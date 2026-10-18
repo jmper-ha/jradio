@@ -333,10 +333,10 @@ detail, the alarm, the sleep timer, the backup.
 - **Scrolling** - how long lines move: "left-right", or "left" with a jump
   back to the start.
 - **Brightness** - 10 to 100, changed with the encoder right on the row.
-- **Volume step** - how many percent one click of the encoder moves the
-  volume: 1 to 20, 5 by default. On the device it is changed with the encoder
-  right on the row, on the web with a slider in the Encoder group. The
-  remote's volume keys always step by 5.
+- **Volume step** - how many percent one click of the encoder or one press of
+  a remote volume key moves the volume: 1 to 20, 5 by default. On the device it
+  is changed with the encoder right on the row, on the web with a slider in the
+  Encoder group.
 - **Sound** - a group of its own on the device and on the web:
   - **Bass** and **Treble** - tone controls, -12 to +12 dB (bass below
     250 Hz, treble above 4 kHz). On the device they are turned with the

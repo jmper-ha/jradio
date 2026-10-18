@@ -58,8 +58,38 @@ static void test_each_button_reports_its_own_actions(void)
     assert(sleep_button(&gesture, false, 5) == BOARD_INPUT_ACTION_SLEEP_BUTTON);
 }
 
+/* A step on the press, nothing more until the delay, then a slow repeat, then
+   a fast one; a release starts it over. Called every 5 ms, as the task does. */
+static void test_a_held_button_repeats_faster_the_longer_it_is_held(void)
+{
+    board_button_repeat_t repeat;
+    board_button_repeat_init(&repeat);
+    assert(!board_button_repeat_update(&repeat, false, 5U));
+    assert(board_button_repeat_update(&repeat, true, 5U));
+    unsigned steps = 0U;
+    unsigned first_repeat_at = 0U;
+    for (unsigned held = 5U; held <= 3000U; held += 5U) {
+        if (board_button_repeat_update(&repeat, true, 5U)) {
+            ++steps;
+            if (first_repeat_at == 0U) first_repeat_at = held;
+        }
+    }
+    assert(first_repeat_at == BOARD_BUTTON_REPEAT_DELAY_MS);
+    // 400..1500 every 150 ms, then every 60 ms to 3000.
+    const unsigned slow = (BOARD_BUTTON_REPEAT_FAST_AFTER_MS - BOARD_BUTTON_REPEAT_DELAY_MS) /
+                          BOARD_BUTTON_REPEAT_SLOW_MS + 1U;
+    assert(steps >= slow + (3000U - BOARD_BUTTON_REPEAT_FAST_AFTER_MS) / BOARD_BUTTON_REPEAT_FAST_MS - 2U);
+    assert(steps <= slow + (3000U - BOARD_BUTTON_REPEAT_FAST_AFTER_MS) / BOARD_BUTTON_REPEAT_FAST_MS + 2U);
+    // Let go and pressed again: one step at once, as at first.
+    assert(!board_button_repeat_update(&repeat, false, 5U));
+    assert(board_button_repeat_update(&repeat, true, 5U));
+    assert(!board_button_repeat_update(&repeat, true, 300U));
+    assert(!board_button_repeat_update(NULL, true, 5U));
+}
+
 int main(void)
 {
+    test_a_held_button_repeats_faster_the_longer_it_is_held();
     test_a_hold_reports_once_and_swallows_the_click();
     test_a_short_press_reports_on_release();
     test_each_button_reports_its_own_actions();

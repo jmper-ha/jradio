@@ -143,6 +143,9 @@
     {key: 'encoder_left', kind: 'pin', device: 'encoder', dflt: 7, define: 'ENCODER_LEFT_GPIO'},
     {key: 'encoder_button', kind: 'pin', device: 'encoder', dflt: 6, define: 'ENCODER_BUTTON_GPIO'},
     {key: 'encoder_pullups', kind: 'bool', device: 'encoder', dflt: 0, define: 'ENCODER_USE_INTERNAL_PULLUPS'},
+    /* Three buttons on the encoder's three lines: + on Right, - on Left, OK on
+       Push. One or the other - the lines are the same. */
+    {key: 'encoder_buttons', kind: 'bool', device: 'encoder', dflt: 0, define: 'ENCODER_AS_BUTTONS'},
 
     {key: 'button_sleep', kind: 'opt_pin', device: 'buttons', dflt: 21, define: 'BUTTON_SLEEP_GPIO'},
     {key: 'button_quick_menu', kind: 'opt_pin', device: 'buttons', dflt: 45, define: 'BUTTON_QUICK_MENU_GPIO'},
@@ -571,6 +574,7 @@
       ...gpio('BUTTON_PREV_GPIO', 'button_prev'),
       ...gpio('BUTTON_NEXT_GPIO', 'button_next'),
       `#define ENCODER_USE_INTERNAL_PULLUPS ${on('encoder_pullups')}`,
+      `#define ENCODER_AS_BUTTONS ${on('encoder_buttons')}`,
       `#define BUTTONS_USE_INTERNAL_PULLUPS ${on('buttons_pullups')}`,
       '',
       ...(deviceEnabled(values, 'ir')
@@ -692,6 +696,7 @@
     asPin('button_sleep', 'BUTTON_SLEEP_GPIO'); asPin('button_quick_menu', 'BUTTON_QUICK_MENU_GPIO');
     asPin('button_prev', 'BUTTON_PREV_GPIO'); asPin('button_next', 'BUTTON_NEXT_GPIO');
     asBool('encoder_pullups', 'ENCODER_USE_INTERNAL_PULLUPS');
+    asBool('encoder_buttons', 'ENCODER_AS_BUTTONS');
     asBool('buttons_pullups', 'BUTTONS_USE_INTERNAL_PULLUPS');
     asPin('ir_receiver', 'IR_RECEIVER_GPIO');
     const dac = take('AUDIO_DAC');

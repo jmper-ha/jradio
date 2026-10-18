@@ -65,7 +65,10 @@ build instead of giving a silent device.
 
 **An optional part is enabled by its block of lines and disabled by removing
 it** (or commenting it out): no microSD block - no card in the menu; no
-`BUTTON_*_GPIO` lines - the firmware builds with the encoder alone. Features
+`BUTTON_*_GPIO` lines - the firmware builds with the encoder alone. Instead of
+the encoder three buttons can go on the same three lines - + on Encoder A, - on
+Encoder B, OK on the encoder's push - with "Three buttons instead of the
+encoder" on in the wiring (`ENCODER_AS_BUTTONS 1`): one or the other. Features
 without hardware - Yandex Music and DLNA - are switched with the
 `YANDEX_MUSIC` and `DLNA` lines set to `FEATURE_ON` or `FEATURE_OFF`.
 

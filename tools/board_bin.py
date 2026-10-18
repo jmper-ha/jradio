@@ -143,6 +143,7 @@ def board_csv(macros):
         ("encoder_left", pin(macros, "ENCODER_LEFT_GPIO")),
         ("encoder_button", pin(macros, "ENCODER_BUTTON_GPIO")),
         ("encoder_pullups", switch(macros, "ENCODER_USE_INTERNAL_PULLUPS", 0)),
+        ("encoder_buttons", switch(macros, "ENCODER_AS_BUTTONS", 0)),
         ("button_sleep", pin(macros, "BUTTON_SLEEP_GPIO")),
         ("button_quick_menu", pin(macros, "BUTTON_QUICK_MENU_GPIO")),
         ("button_prev", pin(macros, "BUTTON_PREV_GPIO")),

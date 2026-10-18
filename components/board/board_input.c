@@ -48,6 +48,32 @@ board_input_action_t board_button_gesture_update(board_button_gesture_t *gesture
     return BOARD_INPUT_ACTION_NONE;
 }
 
+void board_button_repeat_init(board_button_repeat_t *repeat)
+{
+    if (repeat != NULL) *repeat = (board_button_repeat_t){0};
+}
+
+bool board_button_repeat_update(board_button_repeat_t *repeat, bool pressed, uint32_t elapsed_ms)
+{
+    if (repeat == NULL) return false;
+    if (!pressed) {
+        *repeat = (board_button_repeat_t){0};
+        return false;
+    }
+    if (!repeat->pressed) {
+        repeat->pressed = true;
+        repeat->held_ms = 0U;
+        repeat->next_ms = BOARD_BUTTON_REPEAT_DELAY_MS;
+        return true;
+    }
+    repeat->held_ms += elapsed_ms;
+    if (repeat->held_ms < repeat->next_ms) return false;
+    repeat->next_ms += repeat->held_ms >= BOARD_BUTTON_REPEAT_FAST_AFTER_MS
+                           ? BOARD_BUTTON_REPEAT_FAST_MS
+                           : BOARD_BUTTON_REPEAT_SLOW_MS;
+    return true;
+}
+
 #ifdef ESP_PLATFORM
 #include "board_config.h"
 #include "driver/gpio.h"
@@ -84,6 +110,11 @@ static board_input_channel_t s_channels[] = {
 };
 static int s_encoder_left = BOARD_GPIO_NOT_WIRED;
 static int s_encoder_right = BOARD_GPIO_NOT_WIRED;
+/* Three buttons on the encoder's lines instead of the encoder: - on the left
+ * line and + on the right, each debounced and repeating while held. */
+static bool s_encoder_buttons;
+static board_input_debouncer_t s_step_debouncers[2];
+static board_button_repeat_t s_step_repeats[2];
 static board_encoder_decoder_t s_encoder_decoder;
 /* The encoder in hardware. Polling the two lines every 5 ms lost detents on a
  * quick turn: four transitions a detent at forty detents a second is one every
@@ -126,8 +157,23 @@ static void board_input_task(void *arg)
                 }
             }
         }
+        if (s_encoder_buttons) {
+            const int lines[2] = {s_encoder_left, s_encoder_right};
+            const board_input_action_t steps[2] = {BOARD_INPUT_ACTION_ENCODER_LEFT,
+                                                   BOARD_INPUT_ACTION_ENCODER_RIGHT};
+            for (size_t index = 0U; index < 2U; ++index) {
+                (void)board_input_debouncer_update(&s_step_debouncers[index],
+                                                   gpio_get_level(lines[index]) == 0);
+                if (board_button_repeat_update(&s_step_repeats[index],
+                                               s_step_debouncers[index].stable_pressed,
+                                               INPUT_POLL_MS) &&
+                    xQueueSend(s_event_queue, &steps[index], 0) != pdTRUE) {
+                    ESP_LOGW(TAG, "input queue full; action=%d dropped", (int)steps[index]);
+                }
+            }
+        }
         const board_input_action_t encoder_action =
-            s_encoder_pcnt != NULL
+            s_encoder_pcnt != NULL || s_encoder_buttons
                 ? BOARD_INPUT_ACTION_NONE
                 : board_encoder_decoder_update(&s_encoder_decoder, gpio_get_level(s_encoder_left),
                                                gpio_get_level(s_encoder_right));
@@ -359,6 +405,7 @@ esp_err_t board_input_init(void)
     const board_config_t *wiring = board_config_get();
     s_encoder_left = wiring->encoder_left;
     s_encoder_right = wiring->encoder_right;
+    s_encoder_buttons = wiring->encoder_buttons != 0U;
     // In s_channels' order.
     const int8_t buttons[] = {wiring->encoder_button, wiring->button_sleep,
                               wiring->button_quick_menu, wiring->button_prev,
@@ -418,7 +465,15 @@ esp_err_t board_input_init(void)
     }
     board_encoder_decoder_init(&s_encoder_decoder, gpio_get_level(s_encoder_left),
                                gpio_get_level(s_encoder_right));
-    if (s_encoder_left >= 0 && s_encoder_right >= 0) {
+    if (s_encoder_buttons) {
+        const int lines[2] = {s_encoder_left, s_encoder_right};
+        for (size_t index = 0U; index < 2U; ++index) {
+            board_input_debouncer_init_from_level(&s_step_debouncers[index],
+                                                  gpio_get_level(lines[index]),
+                                                  INPUT_DEBOUNCE_SAMPLES);
+            board_button_repeat_init(&s_step_repeats[index]);
+        }
+    } else if (s_encoder_left >= 0 && s_encoder_right >= 0) {
         const esp_err_t counted = board_encoder_pcnt_start(s_encoder_left, s_encoder_right);
         if (counted != ESP_OK) {
             ESP_LOGW(TAG, "encoder pulse counter unavailable (%s); polling the lines instead",
@@ -432,7 +487,8 @@ esp_err_t board_input_init(void)
     }
 
     ESP_LOGI(TAG, "input task started; poll=%d ms debounce=%d ms encoder=%s", INPUT_POLL_MS,
-             INPUT_DEBOUNCE_MS, s_encoder_pcnt != NULL ? "pcnt" : "polled");
+             INPUT_DEBOUNCE_MS,
+             s_encoder_buttons ? "three buttons" : s_encoder_pcnt != NULL ? "pcnt" : "polled");
     return ESP_OK;
 }
 

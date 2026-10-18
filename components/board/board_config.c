@@ -102,6 +102,7 @@ static const field_t k_fields[] = {
     {"encoder_left", KIND_PIN, DEV_ENCODER, AT(encoder_left), false, NULL, {{NULL, 0}}},
     {"encoder_button", KIND_PIN, DEV_ENCODER, AT(encoder_button), false, NULL, {{NULL, 0}}},
     {"encoder_pullups", KIND_BOOL, DEV_ENCODER, AT(encoder_pullups), false, NULL, {{NULL, 0}}},
+    {"encoder_buttons", KIND_BOOL, DEV_ENCODER, AT(encoder_buttons), false, NULL, {{NULL, 0}}},
     {"button_sleep", KIND_OPT_PIN, DEV_BUTTONS, AT(button_sleep), false, NULL, {{NULL, 0}}},
     {"button_quick_menu", KIND_OPT_PIN, DEV_BUTTONS, AT(button_quick_menu), false, NULL,
      {{NULL, 0}}},

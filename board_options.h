@@ -82,6 +82,11 @@
 #define ENCODER_RIGHT_GPIO 5
 #define ENCODER_LEFT_GPIO 7
 #define ENCODER_BUTTON_GPIO 6
+/* 1: three buttons instead of the encoder, on the same three lines - "+" on
+ * ENCODER_RIGHT_GPIO, "-" on ENCODER_LEFT_GPIO, OK on ENCODER_BUTTON_GPIO.
+ * They do what a turn and a push do; held, + and - repeat, faster the longer
+ * they are held. Asked for by users who would rather not fit an encoder. */
+#define ENCODER_AS_BUTTONS 0
 
 /* Three of the four are named for what they do rather than for the
  * silkscreen: the third and fourth buttons are the track keys everywhere they

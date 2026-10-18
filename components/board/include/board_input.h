@@ -39,6 +39,9 @@
 /* Goes with the buttons and is usually dropped with them; on its own the
  * internal pull-up is the safe default - the buttons on revision 1 were
  * unstable without it, and a floating input costs nothing with it. */
+#ifndef ENCODER_AS_BUTTONS
+#define ENCODER_AS_BUTTONS 0
+#endif
 #ifndef BUTTONS_USE_INTERNAL_PULLUPS
 #define BUTTONS_USE_INTERNAL_PULLUPS 1
 #endif
@@ -109,6 +112,21 @@ typedef struct {
     uint32_t held_ms;
 } board_button_gesture_t;
 
+/* A + or - button standing in for the encoder: one step on the press, and
+ * held, more after BOARD_BUTTON_REPEAT_DELAY_MS - every SLOW_MS at first,
+ * every FAST_MS once held past FAST_AFTER_MS. A list of a hundred stations or
+ * the volume end to end is then a hold of a few seconds, not a hundred
+ * presses, and a short press is still exactly one step. */
+#define BOARD_BUTTON_REPEAT_DELAY_MS 400U
+#define BOARD_BUTTON_REPEAT_SLOW_MS 150U
+#define BOARD_BUTTON_REPEAT_FAST_AFTER_MS 1500U
+#define BOARD_BUTTON_REPEAT_FAST_MS 60U
+typedef struct {
+    bool pressed;
+    uint32_t held_ms;
+    uint32_t next_ms;
+} board_button_repeat_t;
+
 board_input_action_t board_input_action_from_gpio(int gpio_num, int level);
 void board_input_debouncer_init(board_input_debouncer_t *debouncer, uint8_t required_samples);
 void board_input_debouncer_init_from_level(board_input_debouncer_t *debouncer, int level,
@@ -124,6 +142,10 @@ board_input_action_t board_encoder_decoder_update(board_encoder_decoder_t *decod
  * reads is still one detent. */
 int32_t board_encoder_detents_take(int32_t *pending, int32_t counted);
 void board_button_gesture_init(board_button_gesture_t *gesture);
+void board_button_repeat_init(board_button_repeat_t *repeat);
+/* True when the button, debounced `pressed`, owes a step now; `elapsed_ms`
+ * since the last call. */
+bool board_button_repeat_update(board_button_repeat_t *repeat, bool pressed, uint32_t elapsed_ms);
 /* One button's click-or-hold, told apart. `click` is reported on release and
  * only when the hold never fired, `hold` the moment the press passes the
  * threshold - so a long press never also delivers a short one. The two

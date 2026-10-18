@@ -55,6 +55,12 @@ choice is remembered in the browser.
 A single press acts with a small delay - otherwise it could not be told from
 the start of a double one. A short press of Sleep does nothing yet.
 
+**Three buttons instead of the encoder.** With "Three buttons instead of the
+encoder" on in the wiring, + and - do what a turn of the encoder right and
+left does, and OK what its push does (single, double, triple and long). Held,
++ and - repeat, faster after a second and a half: the volume or a long list
+take one hold.
+
 ### The remote control
 
 With an IR receiver on the board, the device takes any infrared remote - from

@@ -73,6 +73,8 @@ typedef struct {
     int8_t encoder_left;
     int8_t encoder_button;
     uint8_t encoder_pullups;
+    // Three buttons on the encoder's lines instead of the encoder; see board_options.h.
+    uint8_t encoder_buttons;
     int8_t button_sleep;
     int8_t button_quick_menu;
     int8_t button_prev;

@@ -38,6 +38,7 @@ void board_config_compiled(board_config_t *config)
     config->encoder_left = PIN(ENCODER_LEFT_GPIO);
     config->encoder_button = PIN(ENCODER_BUTTON_GPIO);
     config->encoder_pullups = ENCODER_USE_INTERNAL_PULLUPS ? 1U : 0U;
+    config->encoder_buttons = ENCODER_AS_BUTTONS ? 1U : 0U;
 #ifdef BUTTON_SLEEP_GPIO
     config->button_sleep = PIN(BUTTON_SLEEP_GPIO);
 #endif

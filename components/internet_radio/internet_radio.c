@@ -246,6 +246,11 @@ typedef struct {
     esp_http_client_handle_t client;
     atomic_int state;
     char location[RADIO_HLS_URL_MAX];
+    /* A track's last address to try before a fresh link, and the address the
+     * reopened body came from - the next pickup's first try. */
+    char direct[RADIO_HLS_URL_MAX];
+    char final[RADIO_HLS_URL_MAX];
+    bool reused;
 } radio_reopen_t;
 
 typedef struct {
@@ -309,6 +314,10 @@ typedef struct {
      * station search, which has no row in the playlist to look it up by. In
      * PSRAM, allocated at init: STATION_CATALOG_URL_MAX_LEN + 1 bytes. */
     char *stream_url;
+    /* Where the current track's body is served from, after the redirects, for
+     * picking it up again without a fresh link; RADIO_HLS_URL_MAX bytes in
+     * PSRAM, empty when not known. */
+    char *track_direct_url;
     /* The longest a read that was meant not to wait took, and how many took
      * RADIO_READ_SLOW_US or more, since the last health line. Such a read is
      * time the decode task spends away from the DAC whatever the backlog. */
@@ -856,8 +865,12 @@ static void radio_direct_task(void *arg)
                     pcm_pending = 0U;
                     pcm_delivered = 0U;
                 }
-                ESP_LOGI(TAG, "picked the track up at %u bytes (HTTP %d, %lld more) with %u buffered%s",
+                if (radio->track_direct_url != NULL) {
+                    memcpy(radio->track_direct_url, job->final, RADIO_HLS_URL_MAX);
+                }
+                ESP_LOGI(TAG, "picked the track up at %u bytes %s(HTTP %d, %lld more) with %u buffered%s",
                          (unsigned int)job->offset,
+                         job->reused ? "from the same address " : "",
                          esp_http_client_get_status_code(radio->http),
                          (long long)esp_http_client_get_content_length(radio->http),
                          (unsigned int)available,
@@ -1520,10 +1533,18 @@ static esp_err_t radio_http_event(esp_http_client_event_t *event)
 static esp_err_t radio_http_connect_client(const char *url, size_t range_offset,
                                            esp_http_client_handle_t *client,
                                            bool *range_granted, char *location,
-                                           http_event_handle_cb handler, void *user_data)
+                                           http_event_handle_cb handler, void *user_data,
+                                           char *final_url)
 {
     *client = NULL;
     *range_granted = false;
+    /* Where the body finally came from, after the redirects - RADIO_HLS_URL_MAX
+     * bytes, or NULL when nobody wants it. Left empty when it cannot be told:
+     * a relative redirect, or an address too long to keep whole. */
+    if (final_url != NULL) {
+        const int length = snprintf(final_url, RADIO_HLS_URL_MAX, "%s", url != NULL ? url : "");
+        if (length < 0 || length >= (int)RADIO_HLS_URL_MAX) final_url[0] = '\0';
+    }
     if (url == NULL || url[0] == '\0') return ESP_ERR_INVALID_ARG;
     const esp_http_client_config_t config = {
         .url = url,
@@ -1612,8 +1633,10 @@ static esp_err_t radio_http_connect_client(const char *url, size_t range_offset,
         if (strncasecmp(location, "http://", 7) == 0 ||
             strncasecmp(location, "https://", 8) == 0) {
             err = esp_http_client_set_url(http, location);
+            if (final_url != NULL) memcpy(final_url, location, RADIO_HLS_URL_MAX);
         } else {
             err = esp_http_client_set_redirection(http);
+            if (final_url != NULL) final_url[0] = '\0';
         }
         location[0] = '\0';
         if (err != ESP_OK) {
@@ -1644,7 +1667,8 @@ static esp_err_t radio_http_connect(internet_radio_context_t *radio, const char 
 {
     return radio_http_connect_client(url, radio->range_offset, &radio->http,
                                      &radio->range_granted, radio->redirect_location,
-                                     radio_http_event, radio);
+                                     radio_http_event, radio,
+                                     radio->track_chain ? radio->track_direct_url : NULL);
 }
 
 /* Only the Location: everything else the radio's handler takes off the
@@ -1676,8 +1700,8 @@ static void radio_reopen_task(void *arg)
             if (atomic_load_explicit(job->stop, memory_order_acquire)) break;
             job->icy_interval = 0U;
             if (radio_http_connect_client(job->url, 0U, &job->client, &job->range_granted,
-                                          job->location, radio_reopen_http_event,
-                                          job) == ESP_OK) {
+                                          job->location, radio_reopen_http_event, job,
+                                          NULL) == ESP_OK) {
                 outcome = RADIO_REOPEN_READY;
                 break;
             }
@@ -1685,15 +1709,33 @@ static void radio_reopen_task(void *arg)
                      RADIO_HTTP_CONNECT_RETRIES);
         }
     } else {
-        const char *url = job->resolve();
-        if (url == NULL) {
-            ESP_LOGW(TAG, "the track could not be resolved again");
-        } else if (radio_http_connect_client(url, job->offset, &job->client,
-                                             &job->range_granted, job->location,
-                                             radio_reopen_http_event, job) == ESP_OK) {
+        /* The address the track was last served from, first: Yandex hands
+         * out the same one for minutes - four pickups in a row over a minute
+         * and a half went to one storage node with one signature in a user's
+         * log - and asking it again is one TLS handshake, where a fresh link
+         * is two API calls before that. On that user's line those took 2 to 8
+         * seconds and the backlog ran out under them. */
+        if (job->direct[0] != '\0' &&
+            radio_http_connect_client(job->direct, job->offset, &job->client,
+                                      &job->range_granted, job->location,
+                                      radio_reopen_http_event, job, job->final) == ESP_OK) {
+            job->reused = true;
             outcome = RADIO_REOPEN_READY;
         } else {
-            ESP_LOGW(TAG, "the track did not reopen");
+            if (job->direct[0] != '\0') {
+                ESP_LOGI(TAG, "the track's last address did not answer; asking for a new one");
+            }
+            const char *url = job->resolve();
+            if (url == NULL) {
+                ESP_LOGW(TAG, "the track could not be resolved again");
+            } else if (radio_http_connect_client(url, job->offset, &job->client,
+                                                 &job->range_granted, job->location,
+                                                 radio_reopen_http_event, job,
+                                                 job->final) == ESP_OK) {
+                outcome = RADIO_REOPEN_READY;
+            } else {
+                ESP_LOGW(TAG, "the track did not reopen");
+            }
         }
     }
     atomic_store_explicit(&job->state, outcome, memory_order_release);
@@ -1712,6 +1754,9 @@ static bool radio_reopen_start(internet_radio_context_t *radio)
     if (radio->track_chain) {
         job->resolve = radio->track_reopen;
         job->offset = radio->track_offset;
+        if (radio->track_direct_url != NULL) {
+            memcpy(job->direct, radio->track_direct_url, RADIO_HLS_URL_MAX);
+        }
     } else {
         if (radio->stream_url == NULL || radio->stream_url[0] == '\0') {
             heap_caps_free(job);
@@ -2673,6 +2718,9 @@ esp_err_t internet_radio_init(void)
     // Without it a dropped station reconnects in line, as it always did.
     s_radio.stream_url = heap_caps_calloc(1, STATION_CATALOG_URL_MAX_LEN + 1U,
                                           MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    // Without it a track is picked up through a fresh link every time.
+    s_radio.track_direct_url = heap_caps_calloc(1, RADIO_HLS_URL_MAX,
+                                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     s_radio.direct_done = xSemaphoreCreateBinary();
     if (s_radio.direct_done == NULL) {
         return ESP_ERR_NO_MEM;

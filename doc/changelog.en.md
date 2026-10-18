@@ -6,6 +6,27 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.8.1 — 18 October 2026
+
+New:
+- The tone and loudness are at hand: in the web player behind a button beside
+  the volume (a sheet from the bottom on a phone), on the device in the quick
+  panel. The web settings drop their Sound group.
+- In the quick panel the switches (alarm, BT speaker) flip with one press of
+  the encoder.
+- Three buttons instead of the encoder: +, - and OK on the same pins, chosen in
+  the wiring. Held, + and - repeat, faster and faster.
+- A remote's volume keys step as the encoder does, by the "Volume step"
+  setting.
+
+Fixed:
+- Yandex Music: after a dropped connection a track is picked up in about half a
+  second instead of 4-10: the radio first tries the same stream address,
+  without the API.
+- VBR MP3: the bitrate on screen no longer jumps (the average is shown), the
+  track length is exact and a jump lands where it should.
+- Firmware built from a ZIP download (no git) showed version "1".
+
 ## v1.8.0 — 14 October 2026
 
 New:

@@ -97,6 +97,15 @@ What matters when wiring:
 - **Flashing goes through UART (GPIO 43, 44), not the USB connector.** USB
   belongs to the stick, and the built-in USB-Serial-JTAG sits on the same pins
   19/20. A USB-UART bridge is needed - most dev modules already have one.
+- **The stick's socket needs 5 V.** The ESP32-S3 does not power its USB: the
+  socket's VBUS goes to the board's +5 V, GND is common, D- to GPIO 19, D+ to
+  GPIO 20. If the stick goes into the board's own USB connector through an OTG
+  adapter, many boards (YD-ESP32-S3 / N16R8, for one) only feed 5 V to that
+  connector once the "USB-OTG" ("IN-OUT") jumper is closed. The sign of no
+  power: `usb: USB Host ready` in the log, then only `no drive yet;
+  re-enumerating the root port` - the stick never appears on the bus.
+- **The stick in FAT32 (or FAT16).** The firmware does not read exFAT, and
+  large sticks often come formatted with it.
 - **The sleep button must be on GPIO 0-21**: only those pins can wake the chip
   from deep sleep. The same goes for the IR receiver if the remote is to wake
   the device.

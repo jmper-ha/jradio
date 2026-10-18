@@ -93,8 +93,6 @@ const ids = [
   'device-brightness',
   'device-brightness-value', 'device-flip-vertical', 'device-flip-horizontal', 'device-invert-colors',
   'device-volume-step', 'device-volume-step-value',
-  'device-tone-bass', 'device-tone-bass-value', 'device-tone-treble', 'device-tone-treble-value',
-  'device-loudness', 'device-loudness-treble', 'device-loudness-treble-row',
   'device-theme', 'device-theme-reset', 'device-theme-reset-row',
   'device-theme-ground', 'device-theme-ground-row',
   'device-theme-text', 'device-theme-text-row',
@@ -695,13 +693,6 @@ function lastYandexTimer() {
   assert.equal(elements['#device-volume-step-value'].textContent, '7');
   assert.equal(elements['#device-volume-step'].min, '1');
   assert.equal(elements['#device-volume-step'].max, '20');
-  // A lift reads with its sign; the treble switch only shows with loudness on.
-  assert.equal(elements['#device-tone-bass'].value, '4');
-  assert.equal(elements['#device-tone-bass-value'].textContent, '+4');
-  assert.equal(elements['#device-tone-treble-value'].textContent, '-3');
-  assert.equal(elements['#device-tone-bass'].min, '-12');
-  assert.equal(elements['#device-loudness'].value, 'off');
-  assert.equal(elements['#device-loudness-treble-row'].hidden, true);
   assert.equal(elements['#device-brightness'].value, '45');
   assert.equal(elements['#device-brightness-value'].textContent, '45');
   // The slider stops where the encoder does, and the device says where.
@@ -1017,30 +1008,6 @@ function lastYandexTimer() {
       .at(-1).options.body),
     {field: 'volume_step', value: 3});
 
-  // A cut goes out as a negative number, and loudness as its name.
-  elements['#device-tone-bass'].value = '-5';
-  elements['#device-tone-bass'].emit('input');
-  assert.equal(elements['#device-tone-bass-value'].textContent, '-5');
-  settingsReply = {...settingsReply, tone_bass: -5};
-  elements['#device-tone-bass'].emit('change');
-  await settle();
-  assert.deepEqual(
-    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
-                                           call.options &&
-                                           call.options.method === 'POST')
-      .at(-1).options.body),
-    {field: 'tone_bass', value: -5});
-  elements['#device-loudness'].value = 'medium';
-  settingsReply = {...settingsReply, loudness: 'medium'};
-  elements['#device-loudness'].emit('change');
-  await settle();
-  assert.deepEqual(
-    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
-                                           call.options &&
-                                           call.options.method === 'POST')
-      .at(-1).options.body),
-    {field: 'loudness', value: 'medium'});
-  assert.equal(elements['#device-loudness-treble-row'].hidden, false);
 
   /* A colour goes out when the picker closes, as the text the picker holds;
      the reset is one write of `true`. */

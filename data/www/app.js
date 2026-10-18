@@ -30,6 +30,18 @@
   const volumeControl = document.querySelector('#volume-control');
   const volumeInput = document.querySelector('#volume-input');
   const volumeValue = document.querySelector('#volume-value');
+  const toneOpen = document.querySelector('#tone-open');
+  const tonePanel = document.querySelector('#tone-panel');
+  const toneBackdrop = document.querySelector('#tone-backdrop');
+  const toneClose = document.querySelector('#tone-close');
+  const toneBass = document.querySelector('#tone-bass');
+  const toneTreble = document.querySelector('#tone-treble');
+  const toneBassValue = document.querySelector('#tone-bass-value');
+  const toneTrebleValue = document.querySelector('#tone-treble-value');
+  const toneLoudness = Array.from(document.querySelectorAll('[data-loudness]'));
+  const toneLoudnessTrebleRow = document.querySelector('#tone-loudness-treble-row');
+  const toneLoudnessTreble = document.querySelector('#tone-loudness-treble');
+  const toneReset = document.querySelector('#tone-reset');
   const streamMeta = document.querySelector('#stream-meta');
   const playerError = document.querySelector('#player-error');
   const commandStatus = document.querySelector('#command-status');
@@ -441,8 +453,191 @@
     sendVolume(target);
   }
 
+  /* The tone, as the device last said, and what the panel is doing with it.
+     Each field is written on its own and one at a time, the way the volume
+     is: a drag fires an input per pixel, and only the newest of those that
+     arrive while a write is in the air is worth sending after it. */
+  const tone = {
+    values: {tone_bass: 0, tone_treble: 0, loudness: 'off', loudness_treble: true},
+    held: '',
+    busy: {},
+    queued: {},
+    open: false,
+    pushedHistory: false,
+  };
+  const TONE_LOUDNESS = ['off', 'weak', 'medium', 'strong'];
+
+  function toneText(db) {
+    const sign = db > 0 ? '+' : '';
+    return `${sign}${db} ${t('player.db')}`;
+  }
+
+  function renderTone() {
+    // A page without the panel - the tests' smaller ones - has nothing to draw.
+    if (!tonePanel) return;
+    const v = tone.values;
+    // A handle under a finger is left where the finger is.
+    if (tone.held !== 'tone_bass') toneBass.value = String(v.tone_bass);
+    if (tone.held !== 'tone_treble') toneTreble.value = String(v.tone_treble);
+    toneBassValue.textContent = toneText(Number(toneBass.value));
+    toneTrebleValue.textContent = toneText(Number(toneTreble.value));
+    for (const button of toneLoudness) {
+      button.setAttribute('aria-checked', String(button.dataset.loudness === v.loudness));
+    }
+    toneLoudnessTreble.checked = v.loudness_treble === true;
+    toneLoudnessTrebleRow.hidden = v.loudness === 'off';
+    toneOpen.classList.toggle('is-active',
+      v.tone_bass !== 0 || v.tone_treble !== 0 || v.loudness !== 'off');
+  }
+
+  function applyTone(value) {
+    const v = tone.values;
+    for (const field of ['tone_bass', 'tone_treble']) {
+      if (Number.isSafeInteger(value[field]) && !tone.busy[field]) v[field] = value[field];
+    }
+    if (TONE_LOUDNESS.includes(value.loudness) && !tone.busy.loudness) v.loudness = value.loudness;
+    if (typeof value.loudness_treble === 'boolean' && !tone.busy.loudness_treble) {
+      v.loudness_treble = value.loudness_treble;
+    }
+    renderTone();
+  }
+
+  /* Over REST, as the volume: these are stored settings, and the settings
+     endpoint is the one path the device applies them by. */
+  function sendTone(field, value) {
+    if (tone.busy[field]) {
+      tone.queued[field] = value;
+      return;
+    }
+    tone.busy[field] = true;
+    window.fetch('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({field, value}),
+    })
+      .then((response) => {
+        if (!response || response.ok !== true) throw new Error('request failed');
+        tone.values[field] = value;
+      })
+      .catch(() => {
+        commandStatus.textContent = t('player.tone_failed');
+        commandStatus.classList.add('is-error');
+      })
+      .then(() => {
+        tone.busy[field] = false;
+        const queued = tone.queued[field];
+        delete tone.queued[field];
+        if (queued !== undefined && queued !== tone.values[field]) {
+          sendTone(field, queued);
+          return;
+        }
+        renderTone();
+      });
+  }
+
+  /* Under its button on a wide screen; on a phone the stylesheet makes it a
+     sheet from the bottom and these are left alone. */
+  function placeTonePanel() {
+    if (window.matchMedia && window.matchMedia('(max-width: 720px)').matches) {
+      tonePanel.style.top = '';
+      tonePanel.style.left = '';
+      return;
+    }
+    const button = toneOpen.getBoundingClientRect();
+    const width = tonePanel.offsetWidth || 340;
+    const left = Math.max(8, Math.min(button.right - width, window.innerWidth - width - 8));
+    tonePanel.style.top = `${Math.round(button.bottom + 8)}px`;
+    tonePanel.style.left = `${Math.round(left)}px`;
+  }
+
+  function openTone() {
+    if (tone.open) return;
+    tone.open = true;
+    renderTone();
+    tonePanel.hidden = false;
+    toneBackdrop.hidden = false;
+    toneOpen.setAttribute('aria-expanded', 'true');
+    placeTonePanel();
+    /* A phone's back gesture closes a sheet rather than leaving the page:
+       the panel stands in the history while it is open. */
+    if (window.history && typeof window.history.pushState === 'function') {
+      window.history.pushState({tonePanel: true}, '');
+      tone.pushedHistory = true;
+    }
+    toneClose.focus();
+  }
+
+  function closeTone(fromHistory = false) {
+    if (!tone.open) return;
+    tone.open = false;
+    tone.held = '';
+    tonePanel.hidden = true;
+    toneBackdrop.hidden = true;
+    toneOpen.setAttribute('aria-expanded', 'false');
+    if (tone.pushedHistory) {
+      tone.pushedHistory = false;
+      if (!fromHistory) window.history.back();
+    }
+    toneOpen.focus();
+  }
+
+  function bindToneSlider(input, field) {
+    input.addEventListener('input', () => {
+      tone.held = field;
+      const db = Math.round(Number(input.value));
+      (field === 'tone_bass' ? toneBassValue : toneTrebleValue).textContent = toneText(db);
+      // Sent while it moves: the point of the panel is hearing the change.
+      sendTone(field, db);
+    });
+    input.addEventListener('change', () => { tone.held = ''; });
+    // A double tap puts it back to flat.
+    input.addEventListener('dblclick', () => {
+      tone.held = '';
+      input.value = '0';
+      sendTone(field, 0);
+      tone.values[field] = 0;
+      renderTone();
+    });
+  }
+
+  function bindTonePanel() {
+    toneOpen.addEventListener('click', () => (tone.open ? closeTone() : openTone()));
+    toneClose.addEventListener('click', () => closeTone());
+    toneBackdrop.addEventListener('click', () => closeTone());
+    bindToneSlider(toneBass, 'tone_bass');
+    bindToneSlider(toneTreble, 'tone_treble');
+    for (const button of toneLoudness) {
+      button.addEventListener('click', () => {
+        const name = button.dataset.loudness;
+        tone.values.loudness = name;
+        renderTone();
+        sendTone('loudness', name);
+      });
+    }
+    toneLoudnessTreble.addEventListener('change', () => {
+      tone.values.loudness_treble = toneLoudnessTreble.checked;
+      sendTone('loudness_treble', toneLoudnessTreble.checked);
+    });
+    toneReset.addEventListener('click', () => {
+      tone.held = '';
+      for (const [field, flat] of [['tone_bass', 0], ['tone_treble', 0], ['loudness', 'off']]) {
+        tone.values[field] = flat;
+        sendTone(field, flat);
+      }
+      renderTone();
+    });
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && tone.open) closeTone();
+    });
+    window.addEventListener('popstate', () => {
+      if (tone.open) closeTone(true);
+    });
+    window.addEventListener('resize', () => { if (tone.open) placeTonePanel(); });
+  }
+
   function applySettings(value) {
     if (!isObject(value)) return;
+    applyTone(value);
     /* The language is a device setting like any other, so it arrives here -
        which is what makes the switch on the settings page, and the row on the
        device's own screen, relabel this tab without a reload. */
@@ -1504,6 +1699,8 @@
   progressSeek.addEventListener('change', commitSeek);
   volumeInput.addEventListener('input', holdVolume);
   volumeInput.addEventListener('change', commitVolume);
+  if (tonePanel) bindTonePanel();
+
   listSearch.addEventListener('input', applyListFilter);
   /* Folded away on a phone the bar shows only the cover, the title and pause;
      the position, the volume and the stream's numbers live in the expanded

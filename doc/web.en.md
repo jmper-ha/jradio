@@ -13,7 +13,7 @@ meant for a trusted home network - do not expose it.**
 
 | Page | What is on it |
 |---|---|
-| **Player** (`/`) | What is playing, the cover, volume, position, buttons; source choice and the lists of stations, files and server folders; the sleep timer and the alarm |
+| **Player** (`/`) | What is playing, the cover, volume, position, buttons; the tone and loudness behind a button beside the volume (a sheet from the bottom on a phone); source choice and the lists of stations, files and server folders; the sleep timer and the alarm |
 | **Stations** (`/playlist`) | Two tabs. "Internet radio": the station list editor - name, address, picture, order by dragging, trying an address by ear right on the device. "FM" (there when the build has a tuner): the presets, the scan of the band, pictures. Above the tabs a shared Import and Export for both lists |
 | **Settings** (`/settings`) | Everything the device has, plus Wi-Fi networks, the name, time and zone, weather, the alarm, the sleep timer, Yandex Music, Bluetooth speakers, the backup, About |
 | **Remote** (`/remote`) | Learning the IR remote's keys; opened by a button in the settings when the build has a receiver |

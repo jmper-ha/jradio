@@ -188,6 +188,17 @@
               <input id="volume-input" type="range" min="0" max="100" step="1" value="0"
                      data-i18n-aria="player.volume" aria-label="Громкость" disabled>
               <output id="volume-value">0</output>
+              <!-- The tone, beside the volume it is turned with: in the
+                   settings it was three levels away from the music it is
+                   adjusted to. Lit while anything is off flat. -->
+              <button id="tone-open" class="tone-open" type="button" aria-haspopup="dialog"
+                      aria-expanded="false" aria-controls="tone-panel"
+                      data-i18n-aria="player.tone" aria-label="Тембр">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M6 4v16M12 4v16M18 4v16"/>
+                  <circle cx="6" cy="14" r="2.2"/><circle cx="12" cy="8" r="2.2"/><circle cx="18" cy="16" r="2.2"/>
+                </svg>
+              </button>
             </div>
           </div>
 
@@ -249,6 +260,44 @@
   <noscript>
     <p class="noscript-message">Для управления плеером в браузере требуется JavaScript. / JavaScript is required to control the player in a browser.</p>
   </noscript>
+  <!-- The tone panel: a sheet from the bottom on a phone, a box under its
+       button on a wider screen. Everything applies as it is moved. -->
+  <div id="tone-backdrop" class="tone-backdrop" hidden></div>
+  <section id="tone-panel" class="tone-panel" role="dialog" aria-labelledby="tone-title" hidden>
+    <div class="tone-head">
+      <h2 id="tone-title" data-i18n="player.tone">Тембр</h2>
+      <button id="tone-close" class="tone-close" type="button"
+              data-i18n-aria="player.tone_close" aria-label="Закрыть">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="tone-slider">
+      <label for="tone-bass" data-i18n="player.tone_bass">Низкие</label>
+      <output id="tone-bass-value"></output>
+      <input id="tone-bass" type="range" min="-12" max="12" step="1" value="0">
+    </div>
+    <div class="tone-slider">
+      <label for="tone-treble" data-i18n="player.tone_treble">Высокие</label>
+      <output id="tone-treble-value"></output>
+      <input id="tone-treble" type="range" min="-12" max="12" step="1" value="0">
+    </div>
+    <div class="tone-loudness">
+      <span id="tone-loudness-label" data-i18n="settings.loudness">Тонкомпенсация</span>
+      <div class="tone-choices" role="radiogroup" aria-labelledby="tone-loudness-label">
+        <button type="button" role="radio" data-loudness="off" data-i18n="settings.loudness_off">Выкл</button>
+        <button type="button" role="radio" data-loudness="weak" data-i18n="settings.loudness_weak">Слабая</button>
+        <button type="button" role="radio" data-loudness="medium" data-i18n="settings.loudness_medium">Средняя</button>
+        <button type="button" role="radio" data-loudness="strong" data-i18n="settings.loudness_strong">Сильная</button>
+      </div>
+    </div>
+    <div id="tone-loudness-treble-row" class="tone-switch">
+      <label for="tone-loudness-treble" data-i18n="settings.loudness_treble">И высокие тоже</label>
+      <input id="tone-loudness-treble" type="checkbox">
+    </div>
+    <p class="tone-note" data-i18n="note.loudness">Чем тише громкость, тем больше подъём низких — ухо на тихом звуке их не слышит. На полной громкости не действует.</p>
+    <button id="tone-reset" class="secondary-button tone-reset" type="button" data-i18n="player.tone_reset">Сбросить</button>
+  </section>
+
   <script src="/app.js"></script>
   <script src="/update.js"></script>
 </body>

@@ -25,6 +25,10 @@ class ClassList {
     else this.values.delete(name);
     return enabled;
   }
+
+  contains(name) {
+    return this.values.has(name);
+  }
 }
 
 class Element {
@@ -76,6 +80,14 @@ class Element {
       typeof item.contains === 'function' && item.contains(target));
   }
 
+  getBoundingClientRect() {
+    return {top: 60, bottom: 90, left: 700, right: 730, width: 30, height: 30};
+  }
+
+  get offsetWidth() {
+    return 340;
+  }
+
   focus() {
     documentRef.activeElement = this;
   }
@@ -96,6 +108,9 @@ const ids = [
   'stream-meta', 'player-error', 'command-status', 'media-list',
   'list-title', 'list-count', 'list-items', 'list-empty', 'list-offline', 'list-loading', 'list-loading-text', 'list-search',
   'player-bar', 'player-expand',
+  'tone-open', 'tone-panel', 'tone-backdrop', 'tone-close', 'tone-bass', 'tone-treble',
+  'tone-bass-value', 'tone-treble-value', 'tone-loudness-treble-row', 'tone-loudness-treble',
+  'tone-reset',
 ];
 const buttonIds = new Set([
   'play-toggle', 'next-track', 'like-track', 'dislike-track', 'previous-item',
@@ -105,8 +120,14 @@ const elements = Object.fromEntries(ids.map((id) => [
   `#${id}`,
   new Element(buttonIds.has(id) ? 'button' : 'div'),
 ]));
+// The four loudness buttons, found by their data-loudness.
+const loudnessButtons = ['off', 'weak', 'medium', 'strong'].map((name) => {
+  const button = new Element('button');
+  button.dataset.loudness = name;
+  return button;
+});
 const body = new Element('body');
-body.append(...Object.values(elements));
+body.append(...Object.values(elements), ...loudnessButtons);
 
 function walk(root) {
   return (root.children || []).flatMap((item) => [item, ...walk(item)]);
@@ -122,6 +143,7 @@ function matches(item, selector) {
     if (value === 'button[data-source]') {
       return item.tagName === 'BUTTON' && item.dataset.source !== undefined;
     }
+    if (value === '[data-loudness]') return item.dataset.loudness !== undefined;
     if (value === 'button[data-index]') {
       return item.tagName === 'BUTTON' && item.dataset.index !== undefined;
     }
@@ -188,6 +210,18 @@ const context = {
   WebSocket: FakeWebSocket,
   window: {
     location: {protocol: 'http:', host: 'radio.local'},
+    innerWidth: 1200,
+    listeners: {},
+    addEventListener(type, callback) { (this.listeners[type] ||= []).push(callback); },
+    emit(type, event = {}) { for (const callback of this.listeners[type] || []) callback(event); },
+    // A wide screen: the panel is placed under its button.
+    matchMedia: () => ({matches: false}),
+    history: {
+      pushed: 0,
+      backs: 0,
+      pushState() { this.pushed += 1; },
+      back() { this.backs += 1; },
+    },
     setTimeout(callback, delay) {
       timers.push({callback, delay});
       timerHandles.set(timers.length, timers[timers.length - 1]);
@@ -851,6 +885,83 @@ sendEvent(second, {
   });
   assert.equal(elements['#alarm-row'].hidden, true);
   assert.equal(elements['#alarm-label'].textContent, '');
+
+  /* The tone panel. It reads the tone from the same settings frame as the
+     volume, lights its button while the sound is not flat, and writes each
+     control as it moves, one write per field in the air at a time. */
+  const tonePosts = () => progressCalls
+    .filter((call) => call.url === '/api/settings' && call.options && call.options.method === 'POST')
+    .map((call) => JSON.parse(call.options.body));
+  sendEvent(second, {
+    type: 'settings.update', revision: 925,
+    settings: {volume: 30, tone_bass: 4, tone_treble: -3, loudness: 'off', loudness_treble: true},
+  });
+  assert.equal(elements['#tone-open'].classList.contains('is-active'), true);
+
+  elements['#tone-open'].emit('click');
+  assert.equal(elements['#tone-panel'].hidden, false);
+  assert.equal(elements['#tone-backdrop'].hidden, false);
+  assert.equal(elements['#tone-open'].attributes['aria-expanded'], 'true');
+  assert.equal(context.window.history.pushed, 1);
+  // Under its button, its right edge on the button's.
+  assert.equal(elements['#tone-panel'].style.top, '98px');
+  assert.equal(elements['#tone-panel'].style.left, '390px');
+  assert.equal(elements['#tone-bass'].value, '4');
+  assert.equal(elements['#tone-bass-value'].textContent, '+4 дБ');
+  assert.equal(elements['#tone-treble-value'].textContent, '-3 дБ');
+  // Loudness off: its treble switch is not offered.
+  assert.equal(elements['#tone-loudness-treble-row'].hidden, true);
+  assert.equal(loudnessButtons[0].attributes['aria-checked'], 'true');
+
+  // A drag is sent as it moves; while a write is out the newest value waits.
+  const before = tonePosts().length;
+  elements['#tone-bass'].value = '5';
+  elements['#tone-bass'].emit('input');
+  elements['#tone-bass'].value = '6';
+  elements['#tone-bass'].emit('input');
+  elements['#tone-bass'].value = '7';
+  elements['#tone-bass'].emit('input');
+  assert.equal(elements['#tone-bass-value'].textContent, '+7 дБ');
+  await settle();
+  await settle();
+  const sent = tonePosts().slice(before);
+  assert.deepEqual(sent[0], {field: 'tone_bass', value: 5});
+  assert.deepEqual(sent.at(-1), {field: 'tone_bass', value: 7});
+  assert.ok(sent.length <= 2);
+  // A push arriving under the finger does not move the handle.
+  sendEvent(second, {
+    type: 'settings.update', revision: 926,
+    settings: {volume: 30, tone_bass: 5, tone_treble: -3, loudness: 'off', loudness_treble: true},
+  });
+  assert.equal(elements['#tone-bass'].value, '7');
+  elements['#tone-bass'].emit('change');
+
+  // Loudness is four buttons; choosing one shows its treble switch.
+  loudnessButtons[2].emit('click');
+  await settle();
+  assert.deepEqual(tonePosts().at(-1), {field: 'loudness', value: 'medium'});
+  assert.equal(loudnessButtons[2].attributes['aria-checked'], 'true');
+  assert.equal(loudnessButtons[0].attributes['aria-checked'], 'false');
+  assert.equal(elements['#tone-loudness-treble-row'].hidden, false);
+
+  // Reset is the three back to flat; the button goes dark.
+  elements['#tone-reset'].emit('click');
+  await settle();
+  const resetPosts = tonePosts().slice(-3);
+  assert.deepEqual(resetPosts.map((post) => post.field).sort(), ['loudness', 'tone_bass', 'tone_treble']);
+  assert.equal(elements['#tone-open'].classList.contains('is-active'), false);
+  assert.equal(elements['#tone-bass-value'].textContent, '0 дБ');
+
+  // Escape closes it, and takes back the history step it added.
+  context.window.emit('keydown', {key: 'Escape'});
+  assert.equal(elements['#tone-panel'].hidden, true);
+  assert.equal(elements['#tone-backdrop'].hidden, true);
+  assert.equal(context.window.history.backs, 1);
+  // A phone's back gesture closes it without going back a second time.
+  elements['#tone-open'].emit('click');
+  context.window.emit('popstate');
+  assert.equal(elements['#tone-panel'].hidden, true);
+  assert.equal(context.window.history.backs, 1);
 
   second.emit('close');
   assert.equal(elements['#socket-state'].textContent, 'Нет связи');

@@ -65,8 +65,6 @@
   const deviceBrightness = document.querySelector('#device-brightness');
   const deviceIdleBrightness = document.querySelector('#device-idle-brightness');
   const deviceVolumeStep = document.querySelector('#device-volume-step');
-  const deviceToneBass = document.querySelector('#device-tone-bass');
-  const deviceToneTreble = document.querySelector('#device-tone-treble');
   const deviceScreensaverAfter = document.querySelector('#device-screensaver-after');
   const weatherNowRow = document.querySelector('#device-weather-now-row');
   const weatherNow = document.querySelector('#device-weather-now');
@@ -161,13 +159,6 @@
      row: document.querySelector('#device-theme-accent-row'), when: {field: 'theme', is: 'custom'}},
     {field: 'volume_step', kind: 'number', node: deviceVolumeStep,
      output: document.querySelector('#device-volume-step-value')},
-    {field: 'tone_bass', kind: 'number', node: deviceToneBass, signed: true,
-     output: document.querySelector('#device-tone-bass-value')},
-    {field: 'tone_treble', kind: 'number', node: deviceToneTreble, signed: true,
-     output: document.querySelector('#device-tone-treble-value')},
-    {field: 'loudness', kind: 'choice', node: document.querySelector('#device-loudness')},
-    {field: 'loudness_treble', kind: 'switch', node: document.querySelector('#device-loudness-treble'),
-     row: document.querySelector('#device-loudness-treble-row'), when: {field: 'loudness', not: 'off'}},
   ];
 
   const reconnectDelays = Object.freeze([500, 1000, 2000, 4000, 8000]);
@@ -215,10 +206,6 @@
     return value !== null && typeof value === 'object' && !Array.isArray(value);
   }
 
-  // A tone control reads +3 for a lift: a bare 3 next to a -3 looks unsigned.
-  function readout(entry, value) {
-    return entry.signed && value > 0 ? `+${value}` : String(value);
-  }
 
   function safeString(value, fallback = '') {
     return typeof value === 'string' ? value : fallback;
@@ -1206,12 +1193,6 @@
       deviceIdleBrightness.min = String(payload.idle_brightness_min);
       deviceIdleBrightness.max = String(payload.idle_brightness_max);
     }
-    if (Number.isSafeInteger(payload.tone_min) && Number.isSafeInteger(payload.tone_max)) {
-      for (const node of [deviceToneBass, deviceToneTreble]) {
-        node.min = String(payload.tone_min);
-        node.max = String(payload.tone_max);
-      }
-    }
     if (Number.isSafeInteger(payload.volume_step_min) &&
         Number.isSafeInteger(payload.volume_step_max)) {
       deviceVolumeStep.min = String(payload.volume_step_min);
@@ -1258,7 +1239,7 @@
         continue;
       } else if (Number.isSafeInteger(value)) {
         entry.node.value = String(value);
-        if (entry.output) entry.output.textContent = readout(entry, value);
+        if (entry.output) entry.output.textContent = String(value);
       }
       // A field the build does not have is taken off the page rather than
       // disabled: there is nothing behind it to explain. A field another
@@ -1477,7 +1458,7 @@
         if (entry.output) {
           entry.node.addEventListener('input', () => {
             deviceHeld = entry.field;
-            entry.output.textContent = readout(entry, Number(entry.node.value));
+            entry.output.textContent = String(Number(entry.node.value));
           });
         }
         entry.node.addEventListener('change', () => {

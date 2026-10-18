@@ -919,9 +919,130 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   align-items: center;
   gap: .45rem;
   flex: none;
-  width: 160px;
+  width: 196px;
   margin-left: auto;
   color: var(--muted);
+}
+
+/* The tone button closes the volume row. Lit while the sound is not flat,
+   so a bass lift left on is seen without opening anything. */
+.tone-open {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+}
+.tone-open svg {
+  width: 18px;
+  height: 18px;
+  fill: var(--surface);
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.tone-open:hover { background: var(--surface-2); }
+.tone-open.is-active { color: var(--accent); border-color: var(--accent-line); }
+
+/* The panel. On a wide screen a box placed under its button by app.js; on a
+   phone - the media query below - a sheet from the bottom, full width, with
+   controls a thumb can hit. */
+.tone-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: transparent;
+}
+.tone-panel {
+  position: fixed;
+  z-index: 41;
+  width: 340px;
+  max-width: calc(100vw - 16px);
+  padding: .9rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+.tone-panel[hidden], .tone-backdrop[hidden] { display: none; }
+.tone-head { display: flex; align-items: center; justify-content: space-between; }
+.tone-head h2 { margin: 0; font-size: 1rem; }
+.tone-close {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+}
+.tone-close svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.tone-close:hover { background: var(--surface-2); }
+/* Name and reading on one line, the slider under them at full width. */
+.tone-slider {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .35rem .5rem;
+  align-items: center;
+}
+.tone-slider label { font-size: .9rem; }
+.tone-slider output { font-variant-numeric: tabular-nums; color: var(--muted); font-size: .85rem; }
+.tone-slider input {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.tone-loudness { display: flex; flex-direction: column; gap: .45rem; font-size: .9rem; }
+/* Four buttons rather than a list: on a phone a select is two taps and a
+   system picker for a choice that fits on one line. */
+.tone-choices { display: grid; grid-template-columns: repeat(4, 1fr); gap: .3rem; }
+.tone-choices button {
+  min-height: 34px;
+  padding: 0 .2rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: .8rem;
+}
+.tone-choices button[aria-checked="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.tone-switch { display: flex; align-items: center; justify-content: space-between; font-size: .9rem; }
+.tone-switch[hidden] { display: none; }
+.tone-note { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.35; }
+.tone-reset { align-self: flex-start; }
+
+@media (max-width: 720px) {
+  .tone-backdrop { background: rgba(0, 0, 0, .45); }
+  .tone-panel {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    width: auto;
+    max-width: none;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+  .tone-slider input { height: 32px; }
+  .tone-choices button { min-height: 42px; font-size: .85rem; }
+  .tone-reset { align-self: stretch; justify-content: center; height: 40px; }
 }
 
 /* The sleep timer, on its own line under the position and the volume. A

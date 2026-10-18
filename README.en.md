@@ -67,7 +67,7 @@ The full pinout and the choice of parts are in [Hardware](doc/hardware.en.md).
 | **Clock and weather** | Time from the internet or a DS3231 / DS1307 clock, the temperature and a sky icon next to the clock (Open-Meteo, wttr.in or OpenWeatherMap) |
 | **Screensaver** | Dimming, a black screen, or a drifting clock with the date, the weather and the track title |
 | **Themes** | Standard, high-contrast for displays whose text looks washed out, or your own - six colours picked on the web |
-| **Quick panel** | A window over the player: the sleep timer, the alarm, the brightness, the BT speaker - without leaving the screen |
+| **Quick panel** | A window over the player: the sleep timer, the alarm, the brightness, the tone, loudness, the BT speaker - without leaving the screen |
 | **Alarm clock** | Internet radio or FM at a set time on chosen weekdays at its own volume, switching off at a set time; a sleeping device wakes itself |
 | **Sleep timer** | 15-120 minutes, then a fade-out and sleep |
 | **Deep sleep** | Holding a button shuts the device down; the same button or the remote wakes it. With a power switch the whole periphery goes dark |

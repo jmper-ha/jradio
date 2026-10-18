@@ -235,21 +235,23 @@ They have pages of their own: [Yandex Music](yandex.en.md) and
 ## The quick panel
 
 Quick_menu drops a window over the player with what is needed right now: the
-**sleep timer**, the **alarm**, the **brightness** and the **BT speaker**.
-Without leaving the screen:
+**sleep timer**, the **alarm**, the **brightness**, **bass**, **treble**,
+**loudness** and the **BT speaker**. The window shows four rows and scrolls
+through the rest. Without leaving the screen:
 
 | Action | What it does |
 |---|---|
 | Turn the encoder | The next row |
-| Press | Take the value - it turns amber |
-| Turn in this mode | Change the value |
+| Press on a switch (alarm, BT speaker) | Flip it at once |
+| Press on a value | Take the value - it turns amber |
+| Turn in this mode | Change the value: tone by 1 dB, loudness round its four |
 | Press again | Release the value |
 | Quick_menu, a long press of the encoder | Close the window |
 
-The window closes by itself after ten seconds without a press. The "Sound
-over Bluetooth" row is there only while the module answers; the sleep timer
-cycles - off, 15, 30, 45, 60, 90, 120 minutes. A change made in the browser
-shows in the window at once.
+The window closes by itself after ten seconds without a press. The BT speaker
+row is there only while the module answers; the sleep timer cycles - off, 15,
+30, 45, 60, 90, 120 minutes. A change made in the browser shows in the window
+at once.
 
 ## Sleep, the timer, the alarm
 
@@ -337,7 +339,8 @@ detail, the alarm, the sleep timer, the backup.
   a remote volume key moves the volume: 1 to 20, 5 by default. On the device it
   is changed with the encoder right on the row, on the web with a slider in the
   Encoder group.
-- **Sound** - a group of its own on the device and on the web:
+- **Sound** - a group of its own on the device; the same in the quick panel,
+  and on the web behind the button beside the volume on the player page:
   - **Bass** and **Treble** - tone controls, -12 to +12 dB (bass below
     250 Hz, treble above 4 kHz). On the device they are turned with the
     encoder right on the row, and the sound changes as you turn. A lift adds

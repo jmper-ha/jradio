@@ -24,7 +24,12 @@
   /* Which device a pin's colour comes from. Bus pins take the bus's colour,
      so a shared bus reads as one thing on the picture. */
   const DEVICE_LABEL = (device) => t(`hw.dev.${device}`);
-  const FIELD_LABEL = (key) => t(`hw.f.${key}`);
+  /* The encoder's three lines are named for what is on them: a turn and a
+     push, or the three buttons standing in for it. */
+  const ENCODER_LINES = ['encoder_right', 'encoder_left', 'encoder_button'];
+  const asButtons = () => String(values.encoder_buttons) === '1';
+  const FIELD_LABEL = (key) =>
+    t(ENCODER_LINES.includes(key) && asButtons() ? `hw.f.${key}.buttons` : `hw.f.${key}`);
   const OPTION_LABEL = (value) => {
     const key = `hw.opt.${value}`;
     const text = t(key);
@@ -61,6 +66,12 @@
 
   function setValue(key, value) {
     values = hw.changeValue(values, key, value);
+    // The encoder's rows and pins are renamed with it.
+    if (key === 'encoder_buttons') {
+      build();
+      saveDraft();
+      return;
+    }
     sync();
     saveDraft();
   }
@@ -217,6 +228,9 @@
         ...fields.filter((field) => !field.hidden && !field.showIn),
         ...hw.FIELDS.filter((field) => field.showIn === device),
       ];
+      /* Encoder or buttons comes first: it says what the rows under it are. */
+      const first = shown.findIndex((field) => field.key === 'encoder_buttons');
+      if (first > 0) shown.unshift(...shown.splice(first, 1));
       if (fields.length === 0) continue;
       const section = document.createElement('div');
       section.className = `device-group hw-group hw-dev-${device}`;
@@ -380,8 +394,9 @@
      has one ("TFT CS" rather than "Выбор кристалла экрана"), the row's label
      otherwise. */
   function shortSignal(key) {
-    const short = t(`hw.s.${key}`);
-    return short === `hw.s.${key}` ? FIELD_LABEL(key) : short;
+    const name = ENCODER_LINES.includes(key) && asButtons() ? `hw.s.${key}.buttons` : `hw.s.${key}`;
+    const short = t(name);
+    return short === name ? FIELD_LABEL(key) : short;
   }
 
   function syncControls() {

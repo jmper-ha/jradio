@@ -110,7 +110,7 @@ const ids = [
   'player-bar', 'player-expand',
   'tone-open', 'tone-panel', 'tone-backdrop', 'tone-close', 'tone-bass', 'tone-treble',
   'tone-bass-value', 'tone-treble-value', 'tone-loudness-treble-row', 'tone-loudness-treble',
-  'tone-reset',
+  'tone-reset', 'tone-level', 'tone-level-status',
 ];
 const buttonIds = new Set([
   'play-toggle', 'next-track', 'like-track', 'dislike-track', 'previous-item',
@@ -962,6 +962,39 @@ sendEvent(second, {
   context.window.emit('popstate');
   assert.equal(elements['#tone-panel'].hidden, true);
   assert.equal(context.window.history.backs, 1);
+
+  /* Levelling: a switch in the tone panel and a line under it from the
+     position poll - nothing while it is off, and the case where a quiet
+     station cannot be lifted said in words. */
+  assert.equal(elements['#tone-level-status'].hidden, true);
+  sendEvent(second, {
+    type: 'settings.update', revision: 930,
+    settings: {volume: 30, tone_bass: 0, tone_treble: 0, loudness: 'off', loudness_treble: true,
+               level_normalize: true},
+  });
+  assert.equal(elements['#tone-level'].checked, true);
+  const levelLine = async (level) => {
+    progressReply = {cover: {present: false, generation: 0, width: 0, height: 0}, level};
+    assert.ok(firePendingTimer());
+    await settle();
+    return elements['#tone-level-status'].hidden ? '' : elements['#tone-level-status'].textContent;
+  };
+  assert.equal(await levelLine({phase: 'measuring', gain_db: 0, wanted_db: 0, capped: false, fixed: false}),
+               'Подбирается уровень…');
+  assert.equal(await levelLine({phase: 'learning', gain_db: -2.4, wanted_db: -6, capped: false, fixed: false}),
+               'Станция громче, убавлено на 2,4 дБ · подбирается');
+  assert.equal(await levelLine({phase: 'settled', gain_db: 3, wanted_db: 3, capped: false, fixed: false}),
+               'Станция тише, поднято на 3,0 дБ · запомнено');
+  assert.equal(await levelLine({phase: 'settled', gain_db: 4, wanted_db: 4, capped: true, fixed: false}),
+               'Станция тише на 4,0 дБ, громче уже некуда · запомнено');
+  assert.equal(await levelLine({phase: 'settled', gain_db: 0.2, wanted_db: 0.2, capped: false, fixed: false}),
+               'Уровень в норме · запомнено');
+  const levelPosts = () => tonePosts().filter((post) => post.field === 'level_normalize');
+  elements['#tone-level'].checked = false;
+  elements['#tone-level'].emit('change');
+  await settle();
+  assert.deepEqual(levelPosts().at(-1), {field: 'level_normalize', value: false});
+  assert.equal(elements['#tone-level-status'].hidden, true);
 
   second.emit('close');
   assert.equal(elements['#socket-state'].textContent, 'Нет связи');

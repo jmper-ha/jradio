@@ -283,12 +283,14 @@ static void test_the_sound_group_holds_two_numbers_and_a_choice(void)
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_SOUND_GROUP);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    // Four headings, four fields, About.
-    assert(ui_settings_model_row_count(&model) == 9U);
+    // Four headings, five fields, About.
+    assert(ui_settings_model_row_count(&model) == 10U);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_TONE_BASS_FIELD);
     assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_TONE_TREBLE_FIELD);
     assert(ui_settings_model_row_at(&model, 5U).id == UI_SETTINGS_ROW_LOUDNESS_FIELD);
     assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD);
+    assert(ui_settings_model_row_at(&model, 7U).id == UI_SETTINGS_ROW_LEVEL_NORMALIZE_FIELD);
+    assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_LEVEL_NORMALIZE_FIELD));
     // The tone controls take the knob; loudness and its switch are clicked.
     assert(ui_settings_row_is_number(UI_SETTINGS_ROW_TONE_BASS_FIELD));
     assert(ui_settings_row_is_number(UI_SETTINGS_ROW_TONE_TREBLE_FIELD));

@@ -289,6 +289,10 @@ typedef struct {
     signed char tone_treble;
     unsigned char loudness;
     bool loudness_treble;
+    /* One station as loud as the next (board's audio_level.c): measured,
+     * corrected and remembered per station. Off until it has been listened
+     * to on the bench. */
+    bool level_normalize;
     /* The time zone as an id out of device_timezone.h, not a POSIX string:
      * every summer-time rule carries commas, and settings.csv splits a line on
      * the first one. */
@@ -388,6 +392,7 @@ bool device_settings_save_tone_later(device_settings_t *settings, int bass_db, i
 // A device_loudness_t; stored as "off", "weak", "medium", "strong".
 bool device_settings_set_loudness(device_settings_t *settings, unsigned int loudness);
 bool device_settings_set_loudness_treble(device_settings_t *settings, bool enabled);
+bool device_settings_set_level_normalize(device_settings_t *settings, bool enabled);
 /* An id this build knows, out of device_timezone.h; anything else is refused
  * rather than stored, since a zone the firmware cannot translate is a clock
  * that silently stays on the old one. */

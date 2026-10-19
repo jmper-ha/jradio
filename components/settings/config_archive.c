@@ -30,6 +30,8 @@ const char *config_archive_member_file(config_archive_member_t member)
         return "remote.csv";
     case CONFIG_ARCHIVE_MEMBER_FM_PRESETS:
         return "fm_presets.csv";
+    case CONFIG_ARCHIVE_MEMBER_LEVELS:
+        return "levels.csv";
     case CONFIG_ARCHIVE_MEMBER_UNKNOWN:
         break;
     }
@@ -197,7 +199,8 @@ bool config_archive_member_is_plausible(config_archive_member_t member, const vo
         return archive_json_is_plausible(bytes, size);
     case CONFIG_ARCHIVE_MEMBER_SETTINGS:
     case CONFIG_ARCHIVE_MEMBER_REMOTE:
-        /* Both are "key,value" text; the remote's table is written with a
+    case CONFIG_ARCHIVE_MEMBER_LEVELS:
+        /* All "key,value" text; the remote's table is written with a
          * "# function,code" header, which the comma check accepts. */
         return archive_csv_is_plausible(bytes, size, ',');
     case CONFIG_ARCHIVE_MEMBER_FM_PRESETS:

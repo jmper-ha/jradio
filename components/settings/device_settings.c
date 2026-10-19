@@ -236,6 +236,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         .tone_treble = 0,
         .loudness = DEVICE_LOUDNESS_OFF,
         .loudness_treble = false,
+        .level_normalize = false,
         .screensaver_seconds = DEVICE_SCREENSAVER_SECONDS_DEFAULT,
         .screensaver_brightness = DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT,
         .yandex_music = true,
@@ -428,6 +429,9 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     }
     if (read_value(&csv, "loudness_treble", value, sizeof(value))) {
         (void)parse_bool(value, &settings->loudness_treble);
+    }
+    if (read_value(&csv, "level_normalize", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->level_normalize);
     }
     if (read_value(&csv, "screensaver", value, sizeof(value))) {
         settings->screensaver = screensaver_from_text(value);
@@ -962,6 +966,15 @@ bool device_settings_set_loudness_treble(device_settings_t *settings, bool enabl
     if (settings->loudness_treble == enabled) return true;
     if (!save_value(settings, "loudness_treble", enabled ? "1" : "0")) return false;
     settings->loudness_treble = enabled;
+    return true;
+}
+
+bool device_settings_set_level_normalize(device_settings_t *settings, bool enabled)
+{
+    if (settings == NULL) return false;
+    if (settings->level_normalize == enabled) return true;
+    if (!save_value(settings, "level_normalize", enabled ? "1" : "0")) return false;
+    settings->level_normalize = enabled;
     return true;
 }
 

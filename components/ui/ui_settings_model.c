@@ -109,6 +109,11 @@ static const ui_settings_row_t s_field_rows[] = {
         .kind = UI_SETTINGS_ROW_FIELD,
     },
     {
+        .id = UI_SETTINGS_ROW_LEVEL_NORMALIZE_FIELD,
+        .group = UI_SETTINGS_GROUP_SOUND,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
         .id = UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
         .group = UI_SETTINGS_GROUP_DISPLAY,
         .kind = UI_SETTINGS_ROW_FIELD,

@@ -326,6 +326,8 @@ static void test_apply_writes_through_to_the_file(void)
     assert(web_settings_apply(&settings, &tone_change));
     assert(parse_one("{\"field\":\"loudness_treble\",\"value\":true}", &tone_change));
     assert(web_settings_apply(&settings, &tone_change));
+    assert(parse_one("{\"field\":\"level_normalize\",\"value\":true}", &tone_change));
+    assert(web_settings_apply(&settings, &tone_change));
 
     device_settings_t reloaded;
     assert(device_settings_init_at(&reloaded, test_path));
@@ -355,6 +357,7 @@ static void test_apply_writes_through_to_the_file(void)
     assert(reloaded.alarm.stop_hour == 10U && reloaded.alarm.stop_minute == 45U);
     assert(reloaded.tone_bass == -4 && reloaded.tone_treble == 6);
     assert(reloaded.loudness == DEVICE_LOUDNESS_MEDIUM && reloaded.loudness_treble);
+    assert(reloaded.level_normalize);
     char nothing[8];
     assert(!settings_csv_get(test_path, "openweathermap_key", nothing, sizeof(nothing)));
 
@@ -444,6 +447,7 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"tone_treble\":0") != NULL);
     assert(strstr(document, "\"loudness\":\"off\"") != NULL);
     assert(strstr(document, "\"loudness_treble\":false") != NULL);
+    assert(strstr(document, "\"level_normalize\":false") != NULL);
     assert(strstr(document, "\"tone_min\":-12") != NULL);
     assert(strstr(document, "\"tone_max\":12") != NULL);
 

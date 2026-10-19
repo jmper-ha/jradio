@@ -887,6 +887,8 @@ static void test_tone_and_loudness_persist(void)
     assert(device_settings_init_at(&settings, test_path));
     assert(settings.tone_bass == 0 && settings.tone_treble == 0);
     assert(settings.loudness == DEVICE_LOUDNESS_OFF && !settings.loudness_treble);
+    assert(!settings.level_normalize);
+    assert(device_settings_set_level_normalize(&settings, true));
     assert(device_settings_set_tone_bass(&settings, -4));
     assert(device_settings_set_tone_treble(&settings, 7));
     assert(device_settings_set_loudness(&settings, DEVICE_LOUDNESS_MEDIUM));
@@ -898,6 +900,7 @@ static void test_tone_and_loudness_persist(void)
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.tone_bass == -4 && reloaded.tone_treble == 7);
     assert(reloaded.loudness == DEVICE_LOUDNESS_MEDIUM && reloaded.loudness_treble);
+    assert(reloaded.level_normalize);
     char value[16];
     assert(settings_csv_get(test_path, "loudness", value, sizeof(value)));
     assert(strcmp(value, "medium") == 0);

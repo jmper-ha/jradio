@@ -42,6 +42,8 @@
   const toneLoudnessTrebleRow = document.querySelector('#tone-loudness-treble-row');
   const toneLoudnessTreble = document.querySelector('#tone-loudness-treble');
   const toneReset = document.querySelector('#tone-reset');
+  const toneLevel = document.querySelector('#tone-level');
+  const toneLevelStatus = document.querySelector('#tone-level-status');
   const streamMeta = document.querySelector('#stream-meta');
   const playerError = document.querySelector('#player-error');
   const commandStatus = document.querySelector('#command-status');
@@ -458,7 +460,10 @@
      is: a drag fires an input per pixel, and only the newest of those that
      arrive while a write is in the air is worth sending after it. */
   const tone = {
-    values: {tone_bass: 0, tone_treble: 0, loudness: 'off', loudness_treble: true},
+    values: {tone_bass: 0, tone_treble: 0, loudness: 'off', loudness_treble: true,
+             level_normalize: false},
+    // The levelling's reading from the position poll; null while it is off.
+    level: null,
     held: '',
     busy: {},
     queued: {},
@@ -486,6 +491,10 @@
     }
     toneLoudnessTreble.checked = v.loudness_treble === true;
     toneLoudnessTrebleRow.hidden = v.loudness === 'off';
+    toneLevel.checked = v.level_normalize === true;
+    const levelText = v.level_normalize ? levelStatusText(tone.level) : '';
+    toneLevelStatus.textContent = levelText;
+    toneLevelStatus.hidden = levelText === '';
     toneOpen.classList.toggle('is-active',
       v.tone_bass !== 0 || v.tone_treble !== 0 || v.loudness !== 'off');
   }
@@ -499,7 +508,47 @@
     if (typeof value.loudness_treble === 'boolean' && !tone.busy.loudness_treble) {
       v.loudness_treble = value.loudness_treble;
     }
+    if (typeof value.level_normalize === 'boolean' && !tone.busy.level_normalize) {
+      v.level_normalize = value.level_normalize;
+    }
     renderTone();
+  }
+
+  /* One decimal, and no minus: the words say which way. A decimal comma in
+     Russian, as on the panel. */
+  function levelDb(db) {
+    const english = Boolean(window.jradioI18n.language) && window.jradioI18n.language() === 'en';
+    const text = Math.abs(db).toFixed(1);
+    return english ? text : text.replace('.', ',');
+  }
+
+  /* What the levelling is doing with what is playing, in a line. The case
+     that matters most is the one where it cannot do it: at full volume a quiet
+     station has no room to be lifted, and without saying so the switch looks
+     as if it does nothing. */
+  function levelStatusText(level) {
+    if (!isObject(level) || typeof level.phase !== 'string') return '';
+    const gain = Number(level.gain_db);
+    const wanted = Number(level.wanted_db);
+    if (!Number.isFinite(gain) || !Number.isFinite(wanted)) return '';
+    if (level.phase === 'measuring') return t('level.measuring');
+    if (level.fixed === true) return t('level.tags', {db: (gain > 0 ? '+' : gain < 0 ? '−' : '') + levelDb(gain)});
+    let text;
+    if (level.capped === true && wanted > 0) {
+      text = t('level.capped', {db: levelDb(wanted)});
+    } else if (Math.abs(gain) < 0.5) {
+      text = t('level.even');
+    } else {
+      text = t(gain < 0 ? 'level.louder' : 'level.quieter', {db: levelDb(gain)});
+    }
+    const after = level.phase === 'settled' ? t('level.kept') : t('level.learning');
+    return `${text} · ${after}`;
+  }
+
+  function applyLevel(payload) {
+    const was = JSON.stringify(tone.level);
+    tone.level = isObject(payload) ? payload : null;
+    if (JSON.stringify(tone.level) !== was && tonePanel) renderTone();
   }
 
   /* Over REST, as the volume: these are stored settings, and the settings
@@ -617,6 +666,11 @@
     toneLoudnessTreble.addEventListener('change', () => {
       tone.values.loudness_treble = toneLoudnessTreble.checked;
       sendTone('loudness_treble', toneLoudnessTreble.checked);
+    });
+    toneLevel.addEventListener('change', () => {
+      tone.values.level_normalize = toneLevel.checked;
+      renderTone();
+      sendTone('level_normalize', toneLevel.checked);
     });
     toneReset.addEventListener('click', () => {
       tone.held = '';
@@ -808,6 +862,7 @@
     renderProgress();
     renderCover(value.cover);
     applySleep(value.sleep);
+    applyLevel(value.level);
   }
 
   /* "44:59". Minutes and seconds rather than the panel's whole minutes: the

@@ -46,6 +46,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include <errno.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "board.h"
 #include "board_config.h"
 #include "board_features.h"
 #include "bt_link.h"
@@ -2034,6 +2035,25 @@ static esp_err_t web_server_progress_get(httpd_req_t *request)
     web_json_literal(&writer, ",\"remaining_seconds\":");
     web_json_format(&writer, "%u", (unsigned)sleep_timer_service_remaining_seconds());
     web_json_literal(&writer, "},");
+    /* The levelling's reading rides here too: the correction creeps at a tenth
+     * of a decibel a second, which pushed would be a frame a second per
+     * browser for nothing. Absent while it is off. */
+    audio_level_status_t level;
+    board_audio_level_status(&level);
+    if (level.phase != AUDIO_LEVEL_OFF) {
+        static const char *const k_phases[] = {"off", "measuring", "learning", "settled"};
+        web_json_literal(&writer, "\"level\":{\"phase\":");
+        web_json_string(&writer, k_phases[level.phase < 4U ? level.phase : 0U]);
+        web_json_literal(&writer, ",\"gain_db\":");
+        web_json_format(&writer, "%.1f", (double)level.gain_db);
+        web_json_literal(&writer, ",\"wanted_db\":");
+        web_json_format(&writer, "%.1f", (double)level.wanted_db);
+        web_json_literal(&writer, ",\"capped\":");
+        web_json_literal(&writer, level.capped ? "true" : "false");
+        web_json_literal(&writer, ",\"fixed\":");
+        web_json_literal(&writer, level.fixed ? "true" : "false");
+        web_json_literal(&writer, "},");
+    }
     /* The generation is what the page watches: the picture itself comes from
      * /api/cover, and re-fetching 27 KB once a second to find out it has not
      * changed is exactly what this number exists to prevent.

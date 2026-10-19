@@ -47,6 +47,8 @@ typedef enum {
     UI_SETTINGS_ROW_TONE_TREBLE_FIELD,
     UI_SETTINGS_ROW_LOUDNESS_FIELD,
     UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD,
+    // One station as loud as the next: a switch.
+    UI_SETTINGS_ROW_LEVEL_NORMALIZE_FIELD,
     UI_SETTINGS_ROW_DISPLAY_GROUP,
     UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
     /* The mode only. Its wait and its idle level are numbers nobody sets

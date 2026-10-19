@@ -83,6 +83,11 @@ typedef enum {
     DEVICE_TEXT_LOUDNESS_MEDIUM,
     DEVICE_TEXT_LOUDNESS_STRONG,
     DEVICE_TEXT_ROW_LOUDNESS_TREBLE,
+    DEVICE_TEXT_ROW_LEVEL_NORMALIZE,
+    /* What the levelling shows over the volume: still measuring, and a lift
+     * the volume left no room for. */
+    DEVICE_TEXT_LEVEL_MEASURING,
+    DEVICE_TEXT_LEVEL_CAPPED,
     /* The two the quick panel names that no settings row does: the sleep
      * timer is set from the panel and from the web page, never from the
      * settings screen, and the alarm's own rows live in the browser. */

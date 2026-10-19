@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
@@ -20,6 +21,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#include "audio_level.h"
 #include "audio_tone.h"
 #include "audio_volume.h"
 #include "board.h"
@@ -196,6 +198,82 @@ void board_audio_set_tone(const audio_tone_settings_t *settings)
     taskENTER_CRITICAL(&s_tone_lock);
     s_tone_wanted = *settings;
     taskEXIT_CRITICAL(&s_tone_lock);
+}
+
+/* Levelling, the same way: the requests and the status cross under their
+ * own spinlock, the measurement itself is the audio side's. A begin is a
+ * counter rather than a flag, so two in a row are not one. */
+static portMUX_TYPE s_level_lock = portMUX_INITIALIZER_UNLOCKED;
+static bool s_level_enabled_wanted;
+static uint32_t s_level_begin_asked;
+static uint32_t s_level_begin_done;
+static float s_level_begin_db;
+static bool s_level_begin_remembered;
+static bool s_level_begin_fixed;
+static audio_level_status_t s_level_status;
+static audio_level_t s_level;
+
+void board_audio_set_levelling(bool enabled)
+{
+    taskENTER_CRITICAL(&s_level_lock);
+    s_level_enabled_wanted = enabled;
+    taskEXIT_CRITICAL(&s_level_lock);
+}
+
+void board_audio_level_begin(float start_db, bool remembered, bool fixed)
+{
+    taskENTER_CRITICAL(&s_level_lock);
+    s_level_begin_db = start_db;
+    s_level_begin_remembered = remembered;
+    s_level_begin_fixed = fixed;
+    s_level_begin_asked++;
+    /* Said at once rather than at the next block: a source whose sound goes
+     * past this board - Bluetooth in, analogue FM - writes no block, and the
+     * page would go on showing the station before it. */
+    if (s_level_enabled_wanted) {
+        memset(&s_level_status, 0, sizeof(s_level_status));
+        s_level_status.phase =
+            remembered || fixed ? AUDIO_LEVEL_SETTLED : AUDIO_LEVEL_MEASURING;
+        s_level_status.gain_db = start_db;
+        s_level_status.wanted_db = start_db;
+        s_level_status.fixed = fixed;
+    }
+    taskEXIT_CRITICAL(&s_level_lock);
+}
+
+void board_audio_level_status(audio_level_status_t *status)
+{
+    if (status == NULL) return;
+    taskENTER_CRITICAL(&s_level_lock);
+    *status = s_level_status;
+    taskEXIT_CRITICAL(&s_level_lock);
+}
+
+/* Takes what the player asked for since the last block, measures this one,
+ * and returns the volume's multiplier with the correction in it. */
+static uint16_t board_audio_levelled_gain(const void *pcm, uint32_t frames, uint16_t gain)
+{
+    taskENTER_CRITICAL(&s_level_lock);
+    const bool enabled = s_level_enabled_wanted;
+    const bool begin = s_level_begin_asked != s_level_begin_done;
+    s_level_begin_done = s_level_begin_asked;
+    const float begin_db = s_level_begin_db;
+    const bool remembered = s_level_begin_remembered;
+    const bool fixed = s_level_begin_fixed;
+    taskEXIT_CRITICAL(&s_level_lock);
+    /* Switched on mid-station, it starts from what the player last said about
+     * this one - the remembered level - rather than as a stranger. */
+    const bool switched_on = enabled && !s_level.enabled;
+    audio_level_set_enabled(&s_level, enabled);
+    if (begin || switched_on) audio_level_begin(&s_level, begin_db, remembered, fixed);
+    audio_level_measure(&s_level, s_audio_sample_rate, (const int16_t *)pcm, frames);
+    const uint16_t levelled = audio_level_apply(&s_level, gain);
+    audio_level_status_t status;
+    audio_level_status(&s_level, &status);
+    taskENTER_CRITICAL(&s_level_lock);
+    s_level_status = status;
+    taskEXIT_CRITICAL(&s_level_lock);
+    return levelled;
 }
 
 void board_audio_set_volume(uint8_t percent)
@@ -645,8 +723,13 @@ static uint16_t s_audio_gain_end = AUDIO_VOLUME_UNITY;
 
 static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
 {
-    const uint16_t gain = audio_volume_gain(board_audio_volume());
     const uint32_t frames = (uint32_t)(pcm_length / AUDIO_VOLUME_FRAME_BYTES);
+    /* The correction rides in the volume's multiplier, so it is ramped
+     * across the block with it and the tone's headroom is worked out from
+     * the two together. Measured here, before either: what the station
+     * sends, like the meter. */
+    const uint16_t gain =
+        board_audio_levelled_gain(pcm, frames, audio_volume_gain(board_audio_volume()));
     uint16_t gain_start;
     uint16_t gain_end;
     /* The start of a stream - the fade's first block - is where the tone

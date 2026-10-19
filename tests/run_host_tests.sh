@@ -122,6 +122,8 @@ fi
 run_test audio_pcm_convert tests/test_audio_pcm_convert.c components/board/audio_pcm_convert.c
 run_test audio_volume tests/test_audio_volume.c components/board/audio_volume.c
 run_test audio_tone tests/test_audio_tone.c components/board/audio_tone.c components/board/audio_volume.c -lm
+run_test audio_level tests/test_audio_level.c components/board/audio_level.c \
+    components/board/audio_tone.c components/board/audio_volume.c -lm
 run_test audio_source tests/test_audio_source.c components/audio/audio_source_manager.c
 run_test rda5807 tests/test_rda5807.c components/fm_tuner/rda5807.c
 run_test fm_presets tests/test_fm_presets.c components/fm_tuner/fm_presets.c
@@ -238,6 +240,7 @@ run_test alarm_schedule tests/test_alarm_schedule.c components/settings/alarm_sc
 run_test device_settings tests/test_device_settings.c components/settings/device_settings.c components/settings/settings_nvs.c components/settings/alarm_schedule.c components/settings/device_timezone.c \
     components/settings/settings_csv.c
 run_test station_catalog tests/test_station_catalog.c components/internet_radio/station_catalog.c
+run_test station_levels tests/test_station_levels.c components/internet_radio/station_levels.c -lm
 run_test station_resume tests/test_station_resume.c components/internet_radio/station_resume.c \
     components/settings/settings_csv.c
 run_test system_health tests/test_system_health.c components/diagnostics/system_health.c
@@ -258,6 +261,7 @@ run_test ui_quick_menu tests/test_ui_quick_menu.c components/ui/ui_quick_menu.c 
 run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c \
     components/internet_radio/radio_stream_format.c
 run_test ui_now_playing tests/test_ui_now_playing.c components/ui/ui_now_playing.c
+run_test ui_level_text tests/test_ui_level_text.c components/ui/ui_level_text.c -lm
 run_test ui_seek tests/test_ui_seek.c components/ui/ui_seek.c
 run_test ui_fm_tune tests/test_ui_fm_tune.c components/ui/ui_fm_tune.c
 run_test ui_web_address tests/test_ui_web_address.c components/ui/ui_web_address.c components/settings/device_text.c

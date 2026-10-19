@@ -717,6 +717,24 @@ _Static_assert(UI_SRC_BUFFER_X + UI_BUFFER_GRAPH_W <= TFT_WIDTH - UI_CONTENT_X,
                "the buffer graph runs off the right edge");
 _Static_assert(UI_SRC_BUFFER_GRAPH_Y + UI_SRC_BUFFER_GRAPH_H <= TFT_HEIGHT,
                "the buffer graph runs off the bottom of the panel");
+/* The levelling's reading: over the volume figure, right edge on its right
+ * edge, in the strip between the meter's lower rule and the footer. A face a
+ * step below the figure's - a 12 px one made for it where the body is 14,
+ * since nothing smaller existed. Wide enough for "−9 дБ" and "макс". */
+#if UI_FONT_BODY_PX > 14
+#define UI_SRC_LEVEL_PX 14
+#define UI_SRC_LEVEL_LINE_H UI_FONT_CYRILLIC_14_LINE_H
+#else
+#define UI_SRC_LEVEL_PX 12
+#define UI_SRC_LEVEL_LINE_H UI_FONT_LEVEL_12_LINE_H
+#endif
+#define UI_SRC_LEVEL_W 52
+#define UI_SRC_LEVEL_X (UI_SRC_VOLUME_TEXT_X + 26 - UI_SRC_LEVEL_W)
+#define UI_SRC_LEVEL_Y (UI_SRC_FOOT_Y - UI_SRC_LEVEL_LINE_H)
+_Static_assert(UI_SRC_LEVEL_Y > UI_SRC_RULE_BOTTOM,
+               "the levelling's reading runs over the meter's lower rule");
+_Static_assert(UI_SRC_LEVEL_X + UI_SRC_LEVEL_W <= TFT_WIDTH,
+               "the levelling's reading runs off the panel");
 /* Three digits of volume, and the right margin every other block keeps. */
 _Static_assert(UI_SRC_VOLUME_TEXT_X + 26 <= TFT_WIDTH,
                "the player's volume reading runs off the panel");

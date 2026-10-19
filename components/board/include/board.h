@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "audio_level.h"
 #include "audio_tone.h"
 #include "esp_err.h"
 
@@ -132,3 +133,11 @@ uint8_t board_audio_volume(void);
 /* Tone controls and loudness (audio_tone.h), applied from the next block on.
  * Not the Bluetooth module's sound, which reaches the DAC past this board. */
 void board_audio_set_tone(const audio_tone_settings_t *settings);
+
+/* Levelling (audio_level.h). The player says when a station or source
+ * begins and where it should start - what was learned for it before, or
+ * what its tags say - and reads back what was found, to keep. Picked up at
+ * the next block, like the tone. */
+void board_audio_set_levelling(bool enabled);
+void board_audio_level_begin(float start_db, bool remembered, bool fixed);
+void board_audio_level_status(audio_level_status_t *status);

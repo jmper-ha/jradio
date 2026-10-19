@@ -36,6 +36,7 @@
 #include "ui_player_state.h"
 #include "ui_quick_menu.h"
 #include "ui_station_dial.h"
+#include "ui_level_text.h"
 #include "ui_now_playing.h"
 #include "ui_radio_text.h"
 #include "ui_seek.h"
@@ -410,6 +411,8 @@ static lv_image_dsc_t s_source_cover_dsc;
 static uint16_t *s_source_cover_pixels;
 static unsigned int s_source_cover_generation;
 static lv_obj_t *s_source_volume;
+/* The levelling's correction, small, over the volume figure. */
+static lv_obj_t *s_source_level;
 static lv_obj_t *s_source_volume_bar;
 static lv_obj_t *s_source_volume_icon;
 #ifdef UI_SRC_BT_ICON_X
@@ -496,7 +499,7 @@ static lv_obj_t *s_settings_more_above;
 static lv_obj_t *s_settings_more_below;
 /* One per boolean setting, not per row on screen: only one group is open at
  * a time, so at most three are ever visible, but each keeps its own object. */
-#define UI_SETTINGS_SWITCH_COUNT 9U
+#define UI_SETTINGS_SWITCH_COUNT 10U
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
@@ -2013,6 +2016,42 @@ static void ui_update_footer(void)
     char volume_text[8];
     snprintf(volume_text, sizeof(volume_text), "%u", (unsigned int)volume);
     ui_set_label_text_if_changed(s_source_volume, volume_text);
+    /* Only where nothing else stands in that strip: a station, or a rotor
+     * track before it has a length. A file's correction would come from its
+     * tags and never move - nothing there to watch - and its bar has the
+     * room. */
+    audio_level_status_t level;
+    board_audio_level_status(&level);
+    /* For the bench: what the levelling makes of a station, when it changes
+     * its mind and every half minute while it is still on its way. */
+    static uint8_t s_level_logged_phase = AUDIO_LEVEL_OFF;
+    static uint32_t s_level_logged_ms;
+    const uint32_t level_now_ms = lv_tick_get();
+    if (level.phase != s_level_logged_phase ||
+        (level.phase == AUDIO_LEVEL_LEARNING && level_now_ms - s_level_logged_ms >= 30000U)) {
+        static const char *const k_phases[] = {"off", "measuring", "learning", "settled"};
+        ESP_LOGI(TAG, "level: %s, est %.1f LUFS, gain %.1f dB -> %.1f dB%s",
+                 k_phases[level.phase < 4U ? level.phase : 0U], (double)level.loudness,
+                 (double)level.gain_db, (double)level.wanted_db,
+                 level.capped ? ", no room to lift" : "");
+        s_level_logged_phase = level.phase;
+        s_level_logged_ms = level_now_ms;
+    }
+    char level_text[24];
+    const bool stream = s_player_ui.source == AUDIO_SOURCE_INTERNET_RADIO ||
+                        s_player_ui.source == AUDIO_SOURCE_YANDEX;
+    const bool show_level =
+        stream && !have_bar &&
+        ui_level_text(&level, ui_text(DEVICE_TEXT_DB_SHORT), ui_text(DEVICE_TEXT_LEVEL_MEASURING),
+                      ui_text(DEVICE_TEXT_LEVEL_CAPPED), level_text, sizeof(level_text));
+    if (show_level) {
+        ui_set_label_text_if_changed(s_source_level, level_text);
+        if (lv_obj_has_flag(s_source_level, LV_OBJ_FLAG_HIDDEN)) {
+            lv_obj_clear_flag(s_source_level, LV_OBJ_FLAG_HIDDEN);
+        }
+    } else if (!lv_obj_has_flag(s_source_level, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_add_flag(s_source_level, LV_OBJ_FLAG_HIDDEN);
+    }
     lv_obj_t *fill_bar = lv_obj_get_child(s_source_volume_bar, 0);
     if (fill_bar != NULL) {
         const int32_t width = (int32_t)(((unsigned int)UI_SRC_VOLUME_BAR_W * volume) / 100U);
@@ -3444,6 +3483,10 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_LOUDNESS_TREBLE,
                                  s_device_settings.loudness_treble);
         break;
+    case UI_SETTINGS_ROW_LEVEL_NORMALIZE_FIELD:
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_LEVEL_NORMALIZE,
+                                 s_device_settings.level_normalize);
+        break;
     case UI_SETTINGS_ROW_BRIGHTNESS_FIELD:
         /* Angle brackets while the knob owns the value: the cursor already
          * says which row, and this is the only thing that says the next click
@@ -3535,6 +3578,10 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     case UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD:
         *index = 8U;
         *value = s_device_settings.loudness_treble;
+        return true;
+    case UI_SETTINGS_ROW_LEVEL_NORMALIZE_FIELD:
+        *index = 9U;
+        *value = s_device_settings.level_normalize;
         return true;
     default:
         return false;
@@ -3901,9 +3948,9 @@ static void ui_apply_files_end(void)
     player_control_set_files_repeat(s_device_settings.files_end == DEVICE_FILES_END_REPEAT);
 }
 
-/* The tone controls and loudness, as the settings say. The board keeps them
- * and slopes towards them a block at a time, so this is safe to call on every
- * settings change. */
+/* The tone controls, loudness and levelling, as the settings say. The board
+ * keeps them and slopes towards them a block at a time, so this is safe to
+ * call on every settings change. */
 static void ui_apply_tone(void)
 {
     const audio_tone_settings_t tone = {
@@ -3913,6 +3960,7 @@ static void ui_apply_tone(void)
         .loudness_treble = s_device_settings.loudness_treble,
     };
     board_audio_set_tone(&tone);
+    board_audio_set_levelling(s_device_settings.level_normalize);
 }
 
 static void ui_reload_settings(void)
@@ -4463,6 +4511,11 @@ static void ui_settings_change_selected(void)
                                                       !s_device_settings.loudness_treble);
         if (changed) ui_apply_tone();
         break;
+    case UI_SETTINGS_ROW_LEVEL_NORMALIZE_FIELD:
+        changed = device_settings_set_level_normalize(&s_device_settings,
+                                                      !s_device_settings.level_normalize);
+        if (changed) ui_apply_tone();
+        break;
     case UI_SETTINGS_ROW_THEME_FIELD:
         /* Round the three. Custom is on the ring even before anyone has set
          * its colours: they start as the standard ones, so it is never a
@@ -4979,6 +5032,17 @@ static void ui_create_source_screen(void)
     lv_obj_set_pos(s_source_volume, UI_SRC_VOLUME_TEXT_X, UI_SRC_FOOT_Y);
     ui_paint(s_source_volume, UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
     lv_label_set_text(s_source_volume, "");
+    /* Right-aligned on the volume figure's right edge, in the strip between
+     * the meter's lower rule and the footer - where a file's progress bar
+     * runs, which is why it is shown for streams only. */
+    s_source_level = lv_label_create(s_source_screen);
+    lv_obj_set_style_text_font(s_source_level, UI_FONT_LEVEL, 0);
+    lv_obj_set_width(s_source_level, UI_SRC_LEVEL_W);
+    lv_obj_set_style_text_align(s_source_level, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(s_source_level, UI_SRC_LEVEL_X, UI_SRC_LEVEL_Y);
+    ui_paint(s_source_level, UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
+    lv_label_set_text(s_source_level, "");
+    lv_obj_add_flag(s_source_level, LV_OBJ_FLAG_HIDDEN);
 
     /* Pause badge, created last so it draws over everything else.
      *
@@ -8105,6 +8169,10 @@ esp_err_t ui_init(void)
                  "font metrics disagree with the layout: body %d vs %d, title %d vs %d",
                  (int)UI_FONT_BODY->line_height, (int)UI_FONT_BODY_LINE_H,
                  (int)UI_FONT_TITLE->line_height, (int)UI_FONT_TITLE_LINE_H);
+    }
+    if (UI_FONT_LEVEL->line_height != UI_SRC_LEVEL_LINE_H) {
+        ESP_LOGE(TAG, "font metrics disagree with the layout: level %d vs %d",
+                 (int)UI_FONT_LEVEL->line_height, (int)UI_SRC_LEVEL_LINE_H);
     }
 
     /* Before the web server exists to arm it and before the task that

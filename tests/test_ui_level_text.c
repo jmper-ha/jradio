@@ -1,0 +1,34 @@
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "ui_level_text.h"
+
+static const char *show(uint8_t phase, float gain, float wanted, bool capped)
+{
+    static char out[24];
+    const audio_level_status_t status = {
+        .phase = phase, .gain_db = gain, .wanted_db = wanted, .capped = capped};
+    if (!ui_level_text(&status, "дБ", "…", "макс", out, sizeof(out))) return NULL;
+    return out;
+}
+
+int main(void)
+{
+    assert(show(AUDIO_LEVEL_OFF, -4.0f, -4.0f, false) == NULL);
+    assert(strcmp(show(AUDIO_LEVEL_MEASURING, 0.0f, 0.0f, false), "…") == 0);
+    assert(strcmp(show(AUDIO_LEVEL_LEARNING, -3.6f, -6.0f, false), "\xE2\x80\x93" "4 дБ") == 0);
+    assert(strcmp(show(AUDIO_LEVEL_SETTLED, 2.4f, 2.4f, false), "+2 дБ") == 0);
+    assert(strcmp(show(AUDIO_LEVEL_SETTLED, 0.3f, 0.3f, false), "0 дБ") == 0);
+    // A lift the volume had no room for says so; a cut never is one.
+    assert(strcmp(show(AUDIO_LEVEL_SETTLED, 5.0f, 5.0f, true), "макс") == 0);
+    assert(strcmp(show(AUDIO_LEVEL_SETTLED, -5.0f, -5.0f, true), "\xE2\x80\x93" "5 дБ") == 0);
+    // A buffer too small is cut, not overrun.
+    char tiny[4];
+    const audio_level_status_t status = {.phase = AUDIO_LEVEL_SETTLED, .gain_db = -9.0f};
+    assert(ui_level_text(&status, "дБ", "…", "макс", tiny, sizeof(tiny)));
+    assert(strlen(tiny) < sizeof(tiny));
+    assert(!ui_level_text(NULL, "дБ", "…", "макс", tiny, sizeof(tiny)) && tiny[0] == '\0');
+    puts("ui level text tests passed");
+    return 0;
+}

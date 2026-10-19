@@ -19,6 +19,8 @@
 #define UI_FONT_CYRILLIC_18_LINE_H 24
 #define UI_FONT_CYRILLIC_20_LINE_H 24
 #define UI_FONT_CYRILLIC_26_LINE_H 35
+// The levelling's small face (ui_font_level_12.c), which is not a Cyrillic face.
+#define UI_FONT_LEVEL_12_LINE_H 12
 /* 18 and 20 sharing a line height is not a typo. Line height is set by the
  * tallest glyph in the face, and the 20 px one was built over a narrower
  * Cyrillic range that stops at 0x045F - it simply does not contain the letters

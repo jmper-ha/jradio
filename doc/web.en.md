@@ -97,10 +97,11 @@ a key; if none came, the page says so. More in
 
 ## Backup
 
-`GET /api/backup` gives a zip with six files: `wifi.json` (the networks),
+`GET /api/backup` gives a zip with seven files: `wifi.json` (the networks),
 `settings.csv` (the settings), `yandex.json` (the token), `weather.json` (the
-OpenWeatherMap key), `remote.csv` (the keys the remote was taught) and
-`fm_presets.csv` (the FM stations), and with them those stations' pictures,
+OpenWeatherMap key), `remote.csv` (the keys the remote was taught),
+`fm_presets.csv` (the FM stations) and `levels.csv` (the level corrections
+the levelling has learned per station), and with them those stations' pictures,
 `radio_img/<name>`. `POST /api/restore` takes the whole archive or one file;
 the device checks all files before writing, writes them and reboots. The
 station list is not in the archive - it has its own export on the Stations

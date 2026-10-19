@@ -75,6 +75,9 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_LOUDNESS_STRONG] = {"сильная", "strong"},
     /* Right under loudness, which is what makes "lift" mean its lift. */
     [DEVICE_TEXT_ROW_LOUDNESS_TREBLE] = {"Подъём высоких", "Treble lift"},
+    [DEVICE_TEXT_ROW_LEVEL_NORMALIZE] = {"Ровная громкость", "Even volume"},
+    [DEVICE_TEXT_LEVEL_MEASURING] = {"…", "…"},
+    [DEVICE_TEXT_LEVEL_CAPPED] = {"макс", "max"},
     [DEVICE_TEXT_ROW_SLEEP_TIMER] = {"Таймер сна", "Sleep timer"},
     [DEVICE_TEXT_ROW_ALARM] = {"Будильник", "Alarm"},
     [DEVICE_TEXT_ROW_BT_SPEAKER] = {"Колонка BT", "BT speaker"},

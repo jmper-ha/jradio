@@ -91,6 +91,7 @@ static const field_descriptor_t k_fields[] = {
     {"tone_treble", WEB_SETTINGS_FIELD_TONE_TREBLE, {NULL}, true, false},
     {"loudness", WEB_SETTINGS_FIELD_LOUDNESS, {WEB_SETTINGS_LOUDNESS_NAMES}, false, false},
     {"loudness_treble", WEB_SETTINGS_FIELD_LOUDNESS_TREBLE, {NULL}, false, false},
+    {"level_normalize", WEB_SETTINGS_FIELD_LEVEL_NORMALIZE, {NULL}, false, false},
 };
 
 /* A provider the page has no name for - a newer card - reads as off, which is
@@ -336,6 +337,8 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_loudness(settings, (unsigned int)change->value);
     case WEB_SETTINGS_FIELD_LOUDNESS_TREBLE:
         return device_settings_set_loudness_treble(settings, change->value != 0);
+    case WEB_SETTINGS_FIELD_LEVEL_NORMALIZE:
+        return device_settings_set_level_normalize(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY:
         /* Not the card's: the handler routes it to the key file. */
         return false;
@@ -381,6 +384,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .tone_treble = (int8_t)settings->tone_treble,
         .loudness = settings->loudness,
         .loudness_treble = settings->loudness_treble,
+        .level_normalize = settings->level_normalize,
         .home_screen_available = home_screen_available,
         .yandex_available = yandex_available,
         .dlna_available = dlna_available,
@@ -433,6 +437,7 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->tone_bass == right->tone_bass && left->tone_treble == right->tone_treble &&
            left->loudness == right->loudness &&
            left->loudness_treble == right->loudness_treble &&
+           left->level_normalize == right->level_normalize &&
            left->home_screen_available == right->home_screen_available &&
            left->yandex_available == right->yandex_available &&
            left->dlna_available == right->dlna_available &&
@@ -536,6 +541,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
                                 : k_loudness_names[0]);
     web_json_literal(writer, ",\"loudness_treble\":");
     web_json_literal(writer, view->loudness_treble ? "true" : "false");
+    web_json_literal(writer, ",\"level_normalize\":");
+    web_json_literal(writer, view->level_normalize ? "true" : "false");
     /* What this build has, not what it is set to: a switch for a source the
      * firmware was compiled without would change a value nothing reads. */
     web_json_literal(writer, ",\"available\":{\"home_screen\":");

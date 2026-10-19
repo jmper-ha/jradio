@@ -4,9 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The six files that make a device this device: the networks it knows, how
- * it is set up, the Yandex token, the weather key, the remote's learned table
- * and the FM presets. A backup carries them as one zip, so a restore does not
+/* The seven files that make a device this device: the networks it knows, how
+ * it is set up, the Yandex token, the weather key, the remote's learned table,
+ * the FM presets and the level each station was found to need. A backup carries them as one zip, so a restore does not
  * depend on the browser having kept six separate downloads together - and so
  * one file out of the archive can still be restored on its own.
  *
@@ -25,7 +25,7 @@
  * Everything here is pure: no filesystem, no ESP-IDF. The buffer belongs to
  * the caller. */
 
-#define CONFIG_ARCHIVE_MEMBER_MAX 6U
+#define CONFIG_ARCHIVE_MEMBER_MAX 7U
 /* And the pictures the FM presets point at, which the archive carries beside
  * the presets as "radio_img/<name>": a data flash wipes the directory they
  * live in, and presets that name nothing show a note where each station's
@@ -51,14 +51,17 @@ typedef enum {
     CONFIG_ARCHIVE_MEMBER_WEATHER,
     CONFIG_ARCHIVE_MEMBER_REMOTE,
     CONFIG_ARCHIVE_MEMBER_FM_PRESETS,
+    /* Learned rather than set, but learned over hours of listening: without
+     * it every station starts unlevelled again after a data flash. */
+    CONFIG_ARCHIVE_MEMBER_LEVELS,
 } config_archive_member_t;
 /* The members run from the first to this one; the loops that walk them say
  * so here rather than naming whichever member happens to be last. */
 #define CONFIG_ARCHIVE_MEMBER_FIRST CONFIG_ARCHIVE_MEMBER_WIFI
-#define CONFIG_ARCHIVE_MEMBER_LAST CONFIG_ARCHIVE_MEMBER_FM_PRESETS
+#define CONFIG_ARCHIVE_MEMBER_LAST CONFIG_ARCHIVE_MEMBER_LEVELS
 
 /* "wifi.json", "settings.csv", "yandex.json", "weather.json", "remote.csv",
- * "fm_presets.csv"; NULL for UNKNOWN. */
+ * "fm_presets.csv", "levels.csv"; NULL for UNKNOWN. */
 const char *config_archive_member_file(config_archive_member_t member);
 
 /* Maps a file name onto a member. A leading directory is ignored, so both

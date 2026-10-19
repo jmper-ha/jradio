@@ -1761,6 +1761,10 @@ static void player_control_task(void *arg)
                 break;
             }
             atomic_store_explicit(&s_active_source, command.source, memory_order_release);
+            /* A new source is a stranger to the levelling: the files are not
+             * the station that was on. A station of the radio's, or a chain,
+             * says where it starts again as it opens. */
+            board_audio_level_begin(0.0f, false, false);
             /* The listing changed with the source, and the revision is the
              * only way to say so: the radio and the rotor share one list kind
              * ("stations") and can happen to have the same number of rows.

@@ -32,6 +32,7 @@
 #include "radio_prebuffer.h"
 #include "radio_decoder.h"
 #include "radio_stream_format.h"
+#include "station_levels.h"
 #include "station_resume.h"
 
 #define RADIO_HTTP_BUFFER_SIZE 2048
@@ -2705,6 +2706,57 @@ esp_err_t internet_radio_catalog_replace(const char *text, size_t length, size_t
     return ESP_OK;
 }
 
+/* What levelling learned per station (station_levels.h), in PSRAM: NULL when
+ * there was none to spare, and stations then start unmeasured every time.
+ * Only the control side touches it - starting and stopping run there, and so
+ * does the write. */
+static station_levels_t *s_levels;
+static uint32_t s_level_key;
+static bool s_level_keyed;
+
+/* The station that is ending keeps what was measured for it, if there is
+ * anything new: a first estimate needs a few seconds of sound, and one that
+ * moved by less than half a decibel is not worth a write to flash. */
+static void radio_level_keep(void)
+{
+    if (!s_level_keyed || s_levels == NULL) return;
+    s_level_keyed = false;
+    audio_level_status_t status;
+    board_audio_level_status(&status);
+    if (status.fixed || (status.phase != AUDIO_LEVEL_LEARNING &&
+                         status.phase != AUDIO_LEVEL_SETTLED)) {
+        return;
+    }
+    if (!station_levels_note(s_levels, s_level_key, status.wanted_db)) return;
+    if (station_levels_save(s_levels, STATION_LEVELS_PATH)) {
+        ESP_LOGI(TAG, "level of station %08lx kept: %.1f dB (%.1f LUFS)",
+                 (unsigned long)s_level_key, (double)status.wanted_db, (double)status.loudness);
+    } else {
+        ESP_LOGW(TAG, "could not save %s", STATION_LEVELS_PATH);
+    }
+}
+
+/* A station starts at what it was found to need before; a chain - a Yandex
+ * station, a media server's album - is a different recording every track,
+ * and is measured as it goes with nothing kept. */
+static void radio_level_begin(const char *url, bool track_chain)
+{
+    radio_level_keep();
+    if (track_chain || s_levels == NULL) {
+        board_audio_level_begin(0.0f, false, false);
+        return;
+    }
+    s_level_key = station_levels_key(url);
+    s_level_keyed = true;
+    float db = 0.0f;
+    const bool remembered = station_levels_find(s_levels, s_level_key, &db);
+    if (remembered) {
+        ESP_LOGI(TAG, "level of station %08lx: %.1f dB, remembered",
+                 (unsigned long)s_level_key, (double)db);
+    }
+    board_audio_level_begin(remembered ? db : 0.0f, remembered, false);
+}
+
 esp_err_t internet_radio_init(void)
 {
     if (s_radio.initialized) return ESP_OK;
@@ -2758,6 +2810,8 @@ esp_err_t internet_radio_init(void)
     s_radio.status.station[0] = '\0';
     taskEXIT_CRITICAL(&s_status_lock);
     radio_load_catalog(&s_radio);
+    s_levels = heap_caps_malloc(sizeof(*s_levels), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (s_levels != NULL) station_levels_load(s_levels, STATION_LEVELS_PATH);
     ESP_RETURN_ON_ERROR(radio_sync_output(&s_radio), TAG, "disable idle I2S output failed");
     s_radio.initialized = true;
     return ESP_OK;
@@ -2850,6 +2904,7 @@ static bool radio_start_stream(const char *url, const char *name, size_t station
     }
     taskEXIT_CRITICAL(&s_status_lock);
     if (!started) return false;
+    radio_level_begin(url, track_chain);
     s_radio.track_chain = track_chain;
     atomic_store_explicit(&s_radio.skip_requested, false, memory_order_release);
     s_radio.stream_format = stream_format;
@@ -3061,6 +3116,7 @@ esp_err_t internet_radio_stop(void)
      * semaphore was waiting and the take above returned at once. */
     s_radio.direct_task = NULL;
     taskEXIT_CRITICAL(&s_status_lock);
+    radio_level_keep();
     const esp_err_t output_result = radio_sync_output(&s_radio);
     radio_http_close(&s_radio);
     return output_result;

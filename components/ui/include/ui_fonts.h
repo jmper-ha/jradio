@@ -26,6 +26,11 @@ extern const lv_font_t ui_font_cyrillic_14;
 extern const lv_font_t ui_font_cyrillic_18;
 extern const lv_font_t ui_font_cyrillic_20;
 extern const lv_font_t ui_font_cyrillic_26;
+/* The levelling's reading over the volume figure, and nothing else: digits,
+ * signs (the en dash is the minus, as in the 14 px face), an ellipsis and the letters of "дБ", "dB", "макс" and "max" - a
+ * face a step below the 14 px body, which on a 320 px panel is the volume
+ * figure's own. See UI_SRC_LEVEL_PX. */
+extern const lv_font_t ui_font_level_12;
 /* DSEG7 Classic Bold (SIL OFL), digits, colon, dash and period only: the
  * screensaver's clock and the FM frequency. The period has no width of its
  * own - it sits in the gap after the digit before it, as on a real display.
@@ -55,6 +60,13 @@ extern const lv_font_t ui_font_seven_segment_112;
 
 /* Body text: notices, secondary lines, the settings fields. */
 #define UI_FONT_BODY (&UI_FONT_TEXT(UI_FONT_BODY_PX))
+/* A step below the volume figure it stands over: the 12 px face where the
+ * figure is 14, the 14 px one where it is larger. */
+#if UI_SRC_LEVEL_PX == 12
+#define UI_FONT_LEVEL (&ui_font_level_12)
+#else
+#define UI_FONT_LEVEL (&UI_FONT_TEXT(UI_SRC_LEVEL_PX))
+#endif
 /* Titles: list rows, group headings, the name of what is playing. */
 #define UI_FONT_TITLE (&UI_FONT_TEXT(UI_FONT_TITLE_PX))
 /* The list home screen's rows: the title face, unless the shape has no room

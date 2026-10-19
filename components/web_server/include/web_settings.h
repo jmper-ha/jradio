@@ -93,6 +93,8 @@ typedef enum {
     WEB_SETTINGS_FIELD_TONE_TREBLE,
     WEB_SETTINGS_FIELD_LOUDNESS,
     WEB_SETTINGS_FIELD_LOUDNESS_TREBLE,
+    // One station as loud as the next.
+    WEB_SETTINGS_FIELD_LEVEL_NORMALIZE,
     /* Not a device setting at all - a secret that goes to its own file - but
      * it arrives on the same page in the same shape, so it is parsed here and
      * routed by the handler: web_settings_apply() refuses it. */
@@ -182,6 +184,7 @@ typedef struct web_settings_view {
     int8_t tone_treble;
     uint8_t loudness;
     bool loudness_treble;
+    bool level_normalize;
     bool home_screen_available;
     bool yandex_available;
     bool dlna_available;

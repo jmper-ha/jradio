@@ -22,6 +22,7 @@ static void test_member_names_map_both_ways(void)
     assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_REMOTE), "remote.csv") == 0);
     assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_FM_PRESETS),
                   "fm_presets.csv") == 0);
+    assert(strcmp(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_LEVELS), "levels.csv") == 0);
     assert(config_archive_member_file(CONFIG_ARCHIVE_MEMBER_UNKNOWN) == NULL);
     /* Every member has a name and a place in the archive, and the range the
      * loops walk covers all of them. */
@@ -88,6 +89,10 @@ static void test_plausibility_gates_the_obvious_wrong_file(void)
                                                sizeof(SETTINGS_CSV) - 1U));
     assert(!config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_FM_PRESETS, png,
                                                sizeof(png)));
+    static const char levels[] = "9f3a01bc,-35\n0000000a,12\n";
+    assert(config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_LEVELS, levels,
+                                              sizeof(levels) - 1U));
+    assert(!config_archive_member_is_plausible(CONFIG_ARCHIVE_MEMBER_LEVELS, png, sizeof(png)));
     /* JSON, but somebody else's: the loader would read it as no networks at
      * all and the device would come up on the setup access point. */
     static const char foreign[] = "{\"networks\":[]}";

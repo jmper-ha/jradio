@@ -489,6 +489,27 @@ esp_err_t board_input_init(void)
     ESP_LOGI(TAG, "input task started; poll=%d ms debounce=%d ms encoder=%s", INPUT_POLL_MS,
              INPUT_DEBOUNCE_MS,
              s_encoder_buttons ? "three buttons" : s_encoder_pcnt != NULL ? "pcnt" : "polled");
+    /* The pins as the firmware took them from the wiring. A board that went to
+     * sleep two seconds after every boot had its sleep button's pin floating -
+     * no button soldered yet - and nothing in the log said which pin that was
+     * or whether its pull-up was on. */
+    ESP_LOGI(TAG, "encoder L=%d R=%d button=%d, pull-ups %s; sleep=%d quick=%d prev=%d next=%d, "
+                  "pull-ups %s",
+             wiring->encoder_left, wiring->encoder_right, wiring->encoder_button,
+             wiring->encoder_pullups ? "internal" : "external", wiring->button_sleep,
+             wiring->button_quick_menu, wiring->button_prev, wiring->button_next,
+             wiring->buttons_pullups ? "internal" : "external");
+    // In s_channels' order.
+    static const char *const names[] = {"encoder button", "sleep", "quick", "prev", "next"};
+    for (size_t index = 0; index < sizeof(s_channels) / sizeof(s_channels[0]); ++index) {
+        if (s_channels[index].gpio_num == BOARD_GPIO_NOT_WIRED) continue;
+        // Buttons pull to ground: low before anyone could have touched one is
+        // a pin with nothing holding it up, and the hold will act on its own.
+        if (gpio_get_level(s_channels[index].gpio_num) == 0) {
+            ESP_LOGW(TAG, "%s button (GPIO %d) reads pressed at boot: not wired, or no pull-up",
+                     names[index], s_channels[index].gpio_num);
+        }
+    }
     return ESP_OK;
 }
 

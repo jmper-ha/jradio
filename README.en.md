@@ -129,3 +129,9 @@ The full list of limits is in [Diagnostics and limits](doc/diagnostics.en.md).
 | [Media server (DLNA)](doc/dlna.en.md) | Finding the server, walking the library, resume |
 | [Diagnostics and limits](doc/diagnostics.en.md) | What the log says, how to read it, the limits |
 | [Changelog](doc/changelog.en.md) | What each version added and fixed |
+
+## Support
+
+If jRadio is useful to you, you can support its development:
+
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/de4thpunch)

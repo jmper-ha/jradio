@@ -459,6 +459,26 @@ static void read_flac_layout(file_player_context_t *ctx)
  * the moment the track appears on it rather than a second into playback. It
  * costs one read of the tag - 68 KB on the album this was built for - and a
  * JPEG decode, both of which finish long before the first sample is due. */
+/* Whether the track playing started the levelling from its own tags. One
+ * that has none after it is measured from a fresh start - the tagged one's
+ * correction belongs to that track - while a run of untagged tracks is
+ * measured straight through, as one programme. */
+static bool s_level_from_tags;
+
+static void begin_level(const audio_tags_t *tags)
+{
+    if (tags->has_loudness) {
+        const float db = audio_level_correction_db(tags->loudness_lufs);
+        board_audio_level_begin(db, false, true);
+        s_level_from_tags = true;
+        ESP_LOGI(TAG, "level from tags: %.1f LUFS, %.1f dB", (double)tags->loudness_lufs,
+                 (double)db);
+    } else if (s_level_from_tags) {
+        board_audio_level_begin(0.0f, false, false);
+        s_level_from_tags = false;
+    }
+}
+
 static void load_tags(file_player_context_t *ctx)
 {
     uint8_t *scratch = alloc_buffer(AUDIO_TAGS_SCRATCH_SIZE);
@@ -471,6 +491,8 @@ static void load_tags(file_player_context_t *ctx)
     }
     // The tag reader seeks about the file; the decoder needs it back at zero.
     rewind(ctx->file);
+    // Before the first frame, like the rest: the track starts at its level.
+    begin_level(&tags);
 
     if (audio_tags_have_text(&tags)) {
         taskENTER_CRITICAL(&s_status_lock);

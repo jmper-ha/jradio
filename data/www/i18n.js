@@ -670,7 +670,7 @@
     'level.quieter': ['Станция тише, поднято на {db} дБ', 'The station is quieter: turned up by {db} dB'],
     'level.even': ['Уровень в норме', 'The level is right'],
     'level.capped': ['Станция тише на {db} дБ, громче уже некуда', 'The station is {db} dB quieter, and there is no room left to lift it'],
-    'level.tags': ['По тегам файла: {db} дБ', 'From the file tags: {db} dB'],
+    'level.tags': ['По данным трека: {db} дБ', 'From the track\'s own measurement: {db} dB'],
     'level.learning': ['подбирается', 'adjusting'],
     'level.kept': ['запомнено', 'remembered'],
     'note.loudness': ['Чем тише громкость, тем больше подъём низких — ухо на тихом звуке их не слышит. На полной громкости не действует.',

@@ -317,6 +317,24 @@ bool id3v2_parse_body(const id3v2_header_t *header, const uint8_t *body, size_t 
                                         AUDIO_TAGS_TEXT_MAX_LEN);
                 found_any = true;
             }
+        } else if ((short_frames && memcmp(frame, "TXX", 3U) == 0) ||
+                   (!short_frames && memcmp(frame, "TXXX", 4U) == 0)) {
+            /* A user text frame: a description, then its value - which is
+             * where foobar2000, Mp3tag and the rest keep ReplayGain in MP3. */
+            const uint8_t *txxx = body + body_offset;
+            size_t value_start;
+            if (body_length >= 2U &&
+                skip_description(txxx, body_length, 1U, txxx[0], &value_start)) {
+                char key[32];
+                char value[32];
+                const bool wide = txxx[0] == AUDIO_TAGS_ENCODING_UTF16_BOM ||
+                                  txxx[0] == AUDIO_TAGS_ENCODING_UTF16_BE;
+                const size_t key_bytes = value_start - 1U - (wide ? 2U : 1U);
+                audio_tags_text_to_utf8(txxx[0], txxx + 1U, key_bytes, key, sizeof(key));
+                audio_tags_text_to_utf8(txxx[0], txxx + value_start, body_length - value_start,
+                                        value, sizeof(value));
+                (void)audio_tags_note_gain(tags, key, value);
+            }
         } else if ((short_frames && memcmp(frame, "PIC", 3U) == 0) ||
                    (!short_frames && memcmp(frame, "APIC", 4U) == 0)) {
             parse_picture_frame(body + body_offset, body_length, body_offset, short_frames,

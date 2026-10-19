@@ -1,5 +1,7 @@
 #include "audio_tags.h"
 
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 void audio_tags_clear(audio_tags_t *tags)
@@ -12,6 +14,49 @@ bool audio_tags_have_text(const audio_tags_t *tags)
 {
     if (tags == NULL) return false;
     return tags->title[0] != '\0' || tags->artist[0] != '\0' || tags->album[0] != '\0';
+}
+
+static bool same_ignoring_case(const char *left, const char *right)
+{
+    for (; *left != '\0' && *right != '\0'; ++left, ++right) {
+        char a = *left;
+        char b = *right;
+        if (a >= 'a' && a <= 'z') a = (char)(a - 'a' + 'A');
+        if (b >= 'a' && b <= 'z') b = (char)(b - 'a' + 'A');
+        if (a != b) return false;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
+// The references the two conventions store their gains against.
+#define REPLAYGAIN_REFERENCE_LUFS (-18.0f)
+#define R128_REFERENCE_LUFS (-23.0f)
+
+bool audio_tags_note_gain(audio_tags_t *tags, const char *key, const char *value)
+{
+    if (tags == NULL || key == NULL || value == NULL || tags->has_loudness) return false;
+    const bool replaygain = same_ignoring_case(key, "REPLAYGAIN_TRACK_GAIN");
+    const bool r128 = same_ignoring_case(key, "R128_TRACK_GAIN");
+    if (!replaygain && !r128) return false;
+    while (*value == ' ') ++value;
+    char *end = NULL;
+    float gain;
+    if (replaygain) {
+        gain = strtof(value, &end);
+        if (end == value) return false;
+        // What may follow the number: " dB", as every tagger writes it.
+        while (*end == ' ') ++end;
+        if ((end[0] == 'd' || end[0] == 'D') && (end[1] == 'b' || end[1] == 'B')) end += 2;
+    } else {
+        const long q78 = strtol(value, &end, 10);
+        if (end == value) return false;
+        gain = (float)q78 / 256.0f;
+    }
+    while (*end == ' ') ++end;
+    if (*end != '\0' || !isfinite(gain) || gain > 50.0f || gain < -50.0f) return false;
+    tags->loudness_lufs = (replaygain ? REPLAYGAIN_REFERENCE_LUFS : R128_REFERENCE_LUFS) - gain;
+    tags->has_loudness = true;
+    return true;
 }
 
 /* Windows-1251 puts the Cyrillic alphabet in 0xC0..0xFF and the two letters Ё

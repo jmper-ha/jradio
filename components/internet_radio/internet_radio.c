@@ -2736,13 +2736,18 @@ static void radio_level_keep(void)
     }
 }
 
-/* A station starts at what it was found to need before; a chain - a Yandex
- * station, a media server's album - is a different recording every track,
- * and is measured as it goes with nothing kept. */
+/* A station starts at what it was found to need before. A chain - a Yandex
+ * station, a media server's album - is a different recording every track and
+ * keeps nothing: the rotor says per track where each starts (it has the
+ * service's own measurement), and a media server's tracks are measured as
+ * they go from where the source began. Nothing is said here for a chain, then
+ * - the rotor's word for the first track came before this, when the chain
+ * asked it for a link, and a fresh start here would undo it. */
 static void radio_level_begin(const char *url, bool track_chain)
 {
     radio_level_keep();
-    if (track_chain || s_levels == NULL) {
+    if (track_chain) return;
+    if (s_levels == NULL) {
         board_audio_level_begin(0.0f, false, false);
         return;
     }

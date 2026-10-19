@@ -48,6 +48,11 @@ typedef struct {
     char cover[YANDEX_TRACK_COVER_MAX + 1U];
     uint32_t duration_ms;
     bool liked;
+    /* The track's integrated loudness as the service measured it ("r128":
+     * {"i": ...}), so levelling can start each track where it belongs
+     * instead of measuring it from the first second. */
+    bool has_loudness;
+    float loudness_lufs;
 } yandex_track_t;
 
 typedef struct {

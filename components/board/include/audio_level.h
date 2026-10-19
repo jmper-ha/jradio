@@ -105,5 +105,16 @@ bool audio_level_idle(const audio_level_t *level);
 
 void audio_level_status(const audio_level_t *level, audio_level_status_t *status);
 
+/* The correction for a recording whose loudness is already known - a Yandex
+ * track's r128, a file's ReplayGain - so it need not be measured: the target
+ * less that loudness, within the limit. */
+float audio_level_correction_db(float loudness_lufs);
+
+/* ReplayGain 2 aims at -18 LUFS and stores the gain that gets there, so the
+ * loudness it measured is -18 less that gain; R128_TRACK_GAIN aims at -23 and
+ * stores its gain in 1/256 dB. */
+#define AUDIO_LEVEL_REPLAYGAIN_REFERENCE_LUFS (-18.0f)
+#define AUDIO_LEVEL_R128_REFERENCE_LUFS (-23.0f)
+
 /* For the tests: the K-weighting's two stages at `rate`. */
 void audio_level_k_filter(uint32_t rate, audio_biquad_t out[2]);

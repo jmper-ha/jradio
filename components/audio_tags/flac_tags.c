@@ -262,6 +262,22 @@ bool flac_vorbis_comment_parse(const uint8_t *block, size_t length, audio_tags_t
             {"ARTIST", offsetof(audio_tags_t, artist)},
             {"ALBUM", offsetof(audio_tags_t, album)},
         };
+        /* A gain is no text to show, so it does not make the tags "found";
+         * it rides along for the levelling. The value is copied out to be
+         * terminated - "-6.54 dB" is all it ever is. */
+        const uint8_t *equals = memchr(entry, '=', entry_length);
+        if (equals != NULL && (size_t)(equals - entry) < 24U &&
+            entry_length - (size_t)(equals - entry) - 1U < 24U) {
+            char key[24];
+            char value[24];
+            const size_t key_length = (size_t)(equals - entry);
+            const size_t value_length = entry_length - key_length - 1U;
+            memcpy(key, entry, key_length);
+            key[key_length] = '\0';
+            memcpy(value, equals + 1, value_length);
+            value[value_length] = '\0';
+            (void)audio_tags_note_gain(tags, key, value);
+        }
         for (size_t field = 0U; field < sizeof(fields) / sizeof(fields[0]); ++field) {
             if (!key_matches(entry, entry_length, fields[field].key)) continue;
             const size_t key_length = strlen(fields[field].key) + 1U;

@@ -86,6 +86,12 @@ static float clamp_db(float db)
     return db;
 }
 
+float audio_level_correction_db(float loudness_lufs)
+{
+    if (!isfinite(loudness_lufs)) return 0.0f;
+    return clamp_db(AUDIO_LEVEL_TARGET_LUFS - loudness_lufs);
+}
+
 static void restart(audio_level_t *level)
 {
     memset(level->state, 0, sizeof(level->state));

@@ -86,6 +86,55 @@ static void parse(tag_builder_t *builder, uint8_t major, uint8_t flags, audio_ta
     (void)id3v2_parse_body(&header, builder->data, builder->length, tags);
 }
 
+// A user text frame: encoding, description, terminator, value.
+static void put_txxx_frame(tag_builder_t *builder, const char *description, const char *value)
+{
+    const size_t body = 1U + strlen(description) + 1U + strlen(value);
+    put(builder, "TXXX", 4U);
+    put_be32(builder, (uint32_t)body);
+    put_u8(builder, 0U);
+    put_u8(builder, 0U);
+    put_u8(builder, 0U);
+    put(builder, description, strlen(description) + 1U);
+    put(builder, value, strlen(value));
+}
+
+/* Where MP3 taggers keep ReplayGain: TXXX frames named for it, beside others
+ * that are nothing of the kind. */
+static void test_a_track_gain_in_a_user_frame_is_read_as_loudness(void)
+{
+    tag_builder_t builder = {.length = 0U};
+    put_txxx_frame(&builder, "MusicBrainz Album Id", "1234");
+    put_txxx_frame(&builder, "REPLAYGAIN_ALBUM_GAIN", "-2.00 dB");
+    put_txxx_frame(&builder, "replaygain_track_gain", "+1.25 dB");
+    put_text_frame(&builder, "TIT2", "Song", false);
+    audio_tags_t tags;
+    parse(&builder, 3U, 0U, &tags);
+    assert(strcmp(tags.title, "Song") == 0);
+    assert(tags.has_loudness);
+    assert(tags.loudness_lufs > -19.26f && tags.loudness_lufs < -19.24f);
+
+    // UTF-16 with its marks, as some writers do even for ASCII.
+    tag_builder_t wide = {.length = 0U};
+    static const uint8_t body[] = {
+        1U, 0xFFU, 0xFEU, 'R', 0, 'E', 0, 'P', 0, 'L', 0, 'A', 0, 'Y', 0, 'G', 0, 'A', 0,
+        'I', 0, 'N', 0, '_', 0, 'T', 0, 'R', 0, 'A', 0, 'C', 0, 'K', 0, '_', 0, 'G', 0,
+        'A', 0, 'I', 0, 'N', 0, 0, 0, 0xFFU, 0xFEU, '-', 0, '3', 0, ' ', 0, 'd', 0, 'B', 0};
+    put(&wide, "TXXX", 4U);
+    put_be32(&wide, (uint32_t)sizeof(body));
+    put_u8(&wide, 0U);
+    put_u8(&wide, 0U);
+    put(&wide, body, sizeof(body));
+    parse(&wide, 3U, 0U, &tags);
+    assert(tags.has_loudness && tags.loudness_lufs > -15.01f && tags.loudness_lufs < -14.99f);
+
+    // A value that is not a number is no gain.
+    tag_builder_t junk = {.length = 0U};
+    put_txxx_frame(&junk, "REPLAYGAIN_TRACK_GAIN", "loud");
+    parse(&junk, 3U, 0U, &tags);
+    assert(!tags.has_loudness);
+}
+
 static void test_the_real_album_reads_back(void)
 {
     /* The bytes of "01-1 Балтийское море.mp3" as the file has them: ID3v2.3
@@ -368,6 +417,7 @@ static void test_id3v1_is_the_last_resort(void)
 
 int main(void)
 {
+    test_a_track_gain_in_a_user_frame_is_read_as_loudness();
     test_the_real_album_reads_back();
     test_a_cover_cut_off_by_the_buffer_is_not_reported();
     test_header_rejects_what_is_not_a_tag();

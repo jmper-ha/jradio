@@ -50,10 +50,25 @@ typedef struct {
      * before the frame is ever seen, so there is nothing to point at. */
     size_t picture_file_offset;
     size_t picture_file_length;
+    /* The track's loudness as a tagger measured it, from REPLAYGAIN_TRACK_GAIN
+     * or R128_TRACK_GAIN, turned back from the gain each stores into the
+     * LUFS it was measured at - so the levelling can start the track where it
+     * belongs instead of measuring it. */
+    bool has_loudness;
+    float loudness_lufs;
 } audio_tags_t;
 
 void audio_tags_clear(audio_tags_t *tags);
 bool audio_tags_have_text(const audio_tags_t *tags);
+
+/* Offers one "key=value" pair that may carry a gain: REPLAYGAIN_TRACK_GAIN
+ * ("-6.54 dB", ReplayGain 2's reference -18 LUFS) or R128_TRACK_GAIN (an
+ * integer in 1/256 dB against -23 LUFS, Opus's convention). The key is matched
+ * without regard to case. True when it was one of those and it parsed; the
+ * first found wins. Album gains are left alone: a folder played in order
+ * would want them, a shuffled one would not, and the track's is never wrong
+ * for the track. */
+bool audio_tags_note_gain(audio_tags_t *tags, const char *key, const char *value);
 
 // The four text encodings ID3v2 defines. Vorbis comments are always UTF-8.
 #define AUDIO_TAGS_ENCODING_ISO8859_1 0U

@@ -10,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "album_art.h"
+#include "board.h"
 #include "internet_radio.h"
 #include "yandex_api.h"
 #include "yandex_feedback.h"
@@ -480,6 +481,17 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track)
 
     *track = candidate;
 
+    /* Every track is its own recording, so each starts the levelling afresh -
+     * at the correction its own r128 calls for, when the service measured it,
+     * which is nearly always; measured as it plays when not. Here, on the
+     * decode task, just before the track's first byte is read: the one before
+     * it has ended. */
+    if (candidate.has_loudness) {
+        board_audio_level_begin(audio_level_correction_db(candidate.loudness_lufs), false, true);
+    } else {
+        board_audio_level_begin(0.0f, false, false);
+    }
+
     /* Only once the link is in hand: a track that could not be resolved was
      * never played, and reporting it as started would teach the rotor that it
      * was heard. */
@@ -512,7 +524,13 @@ esp_err_t yandex_rotor_next(char *url, size_t url_size, yandex_track_t *track)
     snprintf(event.batch_id, sizeof(event.batch_id), "%s", s_rotor.batch.batch_id);
     (void)yandex_feedback_post(&event);
 
-    ESP_LOGI(TAG, "next track %s (%u ms)", candidate.id, (unsigned int)candidate.duration_ms);
+    if (candidate.has_loudness) {
+        ESP_LOGI(TAG, "next track %s (%u ms, %.1f LUFS)", candidate.id,
+                 (unsigned int)candidate.duration_ms, (double)candidate.loudness_lufs);
+    } else {
+        ESP_LOGI(TAG, "next track %s (%u ms)", candidate.id,
+                 (unsigned int)candidate.duration_ms);
+    }
     return ESP_OK;
 }
 

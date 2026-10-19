@@ -1,3 +1,5 @@
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "yandex_json_reader.h"
@@ -203,6 +205,35 @@ bool json_read_uint(json_reader_t *reader, uint32_t *value)
      * Every count this parser reads is whole, so this means a changed answer. */
     if (*reader->cursor == '.' || *reader->cursor == 'e' || *reader->cursor == 'E') return false;
     *value = result;
+    return true;
+}
+
+bool json_read_number(json_reader_t *reader, float *value)
+{
+    json_skip_whitespace(reader);
+    const char *start = reader->cursor;
+    // JSON's own grammar, checked before strtof sees it: strtof would take
+    // "inf", "nan", hex and a leading '+', none of which JSON allows.
+    const char *at = start;
+    if (*at == '-') ++at;
+    if (*at < '0' || *at > '9') return false;
+    while (*at >= '0' && *at <= '9') ++at;
+    if (*at == '.') {
+        ++at;
+        if (*at < '0' || *at > '9') return false;
+        while (*at >= '0' && *at <= '9') ++at;
+    }
+    if (*at == 'e' || *at == 'E') {
+        ++at;
+        if (*at == '+' || *at == '-') ++at;
+        if (*at < '0' || *at > '9') return false;
+        while (*at >= '0' && *at <= '9') ++at;
+    }
+    char *end = NULL;
+    const float parsed = strtof(start, &end);
+    if (end != at || !isfinite(parsed)) return false;
+    reader->cursor = at;
+    *value = parsed;
     return true;
 }
 

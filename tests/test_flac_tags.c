@@ -76,6 +76,34 @@ static void test_vorbis_comments_are_named_fields(void)
     assert(strcmp(tags.album, "Вместе с нами по морям") == 0);
 }
 
+/* ReplayGain rides in the comments as two keys among the rest; the track's
+ * is taken and turned back into the loudness it was measured at. */
+static void test_a_track_gain_is_read_as_loudness(void)
+{
+    block_builder_t builder = {.length = 0U};
+    put_le32(&builder, 0U);
+    put_le32(&builder, 4U);
+    put_comment(&builder, "REPLAYGAIN_ALBUM_GAIN=-9.10 dB");
+    put_comment(&builder, "replaygain_track_gain=-6.54 dB");
+    put_comment(&builder, "REPLAYGAIN_TRACK_PEAK=0.988");
+    put_comment(&builder, "TITLE=A");
+    audio_tags_t tags;
+    audio_tags_clear(&tags);
+    assert(flac_vorbis_comment_parse(builder.data, builder.length, &tags));
+    assert(tags.has_loudness);
+    // -18 less a gain of -6.54: measured at -11.46 LUFS.
+    assert(tags.loudness_lufs > -11.47f && tags.loudness_lufs < -11.45f);
+
+    // A gain and no text is a gain, but not tags to show.
+    block_builder_t bare = {.length = 0U};
+    put_le32(&bare, 0U);
+    put_le32(&bare, 1U);
+    put_comment(&bare, "R128_TRACK_GAIN=-1536");
+    audio_tags_clear(&tags);
+    assert(!flac_vorbis_comment_parse(bare.data, bare.length, &tags));
+    assert(tags.has_loudness && tags.loudness_lufs > -17.01f && tags.loudness_lufs < -16.99f);
+}
+
 static void test_a_truncated_comment_block_stops_rather_than_reads_on(void)
 {
     block_builder_t builder = {.length = 0U};
@@ -377,6 +405,7 @@ int main(void)
     test_a_frame_says_where_it_starts();
     test_the_block_header_splits_into_three_parts();
     test_vorbis_comments_are_named_fields();
+    test_a_track_gain_is_read_as_loudness();
     test_a_truncated_comment_block_stops_rather_than_reads_on();
     test_a_picture_block_is_described_without_its_image();
     test_a_picture_header_that_runs_past_the_block_is_refused();

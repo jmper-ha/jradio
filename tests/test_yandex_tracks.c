@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "yandex_json_reader.h"
 #include "yandex_track.h"
 
 /* Shaped like the real answer of /rotor/station/user:onyourwave/tracks,
@@ -17,6 +18,8 @@ static const char *const BATCH =
     "\"version\":\"feat. Haylen; Wolfgang Lohr Remix\","
     "\"major\":{\"id\":508,\"name\":\"WAGRAM_MUSIC\"},"
     "\"available\":true,\"durationMs\":180920,"
+    "\"r128\":{\"i\":-10.550000190734863,\"tp\":0.41999998688697815},"
+    "\"fade\":{\"inStart\":0.3,\"inStop\":5.3,\"outStart\":348.5,\"outStop\":353.5},"
     "\"artists\":[{\"id\":784066,\"name\":\"Bart & Baker\",\"available\":true,"
     "\"cover\":{\"prefix\":\"4cfb1690.a\"},\"genres\":[]},"
     "{\"id\":900001,\"name\":\"Haylen\",\"available\":true,\"genres\":[]}],"
@@ -33,7 +36,7 @@ static const char *const BATCH =
     "\"liked\":false},"
     "{\"type\":\"track\",\"track\":{"
     "\"id\":\"38207393\",\"title\":\"\\u041f\\u0430\\u0440\\u0438\\u0436\","
-    "\"available\":true,\"durationMs\":343910,"
+    "\"available\":true,\"durationMs\":343910,\"r128\":{\"tp\":-1e0},"
     "\"artists\":[{\"id\":2,\"name\":\"Bellaire\"}]},"
     "\"liked\":false}"
     "],\"pumpkin\":false}}";
@@ -55,6 +58,9 @@ static void test_the_real_shape_yields_the_playable_tracks(void)
     assert(strcmp(batch.tracks[0].cover,
                   "avatars.yandex.net/get-music-content/2433207/16fb.a.12-1/%%") == 0);
     assert(batch.tracks[0].liked);
+    // The service's own loudness measurement, for the levelling.
+    assert(batch.tracks[0].has_loudness);
+    assert(batch.tracks[0].loudness_lufs > -10.56f && batch.tracks[0].loudness_lufs < -10.54f);
 
     /* The second playable track is the third element: the unavailable one in
      * between must not shift anything or leave a hole. */
@@ -66,6 +72,35 @@ static void test_the_real_shape_yields_the_playable_tracks(void)
      * previous one's. */
     assert(batch.tracks[1].cover[0] == '\0');
     assert(!batch.tracks[1].liked);
+    // An r128 without its "i" is no measurement, and costs the track nothing.
+    assert(!batch.tracks[1].has_loudness);
+}
+
+/* JSON's number grammar and nothing wider: strtof alone would also take
+ * "inf", "nan", hex and a leading plus. */
+static void test_numbers_are_read_as_json_writes_them(void)
+{
+    static const struct {
+        const char *text;
+        bool ok;
+        float value;
+    } cases[] = {
+        {"-10.55,", true, -10.55f}, {"0", true, 0.0f},       {"1e2}", true, 100.0f},
+        {"-2.5E-1]", true, -0.25f}, {"+1", false, 0.0f},     {"inf", false, 0.0f},
+        {"nan", false, 0.0f},       {"0x10", false, 0.0f},   {".5", false, 0.0f},
+        {"1.", false, 0.0f},        {"1e", false, 0.0f},     {"-", false, 0.0f},
+    };
+    for (size_t index = 0U; index < sizeof(cases) / sizeof(cases[0]); ++index) {
+        json_reader_t reader = {.cursor = cases[index].text};
+        float value = 99.0f;
+        const bool ok = json_read_number(&reader, &value);
+        assert(ok == cases[index].ok);
+        if (ok) {
+            assert(value > cases[index].value - 0.0001f && value < cases[index].value + 0.0001f);
+        } else {
+            assert(reader.cursor == cases[index].text && value == 99.0f);
+        }
+    }
 }
 
 static void test_the_envelope_is_optional(void)
@@ -211,6 +246,7 @@ static void test_more_tracks_than_fit_are_carried_not_refused(void)
 int main(void)
 {
     test_the_real_shape_yields_the_playable_tracks();
+    test_numbers_are_read_as_json_writes_them();
     test_the_envelope_is_optional();
     test_the_batch_id_comes_out_with_the_tracks();
     test_a_session_answer_carries_its_id_and_whether_it_expired();

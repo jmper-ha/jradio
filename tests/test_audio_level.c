@@ -224,8 +224,18 @@ static void test_switching_off_slopes_back_and_goes_idle(void)
     assert(status.phase == AUDIO_LEVEL_OFF);
 }
 
+static void test_a_known_loudness_is_corrected_without_measuring(void)
+{
+    // A Yandex track's r128 of -10.55 LUFS: 5.45 dB too loud for -16.
+    assert(NEAR(audio_level_correction_db(-10.55f), -5.45f, 0.001f));
+    assert(audio_level_correction_db(-40.0f) == AUDIO_LEVEL_LIMIT_DB);
+    assert(audio_level_correction_db(0.0f) == -AUDIO_LEVEL_LIMIT_DB);
+    assert(audio_level_correction_db(NAN) == 0.0f);
+}
+
 int main(void)
 {
+    test_a_known_loudness_is_corrected_without_measuring();
     test_the_meter_reads_what_the_standard_says();
     test_a_new_station_is_measured_then_corrected();
     test_pauses_and_silence_do_not_move_the_estimate();

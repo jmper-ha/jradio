@@ -48,6 +48,10 @@ bool json_read_string_clipped(json_reader_t *reader, char *output, size_t capaci
  * past UINT32_MAX - is refused rather than rounded or wrapped. */
 bool json_read_uint(json_reader_t *reader, uint32_t *value);
 
+/* Reads any JSON number, fraction, sign and exponent included - a
+ * measurement rather than a count. */
+bool json_read_number(json_reader_t *reader, float *value);
+
 /* Reads a literal `true` or `false`. */
 bool json_read_bool(json_reader_t *reader, bool *value);
 

@@ -72,6 +72,18 @@ static bool yandex_parse_track(json_reader_t *reader, yandex_track_t *track)
             }
         } else if (strcmp(key, "durationMs") == 0) {
             if (!json_read_uint(reader, &track->duration_ms)) return false;
+        } else if (strcmp(key, "r128") == 0) {
+            /* An object; only its "i" is wanted ("tp", the true peak, is the
+             * volume's business). A shape that is not that is skipped, not
+             * fatal: the track plays the same, only measured instead. */
+            json_reader_t loudness = *reader;
+            float lufs = 0.0f;
+            if (json_enter_object_key(&loudness, "i") && json_read_number(&loudness, &lufs) &&
+                lufs < 0.0f && lufs > -70.0f) {
+                track->has_loudness = true;
+                track->loudness_lufs = lufs;
+            }
+            if (!json_skip_value(reader)) return false;
         } else if (strcmp(key, "available") == 0) {
             if (!json_read_bool(reader, &available)) return false;
         } else if (strcmp(key, "artists") == 0) {

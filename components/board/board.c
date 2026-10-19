@@ -892,6 +892,7 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
             board_audio_level_note(level_left, &s_audio_level_left);
             board_audio_level_note(level_right, &s_audio_level_right);
             atomic_store_explicit(&s_audio_level_fresh, true, memory_order_relaxed);
+            const unsigned int silent_before = s_audio_health.silent_writes;
             board_audio_health_add(&s_audio_health, *written, pcm_length,
                                    peak_left > peak_right ? peak_left : peak_right);
             // Measured on the bytes actually clocked out, not on the
@@ -912,7 +913,10 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
              * These pin the moment instead. Only the first occurrence of each
              * kind per window is marked, so a long silence cannot flood the
              * UART and stall the pipeline it is measuring. */
-            mark_silence = s_audio_health.silent_writes == 1U;
+            /* On the write that made it the first, not on every write after
+             * it: the count stays at one until the window closes, and one
+             * zero block at a station's start was 414 lines. */
+            mark_silence = silent_before == 0U && s_audio_health.silent_writes == 1U;
             if (!s_audio_gap_reported &&
                 board_audio_underrun_count() != s_audio_health_underruns) {
                 gap_count = board_audio_underrun_count() - s_audio_health_underruns;

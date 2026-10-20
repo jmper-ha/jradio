@@ -2725,10 +2725,10 @@ static void radio_level_keep(void)
     audio_level_status_t status;
     board_audio_level_status(&status);
     if (!status.keep) return;
-    if (!station_levels_note(s_levels, s_level_key, status.wanted_db)) return;
+    if (!station_levels_note(s_levels, s_level_key, status.loudness)) return;
     if (station_levels_save(s_levels, STATION_LEVELS_PATH)) {
-        ESP_LOGI(TAG, "level of station %08lx kept: %.1f dB (%.1f LUFS)",
-                 (unsigned long)s_level_key, (double)status.wanted_db, (double)status.loudness);
+        ESP_LOGI(TAG, "level of station %08lx kept: %.1f LUFS (%.1f dB)",
+                 (unsigned long)s_level_key, (double)status.loudness, (double)status.wanted_db);
     } else {
         ESP_LOGW(TAG, "could not save %s", STATION_LEVELS_PATH);
     }
@@ -2751,14 +2751,17 @@ static void radio_level_begin(const char *url, bool track_chain)
     }
     s_level_key = station_levels_key(url);
     s_level_keyed = true;
-    float db = 0.0f;
-    const bool remembered = station_levels_find(s_levels, s_level_key, &db);
+    float lufs = 0.0f;
+    const bool remembered = station_levels_find(s_levels, s_level_key, &lufs);
+    // Against today's target, whatever it was when the loudness was kept.
+    const float db = remembered ? audio_level_correction_db(lufs) : 0.0f;
     const int nudge = station_levels_nudge(s_levels, s_level_key);
     if (remembered || nudge != 0) {
-        ESP_LOGI(TAG, "level of station %08lx: %.1f dB%s, nudge %+d dB",
-                 (unsigned long)s_level_key, (double)db, remembered ? ", remembered" : "", nudge);
+        ESP_LOGI(TAG, "level of station %08lx: %.1f LUFS, %.1f dB%s, nudge %+d dB",
+                 (unsigned long)s_level_key, (double)lufs, (double)db,
+                 remembered ? ", remembered" : "", nudge);
     }
-    board_audio_level_begin(remembered ? db : 0.0f, remembered, false);
+    board_audio_level_begin(db, remembered, false);
     board_audio_level_offer_nudge(true, nudge);
 }
 

@@ -68,6 +68,13 @@ void station_levels_load(station_levels_t *levels, const char *path)
     FILE *file = path != NULL ? fopen(path, "r") : NULL;
     if (file == NULL) return;
     char line[32];
+    /* Corrections from before the loudness was kept: meaningless against
+     * any target, so the stations start as strangers, once. */
+    if (fgets(line, sizeof(line), file) == NULL ||
+        strncmp(line, STATION_LEVELS_FORMAT_LINE, strlen(STATION_LEVELS_FORMAT_LINE)) != 0) {
+        fclose(file);
+        return;
+    }
     while (levels->count < STATION_LEVELS_MAX && fgets(line, sizeof(line), file) != NULL) {
         station_level_t entry;
         // A line longer than the buffer is no line of ours; skip its rest.
@@ -85,13 +92,13 @@ void station_levels_load(station_levels_t *levels, const char *path)
     fclose(file);
 }
 
-bool station_levels_find(const station_levels_t *levels, uint32_t key, float *db)
+bool station_levels_find(const station_levels_t *levels, uint32_t key, float *lufs)
 {
     if (levels == NULL) return false;
     const size_t index = index_of(levels, key);
     if (index == levels->count) return false;
     if (levels->entries[index].tenths_db == STATION_LEVELS_UNMEASURED) return false;
-    if (db != NULL) *db = (float)levels->entries[index].tenths_db / 10.0f;
+    if (lufs != NULL) *lufs = (float)levels->entries[index].tenths_db / 10.0f;
     return true;
 }
 
@@ -132,10 +139,10 @@ bool station_levels_set_nudge(station_levels_t *levels, uint32_t key, int nudge_
     return changed;
 }
 
-bool station_levels_note(station_levels_t *levels, uint32_t key, float db)
+bool station_levels_note(station_levels_t *levels, uint32_t key, float lufs)
 {
-    if (levels == NULL || !isfinite(db)) return false;
-    station_level_t entry = {.key = key, .tenths_db = to_tenths(db)};
+    if (levels == NULL || !isfinite(lufs)) return false;
+    station_level_t entry = {.key = key, .tenths_db = to_tenths(lufs)};
     const size_t index = index_of(levels, key);
     bool changed = true;
     if (index != levels->count) entry.nudge_db = levels->entries[index].nudge_db;
@@ -161,7 +168,7 @@ bool station_levels_save(const station_levels_t *levels, const char *path)
     }
     FILE *file = fopen(temporary, "w");
     if (file == NULL) return false;
-    bool ok = true;
+    bool ok = fputs(STATION_LEVELS_FORMAT_LINE "\n", file) != EOF;
     for (size_t index = 0U; index < levels->count && ok; ++index) {
         const station_level_t *entry = &levels->entries[index];
         ok = fprintf(file, "%08lx,", (unsigned long)entry->key) > 0;

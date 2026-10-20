@@ -80,7 +80,8 @@ static void test_bad_lines_are_skipped(void)
 {
     FILE *file = fopen(k_path, "w");
     assert(file != NULL);
-    fputs("0000000a,-35\n"
+    fputs("#lufs\n"
+          "0000000a,-35\n"
           "garbage\n"
           "zz,1\n"
           "0000000b,abc\n"
@@ -134,7 +135,7 @@ static void test_a_nudge_rides_beside_the_measurement(void)
     text[length] = '\0';
     fclose(file);
     // No third field without a nudge, no second without a measurement.
-    assert(strcmp(text, "00000004,,-6\n00000003,40\n00000002,-50,-2\n00000001,-20,3\n") == 0);
+    assert(strcmp(text, "#lufs\n00000004,,-6\n00000003,40\n00000002,-50,-2\n00000001,-20,3\n") == 0);
     station_levels_load(&s_reloaded, k_path);
     assert(s_reloaded.count == 4U);
     assert(station_levels_find(&s_reloaded, 2U, &db) && fabsf(db + 5.0f) < 0.001f);
@@ -150,7 +151,8 @@ static void test_bad_nudges_are_skipped(void)
 {
     FILE *file = fopen(k_path, "w");
     assert(file != NULL);
-    fputs("0000000a,,\n"
+    fputs("#lufs\n"
+          "0000000a,,\n"
           "0000000b,\n"
           "0000000c,5,x\n"
           "0000000d,5,99\n"
@@ -165,6 +167,24 @@ static void test_bad_nudges_are_skipped(void)
     remove(k_path);
 }
 
+/* A file from before the loudness was kept holds corrections, which mean
+   nothing against another target: read as empty, and written anew. */
+static void test_a_file_of_corrections_is_read_as_empty(void)
+{
+    FILE *file = fopen(k_path, "w");
+    assert(file != NULL);
+    fputs("0000000a,-35\n0000000b,40\n", file);
+    fclose(file);
+    station_levels_load(&s_levels, k_path);
+    assert(s_levels.count == 0U);
+    file = fopen(k_path, "w");
+    assert(file != NULL);
+    fclose(file);
+    station_levels_load(&s_levels, k_path);
+    assert(s_levels.count == 0U);
+    remove(k_path);
+}
+
 int main(void)
 {
     test_the_key_is_fnv1a();
@@ -174,6 +194,7 @@ int main(void)
     test_bad_lines_are_skipped();
     test_a_nudge_rides_beside_the_measurement();
     test_bad_nudges_are_skipped();
+    test_a_file_of_corrections_is_read_as_empty();
     puts("station levels tests passed");
     return 0;
 }

@@ -19,6 +19,10 @@ New:
   in the quick panel and a slider in the web's tone panel. Kept per station,
   and works without even volume as well.
 - The boot log names the button pins, and warns of a button held at power-on.
+- The encoder's and the buttons' internal pull-ups are always on, and the
+  editor's switches for them are gone. A button can go straight between its
+  pin and ground: a Sleep button with no pull-up of its own no longer
+  presses itself and puts the board to sleep.
 
 Fixed:
 - Bad internet: a station no longer gives up with "could not connect". While

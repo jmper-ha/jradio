@@ -6,6 +6,26 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## Next version
+
+New:
+- Even volume: stations and tracks play equally loud. The radio measures a
+  station's loudness the way broadcasters do (EBU R128), brings it to
+  -14 LUFS and remembers it per station. Yandex Music tracks and files with
+  ReplayGain/R128 tags already have theirs known, and start at their level.
+  Switched on under Sound on the device or in the web's tone panel; off by
+  default.
+- A volume nudge of your own for an internet station, +-6 dB: a Station row
+  in the quick panel and a slider in the web's tone panel. Kept per station,
+  and works without even volume as well.
+- The boot log names the button pins, and warns of a button held at power-on.
+
+Fixed:
+- Switching station from the web flashed the station list on the screen for
+  a second.
+- The warning about an all-zero audio block repeated in the log hundreds of
+  times in a row.
+
 ## v1.8.1 — 18 October 2026
 
 New:

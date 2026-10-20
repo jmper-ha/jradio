@@ -13,7 +13,7 @@ meant for a trusted home network - do not expose it.**
 
 | Page | What is on it |
 |---|---|
-| **Player** (`/`) | What is playing, the cover, volume, position, buttons; the tone and loudness behind a button beside the volume (a sheet from the bottom on a phone); source choice and the lists of stations, files and server folders; the sleep timer and the alarm |
+| **Player** (`/`) | What is playing, the cover, volume, position, buttons; the tone, loudness, even volume and the station's volume behind a button beside the volume (a sheet from the bottom on a phone); source choice and the lists of stations, files and server folders; the sleep timer and the alarm |
 | **Stations** (`/playlist`) | Two tabs. "Internet radio": the station list editor - name, address, picture, order by dragging, trying an address by ear right on the device. "FM" (there when the build has a tuner): the presets, the scan of the band, pictures. Above the tabs a shared Import and Export for both lists |
 | **Settings** (`/settings`) | Everything the device has, plus Wi-Fi networks, the name, time and zone, weather, the alarm, the sleep timer, Yandex Music, Bluetooth speakers, the backup, About |
 | **Remote** (`/remote`) | Learning the IR remote's keys; opened by a button in the settings when the build has a receiver |
@@ -100,8 +100,8 @@ a key; if none came, the page says so. More in
 `GET /api/backup` gives a zip with seven files: `wifi.json` (the networks),
 `settings.csv` (the settings), `yandex.json` (the token), `weather.json` (the
 OpenWeatherMap key), `remote.csv` (the keys the remote was taught),
-`fm_presets.csv` (the FM stations) and `levels.csv` (the level corrections
-the levelling has learned per station), and with them those stations' pictures,
+`fm_presets.csv` (the FM stations) and `levels.csv` (the stations' loudness
+in LUFS the levelling has measured, and their hand nudges), and with them those stations' pictures,
 `radio_img/<name>`. `POST /api/restore` takes the whole archive or one file;
 the device checks all files before writing, writes them and reboots. The
 station list is not in the archive - it has its own export on the Stations

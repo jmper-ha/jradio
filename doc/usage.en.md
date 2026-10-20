@@ -242,7 +242,7 @@ They have pages of their own: [Yandex Music](yandex.en.md) and
 
 Quick_menu drops a window over the player with what is needed right now: the
 **sleep timer**, the **alarm**, the **brightness**, **bass**, **treble**,
-**loudness** and the **BT speaker**. The window shows four rows and scrolls
+**loudness**, the **station** and the **BT speaker**. The window shows four rows and scrolls
 through the rest. Without leaving the screen:
 
 | Action | What it does |
@@ -250,12 +250,13 @@ through the rest. Without leaving the screen:
 | Turn the encoder | The next row |
 | Press on a switch (alarm, BT speaker) | Flip it at once |
 | Press on a value | Take the value - it turns amber |
-| Turn in this mode | Change the value: tone by 1 dB, loudness round its four |
+| Turn in this mode | Change the value: tone and station by 1 dB, loudness round its four |
 | Press again | Release the value |
 | Quick_menu, a long press of the encoder | Close the window |
 
 The window closes by itself after ten seconds without a press. The BT speaker
-row is there only while the module answers; the sleep timer cycles - off, 15,
+row is there only while the module answers, the Station row only while an
+internet station plays (what it is - below, under Even volume); the sleep timer cycles - off, 15,
 30, 45, 60, 90, 120 minutes. A change made in the browser shows in the window
 at once.
 
@@ -322,7 +323,7 @@ page as a line with the time and the days.
 On the device: language, home screen style, scrolling of long lines, the
 buffer readout, resume, end of folder, Yandex Music, DLNA, weather, brightness, picture
 mirroring, colour inversion, theme, screensaver, sound over Bluetooth, volume step,
-bass and treble, loudness, volume. They apply at once and
+bass and treble, loudness, even volume, volume. They apply at once and
 are saved. The same settings are in the web interface, in the same words;
 changes either way show at once.
 
@@ -358,10 +359,38 @@ detail, the alarm, the sleep timer, the backup.
     at all at full volume, up to +6, +10 or +15 dB towards quiet. A click
     steps round;
   - **Treble lift** - loudness lifts the treble too, less than the bass (up
-    to +3, +6 or +10 dB).
+    to +3, +6 or +10 dB);
+  - **Even volume** (on the web, "Level the volume") - stations and tracks
+    play equally loud, without reaching for the volume at every switch. Off
+    by default. How it works:
+    - the radio listens to how loud a station plays - the way broadcasters
+      measure it (EBU R128, in LUFS), on the stream itself, before the volume
+      and the tone; pauses and quiet intros do not count, and one loud advert
+      hardly moves it;
+    - and brings it to -14 LUFS, by no more than +-9 dB. A new station is
+      measured for about three seconds and caught up with in about ten; after
+      that the correction moves very slowly, so the volume does not breathe;
+    - turning down always works, but a quiet station is lifted only within
+      the room the volume has left: at full volume there is none, and the
+      figure over the volume says "max". Nothing distorts;
+    - a station that has played for 20 seconds is remembered and starts at its
+      own level the next time; flicking through stations remembers nothing;
+    - Yandex Music tracks and files with ReplayGain or R128 tags are not
+      measured: their loudness is known, and a track starts at its correction.
+
+    Over the volume figure is the correction now: "-7 dB", "+2 dB", "..."
+    while a station is measured. On the web, under the switch, the same in
+    words.
+  - **Station** (on the web, "This station's volume", in the tone panel) - a
+    nudge of your own for the internet station playing, -6 to +6 dB, if it
+    still sounds louder or quieter than the others. Kept per station, and it
+    works without even volume too - a volume of its own for the station. A
+    double click on the web slider puts it back to zero. Yandex and files do
+    not have it: every track there is its own.
 
   They act on everything that plays through the radio itself: internet
-  radio, Yandex Music, files, DLNA, FM through the ADC. Sound from a phone
+  radio, Yandex Music, files, DLNA, FM through the ADC (even volume - on all
+  of it but FM). Sound from a phone
   over Bluetooth goes around them and stays as it is for now. With
   everything at zero and loudness off, the sound passes through unchanged.
 - **Invert colours** - if the picture looks like a negative (a dark

@@ -2385,6 +2385,12 @@ static bool radio_show_reconnecting(internet_radio_context_t *radio)
     (void)radio_status_apply(radio, INTERNET_RADIO_EVENT_FAILURE);
     (void)radio_sync_output(radio);
     radio->output_started = false;
+    /* The first sound out is what says "playing" again. A reconnect in line
+     * reopens through radio_stream_reset_status, which clears this anyway; a
+     * station back from the background one comes in on its own client, and
+     * with this left set the screen read "Reconnecting..." over the music
+     * for as long as it played. */
+    radio->output_logged = false;
     xSemaphoreGive(radio->direct_io_mutex);
     return true;
 }

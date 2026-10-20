@@ -78,3 +78,14 @@ bool internet_radio_decoder_starved(size_t consumed, size_t remaining);
  * reset and then a reconnect. */
 uint32_t internet_radio_decode_stall_limit(bool decoder_synced, uint32_t running_limit_ms,
                                            uint32_t sync_limit_ms);
+
+/* How long to wait after reconnect attempt `attempt` (from 0) fails, to a
+ * station that was playing. Ten tries a second apart first: that is how long
+ * a backlog of 4-8 s plays out while they run in the background, and a gap
+ * of 10 s straight after three quick ones let it run dry on the bench under
+ * a drop of thirteen seconds. Then 10 s, 30 s, and a minute apart for as
+ * long as it takes. A
+ * station is never given up on by itself any more: on a day of bad internet
+ * it used to stop with an error after a minute, and stayed stopped once the
+ * line came back. The listener stops it - any key that changes what plays. */
+uint32_t internet_radio_reconnect_delay_ms(uint32_t attempt);

@@ -111,10 +111,16 @@
  * so it only has to be short enough to keep the loop answering a stop request. */
 #define RADIO_HTTP_READ_WAIT_MS 20U
 #define RADIO_HTTP_RECONNECT_DELAY_MS 500U
+/* The client's wait on any one step of an open - the connect, the handshake,
+ * the headers. A station that answers at all does so well inside a second;
+ * 10 s was what a stop or a station change had to sit through when it landed
+ * on a try at a host that never answers, and a lost station is now tried
+ * for as long as it takes. */
+#define RADIO_HTTP_TIMEOUT_MS 5000
 /* An open that took this long before failing waited on a host that never
- * answered; it is not tried again. Half the client's 10 s timeout, so a
- * slow server that does answer within it still gets its retries. */
-#define RADIO_HTTP_CONNECT_GIVE_UP_MS 5000
+ * answered; it is not tried again. Half the client's timeout, so a slow
+ * server that does answer within it still gets its retries. */
+#define RADIO_HTTP_CONNECT_GIVE_UP_MS (RADIO_HTTP_TIMEOUT_MS / 2)
 /* Backlog held ahead of the decoder. 16 KB was about a second at 128 kbps but
  * only 90 ms of a 1441 kbps FLAC stream - less cushion than the I2S DMA
  * itself - so high-bitrate streams glitched on any network jitter. 64 KB was
@@ -241,6 +247,8 @@ typedef struct {
     bool live;
     char url[STATION_CATALOG_URL_MAX_LEN + 1];
     const atomic_bool *stop;
+    // A live station's tries end on a pause as on a stop.
+    const atomic_bool *paused;
     // The byte the new body starts from, and whether the server agreed to it.
     size_t offset;
     bool range_granted;
@@ -843,8 +851,9 @@ static void radio_direct_task(void *arg)
                 decode_error_retries = 0U;
                 last_rx_tick = xTaskGetTickCount();
             } else if (state == RADIO_REOPEN_FAILED) {
-                // Its tries are spent: the reconnect that says so on screen
-                // has its own, and gives up the station after them.
+                /* It gives up only on a stop or a pause. A stop ends this loop
+                 * below; after a pause the station is reconnected in line,
+                 * on the same schedule, saying so on screen. */
                 radio_reopen_drop(radio);
                 reconnect_shown = false;
                 if (!radio_direct_reconnect(radio)) {
@@ -858,6 +867,11 @@ static void radio_direct_task(void *arg)
                 pcm_delivered = 0U;
                 decode_error_retries = 0U;
                 last_rx_tick = xTaskGetTickCount();
+                /* The decoder starts its count from the reconnect, not from the
+                 * last sound before it: a station back after twenty seconds of
+                 * tries was otherwise "stalled" 21 ms in, and dropped again. */
+                last_pcm_tick = xTaskGetTickCount();
+                decoder_synced = false;
                 continue;
             } else if (available == 0U) {
                 // The backlog is spent and the station is still not back.
@@ -1390,6 +1404,9 @@ static void radio_direct_task(void *arg)
                     pcm_pending = 0U;
                     pcm_delivered = 0U;
                     decode_error_retries = 0U;
+                    // As above: the stall check counts from here.
+                    last_pcm_tick = xTaskGetTickCount();
+                    decoder_synced = false;
                     continue;
                 }
                 if (atomic_load_explicit(&radio->direct_paused, memory_order_acquire)) {
@@ -1572,7 +1589,7 @@ static esp_err_t radio_http_connect_client(const char *url, size_t range_offset,
         .url = url,
         .buffer_size = RADIO_HTTP_BUFFER_SIZE,
         .buffer_size_tx = RADIO_HTTP_TX_BUFFER_SIZE,
-        .timeout_ms = 10000,
+        .timeout_ms = RADIO_HTTP_TIMEOUT_MS,
         .keep_alive_enable = false,
         .user_agent = "VLC/3.0",
         .disable_auto_redirect = true,
@@ -1711,16 +1728,37 @@ static esp_err_t radio_reopen_http_event(esp_http_client_event_t *event)
     return ESP_OK;
 }
 
+// False when the wait was cut short: the station was stopped or paused.
+static bool radio_reopen_wait(const radio_reopen_t *job, uint32_t delay_ms)
+{
+    const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(delay_ms);
+    for (;;) {
+        if (atomic_load_explicit(job->stop, memory_order_acquire) ||
+            atomic_load_explicit(job->paused, memory_order_acquire)) {
+            return false;
+        }
+        if ((int32_t)(deadline - xTaskGetTickCount()) <= 0) return true;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+}
+
 static void radio_reopen_task(void *arg)
 {
     radio_reopen_t *job = arg;
     int outcome = RADIO_REOPEN_FAILED;
     if (job->live) {
-        /* The tries radio_direct_reconnect() makes, half a second apart, and
-         * given up as soon as nobody wants the station any more. */
-        for (unsigned int attempt = 0U; attempt < RADIO_HTTP_CONNECT_RETRIES; ++attempt) {
-            if (attempt > 0U) vTaskDelay(pdMS_TO_TICKS(RADIO_HTTP_RECONNECT_DELAY_MS));
-            if (atomic_load_explicit(job->stop, memory_order_acquire)) break;
+        /* For as long as it takes, on the schedule radio_direct_reconnect()
+         * keeps (internet_radio_state.h). It used to give up after three tries
+         * in a second and a half, and the decode task then reconnected in
+         * line - throwing away the seconds still buffered, which would have
+         * covered a short drop with nobody hearing it. Now the backlog plays
+         * out while this goes on, and only when it is spent does the screen
+         * say "Reconnecting...". A stop or a pause ends it. */
+        for (uint32_t attempt = 0U;; ++attempt) {
+            if (!radio_reopen_wait(job, attempt == 0U ? 0U
+                                                      : internet_radio_reconnect_delay_ms(attempt - 1U))) {
+                break;
+            }
             job->icy_interval = 0U;
             if (radio_http_connect_client(job->url, 0U, &job->client, &job->range_granted,
                                           job->location, radio_reopen_http_event, job,
@@ -1728,8 +1766,9 @@ static void radio_reopen_task(void *arg)
                 outcome = RADIO_REOPEN_READY;
                 break;
             }
-            ESP_LOGW(TAG, "background reconnect attempt %u/%u failed", attempt + 1U,
-                     RADIO_HTTP_CONNECT_RETRIES);
+            ESP_LOGW(TAG, "background reconnect attempt %u failed; next in %u ms",
+                     (unsigned int)attempt + 1U,
+                     (unsigned int)internet_radio_reconnect_delay_ms(attempt));
         }
     } else {
         /* The address the track was last served from, first: Yandex hands
@@ -1774,6 +1813,7 @@ static bool radio_reopen_start(internet_radio_context_t *radio)
     radio_reopen_t *job = heap_caps_calloc(1, sizeof(*job), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (job == NULL) return false;
     job->stop = &radio->direct_stop_requested;
+    job->paused = &radio->direct_paused;
     if (radio->track_chain) {
         job->resolve = radio->track_reopen;
         job->offset = radio->track_offset;
@@ -2432,8 +2472,13 @@ static bool radio_direct_reconnect(internet_radio_context_t *radio)
     radio_stream_close(radio);
     radio_decoder_reset(radio->decoder);
     const char *url = radio->catalog->entries[status.station_index].url;
-    for (unsigned int attempt = 0U; attempt < RADIO_HTTP_CONNECT_RETRIES; ++attempt) {
-        if (!radio_delay_interruptible(radio, RADIO_HTTP_RECONNECT_DELAY_MS)) {
+    /* Until it answers or somebody stops it (internet_radio_state.h): the
+     * wait between tries is interruptible, and a try itself is bounded by the
+     * client's timeout. Only a stop, a pause or a state that is no longer
+     * ours ends this without a stream. */
+    for (uint32_t attempt = 0U;; ++attempt) {
+        if (!radio_delay_interruptible(radio, attempt == 0U ? RADIO_HTTP_RECONNECT_DELAY_MS
+                                                            : internet_radio_reconnect_delay_ms(attempt - 1U))) {
             return false;
         }
         if (!radio_status_apply(radio, INTERNET_RADIO_EVENT_RETRY)) {
@@ -2441,8 +2486,7 @@ static bool radio_direct_reconnect(internet_radio_context_t *radio)
         }
         const esp_err_t err = radio_stream_open(radio, url);
         if (err == ESP_OK) {
-            ESP_LOGI(TAG, "HTTP stream reconnected on attempt %u/%u", attempt + 1U,
-                     RADIO_HTTP_CONNECT_RETRIES);
+            ESP_LOGI(TAG, "HTTP stream reconnected on attempt %u", (unsigned int)attempt + 1U);
             return true;
         }
         if (atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire) ||
@@ -2452,10 +2496,10 @@ static bool radio_direct_reconnect(internet_radio_context_t *radio)
         if (!radio_status_apply(radio, INTERNET_RADIO_EVENT_FAILURE)) {
             return false;
         }
-        ESP_LOGW(TAG, "HTTP reconnect attempt %u/%u failed: %s", attempt + 1U,
-                 RADIO_HTTP_CONNECT_RETRIES, esp_err_to_name(err));
+        ESP_LOGW(TAG, "HTTP reconnect attempt %u failed: %s; next in %u ms",
+                 (unsigned int)attempt + 1U, esp_err_to_name(err),
+                 (unsigned int)internet_radio_reconnect_delay_ms(attempt));
     }
-    return false;
 }
 
 /* Moves a chain source on to its next track: ask for a link, reset the

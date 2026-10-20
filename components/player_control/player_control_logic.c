@@ -175,9 +175,13 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
         if (state->playback_state == PLAYER_PLAYBACK_PAUSED) return PLAYER_OPERATION_RESUME;
         if (state->playback_state == PLAYER_PLAYBACK_STOPPED ||
             state->playback_state == PLAYER_PLAYBACK_ERROR) return PLAYER_OPERATION_START_SAVED;
-        return state->playback_state == PLAYER_PLAYBACK_CONNECTING ||
-                       state->playback_state == PLAYER_PLAYBACK_RECONNECTING
-                   ? PLAYER_OPERATION_NONE : PLAYER_OPERATION_INVALID;
+        /* A station lost and being tried again is tried for as long as it
+         * takes (internet_radio_state.h), so the press is how it ends: it
+         * stops, and the next press starts it again. Silence either way -
+         * while its backlog still plays, the state is "playing". */
+        if (state->playback_state == PLAYER_PLAYBACK_RECONNECTING) return PLAYER_OPERATION_STOP;
+        return state->playback_state == PLAYER_PLAYBACK_CONNECTING ? PLAYER_OPERATION_NONE
+                                                                   : PLAYER_OPERATION_INVALID;
     case PLAYER_COMMAND_SELECT_ITEM: {
         /* With no source selected the snapshot still describes the station
          * catalogue - item_count comes from it, and both screens show the

@@ -17,6 +17,18 @@ static void test_toggle_maps_playing_to_pause(void)
     assert(player_control_decide(&state, &command) == PLAYER_OPERATION_PAUSE);
 }
 
+/* A lost station is tried for as long as it takes, so the press is how it
+   ends; a station still connecting for the first time is left to finish. */
+static void test_toggle_stops_a_station_being_reconnected(void)
+{
+    player_snapshot_t state = {.wifi_connected = true, .active_source = AUDIO_SOURCE_INTERNET_RADIO,
+                               .playback_state = PLAYER_PLAYBACK_RECONNECTING};
+    player_command_t command = {.kind = PLAYER_COMMAND_TOGGLE};
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_STOP);
+    state.playback_state = PLAYER_PLAYBACK_CONNECTING;
+    assert(player_control_decide(&state, &command) == PLAYER_OPERATION_NONE);
+}
+
 static void test_active_station_is_not_restarted(void)
 {
     player_snapshot_t state = {.wifi_connected = true, .active_source = AUDIO_SOURCE_INTERNET_RADIO,
@@ -1041,6 +1053,7 @@ int main(void)
     test_a_yandex_station_starts_and_is_not_restarted();
     test_a_yandex_chain_never_advances_by_itself();
     test_toggle_maps_playing_to_pause();
+    test_toggle_stops_a_station_being_reconnected();
     test_usb_source_requires_a_mounted_drive();
     test_usb_reselecting_the_same_entry_still_acts();
     test_track_finished_advances_only_on_usb();

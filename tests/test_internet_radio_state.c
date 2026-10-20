@@ -146,6 +146,23 @@ static void test_a_resyncing_decoder_is_not_a_starved_one(void)
     assert(internet_radio_decoder_starved(0U, 0U));
 }
 
+static void test_a_lost_station_is_tried_ever_more_slowly(void)
+{
+    // Ten seconds of tries while a backlog plays out.
+    uint32_t quick = 0U;
+    for (uint32_t attempt = 0U; attempt < 10U; ++attempt) quick += internet_radio_reconnect_delay_ms(attempt);
+    assert(quick == 10000U);
+    assert(internet_radio_reconnect_delay_ms(10U) == 10000U);
+    assert(internet_radio_reconnect_delay_ms(12U) == 30000U);
+    assert(internet_radio_reconnect_delay_ms(14U) == 60000U);
+    // And never stops: an hour in, still once a minute.
+    assert(internet_radio_reconnect_delay_ms(UINT32_MAX) == 60000U);
+    for (uint32_t attempt = 1U; attempt < 20U; ++attempt) {
+        assert(internet_radio_reconnect_delay_ms(attempt) >=
+               internet_radio_reconnect_delay_ms(attempt - 1U));
+    }
+}
+
 int main(void)
 {
     test_start_pause_resume_stop();
@@ -158,6 +175,7 @@ int main(void)
     test_a_decoder_that_eats_input_without_producing_is_a_stall();
     test_the_stall_limit_leaves_room_for_a_decoder_still_finding_a_frame();
     test_a_resyncing_decoder_is_not_a_starved_one();
+    test_a_lost_station_is_tried_ever_more_slowly();
     puts("internet_radio_state tests passed");
     return 0;
 }

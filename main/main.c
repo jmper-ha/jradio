@@ -12,6 +12,7 @@
 #include "board.h"
 #include "board_config.h"
 #include "board_features.h"
+#include "board_ssm3582.h"
 #include "bt_link.h"
 #include "board_input.h"
 #include "device_clock.h"
@@ -300,6 +301,19 @@ void app_main(void)
         /* Only finds the chip for now and leaves it powered down: the player
          * has no FM source to drive it with yet. */
         start_optional("FM tuner", fm_tuner_init());
+    }
+    if (BOARD_HAS_SSM3582) {
+        /* Finds the amplifier on I2C0 and leaves it muted and powered down -
+         * the boot is quiet whatever the pins were doing, and the debug log
+         * for this tag is raised in there, so the monitor shows every register
+         * the chip is given from here on. */
+        start_optional("SSM3582 amplifier", board_ssm3582_init());
+        /* Whatever set the volume before the chip answered - the alarm path
+         * and the settings read both can - is pushed now, so the chip is not
+         * left at its own default until the UI's next turn of the knob. */
+        if (board_ssm3582_present()) {
+            (void)board_ssm3582_set_volume(board_audio_volume());
+        }
     }
     ESP_ERROR_CHECK(internet_radio_init());
     /* Nothing is installed here any more. A station that arrives one track at

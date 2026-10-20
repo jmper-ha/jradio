@@ -115,6 +115,14 @@ void board_config_compiled(board_config_t *config)
     config->i2c0_scl = PIN(FM_I2C_SCL_GPIO);
 #endif
 #endif
+/* The amplifier's control is on I2C0 too, so its block brings the bus pins
+ * in when neither the tuner nor the clock did - the same two defines, as
+ * above; a board whose only I2C device is the amplifier names them here. */
+#if defined(AUDIO_AMP_SSM3582) && AUDIO_AMP_SSM3582 == FEATURE_ON && \
+    defined(FM_I2C_SDA_GPIO) && defined(FM_I2C_SCL_GPIO)
+    config->i2c0_sda = PIN(FM_I2C_SDA_GPIO);
+    config->i2c0_scl = PIN(FM_I2C_SCL_GPIO);
+#endif
 #if defined(AUDIO_ADC) && AUDIO_ADC == AUDIO_ADC_PCM1808
     config->adc = AUDIO_ADC_PCM1808;
     config->i2s0_din = PIN(I2S_DIN_GPIO);

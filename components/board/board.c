@@ -25,6 +25,7 @@
 #include "board.h"
 #include "board_amplifier.h"
 #include "board_config.h"
+#include "board_ssm3582.h"
 #include "board_audio_health.h"
 #include "board_audio_startup.h"
 #include "board_audio_format.h"
@@ -202,6 +203,14 @@ void board_audio_set_volume(uint8_t percent)
 {
     if (percent > AUDIO_VOLUME_MAX_PERCENT) percent = AUDIO_VOLUME_MAX_PERCENT;
     atomic_store_explicit(&s_audio_volume, percent, memory_order_relaxed);
+    /* The amplifier's own volume, over I2C: with a chip fitted it is the chip
+     * that attenuates (see board_audio_shaped_block()), so the setting has to
+     * reach it, not only the samples. Present-checked at runtime rather than
+     * #if'd, so a build with the option on but no chip answering keeps the
+     * software path exactly as it was. */
+    if (BOARD_HAS_SSM3582 && board_ssm3582_present()) {
+        (void)board_ssm3582_set_volume(percent);
+    }
 }
 
 uint8_t board_audio_volume(void)
@@ -476,19 +485,26 @@ static bool s_dac_muted;
 
 /* Writes the pin, or does nothing at all on a board with no such pin. Every
  * caller is one of the three inputs changing, so this is where the rule is
- * applied rather than at each site. */
+ * applied rather than at each site.
+ *
+ * The SSM3582 gets the same rule over I2C: powered up before the gate opens
+ * on the first play, and the gate itself is the mute - a pause powers nothing
+ * down, it only closes the gate, so there is no power cycle per pause and the
+ * chip's registers stay as they were written. */
 static void board_amp_drive(bool play)
 {
-    const int8_t pin = wiring()->amp_enable;
-    if (pin < 0) {
-        s_amp_playing = play;
-        return;
-    }
     if (play == s_amp_playing) return;
     s_amp_playing = play;
+    const int8_t pin = wiring()->amp_enable;
+    if (pin >= 0) {
     const int on = wiring()->amp_on_level;
     (void)gpio_set_level(pin, play ? on : !on);
     ESP_LOGI(TAG, "amplifier %s", play ? "unmuted" : "muted");
+    }
+    if (BOARD_HAS_SSM3582 && board_ssm3582_present()) {
+        if (play) (void)board_ssm3582_set_powered(true);
+        (void)board_ssm3582_set_muted(!play);
+    }
 }
 
 static void board_amp_apply(void)
@@ -645,7 +661,15 @@ static uint16_t s_audio_gain_end = AUDIO_VOLUME_UNITY;
 
 static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
 {
-    const uint16_t gain = audio_volume_gain(board_audio_volume());
+    /* Where the setting is applied: with the SSM3582 answering, the chip
+     * attenuates and the samples go through at unity - scaling them as well
+     * would put the curve on twice, and would throw away a bit per 6 dB on the
+     * way to a chip that can do it in its own DAC. The start fade is
+     * unaffected: it ramps this gain up from zero either way. Without the
+     * chip, the setting reaches the samples as it always did. */
+    const bool chip_volume = BOARD_HAS_SSM3582 && board_ssm3582_present();
+    const uint16_t gain =
+        chip_volume ? AUDIO_VOLUME_UNITY : audio_volume_gain(board_audio_volume());
     const uint32_t frames = (uint32_t)(pcm_length / AUDIO_VOLUME_FRAME_BYTES);
     uint16_t gain_start;
     uint16_t gain_end;

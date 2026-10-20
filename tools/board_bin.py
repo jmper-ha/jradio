@@ -106,13 +106,18 @@ def board_csv(macros):
     fm = defined("FM_TUNER") and value(macros, "FM_TUNER") == value(macros, "FM_TUNER_RDA5807")
     fm_i2s = fm and defined("FM_I2S_PERIPHERAL") and defined("I2S_DIN_GPIO")
     adc = defined("AUDIO_ADC") and value(macros, "AUDIO_ADC") == value(macros, "AUDIO_ADC_PCM1808")
-    # The clock shares I2C0 - and its two pin defines - with the tuner.
+    # The clock shares I2C0 - and its two pin defines - with the tuner, and
+    # so does the SSM3582 amplifier: whichever of the three is fitted brings
+    # the bus pins in, the same rule board_config_compiled() applies.
     rtc = "none"
     if defined("RTC_CHIP"):
         for name in ("ds3231", "ds1307"):
             if value(macros, "RTC_CHIP") == value(macros, f"RTC_CHIP_{name.upper()}"):
                 rtc = name
-    i2c0 = (fm or rtc != "none") and defined("FM_I2C_SDA_GPIO") and defined("FM_I2C_SCL_GPIO")
+    amp = defined("AUDIO_AMP_SSM3582") and value(macros, "AUDIO_AMP_SSM3582") == value(
+        macros, "FEATURE_ON")
+    i2c0 = (fm or rtc != "none" or amp) and defined("FM_I2C_SDA_GPIO") and defined(
+        "FM_I2C_SCL_GPIO")
     reset = pin(macros, "TFT_RESET_GPIO") if defined("TFT_RESET_GPIO") else "rst"
     feature_on = value(macros, "FEATURE_ON")
     rows = [

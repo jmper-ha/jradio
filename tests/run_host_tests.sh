@@ -173,6 +173,8 @@ run_test board_audio_startup tests/test_board_audio_startup.c \
     components/board/board_audio_startup.c
 run_test board_amplifier tests/test_board_amplifier.c \
     components/board/board_amplifier.c
+run_test ssm3582 tests/test_ssm3582.c \
+    components/board/ssm3582.c
 # The half of version_info that has no device in it: the stamp comes off a
 # filesystem, so refusing a truncated or hand-edited one is the part worth
 # testing, and none of it needs ESP-IDF.

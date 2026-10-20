@@ -151,6 +151,21 @@
 /* #define AUDIO_AMP_GPIO 39 */
 /* #define AUDIO_AMP_ON_LEVEL 1 */
 
+/* The SSM3582 amplifier on the speakers: the same I2S lines the DAC would
+ * take, and gain, mute and power over I2C0 - so a board with one fitted needs
+ * no AUDIO_AMP_GPIO, the mute is on the chip. */
+/* #define AUDIO_AMP_SSM3582 FEATURE_ON */
+// The address its ADDR0/ADDR1 straps select: 0x10 is both low, up to 0x1F.
+/* #define AMP_SSM3582_I2C_ADDRESS 0x10 */
+/* I2C0's two lines, on the bus the amplifier shares with whatever else is
+ * fitted - named with the tuner's defines even without a tuner, the same way
+ * the clock's block in board_config_compiled.c reads them. 38 and 39 are the
+ * free pins left on this board; pull-ups on both, as every I2C device here
+ * wants. */
+/* #define FM_I2C_SDA_GPIO 38 */
+/* #define FM_I2C_SCL_GPIO 39 */
+
+
 /* ======================================================================
  * Deep sleep - cutting power to everything outside the module
  * ====================================================================== */

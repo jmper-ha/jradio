@@ -369,6 +369,11 @@ static void test_no_pin_is_claimed_by_two_devices(void)
 #endif
 #if BOARD_HAS_FM_RADIO
         FM_I2C_SDA_GPIO, FM_I2C_SCL_GPIO,
+#elif BOARD_HAS_SSM3582
+        /* The amplifier's control lines are the same two defines the tuner's
+         * would be, so listed once - a board with both fits them under the
+         * branch above. */
+        FM_I2C_SDA_GPIO, FM_I2C_SCL_GPIO,
 #endif
     };
     const size_t count = sizeof(pins) / sizeof(pins[0]);

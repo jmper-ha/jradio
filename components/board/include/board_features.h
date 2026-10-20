@@ -64,3 +64,12 @@
 #else
 #define BOARD_HAS_DLNA 0
 #endif
+
+/* The amplifier with the controls on I2C0. A switch rather than a part: what
+ * it plays is whatever the DAC selection already says, and the chip's own
+ * identity is checked by the driver, not chosen at build time. */
+#if defined(AUDIO_AMP_SSM3582) && AUDIO_AMP_SSM3582 == FEATURE_ON
+#define BOARD_HAS_SSM3582 1
+#else
+#define BOARD_HAS_SSM3582 0
+#endif

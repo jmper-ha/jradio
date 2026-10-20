@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "audio_pcm_convert.c" "audio_volume.c" "board.c" "board_amplifier.c"
+    SRCS "board_ssm3582.c" "ssm3582.c" "audio_pcm_convert.c" "audio_volume.c" "board.c" "board_amplifier.c"
          "board_config.c" "board_config_compiled.c" "board_config_load.c"
          "board_audio_health.c"
          "audio_tone.c" "board_audio_startup.c" "board_input.c" "board_i2c.c" "board_rtc.c" "rtc_chip.c"

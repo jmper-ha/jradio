@@ -30,7 +30,8 @@
     defined(BUTTON_SLEEP_GPIO) || defined(DISPLAY) || defined(AUDIO_DAC) ||      \
     defined(SDC_CS_GPIO) || defined(YANDEX_MUSIC) || defined(FM_TUNER) ||     \
     defined(BLUETOOTH) || defined(DLNA) || defined(IR_RECEIVER_GPIO) ||       \
-    defined(AUDIO_ADC) || defined(I2S_MCLK_GPIO)
+    defined(AUDIO_ADC) || defined(I2S_MCLK_GPIO) ||                           \
+    defined(AUDIO_AMP_SSM3582) || defined(AMP_SSM3582_I2C_ADDRESS)
 #error "board_options.h: a name here is already defined elsewhere - most likely \
 an ESP-IDF header now uses it. Re-prefix the affected option in this file and \
 at its use sites."

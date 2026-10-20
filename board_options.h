@@ -109,15 +109,13 @@
 #define BUTTON_PREV_GPIO 46
 #define BUTTON_NEXT_GPIO 9
 
-/* Internal pull-ups, per group rather than for all seven pins at once.
+/* The internal pull-ups are always on, for the encoder and the buttons alike
+ * (2026-10-20). They were a choice per group, and users who wired a button
+ * with no pull-up of its own and left the choice off got a Sleep button that
+ * pressed itself on noise. On top of an external pull-up the internal one
+ * costs nothing that matters; without one it is the difference.
  *
- * External pull-ups are fitted on the board. The buttons still needed the
- * internal ones on top - GPIO 45, 46 and 21 were unstable without them - but
- * the encoder never had that problem, and the two parallel pull-ups only add
- * current through its contacts on every detent. */
-#define ENCODER_USE_INTERNAL_PULLUPS 0
-#define BUTTONS_USE_INTERNAL_PULLUPS 1
-/* There is no hardware debouncing on either group, and no interrupt line for
+ * There is no hardware debouncing on either group, and no interrupt line for
  * the encoder: both are polled and filtered in board_input.c. */
 
 /* ======================================================================

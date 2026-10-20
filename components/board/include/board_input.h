@@ -36,14 +36,8 @@
 #ifndef BUTTON_NEXT_GPIO
 #define BUTTON_NEXT_GPIO BOARD_GPIO_NOT_WIRED
 #endif
-/* Goes with the buttons and is usually dropped with them; on its own the
- * internal pull-up is the safe default - the buttons on revision 1 were
- * unstable without it, and a floating input costs nothing with it. */
 #ifndef ENCODER_AS_BUTTONS
 #define ENCODER_AS_BUTTONS 0
-#endif
-#ifndef BUTTONS_USE_INTERNAL_PULLUPS
-#define BUTTONS_USE_INTERNAL_PULLUPS 1
 #endif
 
 typedef enum {

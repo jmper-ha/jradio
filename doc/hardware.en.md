@@ -118,8 +118,9 @@ What matters when wiring:
 - microSD has its own SPI3 bus: the display has no MISO wired, and the card
   cannot work without one. No card-detect is wired - the card is found on
   entering the source.
-- Internal pull-ups are on for the buttons (`BUTTONS_USE_INTERNAL_PULLUPS 1`)
-  and off for the encoder, where external ones suffice.
+- The internal pull-ups of the encoder and the buttons are always on. A
+  button can go straight between its pin and ground, with no resistor of its
+  own; an external one does no harm.
 
 ## The display
 

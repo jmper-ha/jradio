@@ -239,8 +239,26 @@ static void test_a_display_is_named_as_the_release_names_it(void)
     assert(board_config_display_name(0xFFU) == NULL);
 }
 
+/* The pull-ups are always on: a file from before that turned them off still
+ * loads clean, gets them, and is written back saying so. */
+static void test_pull_ups_off_in_an_old_file_are_read_past(void)
+{
+    static const char csv[] = "encoder_pullups,0\nbuttons_pullups,0\n";
+    board_config_t config;
+    board_config_clear(&config);
+    board_config_parse_result_t parsed;
+    board_config_parse_csv(csv, strlen(csv), &config, &parsed);
+    assert(parsed.bad_lines == 0U && parsed.unknown_keys == 0U);
+    assert(config.encoder_pullups == 1U && config.buttons_pullups == 1U);
+    char written[2048];
+    assert(board_config_to_csv(&config, written, sizeof(written)) < sizeof(written));
+    assert(strstr(written, "\nencoder_pullups,1\n") != NULL);
+    assert(strstr(written, "\nbuttons_pullups,1\n") != NULL);
+}
+
 int main(void)
 {
+    test_pull_ups_off_in_an_old_file_are_read_past();
     test_the_cases_shared_with_the_editor();
     test_what_the_values_become();
     test_a_bad_line_is_counted_and_the_value_kept();

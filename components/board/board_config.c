@@ -101,14 +101,16 @@ static const field_t k_fields[] = {
     {"encoder_right", KIND_PIN, DEV_ENCODER, AT(encoder_right), false, NULL, {{NULL, 0}}},
     {"encoder_left", KIND_PIN, DEV_ENCODER, AT(encoder_left), false, NULL, {{NULL, 0}}},
     {"encoder_button", KIND_PIN, DEV_ENCODER, AT(encoder_button), false, NULL, {{NULL, 0}}},
-    {"encoder_pullups", KIND_BOOL, DEV_ENCODER, AT(encoder_pullups), false, NULL, {{NULL, 0}}},
+    /* Always on (board_options.h): read past, written as 1, so a file from
+     * before that says 0 still loads - and gets them. */
+    {"encoder_pullups", KIND_IGNORED, DEV_ENCODER, AT(encoder_pullups), false, "1", {{NULL, 0}}},
     {"encoder_buttons", KIND_BOOL, DEV_ENCODER, AT(encoder_buttons), false, NULL, {{NULL, 0}}},
     {"button_sleep", KIND_OPT_PIN, DEV_BUTTONS, AT(button_sleep), false, NULL, {{NULL, 0}}},
     {"button_quick_menu", KIND_OPT_PIN, DEV_BUTTONS, AT(button_quick_menu), false, NULL,
      {{NULL, 0}}},
     {"button_prev", KIND_OPT_PIN, DEV_BUTTONS, AT(button_prev), false, NULL, {{NULL, 0}}},
     {"button_next", KIND_OPT_PIN, DEV_BUTTONS, AT(button_next), false, NULL, {{NULL, 0}}},
-    {"buttons_pullups", KIND_BOOL, DEV_BUTTONS, AT(buttons_pullups), false, NULL, {{NULL, 0}}},
+    {"buttons_pullups", KIND_IGNORED, DEV_BUTTONS, AT(buttons_pullups), false, "1", {{NULL, 0}}},
     {"ir_receiver", KIND_OPT_PIN, DEV_IR, AT(ir_receiver), false, NULL, {{NULL, 0}}},
     {"dac", KIND_CHOICE, DEV_DAC, AT(dac), false, NULL,
      // The UDA1334A has a driver but has not been tried on a board yet.
@@ -193,6 +195,8 @@ void board_config_clear(board_config_t *config)
     }
     config->spi2_sclk = 12;
     config->spi2_mosi = 11;
+    config->encoder_pullups = 1U;
+    config->buttons_pullups = 1U;
     config->display = DISPLAY_NONE;
     config->dac = DAC_PCM5102;
     config->bluetooth = BLUETOOTH_NONE;

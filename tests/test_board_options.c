@@ -205,11 +205,10 @@ static void test_control_pins_are_distinct(void)
             assert(pins[i] != pins[j]);
         }
     }
-    /* Separate per group: the buttons need the internal pull-ups on top of
-     * the external ones, the encoder does not and only pays contact current
-     * for them. */
-    assert(BUTTONS_USE_INTERNAL_PULLUPS == 1);
-    assert(ENCODER_USE_INTERNAL_PULLUPS == 0);
+    // The pull-ups are no longer a choice: always on, in board_input.c.
+#if defined(BUTTONS_USE_INTERNAL_PULLUPS) || defined(ENCODER_USE_INTERNAL_PULLUPS)
+#error "the internal pull-ups are always on; board_options.h should not name them"
+#endif
 }
 
 static void test_audio_group_matches_the_fixed_i2s_slots(void)

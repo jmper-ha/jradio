@@ -142,13 +142,14 @@ def board_csv(macros):
         ("encoder_right", pin(macros, "ENCODER_RIGHT_GPIO")),
         ("encoder_left", pin(macros, "ENCODER_LEFT_GPIO")),
         ("encoder_button", pin(macros, "ENCODER_BUTTON_GPIO")),
-        ("encoder_pullups", switch(macros, "ENCODER_USE_INTERNAL_PULLUPS", 0)),
+        # Always on since 2026-10-20 (board_options.h); the key stays for old readers.
+        ("encoder_pullups", "1"),
         ("encoder_buttons", switch(macros, "ENCODER_AS_BUTTONS", 0)),
         ("button_sleep", pin(macros, "BUTTON_SLEEP_GPIO")),
         ("button_quick_menu", pin(macros, "BUTTON_QUICK_MENU_GPIO")),
         ("button_prev", pin(macros, "BUTTON_PREV_GPIO")),
         ("button_next", pin(macros, "BUTTON_NEXT_GPIO")),
-        ("buttons_pullups", switch(macros, "BUTTONS_USE_INTERNAL_PULLUPS", 0)),
+        ("buttons_pullups", "1"),
         ("ir_receiver", pin(macros, "IR_RECEIVER_GPIO")),
         ("dac", choice(macros, "AUDIO_DAC", "DAC_", DACS)
          if defined("AUDIO_DAC") else "pcm5102"),

@@ -79,7 +79,7 @@ function test_the_header_round_trips_and_names_every_option() {
   for (const name of ['DISPLAY', 'DISPLAY_SPI_PERIPHERAL', 'TFT_CS_GPIO', 'TFT_DC_GPIO', 'TFT_MOSI_GPIO',
                       'TFT_SCLK_GPIO', 'TFT_BACKLIGHT_GPIO', 'ENCODER_RIGHT_GPIO', 'ENCODER_LEFT_GPIO',
                       'ENCODER_BUTTON_GPIO', 'BUTTON_SLEEP_GPIO', 'BUTTON_QUICK_MENU_GPIO', 'BUTTON_PREV_GPIO',
-                      'BUTTON_NEXT_GPIO', 'ENCODER_USE_INTERNAL_PULLUPS', 'BUTTONS_USE_INTERNAL_PULLUPS',
+                      'BUTTON_NEXT_GPIO', 'ENCODER_AS_BUTTONS',
                       'AUDIO_DAC', 'I2S_DOUT_GPIO', 'I2S_BCLK_GPIO', 'I2S_LRCK_GPIO',
                       'USB_DM_GPIO', 'USB_DP_GPIO', 'SDC_CS_GPIO',
                       'SDC_SCK_GPIO', 'SDC_MISO_GPIO', 'SDC_MOSI_GPIO', 'YANDEX_MUSIC',
@@ -87,7 +87,8 @@ function test_the_header_round_trips_and_names_every_option() {
     assert.ok(new RegExp(`^#define ${name} `, 'm').test(header), name);
   }
   /* And none the firmware does not: they read as settings to get right. */
-  for (const name of ['AUDIO_DAC_HAS_MCLK', 'USB_VBUS_SWITCHED', 'SDC_SPI_PERIPHERAL', 'SDC_HAS_CARD_DETECT']) {
+  for (const name of ['AUDIO_DAC_HAS_MCLK', 'USB_VBUS_SWITCHED', 'SDC_SPI_PERIPHERAL', 'SDC_HAS_CARD_DETECT',
+                      'ENCODER_USE_INTERNAL_PULLUPS', 'BUTTONS_USE_INTERNAL_PULLUPS']) {
     assert.ok(!new RegExp(`#define ${name}\\b`).test(header), name);
   }
   /* A header written before, with them in, still pastes clean. */

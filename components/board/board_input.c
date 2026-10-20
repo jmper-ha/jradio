@@ -413,40 +413,26 @@ esp_err_t board_input_init(void)
     for (size_t index = 0; index < sizeof(s_channels) / sizeof(s_channels[0]); ++index) {
         s_channels[index].gpio_num = buttons[index] >= 0 ? buttons[index] : BOARD_GPIO_NOT_WIRED;
     }
-    /* Two calls rather than one: the encoder and the buttons want different
-     * pull-up settings, and gpio_config() applies one setting to every pin in
-     * its mask. The encoder button belongs to the encoder here - it is the
-     * same part and the same external pull-up. */
-    const gpio_config_t encoder_config = {
+    /* Every input with its internal pull-up, always (board_options.h): on
+     * top of an external one it changes nothing that matters, and without
+     * one - a bare button, a bare encoder - it is what keeps the pin from
+     * floating. It was a choice per group until 2026-10-20, and a Sleep
+     * button wired with the choice off pressed itself on noise. */
+    const gpio_config_t input_config = {
         .pin_bit_mask = (1ULL << wiring->encoder_right) | (1ULL << wiring->encoder_left) |
-                        (1ULL << wiring->encoder_button),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = wiring->encoder_pullups ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    const gpio_config_t button_config = {
-        .pin_bit_mask = board_input_pin_bit(s_channels[1].gpio_num) |
+                        (1ULL << wiring->encoder_button) |
+                        board_input_pin_bit(s_channels[1].gpio_num) |
                         board_input_pin_bit(s_channels[2].gpio_num) |
                         board_input_pin_bit(s_channels[3].gpio_num) |
                         board_input_pin_bit(s_channels[4].gpio_num),
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = wiring->buttons_pullups ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
-
-    esp_err_t result = gpio_config(&encoder_config);
+    const esp_err_t result = gpio_config(&input_config);
     if (result != ESP_OK) {
         return result;
-    }
-    /* An empty mask is an argument error to gpio_config, not a no-op, so a
-     * board with no function buttons at all skips the call. */
-    if (button_config.pin_bit_mask != 0ULL) {
-        result = gpio_config(&button_config);
-        if (result != ESP_OK) {
-            return result;
-        }
     }
     if (s_event_queue != NULL) {
         return ESP_OK;
@@ -493,12 +479,11 @@ esp_err_t board_input_init(void)
      * sleep two seconds after every boot had its sleep button's pin floating -
      * no button soldered yet - and nothing in the log said which pin that was
      * or whether its pull-up was on. */
-    ESP_LOGI(TAG, "encoder L=%d R=%d button=%d, pull-ups %s; sleep=%d quick=%d prev=%d next=%d, "
-                  "pull-ups %s",
+    ESP_LOGI(TAG, "encoder L=%d R=%d button=%d; sleep=%d quick=%d prev=%d next=%d; "
+                  "internal pull-ups on",
              wiring->encoder_left, wiring->encoder_right, wiring->encoder_button,
-             wiring->encoder_pullups ? "internal" : "external", wiring->button_sleep,
-             wiring->button_quick_menu, wiring->button_prev, wiring->button_next,
-             wiring->buttons_pullups ? "internal" : "external");
+             wiring->button_sleep, wiring->button_quick_menu, wiring->button_prev,
+             wiring->button_next);
     // In s_channels' order.
     static const char *const names[] = {"encoder button", "sleep", "quick", "prev", "next"};
     for (size_t index = 0; index < sizeof(s_channels) / sizeof(s_channels[0]); ++index) {
@@ -506,7 +491,7 @@ esp_err_t board_input_init(void)
         // Buttons pull to ground: low before anyone could have touched one is
         // a pin with nothing holding it up, and the hold will act on its own.
         if (gpio_get_level(s_channels[index].gpio_num) == 0) {
-            ESP_LOGW(TAG, "%s button (GPIO %d) reads pressed at boot: not wired, or no pull-up",
+            ESP_LOGW(TAG, "%s button (GPIO %d) reads pressed at boot: held, or shorted to ground",
                      names[index], s_channels[index].gpio_num);
         }
     }

@@ -142,7 +142,10 @@
     {key: 'encoder_right', kind: 'pin', device: 'encoder', dflt: 5, define: 'ENCODER_RIGHT_GPIO'},
     {key: 'encoder_left', kind: 'pin', device: 'encoder', dflt: 7, define: 'ENCODER_LEFT_GPIO'},
     {key: 'encoder_button', kind: 'pin', device: 'encoder', dflt: 6, define: 'ENCODER_BUTTON_GPIO'},
-    {key: 'encoder_pullups', kind: 'bool', device: 'encoder', dflt: 0, define: 'ENCODER_USE_INTERNAL_PULLUPS'},
+    /* The internal pull-ups are always on (2026-10-20): a button wired with
+       none of its own and the box left unticked was a Sleep button that
+       pressed itself. Kept as keys, always 1, so files from before load. */
+    {key: 'encoder_pullups', kind: 'bool', device: 'encoder', fixed: 1},
     /* Three buttons on the encoder's three lines: + on Right, - on Left, OK on
        Push. One or the other - the lines are the same. */
     {key: 'encoder_buttons', kind: 'bool', device: 'encoder', dflt: 0, define: 'ENCODER_AS_BUTTONS'},
@@ -151,7 +154,7 @@
     {key: 'button_quick_menu', kind: 'opt_pin', device: 'buttons', dflt: 45, define: 'BUTTON_QUICK_MENU_GPIO'},
     {key: 'button_prev', kind: 'opt_pin', device: 'buttons', dflt: 46, define: 'BUTTON_PREV_GPIO'},
     {key: 'button_next', kind: 'opt_pin', device: 'buttons', dflt: 9, define: 'BUTTON_NEXT_GPIO'},
-    {key: 'buttons_pullups', kind: 'bool', device: 'buttons', dflt: 1, define: 'BUTTONS_USE_INTERNAL_PULLUPS'},
+    {key: 'buttons_pullups', kind: 'bool', device: 'buttons', fixed: 1},
 
     /* The infrared receiver: one pin, off by default like the README board. */
     {key: 'ir_receiver', kind: 'opt_pin', device: 'ir', dflt: NONE, enables: true, define: 'IR_RECEIVER_GPIO'},
@@ -573,9 +576,7 @@
       ...gpio('BUTTON_QUICK_MENU_GPIO', 'button_quick_menu'),
       ...gpio('BUTTON_PREV_GPIO', 'button_prev'),
       ...gpio('BUTTON_NEXT_GPIO', 'button_next'),
-      `#define ENCODER_USE_INTERNAL_PULLUPS ${on('encoder_pullups')}`,
       `#define ENCODER_AS_BUTTONS ${on('encoder_buttons')}`,
-      `#define BUTTONS_USE_INTERNAL_PULLUPS ${on('buttons_pullups')}`,
       '',
       ...(deviceEnabled(values, 'ir')
         ? ['/* The infrared receiver, for the remote. */', ...gpio('IR_RECEIVER_GPIO', 'ir_receiver')]
@@ -695,9 +696,10 @@
     asPin('encoder_button', 'ENCODER_BUTTON_GPIO');
     asPin('button_sleep', 'BUTTON_SLEEP_GPIO'); asPin('button_quick_menu', 'BUTTON_QUICK_MENU_GPIO');
     asPin('button_prev', 'BUTTON_PREV_GPIO'); asPin('button_next', 'BUTTON_NEXT_GPIO');
-    asBool('encoder_pullups', 'ENCODER_USE_INTERNAL_PULLUPS');
+    // Read past: the pull-ups are always on now, whatever an old header said.
+    take('ENCODER_USE_INTERNAL_PULLUPS');
     asBool('encoder_buttons', 'ENCODER_AS_BUTTONS');
-    asBool('buttons_pullups', 'BUTTONS_USE_INTERNAL_PULLUPS');
+    take('BUTTONS_USE_INTERNAL_PULLUPS');
     asPin('ir_receiver', 'IR_RECEIVER_GPIO');
     const dac = take('AUDIO_DAC');
     if (dac !== undefined) {

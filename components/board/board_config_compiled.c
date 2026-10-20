@@ -37,7 +37,8 @@ void board_config_compiled(board_config_t *config)
     config->encoder_right = PIN(ENCODER_RIGHT_GPIO);
     config->encoder_left = PIN(ENCODER_LEFT_GPIO);
     config->encoder_button = PIN(ENCODER_BUTTON_GPIO);
-    config->encoder_pullups = ENCODER_USE_INTERNAL_PULLUPS ? 1U : 0U;
+    // Always on (board_options.h); kept in the record for the files' sake.
+    config->encoder_pullups = 1U;
     config->encoder_buttons = ENCODER_AS_BUTTONS ? 1U : 0U;
 #ifdef BUTTON_SLEEP_GPIO
     config->button_sleep = PIN(BUTTON_SLEEP_GPIO);
@@ -51,7 +52,7 @@ void board_config_compiled(board_config_t *config)
 #ifdef BUTTON_NEXT_GPIO
     config->button_next = PIN(BUTTON_NEXT_GPIO);
 #endif
-    config->buttons_pullups = BUTTONS_USE_INTERNAL_PULLUPS ? 1U : 0U;
+    config->buttons_pullups = 1U;
 #ifdef IR_RECEIVER_GPIO
     config->ir_receiver = PIN(IR_RECEIVER_GPIO);
 #endif

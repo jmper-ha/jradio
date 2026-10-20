@@ -141,3 +141,10 @@ void board_audio_set_tone(const audio_tone_settings_t *settings);
 void board_audio_set_levelling(bool enabled);
 void board_audio_level_begin(float start_db, bool remembered, bool fixed);
 void board_audio_level_status(audio_level_status_t *status);
+/* The listener's nudge for the station playing (AUDIO_LEVEL_NUDGE_LIMIT_DB).
+ * A begin clears it and stops offering it; the player offers it after the
+ * begin for a source that takes one, and withdraws it when that source
+ * stops. The second answers whether the source playing takes one, and the
+ * nudge it has. */
+void board_audio_level_offer_nudge(bool offered, int nudge_db);
+bool board_audio_level_nudge(int *nudge_db);

@@ -2037,10 +2037,13 @@ static esp_err_t web_server_progress_get(httpd_req_t *request)
     web_json_literal(&writer, "},");
     /* The levelling's reading rides here too: the correction creeps at a tenth
      * of a decibel a second, which pushed would be a frame a second per
-     * browser for nothing. Absent while it is off. */
+     * browser for nothing. Absent while it is off and the source takes no
+     * nudge; "nudge_db" is there only while it does - a station. */
     audio_level_status_t level;
     board_audio_level_status(&level);
-    if (level.phase != AUDIO_LEVEL_OFF) {
+    int nudge_db = 0;
+    const bool nudge = board_audio_level_nudge(&nudge_db);
+    if (level.phase != AUDIO_LEVEL_OFF || nudge) {
         static const char *const k_phases[] = {"off", "measuring", "learning", "settled"};
         web_json_literal(&writer, "\"level\":{\"phase\":");
         web_json_string(&writer, k_phases[level.phase < 4U ? level.phase : 0U]);
@@ -2052,6 +2055,10 @@ static esp_err_t web_server_progress_get(httpd_req_t *request)
         web_json_literal(&writer, level.capped ? "true" : "false");
         web_json_literal(&writer, ",\"fixed\":");
         web_json_literal(&writer, level.fixed ? "true" : "false");
+        if (nudge) {
+            web_json_literal(&writer, ",\"nudge_db\":");
+            web_json_format(&writer, "%d", nudge_db);
+        }
         web_json_literal(&writer, "},");
     }
     /* The generation is what the page watches: the picture itself comes from

@@ -44,6 +44,9 @@
   const toneReset = document.querySelector('#tone-reset');
   const toneLevel = document.querySelector('#tone-level');
   const toneLevelStatus = document.querySelector('#tone-level-status');
+  const toneNudgeRow = document.querySelector('#tone-nudge-row');
+  const toneNudge = document.querySelector('#tone-nudge');
+  const toneNudgeValue = document.querySelector('#tone-nudge-value');
   const streamMeta = document.querySelector('#stream-meta');
   const playerError = document.querySelector('#player-error');
   const commandStatus = document.querySelector('#command-status');
@@ -464,6 +467,11 @@
              level_normalize: false},
     // The levelling's reading from the position poll; null while it is off.
     level: null,
+    /* The station's nudge, sent over the socket rather than as a setting:
+       it belongs to the station playing, not to the device. The newest one
+       moved to while a send is in the air goes after it, as for the tone. */
+    nudgeSentAt: 0,
+    nudgeQueued: null,
     held: '',
     busy: {},
     queued: {},
@@ -495,6 +503,14 @@
     const levelText = v.level_normalize ? levelStatusText(tone.level) : '';
     toneLevelStatus.textContent = levelText;
     toneLevelStatus.hidden = levelText === '';
+    const nudge = isObject(tone.level) && Number.isSafeInteger(tone.level.nudge_db)
+      ? tone.level.nudge_db : null;
+    toneNudgeRow.hidden = nudge === null;
+    // Held, or just sent and not yet back through the poll: left where it is.
+    if (nudge !== null && tone.held !== 'nudge' && Date.now() - tone.nudgeSentAt > 2500) {
+      toneNudge.value = String(nudge);
+    }
+    toneNudgeValue.textContent = toneText(Number(toneNudge.value));
     toneOpen.classList.toggle('is-active',
       v.tone_bass !== 0 || v.tone_treble !== 0 || v.loudness !== 'off');
   }
@@ -584,6 +600,23 @@
       });
   }
 
+  function sendNudge(db) {
+    if (Date.now() - tone.nudgeSentAt < 250) {
+      // A drag fires an input per pixel; the last of a burst goes shortly.
+      if (tone.nudgeQueued === null) {
+        window.setTimeout(() => {
+          const queued = tone.nudgeQueued;
+          tone.nudgeQueued = null;
+          if (queued !== null) sendNudge(queued);
+        }, 250);
+      }
+      tone.nudgeQueued = db;
+      return;
+    }
+    tone.nudgeSentAt = Date.now();
+    sendCommand('player.level_nudge', {db});
+  }
+
   /* Under its button on a wide screen; on a phone the stylesheet makes it a
      sheet from the bottom and these are left alone. */
   function placeTonePanel() {
@@ -666,6 +699,19 @@
     toneLoudnessTreble.addEventListener('change', () => {
       tone.values.loudness_treble = toneLoudnessTreble.checked;
       sendTone('loudness_treble', toneLoudnessTreble.checked);
+    });
+    toneNudge.addEventListener('input', () => {
+      tone.held = 'nudge';
+      const db = Math.round(Number(toneNudge.value));
+      toneNudgeValue.textContent = toneText(db);
+      sendNudge(db);
+    });
+    toneNudge.addEventListener('change', () => { tone.held = ''; });
+    toneNudge.addEventListener('dblclick', () => {
+      tone.held = '';
+      toneNudge.value = '0';
+      toneNudgeValue.textContent = toneText(0);
+      sendNudge(0);
     });
     toneLevel.addEventListener('change', () => {
       tone.values.level_normalize = toneLevel.checked;

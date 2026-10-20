@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "audio_level.h"
 #include "player_control.h"
 
 /* Every fixture below is a device that is on a network: the two sources that
@@ -867,6 +868,21 @@ static void test_tuning_by_hand_is_the_tuners_alone(void)
     assert(player_control_decide(&state, &up) == PLAYER_OPERATION_INVALID);
 }
 
+static void test_a_nudge_is_a_stations_alone(void)
+{
+    player_snapshot_t state = {.active_source = AUDIO_SOURCE_INTERNET_RADIO,
+                               .playback_state = PLAYER_PLAYBACK_RECONNECTING};
+    player_command_t nudge = {.kind = PLAYER_COMMAND_LEVEL_NUDGE, .level_nudge_db = -6};
+    assert(player_control_decide(&state, &nudge) == PLAYER_OPERATION_LEVEL_NUDGE);
+    nudge.level_nudge_db = AUDIO_LEVEL_NUDGE_LIMIT_DB + 1;
+    assert(player_control_decide(&state, &nudge) == PLAYER_OPERATION_INVALID);
+    nudge.level_nudge_db = 2;
+    state.active_source = AUDIO_SOURCE_YANDEX;
+    assert(player_control_decide(&state, &nudge) == PLAYER_OPERATION_INVALID);
+    state.active_source = AUDIO_SOURCE_USB;
+    assert(player_control_decide(&state, &nudge) == PLAYER_OPERATION_INVALID);
+}
+
 static void test_a_frequency_reads_with_one_decimal(void)
 {
     char text[12];
@@ -998,6 +1014,7 @@ int main(void)
     test_a_list_row_leads_with_the_frequency();
     test_a_preset_takes_the_name_that_holds_still();
     test_tuning_by_hand_is_the_tuners_alone();
+    test_a_nudge_is_a_stations_alone();
     test_a_preset_is_chosen_without_a_network();
     test_snapshot_equality_notices_the_frequency();
     test_the_signal_is_a_scale_that_does_not_flicker();

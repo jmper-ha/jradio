@@ -372,6 +372,29 @@ static void test_the_sleep_row_is_a_ring(void)
     }
 }
 
+/* The station's nudge comes and goes with the source: it stands under the
+   tone, above the speaker, and is no switch. */
+static void test_the_station_row_sits_under_the_tone(void)
+{
+    ui_quick_menu_t state;
+    open_with_all_rows(&state);
+    assert(!ui_quick_menu_item_visible(&state, UI_QUICK_ITEM_LEVEL_NUDGE));
+    ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_LEVEL_NUDGE, true);
+    assert(ui_quick_menu_visible_count(&state) == 8U);
+    while (state.item != UI_QUICK_ITEM_LOUDNESS) {
+        (void)ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1100U);
+    }
+    (void)ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1200U);
+    assert(state.item == UI_QUICK_ITEM_LEVEL_NUDGE);
+    assert(!ui_quick_item_is_switch(UI_QUICK_ITEM_LEVEL_NUDGE));
+    (void)ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1300U);
+    assert(state.item == UI_QUICK_ITEM_BT_OUTPUT);
+    // A station stopping takes the row, and the cursor off it.
+    (void)ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_LEFT, 1400U);
+    ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_LEVEL_NUDGE, false);
+    assert(state.item != UI_QUICK_ITEM_LEVEL_NUDGE);
+}
+
 static void test_every_row_is_named_in_both_languages(void)
 {
     for (unsigned int item = 0U; item < (unsigned int)UI_QUICK_ITEM_COUNT; ++item) {
@@ -415,6 +438,7 @@ int main(void)
     test_an_untouched_panel_closes_itself();
     test_the_switch_rows_are_the_two_switches();
     test_the_sleep_row_is_a_ring();
+    test_the_station_row_sits_under_the_tone();
     test_every_row_is_named_in_both_languages();
     test_null_is_survivable();
     printf("ui_quick_menu tests passed\n");

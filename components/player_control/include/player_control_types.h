@@ -133,6 +133,10 @@ typedef enum {
     PLAYER_COMMAND_FM_TUNE,
     PLAYER_COMMAND_FM_SEEK_UP,
     PLAYER_COMMAND_FM_SEEK_DOWN,
+    /* The listener's nudge for the station playing, to `level_nudge_db`
+     * (audio_level.h). Only a station of the radio's takes one. Appended,
+     * for the reason the ones above were. */
+    PLAYER_COMMAND_LEVEL_NUDGE,
 } player_command_kind_t;
 
 typedef struct {
@@ -146,6 +150,8 @@ typedef struct {
     uint32_t position_seconds;
     // Only PLAYER_COMMAND_FM_TUNE reads this, for the same reason.
     uint32_t frequency_khz;
+    // Only PLAYER_COMMAND_LEVEL_NUDGE reads this, whole decibels.
+    int8_t level_nudge_db;
 } player_command_t;
 
 typedef struct {
@@ -253,6 +259,7 @@ typedef enum {
     PLAYER_OPERATION_FM_TUNE,
     PLAYER_OPERATION_FM_SEEK_UP,
     PLAYER_OPERATION_FM_SEEK_DOWN,
+    PLAYER_OPERATION_LEVEL_NUDGE,
 } player_operation_t;
 
 /* Whether a drive being pulled out should take the picture on screen with it.

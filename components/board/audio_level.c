@@ -114,6 +114,14 @@ void audio_level_set_enabled(audio_level_t *level, bool enabled)
     }
 }
 
+void audio_level_set_nudge(audio_level_t *level, int nudge_db)
+{
+    if (level == NULL) return;
+    if (nudge_db > AUDIO_LEVEL_NUDGE_LIMIT_DB) nudge_db = AUDIO_LEVEL_NUDGE_LIMIT_DB;
+    if (nudge_db < -AUDIO_LEVEL_NUDGE_LIMIT_DB) nudge_db = -AUDIO_LEVEL_NUDGE_LIMIT_DB;
+    level->nudge_db = (int8_t)nudge_db;
+}
+
 void audio_level_begin(audio_level_t *level, float start_db, bool remembered, bool fixed)
 {
     if (level == NULL || !level->enabled) return;
@@ -229,10 +237,11 @@ uint16_t audio_level_apply(audio_level_t *level, uint16_t volume_gain)
 {
     if (level == NULL) return volume_gain;
     level->capped = false;
-    if (level->gain_db == 0.0f || volume_gain == 0U) return volume_gain;
-    const float gain = (float)volume_gain * powf(10.0f, level->gain_db / 20.0f);
+    const float db = level->gain_db + (float)level->nudge_db;
+    if (db == 0.0f || volume_gain == 0U) return volume_gain;
+    const float gain = (float)volume_gain * powf(10.0f, db / 20.0f);
     if (gain >= (float)AUDIO_VOLUME_UNITY) {
-        level->capped = level->gain_db > 0.0f;
+        level->capped = db > 0.0f;
         return (uint16_t)AUDIO_VOLUME_UNITY;
     }
     return (uint16_t)(gain + 0.5f);
@@ -240,18 +249,21 @@ uint16_t audio_level_apply(audio_level_t *level, uint16_t volume_gain)
 
 bool audio_level_idle(const audio_level_t *level)
 {
-    return level == NULL || (!level->enabled && level->gain_db == 0.0f);
+    return level == NULL ||
+           (!level->enabled && level->gain_db == 0.0f && level->nudge_db == 0);
 }
 
 void audio_level_status(const audio_level_t *level, audio_level_status_t *status)
 {
     if (status == NULL) return;
     memset(status, 0, sizeof(*status));
-    if (level == NULL || !level->enabled) return;
+    if (level == NULL) return;
+    status->nudge_db = level->nudge_db;
+    status->capped = level->capped;
+    if (!level->enabled) return;
     status->gain_db = level->gain_db;
     status->wanted_db = level->wanted_db;
     status->loudness = level->blocks > 0U ? power_to_lufs(level->mean_power) : 0.0f;
-    status->capped = level->capped;
     status->fixed = level->fixed;
     if (level->fixed) {
         status->phase = AUDIO_LEVEL_SETTLED;

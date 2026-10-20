@@ -121,6 +121,38 @@ static void test_accepts_exact_player_commands(void)
 /* Skipping a track carries nothing but the action: which track is playing is
  * the device's business, and an index here would be a second opinion about it
  * that could already be stale by the time it arrives. */
+static void test_accepts_the_station_nudge(void)
+{
+    web_command_t command;
+    const char *down =
+        "{\"type\":\"command\",\"id\":\"n1\",\"action\":\"player.level_nudge\",\"db\":-3}";
+    assert(parse(down, &command) == WEB_PROTOCOL_OK);
+    assert(command.kind == WEB_COMMAND_PLAYER);
+    assert(command.player.kind == PLAYER_COMMAND_LEVEL_NUDGE);
+    assert(command.player.level_nudge_db == -3);
+    assert(command.player.item_index == PLAYER_ITEM_NONE);
+    const char *zero =
+        "{\"type\":\"command\",\"id\":\"n2\",\"action\":\"player.level_nudge\",\"db\":0}";
+    assert(parse(zero, &command) == WEB_PROTOCOL_OK);
+    assert(command.player.level_nudge_db == 0);
+    // Whole decibels inside the limit, and nothing else beside them.
+    assert(parse("{\"type\":\"command\",\"id\":\"n3\",\"action\":\"player.level_nudge\","
+                 "\"db\":1.5}", &command) != WEB_PROTOCOL_OK);
+    assert(parse("{\"type\":\"command\",\"id\":\"n4\",\"action\":\"player.level_nudge\","
+                 "\"db\":7}", &command) != WEB_PROTOCOL_OK);
+    assert(parse("{\"type\":\"command\",\"id\":\"n5\",\"action\":\"player.level_nudge\","
+                 "\"db\":1e30}", &command) != WEB_PROTOCOL_OK);
+    assert(parse("{\"type\":\"command\",\"id\":\"n6\",\"action\":\"player.level_nudge\","
+                 "\"db\":\"2\"}", &command) != WEB_PROTOCOL_OK);
+    assert(parse("{\"type\":\"command\",\"id\":\"n7\",\"action\":\"player.level_nudge\"}",
+                 &command) != WEB_PROTOCOL_OK);
+    assert(parse("{\"type\":\"command\",\"id\":\"n8\",\"action\":\"player.level_nudge\","
+                 "\"db\":1,\"index\":2}", &command) != WEB_PROTOCOL_OK);
+    // And a number named db means nothing to the other commands.
+    assert(parse("{\"type\":\"command\",\"id\":\"n9\",\"action\":\"player.toggle\","
+                 "\"db\":1}", &command) != WEB_PROTOCOL_OK);
+}
+
 static void test_accepts_the_next_track_command(void)
 {
     web_command_t command;
@@ -697,6 +729,7 @@ int main(void)
 {
     test_accepts_exact_player_commands();
     test_accepts_source_and_station_selection();
+    test_accepts_the_station_nudge();
     test_accepts_the_next_track_command();
     test_accepts_the_like_command();
     test_accepts_the_dislike_command();

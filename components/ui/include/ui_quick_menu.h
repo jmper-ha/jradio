@@ -35,6 +35,10 @@ typedef enum {
     UI_QUICK_ITEM_BASS,
     UI_QUICK_ITEM_TREBLE,
     UI_QUICK_ITEM_LOUDNESS,
+    /* The listener's nudge for the station playing (audio_level.h): there
+     * only while a station of the radio's plays, the one source a single
+     * number per station means something for. */
+    UI_QUICK_ITEM_LEVEL_NUDGE,
     UI_QUICK_ITEM_BT_OUTPUT,
     UI_QUICK_ITEM_COUNT,
 } ui_quick_item_t;

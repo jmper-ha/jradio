@@ -93,8 +93,8 @@ void ui_quick_menu_init(ui_quick_menu_t *state)
     state->open = false;
     state->editing = false;
     state->item = UI_QUICK_ITEM_SLEEP;
-    /* The sleep timer, the alarm and the sound are always there; brightness
-     * and the speaker are told to us. Starting with all of them would draw a
+    /* The sleep timer, the alarm and the sound are always there; brightness,
+     * the station's nudge and the speaker are told to us. Starting with all of them would draw a
      * Bluetooth row for one pass on a board that has no module. */
     state->visible = UI_QUICK_VISIBLE(UI_QUICK_ITEM_SLEEP) | UI_QUICK_VISIBLE(UI_QUICK_ITEM_ALARM) |
                      UI_QUICK_VISIBLE(UI_QUICK_ITEM_BASS) | UI_QUICK_VISIBLE(UI_QUICK_ITEM_TREBLE) |
@@ -263,6 +263,7 @@ const char *ui_quick_item_label(ui_quick_item_t item, device_language_t language
     case UI_QUICK_ITEM_BASS: return device_text(DEVICE_TEXT_ROW_TONE_BASS, language);
     case UI_QUICK_ITEM_TREBLE: return device_text(DEVICE_TEXT_ROW_TONE_TREBLE, language);
     case UI_QUICK_ITEM_LOUDNESS: return device_text(DEVICE_TEXT_QUICK_LOUDNESS, language);
+    case UI_QUICK_ITEM_LEVEL_NUDGE: return device_text(DEVICE_TEXT_QUICK_LEVEL_NUDGE, language);
     default: break;
     }
     return "";

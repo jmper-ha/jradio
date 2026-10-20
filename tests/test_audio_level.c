@@ -224,6 +224,38 @@ static void test_switching_off_slopes_back_and_goes_idle(void)
     assert(status.phase == AUDIO_LEVEL_OFF);
 }
 
+static void test_a_nudge_works_with_the_levelling_off_and_on(void)
+{
+    audio_level_t level;
+    audio_level_init(&level);
+    // Off: the nudge alone, and no longer idle while it is there.
+    audio_level_set_nudge(&level, -6);
+    assert(!audio_level_idle(&level));
+    assert(NEAR((float)audio_level_apply(&level, AUDIO_VOLUME_UNITY),
+                (float)AUDIO_VOLUME_UNITY / 2.0f, 200.0f));
+    audio_level_status_t status;
+    audio_level_status(&level, &status);
+    assert(status.phase == AUDIO_LEVEL_OFF && status.nudge_db == -6);
+    // Held to its limit.
+    audio_level_set_nudge(&level, 40);
+    assert(level.nudge_db == AUDIO_LEVEL_NUDGE_LIMIT_DB);
+    // A lift inside the volume's room only, as the correction's is.
+    assert(audio_level_apply(&level, AUDIO_VOLUME_UNITY) == AUDIO_VOLUME_UNITY);
+    audio_level_status(&level, &status);
+    assert(status.capped);
+    // On: added to the correction, and kept through a begin.
+    audio_level_set_enabled(&level, true);
+    audio_level_set_nudge(&level, 3);
+    audio_level_begin(&level, -9.0f, true, false);
+    assert(level.nudge_db == 3);
+    assert(NEAR((float)audio_level_apply(&level, AUDIO_VOLUME_UNITY),
+                (float)AUDIO_VOLUME_UNITY / 2.0f, 200.0f));
+    audio_level_set_nudge(&level, 0);
+    audio_level_set_enabled(&level, false);
+    play(&level, -14.0f, 2.0f, RATE);
+    assert(audio_level_idle(&level));
+}
+
 static void test_a_known_loudness_is_corrected_without_measuring(void)
 {
     // A Yandex track's r128 of -10.55 LUFS: 5.45 dB too loud for -16.
@@ -245,6 +277,7 @@ int main(void)
     test_a_lift_stays_inside_the_volume();
     test_tags_are_taken_as_given();
     test_switching_off_slopes_back_and_goes_idle();
+    test_a_nudge_works_with_the_levelling_off_and_on();
     puts("audio level tests passed");
     return 0;
 }

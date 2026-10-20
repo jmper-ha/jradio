@@ -196,6 +196,10 @@ typedef enum {
     /* Loudness on the quick panel, shortened: the full word is 124 px in the
      * 14 px face, and the name column of the 240 px panels is 98. */
     DEVICE_TEXT_QUICK_LOUDNESS,
+    /* The station's own nudge on the quick panel. Just the word: beside a
+     * value in decibels, under the tone, it reads as the station's level -
+     * and "Station level" does not fit the 98 px column. */
+    DEVICE_TEXT_QUICK_LEVEL_NUDGE,
 
     /* The tuner's line under the frequency: the unit, the mode, the signal,
      * and the word shown while a seek is under way. */

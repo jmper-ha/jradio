@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "audio_level.h"
 #include "cJSON.h"
 
 enum {
@@ -15,6 +16,7 @@ enum {
     FIELD_SSID = 1U << 5,
     FIELD_PASSWORD = 1U << 6,
     FIELD_POSITION = 1U << 7,
+    FIELD_DB = 1U << 8,
 };
 
 #define COMMON_FIELDS (FIELD_TYPE | FIELD_ID | FIELD_ACTION)
@@ -613,6 +615,7 @@ static uint32_t field_bit(const char *name)
     if (strcmp(name, "source") == 0) return FIELD_SOURCE;
     if (strcmp(name, "index") == 0) return FIELD_INDEX;
     if (strcmp(name, "position") == 0) return FIELD_POSITION;
+    if (strcmp(name, "db") == 0) return FIELD_DB;
     if (strcmp(name, "ssid") == 0) return FIELD_SSID;
     if (strcmp(name, "password") == 0) return FIELD_PASSWORD;
     return 0U;
@@ -804,6 +807,23 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
         }
         parsed->player.kind = PLAYER_COMMAND_SEEK;
         parsed->player.position_seconds = numbers->position;
+        return true;
+    }
+    /* The station's nudge, in whole decibels and signed - which is why it is
+     * read from cJSON rather than by the scanner the index and the position
+     * share, which knows only counts. */
+    if (strcmp(action, "player.level_nudge") == 0) {
+        if (fields != (COMMON_FIELDS | FIELD_DB)) return false;
+        const cJSON *db = object_item(root, "db");
+        // The range first: a cast of 1e30 to int would be undefined.
+        if (!cJSON_IsNumber(db) || !(db->valuedouble <= AUDIO_LEVEL_NUDGE_LIMIT_DB) ||
+            !(db->valuedouble >= -AUDIO_LEVEL_NUDGE_LIMIT_DB) ||
+            db->valuedouble != (double)(int)db->valuedouble) {
+            return false;
+        }
+        parsed->player.kind = PLAYER_COMMAND_LEVEL_NUDGE;
+        parsed->player.source = AUDIO_SOURCE_INTERNET_RADIO;
+        parsed->player.level_nudge_db = (int8_t)db->valuedouble;
         return true;
     }
     return false;

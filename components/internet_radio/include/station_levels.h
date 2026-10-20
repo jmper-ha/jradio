@@ -16,6 +16,10 @@
  * brought from elsewhere, is levelled all the same, and the playlist page
  * stays the playlist.
  *
+ * Beside it, the listener's own nudge for the station, in whole decibels -
+ * a third field, written only when it is not 0. A station nudged before it
+ * was ever measured has an empty second field.
+ *
  * Most recently played first, in memory and in the file; past the cap the
  * one played longest ago goes. Pure, and tested on the host. */
 
@@ -24,10 +28,16 @@
 #define STATION_LEVELS_MAX 256U
 /* A correction that moved less than this is not worth a write to flash. */
 #define STATION_LEVELS_WRITE_STEP_DB 0.5f
+/* What a nudge read from the file may be; the player holds it to its own,
+ * narrower limit. */
+#define STATION_LEVELS_NUDGE_MAX 20
+// tenths_db of a station that has a nudge and no measurement yet.
+#define STATION_LEVELS_UNMEASURED INT16_MIN
 
 typedef struct {
     uint32_t key;
     int16_t tenths_db;
+    int8_t nudge_db;
 } station_level_t;
 
 typedef struct {
@@ -42,11 +52,21 @@ uint32_t station_levels_key(const char *url);
  * are skipped. */
 void station_levels_load(station_levels_t *levels, const char *path);
 
+// False for a station never measured, nudged or not.
 bool station_levels_find(const station_levels_t *levels, uint32_t key, float *db);
 
-/* Records `db` for `key` and moves it to the front. True when the table now
- * differs from the file by enough to be written: a new station, or one whose
- * correction moved by STATION_LEVELS_WRITE_STEP_DB or more. */
+// The station's nudge; 0 for one that has none or is not in the table.
+int station_levels_nudge(const station_levels_t *levels, uint32_t key);
+
+/* Records the nudge for `key` and moves it to the front, keeping what was
+ * measured. True when the table changed and wants writing; a nudge of 0 for
+ * a station not in the table changes nothing. */
+bool station_levels_set_nudge(station_levels_t *levels, uint32_t key, int nudge_db);
+
+/* Records `db` for `key` and moves it to the front, keeping its nudge. True
+ * when the table now differs from the file by enough to be written: a new
+ * station, a first measurement, or a correction that moved by
+ * STATION_LEVELS_WRITE_STEP_DB or more. */
 bool station_levels_note(station_levels_t *levels, uint32_t key, float db);
 
 // Through a temporary file and a rename, so a reset mid-write loses nothing.

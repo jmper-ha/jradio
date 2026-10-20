@@ -36,6 +36,10 @@
  * and only the quiet ones need the volume's room. */
 #define AUDIO_LEVEL_TARGET_LUFS (-16.0f)
 #define AUDIO_LEVEL_LIMIT_DB 9.0f
+/* The listener's own word on a station, added to whatever the levelling
+ * makes of it - or the whole of it with the levelling off. Whole decibels:
+ * it is set a step at a time by ear. */
+#define AUDIO_LEVEL_NUDGE_LIMIT_DB 6
 
 typedef enum {
     AUDIO_LEVEL_OFF = 0,
@@ -54,6 +58,10 @@ typedef struct {
     float loudness;     /* the estimate, LUFS; meaningless while measuring */
     bool capped;        /* a lift the volume had no room for, in part or whole */
     bool fixed;         /* given by the source (tags), not measured */
+    /* The listener's nudge, in whole decibels. Reported with the levelling
+     * off too - the nudge works without it - while everything above is then
+     * zero and the phase AUDIO_LEVEL_OFF. */
+    int8_t nudge_db;
 } audio_level_status_t;
 
 typedef struct {
@@ -76,6 +84,7 @@ typedef struct {
     // In the slow phase the correction starts moving only past a dead band.
     bool moving;
     bool capped;
+    int8_t nudge_db;
 } audio_level_t;
 
 void audio_level_init(audio_level_t *level);
@@ -91,12 +100,18 @@ void audio_level_set_enabled(audio_level_t *level, bool enabled);
  * caller ramps. */
 void audio_level_begin(audio_level_t *level, float start_db, bool remembered, bool fixed);
 
+/* The listener's nudge, within +-AUDIO_LEVEL_NUDGE_LIMIT_DB. Kept across a
+ * begin and across switching the levelling off: it belongs to the station,
+ * and the caller says it again - 0 included - when the station changes. It
+ * jumps, and the caller ramps it across the next block like the volume. */
+void audio_level_set_nudge(audio_level_t *level, int nudge_db);
+
 /* Measures `frames` interleaved stereo frames at `rate` Hz and moves the
  * correction by the time they take. Silence is fine - it is gated out. */
 void audio_level_measure(audio_level_t *level, uint32_t rate, const int16_t *in, size_t frames);
 
-/* The volume's multiplier (AUDIO_VOLUME_UNITY units) with the correction in
- * it, never above AUDIO_VOLUME_UNITY. Records whether a lift was cut short. */
+/* The volume's multiplier (AUDIO_VOLUME_UNITY units) with the correction and
+ * the nudge in it, never above AUDIO_VOLUME_UNITY. Records whether a lift was cut short. */
 uint16_t audio_level_apply(audio_level_t *level, uint16_t volume_gain);
 
 /* Nothing applied and nothing to slope back from: the caller may keep its

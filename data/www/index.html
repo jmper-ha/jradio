@@ -300,6 +300,13 @@
       <input id="tone-level" type="checkbox">
     </div>
     <p id="tone-level-status" class="tone-note" hidden></p>
+    <!-- The listener's own word on the station playing: only a station of
+         the radio's takes one, so the row is there only while one plays. -->
+    <div id="tone-nudge-row" class="tone-slider" hidden>
+      <label for="tone-nudge" data-i18n="player.tone_nudge">Громкость этой станции</label>
+      <output id="tone-nudge-value"></output>
+      <input id="tone-nudge" type="range" min="-6" max="6" step="1" value="0">
+    </div>
     <button id="tone-reset" class="secondary-button tone-reset" type="button" data-i18n="player.tone_reset">Сбросить</button>
   </section>
 

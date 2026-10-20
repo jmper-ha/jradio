@@ -653,6 +653,7 @@
                    'The colours change on the device screen at once. If something becomes unreadable, the Theme row on the device takes you back to Standard.'],
     'player.tone': ['Тембр', 'Tone'],
     'player.tone_bass': ['Низкие', 'Bass'],
+    'player.tone_nudge': ['Громкость этой станции', 'This station\'s volume'],
     'player.tone_treble': ['Высокие', 'Treble'],
     'player.db': ['дБ', 'dB'],
     'player.tone_reset': ['Сбросить', 'Reset'],

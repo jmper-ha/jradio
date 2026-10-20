@@ -101,6 +101,70 @@ static void test_bad_lines_are_skipped(void)
     remove(k_path);
 }
 
+static void test_a_nudge_rides_beside_the_measurement(void)
+{
+    s_levels.count = 0U;
+    remove(k_path);
+    // Nothing to say for a station unknown and left alone.
+    assert(!station_levels_set_nudge(&s_levels, 1U, 0));
+    assert(s_levels.count == 0U);
+    // Nudged before it was ever measured: a nudge and no level.
+    assert(station_levels_set_nudge(&s_levels, 1U, 3));
+    assert(!station_levels_set_nudge(&s_levels, 1U, 3));
+    assert(!station_levels_find(&s_levels, 1U, NULL));
+    assert(station_levels_nudge(&s_levels, 1U) == 3);
+    // Its first measurement is written even though it moved "nothing".
+    assert(station_levels_note(&s_levels, 1U, 0.1f));
+    float db = 0.0f;
+    assert(station_levels_find(&s_levels, 1U, &db) && fabsf(db - 0.1f) < 0.001f);
+    // A measured station keeps its nudge through a remeasurement, small or not.
+    assert(!station_levels_note(&s_levels, 1U, 0.3f));
+    assert(station_levels_note(&s_levels, 1U, -2.0f));
+    assert(station_levels_nudge(&s_levels, 1U) == 3);
+    // And the measurement through a nudge.
+    assert(station_levels_note(&s_levels, 2U, -5.0f));
+    assert(station_levels_set_nudge(&s_levels, 2U, -2));
+    assert(station_levels_note(&s_levels, 3U, 4.0f));
+    assert(station_levels_set_nudge(&s_levels, 4U, -6));
+    assert(station_levels_save(&s_levels, k_path));
+    FILE *file = fopen(k_path, "r");
+    assert(file != NULL);
+    char text[128];
+    const size_t length = fread(text, 1U, sizeof(text) - 1U, file);
+    text[length] = '\0';
+    fclose(file);
+    // No third field without a nudge, no second without a measurement.
+    assert(strcmp(text, "00000004,,-6\n00000003,40\n00000002,-50,-2\n00000001,-20,3\n") == 0);
+    station_levels_load(&s_reloaded, k_path);
+    assert(s_reloaded.count == 4U);
+    assert(station_levels_find(&s_reloaded, 2U, &db) && fabsf(db + 5.0f) < 0.001f);
+    assert(station_levels_nudge(&s_reloaded, 2U) == -2);
+    assert(station_levels_nudge(&s_reloaded, 3U) == 0);
+    assert(!station_levels_find(&s_reloaded, 4U, NULL));
+    assert(station_levels_nudge(&s_reloaded, 4U) == -6);
+    assert(station_levels_nudge(&s_reloaded, 99U) == 0);
+    remove(k_path);
+}
+
+static void test_bad_nudges_are_skipped(void)
+{
+    FILE *file = fopen(k_path, "w");
+    assert(file != NULL);
+    fputs("0000000a,,\n"
+          "0000000b,\n"
+          "0000000c,5,x\n"
+          "0000000d,5,99\n"
+          "0000000e,5,1,2\n"
+          "0000000f,,0\n"
+          "00000010,-5,-2\n",
+          file);
+    fclose(file);
+    station_levels_load(&s_levels, k_path);
+    assert(s_levels.count == 1U);
+    assert(station_levels_nudge(&s_levels, 0x10U) == -2);
+    remove(k_path);
+}
+
 int main(void)
 {
     test_the_key_is_fnv1a();
@@ -108,6 +172,8 @@ int main(void)
     test_a_small_move_is_not_written();
     test_past_the_cap_the_oldest_goes();
     test_bad_lines_are_skipped();
+    test_a_nudge_rides_beside_the_measurement();
+    test_bad_nudges_are_skipped();
     puts("station levels tests passed");
     return 0;
 }

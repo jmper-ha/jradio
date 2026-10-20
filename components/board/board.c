@@ -210,6 +210,11 @@ static uint32_t s_level_begin_done;
 static float s_level_begin_db;
 static bool s_level_begin_remembered;
 static bool s_level_begin_fixed;
+/* The listener's nudge, and whether what plays takes one: only a station
+ * does, and any begin - a track of a chain, a file - takes it away until the
+ * player says otherwise. */
+static int8_t s_level_nudge_db;
+static bool s_level_nudge_offered;
 static audio_level_status_t s_level_status;
 static audio_level_t s_level;
 
@@ -227,6 +232,8 @@ void board_audio_level_begin(float start_db, bool remembered, bool fixed)
     s_level_begin_remembered = remembered;
     s_level_begin_fixed = fixed;
     s_level_begin_asked++;
+    s_level_nudge_db = 0;
+    s_level_nudge_offered = false;
     /* Said at once rather than at the next block: a source whose sound goes
      * past this board - Bluetooth in, analogue FM - writes no block, and the
      * page would go on showing the station before it. */
@@ -238,7 +245,30 @@ void board_audio_level_begin(float start_db, bool remembered, bool fixed)
         s_level_status.wanted_db = start_db;
         s_level_status.fixed = fixed;
     }
+    s_level_status.nudge_db = 0;
     taskEXIT_CRITICAL(&s_level_lock);
+}
+
+void board_audio_level_offer_nudge(bool offered, int nudge_db)
+{
+    if (!offered) nudge_db = 0;
+    if (nudge_db > AUDIO_LEVEL_NUDGE_LIMIT_DB) nudge_db = AUDIO_LEVEL_NUDGE_LIMIT_DB;
+    if (nudge_db < -AUDIO_LEVEL_NUDGE_LIMIT_DB) nudge_db = -AUDIO_LEVEL_NUDGE_LIMIT_DB;
+    taskENTER_CRITICAL(&s_level_lock);
+    s_level_nudge_db = (int8_t)nudge_db;
+    s_level_nudge_offered = offered;
+    s_level_status.nudge_db = (int8_t)nudge_db;
+    taskEXIT_CRITICAL(&s_level_lock);
+}
+
+bool board_audio_level_nudge(int *nudge_db)
+{
+    taskENTER_CRITICAL(&s_level_lock);
+    const bool offered = s_level_nudge_offered;
+    const int db = s_level_nudge_db;
+    taskEXIT_CRITICAL(&s_level_lock);
+    if (nudge_db != NULL) *nudge_db = db;
+    return offered;
 }
 
 void board_audio_level_status(audio_level_status_t *status)
@@ -260,12 +290,14 @@ static uint16_t board_audio_levelled_gain(const void *pcm, uint32_t frames, uint
     const float begin_db = s_level_begin_db;
     const bool remembered = s_level_begin_remembered;
     const bool fixed = s_level_begin_fixed;
+    const int nudge_db = s_level_nudge_db;
     taskEXIT_CRITICAL(&s_level_lock);
     /* Switched on mid-station, it starts from what the player last said about
      * this one - the remembered level - rather than as a stranger. */
     const bool switched_on = enabled && !s_level.enabled;
     audio_level_set_enabled(&s_level, enabled);
     if (begin || switched_on) audio_level_begin(&s_level, begin_db, remembered, fixed);
+    audio_level_set_nudge(&s_level, nudge_db);
     audio_level_measure(&s_level, s_audio_sample_rate, (const int16_t *)pcm, frames);
     const uint16_t levelled = audio_level_apply(&s_level, gain);
     audio_level_status_t status;

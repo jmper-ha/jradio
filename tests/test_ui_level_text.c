@@ -23,6 +23,18 @@ int main(void)
     // A lift the volume had no room for says so; a cut never is one.
     assert(strcmp(show(AUDIO_LEVEL_SETTLED, 5.0f, 5.0f, true), "макс") == 0);
     assert(strcmp(show(AUDIO_LEVEL_SETTLED, -5.0f, -5.0f, true), "\xE2\x80\x93" "5 дБ") == 0);
+    // The nudge is in the figure; with the levelling off it is the figure.
+    static char out[24];
+    audio_level_status_t nudged = {.phase = AUDIO_LEVEL_SETTLED, .gain_db = -6.2f,
+                                   .wanted_db = -6.2f, .nudge_db = 2};
+    assert(ui_level_text(&nudged, "дБ", "…", "макс", out, sizeof(out)));
+    assert(strcmp(out, "\xE2\x80\x93" "4 дБ") == 0);
+    nudged = (audio_level_status_t){.phase = AUDIO_LEVEL_OFF, .nudge_db = -3};
+    assert(ui_level_text(&nudged, "дБ", "…", "макс", out, sizeof(out)));
+    assert(strcmp(out, "\xE2\x80\x93" "3 дБ") == 0);
+    nudged = (audio_level_status_t){.phase = AUDIO_LEVEL_OFF, .nudge_db = 3, .capped = true};
+    assert(ui_level_text(&nudged, "дБ", "…", "макс", out, sizeof(out)));
+    assert(strcmp(out, "макс") == 0);
     // A buffer too small is cut, not overrun.
     char tiny[4];
     const audio_level_status_t status = {.phase = AUDIO_LEVEL_SETTLED, .gain_db = -9.0f};

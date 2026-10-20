@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "audio_level.h"
 #include "file_player_state.h"
 
 #define PLAYER_RSSI_REFRESH_MS 1000U
@@ -348,6 +349,16 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
         if (state->active_source != AUDIO_SOURCE_FM) return PLAYER_OPERATION_INVALID;
         return command->kind == PLAYER_COMMAND_FM_SEEK_UP ? PLAYER_OPERATION_FM_SEEK_UP
                                                            : PLAYER_OPERATION_FM_SEEK_DOWN;
+    case PLAYER_COMMAND_LEVEL_NUDGE:
+        /* A station's, whatever it is doing: set while it reconnects or is
+         * paused, it is heard when it plays. The radio refuses it when no
+         * station is open. */
+        if (state->active_source != AUDIO_SOURCE_INTERNET_RADIO ||
+            command->level_nudge_db > AUDIO_LEVEL_NUDGE_LIMIT_DB ||
+            command->level_nudge_db < -AUDIO_LEVEL_NUDGE_LIMIT_DB) {
+            return PLAYER_OPERATION_INVALID;
+        }
+        return PLAYER_OPERATION_LEVEL_NUDGE;
     case PLAYER_COMMAND_CUE_TRACK:
         // News from the file player about a file it is still playing; the
         // source may have moved on since it was posted, and then it is stale.

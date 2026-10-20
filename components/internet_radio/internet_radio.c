@@ -2755,11 +2755,31 @@ static void radio_level_begin(const char *url, bool track_chain)
     s_level_keyed = true;
     float db = 0.0f;
     const bool remembered = station_levels_find(s_levels, s_level_key, &db);
-    if (remembered) {
-        ESP_LOGI(TAG, "level of station %08lx: %.1f dB, remembered",
-                 (unsigned long)s_level_key, (double)db);
+    const int nudge = station_levels_nudge(s_levels, s_level_key);
+    if (remembered || nudge != 0) {
+        ESP_LOGI(TAG, "level of station %08lx: %.1f dB%s, nudge %+d dB",
+                 (unsigned long)s_level_key, (double)db, remembered ? ", remembered" : "", nudge);
     }
     board_audio_level_begin(remembered ? db : 0.0f, remembered, false);
+    board_audio_level_offer_nudge(true, nudge);
+}
+
+bool internet_radio_set_level_nudge(int nudge_db)
+{
+    if (!s_level_keyed || s_levels == NULL) return false;
+    if (nudge_db > AUDIO_LEVEL_NUDGE_LIMIT_DB) nudge_db = AUDIO_LEVEL_NUDGE_LIMIT_DB;
+    if (nudge_db < -AUDIO_LEVEL_NUDGE_LIMIT_DB) nudge_db = -AUDIO_LEVEL_NUDGE_LIMIT_DB;
+    board_audio_level_offer_nudge(true, nudge_db);
+    /* Written at once, unlike the measurement: it is a step at a time by
+     * hand, so a few writes at most, and a board switched off at the wall
+     * straight after would otherwise forget what was just set by ear. */
+    if (!station_levels_set_nudge(s_levels, s_level_key, nudge_db)) return true;
+    if (station_levels_save(s_levels, STATION_LEVELS_PATH)) {
+        ESP_LOGI(TAG, "level of station %08lx: nudge %+d dB kept", (unsigned long)s_level_key, nudge_db);
+    } else {
+        ESP_LOGW(TAG, "could not save %s", STATION_LEVELS_PATH);
+    }
+    return true;
 }
 
 esp_err_t internet_radio_init(void)
@@ -3122,6 +3142,7 @@ esp_err_t internet_radio_stop(void)
     s_radio.direct_task = NULL;
     taskEXIT_CRITICAL(&s_status_lock);
     radio_level_keep();
+    board_audio_level_offer_nudge(false, 0);
     const esp_err_t output_result = radio_sync_output(&s_radio);
     radio_http_close(&s_radio);
     return output_result;

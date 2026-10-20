@@ -200,6 +200,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_HINT_LINK] = {"OK - привязать, удержание - назад", "OK - link, hold - back"},
     [DEVICE_TEXT_DB_SHORT] = {"дБ", "dB"},
     [DEVICE_TEXT_QUICK_LOUDNESS] = {"Тонкомп.", "Loudness"},
+    [DEVICE_TEXT_QUICK_LEVEL_NUDGE] = {"Станция", "Station"},
     [DEVICE_TEXT_MINUTES_SHORT] = {"мин", "min"},
 
     [DEVICE_TEXT_FM_MHZ] = {"МГц", "MHz"},

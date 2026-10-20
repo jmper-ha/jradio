@@ -6136,6 +6136,44 @@ static void ui_quick_create(void)
  *
  * Short, because a row is a name and a value side by side: the alarm's hour
  * *is* its "on", and the switches are one word. */
+/* The nudge goes to the player as a command and comes back through the
+ * board, a pass or two later. Steps taken quicker than that count on from
+ * the last one sent, or a fast turn would send the same value twice. */
+#define UI_LEVEL_NUDGE_SENT_MS 600U
+static int s_level_nudge_sent;
+static uint32_t s_level_nudge_sent_ms;
+static bool s_level_nudge_sending;
+
+static int ui_level_nudge_now(void)
+{
+    if (s_level_nudge_sending &&
+        (uint32_t)(ui_tick_get_ms() - s_level_nudge_sent_ms) < UI_LEVEL_NUDGE_SENT_MS) {
+        return s_level_nudge_sent;
+    }
+    s_level_nudge_sending = false;
+    int db = 0;
+    (void)board_audio_level_nudge(&db);
+    return db;
+}
+
+static void ui_level_nudge_step(int direction)
+{
+    int next = ui_level_nudge_now() + (direction > 0 ? 1 : -1);
+    if (next > AUDIO_LEVEL_NUDGE_LIMIT_DB) next = AUDIO_LEVEL_NUDGE_LIMIT_DB;
+    if (next < -AUDIO_LEVEL_NUDGE_LIMIT_DB) next = -AUDIO_LEVEL_NUDGE_LIMIT_DB;
+    const player_command_t command = {
+        .kind = PLAYER_COMMAND_LEVEL_NUDGE,
+        .source = AUDIO_SOURCE_INTERNET_RADIO,
+        .item_index = PLAYER_ITEM_NONE,
+        .level_nudge_db = (int8_t)next,
+    };
+    if (!player_control_post(&command)) return;
+    s_level_nudge_sent = next;
+    s_level_nudge_sent_ms = ui_tick_get_ms();
+    s_level_nudge_sending = true;
+    ESP_LOGI(TAG, "quick panel: station nudge %+d dB", next);
+}
+
 static void ui_quick_value_text(ui_quick_item_t item, char *out, size_t size)
 {
     switch (item) {
@@ -6164,6 +6202,12 @@ static void ui_quick_value_text(ui_quick_item_t item, char *out, size_t size)
         const int db = item == UI_QUICK_ITEM_BASS ? (int)s_device_settings.tone_bass
                                                   : (int)s_device_settings.tone_treble;
         // Zero without a sign: "+0 dB" reads as a boost that is not there.
+        if (db == 0) snprintf(out, size, "0 %s", ui_text(DEVICE_TEXT_DB_SHORT));
+        else snprintf(out, size, "%+d %s", db, ui_text(DEVICE_TEXT_DB_SHORT));
+        break;
+    }
+    case UI_QUICK_ITEM_LEVEL_NUDGE: {
+        const int db = ui_level_nudge_now();
         if (db == 0) snprintf(out, size, "0 %s", ui_text(DEVICE_TEXT_DB_SHORT));
         else snprintf(out, size, "%+d %s", db, ui_text(DEVICE_TEXT_DB_SHORT));
         break;
@@ -6397,6 +6441,9 @@ static void ui_quick_apply_step(int direction)
     case UI_QUICK_ITEM_TREBLE:
         ui_tone_setting_step(s_quick.item == UI_QUICK_ITEM_BASS, direction);
         break;
+    case UI_QUICK_ITEM_LEVEL_NUDGE:
+        ui_level_nudge_step(direction);
+        break;
     case UI_QUICK_ITEM_LOUDNESS: {
         // Round the four either way, off included, as the settings row does.
         const unsigned count = DEVICE_LOUDNESS_STRONG + 1U;
@@ -6414,15 +6461,17 @@ static void ui_quick_apply_step(int direction)
     }
 }
 
-/* Which rows the panel has, asked every pass because one of them comes and
- * goes: the Bluetooth row is there while the module answers and the player is
+/* Which rows the panel has, asked every pass because two of them come and
+ * go: the Bluetooth row is there while the module answers and the player is
  * not listening to a phone - sending the sound to a speaker while a phone is
- * feeding it is the one combination the module cannot do. */
+ * feeding it is the one combination the module cannot do - and the station's
+ * nudge while a station plays. */
 static void ui_quick_sync_rows(void)
 {
     const bool bluetooth = board_has_bluetooth() && bt_link_alive() &&
                            ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_BLUETOOTH;
     ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_BT_OUTPUT, bluetooth);
+    ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_LEVEL_NUDGE, board_audio_level_nudge(NULL));
 }
 
 static void ui_quick_poll(uint32_t now_ms)

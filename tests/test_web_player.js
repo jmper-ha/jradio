@@ -110,7 +110,7 @@ const ids = [
   'player-bar', 'player-expand',
   'tone-open', 'tone-panel', 'tone-backdrop', 'tone-close', 'tone-bass', 'tone-treble',
   'tone-bass-value', 'tone-treble-value', 'tone-loudness-treble-row', 'tone-loudness-treble',
-  'tone-reset', 'tone-level', 'tone-level-status',
+  'tone-reset', 'tone-level', 'tone-level-status', 'tone-nudge-row', 'tone-nudge', 'tone-nudge-value',
 ];
 const buttonIds = new Set([
   'play-toggle', 'next-track', 'like-track', 'dislike-track', 'previous-item',
@@ -995,6 +995,30 @@ sendEvent(second, {
   await settle();
   assert.deepEqual(levelPosts().at(-1), {field: 'level_normalize', value: false});
   assert.equal(elements['#tone-level-status'].hidden, true);
+
+  /* The station's nudge: a slider there only while the poll says the source
+     takes one, working with the levelling off, and sent over the socket. */
+  assert.equal(elements['#tone-nudge-row'].hidden, true);
+  progressReply = {cover: {present: false, generation: 0, width: 0, height: 0},
+                   level: {phase: 'off', gain_db: 0, wanted_db: 0, capped: false, fixed: false, nudge_db: -2}};
+  assert.ok(firePendingTimer());
+  await settle();
+  assert.equal(elements['#tone-nudge-row'].hidden, false);
+  assert.equal(elements['#tone-nudge'].value, '-2');
+  assert.equal(elements['#tone-nudge-value'].textContent, '-2 дБ');
+  assert.equal(elements['#tone-level-status'].hidden, true);
+  elements['#tone-nudge'].value = '3';
+  elements['#tone-nudge'].emit('input');
+  const nudgeFrame = JSON.parse(second.sent.at(-1));
+  assert.equal(nudgeFrame.action, 'player.level_nudge');
+  assert.equal(nudgeFrame.db, 3);
+  assert.equal(elements['#tone-nudge-value'].textContent, '+3 дБ');
+  elements['#tone-nudge'].emit('change');
+  // A file or a Yandex track takes none: the row goes.
+  progressReply = {cover: {present: false, generation: 0, width: 0, height: 0}};
+  assert.ok(firePendingTimer());
+  await settle();
+  assert.equal(elements['#tone-nudge-row'].hidden, true);
 
   second.emit('close');
   assert.equal(elements['#socket-state'].textContent, 'Нет связи');

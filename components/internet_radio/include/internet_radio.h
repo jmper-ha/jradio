@@ -65,6 +65,12 @@ bool internet_radio_start_track_chain(const char *display_name,
  * playing is not a chain: a station has no next track, only a next station. */
 bool internet_radio_skip_track(void);
 
+/* The listener's nudge for the station playing, in whole decibels, held to
+ * AUDIO_LEVEL_NUDGE_LIMIT_DB and kept with what the levelling measured for
+ * it. False when no station is playing: a chain's tracks each have their own
+ * loudness, and one nudge for all of them would mean nothing. */
+bool internet_radio_set_level_nudge(int nudge_db);
+
 esp_err_t internet_radio_init(void);
 esp_err_t internet_radio_start(void);
 esp_err_t internet_radio_stop(void);

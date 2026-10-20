@@ -2053,6 +2053,11 @@ static void player_control_task(void *arg)
         case PLAYER_OPERATION_FM_TUNE:
             player_fm_tune(command.frequency_khz);
             break;
+        case PLAYER_OPERATION_LEVEL_NUDGE:
+            if (!internet_radio_set_level_nudge(command.level_nudge_db)) {
+                ESP_LOGW(TAG, "level nudge: no station open");
+            }
+            break;
         case PLAYER_OPERATION_FM_SEEK_UP:
         case PLAYER_OPERATION_FM_SEEK_DOWN:
             player_fm_seek(operation == PLAYER_OPERATION_FM_SEEK_UP);

@@ -32,3 +32,9 @@ bool ui_level_text(const audio_level_status_t *status, const char *db_unit,
     }
     return true;
 }
+
+bool ui_level_settling(const audio_level_status_t *status)
+{
+    return status != NULL &&
+           (status->phase == AUDIO_LEVEL_MEASURING || status->phase == AUDIO_LEVEL_LEARNING);
+}

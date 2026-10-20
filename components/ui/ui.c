@@ -2046,6 +2046,23 @@ static void ui_update_footer(void)
                       ui_text(DEVICE_TEXT_LEVEL_CAPPED), level_text, sizeof(level_text));
     if (show_level) {
         ui_set_label_text_if_changed(s_source_level, level_text);
+        /* The station name's colour while the level is still being found,
+         * its own once it is: the colour says whether the figure is the
+         * station's yet. Set only on a change - of the phase, or of the
+         * theme, which moves the accent's value. */
+        static bool s_level_tinted;
+        static uint32_t s_level_tint;
+        const bool tinted = ui_level_settling(&level);
+        const uint32_t tint = ui_hex(UI_ROLE_ACCENT);
+        if (tinted != s_level_tinted || (tinted && tint != s_level_tint)) {
+            s_level_tinted = tinted;
+            s_level_tint = tint;
+            if (tinted) {
+                lv_obj_set_style_text_color(s_source_level, lv_color_hex(tint), 0);
+            } else {
+                lv_obj_remove_local_style_prop(s_source_level, LV_STYLE_TEXT_COLOR, 0);
+            }
+        }
         if (lv_obj_has_flag(s_source_level, LV_OBJ_FLAG_HIDDEN)) {
             lv_obj_clear_flag(s_source_level, LV_OBJ_FLAG_HIDDEN);
         }

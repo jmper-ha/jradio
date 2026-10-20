@@ -14,3 +14,10 @@
  * language on screen. Pure, and tested on the host. */
 bool ui_level_text(const audio_level_status_t *status, const char *db_unit,
                    const char *measuring, const char *capped, char *out, size_t size);
+
+/* Whether the reading is still on its way - a station being measured, or its
+ * correction moving to where the estimate says. The figure is drawn in the
+ * station name's colour then, and in its own once the level has settled
+ * (remembered, measured and stable, or from the track's own data), so the
+ * colour says whether the number is the station's yet. */
+bool ui_level_settling(const audio_level_status_t *status);

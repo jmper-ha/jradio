@@ -35,6 +35,12 @@ int main(void)
     nudged = (audio_level_status_t){.phase = AUDIO_LEVEL_OFF, .nudge_db = 3, .capped = true};
     assert(ui_level_text(&nudged, "дБ", "…", "макс", out, sizeof(out)));
     assert(strcmp(out, "макс") == 0);
+    // The colour: the station's while it settles, its own once it has.
+    assert(ui_level_settling(&(audio_level_status_t){.phase = AUDIO_LEVEL_MEASURING}));
+    assert(ui_level_settling(&(audio_level_status_t){.phase = AUDIO_LEVEL_LEARNING}));
+    assert(!ui_level_settling(&(audio_level_status_t){.phase = AUDIO_LEVEL_SETTLED}));
+    assert(!ui_level_settling(&(audio_level_status_t){.phase = AUDIO_LEVEL_OFF, .nudge_db = 2}));
+    assert(!ui_level_settling(NULL));
     // A buffer too small is cut, not overrun.
     char tiny[4];
     const audio_level_status_t status = {.phase = AUDIO_LEVEL_SETTLED, .gain_db = -9.0f};

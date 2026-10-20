@@ -7340,6 +7340,14 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
         }
     }
 
+    /* Something was chosen - the wait is over. Left armed, it outlived the
+     * station the web picked straight after the source, and fired on a
+     * later switch from the web: between the old station's stop and the new
+     * one's start the snapshot reads "nothing chosen, stopped" for a pass or
+     * two, and the list flashed up over the player. */
+    if (s_waiting_for_source_item && snapshot->active_item_index != PLAYER_ITEM_NONE) {
+        s_waiting_for_source_item = false;
+    }
     if (s_waiting_for_source_item &&
         ui_player_state_list_is_the_only_screen(snapshot->active_source,
                                                 snapshot->active_item_index,

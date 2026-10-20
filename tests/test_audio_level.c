@@ -79,7 +79,8 @@ static void test_a_new_station_is_measured_then_corrected(void)
     audio_level_status_t status;
     audio_level_status(&level, &status);
     assert(status.phase == AUDIO_LEVEL_MEASURING);
-    // A loud station: -8 LUFS, so 8 dB too loud for a target of -16.
+    // A loud station: -8 LUFS, well over the target.
+    const float loud_db = AUDIO_LEVEL_TARGET_LUFS + 8.0f;
     play(&level, -8.0f, 2.0f, RATE);
     audio_level_status(&level, &status);
     assert(status.phase == AUDIO_LEVEL_MEASURING);
@@ -87,12 +88,12 @@ static void test_a_new_station_is_measured_then_corrected(void)
     play(&level, -8.0f, 4.0f, RATE);
     audio_level_status(&level, &status);
     assert(status.phase == AUDIO_LEVEL_LEARNING);
-    assert(NEAR(status.wanted_db, -8.0f, 0.3f));
+    assert(NEAR(status.wanted_db, loud_db, 0.3f));
     // Caught up at about a decibel a second while the station is new.
     assert(status.gain_db < 0.0f && status.gain_db > -4.0f);
     play(&level, -8.0f, 10.0f, RATE);
     audio_level_status(&level, &status);
-    assert(NEAR(status.gain_db, -8.0f, 0.3f));
+    assert(NEAR(status.gain_db, loud_db, 0.3f));
     play(&level, -8.0f, 20.0f, RATE);
     audio_level_status(&level, &status);
     assert(status.phase == AUDIO_LEVEL_SETTLED);
@@ -137,7 +138,7 @@ static void test_the_slow_phase_keeps_its_speed(void)
     audio_level_status(&level, &status);
     assert(status.phase == AUDIO_LEVEL_SETTLED);
     assert(status.gain_db == -2.0f);
-    play(&level, -10.0f, 10.0f, RATE);
+    play(&level, AUDIO_LEVEL_TARGET_LUFS + 6.0f, 10.0f, RATE);
     audio_level_status(&level, &status);
     assert(NEAR(status.wanted_db, -6.0f, 0.3f));
     // No faster than 0.1 dB/s once remembered: 10 s from the first
@@ -150,13 +151,13 @@ static void test_the_limit_and_the_dead_band(void)
 {
     audio_level_t level;
     begin_fresh(&level);
-    play(&level, 0.0f, 40.0f, RATE);  // 16 dB too loud
+    play(&level, 0.0f, 40.0f, RATE);  // well past the limit too loud
     audio_level_status_t status;
     audio_level_status(&level, &status);
     assert(status.wanted_db == -AUDIO_LEVEL_LIMIT_DB);
     // A remembered station 0.3 dB off where it should be stays put.
     audio_level_begin(&level, -1.7f, true, false);
-    play(&level, -14.0f, 60.0f, RATE);
+    play(&level, AUDIO_LEVEL_TARGET_LUFS + 2.0f, 60.0f, RATE);
     audio_level_status(&level, &status);
     assert(status.gain_db == -1.7f);
 }
@@ -280,8 +281,8 @@ static void test_a_nudge_works_with_the_levelling_off_and_on(void)
 
 static void test_a_known_loudness_is_corrected_without_measuring(void)
 {
-    // A Yandex track's r128 of -10.55 LUFS: 5.45 dB too loud for -16.
-    assert(NEAR(audio_level_correction_db(-10.55f), -5.45f, 0.001f));
+    // A Yandex track's r128 of -10.55 LUFS: the target less that.
+    assert(NEAR(audio_level_correction_db(-10.55f), AUDIO_LEVEL_TARGET_LUFS + 10.55f, 0.001f));
     assert(audio_level_correction_db(-40.0f) == AUDIO_LEVEL_LIMIT_DB);
     assert(audio_level_correction_db(0.0f) == -AUDIO_LEVEL_LIMIT_DB);
     assert(audio_level_correction_db(NAN) == 0.0f);

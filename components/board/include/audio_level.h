@@ -33,8 +33,10 @@
 
 /* What the correction aims every station at, in LUFS. Most streams are
  * mastered louder than this, so most are turned down - which always works -
- * and only the quiet ones need the volume's room. */
-#define AUDIO_LEVEL_TARGET_LUFS (-16.0f)
+ * and only the quiet ones need the volume's room. -14 rather than the -16
+ * first tried (2026-10-20): at -16 the loud stations came out 7-9 dB down,
+ * and the volume had to make up for it. */
+#define AUDIO_LEVEL_TARGET_LUFS (-14.0f)
 #define AUDIO_LEVEL_LIMIT_DB 9.0f
 /* The listener's own word on a station, added to whatever the levelling
  * makes of it - or the whole of it with the levelling off. Whole decibels:

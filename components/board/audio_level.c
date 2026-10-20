@@ -20,6 +20,11 @@
 #define MEASURE_BLOCKS 8U /* 3.2 s */
 // A station never heard is caught up with quickly for this long.
 #define FAST_BLOCKS (MEASURE_BLOCKS + 50U) /* 20 s more */
+/* What is worth keeping for the next time: 20 s of sound. A first estimate
+ * from 3 s may be a jingle, an advert or the presenter, and a station that
+ * starts from a remembered level only refines it at the slow rate - a bad
+ * one kept would be heard for a minute at every start. */
+#define KEEP_BLOCKS 50U /* 20 s */
 // And it is settled once this much has been heard and the correction is there.
 #define SETTLE_BLOCKS 75U /* 30 s */
 
@@ -265,6 +270,7 @@ void audio_level_status(const audio_level_t *level, audio_level_status_t *status
     status->wanted_db = level->wanted_db;
     status->loudness = level->blocks > 0U ? power_to_lufs(level->mean_power) : 0.0f;
     status->fixed = level->fixed;
+    status->keep = !level->fixed && level->blocks >= KEEP_BLOCKS;
     if (level->fixed) {
         status->phase = AUDIO_LEVEL_SETTLED;
     } else if (!level->remembered && level->blocks < MEASURE_BLOCKS) {

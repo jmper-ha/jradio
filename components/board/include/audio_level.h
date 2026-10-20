@@ -58,6 +58,9 @@ typedef struct {
     float loudness;     /* the estimate, LUFS; meaningless while measuring */
     bool capped;        /* a lift the volume had no room for, in part or whole */
     bool fixed;         /* given by the source (tags), not measured */
+    /* Measured from enough sound - 20 s, silence not counted - to be kept
+     * for the next time. Never for a correction given by the source. */
+    bool keep;
     /* The listener's nudge, in whole decibels. Reported with the levelling
      * off too - the nudge works without it - while everything above is then
      * zero and the phase AUDIO_LEVEL_OFF. */

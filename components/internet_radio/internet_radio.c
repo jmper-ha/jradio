@@ -2715,18 +2715,16 @@ static uint32_t s_level_key;
 static bool s_level_keyed;
 
 /* The station that is ending keeps what was measured for it, if there is
- * anything new: a first estimate needs a few seconds of sound, and one that
- * moved by less than half a decibel is not worth a write to flash. */
+ * anything new: only an estimate from 20 s of sound (audio_level.h's keep),
+ * and one that moved by less than half a decibel is not worth a write to
+ * flash. Flicking through stations leaves what each had before alone. */
 static void radio_level_keep(void)
 {
     if (!s_level_keyed || s_levels == NULL) return;
     s_level_keyed = false;
     audio_level_status_t status;
     board_audio_level_status(&status);
-    if (status.fixed || (status.phase != AUDIO_LEVEL_LEARNING &&
-                         status.phase != AUDIO_LEVEL_SETTLED)) {
-        return;
-    }
+    if (!status.keep) return;
     if (!station_levels_note(s_levels, s_level_key, status.wanted_db)) return;
     if (station_levels_save(s_levels, STATION_LEVELS_PATH)) {
         ESP_LOGI(TAG, "level of station %08lx kept: %.1f dB (%.1f LUFS)",

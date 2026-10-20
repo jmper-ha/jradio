@@ -224,6 +224,28 @@ static void test_switching_off_slopes_back_and_goes_idle(void)
     assert(status.phase == AUDIO_LEVEL_OFF);
 }
 
+static void test_only_twenty_seconds_of_sound_is_kept(void)
+{
+    audio_level_t level;
+    begin_fresh(&level);
+    audio_level_status_t status;
+    play(&level, -14.0f, 10.0f, RATE);
+    audio_level_status(&level, &status);
+    assert(status.phase != AUDIO_LEVEL_MEASURING && !status.keep);
+    // Silence does not count towards it.
+    play(&level, -300.0f, 30.0f, RATE);
+    audio_level_status(&level, &status);
+    assert(!status.keep);
+    play(&level, -14.0f, 11.0f, RATE);
+    audio_level_status(&level, &status);
+    assert(status.keep);
+    // A source's own figure is not ours to keep.
+    audio_level_begin(&level, -5.0f, false, true);
+    play(&level, -14.0f, 30.0f, RATE);
+    audio_level_status(&level, &status);
+    assert(!status.keep);
+}
+
 static void test_a_nudge_works_with_the_levelling_off_and_on(void)
 {
     audio_level_t level;
@@ -277,6 +299,7 @@ int main(void)
     test_a_lift_stays_inside_the_volume();
     test_tags_are_taken_as_given();
     test_switching_off_slopes_back_and_goes_idle();
+    test_only_twenty_seconds_of_sound_is_kept();
     test_a_nudge_works_with_the_levelling_off_and_on();
     puts("audio level tests passed");
     return 0;

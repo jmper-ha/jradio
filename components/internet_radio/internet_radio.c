@@ -22,6 +22,8 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "lwip/dns.h"
+#include "lwip/tcpip.h"
 
 #include "board.h"
 #include "board_audio_format.h"
@@ -367,6 +369,25 @@ static bool radio_status_apply(internet_radio_context_t *radio, internet_radio_e
     applied = internet_radio_state_apply(&radio->status.state, event);
     taskEXIT_CRITICAL(&s_status_lock);
     return applied;
+}
+
+static void radio_dns_clear(void *arg)
+{
+    (void)arg;
+    dns_clear_cache();
+}
+
+/* A server that will not answer is asked for by name again next time. lwIP
+ * keeps four answers for as long as their TTL says, and a station behind
+ * several addresses whose one in the cache has gone dark was tried there
+ * over and over: a user's radio failed every connect for ten minutes on a
+ * bad day, and a reset - which empties the cache - had it playing at once.
+ * Run on lwIP's own thread, which owns the table. */
+static void radio_dns_forget(void)
+{
+    if (tcpip_callback(radio_dns_clear, NULL) != ERR_OK) {
+        ESP_LOGW(TAG, "could not clear the DNS cache");
+    }
 }
 
 static void radio_http_close(internet_radio_context_t *radio)
@@ -1591,6 +1612,7 @@ static esp_err_t radio_http_connect_client(const char *url, size_t range_offset,
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "HTTP open failed after %u redirects: %s", redirects,
                      esp_err_to_name(err));
+            if (err == ESP_ERR_HTTP_CONNECT) radio_dns_forget();
             int tls_error = 0;
             int tls_flags = 0;
             if (esp_http_client_get_and_clear_last_tls_error(http, &tls_error,

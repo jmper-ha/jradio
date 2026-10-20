@@ -3,7 +3,7 @@ idf_component_register(
          "station_resume.c" "station_levels.c" "internet_radio.c" "radio_prebuffer.c"
     INCLUDE_DIRS "include"
     REQUIRES board esp_http_client esphome__micro-flac esphome__micro-mp3
-             espressif__esp_audio_codec mbedtls settings
+             espressif__esp_audio_codec lwip mbedtls settings
 )
 
 # esp_audio_codec's prebuilt OpenCore MP3 decoder exports the same five global symbols as

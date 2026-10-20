@@ -6,7 +6,7 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
-## Next version
+## v1.8.5 — 20 October 2026
 
 New:
 - Even volume: stations and tracks play equally loud. The radio measures a

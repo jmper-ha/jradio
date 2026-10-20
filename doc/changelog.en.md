@@ -14,7 +14,8 @@ New:
   -14 LUFS and remembers it per station. Yandex Music tracks and files with
   ReplayGain/R128 tags already have theirs known, and start at their level.
   Switched on under Sound on the device or in the web's tone panel; off by
-  default.
+  default. The correction shows over the volume figure, in the station
+  name's colour while the level is being found and in its own once settled.
 - A volume nudge of your own for an internet station, +-6 dB: a Station row
   in the quick panel and a slider in the web's tone panel. Kept per station,
   and works without even volume as well.

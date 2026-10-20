@@ -21,6 +21,17 @@ New:
 - The boot log names the button pins, and warns of a button held at power-on.
 
 Fixed:
+- Bad internet: a station no longer gives up with "could not connect". While
+  the backlog plays, the radio reconnects in the background, so a short drop
+  goes unheard; once it is spent, "Reconnecting..." shows and the tries go
+  on until the station is back (every second at first, then less often, down
+  to once a minute). A press of the encoder during "Reconnecting..." stops
+  the station.
+- After a dropped connection the station played again while the screen kept
+  "Reconnecting..." and the buffer gauge froze.
+- A station that did not answer could stay unreachable until a reboot: its
+  address is now looked up afresh after a failed try. The wait for a server
+  is 5 seconds rather than 10.
 - Switching station from the web flashed the station list on the screen for
   a second.
 - The warning about an all-zero audio block repeated in the log hundreds of

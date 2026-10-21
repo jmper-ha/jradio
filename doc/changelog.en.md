@@ -6,6 +6,13 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.8.6 — 21 October 2026
+
+Fixed:
+- A crackle on 22050 Hz AAC stations with the loudness on or the tone off
+  zero. On those stations a block of sound went to the DAC in two halves,
+  and the second went through the tone's filters twice - the seam clicked.
+
 ## v1.8.5 — 20 October 2026
 
 New:

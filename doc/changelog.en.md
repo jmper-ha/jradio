@@ -12,6 +12,11 @@ New:
 - With nothing playing, the station list opens with the cursor on the
   station played last rather than the first - after coming back from the
   sound settings through the menu, for one.
+- The screensaver has a new "Comes on" setting: "Always" - as before, the
+  set time after the last touch - or "When nothing plays": while something
+  plays the screen stays up, and the screensaver comes on the same time
+  after a pause or a stop. Music starting - the alarm, say - wakes the
+  screen by itself. In the web settings, under Screen.
 
 ## v1.8.6 — 21 October 2026
 

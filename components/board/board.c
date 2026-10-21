@@ -875,6 +875,18 @@ static void board_audio_flush_tail(void)
 #endif
 }
 
+/* What is left of the last block written in part: where its source resumes,
+ * how much of it there is, and where it already sits shaped. A caller that
+ * comes back with exactly that rest gets it from here. Shaped again, the tone
+ * filters ran over it twice - their state stepped on past audio that was not
+ * played - and the seam clicked: on 22.05 kHz stations nearly every block is
+ * written in two halves, as the DMA drains at half the pace, and with the
+ * tone or the loudness on they crackled. The volume's ramp and the levelling
+ * were counted twice over the same samples too. Under s_audio_mutex. */
+static const uint8_t *s_shaped_rest_source;
+static const uint8_t *s_shaped_rest;
+static size_t s_shaped_rest_length;
+
 esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
                             uint32_t timeout_ms)
 {
@@ -905,10 +917,19 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
          * station is sending rather than how loud the listener set it. A meter
          * that fell with the volume knob would look like a failing stream. */
         const uint8_t volume = board_audio_volume();
-        const void *out = board_audio_shaped_block(pcm, pcm_length);
+        const bool rest = s_shaped_rest_length != 0U && pcm == s_shaped_rest_source &&
+                          pcm_length == s_shaped_rest_length;
+        const void *out = rest ? s_shaped_rest : board_audio_shaped_block(pcm, pcm_length);
+        s_shaped_rest_length = 0U;
         result = i2s_channel_write(s_i2s_tx, out, pcm_length, written,
                                    pdMS_TO_TICKS(timeout_ms));
-        if (result == ESP_OK) {
+        // A timeout is a short write, not a lost one: what went is counted.
+        if ((result == ESP_OK || result == ESP_ERR_TIMEOUT) && *written < pcm_length) {
+            s_shaped_rest_source = (const uint8_t *)pcm + *written;
+            s_shaped_rest = (const uint8_t *)out + *written;
+            s_shaped_rest_length = pcm_length - *written;
+        }
+        if ((result == ESP_OK || result == ESP_ERR_TIMEOUT) && *written > 0U) {
             uint16_t peak_left = 0U;
             uint16_t peak_right = 0U;
             pcm_s16le_peak_stereo(pcm, *written, &peak_left, &peak_right);
@@ -1023,6 +1044,7 @@ esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloade
             // The DAC has been fed silence up to this instant, so this block
             // is the step the fade exists for.
             s_audio_fade_frames = 0U;
+            s_shaped_rest_length = 0U;
             const void *out = board_audio_shaped_block(pcm, pcm_length);
             result = i2s_channel_write(s_i2s_tx, out, pcm_length, preloaded,
                                        pdMS_TO_TICKS(1000));

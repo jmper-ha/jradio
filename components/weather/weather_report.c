@@ -1,5 +1,6 @@
 #include "weather_report.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,70 @@ int weather_round_temperature(double celsius)
 static bool temperature_plausible(double celsius)
 {
     return celsius >= WEATHER_TEMPERATURE_MIN && celsius <= WEATHER_TEMPERATURE_MAX;
+}
+
+int weather_hpa_to_mmhg(double hpa)
+{
+    return weather_round_temperature(hpa * 0.750062);
+}
+
+int weather_wind_point(int from_deg)
+{
+    if (from_deg == WEATHER_UNKNOWN || from_deg < 0) return -1;
+    return ((from_deg % 360) + 22) / 45 % 8;
+}
+
+// A reading as the whole number it is shown as, or unknown when it is none.
+static int16_t whole(double value)
+{
+    if (!isfinite(value) || value > 30000.0 || value < -30000.0) return WEATHER_UNKNOWN;
+    return (int16_t)weather_round_temperature(value);
+}
+
+// Everything but the temperature and the picture starts unknown.
+static void start_report(weather_report_t *report)
+{
+    *report = (weather_report_t){0};
+    report->feels_like_c = WEATHER_UNKNOWN;
+    report->humidity_pct = WEATHER_UNKNOWN;
+    report->pressure_mmhg = WEATHER_UNKNOWN;
+    report->wind_ms = WEATHER_UNKNOWN;
+    report->wind_gust_ms = WEATHER_UNKNOWN;
+    report->wind_from_deg = WEATHER_UNKNOWN;
+    report->cloud_pct = WEATHER_UNKNOWN;
+    report->precipitation_tenths_mm = WEATHER_UNKNOWN;
+    report->sunrise_min = WEATHER_UNKNOWN;
+    report->sunset_min = WEATHER_UNKNOWN;
+}
+
+/* The day of the week of a civil date, 0 Sunday: Sakamoto's method, which
+ * needs no table of month lengths and no time library. */
+static uint8_t weekday_of(int year, int month, int day)
+{
+    static const int offsets[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+    if (month < 3) year -= 1;
+    return (uint8_t)((year + year / 4 - year / 100 + year / 400 + offsets[(month - 1) % 12] + day) %
+                     7);
+}
+
+/* "2026-10-21" or "2026-10-21T07:12", as Open-Meteo writes local dates and
+ * times: the weekday, and the minutes after midnight when there is a time. */
+static bool parse_local_date(const char *text, uint8_t *weekday, int *minutes)
+{
+    if (text == NULL || strlen(text) < 10U || text[4] != '-' || text[7] != '-') return false;
+    const int year = atoi(text);
+    const int month = atoi(text + 5);
+    const int day = atoi(text + 8);
+    if (year < 2000 || month < 1 || month > 12 || day < 1 || day > 31) return false;
+    if (weekday != NULL) *weekday = weekday_of(year, month, day);
+    if (minutes != NULL) {
+        if (strlen(text) < 16U || text[10] != 'T' || text[13] != ':') return false;
+        const int hour = atoi(text + 11);
+        const int minute = atoi(text + 14);
+        if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return false;
+        *minutes = hour * 60 + minute;
+    }
+    return true;
 }
 
 weather_icon_t weather_icon_from_wmo(int code, bool is_day)
@@ -136,10 +201,71 @@ static bool finish(weather_report_t *report, double celsius, weather_icon_t icon
     return true;
 }
 
+static int16_t whole_of(const cJSON *object, const char *name)
+{
+    double value = 0.0;
+    return number_of(object, name, &value) ? whole(value) : WEATHER_UNKNOWN;
+}
+
+static const cJSON *array_item(const cJSON *object, const char *name, int index)
+{
+    const cJSON *array = cJSON_GetObjectItemCaseSensitive(object, name);
+    return cJSON_IsArray(array) ? cJSON_GetArrayItem(array, index) : NULL;
+}
+
+/* The current block's other readings and the daily block's three days. All
+ * optional: an answer to the strip's old request has neither, and still
+ * gives its temperature. */
+static void open_meteo_details(const cJSON *root, const cJSON *current, weather_report_t *report)
+{
+    double value = 0.0;
+    report->feels_like_c = whole_of(current, "apparent_temperature");
+    report->humidity_pct = whole_of(current, "relative_humidity_2m");
+    if (number_of(current, "pressure_msl", &value)) {
+        report->pressure_mmhg = (int16_t)weather_hpa_to_mmhg(value);
+    }
+    report->wind_ms = whole_of(current, "wind_speed_10m");
+    report->wind_gust_ms = whole_of(current, "wind_gusts_10m");
+    report->wind_from_deg = whole_of(current, "wind_direction_10m");
+    report->cloud_pct = whole_of(current, "cloud_cover");
+    if (number_of(current, "precipitation", &value)) report->precipitation_tenths_mm = whole(value * 10.0);
+
+    const cJSON *daily = cJSON_GetObjectItemCaseSensitive(root, "daily");
+    if (!cJSON_IsObject(daily)) return;
+    int minutes = 0;
+    const cJSON *sunrise = array_item(daily, "sunrise", 0);
+    const cJSON *sunset = array_item(daily, "sunset", 0);
+    if (cJSON_IsString(sunrise) && parse_local_date(sunrise->valuestring, NULL, &minutes)) {
+        report->sunrise_min = (int16_t)minutes;
+    }
+    if (cJSON_IsString(sunset) && parse_local_date(sunset->valuestring, NULL, &minutes)) {
+        report->sunset_min = (int16_t)minutes;
+    }
+    for (int index = 0; index < WEATHER_FORECAST_DAYS; ++index) {
+        weather_day_t *day = &report->days[index];
+        const cJSON *date = array_item(daily, "time", index);
+        const cJSON *code = array_item(daily, "weather_code", index);
+        const cJSON *low = array_item(daily, "temperature_2m_min", index);
+        const cJSON *high = array_item(daily, "temperature_2m_max", index);
+        const cJSON *chance = array_item(daily, "precipitation_probability_max", index);
+        if (!cJSON_IsString(date) || !cJSON_IsNumber(code) || !cJSON_IsNumber(low) ||
+            !cJSON_IsNumber(high) || !temperature_plausible(low->valuedouble) ||
+            !temperature_plausible(high->valuedouble) ||
+            !parse_local_date(date->valuestring, &day->weekday, NULL)) {
+            continue;
+        }
+        day->icon = weather_icon_from_wmo((int)code->valuedouble, true);
+        day->min_c = whole(low->valuedouble);
+        day->max_c = whole(high->valuedouble);
+        day->precipitation_pct = cJSON_IsNumber(chance) ? whole(chance->valuedouble) : WEATHER_UNKNOWN;
+        day->valid = true;
+    }
+}
+
 bool weather_parse_open_meteo(const char *body, size_t length, weather_report_t *report)
 {
     if (report == NULL) return false;
-    *report = (weather_report_t){0};
+    start_report(report);
     if (body == NULL || length == 0U) return false;
     cJSON *root = cJSON_ParseWithLength(body, length);
     if (root == NULL) return false;
@@ -154,16 +280,58 @@ bool weather_parse_open_meteo(const char *body, size_t length, weather_report_t 
          * safer wrong answer, since the sun is drawn on more of the icons. */
         (void)number_of(current, "is_day", &is_day);
         ok = finish(report, celsius, weather_icon_from_wmo((int)code, is_day != 0.0));
+        if (ok) open_meteo_details(root, current, report);
     }
     cJSON_Delete(root);
     return ok;
+}
+
+// A unix time as minutes after local midnight, `offset` seconds east of UTC.
+static int16_t local_minutes(double unix_time, double offset)
+{
+    if (!isfinite(unix_time) || unix_time <= 0.0) return WEATHER_UNKNOWN;
+    long long local = (long long)unix_time + (long long)offset;
+    local %= 86400LL;
+    if (local < 0) local += 86400LL;
+    return (int16_t)(local / 60LL);
+}
+
+static void openweathermap_details(const cJSON *root, const cJSON *main, weather_report_t *report)
+{
+    double value = 0.0;
+    report->feels_like_c = whole_of(main, "feels_like");
+    report->humidity_pct = whole_of(main, "humidity");
+    if (number_of(main, "pressure", &value)) report->pressure_mmhg = (int16_t)weather_hpa_to_mmhg(value);
+    const cJSON *wind = cJSON_GetObjectItemCaseSensitive(root, "wind");
+    if (cJSON_IsObject(wind)) {
+        report->wind_ms = whole_of(wind, "speed");
+        report->wind_gust_ms = whole_of(wind, "gust");
+        report->wind_from_deg = whole_of(wind, "deg");
+    }
+    const cJSON *clouds = cJSON_GetObjectItemCaseSensitive(root, "clouds");
+    if (cJSON_IsObject(clouds)) report->cloud_pct = whole_of(clouds, "all");
+    /* Only there while something falls: no "rain" block is no rain, which
+     * is a measurement - zero - and not an unknown. */
+    double fallen = 0.0;
+    const cJSON *rain = cJSON_GetObjectItemCaseSensitive(root, "rain");
+    const cJSON *snow = cJSON_GetObjectItemCaseSensitive(root, "snow");
+    if (cJSON_IsObject(rain) && number_of(rain, "1h", &value)) fallen += value;
+    if (cJSON_IsObject(snow) && number_of(snow, "1h", &value)) fallen += value;
+    report->precipitation_tenths_mm = whole(fallen * 10.0);
+    double offset = 0.0;
+    (void)number_of(root, "timezone", &offset);
+    const cJSON *sys = cJSON_GetObjectItemCaseSensitive(root, "sys");
+    if (cJSON_IsObject(sys)) {
+        if (number_of(sys, "sunrise", &value)) report->sunrise_min = local_minutes(value, offset);
+        if (number_of(sys, "sunset", &value)) report->sunset_min = local_minutes(value, offset);
+    }
 }
 
 bool weather_parse_openweathermap(const char *body, size_t length,
                                   weather_report_t *report)
 {
     if (report == NULL) return false;
-    *report = (weather_report_t){0};
+    start_report(report);
     if (body == NULL || length == 0U) return false;
     cJSON *root = cJSON_ParseWithLength(body, length);
     if (root == NULL) return false;
@@ -184,6 +352,7 @@ bool weather_parse_openweathermap(const char *body, size_t length,
         }
         ok = finish(report, celsius,
                     weather_icon_from_openweathermap((int)condition, is_day));
+        if (ok) openweathermap_details(root, main, report);
     }
     cJSON_Delete(root);
     return ok;
@@ -205,16 +374,58 @@ static long seconds_of_day(const char *text, size_t length)
     return hour * 3600 + minute * 60 + second;
 }
 
+/* A field's leading number - "+6°C", "47%", "1036hPa", "0.0mm" - or false
+ * when it does not start with one. */
+static bool field_number(const char *text, size_t length, double *value)
+{
+    char copy[24];
+    if (length == 0U || length >= sizeof(copy)) return false;
+    memcpy(copy, text, length);
+    copy[length] = '\0';
+    char *end = NULL;
+    *value = strtod(copy, &end);
+    return end != copy && isfinite(*value);
+}
+
+/* wttr.in's wind, "↖9km/h": an arrow pointing where the wind goes, then the
+ * speed. The direction is turned round into where it comes from - "↓" is a
+ * north wind - and the speed into metres a second. */
+static void wttr_wind(const char *text, size_t length, weather_report_t *report)
+{
+    static const struct {
+        const char *arrow;
+        int16_t from_deg;
+    } arrows[] = {
+        {"\xE2\x86\x93", 0},   {"\xE2\x86\x99", 45},  {"\xE2\x86\x90", 90},
+        {"\xE2\x86\x96", 135}, {"\xE2\x86\x91", 180}, {"\xE2\x86\x97", 225},
+        {"\xE2\x86\x92", 270}, {"\xE2\x86\x98", 315},
+    };
+    size_t skip = 0U;
+    for (size_t index = 0U; index < sizeof(arrows) / sizeof(arrows[0]); ++index) {
+        if (length >= 3U && memcmp(text, arrows[index].arrow, 3U) == 0) {
+            report->wind_from_deg = arrows[index].from_deg;
+            skip = 3U;
+            break;
+        }
+    }
+    double kmh = 0.0;
+    if (field_number(text + skip, length - skip, &kmh) && kmh >= 0.0) {
+        report->wind_ms = whole(kmh / 3.6);
+    }
+}
+
 bool weather_parse_wttr(const char *body, size_t length, weather_report_t *report)
 {
     if (report == NULL) return false;
-    *report = (weather_report_t){0};
+    start_report(report);
     if (body == NULL || length == 0U) return false;
-    /* One line, as `format=%t|%x|%S|%s|%T` produces it:
-     * "+13°C|o|05:53:09|18:59:44|20:17:45+0300". Anything wttr.in says instead
-     * - "location not found", "Sorry, we are running out of queries" - starts
-     * with a letter and stops here. */
-    char line[96];
+    /* One line, as `format=%t|%x|%S|%s|%T|%f|%h|%P|%w|%p` produces it:
+     * "+8°C|mmm|07:11:48|17:16:16|22:46:16+0300|+6°C|47%|1036hPa|↖9km/h|0.0mm".
+     * The first five are the strip's, in the order they always had; the rest
+     * are the screensaver's. Anything wttr.in says instead - "location not
+     * found", "Sorry, we are running out of queries" - starts with a letter
+     * and stops here. */
+    char line[160];
     size_t copied = 0U;
     while (copied < length && copied + 1U < sizeof(line) && body[copied] != '\n' &&
            body[copied] != '\r') {
@@ -223,11 +434,11 @@ bool weather_parse_wttr(const char *body, size_t length, weather_report_t *repor
     }
     line[copied] = '\0';
 
-    const char *fields[5] = {0};
-    size_t lengths[5] = {0};
+    const char *fields[10] = {0};
+    size_t lengths[10] = {0};
     size_t count = 0U;
     const char *cursor = line;
-    while (count < 5U) {
+    while (count < 10U) {
         const char *bar = strchr(cursor, '|');
         fields[count] = cursor;
         lengths[count] = bar == NULL ? strlen(cursor) : (size_t)(bar - cursor);
@@ -254,15 +465,134 @@ bool weather_parse_wttr(const char *body, size_t length, weather_report_t *repor
      * the three times - an older format, a field the service dropped - is
      * read as day, for the reason Open-Meteo's missing flag is. */
     bool is_day = true;
-    if (count == 5U) {
-        const long sunrise = seconds_of_day(fields[2], lengths[2]);
-        const long sunset = seconds_of_day(fields[3], lengths[3]);
+    long sunrise = -1;
+    long sunset = -1;
+    if (count >= 5U) {
+        sunrise = seconds_of_day(fields[2], lengths[2]);
+        sunset = seconds_of_day(fields[3], lengths[3]);
         const long now = seconds_of_day(fields[4], lengths[4]);
         if (sunrise >= 0 && sunset >= 0 && now >= 0) {
             is_day = now >= sunrise && now < sunset;
         }
     }
-    return finish(report, celsius, weather_icon_from_wttr_symbol(symbol, is_day));
+    if (!finish(report, celsius, weather_icon_from_wttr_symbol(symbol, is_day))) return false;
+    if (sunrise >= 0) report->sunrise_min = (int16_t)(sunrise / 60);
+    if (sunset >= 0) report->sunset_min = (int16_t)(sunset / 60);
+    double value = 0.0;
+    if (count >= 6U && field_number(fields[5], lengths[5], &value) && temperature_plausible(value)) {
+        report->feels_like_c = whole(value);
+    }
+    if (count >= 7U && field_number(fields[6], lengths[6], &value)) report->humidity_pct = whole(value);
+    if (count >= 8U && field_number(fields[7], lengths[7], &value)) {
+        report->pressure_mmhg = (int16_t)weather_hpa_to_mmhg(value);
+    }
+    if (count >= 9U) wttr_wind(fields[8], lengths[8], report);
+    if (count >= 10U && field_number(fields[9], lengths[9], &value)) {
+        report->precipitation_tenths_mm = whole(value * 10.0);
+    }
+    return true;
+}
+
+/* --- OpenWeatherMap's forecast, read by scanning ------------------------ */
+
+// `needle` inside [from, to), or NULL.
+static const char *find_in(const char *from, const char *to, const char *needle)
+{
+    const size_t length = strlen(needle);
+    for (const char *at = from; at != NULL && at + length <= to; ++at) {
+        at = memchr(at, needle[0], (size_t)(to - at));
+        if (at == NULL || at + length > to) return NULL;
+        if (memcmp(at, needle, length) == 0) return at;
+    }
+    return NULL;
+}
+
+// The number after `"key":` inside [from, to).
+static bool number_in(const char *from, const char *to, const char *key, double *value)
+{
+    const char *at = find_in(from, to, key);
+    if (at == NULL) return false;
+    at += strlen(key);
+    size_t length = 0U;
+    while (at + length < to && length < 23U &&
+           strchr("0123456789+-.eE", at[length]) != NULL && at[length] != '\0') {
+        ++length;
+    }
+    return field_number(at, length, value);
+}
+
+bool weather_parse_openweathermap_forecast(const char *body, size_t length,
+                                           weather_report_t *report)
+{
+    if (report == NULL) return false;
+    for (int index = 0; index < WEATHER_FORECAST_DAYS; ++index) report->days[index].valid = false;
+    if (body == NULL || length == 0U) return false;
+    const char *end = body + length;
+    const char *list = find_in(body, end, "\"list\":[");
+    if (list == NULL) return false;
+    /* The city block follows the list; its offset says where local midnight
+     * falls, without which a step cannot be given a date. */
+    const char *city = find_in(list, end, "\"city\":");
+    double offset = 0.0;
+    if (city != NULL) (void)number_in(city, end, "\"timezone\":", &offset);
+    const char *list_end = city != NULL ? city : end;
+
+    long long first_day = -1;
+    int best_distance[WEATHER_FORECAST_DAYS];
+    bool any = false;
+    const char *step = find_in(list, list_end, "\"dt\":");
+    while (step != NULL) {
+        const char *next = find_in(step + 5, list_end, "\"dt\":");
+        const char *step_end = next != NULL ? next : list_end;
+        double when = 0.0;
+        double low = 0.0;
+        double high = 0.0;
+        if (number_in(step, step_end, "\"dt\":", &when) &&
+            number_in(step, step_end, "\"temp_min\":", &low) &&
+            number_in(step, step_end, "\"temp_max\":", &high) && temperature_plausible(low) &&
+            temperature_plausible(high)) {
+            const long long local = (long long)when + (long long)offset;
+            const long long day_number = local >= 0 ? local / 86400LL : (local - 86399LL) / 86400LL;
+            if (first_day < 0) first_day = day_number;
+            const long long index = day_number - first_day;
+            if (index >= 0 && index < WEATHER_FORECAST_DAYS) {
+                weather_day_t *day = &report->days[index];
+                const int hour = (int)((local - day_number * 86400LL) / 3600LL);
+                double chance = -1.0;
+                (void)number_in(step, step_end, "\"pop\":", &chance);
+                const char *weather = find_in(step, step_end, "\"weather\":[");
+                double condition = 0.0;
+                const bool has_condition =
+                    weather != NULL && number_in(weather, step_end, "\"id\":", &condition);
+                if (!day->valid) {
+                    day->valid = true;
+                    day->min_c = whole(low);
+                    day->max_c = whole(high);
+                    day->precipitation_pct = WEATHER_UNKNOWN;
+                    day->icon = WEATHER_ICON_NONE;
+                    // 1970-01-01 was a Thursday.
+                    day->weekday = (uint8_t)((day_number % 7 + 7 + 4) % 7);
+                    best_distance[index] = 99;
+                }
+                if (whole(low) < day->min_c) day->min_c = whole(low);
+                if (whole(high) > day->max_c) day->max_c = whole(high);
+                if (chance >= 0.0) {
+                    const int16_t percent = whole(chance * 100.0);
+                    if (day->precipitation_pct == WEATHER_UNKNOWN || percent > day->precipitation_pct) {
+                        day->precipitation_pct = percent;
+                    }
+                }
+                const int distance = abs(hour - 12);
+                if (has_condition && distance < best_distance[index]) {
+                    best_distance[index] = distance;
+                    day->icon = weather_icon_from_openweathermap((int)condition, true);
+                }
+                any = true;
+            }
+        }
+        step = next;
+    }
+    return any;
 }
 
 size_t weather_request_url(char *url, size_t url_size, device_weather_provider_t provider,
@@ -276,9 +606,17 @@ size_t weather_request_url(char *url, size_t url_size, device_weather_provider_t
     int written = 0;
     switch (provider) {
     case DEVICE_WEATHER_OPEN_METEO:
+        /* The current weather and three days in one answer of about 1.3 KB:
+         * pressure at sea level, as a forecast gives it, and the wind in
+         * metres a second. */
         written = snprintf(url, url_size,
                            "http://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
-                           "&current=temperature_2m,weather_code,is_day",
+                           "&current=temperature_2m,weather_code,is_day,apparent_temperature,"
+                           "relative_humidity_2m,pressure_msl,wind_speed_10m,wind_gusts_10m,"
+                           "wind_direction_10m,precipitation,cloud_cover"
+                           "&daily=weather_code,temperature_2m_min,temperature_2m_max,"
+                           "precipitation_probability_max,sunrise,sunset"
+                           "&forecast_days=3&timezone=auto&wind_speed_unit=ms",
                            latitude, longitude);
         break;
     case DEVICE_WEATHER_WTTR:
@@ -286,7 +624,8 @@ size_t weather_request_url(char *url, size_t url_size, device_weather_provider_t
          * characters a request line may carry bare, whatever curl lets
          * through. */
         written = snprintf(url, url_size,
-                           "http://wttr.in/%s,%s?format=%%25t%%7C%%25x%%7C%%25S%%7C%%25s%%7C%%25T",
+                           "http://wttr.in/%s,%s?format=%%25t%%7C%%25x%%7C%%25S%%7C%%25s%%7C%%25T"
+                           "%%7C%%25f%%7C%%25h%%7C%%25P%%7C%%25w%%7C%%25p",
                            latitude, longitude);
         break;
     case DEVICE_WEATHER_OPENWEATHERMAP:
@@ -352,4 +691,26 @@ bool weather_key_valid(const char *key)
         if (length >= WEATHER_KEY_MAX) return false;
     }
     return length >= 8U;
+}
+
+size_t weather_forecast_url(char *url, size_t url_size, device_weather_provider_t provider,
+                            const char *latitude, const char *longitude, const char *key)
+{
+    if (url == NULL || url_size == 0U) return 0U;
+    url[0] = '\0';
+    if (provider != DEVICE_WEATHER_OPENWEATHERMAP || latitude == NULL || longitude == NULL ||
+        key == NULL || latitude[0] == '\0' || longitude[0] == '\0' || key[0] == '\0') {
+        return 0U;
+    }
+    /* Twenty-four three-hour steps: today's rest and the two days after,
+     * whatever the hour. */
+    const int written = snprintf(url, url_size,
+                                 "http://api.openweathermap.org/data/2.5/forecast?lat=%s&lon=%s"
+                                 "&units=metric&cnt=24&appid=%s",
+                                 latitude, longitude, key);
+    if (written <= 0 || (size_t)written >= url_size) {
+        url[0] = '\0';
+        return 0U;
+    }
+    return (size_t)written;
 }

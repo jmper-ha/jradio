@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "device_settings.h"
 
@@ -35,6 +36,25 @@ typedef enum {
     WEATHER_ICON_COUNT,
 } weather_icon_t;
 
+/* A reading a service did not give: wttr.in has no gusts and no cloud cover,
+ * OpenWeatherMap no forecast in the answer the strip asks for. Drawn as
+ * nothing rather than as a zero that would read as a measurement. */
+#define WEATHER_UNKNOWN INT16_MIN
+
+/* The days the weather screensaver shows: today and the two after. */
+#define WEATHER_FORECAST_DAYS 3
+
+typedef struct {
+    bool valid;
+    weather_icon_t icon;  // the day's weather, always the day picture
+    int16_t min_c;
+    int16_t max_c;
+    // Chance of rain or snow, 0..100, or WEATHER_UNKNOWN.
+    int16_t precipitation_pct;
+    // 0 Sunday .. 6 Saturday, as struct tm counts; the label is the panel's.
+    uint8_t weekday;
+} weather_day_t;
+
 typedef struct {
     bool valid;
     /* Whole degrees Celsius, rounded half away from zero. The services
@@ -42,6 +62,24 @@ typedef struct {
      * read to from across a room. */
     int temperature_c;
     weather_icon_t icon;
+    /* The rest of the current weather, for the weather screensaver; each one
+     * WEATHER_UNKNOWN where the service did not say. Whole units, as they
+     * are shown: a feels-like temperature in degrees, the pressure already
+     * in millimetres of mercury, the wind in metres a second. */
+    int16_t feels_like_c;
+    int16_t humidity_pct;
+    int16_t pressure_mmhg;
+    int16_t wind_ms;
+    int16_t wind_gust_ms;
+    // Where the wind comes from, 0..359 degrees (0 north, 90 east).
+    int16_t wind_from_deg;
+    int16_t cloud_pct;
+    // What fell in the last hour or so, in tenths of a millimetre.
+    int16_t precipitation_tenths_mm;
+    // Local time, minutes after midnight.
+    int16_t sunrise_min;
+    int16_t sunset_min;
+    weather_day_t days[WEATHER_FORECAST_DAYS];
 } weather_report_t;
 
 /* The three answers. Each takes the body as received - a JSON document from
@@ -58,6 +96,28 @@ bool weather_parse_wttr(const char *body, size_t length, weather_report_t *repor
 bool weather_parse_openweathermap(const char *body, size_t length,
                                   weather_report_t *report);
 
+/* OpenWeatherMap's forecast is a second request (weather_forecast_url) and a
+ * second document - a list of three-hour steps, some 14 KB for three days -
+ * read here into `report->days` without touching the rest. Read without
+ * cJSON: a tree over it is a thousand small nodes, which this board would put
+ * in the internal RAM it is short of. Each day is the steps of that local
+ * date: the lowest and highest temperature, the highest chance of rain, and
+ * the picture of the step nearest midday. False, with the days left invalid,
+ * when nothing usable was in it. */
+bool weather_parse_openweathermap_forecast(const char *body, size_t length,
+                                           weather_report_t *report);
+
+/* The second request, for the provider that needs one; 0 for the others. */
+size_t weather_forecast_url(char *url, size_t url_size, device_weather_provider_t provider,
+                            const char *latitude, const char *longitude, const char *key);
+
+/* hPa to whole millimetres of mercury, the way a Russian forecast gives it. */
+int weather_hpa_to_mmhg(double hpa);
+
+/* Where the wind comes from as one of eight points, 0 north, 1 north-east
+ * ... 7 north-west; -1 for an unknown direction. The names are the panel's. */
+int weather_wind_point(int from_deg);
+
 /* The mappings on their own, for the tests and for anyone reading the
  * tables: WMO codes (Open-Meteo), OpenWeatherMap's condition ids, and the
  * plain-text symbols wttr.in's `%x` answers with. */
@@ -70,7 +130,7 @@ weather_icon_t weather_icon_from_wttr_symbol(const char *symbol, bool is_day);
  * in the internal SRAM everything else is short of. Returns the length, or 0
  * when the provider is off, the coordinates are missing, a key is needed and
  * absent, or the buffer is too small. `key` matters to OpenWeatherMap only. */
-#define WEATHER_URL_MAX 256
+#define WEATHER_URL_MAX 512
 size_t weather_request_url(char *url, size_t url_size, device_weather_provider_t provider,
                            const char *latitude, const char *longitude, const char *key);
 

@@ -174,14 +174,17 @@ static void test_the_request_is_plain_http_and_carries_the_coordinates(void)
     char url[WEATHER_URL_MAX];
     assert(weather_request_url(url, sizeof(url), DEVICE_WEATHER_OPEN_METEO, "55.75", "37.62",
                                NULL) > 0U);
-    assert(strcmp(url, "http://api.open-meteo.com/v1/forecast?latitude=55.75&longitude=37.62"
-                       "&current=temperature_2m,weather_code,is_day") == 0);
+    assert(strncmp(url, "http://api.open-meteo.com/v1/forecast?latitude=55.75&longitude=37.62"
+                        "&current=temperature_2m,weather_code,is_day,", 96U) == 0);
+    // Everything the screensaver shows, in one answer.
+    assert(strstr(url, "pressure_msl") != NULL && strstr(url, "&daily=") != NULL &&
+           strstr(url, "&forecast_days=3&timezone=auto&wind_speed_unit=ms") != NULL);
 
     assert(weather_request_url(url, sizeof(url), DEVICE_WEATHER_WTTR, "-33.8688", "151.2093",
                                NULL) > 0U);
     /* The format is asked for encoded: a bare `%` or `|` is not a request line. */
-    assert(strcmp(url, "http://wttr.in/-33.8688,151.2093?format=%25t%7C%25x%7C%25S%7C%25s%7C%25T")
-           == 0);
+    assert(strcmp(url, "http://wttr.in/-33.8688,151.2093?format=%25t%7C%25x%7C%25S%7C%25s%7C%25T"
+                       "%7C%25f%7C%25h%7C%25P%7C%25w%7C%25p") == 0);
     assert(strchr(url, '|') == NULL);
 
     assert(weather_request_url(url, sizeof(url), DEVICE_WEATHER_OPENWEATHERMAP, "55.75", "37.62",
@@ -202,6 +205,17 @@ static void test_the_request_is_plain_http_and_carries_the_coordinates(void)
     assert(weather_request_url(tight, sizeof(tight), DEVICE_WEATHER_OPEN_METEO, "55.75", "37.62",
                                NULL) == 0U);
     assert(tight[0] == '\0');
+
+    // The second request is OpenWeatherMap's alone.
+    assert(weather_forecast_url(url, sizeof(url), DEVICE_WEATHER_OPENWEATHERMAP, "55.75", "37.62",
+                                "k") > 0U);
+    assert(strcmp(url, "http://api.openweathermap.org/data/2.5/forecast?lat=55.75&lon=37.62"
+                       "&units=metric&cnt=24&appid=k") == 0);
+    assert(weather_forecast_url(url, sizeof(url), DEVICE_WEATHER_OPENWEATHERMAP, "55.75", "37.62",
+                                "") == 0U);
+    assert(weather_forecast_url(url, sizeof(url), DEVICE_WEATHER_OPEN_METEO, "55.75", "37.62",
+                                "k") == 0U);
+    assert(weather_forecast_url(url, sizeof(url), DEVICE_WEATHER_WTTR, "55.75", "37.62", NULL) == 0U);
 
     /* Every request is http://, which is the whole point of these three. */
     for (device_weather_provider_t provider = DEVICE_WEATHER_OPEN_METEO;
@@ -275,8 +289,125 @@ static void test_the_key_and_the_icon_names(void)
     assert(strcmp(weather_icon_name(WEATHER_ICON_COUNT), "none") == 0);
 }
 
+static char *read_fixture(const char *path, size_t *length)
+{
+    FILE *file = fopen(path, "rb");
+    assert(file != NULL);
+    static char buffer[4096];
+    *length = fread(buffer, 1U, sizeof(buffer), file);
+    fclose(file);
+    return buffer;
+}
+
+/* The answers to the screensaver's requests, captured on 2026-10-21 from this
+ * PC at Moscow's coordinates. */
+static void test_the_full_open_meteo_answer(void)
+{
+    size_t length = 0U;
+    const char *body = read_fixture("tests/fixtures/weather_open_meteo.json", &length);
+    weather_report_t report;
+    assert(weather_parse_open_meteo(body, length, &report));
+    assert(report.temperature_c == 6 && report.icon == WEATHER_ICON_CLEAR_NIGHT);
+    assert(report.feels_like_c == 3);
+    assert(report.humidity_pct == 63);
+    // 1035.4 hPa at sea level.
+    assert(report.pressure_mmhg == 777);
+    assert(report.wind_ms == 1 && report.wind_gust_ms == 2 && report.wind_from_deg == 100);
+    assert(weather_wind_point(report.wind_from_deg) == 2);  // east
+    assert(report.cloud_pct == 32 && report.precipitation_tenths_mm == 0);
+    assert(report.sunrise_min == 7 * 60 + 12 && report.sunset_min == 17 * 60 + 15);
+    // Wednesday, Thursday, Friday: overcast, then rain.
+    assert(report.days[0].valid && report.days[0].weekday == 3);
+    assert(report.days[0].icon == WEATHER_ICON_CLOUDY);
+    assert(report.days[0].min_c == 2 && report.days[0].max_c == 12);
+    assert(report.days[0].precipitation_pct == 3);
+    assert(report.days[2].valid && report.days[2].weekday == 5);
+    assert(report.days[2].icon == WEATHER_ICON_RAIN && report.days[2].precipitation_pct == 50);
+    assert(report.days[2].min_c == 5 && report.days[2].max_c == 11);
+
+    // The strip's old, short answer still gives what it always did.
+    assert(weather_parse_open_meteo(k_open_meteo, strlen(k_open_meteo), &report));
+    assert(report.feels_like_c == WEATHER_UNKNOWN && !report.days[0].valid);
+    assert(report.sunrise_min == WEATHER_UNKNOWN);
+}
+
+static void test_the_full_wttr_line(void)
+{
+    size_t length = 0U;
+    const char *body = read_fixture("tests/fixtures/weather_wttr.txt", &length);
+    weather_report_t report;
+    assert(weather_parse_wttr(body, length, &report));
+    assert(report.temperature_c == 8 && report.icon == WEATHER_ICON_CLOUDY);
+    assert(report.feels_like_c == 6 && report.humidity_pct == 47);
+    assert(report.pressure_mmhg == 777);  // 1036 hPa
+    // "↖9km/h": blowing north-west, so from the south-east, at 2.5 m/s.
+    assert(report.wind_from_deg == 135 && report.wind_ms == 3);
+    assert(report.wind_gust_ms == WEATHER_UNKNOWN && report.cloud_pct == WEATHER_UNKNOWN);
+    assert(report.precipitation_tenths_mm == 0);
+    assert(report.sunrise_min == 7 * 60 + 11 && report.sunset_min == 17 * 60 + 16);
+    assert(!report.days[0].valid);  // no forecast from this service
+}
+
+static void test_openweathermap_details_and_forecast(void)
+{
+    weather_report_t report;
+    assert(weather_parse_openweathermap(k_openweathermap, strlen(k_openweathermap), &report));
+    assert(report.feels_like_c == 12 && report.humidity_pct == 76);
+    assert(report.pressure_mmhg == 763);  // 1017 hPa
+    assert(report.wind_ms == 2 && report.wind_from_deg == 230);
+    assert(report.wind_gust_ms == WEATHER_UNKNOWN);
+    assert(report.cloud_pct == 40);
+    // No rain block is no rain: a reading, not an unknown.
+    assert(report.precipitation_tenths_mm == 0);
+    // 1789098789 is 03:53 UTC, 06:53 at UTC+3.
+    assert(report.sunrise_min == 6 * 60 + 53);
+
+    /* The documented shape of /data/2.5/forecast, cut to five steps: one at
+     * 21:00 on a Saturday local (UTC+3), four on the Sunday - 00:00, 03:00,
+     * 12:00, 15:00. The dt_txt strings are not read. */
+    static const char forecast[] =
+        "{\"cod\":\"200\",\"message\":0,\"cnt\":5,\"list\":["
+        "{\"dt\":1789236000,\"main\":{\"temp\":10.1,\"feels_like\":9.0,\"temp_min\":9.6,"
+        "\"temp_max\":10.4,\"pressure\":1015,\"humidity\":80},\"weather\":[{\"id\":803,"
+        "\"main\":\"Clouds\",\"icon\":\"04d\"}],\"clouds\":{\"all\":75},\"wind\":{\"speed\":3.1,"
+        "\"deg\":200},\"visibility\":10000,\"pop\":0.1,\"sys\":{\"pod\":\"d\"},"
+        "\"dt_txt\":\"2026-09-11 18:00:00\"},"
+        "{\"dt\":1789246800,\"main\":{\"temp\":8.0,\"temp_min\":7.5,\"temp_max\":8.2},"
+        "\"weather\":[{\"id\":800,\"icon\":\"01n\"}],\"pop\":0,\"dt_txt\":\"2026-09-11 21:00:00\"},"
+        "{\"dt\":1789257600,\"main\":{\"temp\":6.0,\"temp_min\":5.4,\"temp_max\":6.1},"
+        "\"weather\":[{\"id\":800,\"icon\":\"01n\"}],\"pop\":0,\"dt_txt\":\"2026-09-12 00:00:00\"},"
+        "{\"dt\":1789290000,\"main\":{\"temp\":14.0,\"temp_min\":13.2,\"temp_max\":14.4},"
+        "\"weather\":[{\"id\":500,\"icon\":\"10d\"}],\"pop\":0.64,\"rain\":{\"3h\":0.4},"
+        "\"dt_txt\":\"2026-09-12 09:00:00\"},"
+        "{\"dt\":1789300800,\"main\":{\"temp\":16.0,\"temp_min\":15.7,\"temp_max\":16.3},"
+        "\"weather\":[{\"id\":801,\"icon\":\"02d\"}],\"pop\":0.3,\"dt_txt\":\"2026-09-12 12:00:00\"}"
+        "],\"city\":{\"id\":524901,\"name\":\"Moscow\",\"coord\":{\"lat\":55.75,\"lon\":37.62},"
+        "\"country\":\"RU\",\"population\":1000000,\"timezone\":10800,\"sunrise\":1789184392,"
+        "\"sunset\":1789231456}}";
+    assert(weather_parse_openweathermap_forecast(forecast, strlen(forecast), &report));
+    // The current weather is left as it was.
+    assert(report.temperature_c == 13 && report.humidity_pct == 76);
+    assert(report.days[0].valid && report.days[0].weekday == 6);  // Saturday
+    assert(report.days[0].min_c == 10 && report.days[0].max_c == 10);
+    assert(report.days[0].precipitation_pct == 10);
+    assert(report.days[0].icon == WEATHER_ICON_CLOUDY);  // its only step
+    assert(report.days[1].valid && report.days[1].weekday == 0);  // Sunday
+    assert(report.days[1].min_c == 5 && report.days[1].max_c == 16);
+    assert(report.days[1].precipitation_pct == 64);
+    // The noon step is rain, though the night's were clear.
+    assert(report.days[1].icon == WEATHER_ICON_RAIN);
+    assert(!report.days[2].valid);
+
+    static const char refused[] = "{\"cod\":401,\"message\":\"Invalid API key\"}";
+    assert(!weather_parse_openweathermap_forecast(refused, strlen(refused), &report));
+    assert(!report.days[0].valid);
+}
+
 int main(void)
 {
+    test_the_full_open_meteo_answer();
+    test_the_full_wttr_line();
+    test_openweathermap_details_and_forecast();
     test_open_meteo_answer_becomes_a_report();
     test_wttr_line_becomes_a_report();
     test_openweathermap_answer_becomes_a_report();

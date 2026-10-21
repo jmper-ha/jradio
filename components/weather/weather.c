@@ -44,7 +44,11 @@ static const char *TAG = "weather";
 #define WEATHER_STALE_MS (2U * 60U * 60U * 1000U)
 
 /* The largest answer is OpenWeatherMap's at about 500 bytes. */
-#define WEATHER_RESPONSE_MAX 2048U
+#define WEATHER_RESPONSE_MAX 3072U
+/* OpenWeatherMap's three-day forecast, a second answer of some 14 KB. Taken
+ * for the length of one round and given back: above the 256-byte line the
+ * allocator puts it in PSRAM, and nothing else needs it between rounds. */
+#define WEATHER_FORECAST_MAX (20U * 1024U)
 #define WEATHER_HTTP_TIMEOUT_MS 10000
 /* Plain HTTP and a kilobyte of JSON: half of what the Yandex catalog's TLS
  * fetch needs. Measured at the first fetch and logged, see below. */
@@ -216,6 +220,11 @@ static int weather_fetch(const char *url, char *response, size_t response_size, 
          * the name is still worth giving. */
         .user_agent = "jRadio/1.0",
         .keep_alive_enable = false,
+        /* The request line has to fit: Open-Meteo's, with the screensaver's
+         * fields and three days, is near 480 characters, and the client's
+         * default 512 bytes for the line and its headers failed it as a
+         * connection error. */
+        .buffer_size_tx = 1024,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (client == NULL) return 0;
@@ -275,6 +284,36 @@ static void set_state(weather_state_t state, int http_status)
     unlock();
 }
 
+/* OpenWeatherMap's days come from a second request; the other two services
+ * put them in the first answer, or have none. A forecast that fails keeps
+ * the days the last one gave, so the screensaver's bottom row does not blink
+ * out for a round. */
+static void weather_add_forecast(const weather_config_t *config, weather_report_t *report)
+{
+    /* Static rather than on the stack: this runs inside a round that already
+     * holds its own request there, and the task's stack is internal RAM.
+     * Only the weather task gets here. */
+    static char url[WEATHER_URL_MAX];
+    if (weather_forecast_url(url, sizeof(url), config->provider, config->latitude,
+                             config->longitude, config->key) == 0U) {
+        return;
+    }
+    char *body = malloc(WEATHER_FORECAST_MAX);
+    bool got = false;
+    if (body != NULL) {
+        size_t length = 0U;
+        const int status = weather_fetch(url, body, WEATHER_FORECAST_MAX, &length);
+        got = status == 200 && weather_parse_openweathermap_forecast(body, length, report);
+        if (!got) ESP_LOGW(TAG, "OpenWeatherMap forecast: %d", status);
+        free(body);
+    }
+    weather_secure_zero(url, sizeof(url));
+    if (got) return;
+    lock();
+    memcpy(report->days, s_status.report.days, sizeof(report->days));
+    unlock();
+}
+
 /* One round: returns how long to sleep before the next. */
 static uint32_t weather_round(char *response)
 {
@@ -283,7 +322,9 @@ static uint32_t weather_round(char *response)
     config = s_config;
     unlock();
 
-    char url[WEATHER_URL_MAX];
+    /* Static, like the forecast's: 512 bytes the task's internal-RAM stack
+     * could not spare - with them on it, a failed connect left 155 bytes. */
+    static char url[WEATHER_URL_MAX];
     if (config.provider == DEVICE_WEATHER_OFF) {
         set_state(WEATHER_STATE_OFF, 0);
         weather_secure_zero(&config, sizeof(config));
@@ -315,6 +356,7 @@ static uint32_t weather_round(char *response)
 
     weather_report_t report;
     const bool ok = status == 200 && weather_parse(config.provider, response, length, &report);
+    if (ok) weather_add_forecast(&config, &report);
     if (ok) {
         char text[16];
         weather_temperature_text(text, sizeof(text), &report);
@@ -324,8 +366,11 @@ static uint32_t weather_round(char *response)
         s_status.report = report;
         s_report_at_ms = now_ms();
         unlock();
-        ESP_LOGI(TAG, "%s: %s, %s", provider_name(config.provider), text,
-                 weather_icon_name(report.icon));
+        ESP_LOGI(TAG, "%s: %s, %s, feels %d, %d%%, %d mmHg, wind %d m/s from %d, days %d%d%d",
+                 provider_name(config.provider), text, weather_icon_name(report.icon),
+                 report.feels_like_c, report.humidity_pct, report.pressure_mmhg, report.wind_ms,
+                 report.wind_from_deg, report.days[0].valid, report.days[1].valid,
+                 report.days[2].valid);
         weather_secure_zero(&config, sizeof(config));
         return WEATHER_POLL_MS;
     }

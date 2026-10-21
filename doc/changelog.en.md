@@ -6,6 +6,13 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## Next version
+
+New:
+- With nothing playing, the station list opens with the cursor on the
+  station played last rather than the first - after coming back from the
+  sound settings through the menu, for one.
+
 ## v1.8.6 — 21 October 2026
 
 Fixed:

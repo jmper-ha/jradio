@@ -66,6 +66,14 @@ typedef enum {
     DEVICE_SCREENSAVER_CLOCK,
 } device_screensaver_t;
 
+/* When the wait counts: from the last touch, as it always did, or only while
+ * nothing plays - a radio playing on a shelf keeps its screen, and the
+ * screen rests once the music has stopped and the wait has run out. */
+typedef enum {
+    DEVICE_SCREENSAVER_ALWAYS = 0,
+    DEVICE_SCREENSAVER_WHEN_IDLE,
+} device_screensaver_when_t;
+
 /* The panel's colours, see ui_theme.h. Stored by name, so a card from a
  * build that knows more themes reads here as the standard one rather than as
  * a number that means something else. */
@@ -310,6 +318,7 @@ typedef struct {
     device_screensaver_t screensaver;
     device_theme_t theme;
     uint32_t theme_colors[DEVICE_THEME_COLORS];
+    device_screensaver_when_t screensaver_when;
     /* One of device_screensaver_seconds_choices. */
     unsigned short screensaver_seconds;
     /* The idle backlight, a percentage like `brightness` and refused at zero
@@ -446,6 +455,8 @@ bool device_settings_set_screensaver_seconds(device_settings_t *settings, unsign
 bool device_settings_screensaver_seconds_valid(unsigned int seconds);
 bool device_settings_set_screensaver_brightness(device_settings_t *settings,
                                                 unsigned char brightness);
+bool device_settings_set_screensaver_when(device_settings_t *settings,
+                                          device_screensaver_when_t when);
 bool device_settings_set_alarm_enabled(device_settings_t *settings, bool enabled);
 /* Refused outside the day, not wrapped: a time nobody set is an alarm that
  * goes off at a time nobody expects. */

@@ -92,6 +92,7 @@ static const field_descriptor_t k_fields[] = {
     {"loudness", WEB_SETTINGS_FIELD_LOUDNESS, {WEB_SETTINGS_LOUDNESS_NAMES}, false, false},
     {"loudness_treble", WEB_SETTINGS_FIELD_LOUDNESS_TREBLE, {NULL}, false, false},
     {"level_normalize", WEB_SETTINGS_FIELD_LEVEL_NORMALIZE, {NULL}, false, false},
+    {"screensaver_when", WEB_SETTINGS_FIELD_SCREENSAVER_WHEN, {"always", "idle"}, false, false},
 };
 
 /* A provider the page has no name for - a newer card - reads as off, which is
@@ -339,6 +340,10 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_loudness_treble(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_LEVEL_NORMALIZE:
         return device_settings_set_level_normalize(settings, change->value != 0);
+    case WEB_SETTINGS_FIELD_SCREENSAVER_WHEN:
+        // The choice's index: 0 "always", 1 "idle", as device_screensaver_when_t counts.
+        return device_settings_set_screensaver_when(settings,
+                                                    (device_screensaver_when_t)change->value);
     case WEB_SETTINGS_FIELD_OPENWEATHERMAP_KEY:
         /* Not the card's: the handler routes it to the key file. */
         return false;
@@ -379,6 +384,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .screensaver = (uint8_t)settings->screensaver,
         .screensaver_seconds = settings->screensaver_seconds,
         .screensaver_brightness = settings->screensaver_brightness,
+        .screensaver_when = (uint8_t)settings->screensaver_when,
         .alarm = settings->alarm,
         .tone_bass = (int8_t)settings->tone_bass,
         .tone_treble = (int8_t)settings->tone_treble,
@@ -423,6 +429,7 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->screensaver == right->screensaver &&
            left->screensaver_seconds == right->screensaver_seconds &&
            left->screensaver_brightness == right->screensaver_brightness &&
+           left->screensaver_when == right->screensaver_when &&
            left->alarm.enabled == right->alarm.enabled &&
            left->alarm.hour == right->alarm.hour &&
            left->alarm.minute == right->alarm.minute &&
@@ -505,6 +512,9 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_format(writer, "%u", (unsigned)view->screensaver_seconds);
     web_json_literal(writer, ",\"screensaver_brightness\":");
     web_json_format(writer, "%u", (unsigned)view->screensaver_brightness);
+    web_json_literal(writer, ",\"screensaver_when\":");
+    web_json_string(writer, view->screensaver_when == DEVICE_SCREENSAVER_WHEN_IDLE ? "idle"
+                                                                                  : "always");
     /* Flat members under the names the page posts back, the way every
      * other setting here reads: the page's field table is then one line per
      * row and needs no special case, and the player's indicator reads the two

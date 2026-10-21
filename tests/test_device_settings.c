@@ -609,8 +609,12 @@ static void test_the_screensaver_settings_persist_and_are_checked(void)
     assert(settings.screensaver == DEVICE_SCREENSAVER_OFF);
     assert(settings.screensaver_seconds == DEVICE_SCREENSAVER_SECONDS_DEFAULT);
     assert(settings.screensaver_brightness == DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT);
+    // From the last touch, as before the choice existed.
+    assert(settings.screensaver_when == DEVICE_SCREENSAVER_ALWAYS);
 
     assert(device_settings_set_screensaver(&settings, DEVICE_SCREENSAVER_CLOCK));
+    assert(device_settings_set_screensaver_when(&settings, DEVICE_SCREENSAVER_WHEN_IDLE));
+    assert(!device_settings_set_screensaver_when(&settings, (device_screensaver_when_t)5));
     assert(device_settings_set_screensaver_seconds(&settings, 300));
     assert(device_settings_set_screensaver_brightness(&settings, 15));
 
@@ -619,9 +623,12 @@ static void test_the_screensaver_settings_persist_and_are_checked(void)
     assert(reloaded.screensaver == DEVICE_SCREENSAVER_CLOCK);
     assert(reloaded.screensaver_seconds == 300);
     assert(reloaded.screensaver_brightness == 15);
+    assert(reloaded.screensaver_when == DEVICE_SCREENSAVER_WHEN_IDLE);
 
     /* Words in the file, like the weather's. */
     char value[32];
+    assert(settings_csv_get(test_path, "screensaver_when", value, sizeof(value)));
+    assert(strcmp(value, "idle") == 0);
     assert(settings_csv_get(test_path, "screensaver", value, sizeof(value)));
     assert(strcmp(value, "clock") == 0);
     assert(device_settings_set_screensaver(&settings, DEVICE_SCREENSAVER_DIM));
@@ -651,12 +658,14 @@ static void test_the_screensaver_settings_persist_and_are_checked(void)
     (void)unlink(test_path);
     FILE *file = fopen(test_path, "w");
     assert(file != NULL);
-    fputs("screensaver,sparkles\nscreensaver_seconds,45\nscreensaver_brightness,0\n", file);
+    fputs("screensaver,sparkles\nscreensaver_seconds,45\nscreensaver_brightness,0\n"
+          "screensaver_when,sometimes\n", file);
     fclose(file);
     assert(device_settings_init_at(&settings, test_path));
     assert(settings.screensaver == DEVICE_SCREENSAVER_OFF);
     assert(settings.screensaver_seconds == DEVICE_SCREENSAVER_SECONDS_DEFAULT);
     assert(settings.screensaver_brightness == DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT);
+    assert(settings.screensaver_when == DEVICE_SCREENSAVER_ALWAYS);
 }
 
 static void test_the_bluetooth_output_persists_and_forgets(void)

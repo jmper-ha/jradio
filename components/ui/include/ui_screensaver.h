@@ -71,6 +71,14 @@ void ui_screensaver_init(ui_screensaver_t *saver, uint32_t now_ms);
  * or it follows such a press within the grace above. */
 bool ui_screensaver_wake(ui_screensaver_t *saver, device_screensaver_t mode, uint32_t now_ms);
 
+/* Whether something plays, said every pass before the step. With the wait
+ * counting only while nothing plays (DEVICE_SCREENSAVER_WHEN_IDLE), playing
+ * holds the wait at its start, and music starting under a resting screen
+ * brings the screen back - what plays has a screen worth seeing. In the
+ * other setting this does nothing. */
+void ui_screensaver_note_playing(ui_screensaver_t *saver, const device_settings_t *settings,
+                                 bool playing, uint32_t now_ms);
+
 /* One pass of the UI loop. `area_*` is the panel and `block_*` the clock
  * block, so the block can be placed when the clock comes up - somewhere it
  * fits, and somewhere else the next time; `x`/`y` in the view are that

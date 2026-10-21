@@ -1684,6 +1684,14 @@ static void ui_screensaver_draw(void)
  * - see ui_backlight_apply(). */
 static void ui_screensaver_poll(uint32_t now_ms)
 {
+    /* Connecting and reconnecting count as playing: a station being fetched
+     * again is music about to come back, not a device left alone. Paused is
+     * not - nothing is heard. */
+    const player_playback_state_t playback = ui_player_state_playback(&s_player_ui);
+    const bool playing = playback == PLAYER_PLAYBACK_PLAYING ||
+                         playback == PLAYER_PLAYBACK_CONNECTING ||
+                         playback == PLAYER_PLAYBACK_RECONNECTING;
+    ui_screensaver_note_playing(&s_saver, &s_device_settings, playing, now_ms);
     const bool changed =
         ui_screensaver_step(&s_saver, &s_device_settings, now_ms, TFT_WIDTH, TFT_HEIGHT,
                             s_saver_block_w, s_saver_block_h, &s_saver_view);

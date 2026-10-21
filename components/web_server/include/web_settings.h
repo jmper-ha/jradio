@@ -95,6 +95,7 @@ typedef enum {
     WEB_SETTINGS_FIELD_LOUDNESS_TREBLE,
     // One station as loud as the next.
     WEB_SETTINGS_FIELD_LEVEL_NORMALIZE,
+    WEB_SETTINGS_FIELD_SCREENSAVER_WHEN,
     /* Not a device setting at all - a secret that goes to its own file - but
      * it arrives on the same page in the same shape, so it is parsed here and
      * routed by the handler: web_settings_apply() refuses it. */
@@ -174,6 +175,8 @@ typedef struct web_settings_view {
     uint8_t screensaver;
     uint16_t screensaver_seconds;
     uint8_t screensaver_brightness;
+    // device_screensaver_when_t: 0 from the last touch, 1 only while nothing plays.
+    uint8_t screensaver_when;
     /* The alarm as it is set. In the live diff rather than in the document
      * beside the time server: the player page carries an indicator for it, and
      * a change made on one phone has to reach the other one - six bytes is

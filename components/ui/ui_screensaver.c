@@ -30,6 +30,19 @@ bool ui_screensaver_wake(ui_screensaver_t *saver, device_screensaver_t mode, uin
     return swallow;
 }
 
+void ui_screensaver_note_playing(ui_screensaver_t *saver, const device_settings_t *settings,
+                                 bool playing, uint32_t now_ms)
+{
+    if (saver == NULL || settings == NULL || !playing ||
+        settings->screensaver_when != DEVICE_SCREENSAVER_WHEN_IDLE) {
+        return;
+    }
+    saver->last_input_ms = now_ms;
+    saver->active = false;
+    // Woken by the music, not by a press: nothing is waiting to be swallowed.
+    saver->swallowing = false;
+}
+
 bool ui_screensaver_step(ui_screensaver_t *saver, const device_settings_t *settings,
                          uint32_t now_ms, int area_w, int area_h, int block_w, int block_h,
                          ui_screensaver_view_t *view)

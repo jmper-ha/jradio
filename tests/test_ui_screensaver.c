@@ -268,8 +268,52 @@ static void test_the_short_date_drops_the_weekday(void)
     assert(text[0] == '\0');
 }
 
+/* Only while nothing plays: the wait is held at its start for as long as
+ * something does, runs from where the music stopped, and music starting
+ * under a resting screen brings it back. Set to always, playing changes
+ * nothing. */
+static void test_the_wait_can_count_only_while_nothing_plays(void)
+{
+    ui_screensaver_t saver;
+    ui_screensaver_init(&saver, 0);
+    device_settings_t settings = settings_with(DEVICE_SCREENSAVER_DIM);
+    settings.screensaver_when = DEVICE_SCREENSAVER_WHEN_IDLE;
+    ui_screensaver_view_t view;
+    (void)ui_screensaver_step(&saver, &settings, 0, AREA_W, AREA_H, BLOCK_W, BLOCK_H, &view);
+    // An hour of music, nobody at the knob: the panel stays up.
+    for (uint32_t now = 1000U; now <= 3600000U; now += 1000U) {
+        ui_screensaver_note_playing(&saver, &settings, true, now);
+        (void)ui_screensaver_step(&saver, &settings, now, AREA_W, AREA_H, BLOCK_W, BLOCK_H,
+                                  &view);
+        assert(!view.active);
+    }
+    // The music stops: the wait runs from there.
+    ui_screensaver_note_playing(&saver, &settings, false, 3629999U);
+    (void)ui_screensaver_step(&saver, &settings, 3629999U, AREA_W, AREA_H, BLOCK_W, BLOCK_H,
+                              &view);
+    assert(!view.active);
+    assert(ui_screensaver_step(&saver, &settings, 3630000U, AREA_W, AREA_H, BLOCK_W, BLOCK_H,
+                               &view));
+    assert(view.active);
+    // Music again - the alarm, say - and the panel comes back by itself.
+    ui_screensaver_note_playing(&saver, &settings, true, 3700000U);
+    assert(ui_screensaver_step(&saver, &settings, 3700000U, AREA_W, AREA_H, BLOCK_W, BLOCK_H,
+                               &view));
+    assert(!view.active && view.backlight == 50);
+
+    // Always: playing or not, the wait runs from the last touch.
+    ui_screensaver_init(&saver, 0);
+    settings.screensaver_when = DEVICE_SCREENSAVER_ALWAYS;
+    (void)ui_screensaver_step(&saver, &settings, 0, AREA_W, AREA_H, BLOCK_W, BLOCK_H, &view);
+    ui_screensaver_note_playing(&saver, &settings, true, 30000U);
+    assert(ui_screensaver_step(&saver, &settings, 30000U, AREA_W, AREA_H, BLOCK_W, BLOCK_H,
+                               &view));
+    assert(view.active);
+}
+
 int main(void)
 {
+    test_the_wait_can_count_only_while_nothing_plays();
     test_the_short_date_drops_the_weekday();
     test_nothing_happens_while_the_saver_is_off();
     test_dim_takes_the_backlight_down_after_the_wait_and_a_press_passes();

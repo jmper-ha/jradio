@@ -457,6 +457,11 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
             settings->screensaver_seconds = (unsigned short)parsed;
         }
     }
+    // Anything but "idle" is the old behaviour, which a missing key is too.
+    if (read_value(&csv, "screensaver_when", value, sizeof(value))) {
+        settings->screensaver_when =
+            strcmp(value, "idle") == 0 ? DEVICE_SCREENSAVER_WHEN_IDLE : DEVICE_SCREENSAVER_ALWAYS;
+    }
     if (read_value(&csv, "screensaver_brightness", value, sizeof(value))) {
         char *end = NULL;
         const long parsed = strtol(value, &end, 10);
@@ -1118,6 +1123,19 @@ bool device_settings_set_screensaver_seconds(device_settings_t *settings, unsign
     snprintf(text, sizeof(text), "%u", seconds);
     if (!save_value(settings, "screensaver_seconds", text)) return false;
     settings->screensaver_seconds = (unsigned short)seconds;
+    return true;
+}
+
+bool device_settings_set_screensaver_when(device_settings_t *settings,
+                                          device_screensaver_when_t when)
+{
+    if (settings == NULL || when > DEVICE_SCREENSAVER_WHEN_IDLE) return false;
+    if (settings->screensaver_when == when) return true;
+    if (!save_value(settings, "screensaver_when",
+                    when == DEVICE_SCREENSAVER_WHEN_IDLE ? "idle" : "always")) {
+        return false;
+    }
+    settings->screensaver_when = when;
     return true;
 }
 

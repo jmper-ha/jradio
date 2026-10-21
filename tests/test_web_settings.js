@@ -101,7 +101,8 @@ const ids = [
   'device-theme-dim', 'device-theme-dim-row',
   'device-theme-accent', 'device-theme-accent-row',
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
-  'device-idle-brightness-value', 'device-screensaver-after-row',
+  'device-idle-brightness-value', 'device-screensaver-after-row', 'device-screensaver-when',
+  'device-screensaver-when-row',
   'device-idle-brightness-row',
   'device-timezone', 'device-ntp', 'sleep-select', 'device-name', 'device-name-note',
   'device-alarm', 'device-alarm-time', 'device-alarm-station', 'device-alarm-volume',
@@ -1061,12 +1062,25 @@ function lastYandexTimer() {
   await settle();
   assert.equal(elements['#device-screensaver-after-row'].hidden, true);
   assert.equal(elements['#device-idle-brightness-row'].hidden, true);
+  assert.equal(elements['#device-screensaver-when-row'].hidden, true);
   settingsReply = {...settingsReply, screensaver: 'blank'};
   elements['#device-screensaver'].value = 'blank';
   elements['#device-screensaver'].emit('change');
   await settle();
   assert.equal(elements['#device-screensaver-after-row'].hidden, false);
   assert.equal(elements['#device-idle-brightness-row'].hidden, false);
+  assert.equal(elements['#device-screensaver-when-row'].hidden, false);
+  // When it comes on is a word, like the mode.
+  settingsReply = {...settingsReply, screensaver_when: 'idle'};
+  elements['#device-screensaver-when'].value = 'idle';
+  elements['#device-screensaver-when'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
+                                           call.options &&
+                                           call.options.method === 'POST')
+      .at(-1).options.body),
+    {field: 'screensaver_when', value: 'idle'});
 
   /* A write the device refuses puts the control back to what it actually
      holds: a switch left showing a change that never landed is worse than no

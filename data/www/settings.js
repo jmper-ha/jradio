@@ -116,6 +116,12 @@
      node: document.querySelector('#device-screensaver-after'),
      row: document.querySelector('#device-screensaver-after-row'),
      when: {field: 'screensaver', not: 'off'}},
+    /* From the last touch whatever plays, or only once the music has stopped:
+       a radio on a shelf that keeps its screen while it plays. */
+    {field: 'screensaver_when', kind: 'choice',
+     node: document.querySelector('#device-screensaver-when'),
+     row: document.querySelector('#device-screensaver-when-row'),
+     when: {field: 'screensaver', not: 'off'}},
     {field: 'screensaver_brightness', kind: 'number', node: deviceIdleBrightness,
      output: document.querySelector('#device-idle-brightness-value'),
      row: document.querySelector('#device-idle-brightness-row'),

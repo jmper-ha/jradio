@@ -2638,6 +2638,11 @@ void player_control_get_snapshot(player_snapshot_t *snapshot)
     }
 }
 
+bool player_control_last_station(size_t *index)
+{
+    return internet_radio_saved_station_index(index);
+}
+
 bool player_control_input_fill(uint8_t *percent)
 {
     if (percent == NULL) return false;

@@ -150,6 +150,11 @@ bool player_control_playing_file_path(char *out, size_t out_size);
  * open, so the browser has somewhere to show. */
 bool player_control_file_resume_path(const char *path);
 
+/* The station the radio played last - the one autoplay would start - as its
+ * row in the catalogue. False when none is saved or it has left the list.
+ * Reads the settings file, so it is for opening a screen, not for a poll. */
+bool player_control_last_station(size_t *index);
+
 /* The Yandex station on the air, by identity rather than by row.
  *
  * The row is what the dashboard happened to hand out this time, and it is not

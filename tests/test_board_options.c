@@ -33,7 +33,7 @@ static void test_display_group_is_complete_and_consistent(void)
     /* Only SPI2 and SPI3 can drive a panel on this part; SPI1 is the flash bus. */
     assert(DISPLAY_SPI_PERIPHERAL == 2 || DISPLAY_SPI_PERIPHERAL == 3);
     assert(TFT_CS_GPIO == 10);
-    assert(TFT_DC_GPIO == 47);
+    assert(TFT_DC_GPIO == 9);
     assert(TFT_MOSI_GPIO == 11);
     assert(TFT_SCLK_GPIO == 12);
 
@@ -171,7 +171,7 @@ static void test_the_orientation_decides_the_geometry_and_nothing_else(void)
 
 static void test_backlight_duty_fits_the_pwm_timer(void)
 {
-    assert(TFT_BACKLIGHT_GPIO == 2);
+    assert(TFT_BACKLIGHT_GPIO == 13);
     /* The pin is this board's; the PWM settings belong to the panel module and
      * live in its profile header. The pairing is what is worth checking. */
     assert(BACKLIGHT_PWM_HZ == 5000);
@@ -213,13 +213,25 @@ static void test_control_pins_are_distinct(void)
 
 static void test_audio_group_matches_the_fixed_i2s_slots(void)
 {
-    assert(AUDIO_DAC == DAC_PCM5102);
+    assert(AUDIO_DAC == DAC_PCM5102 || AUDIO_DAC == DAC_UDA1334A ||
+           AUDIO_DAC == DAC_SSM3582);
     /* Every DAC in the catalogue resolves to the same fixed format and to a
      * name and a stop policy: the decay before the clock stops is only for
      * the DAC that needs it, and the PCM5102 keeps the stop it always had. */
     assert(AUDIO_BITS_PER_SAMPLE == 16 && AUDIO_CHANNEL_COUNT == 2);
     assert(I2S_SLOT_BIT_WIDTH == AUDIO_BITS_PER_SAMPLE);
-    assert(AUDIO_DAC_STOP_DECAY == 0);
+    /* Only the SSM3582 asks the link for wider slots on its own: its
+     * modulator wants a BCLK no shorter than 2.048 MHz, and 32 x Fs is
+     * under that at every rate this radio plays. It also closes its own
+     * output stage before the clock may stop, so its queue has to decay
+     * to silence first, as the UDA1334A's does. */
+#if AUDIO_DAC == DAC_SSM3582
+    assert(I2S_SLOTS_ALWAYS_WIDE == 1);
+    assert(AUDIO_DAC_STOP_DECAY == 1);
+#else
+    assert(I2S_SLOTS_ALWAYS_WIDE == 0);
+    assert(AUDIO_DAC_STOP_DECAY == (AUDIO_DAC == DAC_PCM5102 ? 0 : 1));
+#endif
     assert(BOARD_DAC_NAME[0] != '\0');
     assert(I2S_DOUT_GPIO == 16);
     assert(I2S_BCLK_GPIO == 18);

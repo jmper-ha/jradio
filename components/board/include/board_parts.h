@@ -85,6 +85,17 @@
  * stops under it, so the firmware decays the output first - see
  * AUDIO_DAC_STOP_DECAY in board_audio_format.h. */
 #define DAC_UDA1334A 2
+/* SSM3582 bridge-tied class-D amplifier: the DAC, the filterless output
+ * stage, a soft-ramped volume control and I2C control in one part. It
+ * replaces the DAC-plus-external-amplifier chain rather than joining it -
+ * the amplifier is what the volume knob moves, and its mute and its
+ * click-free off are registers too (see ssm3582.c). It is not a drop-in
+ * on the I2S side: like these it is a slave of the bus, but it wants a
+ * BCLK no shorter than 2.048 MHz, so the slots widen to 32 bits and no
+ * rate below 32 kHz survives its ratio table - see I2S_SLOTS_ALWAYS_WIDE
+ * in board_audio_format.h. It is controlled over I2C0, the bus the tuner
+ * and the clock are on, at address 0x10. */
+#define DAC_SSM3582 3
 
 #define FM_TUNER_NONE 0
 /* RDA5807 receiver: FM band, I2C control (components/fm_tuner). The M module

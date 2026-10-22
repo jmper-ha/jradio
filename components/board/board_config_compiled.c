@@ -116,6 +116,15 @@ void board_config_compiled(board_config_t *config)
     config->i2c0_scl = PIN(FM_I2C_SCL_GPIO);
 #endif
 #endif
+/* The SSM3582 is controlled over I2C0 too - the third device on that bus,
+ * and named by the same two defines for the same reason: a board built on
+ * the amplifier, with neither tuner nor clock, still has to name them. */
+#if defined(AUDIO_DAC) && AUDIO_DAC == DAC_SSM3582
+#if defined(FM_I2C_SDA_GPIO) && defined(FM_I2C_SCL_GPIO)
+    config->i2c0_sda = PIN(FM_I2C_SDA_GPIO);
+    config->i2c0_scl = PIN(FM_I2C_SCL_GPIO);
+#endif
+#endif
 #if defined(AUDIO_ADC) && AUDIO_ADC == AUDIO_ADC_PCM1808
     config->adc = AUDIO_ADC_PCM1808;
     config->i2s0_din = PIN(I2S_DIN_GPIO);

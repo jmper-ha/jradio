@@ -40,6 +40,7 @@
 #include "ir_receiver.h"
 #include "remote_control.h"
 #include "pcm_diagnostics.h"
+#include "ssm3582.h"
 
 /* Parts this file has code for. Selecting anything else in board_options.h
  * fails the build rather than initialising a device that then misbehaves. */
@@ -312,6 +313,12 @@ void board_audio_set_volume(uint8_t percent)
 {
     if (percent > AUDIO_VOLUME_MAX_PERCENT) percent = AUDIO_VOLUME_MAX_PERCENT;
     atomic_store_explicit(&s_audio_volume, percent, memory_order_relaxed);
+#if AUDIO_DAC == DAC_SSM3582
+    /* The same setting reaches the chip's own soft-ramped volume register;
+     * it does nothing when no chip answered at setup, and the digital path
+     * below is still the only volume there is. */
+    ssm3582_set_volume(percent);
+#endif
 }
 
 uint8_t board_audio_volume(void)
@@ -501,7 +508,8 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
 
     i2s_std_config_t std_config = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate),
-        /* Both DACs here take the Philips I2S timing: audio data is delayed
+        /* Both line-level DACs here, and the SSM3582, take the Philips
+         * I2S timing: audio data is delayed
          * by one BCLK after the LRCK edge. MSB/left-justified timing shifts
          * every sample by one bit and is not the interface selected on this
          * board - a UDA1334A module strapped for it plays noise. */
@@ -524,15 +532,22 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
             },
         },
     };
-    /* Both DACs take a 32 x Fs BCLK with 16-bit stereo I2S. Keeping the
-     * slot equal to the decoded sample width avoids padding and halves the
-     * BCLK edge rate compared with 32-bit slots. An ADC is the exception: it
-     * sends a 24-bit word per channel and is a slave of the BCLK, and half a
-     * frame of 16 clocks has no room for it - a PCM1808 wants 64 x Fs. The
-     * data stays 16 bits wide, left-aligned in the slot, so the DAC and the
-     * samples read back are as they were; only the clock is twice as fast, and
-     * only while the input is made. */
+    /* Both line-level DACs take a 32 x Fs BCLK with 16-bit stereo I2S.
+     * Keeping the slot equal to the decoded sample width avoids padding and
+     * halves the BCLK edge rate compared with 32-bit slots. An ADC is the
+     * exception: it sends a 24-bit word per channel and is a slave of the
+     * BCLK, and half a frame of 16 clocks has no room for it - a PCM1808
+     * wants 64 x Fs. The SSM3582 is the other exception, and it does not
+     * wait for the input: 2.048 MHz is its clock floor and 32 x Fs is under
+     * it at every rate this radio plays, so on that part the slots are wide
+     * everywhere. The data stays 16 bits wide, left-aligned in the slot, so
+     * the DAC and the samples read back are as they were; only the clock is
+     * twice as fast. */
+#if I2S_SLOTS_ALWAYS_WIDE
+    const bool wide_slots = true;
+#else
     const bool wide_slots = capture && board_has_adc();
+#endif
     std_config.slot_cfg.slot_bit_width =
         wide_slots ? I2S_SLOT_BIT_WIDTH_32BIT : (i2s_slot_bit_width_t)I2S_SLOT_BIT_WIDTH;
     /* The word-select's width follows the slot: left at the 16 bits of the data
@@ -568,7 +583,8 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     ESP_LOGI(TAG,
              BOARD_DAC_NAME " I2S: Philips, 16-bit stereo in %u-bit slots, BCLK=%uxFs, "
              "DMA=%ux%u frames (%lu ms)",
-             I2S_SLOT_BIT_WIDTH, I2S_SLOT_BIT_WIDTH * AUDIO_CHANNEL_COUNT,
+             wide_slots ? 32U : (unsigned int)I2S_SLOT_BIT_WIDTH,
+             (wide_slots ? 32U : (unsigned int)I2S_SLOT_BIT_WIDTH) * AUDIO_CHANNEL_COUNT,
              (unsigned)s_dma_desc_num, I2S_DMA_FRAME_NUM,
              (unsigned long)((s_dma_desc_num * I2S_DMA_FRAME_NUM * 1000U) /
                              AUDIO_DEFAULT_SAMPLE_RATE));
@@ -586,9 +602,16 @@ static bool s_dac_muted;
 
 /* Writes the pin, or does nothing at all on a board with no such pin. Every
  * caller is one of the three inputs changing, so this is where the rule is
- * applied rather than at each site. */
+ * applied rather than at each site.
+ *
+ * A board whose amplifier is the SSM3582 has no pin: the same signal moves
+ * that chip's soft power-down instead, one bus over, and the same moment -
+ * before a clock stops, after one starts - is what makes it click-free. */
 static void board_amp_drive(bool play)
 {
+#if AUDIO_DAC == DAC_SSM3582
+    ssm3582_set_playing(play);
+#endif
     const int8_t pin = wiring()->amp_enable;
     if (pin < 0) {
         s_amp_playing = play;
@@ -649,7 +672,22 @@ static esp_err_t board_audio_init(void)
         ESP_RETURN_ON_ERROR(gpio_config(&mute), TAG, "configure DAC mute");
         board_audio_set_dac_muted(false);
     }
-    return board_audio_create_channel(AUDIO_DEFAULT_SAMPLE_RATE);
+    esp_err_t result = board_audio_create_channel(AUDIO_DEFAULT_SAMPLE_RATE);
+#if AUDIO_DAC == DAC_SSM3582
+    /* The amplifier that is also the DAC: the link it will be handed now
+     * exists, so the chip is asked for over I2C in the same breath. A
+     * board with the wiring and no chip keeps playing - the volume stays
+     * where it has always been, in the samples - which is why this is a
+     * log line and not an error. */
+    if (result == ESP_OK) {
+        const esp_err_t chip = ssm3582_setup(AUDIO_DEFAULT_SAMPLE_RATE, board_audio_volume());
+        if (chip != ESP_OK) {
+            ESP_LOGW(TAG, "no SSM3582 answered on I2C0: %s - volume stays digital",
+                     esp_err_to_name(chip));
+        }
+    }
+#endif
+    return result;
 }
 
 esp_err_t board_audio_release_bus(void)
@@ -756,12 +794,24 @@ static uint16_t s_audio_gain_end = AUDIO_VOLUME_UNITY;
 static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
 {
     const uint32_t frames = (uint32_t)(pcm_length / AUDIO_VOLUME_FRAME_BYTES);
+#if AUDIO_DAC == DAC_SSM3582
+    /* With the SSM3582 on the bus the listening level lives in its own
+     * soft-ramped volume register, so the samples only ever carry the
+     * loudness correction and stay whole: attenuation here would throw
+     * away bits for a level the chip is holding already, and raise the
+     * noise floor for nothing. Without a chip - no I2C, none fitted -
+     * the digital volume is still the only one there is, and nothing
+     * about this path changes. */
+    const uint16_t requested = ssm3582_ready() ? AUDIO_VOLUME_UNITY
+                                               : audio_volume_gain(board_audio_volume());
+#else
+    const uint16_t requested = audio_volume_gain(board_audio_volume());
+#endif
     /* The correction rides in the volume's multiplier, so it is ramped
      * across the block with it and the tone's headroom is worked out from
      * the two together. Measured here, before either: what the station
      * sends, like the meter. */
-    const uint16_t gain =
-        board_audio_levelled_gain(pcm, frames, audio_volume_gain(board_audio_volume()));
+    const uint16_t gain = board_audio_levelled_gain(pcm, frames, requested);
     uint16_t gain_start;
     uint16_t gain_end;
     /* The start of a stream - the fade's first block - is where the tone
@@ -1165,6 +1215,15 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
         if (s_rate_listener != NULL) s_rate_listener(sample_rate);
         board_audio_health_rearm();
     }
+#if AUDIO_DAC == DAC_SSM3582
+    if (result == ESP_OK) {
+        /* The chip autodetects the BCLK rate but not what sample rate is
+         * being carried on it: it has to be told which band the new clock
+         * belongs to. Before TX starts again, so the first frame after the
+         * change reaches a chip that already knows its rate. */
+        ssm3582_set_sample_rate(sample_rate);
+    }
+#endif
     if (result == ESP_OK && was_enabled) {
         result = i2s_channel_enable(s_i2s_tx);
         if (result == ESP_OK) {

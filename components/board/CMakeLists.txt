@@ -3,6 +3,7 @@ idf_component_register(
          "board_config.c" "board_config_compiled.c" "board_config_load.c"
          "board_audio_health.c"
          "audio_tone.c" "audio_level.c" "board_audio_startup.c" "board_input.c" "board_i2c.c" "board_rtc.c" "rtc_chip.c"
+         "ssm3582.c" "ssm3582_chip.c"
          "boot_splash_image.c"
          "ir_decode.c" "ir_receiver.c" "ir_wake_stub.c" "pcm_diagnostics.c" "remote_control.c" "remote_map.c"
          # One per display controller; the unselected ones compile to nothing.

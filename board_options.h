@@ -42,11 +42,11 @@
  * choice decides. */
 /* #define DISPLAY DISPLAY_ILI9341_320_240 */
 /* #define DISPLAY DISPLAY_ILI9341_240_320 */
-/* #define DISPLAY DISPLAY_ST7789_320_240 */
+#define DISPLAY DISPLAY_ST7789_320_240
 /* #define DISPLAY DISPLAY_ST7789_240_320 */
 /* #define DISPLAY DISPLAY_ILI9488_480_320 */
 /* #define DISPLAY DISPLAY_ILI9488_320_480 */
-#define DISPLAY DISPLAY_ST7796S_480_320
+/* #define DISPLAY DISPLAY_ST7796S_480_320 */
 /* #define DISPLAY DISPLAY_ST7796S_320_480 */
 /* The 1.9" module, landscape only - see board_parts.h. */
 /* #define DISPLAY DISPLAY_ST7789_320_170 */
@@ -57,7 +57,7 @@
 #define DISPLAY_SPI_PERIPHERAL 2
 
 #define TFT_CS_GPIO 10
-#define TFT_DC_GPIO 47
+#define TFT_DC_GPIO 9
 #define TFT_MOSI_GPIO 11
 #define TFT_SCLK_GPIO 12
 /* No MISO: the panel is written to and never read back.
@@ -73,15 +73,15 @@
  * Display backlight - PWM on a single pin
  * ====================================================================== */
 
-#define TFT_BACKLIGHT_GPIO 2
+#define TFT_BACKLIGHT_GPIO 13
 
 /* ======================================================================
  * Controls - rotary encoder with push button, plus four function buttons
  * ====================================================================== */
 
-#define ENCODER_RIGHT_GPIO 5
-#define ENCODER_LEFT_GPIO 7
-#define ENCODER_BUTTON_GPIO 6
+#define ENCODER_RIGHT_GPIO 47
+#define ENCODER_LEFT_GPIO 48
+#define ENCODER_BUTTON_GPIO 45
 /* 1: three buttons instead of the encoder, on the same three lines - "+" on
  * ENCODER_RIGHT_GPIO, "-" on ENCODER_LEFT_GPIO, OK on ENCODER_BUTTON_GPIO.
  * They do what a turn and a push do; held, + and - repeat, faster the longer
@@ -104,10 +104,10 @@
  * the S3 has RTC_GPIO 0-21 - because only those can wake the chip. F1 and F2
  * were swapped on the bench for exactly that, 2026-09-16; anywhere else and
  * the board is simply never offered the sleep. */
-#define BUTTON_SLEEP_GPIO 21
-#define BUTTON_QUICK_MENU_GPIO 45
-#define BUTTON_PREV_GPIO 46
-#define BUTTON_NEXT_GPIO 9
+#define BUTTON_SLEEP_GPIO 7
+#define BUTTON_QUICK_MENU_GPIO 4
+#define BUTTON_PREV_GPIO 5
+#define BUTTON_NEXT_GPIO 6
 
 /* The internal pull-ups are always on, for the encoder and the buttons alike
  * (2026-10-20). They were a choice per group, and users who wired a button
@@ -122,7 +122,18 @@
  * Audio output - I2S DAC, line out
  * ====================================================================== */
 
-#define AUDIO_DAC DAC_PCM5102
+/* #define AUDIO_DAC DAC_PCM5102 */
+#define AUDIO_DAC DAC_SSM3582
+#define FM_I2C_SDA_GPIO 38
+#define FM_I2C_SCL_GPIO 39
+
+
+/* The I2C address of an SSM3582 amplifier (AUDIO_DAC = DAC_SSM3582), a
+ * seven-bit one. Left out, the chip's own default of 0x10 - both its ADDR
+ * pins at ground - is used. The ADDRx pins pick the address from sixteen
+ * at power-up; say the result here when they are wired to anything else,
+ * the firmware does not scan the bus looking for the chip. */
+#define AUDIO_DAC_I2C_ADDRESS 0x10
 
 #define I2S_DOUT_GPIO 16
 #define I2S_BCLK_GPIO 18
@@ -174,8 +185,8 @@
  * USB host - flash drive, internal PHY
  * ====================================================================== */
 
-#define USB_DM_GPIO 19
-#define USB_DP_GPIO 20
+/* #define USB_DM_GPIO 19 */
+/* #define USB_DP_GPIO 20 */
 /* VBUS is permanently powered and not switched by firmware, so there is no
  * pin for it. A drive left attached across an ESP32 reset is recovered by
  * power-cycling the root port logically (usb_host_lib_set_root_port_power),
@@ -190,10 +201,10 @@
  * a card cannot work without, and the display driver owns its bus with its own
  * transactions - a card on it would have to interleave with every frame. */
 
-#define SDC_CS_GPIO 1
-#define SDC_SCK_GPIO 41
-#define SDC_MISO_GPIO 40
-#define SDC_MOSI_GPIO 42
+/* #define SDC_CS_GPIO 1 */
+/* #define SDC_SCK_GPIO 41 */
+/* #define SDC_MISO_GPIO 40 */
+/* #define SDC_MOSI_GPIO 42 */
 /* GPIO 40, 41 and 42 are MTDO/MTDI/MTMS, so the bus takes over the external
  * JTAG header. No loss in practice: the built-in USB Serial/JTAG shares its
  * pins with the USB host port, which is already wired to the drive socket. */

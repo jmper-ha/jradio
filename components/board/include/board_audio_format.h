@@ -11,11 +11,12 @@
  * Not in board_options.h: none of it is a wiring choice. Selecting a different
  * DAC would replace the whole set at once. */
 
-#if AUDIO_DAC == DAC_PCM5102 || AUDIO_DAC == DAC_UDA1334A
+#if AUDIO_DAC == DAC_PCM5102 || AUDIO_DAC == DAC_UDA1334A || AUDIO_DAC == DAC_SSM3582
 
-/* The slots are fixed 16-bit stereo: mono sources are duplicated into both
- * channels by the players rather than reconfigured, and the sample width has
- * to match the slot width. */
+/* The samples are fixed 16-bit stereo: mono sources are duplicated into
+ * both channels by the players rather than reconfigured, and the sample
+ * width has to match the slot width unless the selected part asks for
+ * wider slots around the same 16-bit samples - see I2S_SLOTS_ALWAYS_WIDE. */
 #define AUDIO_DEFAULT_SAMPLE_RATE 44100
 #define AUDIO_BITS_PER_SAMPLE 16
 #define AUDIO_CHANNEL_COUNT 2
@@ -41,6 +42,20 @@
  * detect and would engage its analog mute. */
 #define I2S_PRELOAD_SILENCE 1
 
+/* The slots around the samples. The two line-level DACs take their
+ * 16-bit stereo in 16-bit slots, BCLK = 32 x Fs, and only an ADC on
+ * the bus forces the wider geometry (see board.c). The SSM3582 wants it
+ * always: its modulator needs a BCLK no shorter than 2.048 MHz, and
+ * 32 x Fs is under that at every rate this radio plays - two 32-bit
+ * slots, 64 x Fs, is what its table lists from 32 kHz upwards. The
+ * samples stay 16 bits, left-aligned in the slot, exactly as they
+ * already are when an ADC widens them. */
+#if AUDIO_DAC == DAC_SSM3582
+#define I2S_SLOTS_ALWAYS_WIDE 1
+#else
+#define I2S_SLOTS_ALWAYS_WIDE 0
+#endif
+
 #if AUDIO_DAC == DAC_PCM5102
 #define BOARD_DAC_NAME "PCM5102"
 /* This DAC mutes itself when the clock errs or stops, so output may be
@@ -49,13 +64,23 @@
  * stop path every board here has been listening to, and the decay below is
  * not worth changing it for. */
 #define AUDIO_DAC_STOP_DECAY 0
-#else
+#elif AUDIO_DAC == DAC_UDA1334A
 #define BOARD_DAC_NAME "UDA1334A"
 /* No internal mute on a lost clock: disabling the channel outright drops up
  * to 92.9 ms of queued music mid-waveform and takes BCLK with it, and the
  * step that leaves on the output is the click two users heard on every
  * station and track change. So the stop decays the output to zero and waits
  * for the DMA to clock it out before the channel goes down. */
+#define AUDIO_DAC_STOP_DECAY 1
+#else
+#define BOARD_DAC_NAME "SSM3582"
+/* The output stage lives in the same chip as the volume control, and it is
+ * closed - soft-ramped, click-free by its own design - before the clock is
+ * ever allowed to stop; see ssm3582_set_playing() where board_amp_drive()
+ * decides an amplifier has nothing to amplify. What still must not drop
+ * mid-waveform is the queue behind that: the chip may only power down over
+ * silence, so the stop decays the tail and lets the DMA clock it out
+ * first, as it does for the UDA1334A. */
 #define AUDIO_DAC_STOP_DECAY 1
 #endif
 

@@ -428,7 +428,7 @@ def emit(out_c, out_h):
         for name, size, image in made:
             data = rgb565a8(image)
             handle.write(f"\nstatic const uint8_t s_{name}_{size}[] = {{\n")
-            for offset in range(0, len(data), 16):
+            for offset in range(0, len(data), 24):
                 # Decimal: a third shorter than hex for the same bytes.
                 chunk = ",".join(str(byte) for byte in data[offset:offset + 24])
                 handle.write(f"    {chunk},\n")

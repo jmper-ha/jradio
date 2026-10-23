@@ -241,6 +241,13 @@ static void test_audio_group_matches_the_fixed_i2s_slots(void)
      * value straight to the pad and its complement for the other state. */
     assert(AUDIO_AMP_ON_LEVEL == 0 || AUDIO_AMP_ON_LEVEL == 1);
 #endif
+#ifdef AUDIO_DAC_MAX_VOLUME_DB
+    /* The SSM3582's loudest setting, in whole dB: it has to sit inside
+     * the chip's own volume ladder, +24 dB to -71 dB in 0.375 dB steps.
+     * ssm3582.c says the same with a _Static_assert; this is where a
+     * board author reading a failing test finds the number to fix. */
+    assert(AUDIO_DAC_MAX_VOLUME_DB >= -71 && AUDIO_DAC_MAX_VOLUME_DB <= 24);
+#endif
     assert(AUDIO_DEFAULT_SAMPLE_RATE == 44100);
     assert(AUDIO_BITS_PER_SAMPLE == 16);
     assert(AUDIO_CHANNEL_COUNT == 2);

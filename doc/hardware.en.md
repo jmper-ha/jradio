@@ -188,6 +188,14 @@ and I2C control:
   samples are not scaled and the noise floor does not rise. It needs no
   `AUDIO_AMP_GPIO` pin: opening and closing the amplifier is a register
   too (a soft power-down, click-free).
+- The loudest setting - the one 100% is worth - can be moved:
+  `AUDIO_DAC_MAX_VOLUME_DB` in `board_options.h`, a whole number of dB
+  between -71 and +24. The chip's digital volume can boost as well as
+  attenuate, up to +24 dB, so this is not a limit not to exceed but
+  where the top of the knob sits; every step below it keeps the very
+  intervals the usual curve has. Left out, the top is 0 dB, the
+  register's reset value. Whole dB are rounded to the nearest 0.375 dB
+  step; a figure outside the range fails the build.
 
 ### The amplifier: the MUTE pin
 

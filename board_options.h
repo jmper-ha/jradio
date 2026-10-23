@@ -135,6 +135,25 @@
  * the firmware does not scan the bus looking for the chip. */
 #define AUDIO_DAC_I2C_ADDRESS 0x10
 
+/* The loudest an SSM3582 amplifier (AUDIO_DAC = DAC_SSM3582) will go, in
+ * whole dB below or above the chip's full scale, at 100% of the volume
+ * knob. The chip's own digital volume runs from +24 dB down to -71 dB in
+ * 0.375 dB steps and can boost as well as attenuate, so this is not a
+ * limit to stay under but where the top of the knob sits: every setting
+ * below it keeps the very curve - the same relative steps - the firmware
+ * has always used. Left undefined it is 0 dB, the chip's reset value.
+ *
+ * This board says +12 dB: the amplifier's analog gain is set to the
+ * quietest setting the driver writes, and the speakers wanted more than
+ * full scale reaches; the extra gain is taken in the chip's digital path
+ * instead of in the samples, so nothing is re-quantised. Loud passages
+ * of a levelled station (-14 LUFS target) sit near enough full scale to
+ * clip in the chip's clipper when asked hard - which is a harder clip
+ * than the amplifier's own, and one the volume knob backs off from.
+ * The figure is rounded to the nearest 0.375 dB step; anything outside
+ * +24..-71 fails the build. */
+#define AUDIO_DAC_MAX_VOLUME_DB 12
+
 #define I2S_DOUT_GPIO 16
 #define I2S_BCLK_GPIO 18
 #define I2S_LRCK_GPIO 17

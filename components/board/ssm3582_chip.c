@@ -3,11 +3,13 @@
 #include <stddef.h>
 
 /* Breakpoints of the volume curve, in the chip's steps of 0.375 dB below
- * unity. The percentages and the decibels are audio_volume.c's, taken
- * through the ladder: -4 dB is 11 steps, -20 dB is 53, -60 dB is 160.
- * The curve reaches -71.25 dB and a hard mute at 0xFF; -60 is where the
- * digital curve ends and the listener's, and every step below it is
- * quieter than anything the knob can ask for. */
+ * the board's loudest setting. The percentages and the decibels are
+ * audio_volume.c's, taken through the ladder: -4 dB is 11 steps, -20 dB is
+ * 53, -60 dB is 160 - all of them below whatever ceiling
+ * db_to_volume_register() hands us, so the curve keeps its shape when the
+ * ceiling moves. A boost at the top shifts the whole ladder towards its
+ * loudest rungs, where -60 dB lands at 0x20 + 160; the clamp below stops
+ * anything else from reaching the mute, which only a zero volume writes. */
 static const struct {
     uint8_t percent;
     uint8_t steps;
@@ -27,10 +29,34 @@ static const struct {
     {1U, 160U},    /* -60 dB */
 };
 
-uint8_t ssm3582_volume_register(uint8_t percent)
+/* Any number of steps asked for below a ceiling lands inside the ladder:
+ * its quietest rung is 0xFE, and the 0xFF mute belongs to a zero volume
+ * alone. A ceiling the board named is already inside it - only the steps
+ * under it can fall off the bottom. */
+static uint8_t ssm3582_volume_ladder_clamp(uint32_t value)
+{
+    if (value > (uint32_t)SSM3582_VOL_QUIETEST) return SSM3582_VOL_QUIETEST;
+    return (uint8_t)value;
+}
+
+uint8_t ssm3582_db_to_volume_register(int max_db)
+{
+    /* The ladder steps by 0.375 = 3/8 dB, so a dB value is that many
+     * eighths over threes of a step: multiply by 8, divide by 3, round to
+     * the nearest by adding half of three first. The register counts
+     * *down* from unity as it gets louder, so a boost subtracts. */
+    const int magnitude = max_db >= 0 ? max_db : -max_db;
+    const int steps = (magnitude * 8 + 1) / 3;
+    int value = (int)SSM3582_VOL_UNITY + (max_db >= 0 ? -steps : steps);
+    if (value > (int)SSM3582_VOL_QUIETEST) value = (int)SSM3582_VOL_QUIETEST;
+    if (value < (int)SSM3582_VOL_LOUDEST) value = (int)SSM3582_VOL_LOUDEST;
+    return (uint8_t)value;
+}
+
+uint8_t ssm3582_volume_register(uint8_t percent, uint8_t max_register)
 {
     if (percent == 0U) return SSM3582_VOL_MUTE;
-    if (percent >= 100U) return SSM3582_VOL_UNITY;
+    if (percent >= 100U) return max_register;
 
     const size_t count = sizeof(s_curve) / sizeof(s_curve[0]);
     for (size_t index = 1U; index < count; ++index) {
@@ -42,11 +68,11 @@ uint8_t ssm3582_volume_register(uint8_t percent)
             const uint32_t span = (uint32_t)(s_curve[index - 1U].percent - s_curve[index].percent);
             const uint32_t into = (uint32_t)(percent - s_curve[index].percent);
             const uint32_t range = (uint32_t)(s_curve[index].steps - s_curve[index - 1U].steps);
-            return (uint8_t)(SSM3582_VOL_UNITY + s_curve[index].steps -
-                             (uint8_t)((into * range) / span));
+            return ssm3582_volume_ladder_clamp((uint32_t)max_register + s_curve[index].steps -
+                                               (into * range) / span);
         }
     }
-    return (uint8_t)(SSM3582_VOL_UNITY + s_curve[count - 1U].steps);
+    return ssm3582_volume_ladder_clamp((uint32_t)max_register + s_curve[count - 1U].steps);
 }
 
 uint8_t ssm3582_dac_fs_bits(uint32_t sample_rate)

@@ -69,9 +69,21 @@
 #define SSM3582_REG_VOL_LEFT 0x07U
 /* 0.375 dB a step: 0x40 is unity, and every step up from it is quieter.
  * VOL_LINK (SAI_CTRL2) keeps the right channel on this one register, so
- * the left is the only one written. */
+ * the left is the only one written. The whole ladder runs 0x00 = +24 dB,
+ * 0x40 = 0 dB (the reset value), 0xFE = −71.25 dB, and 0xFF = mute —
+ * which is why 0xFE is the bottom every computed value has to stop at:
+ * the mute is a setting of its own, not one more rung. */
 #define SSM3582_VOL_UNITY 0x40U
+#define SSM3582_VOL_LOUDEST 0x00U
+#define SSM3582_VOL_QUIETEST 0xFEU
 #define SSM3582_VOL_MUTE 0xFFU
+
+/* The ends of that ladder in whole dB, for a board which names its loudest
+ * setting in whole dB too (board_options.h's AUDIO_DAC_MAX_VOLUME_DB). A
+ * whole dB is 8/3 steps, so anything written in those units lands on the
+ * rung nearest it. */
+#define SSM3582_VOL_DB_LOUDEST 24
+#define SSM3582_VOL_DB_QUIETEST (-71)
 
 #define SSM3582_REG_SAI_CTRL1 0x09U
 /* Stereo mode (the reset value selects TDM), I2S with data delayed one
@@ -109,6 +121,16 @@ uint8_t ssm3582_dac_fs_bits(uint32_t sample_rate);
  * fails the floor - which is why all three are checked. */
 bool ssm3582_bclk_rate_ok(uint32_t sample_rate, uint32_t ratio);
 
+/* The chip's loudest allowed setting, in whole dB above unity, as the
+   volume register. board_options.h's AUDIO_DAC_MAX_VOLUME_DB is written in
+   those units and this is where it turns into a register: 0 dB is the
+   chip's reset value and the top of the curve every other board has,
+   positive values are the digital boost the chip offers up to +24 dB, and
+   negative ones lower the ceiling instead. Outside the ladder the answer
+   is the nearest end of it; the mute, which is not a rung, is never
+   returned. */
+uint8_t ssm3582_db_to_volume_register(int max_db);
+
 /* The listening level as the volume register, 0..100 percent.
 
    The same curve as audio_volume.c - the same breakpoints at the same
@@ -117,5 +139,11 @@ bool ssm3582_bclk_rate_ok(uint32_t sample_rate, uint32_t ratio);
    nobody has to relearn the knob when the board changes. 0 is the
    chip's own mute rather than a zeroed multiplier. Between breakpoints
    the steps are interpolated, as the digital curve interpolates its
-   gains. */
-uint8_t ssm3582_volume_register(uint8_t percent);
+   gains.
+
+   `max_register` is where 100 percent lands, from db_to_volume_register()
+   above: the curve is a number of steps below that ceiling, so a board
+   whose loudest setting is a +12 dB boost keeps every interval between
+   two settings the curve has always had. Steps falling off the bottom of
+   the ladder stop at its quietest rung rather than reaching the mute. */
+uint8_t ssm3582_volume_register(uint8_t percent, uint8_t max_register);

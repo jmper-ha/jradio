@@ -25,6 +25,23 @@ static const char *TAG = "ssm3582";
 _Static_assert(SSM3582_ADDRESS >= 0x08U && SSM3582_ADDRESS <= 0x77U,
                "AUDIO_DAC_I2C_ADDRESS has to be a seven-bit I2C address");
 
+/* Where the knob's 100% sits on the chip's volume ladder, in whole dB,
+ * from board_options.h. Left out it is unity - the top the curve has
+ * always had, the chip's reset value; a board whose speakers want more
+ * than the line can name a boost up to the chip's +24 dB, and one that
+ * wants a quieter ceiling a negative figure. It is the digital path of
+ * this chip that is being stretched here - its analog gain stays at the
+ * quietest setting this driver writes - so the steps of the curve, and
+ * what each percentage means against the next one, do not move. */
+#ifdef AUDIO_DAC_MAX_VOLUME_DB
+#define SSM3582_MAX_VOLUME_DB AUDIO_DAC_MAX_VOLUME_DB
+#else
+#define SSM3582_MAX_VOLUME_DB 0
+#endif
+_Static_assert(SSM3582_MAX_VOLUME_DB >= SSM3582_VOL_DB_QUIETEST &&
+                   SSM3582_MAX_VOLUME_DB <= SSM3582_VOL_DB_LOUDEST,
+               "AUDIO_DAC_MAX_VOLUME_DB has to sit inside the chip's volume ladder");
+
 static i2c_master_dev_handle_t s_dev;
 static bool s_playing;
 /* The volume register as the chip holds it now, -1 until the first
@@ -81,6 +98,14 @@ esp_err_t ssm3582_setup(uint32_t sample_rate, uint8_t volume_percent)
                                                    SSM3582_I2C_TIMEOUT_MS),
                         TAG, "no SSM3582 answering at 0x%02X", SSM3582_ADDRESS);
     ESP_LOGI(TAG, "SSM3582 on I2C0 at 0x%02X", SSM3582_ADDRESS);
+    /* A ceiling other than unity is worth one line: it is a board
+     * option, and a radio that is unexpectedly louder or quieter than
+     * every other one should say which number of its own file did it. */
+    if (SSM3582_MAX_VOLUME_DB != 0) {
+        ESP_LOGI(TAG, "loudest setting at %d dB (volume register 0x%02X)",
+                 SSM3582_MAX_VOLUME_DB,
+                 ssm3582_db_to_volume_register(SSM3582_MAX_VOLUME_DB));
+    }
 
     ESP_RETURN_ON_ERROR(ssm3582_write(SSM3582_REG_AMP_DAC_CTRL, (SSM3582_AMP_DAC_CTRL_LOW_PWR | SSM3582_AMP_DAC_CTRL_13DB)),
                         TAG, "set amplifier analog gain failed");
@@ -126,7 +151,10 @@ void ssm3582_set_playing(bool play)
 void ssm3582_set_volume(uint8_t percent)
 {
     if (s_dev == NULL) return;
-    const int value = ssm3582_volume_register(percent);
+    /* The curve is a count of steps under the board's ceiling; the
+     * ceiling is the one constant board_options.h set for this part. */
+    const uint8_t ceiling = ssm3582_db_to_volume_register(SSM3582_MAX_VOLUME_DB);
+    const int value = ssm3582_volume_register(percent, ceiling);
     if (value == s_volume_written) return;
     const esp_err_t result = ssm3582_write(SSM3582_REG_VOL_LEFT, (uint8_t)value);
     if (result != ESP_OK) {

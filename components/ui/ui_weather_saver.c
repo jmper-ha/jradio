@@ -27,7 +27,7 @@ void ui_wx_temperature_text(char *out, size_t size, int celsius)
 }
 
 void ui_wx_feels_text(char *out, size_t size, device_language_t language,
-                      const weather_report_t *report)
+                      const weather_report_t *report, bool brief)
 {
     if (out == NULL || size == 0U) return;
     if (report == NULL || !known(report->feels_like_c)) {
@@ -36,8 +36,10 @@ void ui_wx_feels_text(char *out, size_t size, device_language_t language,
     }
     char degrees[16];
     ui_wx_temperature_text(degrees, sizeof(degrees), report->feels_like_c);
+    const bool english = language == DEVICE_LANGUAGE_EN;
     snprintf(out, size, "%s %s",
-             language == DEVICE_LANGUAGE_EN ? "feels like" : "ощущается", degrees);
+             brief ? (english ? "feels" : "ощущ.") : (english ? "feels like" : "ощущается"),
+             degrees);
 }
 
 void ui_wx_humidity_text(char *out, size_t size, const weather_report_t *report)

@@ -22,9 +22,11 @@
  * faces. */
 void ui_wx_temperature_text(char *out, size_t size, int celsius);
 
-// "ощущается +3°" / "feels like +3°".
+/* "ощущается +3°" / "feels like +3°", or "ощущ. +3°" / "feels +3°" where
+ * `brief` - a small panel, whose top has the clock, the picture and this
+ * line in 300 px. */
 void ui_wx_feels_text(char *out, size_t size, device_language_t language,
-                      const weather_report_t *report);
+                      const weather_report_t *report, bool brief);
 
 // "62%".
 void ui_wx_humidity_text(char *out, size_t size, const weather_report_t *report);

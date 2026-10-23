@@ -39,9 +39,11 @@ static void test_the_readings_as_the_mockup_has_them(void)
     EXPECT(ui_wx_temperature_text(out, sizeof(out), 6), "+6\xC2\xB0");
     EXPECT(ui_wx_temperature_text(out, sizeof(out), -3), "\xE2\x80\x93" "3\xC2\xB0");
     EXPECT(ui_wx_temperature_text(out, sizeof(out), 0), "0\xC2\xB0");
-    EXPECT(ui_wx_feels_text(out, sizeof(out), DEVICE_LANGUAGE_RU, &report),
+    EXPECT(ui_wx_feels_text(out, sizeof(out), DEVICE_LANGUAGE_RU, &report, false),
            "ощущается +3\xC2\xB0");
-    EXPECT(ui_wx_feels_text(out, sizeof(out), DEVICE_LANGUAGE_EN, &report),
+    EXPECT(ui_wx_feels_text(out, sizeof(out), DEVICE_LANGUAGE_RU, &report, true),
+           "ощущ. +3\xC2\xB0");
+    EXPECT(ui_wx_feels_text(out, sizeof(out), DEVICE_LANGUAGE_EN, &report, false),
            "feels like +3\xC2\xB0");
     EXPECT(ui_wx_humidity_text(out, sizeof(out), &report), "62%");
     EXPECT(ui_wx_pressure_text(out, sizeof(out), DEVICE_LANGUAGE_RU, &report), "763 мм");
@@ -63,7 +65,7 @@ static void test_what_a_service_did_not_say_is_left_out(void)
     report.wind_from_deg = WEATHER_UNKNOWN;
     report.cloud_pct = WEATHER_UNKNOWN;
     report.precipitation_tenths_mm = 4;
-    EXPECT(ui_wx_feels_text(out, sizeof(out), DEVICE_LANGUAGE_RU, &report), "");
+    EXPECT(ui_wx_feels_text(out, sizeof(out), DEVICE_LANGUAGE_RU, &report, false), "");
     EXPECT(ui_wx_wind_text(out, sizeof(out), DEVICE_LANGUAGE_RU, &report, true), "1 м/с");
     EXPECT(ui_wx_wind_label(out, sizeof(out), DEVICE_LANGUAGE_RU, &report), "ветер");
     EXPECT(ui_wx_sky_text(out, sizeof(out), DEVICE_LANGUAGE_RU, &report), "осадки 0,4 мм");

@@ -2030,7 +2030,15 @@ static void ui_wx_place(void)
     lv_obj_set_pos(s_wx_temperature, x + UI_WX_ICON_PX + 10, top);
     lv_obj_set_pos(s_wx_feels, x + UI_WX_ICON_PX + 10, top + big_h + 2);
 #else
-    lv_obj_set_pos(s_wx_icon, s_wx_content_w - temperature_w - 8 - UI_WX_ICON_PX, 0);
+    /* Left of the wider of the two lines it stands beside: a short "+9°"
+     * over a long "ощущается +8°" had the picture over the second. */
+    const int feels_w = lv_obj_get_width(s_wx_feels);
+    const int figures_w = temperature_w > feels_w ? temperature_w : feels_w;
+    int icon_x = s_wx_content_w - figures_w - 8 - UI_WX_ICON_PX;
+    // And never over the clock, whatever a language makes of the line.
+    const int clock_end = lv_obj_get_width(s_wx_time) + 6;
+    if (icon_x < clock_end) icon_x = clock_end;
+    lv_obj_set_pos(s_wx_icon, icon_x, 0);
 #endif
 #if UI_WX_READING_ROWS
     for (int index = 0; index < 3; ++index) {
@@ -2131,7 +2139,7 @@ static bool ui_wx_refresh(bool force)
 
     ui_wx_temperature_text(text, sizeof(text), report.temperature_c);
     changed |= ui_set_label_text_note_change(s_wx_temperature, text);
-    ui_wx_feels_text(text, sizeof(text), language, &report);
+    ui_wx_feels_text(text, sizeof(text), language, &report, UI_WX_FEELS_BRIEF);
     changed |= ui_set_label_text_note_change(s_wx_feels, text);
     changed |= ui_wx_set_image(s_wx_icon, ui_wx_icon_bitmap(report.icon));
 

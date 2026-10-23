@@ -816,4 +816,6 @@ _Static_assert(UI_SRC_PAUSE_X >= 0 && UI_SRC_PAUSE_X + UI_SRC_PAUSE_SIZE <= TFT_
 #define UI_WX_GAP 6
 // The degree sign after a forecast day's range.
 #define UI_WX_RANGE_DEGREE 1
+// "ощущ. +3°" rather than "ощущается +3°", for the picture's room.
+#define UI_WX_FEELS_BRIEF 0
 #endif

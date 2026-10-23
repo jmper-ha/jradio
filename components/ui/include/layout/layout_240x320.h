@@ -161,3 +161,4 @@
 #define UI_WX_WIND_POINT 1
 #define UI_WX_GAP 3
 #define UI_WX_RANGE_DEGREE 0
+#define UI_WX_FEELS_BRIEF 0

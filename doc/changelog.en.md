@@ -25,6 +25,12 @@ New:
   the picture moves by a pixel against burn-in. Chosen under Screensaver on
   the device or on the web.
 
+Fixed:
+- Crackle and dropouts in the first second on some high-bitrate HTTPS
+  stations (256-320 kbps). A station now starts playing once about a second
+  of sound is in hand, and the big backlog is built up gradually, out of the
+  decoder's way. Such stations start 0.2-0.4 s later, and clean.
+
 ## v1.8.6 — 21 October 2026
 
 Fixed:

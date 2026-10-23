@@ -181,3 +181,24 @@
 
 /* Two thirds of the 96 px tile, as on every panel with that tile. */
 #define UI_SRC_ART_NOTE_PX 64
+
+/* The weather screensaver on the short panel: the clock and the weather on
+ * top and the readings under them. 170 px leaves no room for three days. */
+#define UI_WX_BIG_PX 40
+#define UI_WX_TEXT_PX 18
+#define UI_WX_SMALL_PX 14
+#define UI_WX_ICON_PX 48
+#define UI_WX_DAY_ICON_PX 32
+#define UI_WX_PICTO_PX 16
+#define UI_WX_MARGIN 6
+#define UI_WX_SHIFT_PX 3
+#define UI_WX_FORECAST 0
+#define UI_WX_RANGE_PX 14
+#define UI_WX_PORTRAIT 0
+#define UI_WX_READING_ROWS 0
+#define UI_WX_DAYS_STACKED 0
+#define UI_WX_SOURCE 0
+#define UI_WX_READING_NAMES 0
+#define UI_WX_WIND_POINT 0
+#define UI_WX_GAP 6
+#define UI_WX_RANGE_DEGREE 1

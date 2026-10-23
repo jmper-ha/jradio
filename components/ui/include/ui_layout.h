@@ -796,4 +796,24 @@ _Static_assert(UI_SRC_PAUSE_X >= 0 && UI_SRC_PAUSE_X + UI_SRC_PAUSE_SIZE <= TFT_
 #define UI_WX_SHIFT_PX 4
 // Whether the bottom band - three days - is drawn at all.
 #define UI_WX_FORECAST 1
+/* A forecast day's low and high, a step under the figures: "+10…+12°" in
+ * the text face is wider than what a third of the panel leaves beside the
+ * day's picture. */
+#define UI_WX_RANGE_PX 18
+// Clock left and weather right (0), or the two centred one over the other.
+#define UI_WX_PORTRAIT 0
+// The readings as three columns (0) or a row each.
+#define UI_WX_READING_ROWS 0
+// A day as its picture with the figures beside it (0), or stacked.
+#define UI_WX_DAYS_STACKED 0
+// The service's name in the corner.
+#define UI_WX_SOURCE 1
+// The names under the readings' figures, in the column layout.
+#define UI_WX_READING_NAMES 1
+// The wind's point in letters beside its speed; else the arrow alone says it.
+#define UI_WX_WIND_POINT 1
+// The space above each rule between the bands; a little more under it.
+#define UI_WX_GAP 6
+// The degree sign after a forecast day's range.
+#define UI_WX_RANGE_DEGREE 1
 #endif

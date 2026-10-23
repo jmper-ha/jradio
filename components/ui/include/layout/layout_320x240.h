@@ -127,3 +127,27 @@
  * tile, which is a note half its height: the same ink the FontAwesome glyph
  * at Montserrat 48 put there, so this panel does not change. */
 #define UI_SRC_ART_NOTE_PX 64
+
+/* The weather screensaver: the 480 px screen a size down - 40 px digits, the
+ * body face for the figures, and a day's range in the small face, which is
+ * what fits beside its picture in a third of 300 px. No names under the
+ * readings and no wind point in letters - the pictograms and the arrow say
+ * them - and no service's name: the forecast takes that room. */
+#define UI_WX_BIG_PX 40
+#define UI_WX_TEXT_PX 18
+#define UI_WX_SMALL_PX 14
+#define UI_WX_ICON_PX 48
+#define UI_WX_DAY_ICON_PX 32
+#define UI_WX_PICTO_PX 16
+#define UI_WX_MARGIN 8
+#define UI_WX_SHIFT_PX 3
+#define UI_WX_FORECAST 1
+#define UI_WX_RANGE_PX 14
+#define UI_WX_PORTRAIT 0
+#define UI_WX_READING_ROWS 0
+#define UI_WX_DAYS_STACKED 0
+#define UI_WX_SOURCE 0
+#define UI_WX_READING_NAMES 0
+#define UI_WX_WIND_POINT 0
+#define UI_WX_GAP 6
+#define UI_WX_RANGE_DEGREE 0

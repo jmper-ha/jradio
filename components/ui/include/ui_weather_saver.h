@@ -34,9 +34,10 @@ void ui_wx_pressure_text(char *out, size_t size, device_language_t language,
                          const weather_report_t *report);
 
 /* "1 м/с В" / "1 m/s E": the speed and where the wind comes from, as a
- * forecast says it. A calm says "штиль" / "calm". */
+ * forecast says it - or the speed alone, where `point` is false and the
+ * arrow beside it has to say the direction. A calm says "штиль" / "calm". */
 void ui_wx_wind_text(char *out, size_t size, device_language_t language,
-                     const weather_report_t *report);
+                     const weather_report_t *report, bool point);
 
 /* The line under the wind's figure: "ветер, порывы 5" when the gusts are
  * known and stronger than the wind, else just "ветер" / "wind". */
@@ -57,8 +58,9 @@ void ui_wx_sky_text(char *out, size_t size, device_language_t language,
 void ui_wx_day_name(char *out, size_t size, device_language_t language, int index,
                     const weather_day_t *day);
 
-// "+2…+12°": the day's low and high.
-void ui_wx_day_range_text(char *out, size_t size, const weather_day_t *day);
+/* "+2…+12°": the day's low and high - "+2…+12" without `degree`, where a
+ * third of a small panel beside the day's picture has no room for it. */
+void ui_wx_day_range_text(char *out, size_t size, const weather_day_t *day, bool degree);
 
 // "15%": the chance of rain or snow; empty when unknown.
 void ui_wx_day_chance_text(char *out, size_t size, const weather_day_t *day);

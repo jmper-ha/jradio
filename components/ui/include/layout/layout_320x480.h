@@ -151,3 +151,27 @@
  * panels' note takes: two thirds of the tile, which is a note half its height.
  * A size the generator has to have drawn - see tools/gen_feed_icons.py. */
 #define UI_SRC_ART_NOTE_PX 107
+
+/* The weather screensaver, standing up: the clock over the weather, the
+ * readings in three columns, the days as columns - the 480 px faces and
+ * pictures, since the width is the landscape panel's height. A column is a
+ * third of 300 px: no names under the figures, and the wind's direction by
+ * its arrow alone - "3 м/с ЮВ" ran off the panel. */
+#define UI_WX_BIG_PX 56
+#define UI_WX_TEXT_PX 18
+#define UI_WX_SMALL_PX 14
+#define UI_WX_ICON_PX 80
+#define UI_WX_DAY_ICON_PX 48
+#define UI_WX_PICTO_PX 20
+#define UI_WX_MARGIN 12
+#define UI_WX_SHIFT_PX 4
+#define UI_WX_FORECAST 1
+#define UI_WX_RANGE_PX 18
+#define UI_WX_PORTRAIT 1
+#define UI_WX_READING_ROWS 0
+#define UI_WX_DAYS_STACKED 1
+#define UI_WX_SOURCE 1
+#define UI_WX_READING_NAMES 0
+#define UI_WX_WIND_POINT 0
+#define UI_WX_GAP 6
+#define UI_WX_RANGE_DEGREE 1

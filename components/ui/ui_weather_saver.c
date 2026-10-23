@@ -63,7 +63,7 @@ void ui_wx_pressure_text(char *out, size_t size, device_language_t language,
 }
 
 void ui_wx_wind_text(char *out, size_t size, device_language_t language,
-                     const weather_report_t *report)
+                     const weather_report_t *report, bool point_shown)
 {
     static const char *const ru[] = {"С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ"};
     static const char *const en[] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
@@ -77,7 +77,7 @@ void ui_wx_wind_text(char *out, size_t size, device_language_t language,
         snprintf(out, size, "%s", english ? "calm" : "штиль");
         return;
     }
-    const int point = weather_wind_point(report->wind_from_deg);
+    const int point = point_shown ? weather_wind_point(report->wind_from_deg) : -1;
     if (point < 0) {
         snprintf(out, size, "%d %s", report->wind_ms, english ? "m/s" : "м/с");
     } else {
@@ -155,7 +155,7 @@ void ui_wx_day_name(char *out, size_t size, device_language_t language, int inde
     }
 }
 
-void ui_wx_day_range_text(char *out, size_t size, const weather_day_t *day)
+void ui_wx_day_range_text(char *out, size_t size, const weather_day_t *day, bool degree)
 {
     if (out == NULL || size == 0U) return;
     if (day == NULL || !day->valid) {
@@ -172,6 +172,14 @@ void ui_wx_day_range_text(char *out, size_t size, const weather_day_t *day)
     if (low_length >= 2U && (unsigned char)low[low_length - 2U] == 0xC2U &&
         (unsigned char)low[low_length - 1U] == 0xB0U) {
         low[low_length - 2U] = '\0';
+    }
+    if (!degree) {
+        size_t high_length = 0U;
+        while (high[high_length] != '\0') ++high_length;
+        if (high_length >= 2U && (unsigned char)high[high_length - 2U] == 0xC2U &&
+            (unsigned char)high[high_length - 1U] == 0xB0U) {
+            high[high_length - 2U] = '\0';
+        }
     }
     snprintf(out, size, "%s\xE2\x80\xA6%s", low, high);
 }

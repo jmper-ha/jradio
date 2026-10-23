@@ -139,3 +139,25 @@
  * tile, which is a note half its height: the same ink the FontAwesome glyph
  * at Montserrat 48 put there, so this panel does not change. */
 #define UI_SRC_ART_NOTE_PX 64
+
+/* The weather screensaver on the narrow panel: everything centred, the
+ * readings packed into three short rows without their names or the sky in
+ * words, the days stacked, and no room left for the service's name. */
+#define UI_WX_BIG_PX 40
+#define UI_WX_TEXT_PX 18
+#define UI_WX_SMALL_PX 14
+#define UI_WX_ICON_PX 48
+#define UI_WX_DAY_ICON_PX 32
+#define UI_WX_PICTO_PX 16
+#define UI_WX_MARGIN 6
+#define UI_WX_SHIFT_PX 3
+#define UI_WX_FORECAST 1
+#define UI_WX_RANGE_PX 14
+#define UI_WX_PORTRAIT 1
+#define UI_WX_READING_ROWS 1
+#define UI_WX_DAYS_STACKED 1
+#define UI_WX_SOURCE 0
+#define UI_WX_READING_NAMES 0
+#define UI_WX_WIND_POINT 1
+#define UI_WX_GAP 3
+#define UI_WX_RANGE_DEGREE 0

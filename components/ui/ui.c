@@ -1723,6 +1723,8 @@ static bool s_wx_bitmap_ok;
 static int s_wx_block_w;
 static int s_wx_content_w;
 static int s_wx_content_h;
+// Where the weather group starts on a portrait panel, under the clock.
+static int s_wx_weather_y;
 static bool s_wx_up;
 static bool s_wx_dirty;
 static uint32_t s_wx_text_ms;
@@ -1734,6 +1736,7 @@ static bool s_wx_have_report;
 #define UI_WX_FONT_BIG (&UI_FONT_BOLD_DIGITS(UI_WX_BIG_PX))
 #define UI_WX_FONT_TEXT (&UI_FONT_TEXT(UI_WX_TEXT_PX))
 #define UI_WX_FONT_SMALL (&UI_FONT_TEXT(UI_WX_SMALL_PX))
+#define UI_WX_FONT_RANGE (&UI_FONT_TEXT(UI_WX_RANGE_PX))
 
 #define UI_WX_WEATHER_CASES(size)                                                          \
     case WEATHER_ICON_CLEAR_DAY: return &UI_WX_BITMAP(clear_day, size);                    \
@@ -1815,7 +1818,13 @@ static lv_obj_t *ui_wx_group(lv_obj_t *parent, int y, int h)
 
 /* Builds the hidden block. Nothing is allocated for the bitmap here: the
  * mode is one of five, and 300 KB of PSRAM is taken the first time it is
- * actually used. */
+ * actually used.
+ *
+ * Three choices a shape file makes (ui_layout.h): the top as clock left and
+ * weather right, or both centred one over the other (UI_WX_PORTRAIT); the
+ * readings as three columns or as rows (UI_WX_READING_ROWS); a forecast day
+ * as its picture with the figures beside it, or stacked (UI_WX_DAYS_STACKED).
+ * Everything else is measured from the faces. */
 static void ui_create_weather_saver(void)
 {
     s_wx_block_w = TFT_WIDTH / 32 * 32;
@@ -1824,6 +1833,7 @@ static void ui_create_weather_saver(void)
     const int big_h = lv_font_get_line_height(UI_WX_FONT_BIG);
     const int text_h = lv_font_get_line_height(UI_WX_FONT_TEXT);
     const int small_h = lv_font_get_line_height(UI_WX_FONT_SMALL);
+    const int cw = s_wx_content_w;
 
     // Hidden for good, like the clock's: the snapshot draws it all the same.
     s_wx_block = lv_obj_create(s_saver_cover);
@@ -1835,86 +1845,209 @@ static void ui_create_weather_saver(void)
     lv_obj_add_flag(s_wx_block, LV_OBJ_FLAG_HIDDEN);
     s_wx_content = lv_obj_create(s_wx_block);
     lv_obj_remove_style_all(s_wx_content);
-    lv_obj_set_size(s_wx_content, s_wx_content_w, s_wx_content_h);
+    lv_obj_set_size(s_wx_content, cw, s_wx_content_h);
     lv_obj_set_pos(s_wx_content, UI_WX_MARGIN, UI_WX_MARGIN);
     lv_obj_clear_flag(s_wx_content, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Top: the clock and the date on the left, the weather on the right.
     s_wx_time = ui_wx_label(s_wx_content, UI_WX_FONT_BIG, UI_ROLE_TEXT);
-    lv_obj_set_pos(s_wx_time, 0, 0);
     s_wx_date = ui_wx_label(s_wx_content, UI_WX_FONT_TEXT, UI_ROLE_SECONDARY);
-    lv_obj_set_pos(s_wx_date, 0, big_h + 2);
     s_wx_temperature = ui_wx_label(s_wx_content, UI_WX_FONT_BIG, UI_ROLE_TEXT);
-    lv_obj_align(s_wx_temperature, LV_ALIGN_TOP_RIGHT, 0, 0);
     s_wx_feels = ui_wx_label(s_wx_content, UI_WX_FONT_TEXT, UI_ROLE_SECONDARY);
-    lv_obj_align(s_wx_feels, LV_ALIGN_TOP_RIGHT, 0, big_h + 2);
     s_wx_icon = ui_wx_image(s_wx_content, NULL);
     s_wx_none = ui_wx_label(s_wx_content, UI_WX_FONT_TEXT, UI_ROLE_DIM);
+    int y = 0;
+#if UI_WX_PORTRAIT
+    /* The clock and the date centred on top; the weather centred under them
+     * as one group, placed when its text is known (ui_wx_place_weather). */
+    lv_obj_set_width(s_wx_time, cw);
+    lv_obj_set_style_text_align(s_wx_time, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(s_wx_date, cw);
+    lv_obj_set_style_text_align(s_wx_date, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(s_wx_time, 0, 0);
+    lv_obj_set_pos(s_wx_date, 0, big_h + 2);
+    s_wx_weather_y = big_h + 2 + text_h + UI_WX_GAP;
+    lv_obj_set_width(s_wx_none, cw);
+    lv_obj_set_style_text_align(s_wx_none, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(s_wx_none, 0, s_wx_weather_y + (UI_WX_ICON_PX - text_h) / 2);
+    const int weather_h = big_h + 2 + text_h > UI_WX_ICON_PX ? big_h + 2 + text_h : UI_WX_ICON_PX;
+    y = s_wx_weather_y + weather_h + UI_WX_GAP;
+#else
+    lv_obj_set_pos(s_wx_time, 0, 0);
+    lv_obj_set_pos(s_wx_date, 0, big_h + 2);
+    lv_obj_align(s_wx_temperature, LV_ALIGN_TOP_RIGHT, 0, 0);
+    lv_obj_align(s_wx_feels, LV_ALIGN_TOP_RIGHT, 0, big_h + 2);
     lv_obj_align(s_wx_none, LV_ALIGN_TOP_RIGHT, 0, (big_h - text_h) / 2);
+    s_wx_weather_y = 0;
     const int top_h = big_h + 2 + text_h > UI_WX_ICON_PX ? big_h + 2 + text_h : UI_WX_ICON_PX;
-    int y = top_h + 6;
+    y = top_h + UI_WX_GAP;
+#endif
     (void)ui_wx_rule(s_wx_content, y);
-    y += 8;
+    y += UI_WX_GAP + 2;
 
-    // The readings: three columns of a pictogram, a figure and its name, then
-    // sunrise, sunset and the sky in words.
-    const int readings_h = text_h + small_h + 6 + text_h;
-    s_wx_readings = ui_wx_group(s_wx_content, y, readings_h);
-    const int column_w = s_wx_content_w / 3;
-    for (int index = 0; index < 3; ++index) {
-        const int x = index * column_w;
-        s_wx_picto[index] = ui_wx_image(s_wx_readings, NULL);
-        lv_obj_set_pos(s_wx_picto[index], x, (text_h - UI_WX_PICTO_PX) / 2);
-        s_wx_value[index] = ui_wx_label(s_wx_readings, UI_WX_FONT_TEXT, UI_ROLE_TEXT);
-        lv_obj_set_pos(s_wx_value[index], x + UI_WX_PICTO_PX + 6, 0);
-        s_wx_name[index] = ui_wx_label(s_wx_readings, UI_WX_FONT_SMALL, UI_ROLE_DIM);
-        lv_obj_set_pos(s_wx_name[index], x + UI_WX_PICTO_PX + 6, text_h);
-    }
-    lv_image_set_src(s_wx_picto[0], &UI_WX_BITMAP(humidity, UI_WX_PICTO_PX));
-    lv_image_set_src(s_wx_picto[1], &UI_WX_BITMAP(pressure, UI_WX_PICTO_PX));
-    const int sun_y = text_h + small_h + 6;
     lv_point_t hhmm;
     lv_text_get_size(&hhmm, "00:00", UI_WX_FONT_TEXT, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-    const int sun_w = UI_WX_PICTO_PX + 4 + hhmm.x + 18;
+    const int picto_y = (text_h - UI_WX_PICTO_PX) / 2;
+#if UI_WX_READING_ROWS
+    /* The narrow panel: humidity and pressure side by side, the wind on its
+     * own, then the sun - no names, the pictograms say them. */
+    const int row_h = text_h + 2;
+    const int readings_h = row_h * 3;
+    s_wx_readings = ui_wx_group(s_wx_content, y, readings_h);
+    for (int index = 0; index < 3; ++index) {
+        const int row_x = index == 1 ? cw / 2 : 0;
+        const int row_y = index == 2 ? row_h : 0;
+        s_wx_picto[index] = ui_wx_image(s_wx_readings, NULL);
+        lv_obj_set_pos(s_wx_picto[index], row_x, row_y + picto_y);
+        s_wx_value[index] = ui_wx_label(s_wx_readings, UI_WX_FONT_TEXT, UI_ROLE_TEXT);
+        lv_obj_set_pos(s_wx_value[index], row_x + UI_WX_PICTO_PX + 6, row_y);
+        s_wx_name[index] = ui_wx_label(s_wx_readings, UI_WX_FONT_SMALL, UI_ROLE_DIM);
+        lv_obj_add_flag(s_wx_name[index], LV_OBJ_FLAG_HIDDEN);
+    }
+    const int sun_y = row_h * 2;
+#else
+    /* Without the names under the figures on a small panel: the pictogram
+     * says what each one is, and the line they took is the forecast's. */
+    const int names_h = UI_WX_READING_NAMES ? small_h : 0;
+    const int readings_h = text_h + names_h + 6 + text_h;
+    s_wx_readings = ui_wx_group(s_wx_content, y, readings_h);
+    const int column_w = cw / 3;
+    for (int index = 0; index < 3; ++index) {
+        const int x = index * column_w;
+        const int text_x = x + UI_WX_PICTO_PX + 6;
+        s_wx_picto[index] = ui_wx_image(s_wx_readings, NULL);
+        lv_obj_set_pos(s_wx_picto[index], x, picto_y);
+        s_wx_value[index] = ui_wx_label(s_wx_readings, UI_WX_FONT_TEXT, UI_ROLE_TEXT);
+        lv_obj_set_pos(s_wx_value[index], text_x, 0);
+        /* A name longer than its column is clipped with dots rather than
+         * run into the next one: "ветер, порывы 12" on a 320 px panel. */
+        s_wx_name[index] = ui_wx_label(s_wx_readings, UI_WX_FONT_SMALL, UI_ROLE_DIM);
+        lv_label_set_long_mode(s_wx_name[index], LV_LABEL_LONG_DOT);
+        lv_obj_set_size(s_wx_name[index], (index == 2 ? cw : x + column_w) - text_x, small_h);
+        lv_obj_set_pos(s_wx_name[index], text_x, text_h);
+        if (!UI_WX_READING_NAMES) lv_obj_add_flag(s_wx_name[index], LV_OBJ_FLAG_HIDDEN);
+    }
+    const int sun_y = text_h + names_h + 6;
+#endif
+    lv_image_set_src(s_wx_picto[0], &UI_WX_BITMAP(humidity, UI_WX_PICTO_PX));
+    lv_image_set_src(s_wx_picto[1], &UI_WX_BITMAP(pressure, UI_WX_PICTO_PX));
+    const int sun_w = UI_WX_PICTO_PX + 4 + hhmm.x + 14;
     s_wx_sunrise_picto = ui_wx_image(s_wx_readings, &UI_WX_BITMAP(sunrise, UI_WX_PICTO_PX));
-    lv_obj_set_pos(s_wx_sunrise_picto, 0, sun_y + (text_h - UI_WX_PICTO_PX) / 2);
+    lv_obj_set_pos(s_wx_sunrise_picto, 0, sun_y + picto_y);
     s_wx_sunrise = ui_wx_label(s_wx_readings, UI_WX_FONT_TEXT, UI_ROLE_TEXT);
     lv_obj_set_pos(s_wx_sunrise, UI_WX_PICTO_PX + 4, sun_y);
     s_wx_sunset_picto = ui_wx_image(s_wx_readings, &UI_WX_BITMAP(sunset, UI_WX_PICTO_PX));
-    lv_obj_set_pos(s_wx_sunset_picto, sun_w, sun_y + (text_h - UI_WX_PICTO_PX) / 2);
+    lv_obj_set_pos(s_wx_sunset_picto, sun_w, sun_y + picto_y);
     s_wx_sunset = ui_wx_label(s_wx_readings, UI_WX_FONT_TEXT, UI_ROLE_TEXT);
     lv_obj_set_pos(s_wx_sunset, sun_w + UI_WX_PICTO_PX + 4, sun_y);
     s_wx_sky = ui_wx_label(s_wx_readings, UI_WX_FONT_SMALL, UI_ROLE_DIM);
+    lv_label_set_long_mode(s_wx_sky, LV_LABEL_LONG_DOT);
+#if UI_WX_PORTRAIT && UI_WX_READING_ROWS
+    // The narrowest panel has no line to spare for the sky in words.
+    lv_obj_add_flag(s_wx_sky, LV_OBJ_FLAG_HIDDEN);
+    y += readings_h + UI_WX_GAP;
+#elif UI_WX_PORTRAIT
+    // No room beside the sun on a narrow panel: its own line under it.
+    lv_obj_set_size(s_wx_sky, cw, small_h);
+    lv_obj_set_pos(s_wx_sky, 0, sun_y + text_h + 2);
+    lv_obj_set_height(s_wx_readings, readings_h + small_h + 2);
+    y += readings_h + small_h + 2 + UI_WX_GAP;
+#else
+    lv_obj_set_size(s_wx_sky, cw - sun_w * 2, small_h);
     lv_obj_set_pos(s_wx_sky, sun_w * 2, sun_y + (text_h - small_h) / 2);
-    y += readings_h + 6;
+    y += readings_h + UI_WX_GAP;
+#endif
 
 #if UI_WX_FORECAST
     (void)ui_wx_rule(s_wx_content, y);
-    y += 8;
-    // Three days: the name over a picture, the range and the chance beside it.
-    const int days_h = small_h + 4 + UI_WX_DAY_ICON_PX;
+    y += UI_WX_GAP + 2;
+    const int day_w = cw / WEATHER_FORECAST_DAYS;
+    const int range_h = lv_font_get_line_height(UI_WX_FONT_RANGE);
+#if UI_WX_DAYS_STACKED
+    // Each day a column: the name, the picture, the range, the chance.
+    const int days_h = small_h + 2 + UI_WX_DAY_ICON_PX + 2 + range_h + small_h;
+#else
+    // The chance line sits under the range, below the picture's middle.
+    const int beside_h = small_h + 4 + UI_WX_DAY_ICON_PX / 2 + 2 + small_h;
+    const int days_h = beside_h > small_h + 4 + UI_WX_DAY_ICON_PX ? beside_h
+                                                                  : small_h + 4 + UI_WX_DAY_ICON_PX;
+#endif
     s_wx_days = ui_wx_group(s_wx_content, y, days_h);
     for (int index = 0; index < WEATHER_FORECAST_DAYS; ++index) {
-        const int x = index * column_w;
+        const int x = index * day_w;
         s_wx_day_name[index] = ui_wx_label(s_wx_days, UI_WX_FONT_SMALL, UI_ROLE_SECONDARY);
-        lv_obj_set_width(s_wx_day_name[index], column_w);
+        lv_obj_set_width(s_wx_day_name[index], day_w);
         lv_obj_set_style_text_align(s_wx_day_name[index], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_pos(s_wx_day_name[index], x, 0);
         s_wx_day_icon[index] = ui_wx_image(s_wx_days, NULL);
+        s_wx_day_range[index] = ui_wx_label(s_wx_days, UI_WX_FONT_RANGE, UI_ROLE_TEXT);
+        s_wx_day_drop[index] = ui_wx_image(s_wx_days, &UI_WX_BITMAP(humidity, 16));
+        s_wx_day_chance[index] = ui_wx_label(s_wx_days, UI_WX_FONT_SMALL, UI_ROLE_SECONDARY);
+#if UI_WX_DAYS_STACKED
+        lv_obj_set_pos(s_wx_day_icon[index], x + (day_w - UI_WX_DAY_ICON_PX) / 2, small_h + 2);
+        const int range_y = small_h + 2 + UI_WX_DAY_ICON_PX + 2;
+        lv_label_set_long_mode(s_wx_day_range[index], LV_LABEL_LONG_CLIP);
+        lv_obj_set_size(s_wx_day_range[index], day_w, range_h);
+        lv_obj_set_style_text_align(s_wx_day_range[index], LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(s_wx_day_range[index], x, range_y);
+        // The drop and the chance centred as a pair: placed with their text.
+        lv_obj_set_pos(s_wx_day_drop[index], x, range_y + range_h + (small_h - 16) / 2);
+        lv_obj_set_pos(s_wx_day_chance[index], x, range_y + range_h);
+#else
         lv_obj_set_pos(s_wx_day_icon[index], x, small_h + 4);
         const int beside = x + UI_WX_DAY_ICON_PX + 6;
         const int middle = small_h + 4 + UI_WX_DAY_ICON_PX / 2;
-        s_wx_day_range[index] = ui_wx_label(s_wx_days, UI_WX_FONT_TEXT, UI_ROLE_TEXT);
-        lv_obj_set_pos(s_wx_day_range[index], beside, middle - text_h);
-        s_wx_day_drop[index] = ui_wx_image(s_wx_days, &UI_WX_BITMAP(humidity, 16));
+        lv_obj_set_pos(s_wx_day_range[index], beside, middle - range_h);
         lv_obj_set_pos(s_wx_day_drop[index], beside, middle + (small_h - 16) / 2 + 2);
-        s_wx_day_chance[index] = ui_wx_label(s_wx_days, UI_WX_FONT_SMALL, UI_ROLE_SECONDARY);
         lv_obj_set_pos(s_wx_day_chance[index], beside + 16 + 4, middle + 2);
+#endif
     }
 #endif
 
     s_wx_source = ui_wx_label(s_wx_content, UI_WX_FONT_SMALL, UI_ROLE_DIM);
     lv_obj_align(s_wx_source, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+#if !UI_WX_SOURCE
+    lv_obj_add_flag(s_wx_source, LV_OBJ_FLAG_HIDDEN);
+#endif
+}
+
+/* The parts whose place depends on their text, set after it: the picture
+ * beside the temperature, and on a narrow panel the reading's name after its
+ * figure and a day's drop and chance centred under it. */
+static void ui_wx_place(void)
+{
+    lv_obj_update_layout(s_wx_content);
+    const int temperature_w = lv_obj_get_width(s_wx_temperature);
+#if UI_WX_PORTRAIT
+    const int feels_w = lv_obj_get_width(s_wx_feels);
+    const int figures_w = temperature_w > feels_w ? temperature_w : feels_w;
+    const int group_w = UI_WX_ICON_PX + 10 + figures_w;
+    const int x = (s_wx_content_w - group_w) / 2;
+    const int big_h = lv_font_get_line_height(UI_WX_FONT_BIG);
+    const int text_h = lv_font_get_line_height(UI_WX_FONT_TEXT);
+    const int block_h = big_h + 2 + text_h;
+    const int top = s_wx_weather_y + (UI_WX_ICON_PX > block_h ? (UI_WX_ICON_PX - block_h) / 2 : 0);
+    lv_obj_set_pos(s_wx_icon, x, s_wx_weather_y);
+    lv_obj_set_pos(s_wx_temperature, x + UI_WX_ICON_PX + 10, top);
+    lv_obj_set_pos(s_wx_feels, x + UI_WX_ICON_PX + 10, top + big_h + 2);
+#else
+    lv_obj_set_pos(s_wx_icon, s_wx_content_w - temperature_w - 8 - UI_WX_ICON_PX, 0);
+#endif
+#if UI_WX_READING_ROWS
+    for (int index = 0; index < 3; ++index) {
+        const int value_x = lv_obj_get_x(s_wx_value[index]);
+        lv_obj_set_x(s_wx_name[index], value_x + lv_obj_get_width(s_wx_value[index]) + 8);
+    }
+#endif
+#if UI_WX_FORECAST && UI_WX_DAYS_STACKED
+    const int day_w = s_wx_content_w / WEATHER_FORECAST_DAYS;
+    for (int index = 0; index < WEATHER_FORECAST_DAYS; ++index) {
+        const int chance_w = lv_obj_get_width(s_wx_day_chance[index]);
+        const int pair_w = 16 + 3 + chance_w;
+        const int x = index * day_w + (day_w - pair_w) / 2;
+        lv_obj_set_x(s_wx_day_drop[index], x);
+        lv_obj_set_x(s_wx_day_chance[index], x + 16 + 3);
+    }
+#endif
 }
 
 static bool ui_wx_set_image(lv_obj_t *image, const lv_image_dsc_t *src)
@@ -1985,7 +2118,7 @@ static bool ui_wx_refresh(bool force)
     changed |= ui_wx_set_hidden(s_wx_temperature, !weather);
     changed |= ui_wx_set_hidden(s_wx_feels, !weather);
     changed |= ui_wx_set_hidden(s_wx_readings, !weather);
-    changed |= ui_wx_set_hidden(s_wx_source, !weather);
+    changed |= ui_wx_set_hidden(s_wx_source, !weather || !UI_WX_SOURCE);
 #if UI_WX_FORECAST
     changed |= ui_wx_set_hidden(s_wx_days, !weather || !report.days[0].valid);
 #endif
@@ -2000,12 +2133,7 @@ static bool ui_wx_refresh(bool force)
     changed |= ui_set_label_text_note_change(s_wx_temperature, text);
     ui_wx_feels_text(text, sizeof(text), language, &report);
     changed |= ui_set_label_text_note_change(s_wx_feels, text);
-    /* The picture stands just left of the temperature, whose width is its
-     * text's: laid out after the text is set. */
     changed |= ui_wx_set_image(s_wx_icon, ui_wx_icon_bitmap(report.icon));
-    lv_obj_update_layout(s_wx_content);
-    const int temperature_w = lv_obj_get_width(s_wx_temperature);
-    lv_obj_set_pos(s_wx_icon, s_wx_content_w - temperature_w - 8 - UI_WX_ICON_PX, 0);
 
     ui_wx_humidity_text(text, sizeof(text), &report);
     changed |= ui_set_label_text_note_change(s_wx_value[0], text);
@@ -2015,7 +2143,7 @@ static bool ui_wx_refresh(bool force)
     changed |= ui_set_label_text_note_change(s_wx_value[1], text);
     changed |= ui_set_label_text_note_change(
         s_wx_name[1], language == DEVICE_LANGUAGE_EN ? "pressure" : "давление");
-    ui_wx_wind_text(text, sizeof(text), language, &report);
+    ui_wx_wind_text(text, sizeof(text), language, &report, UI_WX_WIND_POINT);
     changed |= ui_set_label_text_note_change(s_wx_value[2], text);
     ui_wx_wind_label(text, sizeof(text), language, &report);
     changed |= ui_set_label_text_note_change(s_wx_name[2], text);
@@ -2038,7 +2166,7 @@ static bool ui_wx_refresh(bool force)
         changed |= ui_set_label_text_note_change(s_wx_day_name[index], text);
         changed |= ui_wx_set_image(s_wx_day_icon[index],
                                    forecast->valid ? ui_wx_day_bitmap(forecast->icon) : NULL);
-        ui_wx_day_range_text(text, sizeof(text), forecast);
+        ui_wx_day_range_text(text, sizeof(text), forecast, UI_WX_RANGE_DEGREE);
         changed |= ui_set_label_text_note_change(s_wx_day_range[index], text);
         ui_wx_day_chance_text(text, sizeof(text), forecast);
         changed |= ui_set_label_text_note_change(s_wx_day_chance[index], text);
@@ -2052,6 +2180,18 @@ static bool ui_wx_refresh(bool force)
                              ? "OpenWeatherMap"
                              : "";
     changed |= ui_set_label_text_note_change(s_wx_source, source);
+    // Whatever moved with its text, placed once all of it is set.
+    if (changed) {
+        ui_wx_place();
+#if !UI_WX_PORTRAIT
+        /* The date shares the top with the weather's picture: one that runs
+         * into it loses its weekday, as the clock screen's does. */
+        if (lv_obj_get_width(s_wx_date) + 8 > lv_obj_get_x(s_wx_icon)) {
+            ui_screensaver_date_short_text(text, sizeof(text), language, have_date, day, month);
+            (void)ui_set_label_text_note_change(s_wx_date, text);
+        }
+#endif
+    }
     return changed;
 }
 

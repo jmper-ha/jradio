@@ -17,6 +17,13 @@ New:
   plays the screen stays up, and the screensaver comes on the same time
   after a pause or a stop. Music starting - the alarm, say - wakes the
   screen by itself. In the web settings, under Screen.
+- A weather screensaver: the whole weather, like a weather station, with
+  colour pictures - the clock, the temperature and what it feels like,
+  humidity, pressure, the wind with an arrow and gusts, sunrise and sunset,
+  cloud cover and precipitation, a three-day forecast (from Open-Meteo and
+  OpenWeatherMap). On every screen, each with its own layout; once a minute
+  the picture moves by a pixel against burn-in. Chosen under Screensaver on
+  the device or on the web.
 
 ## v1.8.6 — 21 October 2026
 

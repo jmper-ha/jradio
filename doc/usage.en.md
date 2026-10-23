@@ -417,10 +417,13 @@ detail, the alarm, the sleep timer, the backup.
   Colours that mean something (the red error, Bluetooth's blue, the VU
   meter's green and red) stay as they are whatever the theme.
 - **Screensaver** - what the screen does when untouched: none, dimming (to
-  the "idle brightness"), a black screen, or the **clock** - the time drifting
-  over a black screen with the date, the weather and the track title. The
-  delay (15 s - 10 min) and the idle brightness are set on the web. Any action
-  wakes the screen; in the dark modes the first press only wakes.
+  the "idle brightness"), a black screen, the **clock** - the time drifting
+  over a black screen with the date, the weather and the track title - or the
+  **weather** (see below). The delay (15 s - 10 min), the idle brightness and
+  "Comes on" are set on the web: "Always" - the set time after the last
+  touch, or "When nothing plays" - only once the music is stopped or paused;
+  music starting wakes the screen by itself. Any action wakes the screen; in
+  the dark modes the first press only wakes.
 - **Weather** - a switch on the device; the service, the coordinates and the
   key are on the web.
 - **Language** - Russian or English, one switch for the screen and the
@@ -441,6 +444,19 @@ in - latitude and longitude in degrees, as a map writes them; Moscow by
 default. The icon tells day from night. Polled every fifteen minutes; under
 the source choice the page shows what the panel shows, or the reason nothing
 is there.
+
+**The weather screensaver** shows the whole weather, like a weather station,
+with colour pictures: the clock and the date; a big picture, the temperature
+and what it feels like; humidity, pressure in mmHg, the wind - speed, gusts
+and an arrow for where it blows; sunrise and sunset, cloud cover and
+precipitation; at the bottom today and the next two days - a picture, the low
+and the high, the chance of rain or snow. Open-Meteo and OpenWeatherMap give
+the forecast; wttr.in has none, and then there is no bottom row. On the small
+screens some names are left out - the pictures say the same; 320x170 has no
+forecast. The picture is redrawn once a minute and moves by a pixel once a
+minute so the screen does not burn in. With no weather (no internet, the
+service silent for over two hours) the clock, the date and "no weather"
+remain.
 
 ### About
 

@@ -759,6 +759,11 @@ static void radio_direct_task(void *arg)
      * server has stopped sending without closing - see RADIO_TRACK_STALL_MS. */
     TickType_t track_started_tick = xTaskGetTickCount();
     TickType_t last_rx_tick = xTaskGetTickCount();
+    // The wait for a second of backlog before a live station's sound starts.
+    bool start_holding = false;
+    TickType_t start_hold_tick = 0;
+    // When a live station's sound last started, for the target below.
+    TickType_t sound_started_tick = xTaskGetTickCount();
     /* A station's background reconnect ran out of backlog and the screen was
      * told; the new stream then starts the decoder and the output afresh. */
     bool reconnect_shown = false;
@@ -1037,6 +1042,35 @@ static void radio_direct_task(void *arg)
             track_ended = true;
         }
         bool need_input = available == 0U;
+        /* A live station's sound waits for a second of backlog, briefly
+         * (radio_prebuffer_start_bytes): until then the decoder is treated as
+         * starved, so the loop waits on the socket for more rather than
+         * decoding the first frames into a DMA nothing stands behind. Not for a
+         * chain's track - its server is always ahead - nor HLS, whose segments
+         * come whole. */
+        if (!radio->output_started && !radio->track_chain && !radio->hls.active &&
+            radio_stream_is_open(radio)) {
+            if (!start_holding) {
+                start_holding = true;
+                start_hold_tick = xTaskGetTickCount();
+            }
+            uint16_t bitrate = 0U;
+            taskENTER_CRITICAL(&s_status_lock);
+            bitrate = radio->status.bitrate_kbps;
+            taskEXIT_CRITICAL(&s_status_lock);
+            const bool short_of_start =
+                available < radio_prebuffer_start_bytes(bitrate, prebuffer.target);
+            const bool hold_left = (uint32_t)((xTaskGetTickCount() - start_hold_tick) *
+                                              portTICK_PERIOD_MS) < RADIO_PREBUFFER_START_HOLD_MS;
+            if (short_of_start && hold_left) {
+                need_input = true;
+                // Waiting by choice is not the decoder stalling.
+                last_pcm_tick = xTaskGetTickCount();
+            }
+        } else if (radio->output_started && start_holding) {
+            start_holding = false;
+            sound_started_tick = xTaskGetTickCount();
+        }
         /* The current track's body has ended. Its bytes are still in the
          * backlog, so the next link is not opened until the decoder has
          * finished them: opening earlier would hand the tail of one track to a
@@ -1297,10 +1331,19 @@ static void radio_direct_task(void *arg)
         } else if (!radio->hls.active) {
             const bool lossless = radio->stream_format == RADIO_STREAM_FORMAT_FLAC ||
                                   radio->stream_format == RADIO_STREAM_FORMAT_OGG_FLAC;
-            prebuffer.target = radio_prebuffer_live_target(
+            /* The station's own target until the sound has played for the
+             * first few seconds, as a chain's track does: chasing 128 KB from
+             * the start, a 256-320 kbps HTTPS station had its burst decrypted
+             * - in software, on this task - between the first decoded blocks,
+             * and the DMA ran dry 3 to 6 times in the first second. */
+            const uint32_t played_ms =
+                radio->output_started && !start_holding
+                    ? (uint32_t)((xTaskGetTickCount() - sound_started_tick) * portTICK_PERIOD_MS)
+                    : 0U;
+            prebuffer.target = radio_prebuffer_live_target_after(
                 &(radio_prebuffer_config_t){.capacity = prebuffer.capacity,
                                             .target = station_target},
-                lossless);
+                lossless, played_ms);
         } else {
             prebuffer.target = station_target;
         }

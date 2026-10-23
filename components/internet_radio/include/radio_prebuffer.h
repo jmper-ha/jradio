@@ -112,9 +112,39 @@ void radio_prebuffer_config_init(radio_prebuffer_config_t *config, size_t capaci
 #define RADIO_PREBUFFER_LIVE_TARGET (128U * 1024U)
 size_t radio_prebuffer_live_target(const radio_prebuffer_config_t *config, bool lossless);
 
+/* The live target once the sound has played `played_ms`: the station's own
+ * target for the first RADIO_PREBUFFER_TRACK_AFTER_MS, then rising to the
+ * live one over RADIO_PREBUFFER_LIVE_RAMP_MS rather than in one step. A
+ * 256-320 kbps HTTPS station had its burst decrypted - in software, on the
+ * decode task - between the first blocks when the 128 KB was chased from the
+ * start, and the DMA ran dry 3 to 6 times in the first second; chased in one
+ * step three seconds in, once more then (bench, 2026-10-23). */
+#define RADIO_PREBUFFER_LIVE_RAMP_MS 10000U
+size_t radio_prebuffer_live_target_after(const radio_prebuffer_config_t *config, bool lossless,
+                                         uint32_t played_ms);
+
 #define RADIO_PREBUFFER_TRACK_TARGET (192U * 1024U)
 #define RADIO_PREBUFFER_TRACK_AFTER_MS 3000U
 size_t radio_prebuffer_track_target(const radio_prebuffer_config_t *config, uint32_t played_ms);
+
+/* How much backlog a live station should have before its sound starts: a
+ * second of it at `bitrate_kbps`, or RADIO_PREBUFFER_START_UNKNOWN when the
+ * bitrate is not known yet, never more than `target`. Held for at most
+ * RADIO_PREBUFFER_START_HOLD_MS after the stream opens, then it plays with
+ * what it has.
+ *
+ * The sound used to start with the first decoded frame. A server that sends a
+ * burst on connect - most Icecast ones, several seconds ahead - filled the
+ * buffer behind it at once; one that paces a 256 or 320 kbps stream at real
+ * time left it with a few hundred milliseconds, and while the loop read and
+ * decrypted the next records the DMA ran dry: 3 and 6 dropped buffers in the
+ * first second on two such stations on the bench (2026-10-23, a user's
+ * "noise for half a second, then fine"). A burst reaches this at once, so a
+ * station that sends one starts as soon as it did. */
+#define RADIO_PREBUFFER_START_MS 1000U
+#define RADIO_PREBUFFER_START_UNKNOWN (24U * 1024U)
+#define RADIO_PREBUFFER_START_HOLD_MS 1500U
+size_t radio_prebuffer_start_bytes(uint32_t bitrate_kbps, size_t target);
 
 /* `available` is the backlog the decoder still has; `need_input` is true when
  * it cannot proceed without more. */

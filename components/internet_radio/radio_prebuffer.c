@@ -89,3 +89,23 @@ uint8_t radio_prebuffer_percent(size_t available, size_t capacity)
     const uint8_t percent = (uint8_t)((available * 100U + capacity / 2U) / capacity);
     return percent == 0U ? 1U : percent;
 }
+
+size_t radio_prebuffer_start_bytes(uint32_t bitrate_kbps, size_t target)
+{
+    // kbps x 125 is bytes a second.
+    const size_t wanted = bitrate_kbps > 0U
+                              ? (size_t)bitrate_kbps * 125U * RADIO_PREBUFFER_START_MS / 1000U
+                              : RADIO_PREBUFFER_START_UNKNOWN;
+    return wanted < target ? wanted : target;
+}
+
+size_t radio_prebuffer_live_target_after(const radio_prebuffer_config_t *config, bool lossless,
+                                         uint32_t played_ms)
+{
+    const size_t start = config->target;
+    const size_t full = radio_prebuffer_live_target(config, lossless);
+    if (full <= start || played_ms < RADIO_PREBUFFER_TRACK_AFTER_MS) return full < start ? full : start;
+    const uint32_t into = played_ms - RADIO_PREBUFFER_TRACK_AFTER_MS;
+    if (into >= RADIO_PREBUFFER_LIVE_RAMP_MS) return full;
+    return start + (size_t)((uint64_t)(full - start) * into / RADIO_PREBUFFER_LIVE_RAMP_MS);
+}

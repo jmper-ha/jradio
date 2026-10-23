@@ -258,8 +258,42 @@ static void test_a_live_station_holds_what_its_server_sends_ahead(void)
     assert(radio_prebuffer_live_target(NULL, false) == 0U);
 }
 
+static void test_a_live_station_grows_its_backlog_after_the_start(void)
+{
+    radio_prebuffer_config_t config;
+    radio_prebuffer_config_init(&config, 256U * 1024U, 2048U);
+    const size_t start = config.target;
+    const size_t full = radio_prebuffer_live_target(&config, false);
+    assert(full > start);
+    assert(radio_prebuffer_live_target_after(&config, false, 0U) == start);
+    assert(radio_prebuffer_live_target_after(&config, false, RADIO_PREBUFFER_TRACK_AFTER_MS - 1U) ==
+           start);
+    const size_t half = radio_prebuffer_live_target_after(
+        &config, false, RADIO_PREBUFFER_TRACK_AFTER_MS + RADIO_PREBUFFER_LIVE_RAMP_MS / 2U);
+    assert(half > start && half < full);
+    assert(radio_prebuffer_live_target_after(
+               &config, false, RADIO_PREBUFFER_TRACK_AFTER_MS + RADIO_PREBUFFER_LIVE_RAMP_MS) ==
+           full);
+    // Lossless keeps its cap all the way.
+    assert(radio_prebuffer_live_target_after(&config, true, 60000U) ==
+           radio_prebuffer_live_target(&config, true));
+}
+
+static void test_a_live_station_starts_on_a_second_of_backlog(void)
+{
+    // 320 kbps is 40 KB a second, 128 kbps 16 KB.
+    assert(radio_prebuffer_start_bytes(320U, 128U * 1024U) == 40000U);
+    assert(radio_prebuffer_start_bytes(128U, 128U * 1024U) == 16000U);
+    // Unknown until the first frame: a fixed amount.
+    assert(radio_prebuffer_start_bytes(0U, 128U * 1024U) == RADIO_PREBUFFER_START_UNKNOWN);
+    // Never more than the backlog the loop chases: FLAC's 32 KB target.
+    assert(radio_prebuffer_start_bytes(1411U, 32768U) == 32768U);
+}
+
 int main(void)
 {
+    test_a_live_station_starts_on_a_second_of_backlog();
+    test_a_live_station_grows_its_backlog_after_the_start();
     test_a_live_station_holds_what_its_server_sends_ahead();
     test_a_track_holds_more_once_it_has_started();
     test_an_empty_buffer_is_allowed_to_wait_for_data();

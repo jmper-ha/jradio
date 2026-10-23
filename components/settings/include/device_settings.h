@@ -64,6 +64,9 @@ typedef enum {
     DEVICE_SCREENSAVER_DIM,
     DEVICE_SCREENSAVER_BLANK,
     DEVICE_SCREENSAVER_CLOCK,
+    /* The panel dark but for the clock and the full weather: the readings
+     * and three days, in colour (see ui_weather_saver.h). */
+    DEVICE_SCREENSAVER_WEATHER,
 } device_screensaver_t;
 
 /* When the wait counts: from the last touch, as it always did, or only while

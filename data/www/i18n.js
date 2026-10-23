@@ -752,6 +752,7 @@
     'settings.screensaver_dim': ['Затемнение', 'Dim'],
     'settings.screensaver_blank': ['Чёрный экран', 'Blank'],
     'settings.screensaver_clock': ['Часы', 'Clock'],
+    'settings.screensaver_weather': ['Погода', 'Weather'],
     'settings.screensaver_after': ['Через, с', 'After, s'],
     'settings.screensaver_when': ['Включать', 'Comes on'],
     'settings.screensaver_when_always': ['Всегда', 'Always'],

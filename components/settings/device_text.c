@@ -86,6 +86,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_SCREENSAVER_DIM] = {"Затемнение", "Dim"},
     [DEVICE_TEXT_SCREENSAVER_BLANK] = {"Чёрный экран", "Blank"},
     [DEVICE_TEXT_SCREENSAVER_CLOCK] = {"Часы", "Clock"},
+    [DEVICE_TEXT_SCREENSAVER_WEATHER] = {"Погода", "Weather"},
     [DEVICE_TEXT_ROW_FLIP_VERTICAL] = {"Поворот по вертикали", "Flip vertically"},
     [DEVICE_TEXT_ROW_FLIP_HORIZONTAL] = {"Поворот по горизонтали", "Flip horizontally"},
     [DEVICE_TEXT_ROW_INVERT_COLORS] = {"Инверсия цветов", "Invert colours"},

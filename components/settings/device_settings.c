@@ -121,6 +121,7 @@ static const char *screensaver_text(device_screensaver_t mode)
     case DEVICE_SCREENSAVER_DIM: return "dim";
     case DEVICE_SCREENSAVER_BLANK: return "blank";
     case DEVICE_SCREENSAVER_CLOCK: return "clock";
+    case DEVICE_SCREENSAVER_WEATHER: return "weather";
     case DEVICE_SCREENSAVER_OFF: break;
     }
     return "off";
@@ -128,7 +129,7 @@ static const char *screensaver_text(device_screensaver_t mode)
 
 static device_screensaver_t screensaver_from_text(const char *text)
 {
-    for (device_screensaver_t mode = DEVICE_SCREENSAVER_DIM; mode <= DEVICE_SCREENSAVER_CLOCK;
+    for (device_screensaver_t mode = DEVICE_SCREENSAVER_DIM; mode <= DEVICE_SCREENSAVER_WEATHER;
          ++mode) {
         if (strcmp(text, screensaver_text(mode)) == 0) return mode;
     }
@@ -1067,7 +1068,7 @@ bool device_settings_set_weather_enabled(device_settings_t *settings, bool enabl
 
 bool device_settings_set_screensaver(device_settings_t *settings, device_screensaver_t mode)
 {
-    if (settings == NULL || mode > DEVICE_SCREENSAVER_CLOCK) return false;
+    if (settings == NULL || mode > DEVICE_SCREENSAVER_WEATHER) return false;
     if (settings->screensaver == mode) return true;
     if (!save_value(settings, "screensaver", screensaver_text(mode))) return false;
     settings->screensaver = mode;

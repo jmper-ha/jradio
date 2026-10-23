@@ -311,8 +311,26 @@ static void test_the_wait_can_count_only_while_nothing_plays(void)
     assert(view.active);
 }
 
+/* The weather screen hides the panel as the clock does - the waking press
+ * goes no further - at the idle level, with its own flag for ui.c. */
+static void test_the_weather_mode_covers_the_panel(void)
+{
+    ui_screensaver_t saver;
+    ui_screensaver_init(&saver, 0);
+    device_settings_t settings = settings_with(DEVICE_SCREENSAVER_WEATHER);
+    ui_screensaver_view_t view;
+    (void)ui_screensaver_step(&saver, &settings, 0, AREA_W, AREA_H, BLOCK_W, BLOCK_H, &view);
+    assert(ui_screensaver_step(&saver, &settings, 30000, AREA_W, AREA_H, BLOCK_W, BLOCK_H, &view));
+    assert(view.active && view.cover && view.weather && !view.clock);
+    assert(view.backlight == 20);
+    assert(ui_screensaver_wake(&saver, settings.screensaver, 31000));
+    assert(ui_screensaver_step(&saver, &settings, 31000, AREA_W, AREA_H, BLOCK_W, BLOCK_H, &view));
+    assert(!view.active && !view.weather && !view.cover);
+}
+
 int main(void)
 {
+    test_the_weather_mode_covers_the_panel();
     test_the_wait_can_count_only_while_nothing_plays();
     test_the_short_date_drops_the_weekday();
     test_nothing_happens_while_the_saver_is_off();

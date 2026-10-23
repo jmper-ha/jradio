@@ -60,6 +60,8 @@ typedef struct {
      * is drawn on it. */
     bool cover;
     bool clock;
+    // The weather screen drawn on the cover (ui_weather_saver.h).
+    bool weather;
     int x;
     int y;
 } ui_screensaver_view_t;

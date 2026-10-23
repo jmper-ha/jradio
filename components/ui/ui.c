@@ -61,6 +61,8 @@
 #include "ui_vu_meter.h"
 #include "ui_fm_tune.h"
 #include "ui_screensaver.h"
+#include "ui_weather_icon_bitmaps.h"
+#include "ui_weather_saver.h"
 #include "ui_theme.h"
 #include "esp_app_desc.h"
 #include "ota_update.h"
@@ -1679,6 +1681,441 @@ static void ui_screensaver_draw(void)
     s_saver_dirty = false;
 }
 
+/* --- the weather screensaver --------------------------------------------- */
+
+/* Drawn the way the clock is, for the clock's reason: a redraw through LVGL
+ * on this core is slow, and under the cover LVGL is told to look at nothing.
+ * The screen is laid out once in a hidden block, snapshotted into a bitmap in
+ * PSRAM when anything on it changes - the minute, the weather, the language -
+ * and written to the panel in one piece. Once a minute is every change it
+ * has, so the half second a full-panel snapshot costs is paid once a minute.
+ *
+ * The block is the panel's width rounded down to 32 pixels (the bitmap goes
+ * to the DMA from PSRAM, a row of 64 bytes keeps every chunk on a cache line)
+ * and its full height; what moves against burn-in is the content inside it,
+ * a pixel a minute round a small square (ui_wx_shift). */
+static lv_obj_t *s_wx_block;
+static lv_obj_t *s_wx_content;
+static lv_obj_t *s_wx_time;
+static lv_obj_t *s_wx_date;
+static lv_obj_t *s_wx_icon;
+static lv_obj_t *s_wx_temperature;
+static lv_obj_t *s_wx_feels;
+static lv_obj_t *s_wx_none;
+static lv_obj_t *s_wx_readings;
+static lv_obj_t *s_wx_picto[3];
+static lv_obj_t *s_wx_value[3];
+static lv_obj_t *s_wx_name[3];
+static lv_obj_t *s_wx_sunrise_picto;
+static lv_obj_t *s_wx_sunrise;
+static lv_obj_t *s_wx_sunset_picto;
+static lv_obj_t *s_wx_sunset;
+static lv_obj_t *s_wx_sky;
+static lv_obj_t *s_wx_days;
+static lv_obj_t *s_wx_day_name[WEATHER_FORECAST_DAYS];
+static lv_obj_t *s_wx_day_icon[WEATHER_FORECAST_DAYS];
+static lv_obj_t *s_wx_day_range[WEATHER_FORECAST_DAYS];
+static lv_obj_t *s_wx_day_drop[WEATHER_FORECAST_DAYS];
+static lv_obj_t *s_wx_day_chance[WEATHER_FORECAST_DAYS];
+static lv_obj_t *s_wx_source;
+static lv_draw_buf_t s_wx_bitmap;
+static bool s_wx_bitmap_ok;
+static int s_wx_block_w;
+static int s_wx_content_w;
+static int s_wx_content_h;
+static bool s_wx_up;
+static bool s_wx_dirty;
+static uint32_t s_wx_text_ms;
+static uint32_t s_wx_draw_after_ms;
+static uint32_t s_wx_minutes;
+static weather_report_t s_wx_report;
+static bool s_wx_have_report;
+
+#define UI_WX_FONT_BIG (&UI_FONT_BOLD_DIGITS(UI_WX_BIG_PX))
+#define UI_WX_FONT_TEXT (&UI_FONT_TEXT(UI_WX_TEXT_PX))
+#define UI_WX_FONT_SMALL (&UI_FONT_TEXT(UI_WX_SMALL_PX))
+
+#define UI_WX_WEATHER_CASES(size)                                                          \
+    case WEATHER_ICON_CLEAR_DAY: return &UI_WX_BITMAP(clear_day, size);                    \
+    case WEATHER_ICON_CLEAR_NIGHT: return &UI_WX_BITMAP(clear_night, size);                \
+    case WEATHER_ICON_PARTLY_CLOUDY_DAY: return &UI_WX_BITMAP(partly_cloudy_day, size);    \
+    case WEATHER_ICON_PARTLY_CLOUDY_NIGHT: return &UI_WX_BITMAP(partly_cloudy_night, size); \
+    case WEATHER_ICON_CLOUDY: return &UI_WX_BITMAP(cloudy, size);                          \
+    case WEATHER_ICON_FOG: return &UI_WX_BITMAP(fog, size);                                \
+    case WEATHER_ICON_RAIN: return &UI_WX_BITMAP(rain, size);                              \
+    case WEATHER_ICON_SNOW: return &UI_WX_BITMAP(snow, size);                              \
+    case WEATHER_ICON_SLEET: return &UI_WX_BITMAP(sleet, size);                            \
+    case WEATHER_ICON_THUNDERSTORM: return &UI_WX_BITMAP(thunderstorm, size);              \
+    default: return NULL;
+
+static const lv_image_dsc_t *ui_wx_icon_bitmap(weather_icon_t icon)
+{
+    switch (icon) { UI_WX_WEATHER_CASES(UI_WX_ICON_PX) }
+}
+
+#if UI_WX_FORECAST
+static const lv_image_dsc_t *ui_wx_day_bitmap(weather_icon_t icon)
+{
+    switch (icon) { UI_WX_WEATHER_CASES(UI_WX_DAY_ICON_PX) }
+}
+#endif
+
+// The arrow for where the wind goes, from where it comes (weather_wind_point).
+static const lv_image_dsc_t *ui_wx_wind_bitmap(int point)
+{
+    switch (point) {
+    case 0: return &UI_WX_BITMAP(wind_0, UI_WX_PICTO_PX);
+    case 1: return &UI_WX_BITMAP(wind_45, UI_WX_PICTO_PX);
+    case 2: return &UI_WX_BITMAP(wind_90, UI_WX_PICTO_PX);
+    case 3: return &UI_WX_BITMAP(wind_135, UI_WX_PICTO_PX);
+    case 4: return &UI_WX_BITMAP(wind_180, UI_WX_PICTO_PX);
+    case 5: return &UI_WX_BITMAP(wind_225, UI_WX_PICTO_PX);
+    case 6: return &UI_WX_BITMAP(wind_270, UI_WX_PICTO_PX);
+    case 7: return &UI_WX_BITMAP(wind_315, UI_WX_PICTO_PX);
+    default: return NULL;
+    }
+}
+
+static lv_obj_t *ui_wx_label(lv_obj_t *parent, const lv_font_t *font, ui_role_t role)
+{
+    lv_obj_t *label = lv_label_create(parent);
+    lv_obj_set_style_text_font(label, font, 0);
+    ui_paint(label, UI_PAINT_TEXT, role, 0);
+    lv_label_set_text(label, "");
+    return label;
+}
+
+static lv_obj_t *ui_wx_image(lv_obj_t *parent, const lv_image_dsc_t *src)
+{
+    lv_obj_t *image = lv_image_create(parent);
+    if (src != NULL) lv_image_set_src(image, src);
+    return image;
+}
+
+static lv_obj_t *ui_wx_rule(lv_obj_t *parent, int y)
+{
+    lv_obj_t *rule = lv_obj_create(parent);
+    lv_obj_remove_style_all(rule);
+    lv_obj_set_pos(rule, 0, y);
+    lv_obj_set_size(rule, s_wx_content_w, 1);
+    lv_obj_set_style_bg_opa(rule, LV_OPA_COVER, 0);
+    ui_paint(rule, UI_PAINT_BG, UI_ROLE_RULE, 0);
+    return rule;
+}
+
+static lv_obj_t *ui_wx_group(lv_obj_t *parent, int y, int h)
+{
+    lv_obj_t *group = lv_obj_create(parent);
+    lv_obj_remove_style_all(group);
+    lv_obj_set_pos(group, 0, y);
+    lv_obj_set_size(group, s_wx_content_w, h);
+    lv_obj_clear_flag(group, LV_OBJ_FLAG_SCROLLABLE);
+    return group;
+}
+
+/* Builds the hidden block. Nothing is allocated for the bitmap here: the
+ * mode is one of five, and 300 KB of PSRAM is taken the first time it is
+ * actually used. */
+static void ui_create_weather_saver(void)
+{
+    s_wx_block_w = TFT_WIDTH / 32 * 32;
+    s_wx_content_w = s_wx_block_w - 2 * UI_WX_MARGIN - UI_WX_SHIFT_PX;
+    s_wx_content_h = TFT_HEIGHT - 2 * UI_WX_MARGIN - UI_WX_SHIFT_PX;
+    const int big_h = lv_font_get_line_height(UI_WX_FONT_BIG);
+    const int text_h = lv_font_get_line_height(UI_WX_FONT_TEXT);
+    const int small_h = lv_font_get_line_height(UI_WX_FONT_SMALL);
+
+    // Hidden for good, like the clock's: the snapshot draws it all the same.
+    s_wx_block = lv_obj_create(s_saver_cover);
+    lv_obj_remove_style_all(s_wx_block);
+    lv_obj_set_size(s_wx_block, s_wx_block_w, TFT_HEIGHT);
+    lv_obj_set_style_bg_color(s_wx_block, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_wx_block, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(s_wx_block, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_wx_block, LV_OBJ_FLAG_HIDDEN);
+    s_wx_content = lv_obj_create(s_wx_block);
+    lv_obj_remove_style_all(s_wx_content);
+    lv_obj_set_size(s_wx_content, s_wx_content_w, s_wx_content_h);
+    lv_obj_set_pos(s_wx_content, UI_WX_MARGIN, UI_WX_MARGIN);
+    lv_obj_clear_flag(s_wx_content, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Top: the clock and the date on the left, the weather on the right.
+    s_wx_time = ui_wx_label(s_wx_content, UI_WX_FONT_BIG, UI_ROLE_TEXT);
+    lv_obj_set_pos(s_wx_time, 0, 0);
+    s_wx_date = ui_wx_label(s_wx_content, UI_WX_FONT_TEXT, UI_ROLE_SECONDARY);
+    lv_obj_set_pos(s_wx_date, 0, big_h + 2);
+    s_wx_temperature = ui_wx_label(s_wx_content, UI_WX_FONT_BIG, UI_ROLE_TEXT);
+    lv_obj_align(s_wx_temperature, LV_ALIGN_TOP_RIGHT, 0, 0);
+    s_wx_feels = ui_wx_label(s_wx_content, UI_WX_FONT_TEXT, UI_ROLE_SECONDARY);
+    lv_obj_align(s_wx_feels, LV_ALIGN_TOP_RIGHT, 0, big_h + 2);
+    s_wx_icon = ui_wx_image(s_wx_content, NULL);
+    s_wx_none = ui_wx_label(s_wx_content, UI_WX_FONT_TEXT, UI_ROLE_DIM);
+    lv_obj_align(s_wx_none, LV_ALIGN_TOP_RIGHT, 0, (big_h - text_h) / 2);
+    const int top_h = big_h + 2 + text_h > UI_WX_ICON_PX ? big_h + 2 + text_h : UI_WX_ICON_PX;
+    int y = top_h + 6;
+    (void)ui_wx_rule(s_wx_content, y);
+    y += 8;
+
+    // The readings: three columns of a pictogram, a figure and its name, then
+    // sunrise, sunset and the sky in words.
+    const int readings_h = text_h + small_h + 6 + text_h;
+    s_wx_readings = ui_wx_group(s_wx_content, y, readings_h);
+    const int column_w = s_wx_content_w / 3;
+    for (int index = 0; index < 3; ++index) {
+        const int x = index * column_w;
+        s_wx_picto[index] = ui_wx_image(s_wx_readings, NULL);
+        lv_obj_set_pos(s_wx_picto[index], x, (text_h - UI_WX_PICTO_PX) / 2);
+        s_wx_value[index] = ui_wx_label(s_wx_readings, UI_WX_FONT_TEXT, UI_ROLE_TEXT);
+        lv_obj_set_pos(s_wx_value[index], x + UI_WX_PICTO_PX + 6, 0);
+        s_wx_name[index] = ui_wx_label(s_wx_readings, UI_WX_FONT_SMALL, UI_ROLE_DIM);
+        lv_obj_set_pos(s_wx_name[index], x + UI_WX_PICTO_PX + 6, text_h);
+    }
+    lv_image_set_src(s_wx_picto[0], &UI_WX_BITMAP(humidity, UI_WX_PICTO_PX));
+    lv_image_set_src(s_wx_picto[1], &UI_WX_BITMAP(pressure, UI_WX_PICTO_PX));
+    const int sun_y = text_h + small_h + 6;
+    lv_point_t hhmm;
+    lv_text_get_size(&hhmm, "00:00", UI_WX_FONT_TEXT, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    const int sun_w = UI_WX_PICTO_PX + 4 + hhmm.x + 18;
+    s_wx_sunrise_picto = ui_wx_image(s_wx_readings, &UI_WX_BITMAP(sunrise, UI_WX_PICTO_PX));
+    lv_obj_set_pos(s_wx_sunrise_picto, 0, sun_y + (text_h - UI_WX_PICTO_PX) / 2);
+    s_wx_sunrise = ui_wx_label(s_wx_readings, UI_WX_FONT_TEXT, UI_ROLE_TEXT);
+    lv_obj_set_pos(s_wx_sunrise, UI_WX_PICTO_PX + 4, sun_y);
+    s_wx_sunset_picto = ui_wx_image(s_wx_readings, &UI_WX_BITMAP(sunset, UI_WX_PICTO_PX));
+    lv_obj_set_pos(s_wx_sunset_picto, sun_w, sun_y + (text_h - UI_WX_PICTO_PX) / 2);
+    s_wx_sunset = ui_wx_label(s_wx_readings, UI_WX_FONT_TEXT, UI_ROLE_TEXT);
+    lv_obj_set_pos(s_wx_sunset, sun_w + UI_WX_PICTO_PX + 4, sun_y);
+    s_wx_sky = ui_wx_label(s_wx_readings, UI_WX_FONT_SMALL, UI_ROLE_DIM);
+    lv_obj_set_pos(s_wx_sky, sun_w * 2, sun_y + (text_h - small_h) / 2);
+    y += readings_h + 6;
+
+#if UI_WX_FORECAST
+    (void)ui_wx_rule(s_wx_content, y);
+    y += 8;
+    // Three days: the name over a picture, the range and the chance beside it.
+    const int days_h = small_h + 4 + UI_WX_DAY_ICON_PX;
+    s_wx_days = ui_wx_group(s_wx_content, y, days_h);
+    for (int index = 0; index < WEATHER_FORECAST_DAYS; ++index) {
+        const int x = index * column_w;
+        s_wx_day_name[index] = ui_wx_label(s_wx_days, UI_WX_FONT_SMALL, UI_ROLE_SECONDARY);
+        lv_obj_set_width(s_wx_day_name[index], column_w);
+        lv_obj_set_style_text_align(s_wx_day_name[index], LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(s_wx_day_name[index], x, 0);
+        s_wx_day_icon[index] = ui_wx_image(s_wx_days, NULL);
+        lv_obj_set_pos(s_wx_day_icon[index], x, small_h + 4);
+        const int beside = x + UI_WX_DAY_ICON_PX + 6;
+        const int middle = small_h + 4 + UI_WX_DAY_ICON_PX / 2;
+        s_wx_day_range[index] = ui_wx_label(s_wx_days, UI_WX_FONT_TEXT, UI_ROLE_TEXT);
+        lv_obj_set_pos(s_wx_day_range[index], beside, middle - text_h);
+        s_wx_day_drop[index] = ui_wx_image(s_wx_days, &UI_WX_BITMAP(humidity, 16));
+        lv_obj_set_pos(s_wx_day_drop[index], beside, middle + (small_h - 16) / 2 + 2);
+        s_wx_day_chance[index] = ui_wx_label(s_wx_days, UI_WX_FONT_SMALL, UI_ROLE_SECONDARY);
+        lv_obj_set_pos(s_wx_day_chance[index], beside + 16 + 4, middle + 2);
+    }
+#endif
+
+    s_wx_source = ui_wx_label(s_wx_content, UI_WX_FONT_SMALL, UI_ROLE_DIM);
+    lv_obj_align(s_wx_source, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+}
+
+static bool ui_wx_set_image(lv_obj_t *image, const lv_image_dsc_t *src)
+{
+    if (src == NULL) {
+        if (lv_obj_has_flag(image, LV_OBJ_FLAG_HIDDEN)) return false;
+        lv_obj_add_flag(image, LV_OBJ_FLAG_HIDDEN);
+        return true;
+    }
+    bool changed = false;
+    if (lv_image_get_src(image) != src) {
+        lv_image_set_src(image, src);
+        changed = true;
+    }
+    if (lv_obj_has_flag(image, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_clear_flag(image, LV_OBJ_FLAG_HIDDEN);
+        changed = true;
+    }
+    return changed;
+}
+
+static bool ui_wx_set_hidden(lv_obj_t *obj, bool hidden)
+{
+    if (obj == NULL || lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN) == hidden) return false;
+    if (hidden) lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    return true;
+}
+
+/* Sets every label from the clock and the weather; true when anything the
+ * snapshot would show is different. A new minute also takes the content one
+ * step round its square. */
+static bool ui_wx_refresh(bool force)
+{
+    const device_language_t language = s_device_settings.language;
+    bool changed = force;
+    char text[96];
+    int hour = 0;
+    int minute = 0;
+    const bool have_time = device_clock_now(&hour, &minute);
+    if (have_time) snprintf(text, sizeof(text), "%02d:%02d", hour, minute);
+    else snprintf(text, sizeof(text), "--:--");
+    if (ui_set_label_text_note_change(s_wx_time, text)) {
+        changed = true;
+        ++s_wx_minutes;
+        int dx = 0;
+        int dy = 0;
+        ui_wx_shift(s_wx_minutes, UI_WX_SHIFT_PX, &dx, &dy);
+        lv_obj_set_pos(s_wx_content, UI_WX_MARGIN + dx, UI_WX_MARGIN + dy);
+    }
+    int day = 0;
+    int month = 0;
+    int weekday = 0;
+    const bool have_date = device_clock_today(&day, &month, &weekday);
+    ui_screensaver_date_text(text, sizeof(text), language, have_date, day, month, weekday);
+    changed |= ui_set_label_text_note_change(s_wx_date, text);
+
+    weather_report_t report;
+    const bool weather = weather_current(&report);
+    if (!force && weather == s_wx_have_report &&
+        (!weather || memcmp(&report, &s_wx_report, sizeof(report)) == 0) && !changed) {
+        return false;
+    }
+    s_wx_have_report = weather;
+    if (weather) s_wx_report = report;
+
+    changed |= ui_wx_set_hidden(s_wx_none, weather);
+    changed |= ui_wx_set_hidden(s_wx_temperature, !weather);
+    changed |= ui_wx_set_hidden(s_wx_feels, !weather);
+    changed |= ui_wx_set_hidden(s_wx_readings, !weather);
+    changed |= ui_wx_set_hidden(s_wx_source, !weather);
+#if UI_WX_FORECAST
+    changed |= ui_wx_set_hidden(s_wx_days, !weather || !report.days[0].valid);
+#endif
+    if (!weather) {
+        changed |= ui_wx_set_image(s_wx_icon, NULL);
+        changed |= ui_set_label_text_note_change(
+            s_wx_none, language == DEVICE_LANGUAGE_EN ? "no weather" : "нет данных о погоде");
+        return changed;
+    }
+
+    ui_wx_temperature_text(text, sizeof(text), report.temperature_c);
+    changed |= ui_set_label_text_note_change(s_wx_temperature, text);
+    ui_wx_feels_text(text, sizeof(text), language, &report);
+    changed |= ui_set_label_text_note_change(s_wx_feels, text);
+    /* The picture stands just left of the temperature, whose width is its
+     * text's: laid out after the text is set. */
+    changed |= ui_wx_set_image(s_wx_icon, ui_wx_icon_bitmap(report.icon));
+    lv_obj_update_layout(s_wx_content);
+    const int temperature_w = lv_obj_get_width(s_wx_temperature);
+    lv_obj_set_pos(s_wx_icon, s_wx_content_w - temperature_w - 8 - UI_WX_ICON_PX, 0);
+
+    ui_wx_humidity_text(text, sizeof(text), &report);
+    changed |= ui_set_label_text_note_change(s_wx_value[0], text);
+    changed |= ui_set_label_text_note_change(
+        s_wx_name[0], language == DEVICE_LANGUAGE_EN ? "humidity" : "влажность");
+    ui_wx_pressure_text(text, sizeof(text), language, &report);
+    changed |= ui_set_label_text_note_change(s_wx_value[1], text);
+    changed |= ui_set_label_text_note_change(
+        s_wx_name[1], language == DEVICE_LANGUAGE_EN ? "pressure" : "давление");
+    ui_wx_wind_text(text, sizeof(text), language, &report);
+    changed |= ui_set_label_text_note_change(s_wx_value[2], text);
+    ui_wx_wind_label(text, sizeof(text), language, &report);
+    changed |= ui_set_label_text_note_change(s_wx_name[2], text);
+    changed |= ui_wx_set_image(s_wx_picto[2],
+                               ui_wx_wind_bitmap(weather_wind_point(report.wind_from_deg)));
+
+    ui_wx_clock_text(text, sizeof(text), report.sunrise_min);
+    changed |= ui_set_label_text_note_change(s_wx_sunrise, text);
+    changed |= ui_wx_set_hidden(s_wx_sunrise_picto, text[0] == '\0');
+    ui_wx_clock_text(text, sizeof(text), report.sunset_min);
+    changed |= ui_set_label_text_note_change(s_wx_sunset, text);
+    changed |= ui_wx_set_hidden(s_wx_sunset_picto, text[0] == '\0');
+    ui_wx_sky_text(text, sizeof(text), language, &report);
+    changed |= ui_set_label_text_note_change(s_wx_sky, text);
+
+#if UI_WX_FORECAST
+    for (int index = 0; index < WEATHER_FORECAST_DAYS; ++index) {
+        const weather_day_t *forecast = &report.days[index];
+        ui_wx_day_name(text, sizeof(text), language, index, forecast);
+        changed |= ui_set_label_text_note_change(s_wx_day_name[index], text);
+        changed |= ui_wx_set_image(s_wx_day_icon[index],
+                                   forecast->valid ? ui_wx_day_bitmap(forecast->icon) : NULL);
+        ui_wx_day_range_text(text, sizeof(text), forecast);
+        changed |= ui_set_label_text_note_change(s_wx_day_range[index], text);
+        ui_wx_day_chance_text(text, sizeof(text), forecast);
+        changed |= ui_set_label_text_note_change(s_wx_day_chance[index], text);
+        changed |= ui_wx_set_hidden(s_wx_day_drop[index], text[0] == '\0');
+    }
+#endif
+
+    const char *source = s_device_settings.weather_provider == DEVICE_WEATHER_OPEN_METEO ? "Open-Meteo"
+                         : s_device_settings.weather_provider == DEVICE_WEATHER_WTTR    ? "wttr.in"
+                         : s_device_settings.weather_provider == DEVICE_WEATHER_OPENWEATHERMAP
+                             ? "OpenWeatherMap"
+                             : "";
+    changed |= ui_set_label_text_note_change(s_wx_source, source);
+    return changed;
+}
+
+/* The bitmap, taken the first time the mode is used: the panel's width at
+ * two bytes a pixel, in PSRAM, aligned for the DMA. */
+static bool ui_wx_bitmap_ready(void)
+{
+    if (s_wx_bitmap_ok) return true;
+    const uint32_t stride =
+        lv_draw_buf_width_to_stride((uint32_t)s_wx_block_w, LV_COLOR_FORMAT_RGB565);
+    const uint32_t size = (stride * (uint32_t)TFT_HEIGHT + BOARD_DISPLAY_WIRE_ALIGN - 1U) /
+                          BOARD_DISPLAY_WIRE_ALIGN * BOARD_DISPLAY_WIRE_ALIGN;
+    void *pixels = heap_caps_aligned_alloc(BOARD_DISPLAY_WIRE_ALIGN, size, MALLOC_CAP_SPIRAM);
+    if (pixels == NULL) {
+        ESP_LOGW(TAG, "weather screensaver: no %u bytes of PSRAM", (unsigned)size);
+        return false;
+    }
+    lv_draw_buf_init(&s_wx_bitmap, (uint32_t)s_wx_block_w, (uint32_t)TFT_HEIGHT,
+                     LV_COLOR_FORMAT_RGB565, stride, pixels, size);
+    s_wx_bitmap_ok = true;
+    return true;
+}
+
+static void ui_wx_render_and_draw(void)
+{
+    if (!ui_wx_bitmap_ready()) return;
+    const int64_t started = esp_timer_get_time();
+    if (lv_snapshot_take_to_draw_buf(s_wx_block, LV_COLOR_FORMAT_RGB565, &s_wx_bitmap) !=
+        LV_RESULT_OK) {
+        ESP_LOGW(TAG, "weather screensaver: snapshot failed");
+        return;
+    }
+    board_display_to_wire((uint16_t *)s_wx_bitmap.data,
+                          (size_t)s_wx_block_w * (size_t)TFT_HEIGHT);
+    const int x = (TFT_WIDTH - s_wx_block_w) / 2;
+    (void)board_display_draw_wire(x, 0, x + s_wx_block_w, TFT_HEIGHT,
+                                  (const uint16_t *)s_wx_bitmap.data);
+    s_wx_dirty = false;
+    static bool s_logged;
+    if (!s_logged) {
+        s_logged = true;
+        ESP_LOGI(TAG, "weather screensaver: first frame in %d ms",
+                 (int)((esp_timer_get_time() - started) / 1000));
+    }
+}
+
+static void ui_wx_poll(bool wanted, uint32_t now_ms)
+{
+    if (wanted && !s_wx_up) {
+        s_wx_up = true;
+        s_wx_text_ms = now_ms;
+        s_wx_draw_after_ms = now_ms + UI_SAVER_FIRST_DRAW_MS;
+        s_wx_dirty = ui_wx_refresh(true);
+    } else if (!wanted && s_wx_up) {
+        s_wx_up = false;
+    }
+    if (!s_wx_up) return;
+    if ((uint32_t)(now_ms - s_wx_text_ms) >= UI_SAVER_TEXT_MS) {
+        s_wx_text_ms = now_ms;
+        s_wx_dirty |= ui_wx_refresh(false);
+    }
+    if (s_wx_dirty && (int32_t)(now_ms - s_wx_draw_after_ms) >= 0) ui_wx_render_and_draw();
+}
+
 /* One pass: the pure part decides, this applies. The backlight is applied on
  * every pass and not only on a change, because the reload path writes it too
  * - see ui_backlight_apply(). */
@@ -1746,6 +2183,7 @@ static void ui_screensaver_poll(uint32_t now_ms)
         (uint32_t)(now_ms - s_cover_up_ms) >= UI_SAVER_FIRST_DRAW_MS) {
         lv_display_enable_invalidation(s_display, false);
     }
+    ui_wx_poll(s_cover_up && s_saver_view.weather, now_ms);
     if (!s_clock_up) return;
     if ((uint32_t)(now_ms - s_saver_text_ms) >= UI_SAVER_TEXT_MS) {
         s_saver_text_ms = now_ms;
@@ -3528,6 +3966,8 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
                               ? DEVICE_TEXT_SCREENSAVER_BLANK
                           : s_device_settings.screensaver == DEVICE_SCREENSAVER_CLOCK
                               ? DEVICE_TEXT_SCREENSAVER_CLOCK
+                          : s_device_settings.screensaver == DEVICE_SCREENSAVER_WEATHER
+                              ? DEVICE_TEXT_SCREENSAVER_WEATHER
                               : DEVICE_TEXT_SCREENSAVER_OFF);
         break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
@@ -4501,12 +4941,12 @@ static void ui_settings_change_selected(void)
         if (changed) weather_apply(&s_device_settings);
         break;
     case UI_SETTINGS_ROW_SCREENSAVER_FIELD:
-        /* Four in a ring, the way a click cycles every other choice. Its
+        /* Five in a ring, the way a click cycles every other choice. Its
          * wait and its idle level are on the page. */
         changed = device_settings_set_screensaver(
             &s_device_settings,
             (device_screensaver_t)((s_device_settings.screensaver + 1) %
-                                   (DEVICE_SCREENSAVER_CLOCK + 1)));
+                                   (DEVICE_SCREENSAVER_WEATHER + 1)));
         break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         changed = device_settings_set_flip_vertical(&s_device_settings,
@@ -8340,6 +8780,7 @@ esp_err_t ui_init(void)
     ui_create_source_screen();
     ui_create_station_list_screen();
     ui_create_screensaver();
+    ui_create_weather_saver();
     ui_quick_create();
     ui_ota_create();
     ui_quick_menu_init(&s_quick);

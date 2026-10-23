@@ -11,7 +11,8 @@ void ui_screensaver_init(ui_screensaver_t *saver, uint32_t now_ms)
 /* The two modes that leave nothing readable on the panel. */
 static bool mode_hides_screen(device_screensaver_t mode)
 {
-    return mode == DEVICE_SCREENSAVER_BLANK || mode == DEVICE_SCREENSAVER_CLOCK;
+    return mode == DEVICE_SCREENSAVER_BLANK || mode == DEVICE_SCREENSAVER_CLOCK ||
+           mode == DEVICE_SCREENSAVER_WEATHER;
 }
 
 bool ui_screensaver_wake(ui_screensaver_t *saver, device_screensaver_t mode, uint32_t now_ms)
@@ -76,6 +77,7 @@ bool ui_screensaver_step(ui_screensaver_t *saver, const device_settings_t *setti
     if (saver->active) {
         next.cover = mode_hides_screen(mode);
         next.clock = mode == DEVICE_SCREENSAVER_CLOCK;
+        next.weather = mode == DEVICE_SCREENSAVER_WEATHER;
         next.backlight = mode == DEVICE_SCREENSAVER_BLANK ? 0U : settings->screensaver_brightness;
         if (next.clock) {
             next.x = saver->x;
@@ -85,7 +87,8 @@ bool ui_screensaver_step(ui_screensaver_t *saver, const device_settings_t *setti
 
     const bool changed = !saver->have_view || next.active != view->active ||
                          next.backlight != view->backlight || next.cover != view->cover ||
-                         next.clock != view->clock || next.x != view->x || next.y != view->y;
+                         next.clock != view->clock || next.weather != view->weather ||
+                         next.x != view->x || next.y != view->y;
     *view = next;
     saver->have_view = true;
     return changed;

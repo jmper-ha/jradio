@@ -41,6 +41,14 @@ extern const lv_font_t ui_font_seven_segment_48;
 extern const lv_font_t ui_font_seven_segment_56;
 extern const lv_font_t ui_font_seven_segment_72;
 extern const lv_font_t ui_font_seven_segment_112;
+/* The weather screensaver's clock and temperature: DejaVu Sans Bold, digits
+ * and the signs between them only (0-9 : + - – ° …), which is what keeps a
+ * 56 px face at 56 KB of source. Made with lv_font_conv like
+ * tools/gen_ui_fonts.sh, with -r 0x20,0x2B,0x2D,0x30-0x3A,0xB0,0x2013,0x2026. */
+extern const lv_font_t ui_font_bold_digits_40;
+extern const lv_font_t ui_font_bold_digits_56;
+#define UI_FONT_BOLD_DIGITS_(px) ui_font_bold_digits_##px
+#define UI_FONT_BOLD_DIGITS(px) UI_FONT_BOLD_DIGITS_(px)
 
 /* Two levels so the size macro is expanded before it is pasted. */
 #define UI_FONT_TEXT_(px) ui_font_cyrillic_##px

@@ -637,6 +637,12 @@ static void test_the_screensaver_settings_persist_and_are_checked(void)
     assert(device_settings_set_screensaver(&settings, DEVICE_SCREENSAVER_BLANK));
     assert(settings_csv_get(test_path, "screensaver", value, sizeof(value)));
     assert(strcmp(value, "blank") == 0);
+    assert(device_settings_set_screensaver(&settings, DEVICE_SCREENSAVER_WEATHER));
+    assert(settings_csv_get(test_path, "screensaver", value, sizeof(value)));
+    assert(strcmp(value, "weather") == 0);
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.screensaver == DEVICE_SCREENSAVER_WEATHER);
+    assert(device_settings_set_screensaver(&settings, DEVICE_SCREENSAVER_BLANK));
     assert(!device_settings_set_screensaver(&settings, (device_screensaver_t)9));
 
     /* The wait is one of the offered steps, not any number: the knob and the

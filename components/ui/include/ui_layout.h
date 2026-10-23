@@ -772,3 +772,28 @@ _Static_assert(UI_SRC_PAUSE_X >= 0 && UI_SRC_PAUSE_X + UI_SRC_PAUSE_SIZE <= TFT_
                    UI_SRC_PAUSE_Y >= 0 && UI_SRC_PAUSE_Y + UI_SRC_PAUSE_SIZE <= TFT_HEIGHT,
                "the pause badge is off the panel");
 #endif
+
+/* The weather screensaver (ui_weather_saver.h): the faces and picture sizes
+ * of its three bands - the clock and the current weather on top, the
+ * readings, three days of forecast - laid out in ui.c from these. The
+ * defaults are the 480 px landscape panel's, which is what the screen was
+ * drawn for; a shape that has not had its own look takes them over in its
+ * file. Picture sizes are ones tools/gen_weather_icons.py emits, and fonts
+ * ones that exist: a size nobody drew is a link error, not a blank. */
+#ifndef UI_WX_BIG_PX
+// The clock and the temperature, in the bold digit face.
+#define UI_WX_BIG_PX 56
+// The readings' figures, the date, the forecast's temperatures.
+#define UI_WX_TEXT_PX 20
+// The names under the figures, the sky line, the source.
+#define UI_WX_SMALL_PX 14
+#define UI_WX_ICON_PX 80
+#define UI_WX_DAY_ICON_PX 48
+#define UI_WX_PICTO_PX 20
+// From the panel's edge to everything, before the shift.
+#define UI_WX_MARGIN 12
+// How far the whole screen walks, a pixel a minute, against burn-in.
+#define UI_WX_SHIFT_PX 4
+// Whether the bottom band - three days - is drawn at all.
+#define UI_WX_FORECAST 1
+#endif

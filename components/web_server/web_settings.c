@@ -13,10 +13,10 @@
  * silently truncating it into something that parses. */
 #define WEB_SETTINGS_BODY_MAX 192U
 
-/* The named values of a choice field, in enum order. Four is the widest
- * choice on the page - the weather service - and the rest leave the tail
- * NULL. */
-#define WEB_SETTINGS_CHOICE_MAX 4
+/* The named values of a choice field, in enum order. Five is the widest
+ * choice on the page - the screensaver, since it gained the weather - and the
+ * rest leave the tail NULL. */
+#define WEB_SETTINGS_CHOICE_MAX 5
 
 typedef struct {
     const char *name;
@@ -31,7 +31,7 @@ typedef struct {
  * written a year apart still mean the same thing by "wttr". In enum order. */
 #define WEB_SETTINGS_WEATHER_NAMES "off", "open_meteo", "wttr", "openweathermap"
 static const char *const k_weather_names[] = {WEB_SETTINGS_WEATHER_NAMES};
-#define WEB_SETTINGS_SCREENSAVER_NAMES "off", "dim", "blank", "clock"
+#define WEB_SETTINGS_SCREENSAVER_NAMES "off", "dim", "blank", "clock", "weather"
 static const char *const k_screensaver_names[] = {WEB_SETTINGS_SCREENSAVER_NAMES};
 /* device_theme_t's order, and the names settings.csv stores. */
 #define WEB_SETTINGS_THEME_NAMES "standard", "contrast", "custom"

@@ -114,7 +114,7 @@ static const field_t k_fields[] = {
     {"ir_receiver", KIND_OPT_PIN, DEV_IR, AT(ir_receiver), false, NULL, {{NULL, 0}}},
     {"dac", KIND_CHOICE, DEV_DAC, AT(dac), false, NULL,
      // The UDA1334A has a driver but has not been tried on a board yet.
-     {{"pcm5102", DAC_PCM5102}, {NULL, 0}}},
+     {{"pcm5102", DAC_PCM5102}, {"ssm3582", DAC_SSM3582}, {NULL, 0}}},
     {"dac_i2s", KIND_CHOICE, DEV_DAC, AT(dac_i2s), false, NULL, {{"0", 0}, {NULL, 0}}},
     {"dac_mute", KIND_OPT_PIN, DEV_DAC, AT(dac_mute), false, NULL, {{NULL, 0}}},
     {"amp_enable", KIND_OPT_PIN, DEV_AMP, AT(amp_enable), false, NULL, {{NULL, 0}}},

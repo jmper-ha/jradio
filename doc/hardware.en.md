@@ -159,6 +159,50 @@ On the module:
 - If XSMT is handed to the firmware (`AUDIO_DAC_MUTE_GPIO`, below), the
   factory jumper to 3.3 V must be cut.
 
+### The SSM3582 amplifier instead of a DAC
+
+In place of a line-out DAC and an external amplifier there can be a
+board amplifier, the **SSM3582** - a 2x18 W class-D with an I2S input
+and I2C control:
+
+```c
+#define AUDIO_DAC DAC_SSM3582
+```
+
+- The amplifier is a slave on I2S (Philips, data delayed by one clock)
+  like the PCM5102, and takes no master clock. Its slots must be at
+  least 32 bits wide - the firmware widens them by itself, the samples
+  stay 16-bit. Rates below 32 kHz are the ones this geometry leaves the
+  chip unable to play: it goes quiet and the firmware says so in the
+  log.
+- Control is on I2C0 - the same bus and the same two pins as the RDA
+  tuner and the clock take: `FM_I2C_SDA_GPIO`, `FM_I2C_SCL_GPIO`
+  (address 0x10, ADDR0 and ADDR1 to ground). The ADDRx pins choose one
+  of sixteen addresses (0x10…0x1F) at power-up - five states per pin:
+  ground, 47 kΩ to ground, floating, 47 kΩ to DVDD, DVDD. With both at
+  ground it is 0x10, which is the default; wired any other way, the
+  address that comes out has to be named to the firmware:
+  `AUDIO_DAC_I2C_ADDRESS` in `board_options.h`.
+- The listening level lives in the chip's own soft-ramped volume
+  register; the curve matches the firmware's digital volume, but the
+  samples are not scaled and the noise floor does not rise. It needs no
+  `AUDIO_AMP_GPIO` pin: opening and closing the amplifier is a register
+  too (a soft power-down, click-free).
+- The loudest setting - the one 100% is worth - can be moved:
+  `AUDIO_DAC_MAX_VOLUME_DB` in `board_options.h`, a whole number of dB
+  between -71 and +24. The chip's digital volume can boost as well as
+  attenuate, up to +24 dB, so this is not a limit not to exceed but
+  where the top of the knob sits; every step below it keeps the very
+  intervals the usual curve has. Left out, the top is 0 dB, the
+  register's reset value. Whole dB are rounded to the nearest 0.375 dB
+  step; a figure outside the range fails the build.
+
+In the wiring editor this is the "DAC" card: choose "SSM3582 (class-D
+amplifier, I2C)" as the chip and the rows "I2C address" and "Top of the
+volume, dB" appear beside it; its "Control" row names I2C0 and leads to
+the "I2C bus" card, the same way the I2S row does - the bus's pins live
+in that card, beside the pins of the tuner and the clock.
+
 ### The amplifier: the MUTE pin
 
 If a speaker amplifier is fitted, hand its MUTE / SD / standby input to the

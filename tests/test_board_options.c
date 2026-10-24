@@ -213,13 +213,25 @@ static void test_control_pins_are_distinct(void)
 
 static void test_audio_group_matches_the_fixed_i2s_slots(void)
 {
-    assert(AUDIO_DAC == DAC_PCM5102);
+    assert(AUDIO_DAC == DAC_PCM5102 || AUDIO_DAC == DAC_UDA1334A ||
+           AUDIO_DAC == DAC_SSM3582);
     /* Every DAC in the catalogue resolves to the same fixed format and to a
      * name and a stop policy: the decay before the clock stops is only for
      * the DAC that needs it, and the PCM5102 keeps the stop it always had. */
     assert(AUDIO_BITS_PER_SAMPLE == 16 && AUDIO_CHANNEL_COUNT == 2);
     assert(I2S_SLOT_BIT_WIDTH == AUDIO_BITS_PER_SAMPLE);
-    assert(AUDIO_DAC_STOP_DECAY == 0);
+    /* Only the SSM3582 asks the link for wider slots on its own: its
+     * modulator wants a BCLK no shorter than 2.048 MHz, and 32 x Fs is
+     * under that at every rate this radio plays. It also closes its own
+     * output stage before the clock may stop, so its queue has to decay
+     * to silence first, as the UDA1334A's does. */
+#if AUDIO_DAC == DAC_SSM3582
+    assert(I2S_SLOTS_ALWAYS_WIDE == 1);
+    assert(AUDIO_DAC_STOP_DECAY == 1);
+#else
+    assert(I2S_SLOTS_ALWAYS_WIDE == 0);
+    assert(AUDIO_DAC_STOP_DECAY == (AUDIO_DAC == DAC_PCM5102 ? 0 : 1));
+#endif
     assert(BOARD_DAC_NAME[0] != '\0');
     assert(I2S_DOUT_GPIO == 16);
     assert(I2S_BCLK_GPIO == 18);
@@ -228,6 +240,13 @@ static void test_audio_group_matches_the_fixed_i2s_slots(void)
     /* Either polarity is allowed, but only a level: the firmware writes this
      * value straight to the pad and its complement for the other state. */
     assert(AUDIO_AMP_ON_LEVEL == 0 || AUDIO_AMP_ON_LEVEL == 1);
+#endif
+#ifdef AUDIO_DAC_MAX_VOLUME_DB
+    /* The SSM3582's loudest setting, in whole dB: it has to sit inside
+     * the chip's own volume ladder, +24 dB to -71 dB in 0.375 dB steps.
+     * ssm3582.c says the same with a _Static_assert; this is where a
+     * board author reading a failing test finds the number to fix. */
+    assert(AUDIO_DAC_MAX_VOLUME_DB >= -71 && AUDIO_DAC_MAX_VOLUME_DB <= 24);
 #endif
     assert(AUDIO_DEFAULT_SAMPLE_RATE == 44100);
     assert(AUDIO_BITS_PER_SAMPLE == 16);

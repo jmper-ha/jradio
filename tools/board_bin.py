@@ -41,7 +41,7 @@ DISPLAYS = [
     "ili9341_320_240", "ili9341_240_320", "st7789_320_240", "st7789_240_320",
     "st7789_320_170",
 ]
-DACS = ["pcm5102"]
+DACS = ["pcm5102", "ssm3582"]
 
 
 def read_macros(cc, include_dirs):
@@ -113,6 +113,10 @@ def board_csv(macros):
             if value(macros, "RTC_CHIP") == value(macros, f"RTC_CHIP_{name.upper()}"):
                 rtc = name
     i2c0 = (fm or rtc != "none") and defined("FM_I2C_SDA_GPIO") and defined("FM_I2C_SCL_GPIO")
+    dac = choice(macros, "AUDIO_DAC", "DAC_", DACS) if defined("AUDIO_DAC") else "pcm5102"
+    # The SSM3582 amplifier is a third device on that same bus, and needs its
+    # two pin defines just the same when neither tuner nor clock asks.
+    i2c0 = i2c0 or (dac == "ssm3582" and defined("FM_I2C_SDA_GPIO") and defined("FM_I2C_SCL_GPIO"))
     reset = pin(macros, "TFT_RESET_GPIO") if defined("TFT_RESET_GPIO") else "rst"
     feature_on = value(macros, "FEATURE_ON")
     rows = [
@@ -151,8 +155,7 @@ def board_csv(macros):
         ("button_next", pin(macros, "BUTTON_NEXT_GPIO")),
         ("buttons_pullups", "1"),
         ("ir_receiver", pin(macros, "IR_RECEIVER_GPIO")),
-        ("dac", choice(macros, "AUDIO_DAC", "DAC_", DACS)
-         if defined("AUDIO_DAC") else "pcm5102"),
+        ("dac", dac),
         ("dac_i2s", "0"),
         ("dac_mute", pin(macros, "AUDIO_DAC_MUTE_GPIO")),
         ("amp_enable", pin(macros, "AUDIO_AMP_GPIO")),

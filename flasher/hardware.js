@@ -124,17 +124,23 @@
       });
       return select;
     }
-    if (field.kind === 'choice' && field.bus && field.options.length === 1) {
+    if (field.kind === 'choice' && field.bus &&
+        field.options.filter((option) => option !== hw.NONE).length === 1) {
       /* A device that can sit on one bus only gets no drop-down of one item:
          it names the bus and points at the card where the bus's pins live -
-         the question people asked was "where do I change the I2S pins". */
+         the question people asked was "where do I change the I2S pins". The
+         same reading for a bus the device may go without altogether - the
+         amplifier's I2C is none while the line-out DAC sits in its place:
+         "none" is not a thing to pick, and the row appears only with the
+         chip that is on the bus. */
+      const bus = field.options.filter((option) => option !== hw.NONE)[0];
       const span = document.createElement('span');
       span.className = 'row-value';
       const link = document.createElement('a');
-      link.href = `#hw-dev-${field.bus}${field.options[0]}`;
+      link.href = `#hw-dev-${field.bus}${bus}`;
       /* The bus by its kind and number, "I2C0": the number alone is shared
          between kinds - I2S0 and I2C0 are both "0". */
-      link.textContent = `${field.bus.toUpperCase()}${field.options[0]}`;
+      link.textContent = `${field.bus.toUpperCase()}${bus}`;
       const tail = document.createElement('span');
       tail.textContent = ` ${t('hw.bus_card')}`;
       span.append(link, tail);
@@ -167,6 +173,30 @@
       input.id = `hw-${field.key}`;
       input.dataset.key = field.key;
       input.addEventListener('change', () => setValue(field.key, input.checked ? 1 : 0));
+      return input;
+    }
+    if (field.kind === 'hex') {
+      /* A number the header and the datasheet write in hex - an I2C
+         address is picked on the chip's pins in that notation, and
+         nobody wants to turn 0x1A into 26 just to type it in. */
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.id = `hw-${field.key}`;
+      input.dataset.key = field.key;
+      input.spellcheck = false;
+      input.size = 6;
+      if (field.hint) {
+        input.dataset.i18nPlaceholder = `hw.hint.${field.key}`;
+        input.placeholder = t(`hw.hint.${field.key}`);
+      }
+      input.addEventListener('change', () => {
+        const parsed = hw.parseHex(input.value);
+        /* What was typed stays in the box either way: as a number when it
+           reads as one, as the raw words when it does not - the report
+           then names it as a bad value, the way it names anything else
+           that does not read right. */
+        setValue(field.key, parsed === null ? input.value.trim() : parsed);
+      });
       return input;
     }
     const input = document.createElement('input');
@@ -409,6 +439,7 @@
       else if (field.kind === 'pin' || field.kind === 'opt_pin') {
         control.value = hw.isNone(value) ? (field.enables ? hw.UNSET : hw.NONE) : String(value);
       }
+      else if (field.kind === 'hex') control.value = hw.hexText(value);
       else if (control.value !== undefined) control.value = value === undefined || value === null ? '' : String(value);
       const row = rows[field.key];
       if (row) row.classList.toggle('is-picking', picking === field.key);

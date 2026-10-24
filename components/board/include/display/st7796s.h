@@ -121,6 +121,17 @@
  * put back if another board shows either. */
 #define DISPLAY_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
 
+/* The drive of the panel's SPI lines, as a gpio_drive_cap_t: one step above
+ * the weakest every other panel but the ILI9488 runs at (board.c). The bench's
+ * ST7796S at the weakest showed rare artifacts - a garbled patch in the
+ * strip's weather, a dark band beside the title, a few times a day, gone at
+ * the next redraw - which is what edges too soft for 40 MHz on its wires look
+ * like. One step rather than the default the ILI9488 took: the weakest is
+ * what ended the PCM5102's clicks while the screen redraws, and one step up
+ * from it already left one every five or ten minutes on that bench, so this
+ * is the first thing to check if they come back. */
+#define DISPLAY_PIN_DRIVE 1
+
 /* The hardware scroll runs the other way on this glass: with the default
  * sign the screensaver's clock left by the far edge and came back in at the
  * near one. Checked on the panel 2026-09-12, landscape build; the portrait

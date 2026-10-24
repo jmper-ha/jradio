@@ -197,6 +197,12 @@ and I2C control:
   register's reset value. Whole dB are rounded to the nearest 0.375 dB
   step; a figure outside the range fails the build.
 
+In the wiring editor this is the "DAC" card: choose "SSM3582 (class-D
+amplifier, I2C)" as the chip and the rows "I2C address" and "Top of the
+volume, dB" appear beside it; its "Control" row names I2C0 and leads to
+the "I2C bus" card, the same way the I2S row does - the bus's pins live
+in that card, beside the pins of the tuner and the clock.
+
 ### The amplifier: the MUTE pin
 
 If a speaker amplifier is fitted, hand its MUTE / SD / standby input to the

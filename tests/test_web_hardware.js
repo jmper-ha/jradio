@@ -67,9 +67,11 @@ function test_the_file_round_trips() {
   assert.deepStrictEqual(parsed.values, values);
   assert.deepStrictEqual(parsed.unknown, []);
   assert.deepStrictEqual(parsed.bad, []);
-  /* Every key is written, in the schema's order, once. */
+  /* Every key is written, in the schema's order, once - except the ones
+     the file has no business carrying: derived values and settings the
+     firmware reads at compile time. */
   const keys = text.trim().split('\n').slice(1).map((line) => line.split(',')[0]);
-  assert.deepStrictEqual(keys, hw.FIELDS.filter((field) => !field.virtual).map((field) => field.key));
+  assert.deepStrictEqual(keys, hw.FIELDS.filter((field) => !field.virtual && !field.omitFromCsv).map((field) => field.key));
 }
 
 function test_the_header_round_trips_and_names_every_option() {
@@ -672,6 +674,124 @@ function test_the_tuner_is_chosen_by_chip_and_sound() {
   assert.ok(!hw.DEVICES.includes('adc'));
 }
 
+function test_the_ssm3582_amplifier_is_chosen_and_configured() {
+  const base = hw.defaults();
+  // The line-out DAC stays the default; the amplifier and its two
+  // compile-time settings have no lines in a file until a board asks.
+  assert.strictEqual(base.dac, 'pcm5102');
+  assert.strictEqual(base.dac_i2c, hw.NONE);
+  assert.ok(!/dac_i2c|dac_max_volume_db/.test(hw.toCsv(base)));
+
+  // A file that names the chip gets the control bus for free - the file
+  // and the model both know it follows the chip.
+  const amp = hw.parseCsv(hw.toCsv(base) + 'dac,ssm3582\n').values;
+  assert.strictEqual(amp.dac, 'ssm3582');
+  assert.strictEqual(amp.dac_i2c, '0');
+  assert.strictEqual(hw.changeValue(base, 'dac', 'ssm3582').dac_i2c, '0');
+  assert.ok(hw.busUsed(amp, 'i2c0'));
+  // Until the bus has its two pins, the rules hold the board back.
+  assert.deepStrictEqual(hw.validate(amp).errors,
+                        [{code: 'bus_unwired', device: 'dac', bus: 'i2c0', pin: 'sda'},
+                         {code: 'bus_unwired', device: 'dac', bus: 'i2c0', pin: 'scl'}]);
+  const wired = {...amp, i2c0_sda: 8, i2c0_scl: 3};
+  assert.deepStrictEqual(hw.validate(wired).errors, []);
+  // One bus, shared: the tuner beside the amplifier changes nothing.
+  assert.deepStrictEqual(hw.validate(hw.setDeviceEnabled(wired, 'fm', true)).errors, []);
+  // Back to the line-out DAC the bus is nobody's again - and the
+  // amplifier's own settings, left in the model, mean nothing to it.
+  const back = hw.changeValue(wired, 'dac', 'pcm5102');
+  assert.strictEqual(back.dac_i2c, hw.NONE);
+  assert.ok(!hw.busUsed(back, 'i2c0'));
+  assert.deepStrictEqual(hw.validate(back).errors, []);
+  // XSMT is the PCM5102's mute pin: its row goes with the chip.
+  assert.strictEqual(hw.FIELD_BY_KEY.dac_mute.when(wired), false);
+  assert.strictEqual(hw.FIELD_BY_KEY.dac_mute.when(back), true);
+
+  // The chip's two header settings: defaults, forms, ranges.
+  assert.strictEqual(wired.dac_i2c_address, 0x10);
+  assert.strictEqual(wired.dac_max_volume_db, 0);
+  assert.strictEqual(hw.hexText(0x10), '0x10');
+  assert.strictEqual(hw.hexText(26), '0x1A');
+  assert.strictEqual(hw.parseHex('0x1a'), 26);
+  assert.strictEqual(hw.parseHex('26'), null);
+  assert.deepStrictEqual(hw.validate({...wired, dac_i2c_address: '0x1z'}).errors,
+                         [{code: 'bad_value', key: 'dac_i2c_address', value: '0x1z'}]);
+  assert.deepStrictEqual(hw.validate({...wired, dac_i2c_address: 0x78}).errors,
+                         [{code: 'bad_dac_address', key: 'dac_i2c_address', value: 120}]);
+  assert.deepStrictEqual(hw.validate({...wired, dac_max_volume_db: 25}).errors,
+                         [{code: 'bad_dac_max_db', key: 'dac_max_volume_db', value: 25}]);
+  assert.deepStrictEqual(hw.validate({...wired, dac_i2c_address: 0x1f, dac_max_volume_db: 24}).errors, []);
+
+  // The header for a build from source: the chip, its bus by the tuner's
+  // two defines when there is no tuner, and the settings as hex and dB.
+  const tuned = {...wired, dac_i2c_address: 0x1a, dac_max_volume_db: 12};
+  const header = hw.toHeader(tuned);
+  for (const line of ['#define AUDIO_DAC DAC_SSM3582',
+                      '#define AUDIO_DAC_I2C_ADDRESS 0x1A',
+                      '#define AUDIO_DAC_MAX_VOLUME_DB 12',
+                      '#define FM_I2C_SDA_GPIO 8',
+                      '#define FM_I2C_SCL_GPIO 3']) {
+    assert.ok(header.includes(line), line);
+  }
+  // With a tuner on the bus, those two pins are named once, in its block.
+  const withTuner = hw.toHeader({...tuned, fm_tuner: 'rda5807'});
+  assert.strictEqual((withTuner.match(/#define FM_I2C_SDA_GPIO/g) || []).length, 1);
+  // And both files read back as the board they describe. The CSV is the
+  // runtime's format: the chip and its bus survive it, the two
+  // compile-time settings deliberately do not ride in it at all.
+  assert.deepStrictEqual(hw.parseHeader(header).values, tuned);
+  assert.deepStrictEqual(hw.parseHeader(header).unknown, []);
+  const csvBack = hw.parseCsv(hw.toCsv(tuned)).values;
+  assert.strictEqual(csvBack.dac, 'ssm3582');
+  assert.strictEqual(csvBack.dac_i2c, '0');
+  assert.strictEqual(csvBack.i2c0_sda, 8);
+  assert.strictEqual(csvBack.dac_i2c_address, 0x10);
+  assert.strictEqual(csvBack.dac_max_volume_db, 0);
+
+  // On the page: the rows come and go with the chip, the address is
+  // written as hex, and an unwired I2C0 reaches the report.
+  const {document} = loadPage();
+  const parts = document.getElementById('hw-parts');
+  const addressRow = parts.querySelectorAll('.hw-row').find((row) => row.dataset.key === 'dac_i2c_address');
+  const busRow = parts.querySelectorAll('.hw-row').find((row) => row.dataset.key === 'dac_i2c');
+  const muteRow = parts.querySelectorAll('.hw-row').find((row) => row.dataset.key === 'dac_mute');
+  assert.strictEqual(addressRow.hidden, true);
+  assert.strictEqual(busRow.hidden, true);
+  assert.strictEqual(muteRow.hidden, false);
+  const chip = document.getElementById('hw-dac');
+  chip.value = 'ssm3582';
+  chip.emit('change');
+  assert.strictEqual(addressRow.hidden, false);
+  assert.strictEqual(muteRow.hidden, true);
+  // The bus row reads like the I2S one does: it names I2C0 and points at
+  // the card where the bus's pins live, no drop-down of a single choice.
+  assert.strictEqual(busRow.hidden, false);
+  assert.strictEqual(busRow.querySelector('select'), null);
+  const busLink = busRow.querySelector('a');
+  assert.strictEqual(busLink.href, '#hw-dev-i2c0');
+  assert.ok(document.getElementById('hw-dev-i2c0'));
+  const addressInput = document.getElementById('hw-dac_i2c_address');
+  assert.strictEqual(addressInput.value, '0x10');
+  addressInput.value = '0x1a';
+  addressInput.emit('change');
+  const csv = document.getElementById('hw-csv');
+  assert.ok(csv.textContent.includes('#define AUDIO_DAC DAC_SSM3582'));
+  assert.ok(csv.textContent.includes('#define AUDIO_DAC_I2C_ADDRESS 0x1A'));
+  // The bus without its two pins shows in the report and blocks the download.
+  const report = document.getElementById('hw-report');
+  assert.ok(report.children.some((item) => item.textContent.includes('I2C0')));
+  assert.ok(document.getElementById('hw-download').disabled);
+  const sda = document.getElementById('hw-i2c0_sda');
+  sda.value = '8';
+  sda.emit('change');
+  const scl = document.getElementById('hw-i2c0_scl');
+  scl.value = '3';
+  scl.emit('change');
+  assert.ok(!report.children.some((item) => item.textContent.includes('I2C0')));
+  assert.ok(csv.textContent.includes('#define FM_I2C_SDA_GPIO 8'));
+  assert.ok(!document.getElementById('hw-download').disabled);
+}
+
 function test_every_label_the_page_needs_is_in_the_dictionary() {
   const {window} = loadPage();
   const t = window.jradioI18n.t;
@@ -692,7 +812,8 @@ function test_every_label_the_page_needs_is_in_the_dictionary() {
   }
 
   for (const code of ['pin_conflict', 'pin_missing', 'pin_not_on_header', 'pin_psram', 'pin_console', 'pin_usb',
-                      'usb_pin_fixed', 'bus_unwired', 'bad_value', 'sleep_not_rtc', 'ir_not_rtc', 'spi_not_iomux']) {
+                      'usb_pin_fixed', 'bus_unwired', 'bad_value', 'sleep_not_rtc', 'ir_not_rtc', 'spi_not_iomux',
+                      'bad_dac_address', 'bad_dac_max_db']) {
     assert.notStrictEqual(t(`hw.err.${code}`), `hw.err.${code}`, `report ${code}`);
   }
   for (const code of ['pin_psram', 'pin_console', 'pin_usb', 'pin_strapping', 'pin_jtag']) {
@@ -737,6 +858,7 @@ test_a_device_needs_the_pins_of_its_bus();
 test_switching_a_device_off_and_on();
 test_the_fm_tuner_asks_for_its_pins();
 test_the_tuner_is_chosen_by_chip_and_sound();
+test_the_ssm3582_amplifier_is_chosen_and_configured();
 test_the_warnings_that_do_not_stop_a_file();
 test_the_header_is_the_devkit();
 test_the_page_builds_every_part_and_follows_the_clicks();

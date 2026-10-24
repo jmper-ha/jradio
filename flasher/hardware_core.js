@@ -73,6 +73,33 @@
     'st7789_320_170',
   ];
 
+  /* The two settings an SSM3582 amplifier takes from board_options.h, with
+     the ranges its own driver asserts at build time (components/board/
+     ssm3582.c): a seven-bit I2C address - the ADDRx pins pick one of
+     sixteen at power-up, and both at ground leaves the chip's default -
+     and where the top of the volume knob sits in the chip's digital
+     ladder, which runs -71..+24 dB and resets to 0. */
+  const SSM3582_ADDRESS_DEFAULT = 0x10;
+  const SSM3582_ADDRESS_MIN = 0x08;
+  const SSM3582_ADDRESS_MAX = 0x77;
+  const SSM3582_DB_MIN = -71;
+  const SSM3582_DB_MAX = 24;
+
+  /* "0x1A" in, a number out; anything else, null. The header and the
+     datasheet write addresses as hex, so that is what a person types. */
+  function parseHex(text) {
+    const match = /^0x([0-9a-f]+)$/i.exec(String(text).trim());
+    return match === null ? null : parseInt(match[1], 16);
+  }
+
+  /* And the number back the way both write it. */
+  function hexText(value) {
+    const number = Number(value);
+    return Number.isInteger(number)
+      ? `0x${number.toString(16).toUpperCase().padStart(2, '0')}`
+      : String(value);
+  }
+
   /* Every key of the file, in the order it is written, with what it holds:
        pin      a GPIO number, required
        opt_pin  a GPIO number or "none"
@@ -159,11 +186,36 @@
     /* The infrared receiver: one pin, off by default like the README board. */
     {key: 'ir_receiver', kind: 'opt_pin', device: 'ir', dflt: NONE, enables: true, define: 'IR_RECEIVER_GPIO'},
 
-    /* The DAC is always there: a player without an output is no player. The
-       chip stays a choice for the day a second one is supported. */
-    {key: 'dac', kind: 'choice', device: 'dac', options: ['pcm5102'], dflt: 'pcm5102', define: 'AUDIO_DAC'},
+    /* The DAC is always there: a player without an output is no player.
+       Two chips are: the PCM5102 line-out DAC, and the SSM3582 - a
+       Class-D amplifier with a digital input, which plays on the same
+       I2S bus and is controlled over I2C0, the bus the tuner and the
+       clock share. */
+    {key: 'dac', kind: 'choice', device: 'dac', options: ['pcm5102', 'ssm3582'], dflt: 'pcm5102', define: 'AUDIO_DAC'},
     {key: 'dac_i2s', kind: 'choice', device: 'dac', options: ['0'], dflt: '0', bus: 'i2s'},
-    {key: 'dac_mute', kind: 'opt_pin', device: 'dac', dflt: NONE, define: 'AUDIO_DAC_MUTE_GPIO'},
+    /* The amplifier's control bus, named as the tuner's and the clock's
+       fields name theirs: a row that names I2C0 and points at the bus
+       card where its pins live, no drop-down of its own. It follows the
+       chip - chosen with the row above, never here - so the row appears
+       only with the chip that sits on it, and the file carries no line
+       for it: the firmware has no such key, the bus belongs to the
+       chip's name (omitFromCsv). */
+    {key: 'dac_i2c', kind: 'choice', device: 'dac', options: [NONE, '0'], dflt: NONE, bus: 'i2c',
+     omitFromCsv: true, when: (values) => values.dac === 'ssm3582'},
+    /* The two settings the SSM3582 offers beyond the bus: the address its
+       ADDRx pins left it at, and where the top of the volume knob sits.
+       The firmware reads both at compile time, from board_options.h, so
+       they reach the header and never the CSV - a runtime parser given
+       them would only warn about an unknown key (omitFromCsv).
+       Rows only while the chip is the SSM3582. */
+    {key: 'dac_i2c_address', kind: 'hex', device: 'dac', dflt: SSM3582_ADDRESS_DEFAULT, hint: true,
+     omitFromCsv: true, define: 'AUDIO_DAC_I2C_ADDRESS', when: (values) => values.dac === 'ssm3582'},
+    {key: 'dac_max_volume_db', kind: 'int', device: 'dac', dflt: 0, hint: true,
+     omitFromCsv: true, define: 'AUDIO_DAC_MAX_VOLUME_DB', when: (values) => values.dac === 'ssm3582'},
+    /* XSMT is the PCM5102's own soft mute; the SSM3582 opens and closes
+       by a register, so the row and the wire go with the chip. */
+    {key: 'dac_mute', kind: 'opt_pin', device: 'dac', dflt: NONE, define: 'AUDIO_DAC_MUTE_GPIO',
+     when: (values) => values.dac !== 'ssm3582'},
     {key: 'amp_enable', kind: 'opt_pin', device: 'amp', dflt: NONE, enables: true, define: 'AUDIO_AMP_GPIO'},
     {key: 'amp_on_level', kind: 'bool', device: 'amp', dflt: 1, define: 'AUDIO_AMP_ON_LEVEL'},
 
@@ -250,7 +302,7 @@
   const BUS_NEEDS = {
     tft: {spi: ['sclk', 'mosi']},
     sd: {spi: ['sclk', 'mosi', 'miso']},
-    dac: {i2s: ['bclk', 'lrck', 'dout']},
+    dac: {i2s: ['bclk', 'lrck', 'dout'], i2c: ['sda', 'scl']},
     bluetooth: {uart: ['tx', 'rx'], i2s: ['bclk', 'lrck', 'dout']},
     fm: {i2c: ['sda', 'scl'], i2s: ['bclk', 'lrck', 'din']},
     adc: {i2s: ['bclk', 'lrck', 'din', 'mclk']},
@@ -377,6 +429,15 @@
     const field = FIELD_BY_KEY[key];
     if (field && field.virtual) return field.write(values, value);
     const next = {...values, [key]: value};
+    if (key === 'dac') {
+      /* The amplifier sits on I2C0 with the tuner and the clock; the
+         line-out DAC has no control bus at all. XSMT follows the same
+         way: it is the PCM5102's mute pin, and an SSM3582 has no such
+         line. */
+      next.dac_i2c = value === 'ssm3582' ? '0' : NONE;
+      if (value === 'ssm3582') next.dac_mute = NONE;
+      return next;
+    }
     if (key !== 'fm_i2s') return next;
     if (isNone(value)) {
       if (!deviceEnabled(next, 'adc')) next.i2s0_din = NONE;
@@ -490,6 +551,20 @@
       errors.push({code: 'adc_with_fm_i2s', key: 'adc', gpio: null});
     }
 
+    /* The two settings an SSM3582 takes from the header, within the
+       ranges its driver asserts at build time: a figure outside them is
+       not asked about at runtime - the build simply refuses to start. */
+    if (values.dac === 'ssm3582') {
+      const address = Number(values.dac_i2c_address);
+      if (Number.isInteger(address) && (address < SSM3582_ADDRESS_MIN || address > SSM3582_ADDRESS_MAX)) {
+        errors.push({code: 'bad_dac_address', key: 'dac_i2c_address', value: values.dac_i2c_address});
+      }
+      const maxDb = Number(values.dac_max_volume_db);
+      if (Number.isInteger(maxDb) && (maxDb < SSM3582_DB_MIN || maxDb > SSM3582_DB_MAX)) {
+        errors.push({code: 'bad_dac_max_db', key: 'dac_max_volume_db', value: values.dac_max_volume_db});
+      }
+    }
+
     const sleep = pinValue(values.button_sleep);
     if (sleep !== null && sleep > RTC_GPIO_MAX) warnings.push({code: 'sleep_not_rtc', key: 'button_sleep', gpio: sleep});
     const ir = pinValue(values.ir_receiver);
@@ -509,7 +584,7 @@
         errors.push({code: 'bad_value', key: field.key, value});
       } else if (field.kind === 'bool' && !['0', '1'].includes(String(value))) {
         errors.push({code: 'bad_value', key: field.key, value});
-      } else if (field.kind === 'int' && !Number.isInteger(Number(value))) {
+      } else if ((field.kind === 'int' || field.kind === 'hex') && !Number.isInteger(Number(value))) {
         errors.push({code: 'bad_value', key: field.key, value});
       } else if (['pin', 'opt_pin'].includes(field.kind) && pinValue(value) === null &&
                  !isNone(value) && !(field.resetOk && value === RESET) &&
@@ -524,7 +599,10 @@
   function toCsv(values) {
     const lines = ['# key,value'];
     for (const field of FIELDS) {
-      if (field.virtual) continue;
+      /* A virtual field is a pair of rows that mean one stored value, and
+         an omitFromCsv one is either derived from another choice or read
+         by the firmware at compile time; neither has a line in the file. */
+      if (field.virtual || field.omitFromCsv) continue;
       const value = values[field.key];
       lines.push(`${field.key},${isNone(value) && field.kind !== 'text' ? NONE : value}`);
     }
@@ -588,6 +666,20 @@
       ...gpio('I2S_BCLK_GPIO', 'i2s0_bclk'),
       ...gpio('I2S_LRCK_GPIO', 'i2s0_lrck'),
       ...(pin('dac_mute') === null ? [] : gpio('AUDIO_DAC_MUTE_GPIO', 'dac_mute')),
+      ...(values.dac === 'ssm3582'
+        ? ['', '/* The SSM3582 is controlled over I2C0, beside the tuner and the clock:',
+           '   their two FM_I2C_* defines name the bus here when neither of them',
+           '   is on the board. The address is what its ADDRx pins left the chip',
+           '   at - the driver does not scan the bus; the top of the volume knob',
+           "   is where 100% sits in the chip's own digital ladder. */",
+           ...(deviceEnabled(values, 'fm') || deviceEnabled(values, 'rtc')
+             ? []
+             : [...gpio('FM_I2C_SDA_GPIO', 'i2c0_sda'), ...gpio('FM_I2C_SCL_GPIO', 'i2c0_scl')]),
+           `#define AUDIO_DAC_I2C_ADDRESS ${hexText(values.dac_i2c_address)}`,
+           ...(Number(values.dac_max_volume_db) === 0
+             ? []
+             : [`#define AUDIO_DAC_MAX_VOLUME_DB ${Number(values.dac_max_volume_db)}`])]
+        : []),
       ...(deviceEnabled(values, 'amp')
         ? ['', "/* The amplifier's MUTE / SD input, and the level that lets it play. */",
            ...gpio('AUDIO_AMP_GPIO', 'amp_enable'), `#define AUDIO_AMP_ON_LEVEL ${on('amp_on_level')}`]
@@ -704,7 +796,22 @@
     const dac = take('AUDIO_DAC');
     if (dac !== undefined) {
       const id = dac.replace(/^DAC_/, '').toLowerCase();
-      if (FIELD_BY_KEY.dac.options.includes(id)) values.dac = id; else unknown.push({key: 'AUDIO_DAC', value: dac});
+      if (FIELD_BY_KEY.dac.options.includes(id)) {
+        values.dac = id;
+        /* The control bus is not a #define of its own; it follows the chip. */
+        values.dac_i2c = id === 'ssm3582' ? '0' : NONE;
+      } else unknown.push({key: 'AUDIO_DAC', value: dac});
+    }
+    const dacAddress = take('AUDIO_DAC_I2C_ADDRESS');
+    if (dacAddress !== undefined) {
+      const parsed = parseHex(dacAddress);
+      if (parsed !== null) values.dac_i2c_address = parsed;
+      else unknown.push({key: 'AUDIO_DAC_I2C_ADDRESS', value: dacAddress});
+    }
+    const dacMaxDb = take('AUDIO_DAC_MAX_VOLUME_DB');
+    if (dacMaxDb !== undefined) {
+      if (Number.isInteger(Number(dacMaxDb))) values.dac_max_volume_db = Number(dacMaxDb);
+      else unknown.push({key: 'AUDIO_DAC_MAX_VOLUME_DB', value: dacMaxDb});
     }
     asPin('i2s0_dout', 'I2S_DOUT_GPIO'); asPin('i2s0_bclk', 'I2S_BCLK_GPIO'); asPin('i2s0_lrck', 'I2S_LRCK_GPIO');
     /* Lines the editor no longer writes, because the firmware does not read
@@ -793,6 +900,9 @@
         else if (field.enables && value === UNSET) values[key] = UNSET;
         else if (Number.isInteger(Number(value))) values[key] = Number(value);
         else bad.push({line: index + 1, text: line});
+      } else if (field.kind === 'hex') {
+        const parsed = parseHex(value);
+        if (parsed !== null) values[key] = parsed; else bad.push({line: index + 1, text: line});
       } else if (field.kind === 'int' || field.kind === 'bool') {
         if (Number.isInteger(Number(value))) values[key] = Number(value);
         else bad.push({line: index + 1, text: line});
@@ -800,12 +910,17 @@
         values[key] = value;
       }
     });
+    /* A file naming the amplifier without the bus field - one written by
+       hand, or by an older page - means the same board: the control bus
+       follows the chip. */
+    if (values.dac === 'ssm3582') values.dac_i2c = '0';
     return {values, unknown, bad};
   }
 
   return {
     NONE, RESET, UNSET, FORMAT, FIELDS, FIELD_BY_KEY, DEVICES, BUSES, HEADER, MODULES, DISPLAYS,
-    RTC_GPIO_MAX, USB_PINS,
+    RTC_GPIO_MAX, USB_PINS, SSM3582_ADDRESS_DEFAULT, SSM3582_ADDRESS_MIN, SSM3582_ADDRESS_MAX,
+    SSM3582_DB_MIN, SSM3582_DB_MAX, parseHex, hexText,
     defaults, headerPins, headerGpios, pinNote, deviceEnabled, setDeviceEnabled, changeValue, valueOf,
     busOf, busUsed, signals, pinMap, validate, toCsv, parseCsv, toHeader, parseHeader, isNone, pinValue,
   };

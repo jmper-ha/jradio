@@ -2305,6 +2305,17 @@ static void ui_screensaver_poll(uint32_t now_ms)
              * mark nothing and the screen under it would stay black. */
             lv_display_enable_invalidation(s_display, true);
             lv_obj_add_flag(s_saver_cover, LV_OBJ_FLAG_HIDDEN);
+        } else if (s_cover_up &&
+                   (s_saver_view.clock != s_clock_up || s_saver_view.weather != s_wx_up)) {
+            /* The mode changed under a cover already up - from the web page,
+             * while the panel rests. What the old mode wrote went to the panel
+             * past LVGL, which still takes the cover for painted, so it is
+             * painted again: left alone, the weather stayed on round the
+             * clock. Both modes wait out the first-draw delay, so the black
+             * goes down before either writes. */
+            s_cover_up_ms = now_ms;
+            lv_display_enable_invalidation(s_display, true);
+            lv_obj_invalidate(s_saver_cover);
         }
         if (s_saver_view.clock && !s_clock_up) {
             s_clock_up = true;

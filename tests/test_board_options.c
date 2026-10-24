@@ -33,7 +33,7 @@ static void test_display_group_is_complete_and_consistent(void)
     /* Only SPI2 and SPI3 can drive a panel on this part; SPI1 is the flash bus. */
     assert(DISPLAY_SPI_PERIPHERAL == 2 || DISPLAY_SPI_PERIPHERAL == 3);
     assert(TFT_CS_GPIO == 10);
-    assert(TFT_DC_GPIO == 9);
+    assert(TFT_DC_GPIO == 47);
     assert(TFT_MOSI_GPIO == 11);
     assert(TFT_SCLK_GPIO == 12);
 
@@ -171,7 +171,7 @@ static void test_the_orientation_decides_the_geometry_and_nothing_else(void)
 
 static void test_backlight_duty_fits_the_pwm_timer(void)
 {
-    assert(TFT_BACKLIGHT_GPIO == 13);
+    assert(TFT_BACKLIGHT_GPIO == 2);
     /* The pin is this board's; the PWM settings belong to the panel module and
      * live in its profile header. The pairing is what is worth checking. */
     assert(BACKLIGHT_PWM_HZ == 5000);

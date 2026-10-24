@@ -148,9 +148,12 @@ static void test_a_file_overlays_the_compiled_table_and_skips_what_it_cannot_rea
 static void test_what_each_function_does_on_the_board(void)
 {
     assert(remote_function_action(REMOTE_POWER) == BOARD_INPUT_ACTION_SLEEP_LONG);
-    assert(remote_function_action(REMOTE_UP) == BOARD_INPUT_ACTION_ENCODER_LEFT);
-    assert(remote_function_action(REMOTE_DOWN) == BOARD_INPUT_ACTION_ENCODER_RIGHT);
-    assert(remote_function_action(REMOTE_OK) == BOARD_INPUT_ACTION_ENCODER_BUTTON);
+    assert(remote_function_action(REMOTE_UP) == BOARD_INPUT_ACTION_REMOTE_UP);
+    assert(remote_function_action(REMOTE_DOWN) == BOARD_INPUT_ACTION_REMOTE_DOWN);
+    assert(remote_function_action(REMOTE_OK) == BOARD_INPUT_ACTION_REMOTE_OK);
+    assert(remote_function_action(REMOTE_PREV) == BOARD_INPUT_ACTION_REMOTE_PREV);
+    assert(remote_function_action(REMOTE_NEXT) == BOARD_INPUT_ACTION_REMOTE_NEXT);
+    assert(remote_function_action(REMOTE_SOURCE_FM) == BOARD_INPUT_ACTION_SOURCE_FM);
     assert(remote_function_action(REMOTE_BACK) == BOARD_INPUT_ACTION_ENCODER_LONG);
     assert(remote_function_action(REMOTE_QUICK) == BOARD_INPUT_ACTION_QUICK_MENU);
     assert(remote_function_action(REMOTE_DIGIT_0) == BOARD_INPUT_ACTION_DIGIT_0);

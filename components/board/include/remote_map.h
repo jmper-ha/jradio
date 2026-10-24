@@ -55,6 +55,8 @@ typedef enum {
     REMOTE_SOURCE_BLUETOOTH,
     REMOTE_SOURCE_YANDEX,
     REMOTE_SOURCE_DLNA,
+    // Last, so remote.csv and the page keep every older name where it was.
+    REMOTE_SOURCE_FM,
     REMOTE_FUNCTION_COUNT,
 } remote_function_t;
 

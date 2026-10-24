@@ -262,6 +262,7 @@ run_test ui_radio_text tests/test_ui_radio_text.c components/ui/ui_radio_text.c 
     components/internet_radio/radio_stream_format.c
 run_test ui_now_playing tests/test_ui_now_playing.c components/ui/ui_now_playing.c
 run_test ui_level_text tests/test_ui_level_text.c components/ui/ui_level_text.c -lm
+run_test ui_remote_keys tests/test_ui_remote_keys.c components/ui/ui_remote_keys.c
 run_test ui_weather_saver tests/test_ui_weather_saver.c components/ui/ui_weather_saver.c \
     components/weather/weather_report.c "${cjson_source}" -I"${cjson_include}"
 run_test ui_seek tests/test_ui_seek.c components/ui/ui_seek.c

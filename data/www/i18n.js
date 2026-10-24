@@ -188,6 +188,7 @@
     'remote.f.source_bluetooth': ['Bluetooth', 'Bluetooth'],
     'remote.f.source_yandex': ['ЯМузыка', 'Ya.Music'],
     'remote.f.source_dlna': ['Медиасервер', 'Media server'],
+    'remote.f.source_fm': ['FM-радио', 'FM radio'],
 
     /* The hardware editor. Its labels are built by hardware.js rather than
        written in the markup, so every one of them is here: the parts, the

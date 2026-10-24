@@ -151,8 +151,8 @@ async function main() {
   /* The table was fetched once and every function has a row: a bound one
      shows its code and a Forget, an unbound one a dash and no Forget. */
   assert.strictEqual(fetches, 1);
-  assert.strictEqual(groups.querySelectorAll('.remote-row').length, 33);
-  assert.ok(row('power') && row('digit_0') && row('source_dlna'));
+  assert.strictEqual(groups.querySelectorAll('.remote-row').length, 34);
+  assert.ok(row('power') && row('digit_0') && row('source_dlna') && row('source_fm'));
   assert.strictEqual(row('volume_up').children[1].textContent, 'nec:0:15');
   assert.strictEqual(row('volume_up').children[3].hidden, false);
   assert.strictEqual(row('volume_down').children[1].textContent, '—');

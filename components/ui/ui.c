@@ -60,6 +60,7 @@
 #include "album_art.h"
 #include "ui_vu_meter.h"
 #include "ui_fm_tune.h"
+#include "ui_remote_keys.h"
 #include "ui_screensaver.h"
 #include "ui_weather_icon_bitmaps.h"
 #include "ui_weather_saver.h"
@@ -7211,6 +7212,7 @@ static audio_source_t ui_source_of_action(board_input_action_t action)
     case BOARD_INPUT_ACTION_SOURCE_BLUETOOTH: return AUDIO_SOURCE_BLUETOOTH;
     case BOARD_INPUT_ACTION_SOURCE_YANDEX: return AUDIO_SOURCE_YANDEX;
     case BOARD_INPUT_ACTION_SOURCE_DLNA: return AUDIO_SOURCE_DLNA;
+    case BOARD_INPUT_ACTION_SOURCE_FM: return AUDIO_SOURCE_FM;
     default: return AUDIO_SOURCE_NONE;
     }
 }
@@ -7282,6 +7284,33 @@ static bool ui_handle_remote_action(board_input_action_t action)
     return false;
 }
 
+/* Turns the remote's navigation keys - and its Play/Pause, which in a menu
+ * starts what is highlighted - into what they mean on this screen
+ * (ui_remote_keys.h), opening the list first where that is the answer. */
+static board_input_action_t ui_remote_keys_apply(board_input_action_t action)
+{
+    const lv_obj_t *screen = lv_screen_active();
+    ui_remote_screen_t kind = UI_REMOTE_SCREEN_OTHER;
+    if (s_ota_visible || s_settings_open || s_quick.open) {
+        kind = UI_REMOTE_SCREEN_OTHER;
+    } else if (screen == s_source_screen) {
+        kind = UI_REMOTE_SCREEN_PLAYER;
+    } else if (screen == s_menu_screen || screen == s_feed_screen ||
+               screen == s_station_list_screen || screen == s_yandex_screen) {
+        kind = UI_REMOTE_SCREEN_CHOOSER;
+    }
+    const ui_remote_step_t step = ui_remote_keys_translate(action, kind);
+    if (step.open_list) {
+        const audio_source_t source = ui_player_state_source(&s_player_ui);
+        /* A phone has no list to open, and a list that would not open is a
+         * key that does nothing rather than one that turns the volume. */
+        if (source == AUDIO_SOURCE_BLUETOOTH) return BOARD_INPUT_ACTION_NONE;
+        ui_open_source_list(source);
+        if (lv_screen_active() == s_source_screen) return BOARD_INPUT_ACTION_NONE;
+    }
+    return step.action;
+}
+
 static void ui_handle_input(board_input_action_t action)
 {
     /* Before the screensaver, and from every screen: holding F1 means sleep
@@ -7305,6 +7334,8 @@ static void ui_handle_input(board_input_action_t action)
     if (ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms())) {
         return;
     }
+    action = ui_remote_keys_apply(action);
+    if (action == BOARD_INPUT_ACTION_NONE) return;
     if (ui_ota_handle_input(action)) return;
 
     if (ui_handle_remote_action(action)) return;

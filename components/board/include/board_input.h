@@ -86,6 +86,15 @@ typedef enum {
     BOARD_INPUT_ACTION_SOURCE_BLUETOOTH,
     BOARD_INPUT_ACTION_SOURCE_YANDEX,
     BOARD_INPUT_ACTION_SOURCE_DLNA,
+    BOARD_INPUT_ACTION_SOURCE_FM,
+    /* The remote's navigation keys, apart from the case's: what each means
+     * depends on the screen (ui_remote_keys.h) - on the player Up opens the
+     * list, where the knob's turn would be the volume. */
+    BOARD_INPUT_ACTION_REMOTE_UP,
+    BOARD_INPUT_ACTION_REMOTE_DOWN,
+    BOARD_INPUT_ACTION_REMOTE_PREV,
+    BOARD_INPUT_ACTION_REMOTE_NEXT,
+    BOARD_INPUT_ACTION_REMOTE_OK,
 } board_input_action_t;
 
 typedef struct {

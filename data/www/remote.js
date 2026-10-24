@@ -17,7 +17,7 @@
     ['digits', ['digit_0', 'digit_1', 'digit_2', 'digit_3', 'digit_4',
                 'digit_5', 'digit_6', 'digit_7', 'digit_8', 'digit_9']],
     ['sources', ['source_radio', 'source_usb', 'source_sd', 'source_bluetooth',
-                 'source_yandex', 'source_dlna']],
+                 'source_yandex', 'source_dlna', 'source_fm']],
   ];
 
   /* The page asks the device four times a second while it is in front of

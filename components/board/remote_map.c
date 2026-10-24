@@ -38,6 +38,7 @@ static const char *const k_names[REMOTE_FUNCTION_COUNT] = {
     [REMOTE_SOURCE_BLUETOOTH] = "source_bluetooth",
     [REMOTE_SOURCE_YANDEX] = "source_yandex",
     [REMOTE_SOURCE_DLNA] = "source_dlna",
+    [REMOTE_SOURCE_FM] = "source_fm",
 };
 
 /* The 21-key NEC remote of the starter kits - "CAR MP3" on its face - with
@@ -122,13 +123,16 @@ board_input_action_t remote_function_action(remote_function_t function)
     case REMOTE_VOLUME_DOWN: return BOARD_INPUT_ACTION_VOLUME_DOWN;
     case REMOTE_MUTE: return BOARD_INPUT_ACTION_MUTE;
     case REMOTE_PLAY_PAUSE: return BOARD_INPUT_ACTION_PLAY_PAUSE;
-    case REMOTE_PREV: return BOARD_INPUT_ACTION_BTN_PREV;
-    case REMOTE_NEXT: return BOARD_INPUT_ACTION_BTN_NEXT;
-    /* Up the list is the knob turned left - the direction the lists already
-     * read the knob in. */
-    case REMOTE_UP: return BOARD_INPUT_ACTION_ENCODER_LEFT;
-    case REMOTE_DOWN: return BOARD_INPUT_ACTION_ENCODER_RIGHT;
-    case REMOTE_OK: return BOARD_INPUT_ACTION_ENCODER_BUTTON;
+    /* The navigation keys are the remote's own, not the case's: until
+     * 2026-10-24 they were the knob and the Prev/Next buttons, so on the
+     * player Up and Down were the volume - which the remote has keys for -
+     * and OK the pause, while Prev and Next did nothing in a list. What they
+     * mean screen by screen is ui_remote_keys.h. */
+    case REMOTE_PREV: return BOARD_INPUT_ACTION_REMOTE_PREV;
+    case REMOTE_NEXT: return BOARD_INPUT_ACTION_REMOTE_NEXT;
+    case REMOTE_UP: return BOARD_INPUT_ACTION_REMOTE_UP;
+    case REMOTE_DOWN: return BOARD_INPUT_ACTION_REMOTE_DOWN;
+    case REMOTE_OK: return BOARD_INPUT_ACTION_REMOTE_OK;
     /* Both are the knob held: on every screen that is "back", and on the
      * player it is the home screen. One gesture, two keys that name it. */
     case REMOTE_BACK: return BOARD_INPUT_ACTION_ENCODER_LONG;
@@ -144,6 +148,7 @@ board_input_action_t remote_function_action(remote_function_t function)
     case REMOTE_SOURCE_BLUETOOTH: return BOARD_INPUT_ACTION_SOURCE_BLUETOOTH;
     case REMOTE_SOURCE_YANDEX: return BOARD_INPUT_ACTION_SOURCE_YANDEX;
     case REMOTE_SOURCE_DLNA: return BOARD_INPUT_ACTION_SOURCE_DLNA;
+    case REMOTE_SOURCE_FM: return BOARD_INPUT_ACTION_SOURCE_FM;
     default: break;
     }
     const int digit = remote_function_digit(function);

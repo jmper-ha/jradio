@@ -6,6 +6,13 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## Next version
+
+Fixed:
+- Changing the screensaver on the web while it was up (weather to clock,
+  say) left the old one's picture behind the new one. The screen is now
+  cleared first.
+
 ## v1.8.8 — 24 October 2026
 
 New:

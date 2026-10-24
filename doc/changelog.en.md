@@ -24,12 +24,19 @@ New:
   OpenWeatherMap). On every screen, each with its own layout; once a minute
   the picture moves by a pixel against burn-in. Chosen under Screensaver on
   the device or on the web.
+- The remote's keys work like a television's. On the player Up/Down open the
+  station (track) list and move the cursor, OK opens the list, Prev/Next
+  change station or track. In menus and lists Up/Down and Prev/Next move the
+  cursor, OK and Play/Pause choose what is highlighted. The volume is its own
+  keys only. An FM radio key is added.
 
 Fixed:
 - Crackle and dropouts in the first second on some high-bitrate HTTPS
   stations (256-320 kbps). A station now starts playing once about a second
   of sound is in hand, and the big backlog is built up gradually, out of the
   decoder's way. Such stations start 0.2-0.4 s later, and clean.
+- Rare artifacts on the ST7796S screen: the display lines' signal is made a
+  little stronger.
 
 ## v1.8.6 — 21 October 2026
 

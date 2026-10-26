@@ -151,4 +151,11 @@
 #define UI_WX_WIND_POINT 0
 #define UI_WX_GAP 6
 #define UI_WX_RANGE_DEGREE 0
+/* Even without the degree, "+15…+15" in the small face is 73 px against the
+ * 62 a third of 301 px leaves beside a 32 px picture, and it ran into the
+ * next day's picture (seen 2026-10-26). Stacking the day does not fit the
+ * height, so the range is made shorter and the gap narrower: "+15…18" is
+ * 61.5 px and a winter "–15…–25" 63.75, against 65. */
+#define UI_WX_RANGE_ONE_PLUS 1
+#define UI_WX_DAY_GAP 3
 #define UI_WX_FEELS_BRIEF 1

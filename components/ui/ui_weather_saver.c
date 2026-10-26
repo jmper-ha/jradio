@@ -157,7 +157,8 @@ void ui_wx_day_name(char *out, size_t size, device_language_t language, int inde
     }
 }
 
-void ui_wx_day_range_text(char *out, size_t size, const weather_day_t *day, bool degree)
+void ui_wx_day_range_text(char *out, size_t size, const weather_day_t *day, bool degree,
+                          bool one_plus)
 {
     if (out == NULL || size == 0U) return;
     if (day == NULL || !day->valid) {
@@ -183,7 +184,8 @@ void ui_wx_day_range_text(char *out, size_t size, const weather_day_t *day, bool
             high[high_length - 2U] = '\0';
         }
     }
-    snprintf(out, size, "%s\xE2\x80\xA6%s", low, high);
+    const bool drop_plus = one_plus && day->min_c > 0 && day->max_c > 0 && high[0] == '+';
+    snprintf(out, size, "%s\xE2\x80\xA6%s", low, drop_plus ? high + 1 : high);
 }
 
 void ui_wx_day_chance_text(char *out, size_t size, const weather_day_t *day)

@@ -94,12 +94,18 @@ static void test_the_forecast_days(void)
     EXPECT(ui_wx_day_name(out, sizeof(out), DEVICE_LANGUAGE_RU, 1, &report.days[1]), "Чт");
     EXPECT(ui_wx_day_name(out, sizeof(out), DEVICE_LANGUAGE_EN, 1, &report.days[1]), "Thu");
     EXPECT(ui_wx_day_name(out, sizeof(out), DEVICE_LANGUAGE_RU, 2, &report.days[2]), "");
-    EXPECT(ui_wx_day_range_text(out, sizeof(out), &report.days[0], true),
+    EXPECT(ui_wx_day_range_text(out, sizeof(out), &report.days[0], true, false),
            "+2\xE2\x80\xA6+12\xC2\xB0");
-    EXPECT(ui_wx_day_range_text(out, sizeof(out), &report.days[0], false), "+2\xE2\x80\xA6+12");
-    EXPECT(ui_wx_day_range_text(out, sizeof(out), &report.days[1], true),
+    EXPECT(ui_wx_day_range_text(out, sizeof(out), &report.days[0], false, false), "+2\xE2\x80\xA6+12");
+    // One plus, where the panel is narrow; a range across zero keeps both signs.
+    EXPECT(ui_wx_day_range_text(out, sizeof(out), &report.days[0], false, true), "+2\xE2\x80\xA6" "12");
+    EXPECT(ui_wx_day_range_text(out, sizeof(out), &report.days[0], true, true),
+           "+2\xE2\x80\xA6" "12\xC2\xB0");
+    EXPECT(ui_wx_day_range_text(out, sizeof(out), &report.days[1], true, true),
            "\xE2\x80\x93" "3\xE2\x80\xA6" "0\xC2\xB0");
-    EXPECT(ui_wx_day_range_text(out, sizeof(out), &report.days[2], true), "");
+    EXPECT(ui_wx_day_range_text(out, sizeof(out), &report.days[1], true, false),
+           "\xE2\x80\x93" "3\xE2\x80\xA6" "0\xC2\xB0");
+    EXPECT(ui_wx_day_range_text(out, sizeof(out), &report.days[2], true, false), "");
     EXPECT(ui_wx_day_chance_text(out, sizeof(out), &report.days[0]), "3%");
     EXPECT(ui_wx_day_chance_text(out, sizeof(out), &report.days[1]), "");
 }

@@ -61,8 +61,13 @@ void ui_wx_day_name(char *out, size_t size, device_language_t language, int inde
                     const weather_day_t *day);
 
 /* "+2…+12°": the day's low and high - "+2…+12" without `degree`, where a
- * third of a small panel beside the day's picture has no room for it. */
-void ui_wx_day_range_text(char *out, size_t size, const weather_day_t *day, bool degree);
+ * third of a small panel beside the day's picture has no room for it. With
+ * `one_plus` a warm day's high loses its plus, "+12…15": the 320 px panel
+ * had room for 62 px beside the picture and "+15…+15" took 73, running into
+ * the next day's picture. Only when both are above zero - a range that
+ * crosses it keeps both signs. */
+void ui_wx_day_range_text(char *out, size_t size, const weather_day_t *day, bool degree,
+                          bool one_plus);
 
 // "15%": the chance of rain or snow; empty when unknown.
 void ui_wx_day_chance_text(char *out, size_t size, const weather_day_t *day);

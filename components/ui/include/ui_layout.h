@@ -819,3 +819,13 @@ _Static_assert(UI_SRC_PAUSE_X >= 0 && UI_SRC_PAUSE_X + UI_SRC_PAUSE_SIZE <= TFT_
 // "ощущ. +3°" rather than "ощущается +3°", for the picture's room.
 #define UI_WX_FEELS_BRIEF 0
 #endif
+/* Added after the shapes had their own sets, so defaulted on their own: a
+ * layout file says them only to differ. */
+#ifndef UI_WX_RANGE_ONE_PLUS
+// A warm day's high without its plus - see ui_wx_day_range_text().
+#define UI_WX_RANGE_ONE_PLUS 0
+#endif
+#ifndef UI_WX_DAY_GAP
+// Between a day's picture and its figures, when they sit beside it.
+#define UI_WX_DAY_GAP 6
+#endif

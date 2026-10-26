@@ -2002,7 +2002,7 @@ static void ui_create_weather_saver(void)
         lv_obj_set_pos(s_wx_day_chance[index], x, range_y + range_h);
 #else
         lv_obj_set_pos(s_wx_day_icon[index], x, small_h + 4);
-        const int beside = x + UI_WX_DAY_ICON_PX + 6;
+        const int beside = x + UI_WX_DAY_ICON_PX + UI_WX_DAY_GAP;
         const int middle = small_h + 4 + UI_WX_DAY_ICON_PX / 2;
         lv_obj_set_pos(s_wx_day_range[index], beside, middle - range_h);
         lv_obj_set_pos(s_wx_day_drop[index], beside, middle + (small_h - 16) / 2 + 2);
@@ -2182,7 +2182,8 @@ static bool ui_wx_refresh(bool force)
         changed |= ui_set_label_text_note_change(s_wx_day_name[index], text);
         changed |= ui_wx_set_image(s_wx_day_icon[index],
                                    forecast->valid ? ui_wx_day_bitmap(forecast->icon) : NULL);
-        ui_wx_day_range_text(text, sizeof(text), forecast, UI_WX_RANGE_DEGREE);
+        ui_wx_day_range_text(text, sizeof(text), forecast, UI_WX_RANGE_DEGREE,
+                             UI_WX_RANGE_ONE_PLUS);
         changed |= ui_set_label_text_note_change(s_wx_day_range[index], text);
         ui_wx_day_chance_text(text, sizeof(text), forecast);
         changed |= ui_set_label_text_note_change(s_wx_day_chance[index], text);

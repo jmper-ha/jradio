@@ -31,6 +31,10 @@ Fixed:
 - HLS stations with `.aac` segments (Relax FM, say) spoilt one frame of
   sound every six seconds, where one segment met the next. Barely audible,
   and now the join is clean.
+- With the weather switched off, the weather screensaver still came on,
+  showing the clock and "no weather". Without the weather the mode can no
+  longer be chosen, on the device or on the web, and switching the weather
+  off while it is chosen moves the screensaver to the clock.
 
 ## v1.8.9 — 24 October 2026
 

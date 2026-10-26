@@ -22,6 +22,10 @@ New:
 - HLS stations whose segments are MPEG-TS (`.ts`) play, Retro FM's
   `hls-01-retro.emgsound.ru/…/playlist.m3u8` link for one. Such links used to
   stay silent - only `.aac` segments were understood.
+- A new display: the NV3007 142x428 bar, lying down (428x142), with its own
+  layout - the cover on the left, the names, the level meter and a line with
+  the codec and the volume beside it. Source builds only for now
+  (`DISPLAY_NV3007_428_142`); the web flasher does not offer it yet.
 
 Fixed:
 - On the weather screensaver on 320x240 displays, a forecast day's

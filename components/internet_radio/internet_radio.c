@@ -2404,6 +2404,11 @@ static int radio_hls_read(internet_radio_context_t *radio, uint8_t *buffer, int 
             const esp_err_t err = radio_hls_collect(radio);
             if (err == ESP_ERR_NOT_FOUND) continue;
             if (err != ESP_OK) return -1;
+            // Round again so the bytes held back from the ID3 test go out
+            // first. Read straight on, they followed the segment's first
+            // chunk: one spoilt frame in bare ADTS, which the decoder rode
+            // over unheard, but the PAT itself in a transport stream.
+            continue;
         }
 
         const int received = blocking ? radio_http_read_blocking(radio, buffer, length)

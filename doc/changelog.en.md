@@ -18,6 +18,12 @@ New:
   the device it is the "FM level" row in the Sound group, on the web a slider
   in the FM radio section. Shown only where a tuner is fitted.
 
+Fixed:
+- On the weather screensaver on 320x240 displays, a forecast day's
+  temperatures ("+15…+15") ran into the next day's picture. Now, when both
+  are above zero, only the first keeps its plus ("+15…18"), and the figures
+  sit closer to the picture.
+
 ## v1.8.9 — 24 October 2026
 
 Fixed:

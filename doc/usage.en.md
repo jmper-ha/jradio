@@ -456,8 +456,8 @@ with colour pictures: the clock and the date; a big picture, the temperature
 and what it feels like; humidity, pressure in mmHg, the wind - speed, gusts
 and an arrow for where it blows; sunrise and sunset, cloud cover and
 precipitation; at the bottom today and the next two days - a picture, the low
-and the high, the chance of rain or snow. Open-Meteo and OpenWeatherMap give
-the forecast; wttr.in has none, and then there is no bottom row. On the small
+and the high, the chance of rain or snow. All three services give the
+forecast. On the small
 screens some names are left out - the pictures say the same; 320x170 has no
 forecast. The picture is redrawn once a minute and moves by a pixel once a
 minute so the screen does not burn in. With no weather (no internet, the

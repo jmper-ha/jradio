@@ -595,6 +595,161 @@ bool weather_parse_openweathermap_forecast(const char *body, size_t length,
     return any;
 }
 
+/* --- wttr.in's forecast, read by scanning ------------------------------- */
+
+weather_icon_t weather_icon_from_wwo(int code)
+{
+    /* Grouped as wttr.in's own table groups them (its WWO_CODE), and drawn
+     * as its one-line symbols are above: a snow shower is snow, freezing
+     * drizzle and ice pellets are sleet. */
+    switch (code) {
+    case 113: return WEATHER_ICON_CLEAR_DAY;
+    case 116: return WEATHER_ICON_PARTLY_CLOUDY_DAY;
+    case 119:
+    case 122: return WEATHER_ICON_CLOUDY;
+    case 143:
+    case 248:
+    case 260: return WEATHER_ICON_FOG;
+    case 176: case 263: case 266: case 293: case 296: case 299: case 302:
+    case 305: case 308: case 353: case 356: case 359:
+        return WEATHER_ICON_RAIN;
+    case 179: case 182: case 185: case 281: case 284: case 311: case 314:
+    case 317: case 350: case 362: case 365: case 374: case 377:
+        return WEATHER_ICON_SLEET;
+    case 227: case 230: case 320: case 323: case 326: case 329: case 332:
+    case 335: case 338: case 368: case 371: case 395:
+        return WEATHER_ICON_SNOW;
+    case 200: case 386: case 389: case 392:
+        return WEATHER_ICON_THUNDERSTORM;
+    default: return WEATHER_ICON_NONE;
+    }
+}
+
+/* The number after `key` inside [from, to), where the key is followed by
+ * spaces, a colon, more spaces and maybe a quote: wttr.in indents its JSON
+ * and quotes every number. */
+static bool quoted_number_in(const char *from, const char *to, const char *key, double *value)
+{
+    const char *at = find_in(from, to, key);
+    if (at == NULL) return false;
+    at += strlen(key);
+    while (at < to && *at == ' ') ++at;
+    if (at >= to || *at != ':') return false;
+    ++at;
+    while (at < to && *at == ' ') ++at;
+    if (at < to && *at == '"') ++at;
+    size_t length = 0U;
+    while (at + length < to && length < 23U && strchr("0123456789+-.", at[length]) != NULL &&
+           at[length] != '\0') {
+        ++length;
+    }
+    return field_number(at, length, value);
+}
+
+/* 0 Sunday .. 6 Saturday for "YYYY-MM-DD" at `at`; -1 when it is not one. */
+static int weekday_of_date(const char *at, const char *to)
+{
+    if (to - at < 10 || at[4] != '-' || at[7] != '-') return -1;
+    int parts[3] = {0, 0, 0};
+    const int widths[3] = {4, 2, 2};
+    const int starts[3] = {0, 5, 8};
+    for (int part = 0; part < 3; ++part) {
+        for (int i = 0; i < widths[part]; ++i) {
+            const char c = at[starts[part] + i];
+            if (c < '0' || c > '9') return -1;
+            parts[part] = parts[part] * 10 + (c - '0');
+        }
+    }
+    int year = parts[0];
+    const int month = parts[1];
+    const int day = parts[2];
+    if (month < 1 || month > 12 || day < 1 || day > 31) return -1;
+    // Days since 1970-01-01 by the civil-calendar count, then from its Thursday.
+    year -= month <= 2 ? 1 : 0;
+    const int era = (year >= 0 ? year : year - 399) / 400;
+    const int year_of_era = year - era * 400;
+    const int day_of_year = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1;
+    const int day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    const long days = (long)era * 146097L + day_of_era - 719468L;
+    return (int)(((days % 7) + 7 + 4) % 7);
+}
+
+bool weather_parse_wttr_forecast(const char *body, size_t length, weather_report_t *report)
+{
+    if (report == NULL) return false;
+    for (int index = 0; index < WEATHER_FORECAST_DAYS; ++index) report->days[index].valid = false;
+    if (body == NULL || length == 0U) return false;
+    const char *end = body + length;
+    const char *weather = find_in(body, end, "\"weather\"");
+    if (weather == NULL) return false;
+    /* A day's object opens with its astronomy and then its date; from one
+     * date to the next is that day's figures and hours, and the next day's
+     * sun and moon, which hold none of the keys read here. */
+    const char *date = find_in(weather, end, "\"date\"");
+    bool any = false;
+    for (int index = 0; index < WEATHER_FORECAST_DAYS && date != NULL; ++index) {
+        const char *next = find_in(date + 6, end, "\"date\"");
+        const char *day_end = next != NULL ? next : end;
+        double low = 0.0;
+        double high = 0.0;
+        const char *date_value = date + 6;
+        while (date_value < day_end && (*date_value == ' ' || *date_value == ':')) ++date_value;
+        if (date_value < day_end && *date_value == '"') ++date_value;
+        const int weekday = weekday_of_date(date_value, day_end);
+        if (weekday >= 0 && quoted_number_in(date, day_end, "\"mintempC\"", &low) &&
+            quoted_number_in(date, day_end, "\"maxtempC\"", &high) &&
+            temperature_plausible(low) && temperature_plausible(high)) {
+            weather_day_t *day = &report->days[index];
+            day->valid = true;
+            day->min_c = whole(low);
+            day->max_c = whole(high);
+            day->precipitation_pct = WEATHER_UNKNOWN;
+            day->icon = WEATHER_ICON_NONE;
+            day->weekday = (uint8_t)weekday;
+            /* The hours: each step carries one of every key, so the n-th
+             * time, code and chances are all the n-th step's - which saves
+             * finding where a step ends among its nested arrays. */
+            const char *hours = find_in(date, day_end, "\"hourly\"");
+            const char *time_at = hours != NULL ? find_in(hours, day_end, "\"time\"") : NULL;
+            const char *code_at = hours != NULL ? find_in(hours, day_end, "\"weatherCode\"") : NULL;
+            const char *rain_at = hours != NULL ? find_in(hours, day_end, "\"chanceofrain\"") : NULL;
+            const char *snow_at = hours != NULL ? find_in(hours, day_end, "\"chanceofsnow\"") : NULL;
+            int best_distance = 9999;
+            while (time_at != NULL) {
+                double when = 0.0;
+                double code = 0.0;
+                double rain = -1.0;
+                double snow = -1.0;
+                const bool has_time = quoted_number_in(time_at, day_end, "\"time\"", &when);
+                const bool has_code =
+                    code_at != NULL && quoted_number_in(code_at, day_end, "\"weatherCode\"", &code);
+                if (rain_at != NULL) (void)quoted_number_in(rain_at, day_end, "\"chanceofrain\"", &rain);
+                if (snow_at != NULL) (void)quoted_number_in(snow_at, day_end, "\"chanceofsnow\"", &snow);
+                const double chance = rain > snow ? rain : snow;
+                if (chance >= 0.0) {
+                    const int16_t percent = whole(chance);
+                    if (day->precipitation_pct == WEATHER_UNKNOWN || percent > day->precipitation_pct) {
+                        day->precipitation_pct = percent;
+                    }
+                }
+                // "1200" is noon: hours and minutes run together.
+                const int distance = has_time ? abs((int)when - 1200) : 9999;
+                if (has_code && distance < best_distance) {
+                    best_distance = distance;
+                    day->icon = weather_icon_from_wwo((int)code);
+                }
+                time_at = find_in(time_at + 6, day_end, "\"time\"");
+                code_at = code_at != NULL ? find_in(code_at + 13, day_end, "\"weatherCode\"") : NULL;
+                rain_at = rain_at != NULL ? find_in(rain_at + 14, day_end, "\"chanceofrain\"") : NULL;
+                snow_at = snow_at != NULL ? find_in(snow_at + 14, day_end, "\"chanceofsnow\"") : NULL;
+            }
+            any = true;
+        }
+        date = next;
+    }
+    return any;
+}
+
 size_t weather_request_url(char *url, size_t url_size, device_weather_provider_t provider,
                            const char *latitude, const char *longitude, const char *key)
 {
@@ -698,10 +853,18 @@ size_t weather_forecast_url(char *url, size_t url_size, device_weather_provider_
 {
     if (url == NULL || url_size == 0U) return 0U;
     url[0] = '\0';
-    if (provider != DEVICE_WEATHER_OPENWEATHERMAP || latitude == NULL || longitude == NULL ||
-        key == NULL || latitude[0] == '\0' || longitude[0] == '\0' || key[0] == '\0') {
+    if (latitude == NULL || longitude == NULL || latitude[0] == '\0' || longitude[0] == '\0') {
         return 0U;
     }
+    if (provider == DEVICE_WEATHER_WTTR) {
+        const int written = snprintf(url, url_size, "http://wttr.in/%s,%s?format=j1", latitude, longitude);
+        if (written <= 0 || (size_t)written >= url_size) {
+            url[0] = '\0';
+            return 0U;
+        }
+        return (size_t)written;
+    }
+    if (provider != DEVICE_WEATHER_OPENWEATHERMAP || key == NULL || key[0] == '\0') return 0U;
     /* Twenty-four three-hour steps: today's rest and the two days after,
      * whatever the hour. */
     const int written = snprintf(url, url_size,

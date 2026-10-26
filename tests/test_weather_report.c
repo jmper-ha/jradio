@@ -206,7 +206,7 @@ static void test_the_request_is_plain_http_and_carries_the_coordinates(void)
                                NULL) == 0U);
     assert(tight[0] == '\0');
 
-    // The second request is OpenWeatherMap's alone.
+    // The second request is OpenWeatherMap's and wttr.in's.
     assert(weather_forecast_url(url, sizeof(url), DEVICE_WEATHER_OPENWEATHERMAP, "55.75", "37.62",
                                 "k") > 0U);
     assert(strcmp(url, "http://api.openweathermap.org/data/2.5/forecast?lat=55.75&lon=37.62"
@@ -215,7 +215,9 @@ static void test_the_request_is_plain_http_and_carries_the_coordinates(void)
                                 "") == 0U);
     assert(weather_forecast_url(url, sizeof(url), DEVICE_WEATHER_OPEN_METEO, "55.75", "37.62",
                                 "k") == 0U);
-    assert(weather_forecast_url(url, sizeof(url), DEVICE_WEATHER_WTTR, "55.75", "37.62", NULL) == 0U);
+    assert(weather_forecast_url(url, sizeof(url), DEVICE_WEATHER_WTTR, "55.75", "37.62", NULL) > 0U);
+    assert(strcmp(url, "http://wttr.in/55.75,37.62?format=j1") == 0);
+    assert(weather_forecast_url(url, sizeof(url), DEVICE_WEATHER_WTTR, "", "37.62", NULL) == 0U);
 
     /* Every request is http://, which is the whole point of these three. */
     for (device_weather_provider_t provider = DEVICE_WEATHER_OPEN_METEO;
@@ -403,11 +405,70 @@ static void test_openweathermap_details_and_forecast(void)
     assert(!report.days[0].valid);
 }
 
+/* wttr.in's j1, cut down to what is read and laid out as it comes: indented,
+ * every number quoted, a day's sun and moon before its date. The current
+ * block carries keys of the same names and is not a day. */
+static void test_the_wttr_forecast(void)
+{
+    static const char j1[] =
+        "{\n  \"current_condition\": [\n    {\n      \"temp_C\": \"9\",\n"
+        "      \"weatherCode\": \"338\"\n    }\n  ],\n"
+        "  \"weather\": [\n"
+        "    {\n      \"astronomy\": [ { \"sunrise\": \"07:23 AM\" } ],\n"
+        "      \"avgtempC\": \"10\",\n      \"date\": \"2026-10-26\",\n"
+        "      \"hourly\": [\n"
+        "        { \"chanceofrain\": \"10\", \"chanceofsnow\": \"0\", \"time\": \"900\",\n"
+        "          \"weatherCode\": \"113\", \"weatherDesc\": [ { \"value\": \"Sunny\" } ] },\n"
+        "        { \"chanceofrain\": \"30\", \"chanceofsnow\": \"0\", \"time\": \"1200\",\n"
+        "          \"weatherCode\": \"296\", \"weatherDesc\": [ { \"value\": \"Light rain\" } ] },\n"
+        "        { \"chanceofrain\": \"20\", \"chanceofsnow\": \"0\", \"time\": \"1500\",\n"
+        "          \"weatherCode\": \"119\", \"weatherDesc\": [ { \"value\": \"Cloudy\" } ] }\n"
+        "      ],\n      \"maxtempC\": \"15\",\n      \"mintempC\": \"8\"\n    },\n"
+        "    {\n      \"astronomy\": [ { \"sunrise\": \"07:25 AM\" } ],\n"
+        "      \"date\": \"2026-10-27\",\n      \"hourly\": [\n"
+        "        { \"chanceofrain\": \"0\", \"chanceofsnow\": \"70\", \"time\": \"1200\",\n"
+        "          \"weatherCode\": \"326\" }\n"
+        "      ],\n      \"maxtempC\": \"1\",\n      \"mintempC\": \"-4\"\n    },\n"
+        "    {\n      \"date\": \"2026-10-28\",\n      \"hourly\": [],\n"
+        "      \"maxtempC\": \"3\",\n      \"mintempC\": \"-1\"\n    }\n  ]\n}\n";
+    weather_report_t report;
+    memset(&report, 0, sizeof(report));
+    report.temperature_c = 9;
+    assert(weather_parse_wttr_forecast(j1, strlen(j1), &report));
+    assert(report.temperature_c == 9);
+    assert(report.days[0].valid && report.days[0].weekday == 1);  // Monday
+    assert(report.days[0].min_c == 8 && report.days[0].max_c == 15);
+    // The highest chance over the day; the noon step's picture.
+    assert(report.days[0].precipitation_pct == 30);
+    assert(report.days[0].icon == WEATHER_ICON_RAIN);
+    assert(report.days[1].valid && report.days[1].weekday == 2);
+    assert(report.days[1].min_c == -4 && report.days[1].max_c == 1);
+    // Snow's chance counts as much as rain's.
+    assert(report.days[1].precipitation_pct == 70);
+    assert(report.days[1].icon == WEATHER_ICON_SNOW);
+    // A day with no hours still has its figures.
+    assert(report.days[2].valid && report.days[2].weekday == 3);
+    assert(report.days[2].precipitation_pct == WEATHER_UNKNOWN);
+    assert(report.days[2].icon == WEATHER_ICON_NONE);
+
+    static const char refused[] = "Unknown location; please try ~55.75,37.62";
+    assert(!weather_parse_wttr_forecast(refused, strlen(refused), &report));
+    assert(!report.days[0].valid);
+
+    assert(weather_icon_from_wwo(113) == WEATHER_ICON_CLEAR_DAY);
+    assert(weather_icon_from_wwo(122) == WEATHER_ICON_CLOUDY);
+    assert(weather_icon_from_wwo(248) == WEATHER_ICON_FOG);
+    assert(weather_icon_from_wwo(311) == WEATHER_ICON_SLEET);
+    assert(weather_icon_from_wwo(389) == WEATHER_ICON_THUNDERSTORM);
+    assert(weather_icon_from_wwo(1) == WEATHER_ICON_NONE);
+}
+
 int main(void)
 {
     test_the_full_open_meteo_answer();
     test_the_full_wttr_line();
     test_openweathermap_details_and_forecast();
+    test_the_wttr_forecast();
     test_open_meteo_answer_becomes_a_report();
     test_wttr_line_becomes_a_report();
     test_openweathermap_answer_becomes_a_report();

@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "cJSON.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -45,10 +46,12 @@ static const char *TAG = "weather";
 
 /* The largest answer is OpenWeatherMap's at about 500 bytes. */
 #define WEATHER_RESPONSE_MAX 3072U
-/* OpenWeatherMap's three-day forecast, a second answer of some 14 KB. Taken
- * for the length of one round and given back: above the 256-byte line the
- * allocator puts it in PSRAM, and nothing else needs it between rounds. */
+/* The three-day forecast, a second answer: OpenWeatherMap's some 14 KB,
+ * wttr.in's j1 some 40 KB of indented JSON with every hour in it. Taken for
+ * the length of one round, in PSRAM, and given back - nothing else needs it
+ * between rounds. */
 #define WEATHER_FORECAST_MAX (20U * 1024U)
+#define WEATHER_FORECAST_WTTR_MAX (64U * 1024U)
 #define WEATHER_HTTP_TIMEOUT_MS 10000
 /* Plain HTTP and a kilobyte of JSON: half of what the Yandex catalog's TLS
  * fetch needs. Measured at the first fetch and logged, see below. */
@@ -284,10 +287,10 @@ static void set_state(weather_state_t state, int http_status)
     unlock();
 }
 
-/* OpenWeatherMap's days come from a second request; the other two services
- * put them in the first answer, or have none. A forecast that fails keeps
- * the days the last one gave, so the screensaver's bottom row does not blink
- * out for a round. */
+/* OpenWeatherMap's and wttr.in's days come from a second request; Open-Meteo
+ * puts them in the first answer. A forecast that fails keeps the days the
+ * last one gave, so the screensaver's bottom row does not blink out for a
+ * round. */
 static void weather_add_forecast(const weather_config_t *config, weather_report_t *report)
 {
     /* Static rather than on the stack: this runs inside a round that already
@@ -298,14 +301,25 @@ static void weather_add_forecast(const weather_config_t *config, weather_report_
                              config->longitude, config->key) == 0U) {
         return;
     }
-    char *body = malloc(WEATHER_FORECAST_MAX);
+    const bool wttr = config->provider == DEVICE_WEATHER_WTTR;
+    const size_t size = wttr ? WEATHER_FORECAST_WTTR_MAX : WEATHER_FORECAST_MAX;
+    char *body = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
     bool got = false;
     if (body != NULL) {
         size_t length = 0U;
-        const int status = weather_fetch(url, body, WEATHER_FORECAST_MAX, &length);
-        got = status == 200 && weather_parse_openweathermap_forecast(body, length, report);
-        if (!got) ESP_LOGW(TAG, "OpenWeatherMap forecast: %d", status);
-        free(body);
+        const int status = weather_fetch(url, body, size, &length);
+        got = status == 200 && (wttr ? weather_parse_wttr_forecast(body, length, report)
+                                     : weather_parse_openweathermap_forecast(body, length, report));
+        if (!got) {
+            ESP_LOGW(TAG, "%s forecast: %d, %u bytes", wttr ? "wttr.in" : "OpenWeatherMap", status,
+                     (unsigned)length);
+        } else {
+            ESP_LOGI(TAG, "%s forecast: %u bytes", wttr ? "wttr.in" : "OpenWeatherMap",
+                     (unsigned)length);
+        }
+        heap_caps_free(body);
+    } else {
+        ESP_LOGW(TAG, "forecast: no %u bytes of PSRAM", (unsigned)size);
     }
     weather_secure_zero(url, sizeof(url));
     if (got) return;

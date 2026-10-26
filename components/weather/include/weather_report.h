@@ -107,7 +107,18 @@ bool weather_parse_openweathermap(const char *body, size_t length,
 bool weather_parse_openweathermap_forecast(const char *body, size_t length,
                                            weather_report_t *report);
 
-/* The second request, for the provider that needs one; 0 for the others. */
+/* wttr.in's forecast is a second request too, for its `format=j1` - the
+ * one-line format the current weather comes in has no days, and the short
+ * `j2` has them without a picture or a chance of rain, which live in the
+ * hourly steps. Some 40 KB of indented JSON, read by scanning like
+ * OpenWeatherMap's: each day's own low and high, the highest chance of rain
+ * or snow over its steps, and the picture of its midday step. False, with
+ * the days left invalid, when nothing usable was in it. */
+bool weather_parse_wttr_forecast(const char *body, size_t length, weather_report_t *report);
+/* wttr.in's weather codes, worldweatheronline's, as wttr.in itself draws them. */
+weather_icon_t weather_icon_from_wwo(int code);
+
+/* The second request, for the providers that need one; 0 for Open-Meteo. */
 size_t weather_forecast_url(char *url, size_t url_size, device_weather_provider_t provider,
                             const char *latitude, const char *longitude, const char *key);
 

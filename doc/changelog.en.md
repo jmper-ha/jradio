@@ -6,6 +6,18 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## Next version
+
+New:
+- The custom theme has a seventh colour, the screensaver's background. The
+  screensaver used to be always black; now its background can be, say, dark
+  blue. The Standard and Contrast themes keep it black. In the web settings,
+  the Display section, next to the theme's other colours.
+- FM level: FM radio's loudness against internet radio and files, -6 to
+  +12 dB. Useful when the tuner plays noticeably quieter than the rest. On
+  the device it is the "FM level" row in the Sound group, on the web a slider
+  in the FM radio section. Shown only where a tuner is fitted.
+
 ## v1.8.9 — 24 October 2026
 
 Fixed:

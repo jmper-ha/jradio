@@ -41,7 +41,8 @@ static const char *const k_theme_names[] = {WEB_SETTINGS_THEME_NAMES};
 static const char *const k_loudness_names[] = {WEB_SETTINGS_LOUDNESS_NAMES};
 /* The custom colours' names on the page, in the order they are stored. */
 static const char *const k_theme_color_names[DEVICE_THEME_COLORS] = {
-    "theme_ground", "theme_text", "theme_artist", "theme_secondary", "theme_dim", "theme_accent",
+    "theme_ground", "theme_text",   "theme_artist", "theme_secondary",
+    "theme_dim",    "theme_accent", "theme_saver",
 };
 
 static const field_descriptor_t k_fields[] = {
@@ -70,6 +71,7 @@ static const field_descriptor_t k_fields[] = {
     {"screensaver_seconds", WEB_SETTINGS_FIELD_SCREENSAVER_SECONDS, {NULL}, true, false},
     {"screensaver_brightness", WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS, {NULL}, true, false},
     {"volume_step", WEB_SETTINGS_FIELD_VOLUME_STEP, {NULL}, true, false},
+    {"fm_gain", WEB_SETTINGS_FIELD_FM_GAIN, {NULL}, true, false},
     {"theme", WEB_SETTINGS_FIELD_THEME, {WEB_SETTINGS_THEME_NAMES}, false, false},
     {"theme_ground", WEB_SETTINGS_FIELD_THEME_GROUND, {NULL}, false, true},
     {"theme_text", WEB_SETTINGS_FIELD_THEME_TEXT, {NULL}, false, true},
@@ -77,6 +79,7 @@ static const field_descriptor_t k_fields[] = {
     {"theme_secondary", WEB_SETTINGS_FIELD_THEME_SECONDARY, {NULL}, false, true},
     {"theme_dim", WEB_SETTINGS_FIELD_THEME_DIM, {NULL}, false, true},
     {"theme_accent", WEB_SETTINGS_FIELD_THEME_ACCENT, {NULL}, false, true},
+    {"theme_saver", WEB_SETTINGS_FIELD_THEME_SAVER, {NULL}, false, true},
     {"theme_reset", WEB_SETTINGS_FIELD_THEME_RESET, {NULL}, false, false},
     {"alarm_enabled", WEB_SETTINGS_FIELD_ALARM_ENABLED, {NULL}, false, false},
     {"alarm_time", WEB_SETTINGS_FIELD_ALARM_TIME, {NULL}, false, true},
@@ -131,7 +134,7 @@ static bool parse_value(const field_descriptor_t *descriptor, const cJSON *value
         /* A colour is the one text this layer can judge on its own: there is
          * no table to look it up in, only whether it is one. */
         if (descriptor->field >= WEB_SETTINGS_FIELD_THEME_GROUND &&
-            descriptor->field <= WEB_SETTINGS_FIELD_THEME_ACCENT) {
+            descriptor->field <= WEB_SETTINGS_FIELD_THEME_SAVER) {
             uint32_t rgb = 0U;
             return device_settings_parse_color(change->text, &rgb);
         }
@@ -183,6 +186,8 @@ static bool parse_value(const field_descriptor_t *descriptor, const cJSON *value
         if (number <= 0 || number > (int)ALARM_DAYS_ALL) return false;
     } else if (descriptor->field == WEB_SETTINGS_FIELD_VOLUME_STEP) {
         if (number < DEVICE_VOLUME_STEP_MIN || number > DEVICE_VOLUME_STEP_MAX) return false;
+    } else if (descriptor->field == WEB_SETTINGS_FIELD_FM_GAIN) {
+        if (number < DEVICE_FM_GAIN_DB_MIN || number > DEVICE_FM_GAIN_DB_MAX) return false;
     } else if (descriptor->field == WEB_SETTINGS_FIELD_TONE_BASS ||
                descriptor->field == WEB_SETTINGS_FIELD_TONE_TREBLE) {
         // The one signed number here: a cut is as much a setting as a lift.
@@ -287,6 +292,8 @@ bool web_settings_apply(device_settings_t *settings,
                                                           (unsigned char)change->value);
     case WEB_SETTINGS_FIELD_VOLUME_STEP:
         return device_settings_set_volume_step(settings, (unsigned char)change->value);
+    case WEB_SETTINGS_FIELD_FM_GAIN:
+        return device_settings_set_fm_gain(settings, change->value);
     case WEB_SETTINGS_FIELD_THEME:
         return device_settings_set_theme(settings, (device_theme_t)change->value);
     case WEB_SETTINGS_FIELD_THEME_GROUND:
@@ -294,7 +301,8 @@ bool web_settings_apply(device_settings_t *settings,
     case WEB_SETTINGS_FIELD_THEME_ARTIST:
     case WEB_SETTINGS_FIELD_THEME_SECONDARY:
     case WEB_SETTINGS_FIELD_THEME_DIM:
-    case WEB_SETTINGS_FIELD_THEME_ACCENT: {
+    case WEB_SETTINGS_FIELD_THEME_ACCENT:
+    case WEB_SETTINGS_FIELD_THEME_SAVER: {
         uint32_t rgb = 0U;
         if (!device_settings_parse_color(change->text, &rgb)) return false;
         return device_settings_set_theme_color(
@@ -378,6 +386,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .flip_horizontal = settings->flip_horizontal,
         .invert_colors = settings->invert_colors,
         .volume_step = settings->volume_step,
+        .fm_gain = (int8_t)settings->fm_gain,
         .theme = (uint8_t)settings->theme,
         .timezone = (uint8_t)device_timezone_index_of(settings->timezone),
         .weather = (uint8_t)settings->weather_provider,
@@ -424,7 +433,8 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->flip_vertical == right->flip_vertical &&
            left->flip_horizontal == right->flip_horizontal &&
            left->invert_colors == right->invert_colors &&
-           left->volume_step == right->volume_step && left->theme == right->theme &&
+           left->volume_step == right->volume_step && left->fm_gain == right->fm_gain &&
+           left->theme == right->theme &&
            left->timezone == right->timezone && left->weather == right->weather &&
            left->screensaver == right->screensaver &&
            left->screensaver_seconds == right->screensaver_seconds &&
@@ -496,6 +506,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_format(writer, "%u", (unsigned)view->brightness);
     web_json_literal(writer, ",\"volume_step\":");
     web_json_format(writer, "%u", (unsigned)view->volume_step);
+    web_json_literal(writer, ",\"fm_gain\":");
+    web_json_format(writer, "%d", (int)view->fm_gain);
     web_json_literal(writer, ",\"theme\":");
     web_json_string(writer, view->theme < sizeof(k_theme_names) / sizeof(k_theme_names[0])
                                 ? k_theme_names[view->theme]
@@ -587,6 +599,10 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_format(writer, "%d", DEVICE_VOLUME_STEP_MIN);
     web_json_literal(writer, ",\"volume_step_max\":");
     web_json_format(writer, "%d", DEVICE_VOLUME_STEP_MAX);
+    web_json_literal(writer, ",\"fm_gain_min\":");
+    web_json_format(writer, "%d", DEVICE_FM_GAIN_DB_MIN);
+    web_json_literal(writer, ",\"fm_gain_max\":");
+    web_json_format(writer, "%d", DEVICE_FM_GAIN_DB_MAX);
     web_json_literal(writer, ",\"tone_min\":");
     web_json_format(writer, "%d", DEVICE_TONE_DB_MIN);
     web_json_literal(writer, ",\"tone_max\":");

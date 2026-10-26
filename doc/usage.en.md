@@ -387,6 +387,11 @@ detail, the alarm, the sleep timer, the backup.
     works without even volume too - a volume of its own for the station. A
     double click on the web slider puts it back to zero. Yandex and files do
     not have it: every track there is its own.
+  - **FM level** - only with a tuner fitted: FM's loudness against internet
+    radio and files, -6 to +12 dB, 0 by default. A tuner's output is usually
+    quieter than the streams - raise it then; at a high setting the loudest
+    moments are clipped. On the device it is turned with the encoder right on
+    the row, on the web with a slider in the FM radio group.
 
   They act on everything that plays through the radio itself: internet
   radio, Yandex Music, files, DLNA, FM through the ADC (even volume - on all
@@ -404,13 +409,14 @@ detail, the alarm, the sleep timer, the backup.
   - **Contrast** - a black ground, the grey lines brought up close to white,
     a lighter accent. For displays on which the secondary text is hard to
     read;
-  - **Custom** - six colours set on the web, in the same group: background,
+  - **Custom** - seven colours set on the web, in the same group: background,
     main text, the artist on the player, secondary text (list rows, volume,
-    RDS), dim text (stream state, buffer, hints, screensaver) and the accent
-    (station name, selected row). Strips, rules and the cursor are worked out
-    from them. The device's screen is the preview - a colour is on it as soon
-    as the picker closes. "Reset to standard colours" puts all six back at
-    once.
+    RDS), dim text (stream state, buffer, hints, screensaver), the accent
+    (station name, selected row) and the screensaver's background (black in
+    the Standard and Contrast themes). Strips, rules and the cursor are worked
+    out from them. The device's screen is the preview - a colour is on it as
+    soon as the picker closes. "Reset to standard colours" puts all seven back
+    at once.
 
   If a custom theme comes out unreadable, the Theme row on the device still
   switches to Standard - the presets do not depend on the custom colours.

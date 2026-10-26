@@ -100,6 +100,8 @@ const ids = [
   'device-theme-secondary', 'device-theme-secondary-row',
   'device-theme-dim', 'device-theme-dim-row',
   'device-theme-accent', 'device-theme-accent-row',
+  'device-theme-saver', 'device-theme-saver-row',
+  'device-fm-gain', 'device-fm-gain-value', 'device-fm-gain-block',
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
   'device-idle-brightness-value', 'device-screensaver-after-row', 'device-screensaver-when',
   'device-screensaver-when-row',
@@ -191,6 +193,7 @@ let settingsReply = {
   tone_bass: 4, tone_treble: -3, loudness: 'off', loudness_treble: true, tone_min: -12, tone_max: 12,
   theme_ground: '#000000', theme_text: '#ffffff', theme_artist: '#e8e8e8',
   theme_secondary: '#e0e6ea', theme_dim: '#b0bec5', theme_accent: '#ffb74d',
+  theme_saver: '#000000',
   brightness: 45, volume: 62,
   available: {home_screen: true, yandex_music: false, dlna: true, bt_output: true},
   brightness_min: 10, brightness_max: 90, volume_step_min: 1, volume_step_max: 20,
@@ -683,12 +686,14 @@ function lastYandexTimer() {
   assert.equal(elements['#device-files-end'].value, 'repeat');
   assert.equal(elements['#device-flip-horizontal'].checked, true);
   assert.equal(elements['#device-invert-colors'].checked, true);
-  // The custom theme: its six colours shown, with the way back to Standard.
+  // The custom theme: its seven colours shown, with the way back to Standard.
   assert.equal(elements['#device-theme'].value, 'custom');
   assert.equal(elements['#device-theme-ground'].value, '#000000');
   assert.equal(elements['#device-theme-accent'].value, '#ffb74d');
   assert.equal(elements['#device-theme-ground-row'].hidden, false);
   assert.equal(elements['#device-theme-dim-row'].hidden, false);
+  assert.equal(elements['#device-theme-saver'].value, '#000000');
+  assert.equal(elements['#device-theme-saver-row'].hidden, false);
   assert.equal(elements['#device-theme-reset-row'].hidden, false);
   assert.equal(elements['#device-volume-step'].value, '7');
   assert.equal(elements['#device-volume-step-value'].textContent, '7');

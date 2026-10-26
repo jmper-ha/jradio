@@ -172,12 +172,16 @@ static bool device_settings_fm_frequency_valid(unsigned long khz)
     return khz >= 87000UL && khz <= 108000UL;
 }
 
-/* The standard theme's six, pinned in ui_theme.c as well - this layer knows
+/* The standard theme's seven, pinned in ui_theme.c as well - this layer knows
  * nothing of the screen, and test_device_settings and test_ui_theme hold the
  * two copies to the same numbers. */
 const uint32_t device_theme_default_colors[DEVICE_THEME_COLORS] = {
-    0x101820, 0xFFFFFF, 0xB0BEC5, 0xB0BEC5, 0x78909C, 0xF2A33C,
+    0x101820, 0xFFFFFF, 0xB0BEC5, 0xB0BEC5, 0x78909C, 0xF2A33C, 0x000000,
 };
+
+/* The colours a line written before the screensaver's ground was one of them
+ * holds: the rest keep the defaults, which is the black it had then. */
+#define THEME_COLORS_BEFORE_SAVER 6U
 
 bool device_settings_parse_color(const char *text, uint32_t *rgb)
 {
@@ -200,25 +204,30 @@ bool device_settings_parse_color(const char *text, uint32_t *rgb)
 }
 
 /* "101820 FFFFFF ..." - spaces, since a value may not hold the comma that
- * ends a key. All six or none: a line with one bad colour leaves the
- * defaults, not a theme with a hole in it. */
+ * ends a key. All or none: a line with one bad colour leaves the defaults,
+ * not a theme with a hole in it. Six is all from a build before the
+ * screensaver had a colour, and keeps the theme someone made then. */
 static bool theme_colors_from_text(const char *text, uint32_t colors[DEVICE_THEME_COLORS])
 {
     uint32_t parsed[DEVICE_THEME_COLORS];
+    memcpy(parsed, device_theme_default_colors, sizeof(parsed));
     const char *cursor = text;
-    for (size_t index = 0U; index < DEVICE_THEME_COLORS; ++index) {
+    size_t count = 0U;
+    for (;;) {
+        while (*cursor == ' ') ++cursor;
+        if (*cursor == '\0') break;
+        if (count == DEVICE_THEME_COLORS) return false;
         char word[8];
         size_t length = 0U;
-        while (*cursor == ' ') ++cursor;
         while (cursor[length] != '\0' && cursor[length] != ' ') ++length;
-        if (length == 0U || length >= sizeof(word)) return false;
+        if (length >= sizeof(word)) return false;
         memcpy(word, cursor, length);
         word[length] = '\0';
-        if (!device_settings_parse_color(word, &parsed[index])) return false;
+        if (!device_settings_parse_color(word, &parsed[count])) return false;
+        ++count;
         cursor += length;
     }
-    while (*cursor == ' ') ++cursor;
-    if (*cursor != '\0') return false;
+    if (count != DEVICE_THEME_COLORS && count != THEME_COLORS_BEFORE_SAVER) return false;
     memcpy(colors, parsed, sizeof(parsed));
     return true;
 }
@@ -238,6 +247,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         .loudness = DEVICE_LOUDNESS_OFF,
         .loudness_treble = false,
         .level_normalize = false,
+        .fm_gain = 0,
         .screensaver_seconds = DEVICE_SCREENSAVER_SECONDS_DEFAULT,
         .screensaver_brightness = DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT,
         .yandex_music = true,
@@ -433,6 +443,14 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     }
     if (read_value(&csv, "level_normalize", value, sizeof(value))) {
         (void)parse_bool(value, &settings->level_normalize);
+    }
+    if (read_value(&csv, "fm_gain", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        if (end != NULL && end != value && *end == '\0' && parsed >= DEVICE_FM_GAIN_DB_MIN &&
+            parsed <= DEVICE_FM_GAIN_DB_MAX) {
+            settings->fm_gain = (signed char)parsed;
+        }
     }
     if (read_value(&csv, "screensaver", value, sizeof(value))) {
         settings->screensaver = screensaver_from_text(value);
@@ -972,6 +990,17 @@ bool device_settings_set_loudness_treble(device_settings_t *settings, bool enabl
     if (settings->loudness_treble == enabled) return true;
     if (!save_value(settings, "loudness_treble", enabled ? "1" : "0")) return false;
     settings->loudness_treble = enabled;
+    return true;
+}
+
+bool device_settings_set_fm_gain(device_settings_t *settings, int db)
+{
+    if (settings == NULL || db < DEVICE_FM_GAIN_DB_MIN || db > DEVICE_FM_GAIN_DB_MAX) return false;
+    if (settings->fm_gain == db) return true;
+    char text[8];
+    snprintf(text, sizeof(text), "%d", db);
+    if (!save_value(settings, "fm_gain", text)) return false;
+    settings->fm_gain = (signed char)db;
     return true;
 }
 

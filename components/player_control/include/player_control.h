@@ -88,6 +88,10 @@ void player_control_set_files_repeat(bool repeat);
  * what the UI writes back. */
 void player_control_set_fm_frequency(uint32_t khz);
 
+/* The FM level from the settings, in dB, PLAYER_FM_GAIN_DB_MIN..MAX; handed
+ * over whenever the settings may have moved, and heard from the next block. */
+void player_control_set_fm_gain(int db);
+
 /* The FM presets, as fm_presets.csv last read. Reloaded when the web page
  * saves the file; the listing revision moves with it. */
 void player_control_fm_presets_reload(void);

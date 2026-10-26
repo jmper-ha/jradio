@@ -297,11 +297,20 @@ int player_fm_signal_bars(uint8_t rssi, int previous);
  * frequency's, in tenths of a MHz. */
 bool player_fm_name_is_frequency(const char *name, uint32_t khz);
 
-/* The RDA5807M's line out, with the tuner at its loudest, fills about half of
- * the PCM1808's range: through the ADC FM played 6 dB under the internet
- * radio at the same knob. Its samples are doubled in place, and a peak that
- * would not fit is clipped rather than wrapped into a click. */
-void player_fm_adc_gain(int16_t *samples, size_t count);
+/* The listener's FM level, in dB: for a tuner that is quieter or louder
+ * than the internet radio at the same knob. 2026-10-26, asked on the forum. */
+#define PLAYER_FM_GAIN_DB_MIN (-6)
+#define PLAYER_FM_GAIN_DB_MAX 12
+
+/* What FM's samples are multiplied by, out of 4096: the listener's level,
+ * clamped to the range above, and on top of it the ADC's own doubling. The
+ * RDA5807M's line out, with the tuner at its loudest, fills about half of the
+ * PCM1808's range - through the ADC FM played 6 dB under the internet radio -
+ * so that path is doubled before anyone touches the level. */
+int32_t player_fm_gain_q12(int db, bool adc);
+/* Multiplies in place; a peak that would not fit is clipped rather than
+ * wrapped into a click. */
+void player_fm_apply_gain(int16_t *samples, size_t count, int32_t gain_q12);
 
 /* A preset with no name takes the one its station sends over RDS while it is
  * listened to. A scan hears the station for a few seconds only, and some

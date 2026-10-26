@@ -18,6 +18,8 @@ static void test_the_standard_theme_is_the_old_panel(void)
     assert(p.rgb[UI_ROLE_SECONDARY] == 0xB0BEC5);
     assert(p.rgb[UI_ROLE_DIM] == 0x78909C);
     assert(p.rgb[UI_ROLE_ACCENT] == 0xF2A33C);
+    // The screensaver was black before it had a role.
+    assert(p.rgb[UI_ROLE_SAVER] == 0x000000);
     assert(p.rgb[UI_ROLE_STRIP] == 0x1E2C3A);
     assert(p.rgb[UI_ROLE_TILE] == 0x18242E);
     assert(p.rgb[UI_ROLE_TILE_EDGE] == 0x26343F);
@@ -61,10 +63,10 @@ static unsigned luma(uint32_t rgb)
  * dark ground and on a light one alike. */
 static void test_derived_surfaces_keep_their_order(void)
 {
-    const uint32_t dark[UI_THEME_BASE_ROLES] = {0x000000, 0xFFFFFF, 0xE8E8E8,
-                                                0xE0E6EA, 0xB0BEC5, 0xFFB74D};
-    const uint32_t light[UI_THEME_BASE_ROLES] = {0xFFFFFF, 0x000000, 0x202020,
-                                                 0x303030, 0x606060, 0xC04000};
+    const uint32_t dark[UI_THEME_BASE_ROLES] = {0x000000, 0xFFFFFF, 0xE8E8E8, 0xE0E6EA,
+                                                0xB0BEC5, 0xFFB74D, 0x000000};
+    const uint32_t light[UI_THEME_BASE_ROLES] = {0xFFFFFF, 0x000000, 0x202020, 0x303030,
+                                                 0x606060, 0xC04000, 0x102040};
     for (int pass = 0; pass < 2; ++pass) {
         ui_palette_t p;
         ui_theme_derive(pass == 0 ? dark : light, &p);
@@ -80,7 +82,7 @@ static void test_derived_surfaces_keep_their_order(void)
         assert(DIST(UI_ROLE_FEED_FAR) < DIST(UI_ROLE_FEED_NEAR));
         assert(DIST(UI_ROLE_CURSOR) < DIST(UI_ROLE_TEXT));
 #undef DIST
-        // The six chosen colours come through untouched.
+        // The seven chosen colours come through untouched.
         const uint32_t *base = pass == 0 ? dark : light;
         for (unsigned role = 0U; role < UI_THEME_BASE_ROLES; ++role) {
             assert(p.rgb[role] == base[role]);
@@ -98,6 +100,7 @@ static void test_the_contrast_theme_is_black_and_bright(void)
     assert(p.rgb[UI_ROLE_SECONDARY] == 0xE0E6EA);
     assert(p.rgb[UI_ROLE_DIM] == 0xB0BEC5);
     assert(p.rgb[UI_ROLE_ACCENT] == 0xFFB74D);
+    assert(p.rgb[UI_ROLE_SAVER] == 0x000000);
     // Its dim text is brighter than the standard theme's secondary text.
     ui_palette_t standard;
     ui_theme_preset(UI_THEME_STANDARD, &standard);

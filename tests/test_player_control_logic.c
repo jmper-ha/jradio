@@ -992,10 +992,41 @@ static void test_a_name_that_is_only_the_frequency(void)
 static void test_fm_through_the_adc_is_doubled_and_clipped(void)
 {
     int16_t samples[] = {0, 1, -1, 11000, -11000, 16383, 16384, -16384, -16385, INT16_MAX, INT16_MIN};
-    player_fm_adc_gain(samples, sizeof(samples) / sizeof(samples[0]));
+    // The level at 0 dB: the ADC's doubling alone, as before there was a level.
+    assert(player_fm_gain_q12(0, true) == 8192);
+    player_fm_apply_gain(samples, sizeof(samples) / sizeof(samples[0]), player_fm_gain_q12(0, true));
     const int16_t want[] = {0, 2, -2, 22000, -22000, 32766, INT16_MAX, INT16_MIN, INT16_MIN, INT16_MAX, INT16_MIN};
     assert(memcmp(samples, want, sizeof(want)) == 0);
-    player_fm_adc_gain(NULL, 4U);
+    player_fm_apply_gain(NULL, 4U, 8192);
+}
+
+/* The listener's level: a decibel a step, clamped to its range, and 0 dB on
+ * the tuner's own I2S leaves the samples alone. */
+static void test_fm_level_steps_a_decibel_and_clamps(void)
+{
+    assert(player_fm_gain_q12(0, false) == 4096);
+    assert(player_fm_gain_q12(6, false) == 8173);
+    assert(player_fm_gain_q12(-6, false) == 2053);
+    assert(player_fm_gain_q12(12, false) == 16306);
+    assert(player_fm_gain_q12(12, true) == 32612);
+    assert(player_fm_gain_q12(40, false) == player_fm_gain_q12(PLAYER_FM_GAIN_DB_MAX, false));
+    assert(player_fm_gain_q12(-40, false) == player_fm_gain_q12(PLAYER_FM_GAIN_DB_MIN, false));
+    for (int db = PLAYER_FM_GAIN_DB_MIN; db < PLAYER_FM_GAIN_DB_MAX; ++db) {
+        assert(player_fm_gain_q12(db, false) < player_fm_gain_q12(db + 1, false));
+    }
+
+    int16_t samples[] = {0, 1000, -1000, INT16_MAX, INT16_MIN};
+    int16_t same[sizeof(samples) / sizeof(samples[0])];
+    memcpy(same, samples, sizeof(samples));
+    player_fm_apply_gain(samples, 5U, player_fm_gain_q12(0, false));
+    assert(memcmp(samples, same, sizeof(same)) == 0);
+    player_fm_apply_gain(samples, 5U, player_fm_gain_q12(-6, false));
+    const int16_t half[] = {0, 501, -501, 16423, -16424};
+    assert(memcmp(samples, half, sizeof(half)) == 0);
+    int16_t loud[] = {3000, -3000, 9000, -9000};
+    player_fm_apply_gain(loud, 4U, player_fm_gain_q12(12, false));
+    const int16_t want_loud[] = {11943, -11943, INT16_MAX, INT16_MIN};
+    assert(memcmp(loud, want_loud, sizeof(want_loud)) == 0);
 }
 
 static void test_a_station_on_the_next_channel_is_the_same_one(void)
@@ -1032,6 +1063,7 @@ int main(void)
     test_the_signal_is_a_scale_that_does_not_flicker();
     test_a_name_that_is_only_the_frequency();
     test_fm_through_the_adc_is_doubled_and_clipped();
+    test_fm_level_steps_a_decibel_and_clamps();
     test_a_station_on_the_next_channel_is_the_same_one();
     test_the_phone_is_a_source_only_while_the_module_answers();
     test_the_phones_queue_takes_both_keys_and_the_skip();

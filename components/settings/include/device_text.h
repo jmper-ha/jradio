@@ -84,6 +84,7 @@ typedef enum {
     DEVICE_TEXT_LOUDNESS_STRONG,
     DEVICE_TEXT_ROW_LOUDNESS_TREBLE,
     DEVICE_TEXT_ROW_LEVEL_NORMALIZE,
+    DEVICE_TEXT_ROW_FM_GAIN,
     /* What the levelling shows over the volume: still measuring, and a lift
      * the volume left no room for. */
     DEVICE_TEXT_LEVEL_MEASURING,

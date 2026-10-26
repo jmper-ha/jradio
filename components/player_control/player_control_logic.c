@@ -462,12 +462,29 @@ bool player_fm_name_is_frequency(const char *name, uint32_t khz)
     return strcmp(digits, tenths) == 0;
 }
 
-void player_fm_adc_gain(int16_t *samples, size_t count)
+int32_t player_fm_gain_q12(int db, bool adc)
 {
-    if (samples == NULL) return;
+    // 4096 x 10^(dB/20), from PLAYER_FM_GAIN_DB_MIN up, a decibel a step.
+    static const int32_t k_q12[] = {2053, 2303, 2584, 2900, 3254, 3651, 4096,
+                                    4596, 5157, 5786, 6492, 7284, 8173, 9170,
+                                    10289, 11544, 12953, 14533, 16306};
+    _Static_assert(sizeof(k_q12) / sizeof(k_q12[0]) ==
+                       PLAYER_FM_GAIN_DB_MAX - PLAYER_FM_GAIN_DB_MIN + 1,
+                   "one entry a decibel");
+    if (db < PLAYER_FM_GAIN_DB_MIN) db = PLAYER_FM_GAIN_DB_MIN;
+    if (db > PLAYER_FM_GAIN_DB_MAX) db = PLAYER_FM_GAIN_DB_MAX;
+    const int32_t gain = k_q12[db - PLAYER_FM_GAIN_DB_MIN];
+    return adc ? gain * 2 : gain;
+}
+
+void player_fm_apply_gain(int16_t *samples, size_t count, int32_t gain_q12)
+{
+    if (samples == NULL || gain_q12 == 4096) return;
     for (size_t i = 0U; i < count; ++i) {
-        const int32_t louder = (int32_t)samples[i] * 2;
-        samples[i] = (int16_t)(louder > INT16_MAX ? INT16_MAX : louder < INT16_MIN ? INT16_MIN : louder);
+        const int32_t scaled = (int32_t)samples[i] * gain_q12;
+        // Rounded half away from zero, so a level of 0 dB is the samples as they were.
+        const int32_t out = (scaled + (scaled >= 0 ? 2048 : -2048)) / 4096;
+        samples[i] = (int16_t)(out > INT16_MAX ? INT16_MAX : out < INT16_MIN ? INT16_MIN : out);
     }
 }
 

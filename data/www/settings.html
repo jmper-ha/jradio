@@ -160,6 +160,19 @@
                 <p class="field-note" data-i18n="note.volume_step">На сколько процентов меняется громкость за один щелчок энкодера и одно нажатие кнопки громкости пульта.</p>
               </div>
 
+              <!-- Only on a board with a tuner: the device says so in `available`. -->
+              <div class="device-group" id="device-fm-gain-block" hidden>
+                <h3 data-i18n="settings.group_fm">FM-радио</h3>
+                <div class="device-row">
+                  <label for="device-fm-gain" data-i18n="settings.fm_gain">Уровень FM, дБ</label>
+                  <span class="device-slider">
+                    <input id="device-fm-gain" type="range" min="-6" max="12" step="1" data-field="fm_gain">
+                    <output id="device-fm-gain-value">0</output>
+                  </span>
+                </div>
+                <p class="field-note" data-i18n="note.fm_gain">Громкость FM относительно интернет-радио и файлов. Если FM заметно тише, поднимите; громкие места при большом усилении могут ограничиваться.</p>
+              </div>
+
               <div class="device-group" id="bt-output-block" hidden>
                 <h3 data-i18n="bt.group">Звук на Bluetooth</h3>
                 <div class="device-row">
@@ -366,7 +379,7 @@
                     <option value="custom" data-i18n="settings.theme_custom">Своя</option>
                   </select>
                 </div>
-                <!-- The custom theme's six colours, there only while it is the
+                <!-- The custom theme's seven colours, there only while it is the
                      chosen one. The panel is the preview: each colour is on it
                      as soon as the picker closes. -->
                 <div class="device-row" id="device-theme-ground-row" hidden>
@@ -392,6 +405,10 @@
                 <div class="device-row" id="device-theme-accent-row" hidden>
                   <label for="device-theme-accent" data-i18n="settings.theme_accent">Акцент</label>
                   <input id="device-theme-accent" type="color" data-field="theme_accent">
+                </div>
+                <div class="device-row" id="device-theme-saver-row" hidden>
+                  <label for="device-theme-saver" data-i18n="settings.theme_saver">Фон заставки</label>
+                  <input id="device-theme-saver" type="color" data-field="theme_saver">
                 </div>
                 <div class="settings-actions" id="device-theme-reset-row" hidden>
                   <button id="device-theme-reset" class="secondary-button" type="button" data-i18n="settings.theme_reset">Сбросить к стандартным цветам</button>

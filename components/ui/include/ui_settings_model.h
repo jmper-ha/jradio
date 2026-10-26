@@ -49,6 +49,9 @@ typedef enum {
     UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD,
     // One station as loud as the next: a switch.
     UI_SETTINGS_ROW_LEVEL_NORMALIZE_FIELD,
+    /* FM against the other sources, a decibel a detent. Only on a board with
+     * a tuner; last in Sound, since it is set once for the tuner. */
+    UI_SETTINGS_ROW_FM_GAIN_FIELD,
     UI_SETTINGS_ROW_DISPLAY_GROUP,
     UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
     /* The mode only. Its wait and its idle level are numbers nobody sets
@@ -131,6 +134,8 @@ void ui_settings_model_init(ui_settings_model_t *model, bool home_screen);
 /* Whether the Bluetooth module is on this board, from the wiring. Once, at
  * boot, before the settings screen is first built. */
 void ui_settings_model_set_bluetooth(bool fitted);
+// The same for the FM tuner, whose level row is there only with one.
+void ui_settings_model_set_fm(bool fitted);
 ui_settings_model_result_t ui_settings_model_move(ui_settings_model_t *model, int direction);
 ui_settings_model_result_t ui_settings_model_activate(ui_settings_model_t *model);
 ui_settings_row_id_t ui_settings_model_selected(const ui_settings_model_t *model);
@@ -177,3 +182,7 @@ int ui_settings_volume_step_step(int value, int direction);
 #define UI_SETTINGS_TONE_MIN (-12)
 #define UI_SETTINGS_TONE_MAX 12
 int ui_settings_tone_step(int value, int direction);
+/* The FM level, one decibel per detent. Mirrors DEVICE_FM_GAIN_DB_MIN/MAX. */
+#define UI_SETTINGS_FM_GAIN_MIN (-6)
+#define UI_SETTINGS_FM_GAIN_MAX 12
+int ui_settings_fm_gain_step(int value, int direction);

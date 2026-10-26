@@ -86,12 +86,13 @@ typedef enum {
     DEVICE_THEME_CUSTOM,
 } device_theme_t;
 
-/* The custom theme: six colours, 0xRRGGBB, in ui_theme.h's role order -
- * ground, text, artist, secondary, dim, accent. Until someone sets them they
- * are the standard theme's, so choosing Custom first shows the panel as it
- * was and every change is a step away from something known. Kept in one key
- * so that a reset is one write and the six cannot be half changed. */
-#define DEVICE_THEME_COLORS 6U
+/* The custom theme: seven colours, 0xRRGGBB, in ui_theme.h's role order -
+ * ground, text, artist, secondary, dim, accent, screensaver ground. Until
+ * someone sets them they are the standard theme's, so choosing Custom first
+ * shows the panel as it was and every change is a step away from something
+ * known. Kept in one key so that a reset is one write and the seven cannot be
+ * half changed. */
+#define DEVICE_THEME_COLORS 7U
 extern const uint32_t device_theme_default_colors[DEVICE_THEME_COLORS];
 
 /* The waits offered, in seconds. A closed list rather than a free number: the
@@ -236,6 +237,11 @@ typedef enum {
 /* The tone controls' range, as audio_tone.h has it. */
 #define DEVICE_TONE_DB_MIN (-12)
 #define DEVICE_TONE_DB_MAX 12
+/* The FM level's range, as player_control_types.h has it: down a little for a
+ * tuner louder than the streams, up further for the usual one that is
+ * quieter. */
+#define DEVICE_FM_GAIN_DB_MIN (-6)
+#define DEVICE_FM_GAIN_DB_MAX 12
 typedef enum {
     DEVICE_LOUDNESS_OFF = 0,
     DEVICE_LOUDNESS_WEAK,
@@ -304,6 +310,8 @@ typedef struct {
      * corrected and remembered per station. Off until it has been listened
      * to on the bench. */
     bool level_normalize;
+    /* FM's level against the other sources, dB, DEVICE_FM_GAIN_DB_MIN..MAX. */
+    signed char fm_gain;
     /* The time zone as an id out of device_timezone.h, not a POSIX string:
      * every summer-time rule carries commas, and settings.csv splits a line on
      * the first one. */
@@ -398,6 +406,8 @@ bool device_settings_save_brightness_later(device_settings_t *settings, unsigned
 bool device_settings_set_volume_step(device_settings_t *settings, unsigned char step);
 // Refused outside DEVICE_TONE_DB_MIN..MAX.
 bool device_settings_set_tone_bass(device_settings_t *settings, int db);
+// Refused outside DEVICE_FM_GAIN_DB_MIN..MAX.
+bool device_settings_set_fm_gain(device_settings_t *settings, int db);
 bool device_settings_set_tone_treble(device_settings_t *settings, int db);
 // Both, in the background, for the screen's knob once it settles.
 bool device_settings_save_tone_later(device_settings_t *settings, int bass_db, int treble_db);

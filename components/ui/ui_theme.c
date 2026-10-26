@@ -14,6 +14,7 @@ static const ui_palette_t k_standard = {.rgb = {
     [UI_ROLE_SECONDARY] = 0xB0BEC5,
     [UI_ROLE_DIM] = 0x78909C,
     [UI_ROLE_ACCENT] = 0xF2A33C,
+    [UI_ROLE_SAVER] = 0x000000,
     [UI_ROLE_STRIP] = 0x1E2C3A,
     [UI_ROLE_TILE] = 0x18242E,
     [UI_ROLE_TILE_EDGE] = 0x26343F,
@@ -64,6 +65,7 @@ static const uint32_t k_contrast_base[UI_THEME_BASE_ROLES] = {
     [UI_ROLE_SECONDARY] = 0xE0E6EA,
     [UI_ROLE_DIM] = 0xB0BEC5,
     [UI_ROLE_ACCENT] = 0xFFB74D,
+    [UI_ROLE_SAVER] = 0x000000,
 };
 
 uint32_t ui_theme_mix(uint32_t from, uint32_t to, unsigned weight)

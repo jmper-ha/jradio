@@ -1182,7 +1182,7 @@ static void ui_status_strip_update_weather(ui_status_strip_t *strip)
     }
 }
 
-/* The screensaver: a black cover over every screen on LVGL's top layer, and
+/* The screensaver: a cover over every screen on LVGL's top layer, and
  * a clock block that is drawn past LVGL altogether.
  *
  * The cover rather than a screen of its own because whatever was up stays up
@@ -1194,7 +1194,7 @@ static void ui_status_strip_update_weather(ui_status_strip_t *strip)
  * The block itself never goes through LVGL's frame. It is rendered once into
  * a bitmap - a snapshot, whenever its text changes - and the bitmap is written
  * to the panel straight from PSRAM, by DMA, at whatever position the drift
- * has reached, with the strip it uncovered filled black behind it. Through
+ * has reached, with the strip it uncovered filled behind it. Through
  * LVGL, a frame of the moving block cost 70 ms however it was arranged: the
  * digits drawn afresh, then a bitmap blitted, then the band copy - the
  * redraw of a sixth of the panel through the software renderer is simply that
@@ -1225,6 +1225,10 @@ typedef enum {
     UI_SAVER_DATE_NONE,
 } ui_saver_date_form_t;
 static ui_saver_date_form_t s_saver_date_form;
+/* A theme came in with the cover up: what was written past LVGL is in the old
+ * ground, and LVGL takes the cover for painted, so the next pass paints all
+ * of it again. */
+static bool s_saver_recolour;
 static lv_obj_t *s_saver_track;
 /* The block's bitmap, in the panel's wire order once rendered. */
 static lv_draw_buf_t s_saver_bitmap;
@@ -1262,9 +1266,8 @@ static void ui_create_screensaver(void)
     lv_obj_remove_style_all(s_saver_cover);
     lv_obj_set_pos(s_saver_cover, 0, 0);
     lv_obj_set_size(s_saver_cover, TFT_WIDTH, TFT_HEIGHT);
-    /* True black, not the ground colour: on a dark panel the ground is a
-     * visible grey rectangle, and the point is that nothing is. */
-    lv_obj_set_style_bg_color(s_saver_cover, lv_color_black(), 0);
+    // Its own role, not the ground - see UI_ROLE_SAVER.
+    ui_paint(s_saver_cover, UI_PAINT_BG, UI_ROLE_SAVER, 0);
     lv_obj_set_style_bg_opa(s_saver_cover, LV_OPA_COVER, 0);
     lv_obj_set_style_text_font(s_saver_cover, UI_FONT_SAVER_TEXT, 0);
     lv_obj_clear_flag(s_saver_cover, LV_OBJ_FLAG_SCROLLABLE);
@@ -1307,6 +1310,10 @@ static void ui_create_screensaver(void)
     s_saver_block = lv_obj_create(s_saver_cover);
     lv_obj_remove_style_all(s_saver_block);
     lv_obj_set_size(s_saver_block, s_saver_block_w, s_saver_block_h);
+    /* Filled, because the snapshot of a bare block comes out black whatever
+     * the cover around it is. */
+    ui_paint(s_saver_block, UI_PAINT_BG, UI_ROLE_SAVER, 0);
+    lv_obj_set_style_bg_opa(s_saver_block, LV_OPA_COVER, 0);
     lv_obj_clear_flag(s_saver_block, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_saver_block, LV_OBJ_FLAG_HIDDEN);
 
@@ -1840,7 +1847,7 @@ static void ui_create_weather_saver(void)
     s_wx_block = lv_obj_create(s_saver_cover);
     lv_obj_remove_style_all(s_wx_block);
     lv_obj_set_size(s_wx_block, s_wx_block_w, TFT_HEIGHT);
-    lv_obj_set_style_bg_color(s_wx_block, lv_color_black(), 0);
+    ui_paint(s_wx_block, UI_PAINT_BG, UI_ROLE_SAVER, 0);
     lv_obj_set_style_bg_opa(s_wx_block, LV_OPA_COVER, 0);
     lv_obj_clear_flag(s_wx_block, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_wx_block, LV_OBJ_FLAG_HIDDEN);
@@ -2311,7 +2318,7 @@ static void ui_screensaver_poll(uint32_t now_ms)
              * while the panel rests. What the old mode wrote went to the panel
              * past LVGL, which still takes the cover for painted, so it is
              * painted again: left alone, the weather stayed on round the
-             * clock. Both modes wait out the first-draw delay, so the black
+             * clock. Both modes wait out the first-draw delay, so the cover
              * goes down before either writes. */
             s_cover_up_ms = now_ms;
             lv_display_enable_invalidation(s_display, true);
@@ -2332,6 +2339,23 @@ static void ui_screensaver_poll(uint32_t now_ms)
             s_clock_up = false;
             ui_saver_drift_stop();
             s_saver_drawn = false;
+        }
+    }
+    if (s_saver_recolour) {
+        s_saver_recolour = false;
+        if (s_cover_up) {
+            s_cover_up_ms = now_ms;
+            lv_display_enable_invalidation(s_display, true);
+            lv_obj_invalidate(s_saver_cover);
+            if (s_clock_up) {
+                ui_screensaver_render_block();
+                s_saver_drawn = false;
+                s_saver_draw_after_ms = now_ms + UI_SAVER_FIRST_DRAW_MS;
+            }
+            if (s_wx_up) {
+                s_wx_dirty = true;
+                s_wx_draw_after_ms = now_ms + UI_SAVER_FIRST_DRAW_MS;
+            }
         }
     }
     /* Once the cover has had its cycle to be painted, LVGL stops marking
@@ -4110,6 +4134,13 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_LEVEL_NORMALIZE,
                                  s_device_settings.level_normalize);
         break;
+    case UI_SETTINGS_ROW_FM_GAIN_FIELD: {
+        const bool editing = ui_settings_model_is_editing(&s_settings_model) &&
+                             ui_settings_model_selected(&s_settings_model) == row->id;
+        snprintf(text, text_size, editing ? "  %s: <%+d>" : "  %s: %+d",
+                 ui_text(DEVICE_TEXT_ROW_FM_GAIN), (int)s_device_settings.fm_gain);
+        break;
+    }
     case UI_SETTINGS_ROW_BRIGHTNESS_FIELD:
         /* Angle brackets while the knob owns the value: the cursor already
          * says which row, and this is the only thing that says the next click
@@ -4586,6 +4617,7 @@ static void ui_apply_tone(void)
     };
     board_audio_set_tone(&tone);
     board_audio_set_levelling(s_device_settings.level_normalize);
+    player_control_set_fm_gain((int)s_device_settings.fm_gain);
 }
 
 static void ui_reload_settings(void)
@@ -5204,6 +5236,21 @@ static void ui_tone_setting_step(bool bass, int direction)
     device_settings_publish(&s_device_settings);
 }
 
+/* The FM level, a decibel a detent. Written per detent like the volume step:
+ * at most eighteen writes, and the player hears it from its next block. */
+static void ui_fm_gain_setting_step(int direction)
+{
+    const int now = (int)s_device_settings.fm_gain;
+    const int next = ui_settings_fm_gain_step(now, direction);
+    if (next == now) return;
+    const bool changed = device_settings_set_fm_gain(&s_device_settings, next);
+    lv_label_set_text(s_settings_notice,
+                      changed ? "" : ui_text(DEVICE_TEXT_SETTINGS_WRITE_FAILED));
+    if (!changed) return;
+    ui_apply_tone();
+    device_settings_publish(&s_device_settings);
+}
+
 /* The number fields. Separate from ui_settings_change_selected() because a
  * click and a detent mean different things here: the click only decides who
  * the knob belongs to, and this is the turn that moves the value. */
@@ -5217,6 +5264,10 @@ static void ui_settings_change_number(int direction)
     if (selected == UI_SETTINGS_ROW_TONE_BASS_FIELD ||
         selected == UI_SETTINGS_ROW_TONE_TREBLE_FIELD) {
         ui_tone_setting_step(selected == UI_SETTINGS_ROW_TONE_BASS_FIELD, direction);
+        return;
+    }
+    if (selected == UI_SETTINGS_ROW_FM_GAIN_FIELD) {
+        ui_fm_gain_setting_step(direction);
         return;
     }
     if (selected != UI_SETTINGS_ROW_BRIGHTNESS_FIELD) {
@@ -8858,6 +8909,7 @@ static void ui_apply_theme(void)
     lv_obj_report_style_change(NULL);
     lv_obj_refresh_style(lv_layer_top(), LV_PART_ANY, LV_STYLE_PROP_ANY);
 
+    s_saver_recolour = true;
     s_source_like_shown = -2;
     s_fm_marks_stereo = -1;
     s_fm_marks_signal = -1;
@@ -9001,6 +9053,7 @@ esp_err_t ui_init(void)
      * point the answer counts a Yandex row the switch may have turned off. */
     ui_apply_source_visibility();
     ui_settings_model_set_bluetooth(board_has_bluetooth());
+    ui_settings_model_set_fm(board_has_fm_tuner());
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
     // Before anything can play: the board defaults to full volume, and coming
     // back from a power cut at full blast when the user had it at 20 is the

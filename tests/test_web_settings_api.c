@@ -154,7 +154,13 @@ static void test_numbers_are_range_checked(void)
     assert(parse_one("{\"field\":\"volume_step\",\"value\":20}", &change));
     assert(!parse_one("{\"field\":\"volume_step\",\"value\":0}", &change));
     assert(!parse_one("{\"field\":\"volume_step\",\"value\":21}", &change));
-    // The tone controls are the one signed range: a cut is a setting too.
+    // The FM level is signed as well, and narrower.
+    assert(parse_one("{\"field\":\"fm_gain\",\"value\":-6}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_FM_GAIN && change.value == -6);
+    assert(parse_one("{\"field\":\"fm_gain\",\"value\":12}", &change));
+    assert(!parse_one("{\"field\":\"fm_gain\",\"value\":-7}", &change));
+    assert(!parse_one("{\"field\":\"fm_gain\",\"value\":13}", &change));
+    // The tone controls are a signed range too: a cut is a setting.
     assert(parse_one("{\"field\":\"tone_bass\",\"value\":-12}", &change));
     assert(change.field == WEB_SETTINGS_FIELD_TONE_BASS && change.value == -12);
     assert(parse_one("{\"field\":\"tone_treble\",\"value\":12}", &change));
@@ -223,11 +229,17 @@ static void test_apply_writes_through_to_the_file(void)
 
     const web_settings_change_t step = {WEB_SETTINGS_FIELD_VOLUME_STEP, 3, ""};
     assert(web_settings_apply(&settings, &step));
+    const web_settings_change_t fm_gain = {WEB_SETTINGS_FIELD_FM_GAIN, -4, ""};
+    assert(web_settings_apply(&settings, &fm_gain));
+    assert(settings.fm_gain == -4);
     const web_settings_change_t theme = {WEB_SETTINGS_FIELD_THEME, DEVICE_THEME_CUSTOM, ""};
     assert(web_settings_apply(&settings, &theme));
     const web_settings_change_t accent = {WEB_SETTINGS_FIELD_THEME_ACCENT, 0, "#00ff00"};
     assert(web_settings_apply(&settings, &accent));
     assert(settings.theme_colors[5] == 0x00FF00);
+    const web_settings_change_t saver_ground = {WEB_SETTINGS_FIELD_THEME_SAVER, 0, "#102030"};
+    assert(web_settings_apply(&settings, &saver_ground));
+    assert(settings.theme_colors[6] == 0x102030);
     // A colour that is not one is refused by the device, not stored.
     const web_settings_change_t junk = {WEB_SETTINGS_FIELD_THEME_GROUND, 0, "#00ff0"};
     assert(!web_settings_apply(&settings, &junk));
@@ -408,10 +420,14 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "encoder_reverse") == NULL);
     assert(strstr(document, "\"volume_step\":5") != NULL);
     assert(strstr(document, "\"volume_step_min\":1") != NULL);
+    assert(strstr(document, "\"fm_gain\":0") != NULL);
+    assert(strstr(document, "\"fm_gain_min\":-6") != NULL);
+    assert(strstr(document, "\"fm_gain_max\":12") != NULL);
     // The theme lives; its colours are in the document, in the picker's case.
     assert(strstr(document, "\"theme\":\"standard\"") != NULL);
     assert(strstr(document, "\"theme_ground\":\"#101820\"") != NULL);
     assert(strstr(document, "\"theme_accent\":\"#f2a33c\"") != NULL);
+    assert(strstr(document, "\"theme_saver\":\"#000000\"") != NULL);
     assert(strstr(document, "\"volume_step_max\":20") != NULL);
     // A build without Yandex Music or a media server says so, so the page
     // drops those rows rather than offering switches behind which there is

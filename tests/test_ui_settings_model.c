@@ -278,6 +278,8 @@ static void test_the_display_group_holds_a_number_the_knob_edits(void)
 static void test_the_sound_group_holds_two_numbers_and_a_choice(void)
 {
     ui_settings_model_t model;
+    // Without a tuner first: no FM level among the sound rows.
+    ui_settings_model_set_fm(false);
     ui_settings_model_init(&model, true);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
@@ -285,6 +287,13 @@ static void test_the_sound_group_holds_two_numbers_and_a_choice(void)
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
     // Four headings, five fields, About.
     assert(ui_settings_model_row_count(&model) == 10U);
+    assert(ui_settings_model_row_at(&model, 8U).id == UI_SETTINGS_ROW_DISPLAY_GROUP);
+    // With one, the level is the last of them.
+    ui_settings_model_set_fm(true);
+    assert(ui_settings_model_row_count(&model) == 11U);
+    assert(ui_settings_model_row_at(&model, 8U).id == UI_SETTINGS_ROW_FM_GAIN_FIELD);
+    assert(ui_settings_row_is_number(UI_SETTINGS_ROW_FM_GAIN_FIELD));
+    ui_settings_model_set_fm(BOARD_HAS_FM_RADIO);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_TONE_BASS_FIELD);
     assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_TONE_TREBLE_FIELD);
     assert(ui_settings_model_row_at(&model, 5U).id == UI_SETTINGS_ROW_LOUDNESS_FIELD);
@@ -302,6 +311,10 @@ static void test_the_sound_group_holds_two_numbers_and_a_choice(void)
     assert(ui_settings_tone_step(UI_SETTINGS_TONE_MAX, 1) == UI_SETTINGS_TONE_MAX);
     assert(ui_settings_tone_step(UI_SETTINGS_TONE_MIN, -1) == UI_SETTINGS_TONE_MIN);
     assert(ui_settings_tone_step(40, 0) == UI_SETTINGS_TONE_MAX);
+    assert(ui_settings_fm_gain_step(0, 1) == 1);
+    assert(ui_settings_fm_gain_step(UI_SETTINGS_FM_GAIN_MIN, -1) == UI_SETTINGS_FM_GAIN_MIN);
+    assert(ui_settings_fm_gain_step(UI_SETTINGS_FM_GAIN_MAX, 1) == UI_SETTINGS_FM_GAIN_MAX);
+    assert(ui_settings_row_is_number(UI_SETTINGS_ROW_FM_GAIN_FIELD));
 }
 
 static void test_brightness_steps_and_stops_at_the_ends(void)

@@ -793,6 +793,8 @@ static void player_bt_close(void)
 
 // The frequency to come back to: handed over from settings, then followed.
 static atomic_uint s_fm_khz = ATOMIC_VAR_INIT(0U);
+// See player_control_set_fm_gain().
+static atomic_int s_fm_gain_db = ATOMIC_VAR_INIT(0);
 static atomic_bool s_fm_on = ATOMIC_VAR_INIT(false);
 static atomic_bool s_fm_muted = ATOMIC_VAR_INIT(false);
 static atomic_bool s_fm_failed = ATOMIC_VAR_INIT(false);
@@ -1002,7 +1004,10 @@ static void player_fm_pipe_task(void *arg)
                 silent = samples[i] <= PLAYER_FM_PIPE_DEAD_LEVEL &&
                          samples[i] >= -PLAYER_FM_PIPE_DEAD_LEVEL;
             }
-            if (adc) player_fm_adc_gain(samples, count);
+            player_fm_apply_gain(
+                samples, count,
+                player_fm_gain_q12(atomic_load_explicit(&s_fm_gain_db, memory_order_relaxed),
+                                   adc));
             size_t written = 0U;
             (void)board_audio_write(block, read, &written, PLAYER_FM_PIPE_IO_MS);
             silent_bytes = silent ? silent_bytes + read : 0U;
@@ -1067,6 +1072,11 @@ static bool player_fm_status(rda5807_status_t *status, int *bars)
 void player_control_set_fm_frequency(uint32_t khz)
 {
     atomic_store_explicit(&s_fm_khz, khz, memory_order_release);
+}
+
+void player_control_set_fm_gain(int db)
+{
+    atomic_store_explicit(&s_fm_gain_db, db, memory_order_relaxed);
 }
 
 /* The presets, read from fm_presets.csv at boot and again whenever the web

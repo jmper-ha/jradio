@@ -65,6 +65,7 @@
   const deviceBrightness = document.querySelector('#device-brightness');
   const deviceIdleBrightness = document.querySelector('#device-idle-brightness');
   const deviceVolumeStep = document.querySelector('#device-volume-step');
+  const deviceFmGain = document.querySelector('#device-fm-gain');
   const deviceScreensaverAfter = document.querySelector('#device-screensaver-after');
   const weatherNowRow = document.querySelector('#device-weather-now-row');
   const weatherNow = document.querySelector('#device-weather-now');
@@ -163,8 +164,13 @@
      row: document.querySelector('#device-theme-dim-row'), when: {field: 'theme', is: 'custom'}},
     {field: 'theme_accent', kind: 'text', node: document.querySelector('#device-theme-accent'),
      row: document.querySelector('#device-theme-accent-row'), when: {field: 'theme', is: 'custom'}},
+    {field: 'theme_saver', kind: 'text', node: document.querySelector('#device-theme-saver'),
+     row: document.querySelector('#device-theme-saver-row'), when: {field: 'theme', is: 'custom'}},
     {field: 'volume_step', kind: 'number', node: deviceVolumeStep,
      output: document.querySelector('#device-volume-step-value')},
+    {field: 'fm_gain', kind: 'number', node: deviceFmGain,
+     output: document.querySelector('#device-fm-gain-value'),
+     row: document.querySelector('#device-fm-gain-block'), gate: 'fm'},
   ];
 
   const reconnectDelays = Object.freeze([500, 1000, 2000, 4000, 8000]);
@@ -1203,6 +1209,10 @@
         Number.isSafeInteger(payload.volume_step_max)) {
       deviceVolumeStep.min = String(payload.volume_step_min);
       deviceVolumeStep.max = String(payload.volume_step_max);
+    }
+    if (Number.isSafeInteger(payload.fm_gain_min) && Number.isSafeInteger(payload.fm_gain_max)) {
+      deviceFmGain.min = String(payload.fm_gain_min);
+      deviceFmGain.max = String(payload.fm_gain_max);
     }
     if (Number.isSafeInteger(payload.brightness_min) &&
         Number.isSafeInteger(payload.brightness_max)) {

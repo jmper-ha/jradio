@@ -607,6 +607,13 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     (void)settings_csv_snapshot_get(&csv, "last_dlna_title", settings->last_dlna_title,
                            sizeof(settings->last_dlna_title));
     settings_csv_snapshot_free(&csv);
+    /* A file from before the rule, or edited by hand, may pair the two; the
+     * clock is what the weather screen is without its weather. Left in the
+     * file, so a weather service turned on again from a backup finds it. */
+    if (settings->screensaver == DEVICE_SCREENSAVER_WEATHER &&
+        settings->weather_provider == DEVICE_WEATHER_OFF) {
+        settings->screensaver = DEVICE_SCREENSAVER_CLOCK;
+    }
     return true;
 }
 
@@ -1075,6 +1082,14 @@ bool device_settings_set_weather_provider(device_settings_t *settings,
 {
     if (settings == NULL || provider > DEVICE_WEATHER_OPENWEATHERMAP) return false;
     if (settings->weather_provider == provider) return true;
+    /* The weather screen has nothing to show without a service, so it goes
+     * with it - to the clock, the same screen less the weather. */
+    if (provider == DEVICE_WEATHER_OFF && settings->screensaver == DEVICE_SCREENSAVER_WEATHER) {
+        if (!save_value(settings, "screensaver", screensaver_text(DEVICE_SCREENSAVER_CLOCK))) {
+            return false;
+        }
+        settings->screensaver = DEVICE_SCREENSAVER_CLOCK;
+    }
     if (!save_value(settings, "weather", weather_provider_text(provider))) return false;
     settings->weather_provider = provider;
     /* Remembered on the way in, not on the way out: the switch on the panel
@@ -1095,9 +1110,26 @@ bool device_settings_set_weather_enabled(device_settings_t *settings, bool enabl
         settings, enabled ? settings->weather_service : DEVICE_WEATHER_OFF);
 }
 
-bool device_settings_set_screensaver(device_settings_t *settings, device_screensaver_t mode)
+bool device_settings_screensaver_available(const device_settings_t *settings,
+                                          device_screensaver_t mode)
 {
     if (settings == NULL || mode > DEVICE_SCREENSAVER_WEATHER) return false;
+    return mode != DEVICE_SCREENSAVER_WEATHER || settings->weather_provider != DEVICE_WEATHER_OFF;
+}
+
+device_screensaver_t device_settings_next_screensaver(const device_settings_t *settings)
+{
+    if (settings == NULL) return DEVICE_SCREENSAVER_OFF;
+    device_screensaver_t mode = settings->screensaver;
+    do {
+        mode = (device_screensaver_t)((mode + 1) % (DEVICE_SCREENSAVER_WEATHER + 1));
+    } while (!device_settings_screensaver_available(settings, mode));
+    return mode;
+}
+
+bool device_settings_set_screensaver(device_settings_t *settings, device_screensaver_t mode)
+{
+    if (!device_settings_screensaver_available(settings, mode)) return false;
     if (settings->screensaver == mode) return true;
     if (!save_value(settings, "screensaver", screensaver_text(mode))) return false;
     settings->screensaver = mode;

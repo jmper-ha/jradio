@@ -1427,6 +1427,18 @@ function lastYandexTimer() {
   assert.equal(elements['#device-weather-key-row'].hidden, true);
   assert.equal(elements['#device-weather-now-row'].hidden, true);
 
+  /* The weather screen is not on offer while the weather is off, and comes
+     back with a service. */
+  const saverOptions = ['off', 'dim', 'blank', 'clock', 'weather'].map((value) => {
+    const option = new Element();
+    option.value = value;
+    return option;
+  });
+  elements['#device-screensaver'].options = saverOptions;
+  await refreshSettings();
+  assert.equal(saverOptions[4].disabled, true);
+  assert.equal(saverOptions[3].disabled, false);
+
   /* Choosing the service that wants a key brings the key row out, and the
      device says there is no key yet. The field carries nothing: the device
      never sends a key back, only whether it has one. */
@@ -1441,6 +1453,7 @@ function lastYandexTimer() {
   assert.equal(elements['#device-weather-key'].placeholder, 'не задан');
   assert.equal(elements['#device-weather-now-row'].hidden, false);
   assert.equal(elements['#device-weather-now'].textContent, 'нет ключа');
+  assert.equal(saverOptions[4].disabled, false);
 
   /* The key goes out as its own field and comes back as a state, never as
      itself; the field is emptied once the device has it. */
@@ -1499,6 +1512,7 @@ function lastYandexTimer() {
   settingsReply = {...settingsReply, weather: 'off', weather_state: 'off', weather_report: null};
   await refreshSettings();
   assert.equal(elements['#device-weather-now-row'].hidden, true);
+  assert.equal(saverOptions[4].disabled, true);
 
   /* Backup and restore. Nothing is chosen yet, so there is nothing to send -
      a Restore button that is live before a file is picked is a click that

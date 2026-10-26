@@ -5134,12 +5134,11 @@ static void ui_settings_change_selected(void)
         if (changed) weather_apply(&s_device_settings);
         break;
     case UI_SETTINGS_ROW_SCREENSAVER_FIELD:
-        /* Five in a ring, the way a click cycles every other choice. Its
-         * wait and its idle level are on the page. */
+        /* Five in a ring, the way a click cycles every other choice - four
+         * while the weather is off. Its wait and its idle level are on the
+         * page. */
         changed = device_settings_set_screensaver(
-            &s_device_settings,
-            (device_screensaver_t)((s_device_settings.screensaver + 1) %
-                                   (DEVICE_SCREENSAVER_WEATHER + 1)));
+            &s_device_settings, device_settings_next_screensaver(&s_device_settings));
         break;
     case UI_SETTINGS_ROW_FLIP_VERTICAL_FIELD:
         changed = device_settings_set_flip_vertical(&s_device_settings,

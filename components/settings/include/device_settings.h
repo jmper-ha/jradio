@@ -455,6 +455,14 @@ bool device_settings_set_weather_longitude(device_settings_t *settings, const ch
  * six decimals, within `limit` degrees either side of zero. */
 bool device_settings_coordinate_valid(const char *text, int limit);
 bool device_settings_set_screensaver(device_settings_t *settings, device_screensaver_t mode);
+/* The weather screen only while a weather service is on: without one it
+ * would be a clock under "no weather". Setting it then is refused, and
+ * turning the weather off moves a weather screen to the clock. */
+bool device_settings_screensaver_available(const device_settings_t *settings,
+                                          device_screensaver_t mode);
+/* The mode a click on the panel's row moves to: the next one round the ring
+ * that is available. */
+device_screensaver_t device_settings_next_screensaver(const device_settings_t *settings);
 bool device_settings_set_theme(device_settings_t *settings, device_theme_t theme);
 /* One of the six, by index; or all six at once, which is how they go back to
  * the defaults. */

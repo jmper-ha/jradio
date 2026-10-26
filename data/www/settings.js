@@ -1222,6 +1222,15 @@
       deviceBrightness.min = String(payload.brightness_min);
       deviceBrightness.max = String(payload.brightness_max);
     }
+    /* The weather screen needs a weather service; with none it cannot be
+       chosen, and the device has already moved a weather screen to the
+       clock. Before the values, so the choice below lands on a live option. */
+    if (typeof payload.weather === 'string') {
+      const screensaver = document.querySelector('#device-screensaver');
+      for (const option of Array.from((screensaver && screensaver.options) || [])) {
+        if (option.value === 'weather') option.disabled = payload.weather === 'off';
+      }
+    }
     for (const entry of deviceFields) {
       const value = payload[entry.field];
       if (entry.kind === 'choice') {

@@ -637,11 +637,33 @@ static void test_the_screensaver_settings_persist_and_are_checked(void)
     assert(device_settings_set_screensaver(&settings, DEVICE_SCREENSAVER_BLANK));
     assert(settings_csv_get(test_path, "screensaver", value, sizeof(value)));
     assert(strcmp(value, "blank") == 0);
+    /* The weather screen wants a weather service: refused while there is
+     * none, and the panel's ring passes it by. */
+    assert(settings.weather_provider == DEVICE_WEATHER_OFF);
+    assert(!device_settings_screensaver_available(&settings, DEVICE_SCREENSAVER_WEATHER));
+    assert(!device_settings_set_screensaver(&settings, DEVICE_SCREENSAVER_WEATHER));
+    assert(settings.screensaver == DEVICE_SCREENSAVER_BLANK);
+    assert(device_settings_set_screensaver(&settings, DEVICE_SCREENSAVER_CLOCK));
+    assert(device_settings_next_screensaver(&settings) == DEVICE_SCREENSAVER_OFF);
+    assert(device_settings_set_weather_provider(&settings, DEVICE_WEATHER_WTTR));
+    assert(device_settings_next_screensaver(&settings) == DEVICE_SCREENSAVER_WEATHER);
     assert(device_settings_set_screensaver(&settings, DEVICE_SCREENSAVER_WEATHER));
+    assert(device_settings_next_screensaver(&settings) == DEVICE_SCREENSAVER_OFF);
     assert(settings_csv_get(test_path, "screensaver", value, sizeof(value)));
     assert(strcmp(value, "weather") == 0);
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.screensaver == DEVICE_SCREENSAVER_WEATHER);
+    /* Turning the weather off takes the weather screen to the clock, in the
+     * file too. */
+    assert(device_settings_set_weather_enabled(&settings, false));
+    assert(settings.screensaver == DEVICE_SCREENSAVER_CLOCK);
+    assert(settings_csv_get(test_path, "screensaver", value, sizeof(value)));
+    assert(strcmp(value, "clock") == 0);
+    /* A file that pairs them anyway - older, or edited by hand - loads as
+     * the clock. */
+    assert(settings_csv_set(test_path, "screensaver", "weather"));
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.screensaver == DEVICE_SCREENSAVER_CLOCK);
     assert(device_settings_set_screensaver(&settings, DEVICE_SCREENSAVER_BLANK));
     assert(!device_settings_set_screensaver(&settings, (device_screensaver_t)9));
 

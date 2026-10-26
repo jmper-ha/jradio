@@ -6,12 +6,12 @@
 
 #include "radio_stream_format.h"
 
-/* The three fields and what joins them. Both forms carry exactly the same
- * readings in the same order - only the separator differs - so a reader who
- * has seen one panel recognises the other. */
+/* The three fields and what joins them. Every form carries exactly the same
+ * readings in the same order - only the separator and the bitrate's unit
+ * differ - so a reader who has seen one panel recognises the other. */
 static void ui_radio_stream_fields(char *text, size_t text_size, const char *codec,
                                    uint16_t bitrate_kbps, uint32_t sample_rate_hz,
-                                   const char *separator)
+                                   const char *separator, const char *bitrate_unit)
 {
     const char *display_codec = codec != NULL && codec[0] != '\0' ? codec : "--";
     char rate_text[16];
@@ -34,9 +34,10 @@ static void ui_radio_stream_fields(char *text, size_t text_size, const char *cod
 
     char bitrate_text[16];
     if (bitrate_kbps > 0U) {
-        snprintf(bitrate_text, sizeof(bitrate_text), "%u kbps", (unsigned int)bitrate_kbps);
+        snprintf(bitrate_text, sizeof(bitrate_text), "%u%s", (unsigned int)bitrate_kbps,
+                 bitrate_unit);
     } else {
-        snprintf(bitrate_text, sizeof(bitrate_text), "-- kbps");
+        snprintf(bitrate_text, sizeof(bitrate_text), "--%s", bitrate_unit);
     }
     snprintf(text, text_size, "%s%s%s%s%s", display_codec, separator, bitrate_text, separator,
              rate_text);
@@ -45,13 +46,20 @@ static void ui_radio_stream_fields(char *text, size_t text_size, const char *cod
 void ui_radio_stream_text(char *text, size_t text_size, const char *codec,
                           uint16_t bitrate_kbps, uint32_t sample_rate_hz)
 {
-    ui_radio_stream_fields(text, text_size, codec, bitrate_kbps, sample_rate_hz, "  |  ");
+    ui_radio_stream_fields(text, text_size, codec, bitrate_kbps, sample_rate_hz, "  |  ",
+                           " kbps");
+}
+
+void ui_radio_stream_brief(char *text, size_t text_size, const char *codec,
+                           uint16_t bitrate_kbps, uint32_t sample_rate_hz)
+{
+    ui_radio_stream_fields(text, text_size, codec, bitrate_kbps, sample_rate_hz, "  ", "");
 }
 
 void ui_radio_stream_lines(char *text, size_t text_size, const char *codec,
                            uint16_t bitrate_kbps, uint32_t sample_rate_hz)
 {
-    ui_radio_stream_fields(text, text_size, codec, bitrate_kbps, sample_rate_hz, "\n");
+    ui_radio_stream_fields(text, text_size, codec, bitrate_kbps, sample_rate_hz, "\n", " kbps");
 }
 
 void ui_radio_stream_text_for_url(char *text, size_t text_size, const char *url)

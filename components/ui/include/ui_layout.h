@@ -26,6 +26,33 @@
  * layout that was already signed off on both panels, which is a worse outcome
  * than asking for a file. */
 
+/* The numbers that were placed by looking at a screen. One file per panel
+ * shape; see the note at the top of this header for why they are not derived.
+ * Included before every default below, so a shape can take over any of the
+ * ones written as #ifndef - the list and settings geometry among them, which
+ * the 142 px bar panel cannot leave as derived. */
+#if TFT_WIDTH == 320 && TFT_HEIGHT == 240
+#include "layout/layout_320x240.h"
+#elif TFT_WIDTH == 240 && TFT_HEIGHT == 320
+#include "layout/layout_240x320.h"
+#elif TFT_WIDTH == 480 && TFT_HEIGHT == 320
+#include "layout/layout_480x320.h"
+#elif TFT_WIDTH == 320 && TFT_HEIGHT == 480
+#include "layout/layout_320x480.h"
+#elif TFT_WIDTH == 320 && TFT_HEIGHT == 170
+#include "layout/layout_320x170.h"
+#elif TFT_WIDTH == 428 && TFT_HEIGHT == 142
+#include "layout/layout_428x142.h"
+#else
+#error "no layout for this panel shape - copy components/ui/include/layout/layout_320x240.h to layout_<TFT_WIDTH>x<TFT_HEIGHT>.h, place the blocks it lists on the screen, and add an arm above"
+#endif
+
+/* The stream readings bare, without separators or the bitrate's unit: a
+ * shape whose readings share their line with the footer. */
+#ifndef UI_SRC_STREAM_BRIEF
+#define UI_SRC_STREAM_BRIEF 0
+#endif
+
 /* Height of the status strip every screen carries. It holds one line of the
  * body face - the screen's name, the clock, the signal reading - so it follows
  * that face rather than standing as the 26 the first panel needed. Seven
@@ -129,9 +156,13 @@
 /* One dot per item, so a ring of eight does not feel endless. */
 #define UI_FEED_DOT 6
 #define UI_FEED_DOT_PITCH 10
+#ifndef UI_FEED_DOT_Y
 #define UI_FEED_DOT_Y (TFT_HEIGHT - 40)
+#endif
 /* The last line of the screen, under the dots. */
+#ifndef UI_FEED_NOTICE_Y
 #define UI_FEED_NOTICE_Y (TFT_HEIGHT - 22)
+#endif
 
 /* The other home screen: the same items as a list. Eight rows of 24 px start
  * right under the strip and end at 222, which is every pixel a 240 px screen
@@ -159,9 +190,15 @@
  * the same height the home screen's rows use for the same face, plus a pixel
  * so two groups do not touch. The first row sits ten pixels under the strip,
  * and the strip moves with the body face, so this follows it. */
+#ifndef UI_SET_ROW_Y
 #define UI_SET_ROW_Y (UI_STRIP_H + 10)
+#endif
+#ifndef UI_SET_ROW_PITCH
 #define UI_SET_ROW_PITCH (UI_FONT_TITLE_LINE_H + 1)
+#endif
+#ifndef UI_SET_ROW_H
 #define UI_SET_ROW_H UI_FONT_TITLE_LINE_H
+#endif
 /* The scroll chevrons sit in the right margin, and a row that carries a switch
  * stops short of them. A row that does not is full width and runs past: its
  * text is dotted long before it reaches the column, and giving it the same
@@ -192,8 +229,12 @@
  * last thing the cursor reaches, and a click there puts the address up as a QR
  * code, which is the only way a phone gets it without someone reading digits
  * out loud. */
+#ifndef UI_SET_BAND_Y
 #define UI_SET_BAND_Y (TFT_HEIGHT - 30)
+#endif
+#ifndef UI_SET_BAND_H
 #define UI_SET_BAND_H 30
+#endif
 #define UI_SET_BAND_PAD 12
 /* What the notice line above the band keeps for itself: one line of the body
  * face and five pixels of air. */
@@ -201,13 +242,19 @@
 
 /* List screens: rows start straight under the strip, and a rule and the
  * position bar close the screen the way they close the player's. */
+#ifndef UI_LIST_ROW_Y
 #define UI_LIST_ROW_Y (UI_STRIP_H + 6)
+#endif
 /* A list row carries the name in the title face, and unlike the home screen's
  * rows it is spaced apart: six pixels inside the row and six more between
  * them, so a highlighted row reads as a block and not as one line of a
  * paragraph. */
+#ifndef UI_LIST_ROW_PITCH
 #define UI_LIST_ROW_PITCH (UI_FONT_TITLE_LINE_H + 12)
+#endif
+#ifndef UI_LIST_ROW_H
 #define UI_LIST_ROW_H (UI_FONT_TITLE_LINE_H + 6)
+#endif
 /* Width the folder glyph reserves at the left of a row: the icon face's own
  * size, which is what a Montserrat symbol advances by, plus the gap before the
  * name. Written as the face rather than as the 30 it came to on the first
@@ -227,7 +274,9 @@
  * name. */
 #define UI_LIST_NUMBER_W (UI_FONT_TITLE_PX * 1274 / 1000 + UI_FONT_TITLE_PX * 45 / 100)
 /* What the rule and the position bar need below the last row. */
+#ifndef UI_LIST_TAIL_H
 #define UI_LIST_TAIL_H 18
+#endif
 #define UI_LIST_NOTICE_ICON 48
 
 /* Player screen, in device pixels. A status strip carries what is not about
@@ -262,21 +311,6 @@
 #define UI_SRC_PAUSE_BAR_H 34
 #define UI_SRC_PAUSE_GAP 10
 
-/* The numbers that were placed by looking at a screen. One file per panel
- * shape; see the note at the top of this header for why they are not derived. */
-#if TFT_WIDTH == 320 && TFT_HEIGHT == 240
-#include "layout/layout_320x240.h"
-#elif TFT_WIDTH == 240 && TFT_HEIGHT == 320
-#include "layout/layout_240x320.h"
-#elif TFT_WIDTH == 480 && TFT_HEIGHT == 320
-#include "layout/layout_480x320.h"
-#elif TFT_WIDTH == 320 && TFT_HEIGHT == 480
-#include "layout/layout_320x480.h"
-#elif TFT_WIDTH == 320 && TFT_HEIGHT == 170
-#include "layout/layout_320x170.h"
-#else
-#error "no layout for this panel shape - copy components/ui/include/layout/layout_320x240.h to layout_<TFT_WIDTH>x<TFT_HEIGHT>.h, place the blocks it lists on the screen, and add an arm above"
-#endif
 
 /* Everything below follows from the panel and from the shape file, and is the
  * same arithmetic for every panel. */

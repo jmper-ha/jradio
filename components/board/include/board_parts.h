@@ -46,6 +46,12 @@
  * down. The number is out of sequence with its two siblings because it was
  * added after the two 480x320 parts. */
 #define DISPLAY_ST7789_320_170 9
+/* NV3007 controller on a 142x428 bar module, lying down: 428 wide, 142 tall.
+ * The controller's memory is 168 columns and the glass shows 142 of them, so
+ * like the 320x170 module the picture is addressed a few columns in. Its
+ * register set is not Sitronix's: the vendor block behind the 0xFF/0xA5 unlock
+ * is the panel maker's, taken from LVGL's driver. Landscape only. */
+#define DISPLAY_NV3007_428_142 10
 /* ILI9488 controller over SPI, on the 480x320 panel. Read the same way as the
  * pairs above - one part, two orientations - with one difference that is not
  * cosmetic: this controller cannot be driven at 16 bits per pixel over SPI at

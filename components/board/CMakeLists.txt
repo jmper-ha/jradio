@@ -7,7 +7,7 @@ idf_component_register(
          "ir_decode.c" "ir_receiver.c" "ir_wake_stub.c" "pcm_diagnostics.c" "remote_control.c" "remote_map.c"
          # One per display controller; the unselected ones compile to nothing.
          "display/ili9341.c" "display/st7789.c" "display/ili9488.c"
-         "display/st7796s.c"
+         "display/st7796s.c" "display/nv3007.c"
     # The project root carries board_options.h, the single place every external
     # device's wiring is declared. It is public here so the components that
     # REQUIRE board (ui, internet_radio, file_player) see it too.

@@ -48,7 +48,8 @@ typedef struct {
     uint8_t id;
 } choice_t;
 
-#define CHOICES_MAX 10
+/* The widest choice is the display: ten panels and the closing NULL. */
+#define CHOICES_MAX 11
 
 typedef struct {
     const char *key;
@@ -77,6 +78,7 @@ static const field_t k_fields[] = {
       {"st7789_320_240", DISPLAY_ST7789_320_240},
       {"st7789_240_320", DISPLAY_ST7789_240_320},
       {"st7789_320_170", DISPLAY_ST7789_320_170},
+      {"nv3007_428_142", DISPLAY_NV3007_428_142},
       {NULL, 0}}},
     // SPI2's pins are the chip's own; a file cannot move them.
     {"spi2_sclk", KIND_IGNORED, DEV_SPI2, AT(spi2_sclk), false, "12", {{NULL, 0}}},

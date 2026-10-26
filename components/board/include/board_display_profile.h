@@ -24,6 +24,8 @@
 #include "display/ili9488.h"
 #elif DISPLAY == DISPLAY_ST7796S_480_320 || DISPLAY == DISPLAY_ST7796S_320_480
 #include "display/st7796s.h"
+#elif DISPLAY == DISPLAY_NV3007_428_142
+#include "display/nv3007.h"
 #else
 #error "unsupported DISPLAY - see board_parts.h for the parts with drivers"
 #endif

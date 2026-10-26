@@ -49,6 +49,19 @@ static void test_known_bitrate_includes_codec(void)
     assert(strcmp(text, "MP3  |  128 kbps  |  44100") == 0);
 }
 
+/* The bar panel's form: the same readings, bare. */
+static void test_the_brief_form_drops_the_separators_and_the_unit(void)
+{
+    char text[48];
+
+    ui_radio_stream_brief(text, sizeof(text), "MP3", 128, 44100);
+    assert(strcmp(text, "MP3  128  44100") == 0);
+    ui_radio_stream_brief(text, sizeof(text), "AAC", 0, 0);
+    assert(strcmp(text, "AAC  --  --") == 0);
+    ui_radio_stream_brief(text, sizeof(text), "SBC", 0, 44100);
+    assert(strcmp(text, "SBC  44100") == 0);
+}
+
 static void test_sample_rate_formatting(void)
 {
     char text[48];
@@ -101,6 +114,7 @@ int main(void)
     test_the_stacked_form_carries_the_same_three_readings();
     test_a_playing_stream_without_a_bitrate_shows_two_readings();
     test_known_bitrate_includes_codec();
+    test_the_brief_form_drops_the_separators_and_the_unit();
     test_sample_rate_formatting();
     test_missing_codec_falls_back();
     test_station_url_selects_flac_label();

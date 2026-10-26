@@ -2802,6 +2802,9 @@ static void ui_set_stream_readings(const player_snapshot_t *snapshot)
 #if UI_SRC_STREAM_LINES
     ui_radio_stream_lines(text, sizeof(text), snapshot->codec, snapshot->bitrate_kbps,
                           snapshot->sample_rate_hz);
+#elif UI_SRC_STREAM_BRIEF
+    ui_radio_stream_brief(text, sizeof(text), snapshot->codec, snapshot->bitrate_kbps,
+                          snapshot->sample_rate_hz);
 #else
     ui_radio_stream_text(text, sizeof(text), snapshot->codec, snapshot->bitrate_kbps,
                          snapshot->sample_rate_hz);

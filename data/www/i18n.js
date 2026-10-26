@@ -402,6 +402,7 @@
     'hw.opt.ili9341_320_240': ['ILI9341 320×240', 'ILI9341 320×240'], 'hw.opt.ili9341_240_320': ['ILI9341 240×320 (портрет)', 'ILI9341 240×320 (portrait)'],
     'hw.opt.st7789_320_240': ['ST7789 320×240', 'ST7789 320×240'], 'hw.opt.st7789_240_320': ['ST7789 240×320 (портрет)', 'ST7789 240×320 (portrait)'],
     'hw.opt.st7789_320_170': ['ST7789 320×170', 'ST7789 320×170'],
+    'hw.opt.nv3007_428_142': ['NV3007 428×142', 'NV3007 428×142'],
     'hw.opt.rst': ['RST модуля', 'The module\'s RST'],
 
     /* Why a pin is greyed or underlined on the picture. */

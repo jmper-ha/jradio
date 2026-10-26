@@ -29,7 +29,7 @@ static void test_display_group_is_complete_and_consistent(void)
            DISPLAY == DISPLAY_ST7789_320_240 || DISPLAY == DISPLAY_ST7789_240_320 ||
            DISPLAY == DISPLAY_ILI9488_480_320 || DISPLAY == DISPLAY_ILI9488_320_480 ||
            DISPLAY == DISPLAY_ST7796S_480_320 || DISPLAY == DISPLAY_ST7796S_320_480 ||
-           DISPLAY == DISPLAY_ST7789_320_170);
+           DISPLAY == DISPLAY_ST7789_320_170 || DISPLAY == DISPLAY_NV3007_428_142);
     /* Only SPI2 and SPI3 can drive a panel on this part; SPI1 is the flash bus. */
     assert(DISPLAY_SPI_PERIPHERAL == 2 || DISPLAY_SPI_PERIPHERAL == 3);
     assert(TFT_CS_GPIO == 10);
@@ -90,6 +90,10 @@ static void test_display_group_is_complete_and_consistent(void)
     assert(TFT_X_GAP == 0);
     assert(TFT_Y_GAP == 35);
     assert(TFT_Y_GAP * 2 + TFT_HEIGHT == 240);
+#elif DISPLAY == DISPLAY_NV3007_428_142
+    /* 142 of the controller's 168 columns, not necessarily centred. */
+    assert(TFT_X_GAP == 0);
+    assert(TFT_Y_GAP + TFT_HEIGHT <= 168);
 #else
     assert(TFT_X_GAP == 0 && TFT_Y_GAP == 0);
 #endif
@@ -106,7 +110,7 @@ static void test_every_panel_in_the_catalogue_has_its_own_number(void)
         DISPLAY_ST7789_320_240, DISPLAY_ST7789_240_320,
         DISPLAY_ILI9488_480_320, DISPLAY_ILI9488_320_480,
         DISPLAY_ST7796S_480_320, DISPLAY_ST7796S_320_480,
-        DISPLAY_ST7789_320_170,
+        DISPLAY_ST7789_320_170, DISPLAY_NV3007_428_142,
     };
     const size_t count = sizeof(panels) / sizeof(panels[0]);
     for (size_t i = 0; i < count; ++i) {
@@ -148,6 +152,8 @@ static void test_the_orientation_decides_the_geometry_and_nothing_else(void)
     /* One way up only: the 1.9" module is a window onto a 240x320 memory,
      * and its short side is what the window cuts. */
     assert(TFT_WIDTH == 320 && TFT_HEIGHT == 170);
+#elif DISPLAY == DISPLAY_NV3007_428_142
+    assert(TFT_WIDTH == 428 && TFT_HEIGHT == 142);
 #endif
 
     /* Portrait is how the controller addresses the panel natively; landscape

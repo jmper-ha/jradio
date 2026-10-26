@@ -76,6 +76,10 @@ SHAPES = {
     # it. The one shape where the two are side by side, because it is the one
     # shape without the height for anything else.
     (320, 170): dict(tube=(84.0, 85.0), wordmark=(222, 98)),
+    # 428x142: the 320x170 arrangement on a still shorter, wider canvas. The
+    # tube's 114 px leave 14 above and below it; the wordmark beside it is
+    # centred in the room to its right.
+    (428, 142): dict(tube=(96.0, 71.0), wordmark=(288, 84)),
 }
 WEDGE_CENTER_DEG = 90.0  # 6 o'clock, the way a 6E5 is normally seen
 WEDGE_HALF_DEG = 33.0

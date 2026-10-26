@@ -19,12 +19,18 @@ New:
   in the FM radio section. Shown only where a tuner is fitted.
 - The weather screensaver shows the three-day forecast with wttr.in too -
   before, that service had no forecast row.
+- HLS stations whose segments are MPEG-TS (`.ts`) play, Retro FM's
+  `hls-01-retro.emgsound.ru/…/playlist.m3u8` link for one. Such links used to
+  stay silent - only `.aac` segments were understood.
 
 Fixed:
 - On the weather screensaver on 320x240 displays, a forecast day's
   temperatures ("+15…+15") ran into the next day's picture. Now, when both
   are above zero, only the first keeps its plus ("+15…18"), and the figures
   sit closer to the picture.
+- HLS stations with `.aac` segments (Relax FM, say) spoilt one frame of
+  sound every six seconds, where one segment met the next. Barely audible,
+  and now the join is clean.
 
 ## v1.8.9 — 24 October 2026
 

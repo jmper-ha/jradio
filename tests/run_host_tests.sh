@@ -210,6 +210,7 @@ run_test dlna_browse_stack tests/test_dlna_browse_stack.c \
     components/dlna/dlna_xml.c components/internet_radio/radio_stream_format.c
 run_test hls_playlist tests/test_hls_playlist.c \
     components/internet_radio/hls_playlist.c
+run_test ts_demux tests/test_ts_demux.c components/internet_radio/ts_demux.c
 run_test icy_metadata tests/test_icy_metadata.c components/internet_radio/icy_metadata.c
 run_test internet_radio_state tests/test_internet_radio_state.c \
     components/internet_radio/internet_radio_state.c

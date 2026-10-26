@@ -28,6 +28,7 @@
 #include "board.h"
 #include "board_audio_format.h"
 #include "hls_playlist.h"
+#include "ts_demux.h"
 #include "icy_metadata.h"
 #include "pcm_diagnostics.h"
 #include "radio_http_status.h"
@@ -228,7 +229,24 @@ typedef struct {
     uint8_t lead[16];
     size_t lead_length;
     size_t lead_offset;
+    /* Set for segments in an MPEG transport stream rather than bare ADTS.
+     * Allocated only then, and in PSRAM: s_radio lives in internal SRAM. */
+    struct radio_hls_ts *ts;
 } radio_hls_t;
+
+/* The transport stream's packets as they came off the network, and the audio
+ * taken out of them waiting for the decoder - two chunks, because the decoder
+ * may ask for fewer bytes than one packet yields. */
+struct radio_hls_ts {
+    ts_demux_t demux;
+    bool warned_codec;
+    uint8_t raw[RADIO_DIRECT_NETWORK_CHUNK];
+    size_t raw_length;
+    size_t raw_offset;
+    uint8_t audio[RADIO_DIRECT_NETWORK_CHUNK];
+    size_t audio_length;
+    size_t audio_offset;
+};
 
 /* A track of a chain reopened by radio_reopen_task() while the decode task
  * plays out what it has buffered. Reopening means two API calls and a TLS
@@ -2001,6 +2019,10 @@ static void radio_hls_stop(internet_radio_context_t *radio)
         heap_caps_free(radio->hls.playlist);
         radio->hls.playlist = NULL;
     }
+    if (radio->hls.ts != NULL) {
+        heap_caps_free(radio->hls.ts);
+        radio->hls.ts = NULL;
+    }
     if (radio->hls.text != NULL) {
         heap_caps_free(radio->hls.text);
         radio->hls.text = NULL;
@@ -2199,15 +2221,34 @@ static esp_err_t radio_hls_start(internet_radio_context_t *radio, const char *ur
     // The segment names carry the codec; the playlist URL says nothing about
     // it, so without this every HLS station would be decoded as MP3.
     radio->stream_format = radio_stream_format_from_url(radio->hls.playlist->segments[0].uri);
+    if (ts_uri_is_transport_stream(radio->hls.playlist->segments[0].uri)) {
+        radio->hls.ts = heap_caps_malloc(sizeof(*radio->hls.ts),
+                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (radio->hls.ts == NULL) {
+            radio->hls.ts = heap_caps_malloc(sizeof(*radio->hls.ts),
+                                             MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        }
+        if (radio->hls.ts == NULL) {
+            ESP_LOGE(TAG, "HLS transport stream buffer allocation failed");
+            radio_hls_stop(radio);
+            return ESP_ERR_NO_MEM;
+        }
+        memset(radio->hls.ts, 0, sizeof(*radio->hls.ts));
+        ts_demux_init(&radio->hls.ts->demux);
+        // AAC is what the variant's CODECS says on every such station met so
+        // far; the PMT confirms it once the first segment arrives.
+        radio->stream_format = RADIO_STREAM_FORMAT_AAC;
+    }
     radio_stream_reset_status(radio);
     // HLS carries no ICY metadata; an interval of 0 makes the feed a
     // pass-through so the decode loop needs no special case.
     icy_metadata_init(&radio->icy, 0U, radio_set_title, radio);
-    ESP_LOGI(TAG, "HLS session: %u segments, target %u ms, joining at %llu, codec=%s",
+    ESP_LOGI(TAG, "HLS session: %u segments, target %u ms, joining at %llu, codec=%s%s",
              (unsigned int)radio->hls.playlist->segment_count,
              (unsigned int)radio->hls.target_duration_ms,
              (unsigned long long)radio->hls.next_sequence,
-             radio_stream_format_codec_name(radio->stream_format));
+             radio_stream_format_codec_name(radio->stream_format),
+             radio->hls.ts != NULL ? " in MPEG-TS" : "");
     return ESP_OK;
 }
 
@@ -2358,8 +2399,8 @@ static int radio_hls_read_topup(internet_radio_context_t *radio, uint8_t *buffer
 /* Same contract as radio_http_read_*: bytes read, 0 for nothing available
  * right now, negative for a stream that needs reconnecting. Segment
  * boundaries are invisible to the caller. */
-static int radio_hls_read(internet_radio_context_t *radio, uint8_t *buffer, int length,
-                          bool blocking)
+static int radio_hls_read_raw(internet_radio_context_t *radio, uint8_t *buffer, int length,
+                              bool blocking)
 {
     if (length <= 0) return 0;
     for (;;) {
@@ -2439,6 +2480,47 @@ static int radio_hls_read(internet_radio_context_t *radio, uint8_t *buffer, int 
         // Body complete. Leave the connection alone - keep-alive is what makes
         // the next segment cost a request instead of a handshake.
         radio->hls.segment_open = false;
+    }
+}
+
+/* The segments' bytes as the decoder wants them: as they are for bare ADTS,
+ * the audio taken out of the packets for a transport stream. */
+static int radio_hls_read(internet_radio_context_t *radio, uint8_t *buffer, int length,
+                          bool blocking)
+{
+    struct radio_hls_ts *ts = radio->hls.ts;
+    if (ts == NULL) return radio_hls_read_raw(radio, buffer, length, blocking);
+    if (length <= 0) return 0;
+    for (;;) {
+        if (ts->audio_offset < ts->audio_length) {
+            const size_t held = ts->audio_length - ts->audio_offset;
+            const size_t take = held < (size_t)length ? held : (size_t)length;
+            memcpy(buffer, ts->audio + ts->audio_offset, take);
+            ts->audio_offset += take;
+            return (int)take;
+        }
+        if (ts->raw_offset < ts->raw_length) {
+            size_t consumed = 0U;
+            ts->audio_length =
+                ts_demux_feed(&ts->demux, ts->raw + ts->raw_offset,
+                              ts->raw_length - ts->raw_offset, &consumed, ts->audio,
+                              sizeof(ts->audio));
+            ts->audio_offset = 0U;
+            ts->raw_offset += consumed;
+            if (!ts->warned_codec && ts->demux.stream_type != TS_STREAM_TYPE_NONE &&
+                ts->demux.stream_type != TS_STREAM_TYPE_AAC_ADTS) {
+                ts->warned_codec = true;
+                ESP_LOGW(TAG, "HLS transport stream carries stream type 0x%02x, not ADTS AAC",
+                         (unsigned int)ts->demux.stream_type);
+            }
+            continue;
+        }
+        // Packet and table bytes alone give the decoder nothing, so an empty
+        // result here is a reason to read on, not to return.
+        const int received = radio_hls_read_raw(radio, ts->raw, (int)sizeof(ts->raw), blocking);
+        if (received <= 0) return received;
+        ts->raw_length = (size_t)received;
+        ts->raw_offset = 0U;
     }
 }
 

@@ -17,6 +17,8 @@ New:
   +12 dB. Useful when the tuner plays noticeably quieter than the rest. On
   the device it is the "FM level" row in the Sound group, on the web a slider
   in the FM radio section. Shown only where a tuner is fitted.
+- The weather screensaver shows the three-day forecast with wttr.in too -
+  before, that service had no forecast row.
 
 Fixed:
 - On the weather screensaver on 320x240 displays, a forecast day's

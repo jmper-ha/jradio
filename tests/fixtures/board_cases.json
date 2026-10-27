@@ -168,7 +168,7 @@
     },
     {
       "name": "keys the chip decides are read past, unknown ones kept aside",
-      "csv": "touch,xpt2046\nspi2_sclk,5\nmodule,esp32s3_n8r2",
+      "csv": "touch,xpt2046\nspi2_sclk,5",
       "errors": [],
       "warnings": [],
       "unknown_keys": 1,
@@ -358,6 +358,44 @@
       "errors": [
         "bad_value rtc"
       ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "a module the firmware is not built for is a bad value",
+      "csv": "module,esp32s3_n8r2\n",
+      "errors": [
+        "bad_value module"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "the peripheral switch on GPIO 48 floats in deep sleep",
+      "csv": "peripheral_power,48\n",
+      "errors": [
+        "power_on_vdd_spi peripheral_power 48"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "a 1.8 V module warns about the display's DC on GPIO 47",
+      "csv": "module,esp32s3_n16r8v\n",
+      "errors": [],
+      "warnings": [
+        "pin_1v8 tft_dc 47"
+      ],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "a 1.8 V module with nothing on 47 or 48 says nothing",
+      "csv": "module,esp32s3_n16r8v\ntft_dc,4\n",
+      "errors": [],
       "warnings": [],
       "unknown_keys": 0,
       "bad_lines": 0

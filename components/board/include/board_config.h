@@ -32,6 +32,11 @@ extern "C" {
 // A device's bus that is not wired: its "none".
 #define BOARD_BUS_NONE 0xFEU
 #define BOARD_CONFIG_FORMAT 1
+/* The module, for the one thing about it the wiring has to know: the plain
+ * N16R8 runs its memory at 3.3 V, the "V" ones (N16R8V, N32R8V) at 1.8 V, and
+ * GPIO 47/48 follow the memory's supply. */
+#define BOARD_MODULE_N16R8 0U
+#define BOARD_MODULE_N16R8V 1U
 
 typedef struct {
     char board_name[BOARD_CONFIG_NAME_MAX];
@@ -43,6 +48,10 @@ typedef struct {
     uint8_t bluetooth;
     uint8_t fm_tuner;  // FM_TUNER_*
     uint8_t rtc;       // RTC_CHIP_*
+    /* BOARD_MODULE_*: which N16R8 it is. The firmware is the same for both;
+     * what differs is GPIO 47 and 48, which sit on the memory's supply
+     * (VDD_SPI) - 1.8 V on the "V" modules - and are checked against it. */
+    uint8_t module;
     /* The switches below are 0 or 1. They are bytes rather than bools, and a
      * choice above holds BOARD_CONFIG_INVALID, when the file said something
      * else: the editor reports that as bad_value, and a bool could not hold
@@ -130,6 +139,13 @@ typedef enum {
     // Warnings: the board works, but not the way its builder expects.
     BOARD_ISSUE_SLEEP_NOT_RTC,
     BOARD_ISSUE_IR_NOT_RTC,
+    /* The peripheral power switch on GPIO 47 or 48: those sit on VDD_SPI,
+     * which deep sleep switches off, so the pin floats and no hold keeps the
+     * switch shut - a user's LED on 48 glowed dimly all night. An error. */
+    BOARD_ISSUE_POWER_ON_VDD_SPI,
+    /* Anything on GPIO 47 or 48 of a module with 1.8 V memory: those pins
+     * swing 1.8 V there, short of what a 3.3 V part reads as high. */
+    BOARD_ISSUE_PIN_1V8,
     BOARD_ISSUE_SPI_NOT_IOMUX,
 } board_issue_code_t;
 

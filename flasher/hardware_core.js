@@ -52,6 +52,10 @@
      offered here. */
   const MODULES = {
     esp32s3_n16r8: {psramOctal: true},
+    /* The same module with its memory on 1.8 V (N16R8V, N32R8V): the firmware
+       is the same, but GPIO 47 and 48 sit on that supply and swing 1.8 V,
+       short of a 3.3 V part's high. */
+    esp32s3_n16r8v: {psramOctal: true, pins1v8: [47, 48]},
   };
 
   /* A pin value meaning "the module's RST pad", next to a GPIO number and NONE. */
@@ -88,7 +92,7 @@
   const FIELDS = [
     {key: 'board_format', kind: 'text', device: 'board', fixed: FORMAT},
     {key: 'board_name', kind: 'text', device: 'board', dflt: '', hint: true},
-    {key: 'module', kind: 'text', device: 'board', fixed: 'esp32s3_n16r8'},
+    {key: 'module', kind: 'choice', device: 'board', options: Object.keys(MODULES), dflt: 'esp32s3_n16r8'},
     {key: 'display', kind: 'choice', device: 'board', options: DISPLAYS, dflt: 'st7796s_480_320', define: 'DISPLAY'},
 
     /* SPI2's pins are the chip's own (IOMUX) and are not chosen: the display
@@ -331,6 +335,7 @@
     if (gpio === USB_PINS.usb_dp || gpio === USB_PINS.usb_dm) return {code: 'pin_usb', hard: true, usbOnly: true};
     if (STRAPPING_PINS.includes(gpio)) return {code: 'pin_strapping', hard: false};
     if (JTAG_PINS.includes(gpio)) return {code: 'pin_jtag', hard: false};
+    if (module.pins1v8 && module.pins1v8.includes(gpio)) return {code: 'pin_1v8', hard: false, warn: true};
     return null;
   }
 
@@ -459,6 +464,7 @@
       const note = pinNote(gpio, moduleName);
       if (note && note.usbOnly && FIELD_BY_KEY[key].device === 'usb') continue;
       if (note && note.hard) errors.push({code: note.code, key, gpio});
+      else if (note && note.warn) warnings.push({code: note.code, key, gpio});
     }
 
     /* The USB pair is the chip's, not a choice. */
@@ -494,6 +500,11 @@
     if (sleep !== null && sleep > RTC_GPIO_MAX) warnings.push({code: 'sleep_not_rtc', key: 'button_sleep', gpio: sleep});
     const ir = pinValue(values.ir_receiver);
     if (ir !== null && ir > RTC_GPIO_MAX) warnings.push({code: 'ir_not_rtc', key: 'ir_receiver', gpio: ir});
+
+    /* GPIO 47 and 48 sit on VDD_SPI, which deep sleep switches off: the
+       peripheral switch would float all night, and no hold keeps it shut. */
+    const power = pinValue(values.peripheral_power);
+    if (power === 47 || power === 48) errors.push({code: 'power_on_vdd_spi', key: 'peripheral_power', gpio: power});
 
     /* The display's bus at 40 MHz wants SPI2's own pins; the clock and data
        cannot stray any more, the chip select still can. */
@@ -551,7 +562,7 @@
     const lines = [
       '#pragma once',
       '/* board_options.h - the wiring of one board, for the jRadio firmware.',
-      ` * Written by the wiring editor${name ? ` for "${name}"` : ''}; module ESP32-S3-WROOM-1 N16R8.`,
+      ` * Written by the wiring editor${name ? ` for "${name}"` : ''}; module ESP32-S3-WROOM-1 ${values.module === 'esp32s3_n16r8v' ? 'N16R8V (1.8 V memory)' : 'N16R8'}.`,
       ' * Put it at the root of the project in place of the one there and build. */',
       '#include "board_parts.h"',
       '#include "board_options_guard.h"',

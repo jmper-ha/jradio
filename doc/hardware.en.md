@@ -6,7 +6,7 @@
 
 | Part | What fits | Required |
 |---|---|---|
-| Processor | an ESP32-S3 module with 16 MB flash and 8 MB PSRAM (e.g. ESP32-S3-WROOM-1 N16R8) | yes |
+| Processor | an ESP32-S3 module with 16 MB flash and 8 MB PSRAM (e.g. ESP32-S3-WROOM-1 N16R8; the N16R8V / N32R8V with 1.8 V memory do too - their GPIO 47 and 48 swing 1.8 V, which the Hardware editor flags) | yes |
 | Display | over SPI: ILI9341 or ST7789 320×240, ILI9488 or ST7796S 480×320, ST7789 320×170 | yes |
 | Encoder | rotary, with a push button | yes |
 | DAC | PCM5102 (a module with line out) | yes |
@@ -180,13 +180,17 @@ does not hiss into the speakers. Two rules against clicks:
 
 ### Powering the periphery down in sleep
 
-The optional `PERIPHERAL_POWER_GPIO` pin (38, 39 and 48 are free) drives a
+The optional `PERIPHERAL_POWER_GPIO` pin (38 and 39 are free) drives a
 switch that feeds everything outside the module: the panel, the DAC, the card,
 the Bluetooth module, USB. `PERIPHERAL_POWER_ON_LEVEL` is the level that
 opens the switch (1 for a load switch, 0 for a P-channel MOSFET in the
 positive rail). In deep sleep the firmware closes the switch and holds it
 closed; without this line only the chip sleeps, while the backlight and the
 DAC keep drawing.
+
+GPIO 47 and 48 will not do for the switch: they are powered from VDD_SPI, the
+module's memory supply, which deep sleep switches off. The pin floats, nothing
+can hold it, and the periphery stays powered. The Hardware editor refuses it.
 
 The switch must carry the whole periphery with margin: the panel with its
 backlight and the Bluetooth module draw noticeably more at their peaks than on

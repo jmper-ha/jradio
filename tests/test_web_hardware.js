@@ -205,8 +205,13 @@ function test_the_pins_the_chip_keeps_for_itself() {
   assert.strictEqual(hw.parseCsv('spi3_miso,rst\n').bad.length, 1);
   assert.ok(hw.validate({...base, tft_dc: 'rst'}).errors.some((problem) => problem.code === 'bad_value'));
   assert.strictEqual(hw.signals(base).find((signal) => signal.key === 'tft_reset').reset, true);
-  /* The module is not a choice: a file naming another one is read as ours. */
-  assert.strictEqual(hw.parseCsv('module,esp32s3_n8r2\n').values.module, 'esp32s3_n16r8');
+  /* The module is a choice of two N16R8s: a file naming the 1.8 V one keeps
+     it, and one naming a module the firmware is not built for is a bad value
+     (the shared fixtures check the report). */
+  assert.strictEqual(hw.parseCsv('module,esp32s3_n16r8v\n').values.module, 'esp32s3_n16r8v');
+  assert.strictEqual(hw.pinNote(47, 'esp32s3_n16r8'), null);
+  assert.strictEqual(hw.pinNote(48, 'esp32s3_n16r8v').code, 'pin_1v8');
+  assert.strictEqual(hw.pinNote(48, 'esp32s3_n16r8v').hard, false);
   /* 19 and 20 are USB's, and USB's alone - but USB itself is fine there. */
   const usbErrors = hw.validate({...base, tft_dc: 20}).errors.map((problem) => problem.code);
   assert.ok(usbErrors.includes('pin_usb'));

@@ -67,7 +67,8 @@ typedef struct {
 static const field_t k_fields[] = {
     {"board_format", KIND_IGNORED, DEV_BOARD, 0, false, "1", {{NULL, 0}}},
     {"board_name", KIND_TEXT, DEV_BOARD, AT(board_name), false, NULL, {{NULL, 0}}},
-    {"module", KIND_IGNORED, DEV_BOARD, 0, false, "esp32s3_n16r8", {{NULL, 0}}},
+    {"module", KIND_CHOICE, DEV_BOARD, AT(module), false, NULL,
+     {{"esp32s3_n16r8", BOARD_MODULE_N16R8}, {"esp32s3_n16r8v", BOARD_MODULE_N16R8V}, {NULL, 0}}},
     {"display", KIND_CHOICE, DEV_BOARD, AT(display), false, NULL,
      {{"st7796s_480_320", DISPLAY_ST7796S_480_320},
       {"st7796s_320_480", DISPLAY_ST7796S_320_480},
@@ -204,6 +205,7 @@ void board_config_clear(board_config_t *config)
     config->bluetooth = BLUETOOTH_NONE;
     config->fm_tuner = FM_TUNER_NONE;
     config->rtc = RTC_CHIP_NONE;
+    config->module = BOARD_MODULE_N16R8;
     config->rtc_i2c = 0U;
     config->fm_i2s = BOARD_BUS_NONE;
     config->adc = AUDIO_ADC_NONE;
@@ -509,6 +511,8 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
             add_issue(report, false, BOARD_ISSUE_PIN_CONSOLE, signal->key, NULL, gpio);
         } else if ((gpio == USB_DP_PIN || gpio == USB_DM_PIN) && signal->device != DEV_USB) {
             add_issue(report, false, BOARD_ISSUE_PIN_USB, signal->key, NULL, gpio);
+        } else if ((gpio == 47 || gpio == 48) && config->module == BOARD_MODULE_N16R8V) {
+            add_issue(report, true, BOARD_ISSUE_PIN_1V8, signal->key, NULL, gpio);
         }
     }
 
@@ -563,6 +567,13 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     if (config->ir_receiver >= 0 && config->ir_receiver > RTC_GPIO_MAX) {
         add_issue(report, true, BOARD_ISSUE_IR_NOT_RTC, "ir_receiver", NULL, config->ir_receiver);
     }
+    /* GPIO 47 and 48 are powered from VDD_SPI, which is switched off in deep
+     * sleep: a peripheral switch there floats while the board sleeps, and the
+     * hold that keeps it off on any other pin cannot. */
+    if (config->peripheral_power == 47 || config->peripheral_power == 48) {
+        add_issue(report, false, BOARD_ISSUE_POWER_ON_VDD_SPI, "peripheral_power", NULL,
+                  config->peripheral_power);
+    }
     // The panel's 40 MHz bus holds on SPI2's own pins; the select may stray.
     if (config->tft_cs >= 0 && config->tft_cs != SPI2_IOMUX_CS) {
         add_issue(report, true, BOARD_ISSUE_SPI_NOT_IOMUX, "tft_cs", NULL, config->tft_cs);
@@ -604,6 +615,8 @@ const char *board_config_issue_name(board_issue_code_t code)
     case BOARD_ISSUE_SLEEP_NOT_RTC: return "sleep_not_rtc";
     case BOARD_ISSUE_IR_NOT_RTC: return "ir_not_rtc";
     case BOARD_ISSUE_SPI_NOT_IOMUX: return "spi_not_iomux";
+    case BOARD_ISSUE_POWER_ON_VDD_SPI: return "power_on_vdd_spi";
+    case BOARD_ISSUE_PIN_1V8: return "pin_1v8";
     }
     return "";
 }

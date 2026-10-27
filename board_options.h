@@ -166,7 +166,10 @@
  * the board comes up dark after a plain reset.
  *
  * The pin is held across deep sleep (gpio_hold_en + the deep-sleep hold), so
- * it keeps the off level while everything else is isolated. */
+ * it keeps the off level while everything else is isolated - on any pin but
+ * 47 and 48, which sit on VDD_SPI: deep sleep switches that supply off, the
+ * pin floats and no hold keeps the switch shut. The wiring check refuses
+ * them. */
 /* #define PERIPHERAL_POWER_GPIO 38 */
 /* #define PERIPHERAL_POWER_ON_LEVEL 1 */
 

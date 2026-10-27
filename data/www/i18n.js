@@ -403,6 +403,10 @@
     'hw.opt.st7789_320_170': ['ST7789 320×170', 'ST7789 320×170'],
     'hw.opt.nv3007_428_142': ['NV3007 428×142', 'NV3007 428×142'],
     'hw.opt.rst': ['RST модуля', 'The module\'s RST'],
+    'hw.f.module': ['Модуль', 'Module'],
+    'hw.opt.esp32s3_n16r8': ['ESP32-S3 N16R8', 'ESP32-S3 N16R8'],
+    'hw.opt.esp32s3_n16r8v': ['N16R8V / N32R8V (память 1,8 В)', 'N16R8V / N32R8V (1.8 V memory)'],
+    'hw.note.pin_1v8': ['На этом модуле вывод работает от 1,8 В', 'On this module the pin swings 1.8 V'],
 
     /* Why a pin is greyed or underlined on the picture. */
     'hw.note.pin_psram': ['Занят octal-PSRAM модуля N16R8', 'Taken by the N16R8 module\'s octal PSRAM'],
@@ -427,6 +431,10 @@
                              'Sleep on GPIO {gpio}: only pins 0-21 can wake the chip, so the sleep button will not wake the board - only a remote, if there is one'],
     'hw.err.ir_not_rtc': ['ИК-приёмник на GPIO {gpio}: будить чип из сна умеют только выводы 0–21, пульт разбудить не сможет',
                           'The IR receiver on GPIO {gpio}: only pins 0-21 can wake the chip from sleep, so the remote will not'],
+    'hw.err.power_on_vdd_spi': ['Питание периферии на GPIO {gpio}: выводы 47 и 48 питаются от VDD_SPI, а он в глубоком сне выключается — ключ будет висеть в воздухе и периферия не обесточится. Возьмите другой вывод',
+      'Peripheral power on GPIO {gpio}: pins 47 and 48 are powered from VDD_SPI, which deep sleep switches off - the switch would float and the periphery stay powered. Use another pin'],
+    'hw.err.pin_1v8': ['«{key}» на GPIO {gpio}: на модулях с буквой V этот вывод даёт 1,8 В, а не 3,3 В — 3,3-вольтовая деталь может его не понять',
+      '"{key}" on GPIO {gpio}: on the V modules this pin swings 1.8 V, not 3.3 V - a 3.3 V part may not read it'],
     'hw.err.spi_not_iomux': ['«{key}» на GPIO {gpio}: не IOMUX-вывод SPI2, 40 МГц на экране может не держаться',
                              '"{key}" on GPIO {gpio}: not one of SPI2\'s IOMUX pins, 40 MHz to the panel may not hold'],
     'player.command_failed': ['Команда не выполнена', 'The command did not go through'],

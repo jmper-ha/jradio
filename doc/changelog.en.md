@@ -46,6 +46,9 @@ Fixed:
   showing the clock and "no weather". Without the weather the mode can no
   longer be chosen, on the device or on the web, and switching the weather
   off while it is chosen moves the screensaver to the clock.
+- On the home screen a turn of the encoder slid the icons one way and the
+  lit dot under them the other. Now the next item comes in from the left, and
+  the ring moves the way the dot does.
 
 ## v1.8.9 — 24 October 2026
 

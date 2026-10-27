@@ -3225,11 +3225,16 @@ static void ui_update_feed_screen(void)
 {
     const ui_feed_item_t selected = ui_feed_model_selected(&s_feed_model);
     /* One entry per slot in view, ordered left to right, with the selected
-     * item in the middle. Portrait drops the outer pair rather than moving it
+     * item in the middle - and the next item on the left, the previous on
+     * the right. The dots under the ring run in menu order, left to right,
+     * so a turn to the right lights the dot to the right; with the next item
+     * on the right as well, the ring slid left under that same turn, and the
+     * two went opposite ways (seen on the panel 2026-10-27). Now the ring
+     * turns the way the dot moves, like a drum. Portrait drops the outer pair rather than moving it
      * inwards: at 240 px there is no room for a fourth and fifth tile that is
      * not either off the panel or on top of its neighbour. */
 #if UI_FEED_SLOTS == 3
-    const int offsets[UI_FEED_SLOTS] = {-1, 0, 1};
+    const int offsets[UI_FEED_SLOTS] = {1, 0, -1};
     const int centers[UI_FEED_SLOTS] = {
         UI_FEED_CENTER_X - UI_FEED_INNER_DX, UI_FEED_CENTER_X,
         UI_FEED_CENTER_X + UI_FEED_INNER_DX,
@@ -3244,7 +3249,7 @@ static void ui_update_feed_screen(void)
         ui_hex(UI_ROLE_FEED_NEAR), ui_hex(UI_ROLE_ACCENT), ui_hex(UI_ROLE_FEED_NEAR),
     };
 #else
-    const int offsets[UI_FEED_SLOTS] = {-2, -1, 0, 1, 2};
+    const int offsets[UI_FEED_SLOTS] = {2, 1, 0, -1, -2};
     const int centers[UI_FEED_SLOTS] = {
         UI_FEED_CENTER_X - UI_FEED_OUTER_DX, UI_FEED_CENTER_X - UI_FEED_INNER_DX,
         UI_FEED_CENTER_X,

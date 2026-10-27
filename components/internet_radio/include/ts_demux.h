@@ -49,5 +49,17 @@ size_t ts_demux_feed(ts_demux_t *demux, const uint8_t *input, size_t length, siz
                      uint8_t *out, size_t out_size);
 
 /* True for a segment URI whose name says transport stream; a query string
- * after the extension is ignored. */
+ * after the extension is ignored. Only a hint: see the two below. */
 bool ts_uri_is_transport_stream(const char *uri);
+
+/* Bytes from the start of a segment that carry the sync byte where two
+ * packets in a row would start - which bare ADTS or MP3 (0xFF), an ID3 tag
+ * ("ID3") or fMP4 (a box size) never do. Needs at least one byte past the
+ * first packet to say yes; less is not enough to tell. */
+#define TS_PROBE_BYTES (3U * TS_PACKET_SIZE)
+bool ts_looks_like_transport_stream(const uint8_t *data, size_t length);
+
+/* The audio stream type the program tables in these bytes name, as the
+ * demultiplexer would find it - TS_STREAM_TYPE_NONE when they do not get as
+ * far as the PMT. What picks the decoder, before any audio is decoded. */
+uint8_t ts_probe_stream_type(const uint8_t *data, size_t length);

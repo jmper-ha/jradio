@@ -231,8 +231,52 @@ static void test_a_transport_stream_is_told_by_its_name(void)
     assert(!ts_uri_is_transport_stream(NULL));
 }
 
+static void test_the_content_says_transport_stream(void)
+{
+    build_segment();
+    assert(ts_looks_like_transport_stream(g_stream, TS_PROBE_BYTES));
+    assert(ts_probe_stream_type(g_stream, TS_PROBE_BYTES) == TS_STREAM_TYPE_AAC_ADTS);
+    // One packet's worth cannot tell a lone 'G' from a stream.
+    assert(!ts_looks_like_transport_stream(g_stream, TS_PACKET_SIZE));
+    // A sync byte where the second packet should start is required.
+    unsigned char broken[TS_PROBE_BYTES];
+    memcpy(broken, g_stream, sizeof(broken));
+    broken[TS_PACKET_SIZE] = 0x00;
+    assert(!ts_looks_like_transport_stream(broken, sizeof(broken)));
+
+    /* Bare ADTS, an ID3 tag and an fMP4 box are not. */
+    static const unsigned char adts[200] = {0xFF, 0xF1, 0x50, 0x80};
+    static const unsigned char id3[200] = {'I', 'D', '3', 0x04};
+    static const unsigned char mp4[200] = {0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p'};
+    assert(!ts_looks_like_transport_stream(adts, sizeof(adts)));
+    assert(!ts_looks_like_transport_stream(id3, sizeof(id3)));
+    assert(!ts_looks_like_transport_stream(mp4, sizeof(mp4)));
+    assert(!ts_looks_like_transport_stream(NULL, 400U));
+
+    /* Tables cut off before the PMT name nothing. */
+    assert(ts_probe_stream_type(g_stream, TS_PACKET_SIZE) == TS_STREAM_TYPE_NONE);
+    assert(ts_probe_stream_type(NULL, 10U) == TS_STREAM_TYPE_NONE);
+}
+
+/* MPEG audio in the PMT is told apart from AAC, so the decoder can be MP3. */
+static void test_the_probe_names_mpeg_audio(void)
+{
+    build_segment();
+    // The AAC entry's stream type, in the PMT packet (the second one).
+    unsigned char *pmt = g_stream + TS_PACKET_SIZE;
+    for (size_t at = 4U; at < TS_PACKET_SIZE; ++at) {
+        if (pmt[at] == 0x0F && pmt[at + 1U] == 0xE1 && pmt[at + 2U] == 0x01) {
+            pmt[at] = TS_STREAM_TYPE_MPEG1_AUDIO;
+            break;
+        }
+    }
+    assert(ts_probe_stream_type(g_stream, TS_PROBE_BYTES) == TS_STREAM_TYPE_MPEG1_AUDIO);
+}
+
 int main(void)
 {
+    test_the_content_says_transport_stream();
+    test_the_probe_names_mpeg_audio();
     test_the_audio_comes_out_without_its_headers();
     test_any_chunking_gives_the_same_audio();
     test_a_full_output_stops_the_feed_without_losing_bytes();

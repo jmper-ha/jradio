@@ -232,6 +232,12 @@ typedef struct {
     /* Set for segments in an MPEG transport stream rather than bare ADTS.
      * Allocated only then, and in PSRAM: s_radio lives in internal SRAM. */
     struct radio_hls_ts *ts;
+    /* The first segment's opening bytes, read at the start of the session to
+     * see what the segments are, and handed out before anything else is
+     * read. PSRAM, and only until they have gone. */
+    uint8_t *held;
+    size_t held_length;
+    size_t held_offset;
 } radio_hls_t;
 
 /* The transport stream's packets as they came off the network, and the audio
@@ -2023,6 +2029,12 @@ static void radio_hls_stop(internet_radio_context_t *radio)
         heap_caps_free(radio->hls.ts);
         radio->hls.ts = NULL;
     }
+    if (radio->hls.held != NULL) {
+        heap_caps_free(radio->hls.held);
+        radio->hls.held = NULL;
+    }
+    radio->hls.held_length = 0U;
+    radio->hls.held_offset = 0U;
     if (radio->hls.text != NULL) {
         heap_caps_free(radio->hls.text);
         radio->hls.text = NULL;
@@ -2130,6 +2142,8 @@ static esp_err_t radio_hls_load_playlist(internet_radio_context_t *radio, const 
     return radio_hls_read_playlist_body(radio);
 }
 
+static esp_err_t radio_hls_probe(internet_radio_context_t *radio);
+
 /* Opens an HLS session: create the connection, fetch the playlist, follow a
  * master playlist to its variant, and pick the segment to join at. No segment
  * is opened here - the read path fetches the first one like every other. */
@@ -2219,25 +2233,16 @@ static esp_err_t radio_hls_start(internet_radio_context_t *radio, const char *ur
     radio->hls.active = true;
 
     // The segment names carry the codec; the playlist URL says nothing about
-    // it, so without this every HLS station would be decoded as MP3.
+    // it, so without this every HLS station would be decoded as MP3. A guess
+    // the first segment's own bytes then confirm or overrule.
     radio->stream_format = radio_stream_format_from_url(radio->hls.playlist->segments[0].uri);
     if (ts_uri_is_transport_stream(radio->hls.playlist->segments[0].uri)) {
-        radio->hls.ts = heap_caps_malloc(sizeof(*radio->hls.ts),
-                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (radio->hls.ts == NULL) {
-            radio->hls.ts = heap_caps_malloc(sizeof(*radio->hls.ts),
-                                             MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-        }
-        if (radio->hls.ts == NULL) {
-            ESP_LOGE(TAG, "HLS transport stream buffer allocation failed");
-            radio_hls_stop(radio);
-            return ESP_ERR_NO_MEM;
-        }
-        memset(radio->hls.ts, 0, sizeof(*radio->hls.ts));
-        ts_demux_init(&radio->hls.ts->demux);
-        // AAC is what the variant's CODECS says on every such station met so
-        // far; the PMT confirms it once the first segment arrives.
         radio->stream_format = RADIO_STREAM_FORMAT_AAC;
+    }
+    err = radio_hls_probe(radio);
+    if (err != ESP_OK) {
+        radio_hls_stop(radio);
+        return err;
     }
     radio_stream_reset_status(radio);
     // HLS carries no ICY metadata; an interval of 0 makes the feed a
@@ -2362,6 +2367,85 @@ static esp_err_t radio_hls_collect(internet_radio_context_t *radio)
     return ESP_OK;
 }
 
+/* What the segments are, from the first one's own bytes rather than from
+ * its name: a station whose segments are not called .ts - or are called .ts
+ * and are not - is told by the sync byte every transport-stream packet starts
+ * with, and the codec by the PMT, before the decoder is chosen. The bytes go
+ * nowhere: they are held and read out ahead of the rest of the segment.
+ *
+ * Best effort. A first segment that will not open leaves the guess from the
+ * name standing, and the read path asks for it again as it would anyway. */
+static esp_err_t radio_hls_ts_attach(internet_radio_context_t *radio)
+{
+    radio->hls.ts = heap_caps_malloc(sizeof(*radio->hls.ts), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (radio->hls.ts == NULL) {
+        radio->hls.ts = heap_caps_malloc(sizeof(*radio->hls.ts),
+                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (radio->hls.ts == NULL) {
+        ESP_LOGE(TAG, "HLS transport stream buffer allocation failed");
+        return ESP_ERR_NO_MEM;
+    }
+    memset(radio->hls.ts, 0, sizeof(*radio->hls.ts));
+    ts_demux_init(&radio->hls.ts->demux);
+    return ESP_OK;
+}
+
+static esp_err_t radio_hls_probe(internet_radio_context_t *radio)
+{
+    const bool named_ts = ts_uri_is_transport_stream(radio->hls.playlist->segments[0].uri);
+    bool opened = false;
+    // A couple of tries: the first answer may be a segment the server skips.
+    for (int attempt = 0; attempt < 3 && !opened; ++attempt) {
+        if (!radio->hls.request_sent && radio_hls_send_next(radio) != ESP_OK) break;
+        if (!radio_hls_response_ready(radio, RADIO_HLS_TIMEOUT_MS)) break;
+        const esp_err_t err = radio_hls_collect(radio);
+        if (err == ESP_OK) opened = true;
+        else if (err != ESP_ERR_NOT_FOUND) break;
+    }
+    uint8_t *probe = NULL;
+    size_t length = 0U;
+    if (opened) probe = heap_caps_malloc(TS_PROBE_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (probe != NULL) {
+        // The ID3 test's bytes are the segment's first; they lead the probe.
+        length = radio->hls.lead_length - radio->hls.lead_offset;
+        memcpy(probe, radio->hls.lead + radio->hls.lead_offset, length);
+        radio->hls.lead_length = 0U;
+        radio->hls.lead_offset = 0U;
+        while (length < TS_PROBE_BYTES) {
+            const int got = esp_http_client_read(radio->http, (char *)probe + length,
+                                                 (int)(TS_PROBE_BYTES - length));
+            if (got <= 0) break;
+            length += (size_t)got;
+        }
+        radio->hls.held = probe;
+        radio->hls.held_length = length;
+        radio->hls.held_offset = 0U;
+    }
+
+    const bool is_ts = probe != NULL ? ts_looks_like_transport_stream(probe, length) : named_ts;
+    if (probe != NULL && is_ts != named_ts) {
+        ESP_LOGW(TAG, "HLS segment %s named like one: going by its bytes",
+                 is_ts ? "is MPEG-TS though not" : "is not MPEG-TS though");
+    }
+    if (!is_ts) return ESP_OK;
+    const esp_err_t err = radio_hls_ts_attach(radio);
+    if (err != ESP_OK) return err;
+    const uint8_t type = probe != NULL ? ts_probe_stream_type(probe, length) : TS_STREAM_TYPE_NONE;
+    /* MPEG audio is the one other codec the decoder takes from a TS; anything
+     * else - or no PMT in the first bytes - is taken for the AAC every such
+     * station met so far carries. */
+    radio->stream_format = type == TS_STREAM_TYPE_MPEG1_AUDIO || type == TS_STREAM_TYPE_MPEG2_AUDIO
+                               ? RADIO_STREAM_FORMAT_MP3
+                               : RADIO_STREAM_FORMAT_AAC;
+    if (type != TS_STREAM_TYPE_NONE && type != TS_STREAM_TYPE_AAC_ADTS &&
+        type != TS_STREAM_TYPE_MPEG1_AUDIO && type != TS_STREAM_TYPE_MPEG2_AUDIO) {
+        ESP_LOGW(TAG, "HLS transport stream names stream type 0x%02x; trying AAC",
+                 (unsigned int)type);
+    }
+    return ESP_OK;
+}
+
 /* Reads ahead into the open segment without waiting on real time.
  *
  * radio_http_read_ready() cannot be used here. It polls the socket, and over
@@ -2407,8 +2491,21 @@ static int radio_hls_read_raw(internet_radio_context_t *radio, uint8_t *buffer, 
         if (atomic_load_explicit(&radio->direct_stop_requested, memory_order_acquire)) {
             return -1;
         }
-        // The bytes read to test for an ID3 tag come first, or the first frame
-        // of every untagged segment would be lost.
+        // The probe's bytes, then the bytes read to test for an ID3 tag, come
+        // first, or the start of the segment they were read from would be lost.
+        if (radio->hls.held_offset < radio->hls.held_length) {
+            const size_t held = radio->hls.held_length - radio->hls.held_offset;
+            const size_t take = held < (size_t)length ? held : (size_t)length;
+            memcpy(buffer, radio->hls.held + radio->hls.held_offset, take);
+            radio->hls.held_offset += take;
+            if (radio->hls.held_offset == radio->hls.held_length) {
+                heap_caps_free(radio->hls.held);
+                radio->hls.held = NULL;
+                radio->hls.held_length = 0U;
+                radio->hls.held_offset = 0U;
+            }
+            return (int)take;
+        }
         if (radio->hls.lead_offset < radio->hls.lead_length) {
             const size_t held = radio->hls.lead_length - radio->hls.lead_offset;
             const size_t take = held < (size_t)length ? held : (size_t)length;
@@ -2507,10 +2604,13 @@ static int radio_hls_read(internet_radio_context_t *radio, uint8_t *buffer, int 
                               sizeof(ts->audio));
             ts->audio_offset = 0U;
             ts->raw_offset += consumed;
+            const bool mpeg_audio = ts->demux.stream_type == TS_STREAM_TYPE_MPEG1_AUDIO ||
+                                    ts->demux.stream_type == TS_STREAM_TYPE_MPEG2_AUDIO;
             if (!ts->warned_codec && ts->demux.stream_type != TS_STREAM_TYPE_NONE &&
-                ts->demux.stream_type != TS_STREAM_TYPE_AAC_ADTS) {
+                mpeg_audio != (radio->stream_format == RADIO_STREAM_FORMAT_MP3)) {
+                // A PMT that changed its mind after the probe read the first.
                 ts->warned_codec = true;
-                ESP_LOGW(TAG, "HLS transport stream carries stream type 0x%02x, not ADTS AAC",
+                ESP_LOGW(TAG, "HLS transport stream now carries stream type 0x%02x",
                          (unsigned int)ts->demux.stream_type);
             }
             continue;

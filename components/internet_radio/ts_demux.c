@@ -20,6 +20,32 @@ bool ts_uri_is_transport_stream(const char *uri)
     return length >= 3U && strncasecmp(uri + length - 3U, ".ts", 3U) == 0;
 }
 
+bool ts_looks_like_transport_stream(const uint8_t *data, size_t length)
+{
+    if (data == NULL || length <= TS_PACKET_SIZE) return false;
+    for (size_t at = 0U; at < length; at += TS_PACKET_SIZE) {
+        if (data[at] != TS_SYNC_BYTE) return false;
+    }
+    return true;
+}
+
+uint8_t ts_probe_stream_type(const uint8_t *data, size_t length)
+{
+    if (data == NULL) return TS_STREAM_TYPE_NONE;
+    ts_demux_t demux;
+    ts_demux_init(&demux);
+    uint8_t scratch[TS_PAYLOAD_MAX];
+    size_t offset = 0U;
+    while (offset < length && demux.stream_type == TS_STREAM_TYPE_NONE) {
+        size_t consumed = 0U;
+        (void)ts_demux_feed(&demux, data + offset, length - offset, &consumed, scratch,
+                            sizeof(scratch));
+        if (consumed == 0U) break;
+        offset += consumed;
+    }
+    return demux.stream_type;
+}
+
 /* The section a PSI payload starts, past its pointer field. Tables here are
  * a few dozen bytes, so one that does not fit its packet is not worth piecing
  * together - the next copy comes with the next segment. */

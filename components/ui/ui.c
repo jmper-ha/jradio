@@ -6635,8 +6635,18 @@ static void ui_ota_create(void)
 
     const int line_h = UI_FONT_BODY_LINE_H + 6;
     const int top = TFT_HEIGHT / 2 - 5 * line_h / 2;
+    /* The title a row above the block with a blank row under it - unless
+     * that puts it above the panel, as on the 142 px bar, where the title
+     * went off the top edge: there the blank row goes and the five lines are
+     * centred together. */
+    int title_y = top - line_h;
+    int first_y = top + line_h;
+    if (title_y < 0) {
+        title_y = (TFT_HEIGHT - 5 * line_h) / 2;
+        first_y = title_y + line_h;
+    }
     lv_obj_t *title = lv_label_create(s_ota_window);
-    lv_obj_set_pos(title, UI_CONTENT_X, top - line_h);
+    lv_obj_set_pos(title, UI_CONTENT_X, title_y);
     lv_obj_set_width(title, UI_CONTENT_W);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(title, UI_FONT_TITLE, 0);
@@ -6651,7 +6661,7 @@ static void ui_ota_create(void)
     const ui_role_t roles[] = {UI_ROLE_SECONDARY, UI_ROLE_TEXT, UI_ROLE_TEXT, UI_ROLE_DIM};
     for (size_t index = 0U; index < 4U; ++index) {
         lv_obj_t *line = lv_label_create(s_ota_window);
-        lv_obj_set_pos(line, UI_CONTENT_X, top + line_h + (int)index * line_h);
+        lv_obj_set_pos(line, UI_CONTENT_X, first_y + (int)index * line_h);
         /* A height of its own, or LV_LABEL_LONG_DOT has nothing to cut to and
          * the label wraps instead. */
         lv_obj_set_size(line, UI_CONTENT_W, UI_FONT_BODY_LINE_H);

@@ -86,7 +86,7 @@ the waves Yandex picks for the account.
 | FLAC | yes | `.flac` | 24-bit included |
 | Ogg | yes | `.ogg`, `.oga` | FLAC, Vorbis or Opus inside |
 | WAV | - | `.wav` | 16-bit, mono or stereo |
-| HLS (`.m3u8`) | yes | - | MP3 or AAC segments; MPEG-TS is not parsed |
+| HLS (`.m3u8`) | yes | - | MP3 or AAC segments, MPEG-TS ones too; fMP4 is not read |
 
 ## Getting started
 

@@ -241,14 +241,14 @@ They have pages of their own: [Yandex Music](yandex.en.md) and
 ## The quick panel
 
 Quick_menu drops a window over the player with what is needed right now: the
-**sleep timer**, the **alarm**, the **brightness**, **bass**, **treble**,
+**sleep timer**, the **alarm**, the **switch-off**, the **brightness**, **bass**, **treble**,
 **loudness**, the **station** and the **BT speaker**. The window shows four rows and scrolls
 through the rest. Without leaving the screen:
 
 | Action | What it does |
 |---|---|
 | Turn the encoder | The next row |
-| Press on a switch (alarm, BT speaker) | Flip it at once |
+| Press on a switch (alarm, switch-off, BT speaker) | Flip it at once |
 | Press on a value | Take the value - it turns amber |
 | Turn in this mode | Change the value: tone and station by 1 dB, loudness round its four |
 | Press again | Release the value |
@@ -299,14 +299,6 @@ internet radio station.
 At the appointed minute the device raises the backlight, leaves the
 screensaver and starts the station.
 
-**Switching off at a set time.** "Switch off" and "Switch off at" - say, the
-alarm at 7:00 and off at 11:00. It works only when the alarm woke the radio:
-if it was already playing at the alarm's minute, somebody is listening, and it
-is not switched off. The time counts from the ring (over midnight too: 23:00 to
-01:00 is two hours). It goes off the way the sleep timer does: the sound fades
-over ten seconds and the radio sleeps until the next alarm; any key pressed in
-those seconds keeps it on.
-
 **A sleeping device wakes itself.** First ten minutes before the ring,
 quietly, with the screen dark: only to check the clock against the time server
 (over a night the internal clock drifts by minutes). Then a minute before the
@@ -317,6 +309,15 @@ quiet wake takes the time from it and does not switch Wi-Fi on.
 
 On the screen an armed alarm shows as a bell next to the clock; on the player
 page as a line with the time and the days.
+
+### Switch-off by time
+
+A second alarm of its own: its switch, time and days in the web settings,
+the "Switch-off by time" section, and the switch in the quick panel too. At
+its time it turns the radio off however it was turned on - paused or in a
+menu as well: the sound fades over ten seconds and the radio sleeps until the
+next alarm; any key pressed in those seconds keeps it on. A radio switched on
+during that very minute is left on.
 
 ## Settings
 
@@ -425,7 +426,8 @@ detail, the alarm, the sleep timer, the backup.
 - **Screensaver** - what the screen does when untouched: none, dimming (to
   the "idle brightness"), a black screen, the **clock** - the time drifting
   over a black screen with the date, the weather and the track title - or the
-  **weather** (see below). The delay (15 s - 10 min), the idle brightness and
+  **weather** (see below; with the weather off it cannot be chosen, and a
+  chosen one turns into the clock). The delay (15 s - 10 min), the idle brightness and
   "Comes on" are set on the web: "Always" - the set time after the last
   touch, or "When nothing plays" - only once the music is stopped or paused;
   music starting wakes the screen by itself. Any action wakes the screen; in

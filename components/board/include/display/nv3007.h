@@ -34,6 +34,11 @@
 
 #define BOARD_DISPLAY_PORTRAIT 0
 
+/* The hardware scroll runs the other way on this glass, as on the ST7796S:
+ * with the default sign the clock screensaver's block left by the near edge
+ * and came back in at the far one. Seen on the panel 2026-10-27. */
+#define TFT_SCROLL_REVERSED 1
+
 /* 40 MHz, what the other panels on this wiring run at. It came up at 20
  * first, so a garbled picture would not be blamed on the init sequence, and
  * was raised once the panel had been seen right. Torn or speckled pixels on

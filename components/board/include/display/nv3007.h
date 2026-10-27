@@ -39,10 +39,11 @@
  * and came back in at the far one. Seen on the panel 2026-10-27. */
 #define TFT_SCROLL_REVERSED 1
 
-/* 40 MHz, what the other panels on this wiring run at. It came up at 20
- * first, so a garbled picture would not be blamed on the init sequence, and
- * was raised once the panel had been seen right. Torn or speckled pixels on
- * another module mean this line goes back to 20. */
-#define DISPLAY_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
+/* 20 MHz. It was raised to 40, what the other panels on this wiring run
+ * at, and looked clean for minutes - then twice in an evening, 2026-10-27,
+ * the glass froze on its last frame while the firmware went on drawing and
+ * answering the buttons: the controller had stopped taking the writes. Back
+ * at 20 to see whether that was the clock. */
+#define DISPLAY_PIXEL_CLOCK_HZ (20 * 1000 * 1000)
 
 #define BOARD_PANEL_NAME "NV3007"

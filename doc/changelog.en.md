@@ -6,7 +6,7 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
-## Next version
+## v1.9.0 — 27 October 2026
 
 New:
 - The custom theme has a seventh colour, the screensaver's background. The

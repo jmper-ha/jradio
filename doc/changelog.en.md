@@ -26,6 +26,13 @@ New:
   layout - the cover on the left, the names, the level meter and a line with
   the codec and the volume beside it. In the web flasher and the Hardware
   editor.
+- The switch-off is an alarm of its own. It used to be part of the alarm:
+  on the alarm's days, and only when the alarm had turned the radio on. Now
+  it has its own switch, time and days, and at its time it fades the sound
+  and puts the radio to sleep however it was turned on. On the web it has a
+  group of its own, "Switch-off by time"; on the device, a "Switch-off"
+  switch in the quick panel. The old setting moves over by itself, with the
+  alarm's days.
 
 Fixed:
 - On the weather screensaver on 320x240 displays, a forecast day's

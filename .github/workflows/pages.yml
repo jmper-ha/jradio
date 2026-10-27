@@ -61,6 +61,7 @@ jobs:
           - st7789_320_240
           - st7789_240_320
           - st7789_320_170
+          - nv3007_428_142
     steps:
       - uses: actions/checkout@v7
         with:

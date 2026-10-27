@@ -70,7 +70,7 @@
   const DISPLAYS = [
     'st7796s_480_320', 'st7796s_320_480', 'ili9488_480_320', 'ili9488_320_480',
     'ili9341_320_240', 'ili9341_240_320', 'st7789_320_240', 'st7789_240_320',
-    'st7789_320_170',
+    'st7789_320_170', 'nv3007_428_142',
   ];
 
   /* Every key of the file, in the order it is written, with what it holds:

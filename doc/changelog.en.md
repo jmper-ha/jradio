@@ -24,8 +24,8 @@ New:
   stay silent - only `.aac` segments were understood.
 - A new display: the NV3007 142x428 bar, lying down (428x142), with its own
   layout - the cover on the left, the names, the level meter and a line with
-  the codec and the volume beside it. Source builds only for now
-  (`DISPLAY_NV3007_428_142`); the web flasher does not offer it yet.
+  the codec and the volume beside it. In the web flasher and the Hardware
+  editor.
 
 Fixed:
 - On the weather screensaver on 320x240 displays, a forecast day's

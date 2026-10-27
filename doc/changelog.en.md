@@ -6,6 +6,16 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## Next version
+
+Fixed:
+- A peripheral power switch on GPIO 47 or 48 did not switch off in sleep:
+  those pins are powered from the module's memory supply, which deep sleep
+  switches off. The Hardware editor and the firmware's wiring check now
+  refuse them, and the hardware guide no longer suggests 48. The editor also
+  gained a choice of module: the plain N16R8 or the N16R8V / N32R8V with
+  1.8 V memory, where signals on GPIO 47/48 get a warning.
+
 ## v1.9.0 — 27 October 2026
 
 New:

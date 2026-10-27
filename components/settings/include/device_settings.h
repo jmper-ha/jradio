@@ -220,9 +220,10 @@ typedef enum {
 /* The FM preset, the same way: FM_PRESETS_MAX written out. */
 #define DEVICE_ALARM_FM_STATION_DEFAULT 1
 #define DEVICE_ALARM_FM_STATION_MAX 40
-/* Where the switch-off stands before anyone has moved it: late morning, off. */
-#define DEVICE_ALARM_STOP_HOUR_DEFAULT 11
-#define DEVICE_ALARM_STOP_MINUTE_DEFAULT 0
+/* Where the switch-off alarm stands before anyone has moved it: eleven at
+ * night, every day, off. */
+#define DEVICE_ALARM_OFF_HOUR_DEFAULT 23
+#define DEVICE_ALARM_OFF_MINUTE_DEFAULT 0
 
 /* Loud enough to be obviously working, quiet enough that a fresh flash does
  * not startle anyone. */
@@ -340,6 +341,10 @@ typedef struct {
      * loose fields because it is one thing to the user and travels as one to
      * the page and to the sleep. */
     alarm_config_t alarm;
+    /* The switch-off alarm, a second alarm of its own; see alarm_schedule.h.
+     * Kept as alarm_off_* in the file. A card from before the split has the
+     * old switch-off as alarm_stop_*, and the first load moves it over. */
+    alarm_off_t alarm_off;
     device_last_source_t last_source;
     /* The FM frequency last listened to, in kHz; 0 until one has been. Its
      * own key rather than a resume point: the tuner comes back to it every
@@ -496,11 +501,13 @@ bool device_settings_set_alarm_volume(device_settings_t *settings, unsigned char
 bool device_settings_set_alarm_source(device_settings_t *settings, unsigned int source);
 // The FM preset's number counting from 1; zero means none is chosen.
 bool device_settings_set_alarm_fm_station(device_settings_t *settings, unsigned int number);
-/* The switch-off: on or off, and its time, kept apart so that switching it
- * off and on again brings back the time it had. */
-bool device_settings_set_alarm_stop_enabled(device_settings_t *settings, bool enabled);
-bool device_settings_set_alarm_stop_time(device_settings_t *settings, unsigned int hour,
-                                         unsigned int minute);
+/* The switch-off alarm: on or off, its time and its days, each its own key
+ * so switching it off and on again brings back the rest. Days as the alarm's,
+ * zero refused. */
+bool device_settings_set_alarm_off_enabled(device_settings_t *settings, bool enabled);
+bool device_settings_set_alarm_off_time(device_settings_t *settings, unsigned int hour,
+                                        unsigned int minute);
+bool device_settings_set_alarm_off_days(device_settings_t *settings, unsigned int days);
 /* Recorded as playback starts, so a power cut still leaves the last choice
  * behind. Writing "none" clears the resume point. */
 bool device_settings_set_last_source(device_settings_t *settings,

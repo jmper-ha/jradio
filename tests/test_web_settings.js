@@ -111,8 +111,8 @@ const ids = [
   'device-alarm-volume-value', 'device-alarm-time-row', 'device-alarm-days-row',
   'device-alarm-station-row', 'device-alarm-volume-row',
   'device-alarm-source', 'device-alarm-source-row', 'device-alarm-fm-station',
-  'device-alarm-fm-station-row', 'device-alarm-stop', 'device-alarm-stop-row',
-  'device-alarm-stop-time', 'device-alarm-stop-time-row', 'device-alarm-stop-note',
+  'device-alarm-fm-station-row', 'device-alarm-off', 'device-alarm-off-time',
+  'device-alarm-off-time-row', 'device-alarm-off-days-row', 'device-alarm-off-note',
   'device-weather', 'device-weather-latitude', 'device-weather-longitude',
   'device-weather-key', 'device-weather-key-row', 'device-weather-now-row',
   'device-weather-now',
@@ -128,6 +128,14 @@ const alarmDayChips = [1, 2, 3, 4, 5, 6, 0].map((day) => {
   return chip;
 });
 const alarmDayByBit = Object.fromEntries(alarmDayChips.map((chip) => [chip.dataset.day, chip]));
+// The switch-off alarm's own seven.
+const alarmOffDayChips = [1, 2, 3, 4, 5, 6, 0].map((day) => {
+  const chip = new Element();
+  chip.dataset.day = String(day);
+  return chip;
+});
+const alarmOffDayByBit =
+  Object.fromEntries(alarmOffDayChips.map((chip) => [chip.dataset.day, chip]));
 elements['#wifi-form'].elements = {
   ssid: elements['#wifi-ssid'],
   password: elements['#wifi-password'],
@@ -141,6 +149,7 @@ const documentRef = {
   querySelectorAll(selector) {
     if (selector === '.card[data-section]') return sectionCards;
     if (selector === '#device-alarm-days [data-day]') return alarmDayChips;
+    if (selector === '#device-alarm-off-days [data-day]') return alarmOffDayChips;
     return [];
   },
   querySelector(selector) { return elements[selector]; },
@@ -210,6 +219,7 @@ let settingsReply = {
      against 07:00 every day. */
   alarm_enabled: true, alarm_time: '06:40', alarm_days: 0x14, alarm_station: 2,
   alarm_volume: 25,
+  alarm_off_enabled: false, alarm_off_time: '23:00', alarm_off_days: 0x7f,
   timezones: [
     {id: 'europe/moscow', label: 'Москва (UTC+3)'},
     {id: 'asia/yekaterinburg', label: 'Екатеринбург (UTC+5)'},
@@ -916,34 +926,42 @@ function lastYandexTimer() {
   assert.equal(elements['#device-alarm-days-row'].hidden, false);
   assert.equal(elements['#device-alarm-time'].value, '06:40');
 
-  /* No tuner: no choice of source, and the radio's station. The switch-off
-     row is there, its time only once it is switched on. */
+  /* No tuner: no choice of source, and the radio's station. */
   assert.equal(elements['#device-alarm-source-row'].hidden, true);
   assert.equal(elements['#device-alarm-station-row'].hidden, false);
   assert.equal(elements['#device-alarm-fm-station-row'].hidden, true);
-  assert.equal(elements['#device-alarm-stop-row'].hidden, false);
-  assert.equal(elements['#device-alarm-stop-time-row'].hidden, true);
   assert.ok(!fetchCalls.some((call) => String(call.url).startsWith('/api/stations?source=fm')));
 
-  settingsReply = {...settingsReply, alarm_stop_enabled: true, alarm_stop_time: '11:00'};
-  elements['#device-alarm-stop'].checked = true;
-  elements['#device-alarm-stop'].emit('change');
+  /* The switch-off alarm: its own switch, and its time, days and note only
+     while that is on - whatever the alarm itself is doing. */
+  assert.equal(elements['#device-alarm-off-time-row'].hidden, true);
+  assert.equal(elements['#device-alarm-off-days-row'].hidden, true);
+  assert.equal(elements['#device-alarm-off-note'].hidden, true);
+  settingsReply = {...settingsReply, alarm_off_enabled: true, alarm_off_time: '23:00',
+                   alarm_off_days: 0x7f};
+  elements['#device-alarm-off'].checked = true;
+  elements['#device-alarm-off'].emit('change');
   await settle();
-  assert.deepEqual(
-    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' && call.options &&
-                                           call.options.method === 'POST').at(-1).options.body),
-    {field: 'alarm_stop_enabled', value: true});
-  assert.equal(elements['#device-alarm-stop-time-row'].hidden, false);
-  assert.equal(elements['#device-alarm-stop-note'].hidden, false);
-  assert.equal(elements['#device-alarm-stop-time'].value, '11:00');
-  settingsReply = {...settingsReply, alarm_stop_time: '10:30'};
-  elements['#device-alarm-stop-time'].value = '10:30';
-  elements['#device-alarm-stop-time'].emit('change');
+  const lastOffPost = () => JSON.parse(fetchCalls.filter(
+    (call) => call.url === '/api/settings' && call.options &&
+              call.options.method === 'POST').at(-1).options.body);
+  assert.deepEqual(lastOffPost(), {field: 'alarm_off_enabled', value: true});
+  assert.equal(elements['#device-alarm-off-time-row'].hidden, false);
+  assert.equal(elements['#device-alarm-off-days-row'].hidden, false);
+  assert.equal(elements['#device-alarm-off-note'].hidden, false);
+  assert.equal(elements['#device-alarm-off-time'].value, '23:00');
+  settingsReply = {...settingsReply, alarm_off_time: '22:30'};
+  elements['#device-alarm-off-time'].value = '22:30';
+  elements['#device-alarm-off-time'].emit('change');
   await settle();
-  assert.deepEqual(
-    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' && call.options &&
-                                           call.options.method === 'POST').at(-1).options.body),
-    {field: 'alarm_stop_time', value: '10:30'});
+  assert.deepEqual(lastOffPost(), {field: 'alarm_off_time', value: '22:30'});
+  // Its days are its own: Saturday off here leaves the alarm's chips alone.
+  settingsReply = {...settingsReply, alarm_off_days: 0x3f};
+  alarmOffDayByBit['6'].emit('click');
+  await settle();
+  assert.deepEqual(lastOffPost(), {field: 'alarm_off_days', value: 0x3f});
+  assert.equal(alarmOffDayByBit['6'].classList.values.has('is-on'), false);
+  assert.equal(alarmDayByBit['2'].classList.values.has('is-on'), true);
 
   /* A tuner: the choice appears, and FM swaps the station row for the
      presets', filled from the device's own list. */
@@ -1025,16 +1043,16 @@ function lastYandexTimer() {
                                                                  call.options &&
                                                                  call.options.method === 'POST')
     .at(-1).options.body);
-  assert.deepEqual(lastPost(), {field: 'theme_accent', value: '#ff0000'});
+  assert.deepEqual(lastOffPost(), {field: 'theme_accent', value: '#ff0000'});
   elements['#device-theme-reset'].emit('click');
   await settle();
-  assert.deepEqual(lastPost(), {field: 'theme_reset', value: true});
+  assert.deepEqual(lastOffPost(), {field: 'theme_reset', value: true});
   // Off Custom, the colours and the reset go - their values stay on the card.
   settingsReply = {...settingsReply, theme: 'contrast'};
   elements['#device-theme'].value = 'contrast';
   elements['#device-theme'].emit('change');
   await settle();
-  assert.deepEqual(lastPost(), {field: 'theme', value: 'contrast'});
+  assert.deepEqual(lastOffPost(), {field: 'theme', value: 'contrast'});
   assert.equal(elements['#device-theme-ground-row'].hidden, true);
   assert.equal(elements['#device-theme-reset-row'].hidden, true);
 

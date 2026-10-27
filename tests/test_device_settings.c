@@ -803,27 +803,34 @@ static void test_the_alarm_persists_and_is_checked(void)
     assert(reloaded.alarm.volume == 35U);
     assert(alarm_config_valid(&reloaded.alarm));
 
-    /* What it plays and when it switches off: the radio and no switch-off
-     * until somebody says otherwise, with a time ready for it. */
+    /* What it plays: the radio until somebody says otherwise. And the
+     * switch-off alarm beside it, off, with a time and days ready for it. */
     assert(reloaded.alarm.source == ALARM_SOURCE_RADIO);
     assert(reloaded.alarm.fm_station == DEVICE_ALARM_FM_STATION_DEFAULT);
-    assert(!reloaded.alarm.stop_enabled);
-    assert(reloaded.alarm.stop_hour == DEVICE_ALARM_STOP_HOUR_DEFAULT);
-    assert(reloaded.alarm.stop_minute == DEVICE_ALARM_STOP_MINUTE_DEFAULT);
+    assert(!reloaded.alarm_off.enabled);
+    assert(reloaded.alarm_off.hour == DEVICE_ALARM_OFF_HOUR_DEFAULT);
+    assert(reloaded.alarm_off.minute == DEVICE_ALARM_OFF_MINUTE_DEFAULT);
+    assert(reloaded.alarm_off.days == ALARM_DAYS_ALL);
     assert(device_settings_set_alarm_source(&reloaded, ALARM_SOURCE_FM));
     assert(device_settings_set_alarm_fm_station(&reloaded, 7U));
-    assert(device_settings_set_alarm_stop_enabled(&reloaded, true));
-    assert(device_settings_set_alarm_stop_time(&reloaded, 10U, 30U));
+    assert(device_settings_set_alarm_off_enabled(&reloaded, true));
+    assert(device_settings_set_alarm_off_time(&reloaded, 22U, 30U));
+    assert(device_settings_set_alarm_off_days(&reloaded, 0x41U));
     assert(!device_settings_set_alarm_source(&reloaded, 2U));
     assert(!device_settings_set_alarm_fm_station(&reloaded, DEVICE_ALARM_FM_STATION_MAX + 1U));
-    assert(!device_settings_set_alarm_stop_time(&reloaded, 24U, 0U));
-    assert(!device_settings_set_alarm_stop_time(&reloaded, 10U, 60U));
+    assert(!device_settings_set_alarm_off_time(&reloaded, 24U, 0U));
+    assert(!device_settings_set_alarm_off_time(&reloaded, 10U, 60U));
+    assert(!device_settings_set_alarm_off_days(&reloaded, 0U));
+    assert(!device_settings_set_alarm_off_days(&reloaded, 0x80U));
     device_settings_t again;
     assert(device_settings_init_at(&again, test_path));
     assert(again.alarm.source == ALARM_SOURCE_FM);
     assert(again.alarm.fm_station == 7U);
-    assert(again.alarm.stop_enabled);
-    assert(again.alarm.stop_hour == 10U && again.alarm.stop_minute == 30U);
+    assert(again.alarm_off.enabled);
+    assert(again.alarm_off.hour == 22U && again.alarm_off.minute == 30U);
+    assert(again.alarm_off.days == 0x41U);
+    // Its own days: the alarm's are still the weekdays set above.
+    assert(again.alarm.days == 0x3EU);
     // The radio's station is kept beside the preset, not replaced by it.
     assert(again.alarm.station == 12U);
     assert(alarm_config_valid(&again.alarm));
@@ -843,7 +850,9 @@ static void test_a_corrupt_alarm_leaves_the_defaults(void)
           "alarm_volume,abc\n"
           "alarm_source,am\n"
           "alarm_fm_station,41\n"
-          "alarm_stop_time,25:00\n",
+          "alarm_off_enabled,1\n"
+          "alarm_off_time,25:00\n"
+          "alarm_off_days,0\n",
           file);
     fclose(file);
 
@@ -857,7 +866,45 @@ static void test_a_corrupt_alarm_leaves_the_defaults(void)
     assert(settings.alarm.volume == DEVICE_ALARM_VOLUME_DEFAULT);
     assert(settings.alarm.source == ALARM_SOURCE_RADIO);
     assert(settings.alarm.fm_station == DEVICE_ALARM_FM_STATION_DEFAULT);
-    assert(settings.alarm.stop_hour == DEVICE_ALARM_STOP_HOUR_DEFAULT);
+    assert(settings.alarm_off.hour == DEVICE_ALARM_OFF_HOUR_DEFAULT);
+    assert(settings.alarm_off.days == ALARM_DAYS_ALL);
+}
+
+/* A card from before the split: the switch-off that went with the alarm
+ * becomes the switch-off alarm, on the alarm's days, and is written out as
+ * such - the old keys are not looked at again. */
+static void test_the_old_switch_off_moves_to_the_switch_off_alarm(void)
+{
+    (void)unlink(test_path);
+    FILE *file = fopen(test_path, "w");
+    assert(file != NULL);
+    fputs("alarm_enabled,1\n"
+          "alarm_days,62\n"
+          "alarm_stop_enabled,1\n"
+          "alarm_stop_time,09:15\n",
+          file);
+    fclose(file);
+
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    assert(settings.alarm_off.enabled);
+    assert(settings.alarm_off.hour == 9U && settings.alarm_off.minute == 15U);
+    assert(settings.alarm_off.days == 62U);
+    char value[16];
+    assert(settings_csv_get(test_path, "alarm_off_enabled", value, sizeof(value)));
+    assert(strcmp(value, "1") == 0);
+    assert(settings_csv_get(test_path, "alarm_off_time", value, sizeof(value)));
+    assert(strcmp(value, "09:15") == 0);
+    assert(settings_csv_get(test_path, "alarm_off_days", value, sizeof(value)));
+    assert(strcmp(value, "62") == 0);
+
+    /* Moved once: the alarm's days changing afterwards leaves the switch-off
+     * alarm's alone. */
+    assert(device_settings_set_alarm_days(&settings, ALARM_DAYS_ALL));
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.alarm_off.days == 62U);
+    assert(reloaded.alarm_off.enabled);
 }
 
 /* The custom theme: seven colours in one key, all or none, starting as the
@@ -1021,6 +1068,7 @@ int main(void)
     test_a_corrupt_brightness_leaves_the_default();
     test_the_alarm_persists_and_is_checked();
     test_a_corrupt_alarm_leaves_the_defaults();
+    test_the_old_switch_off_moves_to_the_switch_off_alarm();
     puts("device_settings tests passed");
     return 0;
 }

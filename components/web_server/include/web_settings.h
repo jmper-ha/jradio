@@ -88,8 +88,9 @@ typedef enum {
      * switch-off, a switch and its own time. */
     WEB_SETTINGS_FIELD_ALARM_SOURCE,
     WEB_SETTINGS_FIELD_ALARM_FM_STATION,
-    WEB_SETTINGS_FIELD_ALARM_STOP_ENABLED,
-    WEB_SETTINGS_FIELD_ALARM_STOP_TIME,
+    WEB_SETTINGS_FIELD_ALARM_OFF_ENABLED,
+    WEB_SETTINGS_FIELD_ALARM_OFF_TIME,
+    WEB_SETTINGS_FIELD_ALARM_OFF_DAYS,
     /* The tone controls in dB, DEVICE_TONE_DB_MIN..MAX; loudness as
      * "off"/"weak"/"medium"/"strong", and whether it lifts the treble too. */
     WEB_SETTINGS_FIELD_TONE_BASS,
@@ -188,6 +189,7 @@ typedef struct web_settings_view {
      * what that costs per queued frame. It goes out as five flat members named
      * the way they are posted back, not as an object. */
     alarm_config_t alarm;
+    alarm_off_t alarm_off;
     int8_t tone_bass;
     int8_t tone_treble;
     uint8_t loudness;

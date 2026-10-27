@@ -28,7 +28,6 @@ bool alarm_config_valid(const alarm_config_t *config)
         return false;
     }
     if (config->source > ALARM_SOURCE_FM) return false;
-    if (config->stop_hour > 23U || config->stop_minute > 59U) return false;
     if (config->days == 0U || config->days > ALARM_DAYS_ALL) return false;
     if (config->hour > 23U || config->minute > 59U) return false;
     return config->volume <= 100U;
@@ -49,16 +48,17 @@ uint8_t alarm_play_station(const alarm_config_t *config, bool fm_present)
                                                                     : config->station;
 }
 
-uint16_t alarm_stop_after_minutes(const alarm_config_t *config)
+bool alarm_off_valid(const alarm_off_t *off)
 {
-    if (config == NULL || !config->stop_enabled || config->stop_hour > 23U ||
-        config->stop_minute > 59U || config->hour > 23U || config->minute > 59U) {
-        return 0U;
-    }
-    const unsigned int start = (unsigned int)config->hour * 60U + config->minute;
-    const unsigned int stop = (unsigned int)config->stop_hour * 60U + config->stop_minute;
-    const unsigned int after = (stop + MINUTES_PER_DAY - start) % MINUTES_PER_DAY;
-    return (uint16_t)(after == 0U ? MINUTES_PER_DAY : after);
+    return off != NULL && off->enabled && off->days != 0U && off->days <= ALARM_DAYS_ALL &&
+           off->hour <= 23U && off->minute <= 59U;
+}
+
+bool alarm_off_due(const alarm_off_t *off, int weekday, int hour, int minute)
+{
+    if (!alarm_off_valid(off) || !moment_valid(weekday, hour, minute)) return false;
+    if ((off->days & (uint8_t)(1U << weekday)) == 0U) return false;
+    return hour == (int)off->hour && minute == (int)off->minute;
 }
 
 bool alarm_schedule_due(const alarm_config_t *config, int weekday, int hour, int minute)
@@ -106,17 +106,35 @@ void alarm_guard_init(alarm_guard_t *guard)
     guard->armed = true;
 }
 
-bool alarm_guard_take_due(alarm_guard_t *guard, const alarm_config_t *config, int weekday,
-                          int hour, int minute)
+/* The guard's step, given whether this is the minute. */
+static bool guard_step(alarm_guard_t *guard, bool due)
 {
     if (guard == NULL) return false;
-    if (!alarm_schedule_due(config, weekday, hour, minute)) {
+    if (!due) {
         guard->armed = true;
         return false;
     }
     if (!guard->armed) return false;
     guard->armed = false;
     return true;
+}
+
+bool alarm_guard_take_due(alarm_guard_t *guard, const alarm_config_t *config, int weekday,
+                          int hour, int minute)
+{
+    return guard_step(guard, alarm_schedule_due(config, weekday, hour, minute));
+}
+
+void alarm_off_guard_init(alarm_guard_t *guard)
+{
+    if (guard == NULL) return;
+    guard->armed = false;
+}
+
+bool alarm_off_guard_take_due(alarm_guard_t *guard, const alarm_off_t *off, int weekday,
+                              int hour, int minute)
+{
+    return guard_step(guard, alarm_off_due(off, weekday, hour, minute));
 }
 
 uint32_t alarm_hop_lead_seconds(uint32_t seconds_to_alarm)

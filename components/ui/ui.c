@@ -821,16 +821,9 @@ static bool s_alarm_boot_dark;
  * moves the volume off it, and from then on it is theirs. */
 static bool s_alarm_volume_held;
 static uint8_t s_alarm_volume;
-/* This boot is the alarm's, and its ringing has not come yet: the switch-off
- * is armed by that ringing alone. A radio already on at the alarm's minute is
- * somebody listening, and the alarm going off does not make their morning one
- * that ends at eleven. Unlike the dark panel this survives a press. */
-static bool s_alarm_woke_board;
-/* The switch-off, once armed: when the alarm rang. The deadline is worked out
- * from the setting on every check rather than fixed at the ringing, so a
- * switch-off moved or switched off on the page in the meantime is obeyed. */
-static bool s_alarm_stop_armed;
-static uint32_t s_alarm_stop_from_ms;
+/* The switch-off alarm's one-per-minute, which starts disarmed: switched on
+ * during its minute, the radio is left on. */
+static alarm_guard_t s_alarm_off_guard;
 /* How long the ring waits for Wi-Fi before trying anyway: a station cannot be
  * selected while the network is down - player_control_decide() answers INVALID
  * - and an alarm that gives up silently is worse than one that tries and shows
@@ -6890,8 +6883,9 @@ static void ui_quick_value_text(ui_quick_item_t item, char *out, size_t size)
         break;
     }
     case UI_QUICK_ITEM_ALARM:
+    case UI_QUICK_ITEM_ALARM_OFF:
     case UI_QUICK_ITEM_BT_OUTPUT:
-        /* Both are switches, and a switch says it itself. The alarm's hour is
+        /* All are switches, and a switch says it itself. The alarm's hour is
          * not put here either: there is no room beside the switch on the
          * narrowest panel, and the strip's bell already says it is armed. */
         if (size > 0U) out[0] = '\0';
@@ -6956,6 +6950,7 @@ static bool ui_quick_switch_state(ui_quick_item_t item)
 {
     switch (item) {
     case UI_QUICK_ITEM_ALARM: return s_device_settings.alarm.enabled;
+    case UI_QUICK_ITEM_ALARM_OFF: return s_device_settings.alarm_off.enabled;
     case UI_QUICK_ITEM_BT_OUTPUT: return s_device_settings.bt_output;
     default: break;
     }
@@ -7123,6 +7118,16 @@ static void ui_quick_apply_step(int direction)
         }
         device_settings_publish(&s_device_settings);
         ESP_LOGI(TAG, "quick panel: alarm %s", next ? "on" : "off");
+        break;
+    }
+    case UI_QUICK_ITEM_ALARM_OFF: {
+        const bool next = !s_device_settings.alarm_off.enabled;
+        if (!device_settings_set_alarm_off_enabled(&s_device_settings, next)) {
+            ESP_LOGW(TAG, "quick panel: the switch-off alarm's switch was not saved");
+            break;
+        }
+        device_settings_publish(&s_device_settings);
+        ESP_LOGI(TAG, "quick panel: switch-off alarm %s", next ? "on" : "off");
         break;
     }
     case UI_QUICK_ITEM_BT_OUTPUT: {
@@ -8511,16 +8516,6 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
      * source over this morning's station. */
     s_autoplay_pending = false;
 
-    /* The switch-off counts from now, and only on a morning the alarm woke
-     * the board for. */
-    if (s_alarm_woke_board) {
-        s_alarm_woke_board = false;
-        s_alarm_stop_armed = true;
-        s_alarm_stop_from_ms = ui_tick_get_ms();
-        const uint16_t minutes = alarm_stop_after_minutes(&s_device_settings.alarm);
-        if (minutes > 0U) ESP_LOGI(TAG, "alarm: switching off in %u min", (unsigned int)minutes);
-    }
-
     const size_t index = (size_t)alarm_play_station(&s_device_settings.alarm, fm_present) - 1U;
     if (source == ALARM_SOURCE_FM) {
         fm_preset_t preset;
@@ -8581,18 +8576,28 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
     s_waiting_for_source_item = false;
 }
 
-/* The switch-off: the alarm's setting, counted from the ringing. It ends the
- * way the sleep timer does - ten seconds of fading, then the deep sleep the
- * next alarm wakes the board from, and a key pressed in those seconds keeps
- * the radio on. A board with no way to wake has no sleep to go to, and its
- * sound is stopped instead. */
+/* The switch-off alarm: at its minute, on its days, whatever is playing and
+ * however the radio was turned on - paused or in a menu, it goes too. It
+ * ends the way the sleep timer does - ten seconds of fading, then the deep
+ * sleep the next alarm wakes the board from, and a key pressed in those
+ * seconds keeps the radio on. A board with no way to wake has no sleep to go
+ * to, and its sound is stopped instead. */
+#define UI_ALARM_OFF_CHECK_MS 1000U
+static uint32_t s_alarm_off_checked_ms;
 static void ui_alarm_stop_poll(uint32_t now_ms)
 {
-    if (!s_alarm_stop_armed || s_sleep_fading) return;
-    const uint16_t minutes = alarm_stop_after_minutes(&s_device_settings.alarm);
-    if (minutes == 0U) return;  // switched off on the page meanwhile: stays armed
-    if ((uint32_t)(now_ms - s_alarm_stop_from_ms) < (uint32_t)minutes * 60000U) return;
-    s_alarm_stop_armed = false;
+    if ((uint32_t)(now_ms - s_alarm_off_checked_ms) < UI_ALARM_OFF_CHECK_MS) return;
+    s_alarm_off_checked_ms = now_ms;
+    int weekday = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    if (!device_clock_moment(&weekday, &hour, &minute, &second)) return;
+    if (!alarm_off_guard_take_due(&s_alarm_off_guard, &s_device_settings.alarm_off, weekday,
+                                  hour, minute)) {
+        return;
+    }
+    if (s_sleep_fading) return;
     if (!board_deep_sleep_supported()) {
         ESP_LOGI(TAG, "alarm: switch-off time; stopping the sound");
         const player_command_t stop = {
@@ -9049,7 +9054,7 @@ esp_err_t ui_init(void)
      * until the alarm rings, and autoplay does not resume last night's source
      * over this morning's station. */
     s_alarm_boot_dark = alarm_boot_take_pending();
-    s_alarm_woke_board = s_alarm_boot_dark;
+    alarm_off_guard_init(&s_alarm_off_guard);
     if (!device_settings_init(&s_device_settings)) {
         lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
     } else {

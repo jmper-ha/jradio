@@ -265,18 +265,34 @@
                     <output id="device-alarm-volume-value">40</output>
                   </span>
                 </div>
-                <!-- Switching off again: only after a morning the alarm woke the
-                     radio for - one already playing at the alarm's minute is
-                     somebody listening, and is left alone. -->
-                <div class="device-row" id="device-alarm-stop-row" hidden>
-                  <label for="device-alarm-stop" data-i18n="alarm.stop">Выключать</label>
-                  <input id="device-alarm-stop" type="checkbox" data-field="alarm_stop_enabled">
+              </div>
+
+              <!-- The switch-off alarm: a second alarm with its own time and
+                   days, which puts the radio to sleep however it was turned
+                   on. Its rows hang on its own switch, as the alarm's do. -->
+              <div class="device-group">
+                <h3 data-i18n="alarm_off.group">Выключение по времени</h3>
+                <div class="device-row">
+                  <label for="device-alarm-off" data-i18n="alarm.enabled">Включён</label>
+                  <input id="device-alarm-off" type="checkbox" data-field="alarm_off_enabled">
                 </div>
-                <div class="device-row" id="device-alarm-stop-time-row" hidden>
-                  <label for="device-alarm-stop-time" data-i18n="alarm.stop_time">Выключить в</label>
-                  <input id="device-alarm-stop-time" type="time" required data-field="alarm_stop_time">
+                <div class="device-row" id="device-alarm-off-time-row" hidden>
+                  <label for="device-alarm-off-time" data-i18n="alarm.time">Время</label>
+                  <input id="device-alarm-off-time" type="time" required data-field="alarm_off_time">
                 </div>
-                <p class="field-note" id="device-alarm-stop-note" hidden data-i18n="alarm.stop_note">Выключение срабатывает, только если радио проснулось от будильника: звук плавно гаснет, и радио засыпает до следующего будильника.</p>
+                <div class="device-row device-row-stacked" id="device-alarm-off-days-row" hidden>
+                  <span class="row-label" data-i18n="alarm.days">Дни</span>
+                  <div id="device-alarm-off-days" class="day-chips">
+                    <button type="button" class="day-chip" data-day="1" data-i18n="alarm.mon">Пн</button>
+                    <button type="button" class="day-chip" data-day="2" data-i18n="alarm.tue">Вт</button>
+                    <button type="button" class="day-chip" data-day="3" data-i18n="alarm.wed">Ср</button>
+                    <button type="button" class="day-chip" data-day="4" data-i18n="alarm.thu">Чт</button>
+                    <button type="button" class="day-chip" data-day="5" data-i18n="alarm.fri">Пт</button>
+                    <button type="button" class="day-chip" data-day="6" data-i18n="alarm.sat">Сб</button>
+                    <button type="button" class="day-chip" data-day="0" data-i18n="alarm.sun">Вс</button>
+                  </div>
+                </div>
+                <p class="field-note" id="device-alarm-off-note" hidden data-i18n="alarm_off.note">В это время звук плавно гаснет, и радио засыпает до следующего будильника, как бы оно ни было включено.</p>
               </div>
 
               <div class="device-group">

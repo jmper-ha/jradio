@@ -88,8 +88,9 @@ static const field_descriptor_t k_fields[] = {
     {"alarm_volume", WEB_SETTINGS_FIELD_ALARM_VOLUME, {NULL}, true, false},
     {"alarm_source", WEB_SETTINGS_FIELD_ALARM_SOURCE, {"radio", "fm"}, false, false},
     {"alarm_fm_station", WEB_SETTINGS_FIELD_ALARM_FM_STATION, {NULL}, true, false},
-    {"alarm_stop_enabled", WEB_SETTINGS_FIELD_ALARM_STOP_ENABLED, {NULL}, false, false},
-    {"alarm_stop_time", WEB_SETTINGS_FIELD_ALARM_STOP_TIME, {NULL}, false, true},
+    {"alarm_off_enabled", WEB_SETTINGS_FIELD_ALARM_OFF_ENABLED, {NULL}, false, false},
+    {"alarm_off_time", WEB_SETTINGS_FIELD_ALARM_OFF_TIME, {NULL}, false, true},
+    {"alarm_off_days", WEB_SETTINGS_FIELD_ALARM_OFF_DAYS, {NULL}, true, false},
     {"tone_bass", WEB_SETTINGS_FIELD_TONE_BASS, {NULL}, true, false},
     {"tone_treble", WEB_SETTINGS_FIELD_TONE_TREBLE, {NULL}, true, false},
     {"loudness", WEB_SETTINGS_FIELD_LOUDNESS, {WEB_SETTINGS_LOUDNESS_NAMES}, false, false},
@@ -180,7 +181,8 @@ static bool parse_value(const field_descriptor_t *descriptor, const cJSON *value
         if (number <= 0 || !device_settings_screensaver_seconds_valid((unsigned int)number)) {
             return false;
         }
-    } else if (descriptor->field == WEB_SETTINGS_FIELD_ALARM_DAYS) {
+    } else if (descriptor->field == WEB_SETTINGS_FIELD_ALARM_DAYS ||
+               descriptor->field == WEB_SETTINGS_FIELD_ALARM_OFF_DAYS) {
         /* Never empty, which is the state the whole feature is arranged to
          * make unreachable, and never a bit the week does not have. */
         if (number <= 0 || number > (int)ALARM_DAYS_ALL) return false;
@@ -330,14 +332,16 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_alarm_source(settings, (unsigned int)change->value);
     case WEB_SETTINGS_FIELD_ALARM_FM_STATION:
         return device_settings_set_alarm_fm_station(settings, (unsigned int)change->value);
-    case WEB_SETTINGS_FIELD_ALARM_STOP_ENABLED:
-        return device_settings_set_alarm_stop_enabled(settings, change->value != 0);
-    case WEB_SETTINGS_FIELD_ALARM_STOP_TIME: {
+    case WEB_SETTINGS_FIELD_ALARM_OFF_ENABLED:
+        return device_settings_set_alarm_off_enabled(settings, change->value != 0);
+    case WEB_SETTINGS_FIELD_ALARM_OFF_TIME: {
         uint8_t hour = 0U;
         uint8_t minute = 0U;
         if (!alarm_time_parse(change->text, &hour, &minute)) return false;
-        return device_settings_set_alarm_stop_time(settings, hour, minute);
+        return device_settings_set_alarm_off_time(settings, hour, minute);
     }
+    case WEB_SETTINGS_FIELD_ALARM_OFF_DAYS:
+        return device_settings_set_alarm_off_days(settings, (unsigned int)change->value);
     case WEB_SETTINGS_FIELD_TONE_BASS:
         return device_settings_set_tone_bass(settings, change->value);
     case WEB_SETTINGS_FIELD_TONE_TREBLE:
@@ -395,6 +399,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .screensaver_brightness = settings->screensaver_brightness,
         .screensaver_when = (uint8_t)settings->screensaver_when,
         .alarm = settings->alarm,
+        .alarm_off = settings->alarm_off,
         .tone_bass = (int8_t)settings->tone_bass,
         .tone_treble = (int8_t)settings->tone_treble,
         .loudness = settings->loudness,
@@ -448,9 +453,10 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->alarm.volume == right->alarm.volume &&
            left->alarm.source == right->alarm.source &&
            left->alarm.fm_station == right->alarm.fm_station &&
-           left->alarm.stop_enabled == right->alarm.stop_enabled &&
-           left->alarm.stop_hour == right->alarm.stop_hour &&
-           left->alarm.stop_minute == right->alarm.stop_minute &&
+           left->alarm_off.enabled == right->alarm_off.enabled &&
+           left->alarm_off.hour == right->alarm_off.hour &&
+           left->alarm_off.minute == right->alarm_off.minute &&
+           left->alarm_off.days == right->alarm_off.days &&
            left->tone_bass == right->tone_bass && left->tone_treble == right->tone_treble &&
            left->loudness == right->loudness &&
            left->loudness_treble == right->loudness_treble &&
@@ -547,12 +553,14 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_string(writer, view->alarm.source == ALARM_SOURCE_FM ? "fm" : "radio");
     web_json_literal(writer, ",\"alarm_fm_station\":");
     web_json_format(writer, "%u", (unsigned)view->alarm.fm_station);
-    web_json_literal(writer, ",\"alarm_stop_enabled\":");
-    web_json_literal(writer, view->alarm.stop_enabled ? "true" : "false");
-    web_json_literal(writer, ",\"alarm_stop_time\":");
-    char stop_time[6];
-    alarm_time_format(stop_time, sizeof(stop_time), view->alarm.stop_hour, view->alarm.stop_minute);
-    web_json_string(writer, stop_time);
+    web_json_literal(writer, ",\"alarm_off_enabled\":");
+    web_json_literal(writer, view->alarm_off.enabled ? "true" : "false");
+    web_json_literal(writer, ",\"alarm_off_time\":");
+    char off_time[6];
+    alarm_time_format(off_time, sizeof(off_time), view->alarm_off.hour, view->alarm_off.minute);
+    web_json_string(writer, off_time);
+    web_json_literal(writer, ",\"alarm_off_days\":");
+    web_json_format(writer, "%u", (unsigned)view->alarm_off.days);
     web_json_literal(writer, ",\"tone_bass\":");
     web_json_format(writer, "%d", (int)view->tone_bass);
     web_json_literal(writer, ",\"tone_treble\":");

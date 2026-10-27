@@ -97,6 +97,7 @@ void ui_quick_menu_init(ui_quick_menu_t *state)
      * the station's nudge and the speaker are told to us. Starting with all of them would draw a
      * Bluetooth row for one pass on a board that has no module. */
     state->visible = UI_QUICK_VISIBLE(UI_QUICK_ITEM_SLEEP) | UI_QUICK_VISIBLE(UI_QUICK_ITEM_ALARM) |
+                     UI_QUICK_VISIBLE(UI_QUICK_ITEM_ALARM_OFF) |
                      UI_QUICK_VISIBLE(UI_QUICK_ITEM_BASS) | UI_QUICK_VISIBLE(UI_QUICK_ITEM_TREBLE) |
                      UI_QUICK_VISIBLE(UI_QUICK_ITEM_LOUDNESS);
     state->top = 0U;
@@ -248,7 +249,8 @@ uint16_t ui_quick_sleep_step(uint16_t minutes, int direction)
 
 bool ui_quick_item_is_switch(ui_quick_item_t item)
 {
-    return item == UI_QUICK_ITEM_ALARM || item == UI_QUICK_ITEM_BT_OUTPUT;
+    return item == UI_QUICK_ITEM_ALARM || item == UI_QUICK_ITEM_ALARM_OFF ||
+           item == UI_QUICK_ITEM_BT_OUTPUT;
 }
 
 const char *ui_quick_item_label(ui_quick_item_t item, device_language_t language)
@@ -256,6 +258,7 @@ const char *ui_quick_item_label(ui_quick_item_t item, device_language_t language
     switch (item) {
     case UI_QUICK_ITEM_SLEEP: return device_text(DEVICE_TEXT_ROW_SLEEP_TIMER, language);
     case UI_QUICK_ITEM_ALARM: return device_text(DEVICE_TEXT_ROW_ALARM, language);
+    case UI_QUICK_ITEM_ALARM_OFF: return device_text(DEVICE_TEXT_ROW_ALARM_OFF, language);
     /* Not DEVICE_TEXT_ROW_BT_OUTPUT: "Sound over Bluetooth" is a settings row,
      * where the width is the panel's. Here it shares a row with its value. */
     case UI_QUICK_ITEM_BT_OUTPUT: return device_text(DEVICE_TEXT_ROW_BT_SPEAKER, language);

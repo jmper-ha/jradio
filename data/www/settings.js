@@ -47,6 +47,10 @@
   const deviceTimezone = document.querySelector('#device-timezone');
   const sleepSelect = document.querySelector('#sleep-select');
   const alarmDayChips = Array.from(document.querySelectorAll('#device-alarm-days [data-day]'));
+  const alarmOffDayChips =
+    Array.from(document.querySelectorAll('#device-alarm-off-days [data-day]'));
+  const alarmOffDaysRow = document.querySelector('#device-alarm-off-days-row');
+  const alarmOffNote = document.querySelector('#device-alarm-off-note');
   const alarmDaysRow = document.querySelector('#device-alarm-days-row');
   const alarmStation = document.querySelector('#device-alarm-station');
   const alarmFmStation = document.querySelector('#device-alarm-fm-station');
@@ -55,9 +59,6 @@
     source: document.querySelector('#device-alarm-source-row'),
     station: document.querySelector('#device-alarm-station-row'),
     fmStation: document.querySelector('#device-alarm-fm-station-row'),
-    stop: document.querySelector('#device-alarm-stop-row'),
-    stopTime: document.querySelector('#device-alarm-stop-time-row'),
-    stopNote: document.querySelector('#device-alarm-stop-note'),
   };
   const backupStatus = document.querySelector('#backup-status');
   const backupFile = document.querySelector('#backup-file');
@@ -135,9 +136,9 @@
      row: document.querySelector('#device-alarm-time-row'), whenOn: 'alarm_enabled'},
     /* The days are not here: seven buttons are one answer, and the rule that
        the last one cannot be turned off has nowhere to live in this table. */
-    /* The source, its station and the switch-off have no `row` here: each
-       row hangs on two settings at once - the alarm being on and the source,
-       or the switch-off - and applyAlarmRows() below gates them. */
+    /* The source and its station have no `row` here: each row hangs on two
+       settings at once - the alarm being on and the source - and
+       applyAlarmRows() below gates them. */
     {field: 'alarm_source', kind: 'choice', node: document.querySelector('#device-alarm-source')},
     {field: 'alarm_station', kind: 'number', node: alarmStation},
     {field: 'alarm_fm_station', kind: 'number', node: alarmFmStation},
@@ -145,8 +146,9 @@
      node: document.querySelector('#device-alarm-volume'),
      output: document.querySelector('#device-alarm-volume-value'),
      row: document.querySelector('#device-alarm-volume-row'), whenOn: 'alarm_enabled'},
-    {field: 'alarm_stop_enabled', kind: 'switch', node: document.querySelector('#device-alarm-stop')},
-    {field: 'alarm_stop_time', kind: 'text', node: document.querySelector('#device-alarm-stop-time')},
+    {field: 'alarm_off_enabled', kind: 'switch', node: document.querySelector('#device-alarm-off')},
+    {field: 'alarm_off_time', kind: 'text', node: document.querySelector('#device-alarm-off-time'),
+     row: document.querySelector('#device-alarm-off-time-row'), whenOn: 'alarm_off_enabled'},
     {field: 'flip_vertical', kind: 'switch', node: document.querySelector('#device-flip-vertical')},
     {field: 'flip_horizontal', kind: 'switch',
      node: document.querySelector('#device-flip-horizontal')},
@@ -937,6 +939,7 @@
     for (const entry of deviceFields) entry.node.disabled = disabled;
     sleepSelect.disabled = disabled;
     for (const chip of alarmDayChips) chip.disabled = disabled;
+    for (const chip of alarmOffDayChips) chip.disabled = disabled;
   }
 
   /* The zones come from the device rather than sitting in the markup: the list
@@ -1034,35 +1037,44 @@
      is the one state worth making unreachable - it looks armed and never goes
      off. */
   const ALARM_DAYS_ALL = 0x7f;
-  let alarmDays = ALARM_DAYS_ALL;
 
-  function renderAlarmDays() {
-    for (const chip of alarmDayChips) {
+  /* One set of chips and the field it writes: the alarm's and the
+     switch-off alarm's work the same way, each on its own mask. */
+  function dayPicker(chips, field) {
+    let days = ALARM_DAYS_ALL;
+    function render() {
+      for (const chip of chips) {
+        const bit = 1 << Number.parseInt(chip.dataset.day, 10);
+        const on = (days & bit) !== 0;
+        chip.classList.toggle('is-on', on);
+        chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+      }
+    }
+    function apply(mask) {
+      if (!Number.isSafeInteger(mask) || mask <= 0 || mask > ALARM_DAYS_ALL) return;
+      days = mask;
+      render();
+    }
+    function toggle(chip) {
       const bit = 1 << Number.parseInt(chip.dataset.day, 10);
-      const on = (alarmDays & bit) !== 0;
-      chip.classList.toggle('is-on', on);
-      chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+      const next = days ^ bit;
+      if (next === 0) {
+        deviceStatus.textContent = t('alarm.one_day');
+        deviceStatus.classList.remove('is-success');
+        deviceStatus.classList.add('is-error');
+        return;
+      }
+      apply(next);
+      sendDeviceChange(field, next);
     }
-  }
-
-  function applyAlarmDays(mask) {
-    if (!Number.isSafeInteger(mask) || mask <= 0 || mask > ALARM_DAYS_ALL) return;
-    alarmDays = mask;
-    renderAlarmDays();
-  }
-
-  function toggleAlarmDay(chip) {
-    const bit = 1 << Number.parseInt(chip.dataset.day, 10);
-    const next = alarmDays ^ bit;
-    if (next === 0) {
-      deviceStatus.textContent = t('alarm.one_day');
-      deviceStatus.classList.remove('is-success');
-      deviceStatus.classList.add('is-error');
-      return;
+    function bind() {
+      for (const chip of chips) chip.addEventListener('click', () => { toggle(chip); });
+      render();
     }
-    applyAlarmDays(next);
-    sendDeviceChange('alarm_days', next);
+    return {apply, bind};
   }
+  const alarmDayPicker = dayPicker(alarmDayChips, 'alarm_days');
+  const alarmOffDayPicker = dayPicker(alarmOffDayChips, 'alarm_off_days');
 
   /* The station picker. Off /api/stations with the source named rather than
      out of the playlist file: what the alarm stores is a row number, and the
@@ -1166,12 +1178,11 @@
   /* The alarm's rows that hang on two settings. Remembered between frames:
      a live update over the socket may carry the switch without the source,
      and the rows must not fall back to a guess in between. */
-  const alarmState = {enabled: false, source: 'radio', stop: false, fm: false};
+  const alarmState = {enabled: false, source: 'radio', fm: false};
 
   function applyAlarmRows(payload, available) {
     if (typeof payload.alarm_enabled === 'boolean') alarmState.enabled = payload.alarm_enabled;
     if (typeof payload.alarm_source === 'string') alarmState.source = payload.alarm_source;
-    if (typeof payload.alarm_stop_enabled === 'boolean') alarmState.stop = payload.alarm_stop_enabled;
     if (typeof available.fm === 'boolean') alarmState.fm = available.fm;
     const on = alarmState.enabled;
     // FM is offered only where there is a tuner; without one it rings the radio.
@@ -1179,9 +1190,6 @@
     alarmRows.source.hidden = !on || !alarmState.fm;
     alarmRows.station.hidden = !on || fm;
     alarmRows.fmStation.hidden = !on || !fm;
-    alarmRows.stop.hidden = !on;
-    alarmRows.stopTime.hidden = !on || !alarmState.stop;
-    alarmRows.stopNote.hidden = !on || !alarmState.stop;
     if (alarmState.fm && !alarmFmLoaded) {
       alarmFmLoaded = true;
       loadAlarmFmStations();
@@ -1304,10 +1312,15 @@
     /* Neither fits the field table above: the days are seven buttons, and
        the station's options come from their own request and may not be here
        yet. */
-    applyAlarmDays(payload.alarm_days);
-    // The days are not in the field table, so their row is gated here.
+    alarmDayPicker.apply(payload.alarm_days);
+    alarmOffDayPicker.apply(payload.alarm_off_days);
+    // The days are not in the field table, so their rows are gated here.
     if (typeof payload.alarm_enabled === 'boolean') {
       alarmDaysRow.hidden = payload.alarm_enabled !== true;
+    }
+    if (typeof payload.alarm_off_enabled === 'boolean') {
+      alarmOffDaysRow.hidden = payload.alarm_off_enabled !== true;
+      alarmOffNote.hidden = payload.alarm_off_enabled !== true;
     }
     if (Number.isSafeInteger(payload.alarm_station)) {
       alarmStationWanted = payload.alarm_station;
@@ -1456,7 +1469,8 @@
        the panel on the way. */
     themeResetButton.addEventListener('click', () => { sendDeviceChange('theme_reset', true); });
     renderSleepChoices();
-    renderAlarmDays();
+    alarmDayPicker.bind();
+    alarmOffDayPicker.bind();
     loadAlarmStations();
     /* The empty-playlist line is the only text in the picker, and it is a
        translation like the menu's. */
@@ -1465,9 +1479,6 @@
         alarmStationEmptyOption.textContent = t('alarm.no_stations');
       }
     });
-    for (const chip of alarmDayChips) {
-      chip.addEventListener('click', () => { toggleAlarmDay(chip); });
-    }
     /* Built here rather than in the markup, so a language changed on the
        device or in another tab relabels the menu with everything else. */
     window.jradioI18n.onChange(renderSleepChoices);

@@ -51,13 +51,27 @@ typedef struct {
     /* The FM preset, counting from 1 like `station` - its own number, so
      * switching the source back and forth loses neither choice. */
     uint8_t fm_station;
-    /* Switching the radio off again, at a time of day: only after a morning
-     * it woke for the alarm - a radio already on at seven is somebody
-     * listening, and nobody asked for it to go off under them. */
-    bool stop_enabled;
-    uint8_t stop_hour;   /* 0..23 */
-    uint8_t stop_minute; /* 0..59 */
 } alarm_config_t;
+
+/* The switch-off alarm: a second alarm of its own, with its own time and
+ * days, that puts the radio to sleep whatever is playing and whoever turned
+ * it on. It used to be part of the alarm - a time to switch off at, counted
+ * from the ringing and only on a morning the alarm had woken the board - and
+ * users found the pair hard to set: the evening's switch-off had to be the
+ * morning alarm's. Split off 2026-10-27.
+ *
+ * Nothing to play and nothing to wake for: a board already asleep at its time
+ * has nothing to switch off, so this never arms a wake-up. */
+typedef struct {
+    bool enabled;
+    uint8_t hour;   /* 0..23 */
+    uint8_t minute; /* 0..59 */
+    uint8_t days;   /* as alarm_config_t's, never 0 */
+} alarm_off_t;
+
+/* Switched on, with a day and numbers in range. */
+bool alarm_off_valid(const alarm_off_t *off);
+bool alarm_off_due(const alarm_off_t *off, int weekday, int hour, int minute);
 
 /* Whether this configuration could ever ring: switched on, a station chosen
  * for its source, and the numbers in range. */
@@ -69,12 +83,6 @@ bool alarm_config_valid(const alarm_config_t *config);
  * nothing to play. */
 alarm_source_t alarm_play_source(const alarm_config_t *config, bool fm_present);
 uint8_t alarm_play_station(const alarm_config_t *config, bool fm_present);
-
-/* Minutes from the alarm going off to switching the radio off again, 0 when
- * it stays on. Counted on the clock face from the alarm's time to the stop
- * time, so 23:00 to 01:00 is two hours, and the same time for both is a whole
- * day rather than no time at all. */
-uint16_t alarm_stop_after_minutes(const alarm_config_t *config);
 
 /* Is this very minute the one? The caller asks once a second and the guard
  * below is what turns that into one firing. */
@@ -110,6 +118,14 @@ typedef struct {
 void alarm_guard_init(alarm_guard_t *guard);
 bool alarm_guard_take_due(alarm_guard_t *guard, const alarm_config_t *config, int weekday,
                           int hour, int minute);
+
+/* The same one-per-minute for the switch-off, with the opposite start: it
+ * starts disarmed, so a board switched on during the switch-off's own minute
+ * is not put straight back to sleep. It arms once the clock leaves that
+ * minute, as the alarm's guard re-arms. */
+void alarm_off_guard_init(alarm_guard_t *guard);
+bool alarm_off_guard_take_due(alarm_guard_t *guard, const alarm_off_t *off, int weekday,
+                              int hour, int minute);
 
 /* How early the board wakes for the quiet check: far enough out that the
  * drift it is there to correct - the RTC counts on an internal RC oscillator

@@ -94,6 +94,8 @@ typedef enum {
      * settings screen, and the alarm's own rows live in the browser. */
     DEVICE_TEXT_ROW_SLEEP_TIMER,
     DEVICE_TEXT_ROW_ALARM,
+    // The switch-off alarm's switch, beside the alarm's.
+    DEVICE_TEXT_ROW_ALARM_OFF,
     /* The Bluetooth switch under a name that fits beside its value: the quick
      * panel draws a name and a value on one row of a window that is not the
      * full width, where the settings row's own wording does not fit. */

@@ -28,6 +28,9 @@
 typedef enum {
     UI_QUICK_ITEM_SLEEP = 0,
     UI_QUICK_ITEM_ALARM,
+    /* The switch-off alarm's switch, under the alarm's since the two were
+     * split 2026-10-27; its time and days are on the page, like the alarm's. */
+    UI_QUICK_ITEM_ALARM_OFF,
     UI_QUICK_ITEM_BRIGHTNESS,
     /* The tone controls and loudness, here since 2026-10-18: users found them
      * awkward to reach three levels down in the settings while the music they

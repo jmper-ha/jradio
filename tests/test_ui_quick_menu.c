@@ -48,6 +48,9 @@ static void test_the_knob_walks_the_rows_and_wraps(void)
     assert(state.item == UI_QUICK_ITEM_ALARM);
     assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1200U) ==
            UI_QUICK_RESULT_MOVED);
+    assert(state.item == UI_QUICK_ITEM_ALARM_OFF);
+    assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1250U) ==
+           UI_QUICK_RESULT_MOVED);
     assert(state.item == UI_QUICK_ITEM_BRIGHTNESS);
     const ui_quick_item_t sound[] = {UI_QUICK_ITEM_BASS, UI_QUICK_ITEM_TREBLE,
                                      UI_QUICK_ITEM_LOUDNESS, UI_QUICK_ITEM_BT_OUTPUT};
@@ -74,6 +77,8 @@ static void test_the_click_hands_the_knob_to_the_value(void)
     assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1100U) ==
            UI_QUICK_RESULT_MOVED);
     assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1150U) ==
+           UI_QUICK_RESULT_MOVED);
+    assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1175U) ==
            UI_QUICK_RESULT_MOVED);
     const ui_quick_item_t row = state.item;
     assert(row == UI_QUICK_ITEM_BRIGHTNESS);
@@ -145,7 +150,7 @@ static void test_a_row_that_disappears_takes_the_cursor_with_it(void)
     assert(!state.editing);
     ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_BRIGHTNESS, true);
     assert(!ui_quick_menu_item_visible(&state, UI_QUICK_ITEM_BT_OUTPUT));
-    assert(ui_quick_menu_visible_count(&state) == 6U);
+    assert(ui_quick_menu_visible_count(&state) == 7U);
 
     /* And the walk no longer stops on it. */
     for (int step = 0; step < 14; ++step) {
@@ -168,6 +173,7 @@ static void test_one_row_left_is_not_a_spin(void)
     ui_quick_menu_init(&state);
     hide_sound_rows(&state);
     ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_ALARM, false);
+    ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_ALARM_OFF, false);
     assert(ui_quick_menu_visible_count(&state) == 1U);
     assert(ui_quick_menu_open(&state, 100U));
     assert(state.item == UI_QUICK_ITEM_SLEEP);
@@ -184,6 +190,7 @@ static void test_a_panel_with_no_rows_does_not_open(void)
     hide_sound_rows(&state);
     ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_SLEEP, false);
     ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_ALARM, false);
+    ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_ALARM_OFF, false);
     assert(ui_quick_menu_visible_count(&state) == 0U);
     assert(!ui_quick_menu_open(&state, 100U));
     assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_QUICK_MENU, 100U) ==
@@ -216,7 +223,7 @@ static void test_an_untouched_panel_closes_itself(void)
     assert(!ui_quick_menu_idle_expired(&state, 0xFFFFFFFFU));
 }
 
-/* Seven functions under a window of four: the list scrolls, the cursor is
+/* Eight functions under a window of four: the list scrolls, the cursor is
    always on a drawn row, and the order is the order of the enum - the
    speaker's row last, because it is the one that can go away and a row that
    vanished from the middle would move everything under it. */
@@ -224,12 +231,12 @@ static void test_the_list_scrolls_under_the_window(void)
 {
     ui_quick_menu_t state;
     open_with_all_rows(&state);
-    assert(ui_quick_menu_visible_count(&state) == 7U);
+    assert(ui_quick_menu_visible_count(&state) == 8U);
     assert(ui_quick_menu_row_item(&state, 0U) == UI_QUICK_ITEM_SLEEP);
-    assert(ui_quick_menu_row_item(&state, 3U) == UI_QUICK_ITEM_BASS);
+    assert(ui_quick_menu_row_item(&state, 3U) == UI_QUICK_ITEM_BRIGHTNESS);
 
     // Down to the last row: the window follows, with the last four in it.
-    for (int step = 0; step < 6; ++step) {
+    for (int step = 0; step < 7; ++step) {
         (void)ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1100U);
     }
     assert(state.item == UI_QUICK_ITEM_BT_OUTPUT);
@@ -255,8 +262,14 @@ static void test_a_click_flips_a_switch_at_once(void)
     assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_BUTTON, 1200U) ==
            UI_QUICK_RESULT_TOGGLE);
     assert(!state.editing);
-    // The next turn still walks the rows.
+    // The next turn still walks the rows - to the switch-off, a switch too.
     assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1300U) ==
+           UI_QUICK_RESULT_MOVED);
+    assert(state.item == UI_QUICK_ITEM_ALARM_OFF);
+    assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_BUTTON, 1310U) ==
+           UI_QUICK_RESULT_TOGGLE);
+    assert(!state.editing);
+    assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1320U) ==
            UI_QUICK_RESULT_MOVED);
     assert(state.item == UI_QUICK_ITEM_BRIGHTNESS);
     // Loudness is a choice of four, not a switch: it takes the knob.
@@ -295,15 +308,16 @@ static void test_a_short_list_leaves_rows_empty(void)
     ui_quick_menu_t state;
     ui_quick_menu_init(&state);
     // The sound rows are always there; taken out here to get a short list.
-    assert(ui_quick_menu_visible_count(&state) == 5U);
+    assert(ui_quick_menu_visible_count(&state) == 6U);
     ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_BASS, false);
     ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_TREBLE, false);
     ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_LOUDNESS, false);
-    assert(ui_quick_menu_visible_count(&state) == 2U);
+    assert(ui_quick_menu_visible_count(&state) == 3U);
     assert(ui_quick_menu_open(&state, 100U));
     assert(ui_quick_menu_row_item(&state, 0U) == UI_QUICK_ITEM_SLEEP);
     assert(ui_quick_menu_row_item(&state, 1U) == UI_QUICK_ITEM_ALARM);
-    for (uint8_t row = 2U; row < (uint8_t)UI_QUICK_ROWS; ++row) {
+    assert(ui_quick_menu_row_item(&state, 2U) == UI_QUICK_ITEM_ALARM_OFF);
+    for (uint8_t row = 3U; row < (uint8_t)UI_QUICK_ROWS; ++row) {
         assert(ui_quick_menu_row_item(&state, row) == UI_QUICK_ITEM_COUNT);
     }
     /* Past the end of the window, and out of range. */
@@ -317,14 +331,14 @@ static void test_a_short_list_leaves_rows_empty(void)
     ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_BT_OUTPUT, true);
     assert(state.item == UI_QUICK_ITEM_ALARM);
     assert(ui_quick_menu_cursor_row(&state) == 1U);
-    assert(ui_quick_menu_row_item(&state, 2U) == UI_QUICK_ITEM_BT_OUTPUT);
+    assert(ui_quick_menu_row_item(&state, 3U) == UI_QUICK_ITEM_BT_OUTPUT);
 
     /* And it going quiet again takes its row away, leaving the cursor where it
        was: the row above it did not move. */
     ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_BT_OUTPUT, false);
     assert(state.item == UI_QUICK_ITEM_ALARM);
     assert(ui_quick_menu_cursor_row(&state) == 1U);
-    assert(ui_quick_menu_row_item(&state, 2U) == UI_QUICK_ITEM_COUNT);
+    assert(ui_quick_menu_row_item(&state, 3U) == UI_QUICK_ITEM_COUNT);
 }
 
 /* Which rows are switches: the two that are, are, and the two that carry a
@@ -333,6 +347,7 @@ static void test_a_short_list_leaves_rows_empty(void)
 static void test_the_switch_rows_are_the_two_switches(void)
 {
     assert(ui_quick_item_is_switch(UI_QUICK_ITEM_ALARM));
+    assert(ui_quick_item_is_switch(UI_QUICK_ITEM_ALARM_OFF));
     assert(ui_quick_item_is_switch(UI_QUICK_ITEM_BT_OUTPUT));
     assert(!ui_quick_item_is_switch(UI_QUICK_ITEM_SLEEP));
     assert(!ui_quick_item_is_switch(UI_QUICK_ITEM_BRIGHTNESS));
@@ -380,7 +395,7 @@ static void test_the_station_row_sits_under_the_tone(void)
     open_with_all_rows(&state);
     assert(!ui_quick_menu_item_visible(&state, UI_QUICK_ITEM_LEVEL_NUDGE));
     ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_LEVEL_NUDGE, true);
-    assert(ui_quick_menu_visible_count(&state) == 8U);
+    assert(ui_quick_menu_visible_count(&state) == 9U);
     while (state.item != UI_QUICK_ITEM_LOUDNESS) {
         (void)ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1100U);
     }

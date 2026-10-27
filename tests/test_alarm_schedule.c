@@ -261,41 +261,47 @@ static void test_the_source_and_its_station(void)
     assert(alarm_play_station(NULL, true) == 0U);
 }
 
-/* The stop, counted on the clock face from the alarm's time. */
-static void test_the_stop_after_the_alarm(void)
+/* The switch-off alarm, its own time and days. 2026-10-27 is a Tuesday:
+ * weekday 2. */
+static void test_the_switch_off_alarm(void)
 {
-    alarm_config_t config = weekday_alarm();  // 07:30
-    assert(alarm_stop_after_minutes(&config) == 0U);
-    config.stop_enabled = true;
-    config.stop_hour = 11U;
-    config.stop_minute = 0U;
-    assert(alarm_stop_after_minutes(&config) == 210U);
-    // Over midnight.
-    config.hour = 23U;
-    config.minute = 0U;
-    config.stop_hour = 1U;
-    assert(alarm_stop_after_minutes(&config) == 120U);
-    // The same time for both is a whole day, not an alarm that stops at once.
-    config.stop_hour = 23U;
-    assert(alarm_stop_after_minutes(&config) == 1440U);
-    // A minute before is nearly a day.
-    config.stop_hour = 22U;
-    config.stop_minute = 59U;
-    assert(alarm_stop_after_minutes(&config) == 1439U);
-    config.stop_enabled = false;
-    assert(alarm_stop_after_minutes(&config) == 0U);
-    config.stop_enabled = true;
-    config.stop_hour = 24U;
-    assert(alarm_stop_after_minutes(&config) == 0U);
-    assert(!alarm_config_valid(&config));
-    assert(alarm_stop_after_minutes(NULL) == 0U);
+    alarm_off_t off = {.enabled = true, .hour = 23U, .minute = 0U, .days = 0x3EU};  // Mon-Fri
+    assert(alarm_off_valid(&off));
+    assert(alarm_off_due(&off, 2, 23, 0));
+    assert(!alarm_off_due(&off, 2, 23, 1));
+    assert(!alarm_off_due(&off, 6, 23, 0));  // Saturday is not in the mask
+    off.enabled = false;
+    assert(!alarm_off_valid(&off) && !alarm_off_due(&off, 2, 23, 0));
+    off.enabled = true;
+    off.days = 0U;
+    assert(!alarm_off_valid(&off));
+    off.days = ALARM_DAYS_ALL;
+    off.hour = 24U;
+    assert(!alarm_off_valid(&off));
+    assert(!alarm_off_valid(NULL));
+}
+
+/* Switched on during its own minute, the board is left on; the next day's
+ * minute takes it. The alarm's own guard is the other way round. */
+static void test_the_switch_off_does_not_fire_into_a_fresh_boot(void)
+{
+    const alarm_off_t off = {.enabled = true, .hour = 23U, .minute = 0U, .days = ALARM_DAYS_ALL};
+    alarm_guard_t guard;
+    alarm_off_guard_init(&guard);
+    assert(!alarm_off_guard_take_due(&guard, &off, 2, 23, 0));
+    assert(!alarm_off_guard_take_due(&guard, &off, 2, 23, 0));
+    assert(!alarm_off_guard_take_due(&guard, &off, 2, 23, 1));
+    assert(alarm_off_guard_take_due(&guard, &off, 3, 23, 0));
+    // Once per minute however often it is asked.
+    assert(!alarm_off_guard_take_due(&guard, &off, 3, 23, 0));
 }
 
 int main(void)
 {
     test_an_alarm_that_cannot_ring();
     test_the_source_and_its_station();
-    test_the_stop_after_the_alarm();
+    test_the_switch_off_alarm();
+    test_the_switch_off_does_not_fire_into_a_fresh_boot();
     test_later_today_and_tomorrow();
     test_the_week_wraps();
     test_its_own_minute_answers_with_the_next_one();

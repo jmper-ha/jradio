@@ -320,12 +320,16 @@ static void test_apply_writes_through_to_the_file(void)
     assert(!parse_one("{\"field\":\"alarm_source\",\"value\":\"am\"}", &alarm_change));
     assert(parse_one("{\"field\":\"alarm_fm_station\",\"value\":4}", &alarm_change));
     assert(web_settings_apply(&settings, &alarm_change));
-    assert(parse_one("{\"field\":\"alarm_stop_enabled\",\"value\":true}", &alarm_change));
+    assert(parse_one("{\"field\":\"alarm_off_enabled\",\"value\":true}", &alarm_change));
     assert(web_settings_apply(&settings, &alarm_change));
-    assert(parse_one("{\"field\":\"alarm_stop_time\",\"value\":\"10:45\"}", &alarm_change));
+    assert(parse_one("{\"field\":\"alarm_off_time\",\"value\":\"22:45\"}", &alarm_change));
     assert(web_settings_apply(&settings, &alarm_change));
-    assert(parse_one("{\"field\":\"alarm_stop_time\",\"value\":\"25:00\"}", &alarm_change));
+    assert(parse_one("{\"field\":\"alarm_off_time\",\"value\":\"25:00\"}", &alarm_change));
     assert(!web_settings_apply(&settings, &alarm_change));
+    assert(parse_one("{\"field\":\"alarm_off_days\",\"value\":65}", &alarm_change));
+    assert(web_settings_apply(&settings, &alarm_change));
+    assert(!parse_one("{\"field\":\"alarm_off_days\",\"value\":0}", &alarm_change));
+    assert(!parse_one("{\"field\":\"alarm_off_days\",\"value\":128}", &alarm_change));
     const web_settings_change_t too_far = {WEB_SETTINGS_FIELD_ALARM_FM_STATION, 41, ""};
     assert(!web_settings_apply(&settings, &too_far));
 
@@ -365,8 +369,9 @@ static void test_apply_writes_through_to_the_file(void)
     assert(reloaded.alarm.volume == 30U);
     assert(reloaded.alarm.source == ALARM_SOURCE_FM);
     assert(reloaded.alarm.fm_station == 4U);
-    assert(reloaded.alarm.stop_enabled);
-    assert(reloaded.alarm.stop_hour == 10U && reloaded.alarm.stop_minute == 45U);
+    assert(reloaded.alarm_off.enabled);
+    assert(reloaded.alarm_off.hour == 22U && reloaded.alarm_off.minute == 45U);
+    assert(reloaded.alarm_off.days == 65U);
     assert(reloaded.tone_bass == -4 && reloaded.tone_treble == 6);
     assert(reloaded.loudness == DEVICE_LOUDNESS_MEDIUM && reloaded.loudness_treble);
     assert(reloaded.level_normalize);
@@ -457,8 +462,9 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"alarm_volume\":40") != NULL);
     assert(strstr(document, "\"alarm_source\":\"radio\"") != NULL);
     assert(strstr(document, "\"alarm_fm_station\":1") != NULL);
-    assert(strstr(document, "\"alarm_stop_enabled\":false") != NULL);
-    assert(strstr(document, "\"alarm_stop_time\":\"11:00\"") != NULL);
+    assert(strstr(document, "\"alarm_off_enabled\":false") != NULL);
+    assert(strstr(document, "\"alarm_off_time\":\"23:00\"") != NULL);
+    assert(strstr(document, "\"alarm_off_days\":127") != NULL);
     assert(strstr(document, "\"tone_bass\":0") != NULL);
     assert(strstr(document, "\"tone_treble\":0") != NULL);
     assert(strstr(document, "\"loudness\":\"off\"") != NULL);

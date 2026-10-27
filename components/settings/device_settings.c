@@ -259,10 +259,11 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
                   .station = DEVICE_ALARM_STATION_DEFAULT,
                   .volume = DEVICE_ALARM_VOLUME_DEFAULT,
                   .source = ALARM_SOURCE_RADIO,
-                  .fm_station = DEVICE_ALARM_FM_STATION_DEFAULT,
-                  .stop_enabled = false,
-                  .stop_hour = DEVICE_ALARM_STOP_HOUR_DEFAULT,
-                  .stop_minute = DEVICE_ALARM_STOP_MINUTE_DEFAULT},
+                  .fm_station = DEVICE_ALARM_FM_STATION_DEFAULT},
+        .alarm_off = {.enabled = false,
+                      .hour = DEVICE_ALARM_OFF_HOUR_DEFAULT,
+                      .minute = DEVICE_ALARM_OFF_MINUTE_DEFAULT,
+                      .days = ALARM_DAYS_ALL},
     };
     memcpy(settings->storage_path, path, strlen(path) + 1U);
     memcpy(settings->theme_colors, device_theme_default_colors,
@@ -536,15 +537,35 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
             settings->alarm.fm_station = (uint8_t)parsed;
         }
     }
-    if (read_value(&csv, "alarm_stop_enabled", value, sizeof(value))) {
-        (void)parse_bool(value, &settings->alarm.stop_enabled);
-    }
-    if (read_value(&csv, "alarm_stop_time", value, sizeof(value))) {
+    /* The switch-off alarm, and the switch-off it replaced: that one had a
+     * switch and a time of its own and the alarm's days. Read here, moved
+     * over after the file is closed - only when the new keys are not there
+     * yet, so it happens once. */
+    bool old_stop_seen = false;
+    bool old_stop_enabled = false;
+    uint8_t old_stop_hour = DEVICE_ALARM_OFF_HOUR_DEFAULT;
+    uint8_t old_stop_minute = DEVICE_ALARM_OFF_MINUTE_DEFAULT;
+    const bool off_seen = read_value(&csv, "alarm_off_enabled", value, sizeof(value));
+    if (off_seen) (void)parse_bool(value, &settings->alarm_off.enabled);
+    if (read_value(&csv, "alarm_off_time", value, sizeof(value))) {
         uint8_t hour = 0U;
         uint8_t minute = 0U;
         if (alarm_time_parse(value, &hour, &minute)) {
-            settings->alarm.stop_hour = hour;
-            settings->alarm.stop_minute = minute;
+            settings->alarm_off.hour = hour;
+            settings->alarm_off.minute = minute;
+        }
+    }
+    if (read_value(&csv, "alarm_off_days", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        if (end != NULL && *end == '\0' && parsed > 0 && parsed <= (long)ALARM_DAYS_ALL) {
+            settings->alarm_off.days = (uint8_t)parsed;
+        }
+    }
+    if (!off_seen && read_value(&csv, "alarm_stop_enabled", value, sizeof(value))) {
+        old_stop_seen = parse_bool(value, &old_stop_enabled);
+        if (read_value(&csv, "alarm_stop_time", value, sizeof(value))) {
+            (void)alarm_time_parse(value, &old_stop_hour, &old_stop_minute);
         }
     }
     if (read_value(&csv, "fm_frequency", value, sizeof(value))) {
@@ -607,6 +628,23 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     (void)settings_csv_snapshot_get(&csv, "last_dlna_title", settings->last_dlna_title,
                            sizeof(settings->last_dlna_title));
     settings_csv_snapshot_free(&csv);
+    if (old_stop_seen) {
+        /* The old switch-off went with the alarm's days, so the new alarm
+         * starts on them; written out now, so this is the last load that
+         * looks at the old keys. A failed write is tried again next boot. */
+        const alarm_off_t moved = {.enabled = old_stop_enabled,
+                                   .hour = old_stop_hour,
+                                   .minute = old_stop_minute,
+                                   .days = settings->alarm.days};
+        settings->alarm_off = moved;
+        char text[6];
+        alarm_time_format(text, sizeof(text), moved.hour, moved.minute);
+        (void)save_value(settings, "alarm_off_time", text);
+        snprintf(text, sizeof(text), "%u", (unsigned int)moved.days);
+        (void)save_value(settings, "alarm_off_days", text);
+        // Last, since it is the key whose presence says the move is done.
+        (void)save_value(settings, "alarm_off_enabled", moved.enabled ? "1" : "0");
+    }
     /* A file from before the rule, or edited by hand, may pair the two; the
      * clock is what the weather screen is without its weather. Left in the
      * file, so a weather service turned on again from a backup finds it. */
@@ -1290,25 +1328,36 @@ bool device_settings_set_alarm_fm_station(device_settings_t *settings, unsigned 
     return true;
 }
 
-bool device_settings_set_alarm_stop_enabled(device_settings_t *settings, bool enabled)
+bool device_settings_set_alarm_off_enabled(device_settings_t *settings, bool enabled)
 {
     if (settings == NULL) return false;
-    if (settings->alarm.stop_enabled == enabled) return true;
-    if (!save_value(settings, "alarm_stop_enabled", enabled ? "1" : "0")) return false;
-    settings->alarm.stop_enabled = enabled;
+    if (settings->alarm_off.enabled == enabled) return true;
+    if (!save_value(settings, "alarm_off_enabled", enabled ? "1" : "0")) return false;
+    settings->alarm_off.enabled = enabled;
     return true;
 }
 
-bool device_settings_set_alarm_stop_time(device_settings_t *settings, unsigned int hour,
-                                         unsigned int minute)
+bool device_settings_set_alarm_off_time(device_settings_t *settings, unsigned int hour,
+                                        unsigned int minute)
 {
     if (settings == NULL || hour > 23U || minute > 59U) return false;
-    if (settings->alarm.stop_hour == hour && settings->alarm.stop_minute == minute) return true;
+    if (settings->alarm_off.hour == hour && settings->alarm_off.minute == minute) return true;
     char text[6];
     alarm_time_format(text, sizeof(text), (uint8_t)hour, (uint8_t)minute);
-    if (!save_value(settings, "alarm_stop_time", text)) return false;
-    settings->alarm.stop_hour = (uint8_t)hour;
-    settings->alarm.stop_minute = (uint8_t)minute;
+    if (!save_value(settings, "alarm_off_time", text)) return false;
+    settings->alarm_off.hour = (uint8_t)hour;
+    settings->alarm_off.minute = (uint8_t)minute;
+    return true;
+}
+
+bool device_settings_set_alarm_off_days(device_settings_t *settings, unsigned int days)
+{
+    if (settings == NULL || days == 0U || days > ALARM_DAYS_ALL) return false;
+    if (settings->alarm_off.days == days) return true;
+    char text[4];
+    snprintf(text, sizeof(text), "%u", days);
+    if (!save_value(settings, "alarm_off_days", text)) return false;
+    settings->alarm_off.days = (uint8_t)days;
     return true;
 }
 

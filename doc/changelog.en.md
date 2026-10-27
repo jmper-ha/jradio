@@ -21,7 +21,8 @@ New:
   before, that service had no forecast row.
 - HLS stations whose segments are MPEG-TS (`.ts`) play, Retro FM's
   `hls-01-retro.emgsound.ru/…/playlist.m3u8` link for one. Such links used to
-  stay silent - only `.aac` segments were understood.
+  stay silent - only `.aac` segments were understood. The segments' format
+  and codec (AAC or MP3) are told from their content, not their file name.
 - A new display: the NV3007 142x428 bar, lying down (428x142), with its own
   layout - the cover on the left, the names, the level meter and a line with
   the codec and the volume beside it. In the web flasher and the Hardware

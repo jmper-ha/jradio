@@ -9,6 +9,9 @@ detail is in the commit history.
 ## Next version
 
 Fixed:
+- Asleep, the backlight of some panels glowed faintly: the backlight pin was
+  let go in deep sleep, and the module's own pull-up put about 0.5 V on it.
+  It is now held at 0 for the whole sleep, on any module, with no resistor.
 - A peripheral power switch on GPIO 47 or 48 did not switch off in sleep:
   those pins are powered from the module's memory supply, which deep sleep
   switches off. The Hardware editor and the firmware's wiring check now

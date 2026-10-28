@@ -421,6 +421,10 @@ static esp_err_t board_backlight_init(void)
         .hpoint = 0,
     };
 
+    /* Held low through the last deep sleep (see board_deep_sleep), and the
+     * hold survives the wake: lifted first, or the PWM would never reach the
+     * pad and the panel would stay dark. */
+    if (wiring()->tft_backlight >= 0) (void)gpio_hold_dis(wiring()->tft_backlight);
     ESP_RETURN_ON_ERROR(ledc_timer_config(&timer_config), TAG, "configure PWM timer failed");
     ESP_RETURN_ON_ERROR(ledc_channel_config(&channel_config), TAG, "configure PWM channel failed");
     return board_backlight_set(0);
@@ -1777,6 +1781,29 @@ void board_deep_sleep(uint32_t wake_after_seconds)
      * after the backlight goes, so the fill (about 60 ms) is never seen, and
      * from the task that draws: nothing else is sending to the panel. */
     (void)board_display_fill(0, 0, TFT_WIDTH, TFT_HEIGHT, 0U);
+    /* Duty 0 is a low pin only while the chip is awake. Asleep, a pad nobody
+     * holds is let go, and the backlight input decides its own level: a
+     * user's module glowed faintly all night on 0.5 V - a MOSFET gate pulled
+     * up to 3.3 V through 10 k on one module, a bipolar base on another, and
+     * a voltage on the bare pin with the panel unplugged. Taken off the PWM
+     * and held low by the chip's own driver, the way the peripheral switch
+     * below is, it stays at 0 V on any module; board_backlight_init() lifts
+     * the hold. (On 47 or 48, which sleep unpowered, no hold can help.) */
+    const int8_t backlight = wiring()->tft_backlight;
+    if (backlight >= 0) {
+        (void)ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0U);
+        const gpio_config_t low = {
+            .pin_bit_mask = 1ULL << backlight,
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        (void)gpio_config(&low);
+        (void)gpio_set_level(backlight, 0);
+        (void)gpio_hold_en(backlight);
+        gpio_deep_sleep_hold_en();
+    }
     /* Playback has already been stopped by the caller; this is the belt to
      * that braces, because the rail under the amplifier is about to go. */
     board_amp_drive(false);

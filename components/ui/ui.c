@@ -726,6 +726,9 @@ static bool s_autoplay_for_alarm;
 /* Armed by the remote's source key: that source's own place is resumed, not
  * the last source's. AUDIO_SOURCE_NONE otherwise. */
 static audio_source_t s_autoplay_target = AUDIO_SOURCE_NONE;
+/* Whether the select for that volume has gone to the controller - see the
+ * file case in ui_autoplay_step(). */
+static bool s_autoplay_select_sent;
 /* The remote's Mute: the level it took the sound down from, so Mute again
  * or any volume key puts it back. Not a setting - a muted board comes back
  * from a power cut at the level it was muted at, not silent. */
@@ -7347,6 +7350,7 @@ static void ui_remote_open_source(audio_source_t source)
     }
     ESP_LOGI(TAG, "remote: resuming source %d", (int)source);
     s_autoplay_target = source;
+    s_autoplay_select_sent = false;
     s_autoplay_for_alarm = false;
     s_autoplay_pending = true;
     s_autoplay_started_ms = ui_tick_get_ms();
@@ -8385,6 +8389,31 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         ui_autoplay_bluetooth_step(snapshot, waited);
         return;
     }
+    /* A file from the remote is resumed only once the controller says the
+     * volume is the source. The resume reads the file's directory into the
+     * one shared listing from this task, and the select - with another
+     * source to stop first - reads the volume's root into the same listing
+     * from the player's: on the bench the root landed between the reading and
+     * the search, and the file was not found (2026-10-29). At power-on there
+     * is nothing to stop and the race was never seen; this is the remote's
+     * case only. */
+    if (s_autoplay_target != AUDIO_SOURCE_NONE &&
+        (action == UI_AUTOPLAY_FILE || action == UI_AUTOPLAY_FILE_BROWSER) &&
+        snapshot->active_source != s_autoplay_target) {
+        if (!s_autoplay_select_sent) {
+            const player_command_t select = {
+                .kind = PLAYER_COMMAND_SELECT_SOURCE,
+                .source = s_autoplay_target,
+                .item_index = PLAYER_ITEM_NONE,
+            };
+            s_autoplay_select_sent = ui_submit_player_command(&select);
+        }
+        if (!waited) return;
+        // Never confirmed: the list, the way the key used to open.
+        s_autoplay_pending = false;
+        ui_show_source();
+        return;
+    }
     s_autoplay_pending = false;
 
     switch (action) {
@@ -8503,7 +8532,8 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
             .source = source,
             .item_index = PLAYER_ITEM_NONE,
         };
-        if (!ui_submit_player_command(&select)) return;
+        // The remote's volume is already selected and confirmed - above.
+        if (s_autoplay_target == AUDIO_SOURCE_NONE && !ui_submit_player_command(&select)) return;
         // Whether the remembered file is still there is only knowable by
         // looking, so the attempt itself is the test: it opens the file's
         // directory either way, leaving the browser somewhere useful.

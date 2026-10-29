@@ -7377,6 +7377,8 @@ static bool ui_handle_remote_action(board_input_action_t action)
         ui_toggle_playback();
         return true;
     case BOARD_INPUT_ACTION_SLEEP_CYCLE: {
+        // A receiver that cannot wake the chip: no timer, as on the panel.
+        if (!board_deep_sleep_supported()) return true;
         const uint16_t next = ui_quick_sleep_step(sleep_timer_service_minutes(), 1);
         sleep_timer_service_set(next);
         ESP_LOGI(TAG, "remote: sleep timer %u min", (unsigned)next);
@@ -9176,6 +9178,11 @@ esp_err_t ui_init(void)
      * in the evening, and the sleep timer and the alarm have no rows on the
      * settings screen at all. The Bluetooth row is added by the poll. */
     ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_BRIGHTNESS, true);
+    /* Except the timer on a board with nothing to wake it - neither the sleep
+     * button nor the remote's receiver. It would fade the sound out and
+     * bring it back, and two users took that for a timer that does not work
+     * (2026-10-29). */
+    ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_SLEEP, board_deep_sleep_supported());
     ui_screensaver_init(&s_saver, ui_tick_get_ms());
     alarm_guard_init(&s_alarm_guard);
     /* Taken once, and it decides two things further down: the panel stays dark

@@ -46,6 +46,7 @@
   const deviceStatus = document.querySelector('#device-status');
   const deviceTimezone = document.querySelector('#device-timezone');
   const sleepSelect = document.querySelector('#sleep-select');
+  const sleepRow = document.querySelector('#sleep-row');
   const alarmDayChips = Array.from(document.querySelectorAll('#device-alarm-days [data-day]'));
   const alarmOffDayChips =
     Array.from(document.querySelectorAll('#device-alarm-off-days [data-day]'));
@@ -1212,6 +1213,9 @@
     applyLanguage(payload);
     applySleepTimer(payload.sleep);
     const available = isObject(payload.available) ? payload.available : {};
+    /* No sleep button and no receiver that wakes the chip: a timer would fade
+       the sound out and back, so there is none to set. */
+    if (sleepRow && typeof available.sleep === 'boolean') sleepRow.hidden = !available.sleep;
     // Before the values below, or the zone would be set on an empty list.
     fillTimezones(payload.timezones);
     fillSecondsChoices(payload.screensaver_seconds_choices);

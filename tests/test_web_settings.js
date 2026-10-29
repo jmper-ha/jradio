@@ -106,7 +106,7 @@ const ids = [
   'device-idle-brightness-value', 'device-screensaver-after-row', 'device-screensaver-when',
   'device-screensaver-when-row',
   'device-idle-brightness-row',
-  'device-timezone', 'device-ntp', 'sleep-select', 'device-name', 'device-name-note',
+  'device-timezone', 'device-ntp', 'sleep-select', 'sleep-row', 'device-name', 'device-name-note',
   'device-alarm', 'device-alarm-time', 'device-alarm-station', 'device-alarm-volume',
   'device-alarm-volume-value', 'device-alarm-time-row', 'device-alarm-days-row',
   'device-alarm-station-row', 'device-alarm-volume-row',
@@ -204,7 +204,7 @@ let settingsReply = {
   theme_secondary: '#e0e6ea', theme_dim: '#b0bec5', theme_accent: '#ffb74d',
   theme_saver: '#000000',
   brightness: 45, volume: 62,
-  available: {home_screen: true, yandex_music: false, dlna: true, bt_output: true},
+  available: {home_screen: true, yandex_music: false, dlna: true, bt_output: true, sleep: true},
   brightness_min: 10, brightness_max: 90, volume_step_min: 1, volume_step_max: 20,
   screensaver: 'clock', screensaver_seconds: 120, screensaver_brightness: 15,
   idle_brightness_min: 5, idle_brightness_max: 50,
@@ -842,6 +842,7 @@ function lastYandexTimer() {
   /* The sleep timer sits among the settings and is set like one, but it goes
      to its own endpoint: it is never written to the card, because what would
      be saved is a deadline. */
+  assert.equal(elements['#sleep-row'].hidden, false);
   assert.equal(elements['#sleep-select'].children.length, 7);
   assert.equal(elements['#sleep-select'].children[0].textContent, 'Выключен');
   assert.equal(elements['#sleep-select'].children[3].textContent, '45 мин');
@@ -971,6 +972,7 @@ function lastYandexTimer() {
   elements['#device-alarm-source'].value = 'fm';
   elements['#device-alarm-source'].emit('change');
   await settle();
+  assert.equal(elements['#sleep-row'].hidden, false);
   assert.deepEqual(
     JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' && call.options &&
                                            call.options.method === 'POST').at(-1).options.body),
@@ -1012,6 +1014,17 @@ function lastYandexTimer() {
   elements['#device-alarm-source'].value = 'radio';
   elements['#device-alarm-source'].emit('change');
   await settle();
+
+  /* Nothing to wake the board - no sleep button, no receiver that can - and
+     the timer is not offered: it would only fade the sound out and back. */
+  settingsReply = {...settingsReply, available: {...settingsReply.available, sleep: false}};
+  elements['#device-alarm-source'].emit('change');
+  await settle();
+  assert.equal(elements['#sleep-row'].hidden, true);
+  settingsReply = {...settingsReply, available: {...settingsReply.available, sleep: true}};
+  elements['#device-alarm-source'].emit('change');
+  await settle();
+  assert.equal(elements['#sleep-row'].hidden, false);
 
   /* A slider writes when it is let go, not while it is being dragged: the
      readout follows the handle on its own. Brightness is the page's only

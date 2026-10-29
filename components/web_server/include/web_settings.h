@@ -210,6 +210,10 @@ typedef struct web_settings_view {
     /* The FM tuner, for the section that scans and keeps its presets; filled
      * by the same caller. */
     bool fm_available;
+    /* Whether the board can sleep at all - a sleep button or a receiver that
+     * wakes the chip - which is what the sleep timer needs; filled by the
+     * same caller. */
+    bool sleep_available;
     int remote_learning;
     uint32_t remote_revision;
 } web_settings_view_t;

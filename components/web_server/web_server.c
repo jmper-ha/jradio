@@ -1491,6 +1491,7 @@ void web_server_fill_remote(struct web_settings_view *view)
     if (view == NULL) return;
     view->remote_available = board_has_ir();
     view->fm_available = board_has_fm_tuner() && fm_tuner_present();
+    view->sleep_available = board_deep_sleep_supported();
     remote_function_t learning = REMOTE_FUNCTION_COUNT;
     if (board_has_ir()) remote_control_snapshot(NULL, &learning);
     view->remote_learning = learning == REMOTE_FUNCTION_COUNT ? -1 : (int)learning;
@@ -2136,6 +2137,13 @@ static esp_err_t web_server_sleep_timer_post(httpd_req_t *request)
     }
     const uint16_t requested = (uint16_t)minutes->valuedouble;
     cJSON_Delete(root);
+    /* Nothing to wake the board: a timer would only fade the sound out and
+     * back. The page hides the row; this is for anything else that asks. */
+    if (requested != 0U && !board_deep_sleep_supported()) {
+        httpd_resp_set_status(request, "409 Conflict");
+        httpd_resp_sendstr(request, "No sleep button or wake-capable receiver");
+        return ESP_OK;
+    }
     sleep_timer_service_set(requested);
     ESP_LOGI(TAG, "sleep timer set to %u minutes", (unsigned)requested);
 

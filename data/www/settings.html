@@ -202,7 +202,9 @@
                 <!-- Not a setting: it is never written to the card, and it is
                      here because this is the page about time. The countdown
                      is on the player page, where it is watched. -->
-                <div class="device-row">
+                <!-- Hidden on a board with nothing to wake it: neither the sleep
+                     button nor a receiver that can. -->
+                <div class="device-row" id="sleep-row">
                   <label for="sleep-select" data-i18n="sleep.label">Таймер сна</label>
                   <select id="sleep-select"></select>
                 </div>

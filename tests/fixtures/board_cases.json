@@ -436,6 +436,24 @@
       "warnings": [],
       "unknown_keys": 0,
       "bad_lines": 0
+    },
+    {
+      "name": "the SSM3582 at 0x10 beside the tuner, which answers there",
+      "csv": "dac,ssm3582\ni2c0_sda,8\ni2c0_scl,3\nfm_tuner,rda5807",
+      "errors": [
+        "dac_address_taken dac_address"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "the SSM3582 at 0x14 beside the tuner",
+      "csv": "dac,ssm3582\ni2c0_sda,8\ni2c0_scl,3\nfm_tuner,rda5807\ndac_address,0x14",
+      "errors": [],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
     }
   ]
 }

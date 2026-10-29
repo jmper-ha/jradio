@@ -144,6 +144,9 @@ typedef enum {
     BOARD_ISSUE_BAD_VALUE,
     // The tuner's own I2S output and an ADC both claim I2S0's input line.
     BOARD_ISSUE_ADC_WITH_FM_I2S,
+    /* The SSM3582 strapped to 0x10 or 0x11, which the RDA5807 on the same
+     * bus answers at - the bench's tuner answered for it, 2026-10-29. */
+    BOARD_ISSUE_DAC_ADDRESS_TAKEN,
     // Warnings: the board works, but not the way its builder expects.
     BOARD_ISSUE_SLEEP_NOT_RTC,
     BOARD_ISSUE_IR_NOT_RTC,
@@ -206,6 +209,12 @@ void board_config_parse_csv(const char *text, size_t length, board_config_t *con
 /* The rules of the wiring editor's validate(), for the same answers. Errors
  * make a board unusable; warnings are notes. */
 void board_config_validate(const board_config_t *config, board_config_report_t *report);
+
+/* Whether a file naming the DAC `wired` suits a binary built for `built`.
+ * The I2S format is compiled for one DAC, but the SSM3582 takes the PCM5102's
+ * - its wider slots are set at run time - so either binary serves either
+ * chip, and the web flasher's one firmware per panel serves both. */
+bool board_config_dac_fits(uint8_t wired, uint8_t built);
 
 /* A DISPLAY_* id as board.csv, the editor and the release files name it:
  * "ili9341_320_240". NULL for an id there is no firmware for. */

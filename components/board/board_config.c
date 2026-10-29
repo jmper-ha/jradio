@@ -350,6 +350,14 @@ void board_config_parse_csv(const char *text, size_t length, board_config_t *con
     }
 }
 
+bool board_config_dac_fits(uint8_t wired, uint8_t built)
+{
+    if (wired == built) return true;
+    const bool wired_pcm = wired == DAC_PCM5102 || wired == DAC_SSM3582;
+    const bool built_pcm = built == DAC_PCM5102 || built == DAC_SSM3582;
+    return wired_pcm && built_pcm;
+}
+
 /* ---- The rules ------------------------------------------------------- */
 
 static bool device_enabled(const board_config_t *config, device_t device)
@@ -553,6 +561,13 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     // The SSM3582 plays nothing until it is set up over I2C.
     if (config->dac == DAC_SSM3582 && config->dac_i2c == 0U) {
         check_bus(config, report, DEV_DAC, k_i2c0, 2U);
+        /* The RDA5807 answers at 0x10 and 0x11 whatever is strapped, and
+         * would take the amplifier's setup for its own. */
+        if (device_enabled(config, DEV_FM) && config->fm_i2c == 0U &&
+            (config->dac_address == 0x10U || config->dac_address == 0x11U)) {
+            add_issue(report, false, BOARD_ISSUE_DAC_ADDRESS_TAKEN, "dac_address", "fm_tuner",
+                      -1);
+        }
     }
     if (device_enabled(config, DEV_BLUETOOTH)) {
         if (config->bt_uart == 1U) check_bus(config, report, DEV_BLUETOOTH, k_uart1, 2U);
@@ -628,6 +643,7 @@ const char *board_config_issue_name(board_issue_code_t code)
     case BOARD_ISSUE_BUS_UNWIRED: return "bus_unwired";
     case BOARD_ISSUE_BAD_VALUE: return "bad_value";
     case BOARD_ISSUE_ADC_WITH_FM_I2S: return "adc_with_fm_i2s";
+    case BOARD_ISSUE_DAC_ADDRESS_TAKEN: return "dac_address_taken";
     case BOARD_ISSUE_SLEEP_NOT_RTC: return "sleep_not_rtc";
     case BOARD_ISSUE_IR_NOT_RTC: return "ir_not_rtc";
     case BOARD_ISSUE_SPI_NOT_IOMUX: return "spi_not_iomux";

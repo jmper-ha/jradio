@@ -38,6 +38,7 @@ static void normalise(const board_issue_t *issue, char *out, size_t size)
         break;
     case BOARD_ISSUE_BAD_VALUE:
     case BOARD_ISSUE_ADC_WITH_FM_I2S:
+    case BOARD_ISSUE_DAC_ADDRESS_TAKEN:
     case BOARD_ISSUE_PIN_MISSING:
         snprintf(out, size, "%s %s", name, issue->key);
         break;
@@ -256,8 +257,21 @@ static void test_pull_ups_off_in_an_old_file_are_read_past(void)
     assert(strstr(written, "\nbuttons_pullups,1\n") != NULL);
 }
 
+/* One binary per panel serves the PCM5102 and the SSM3582 alike; a DAC
+ * with its own format - the UDA1334A's stop - still wants its own build. */
+static void test_which_dacs_a_binary_takes(void)
+{
+    assert(board_config_dac_fits(DAC_PCM5102, DAC_PCM5102));
+    assert(board_config_dac_fits(DAC_SSM3582, DAC_PCM5102));
+    assert(board_config_dac_fits(DAC_PCM5102, DAC_SSM3582));
+    assert(board_config_dac_fits(DAC_UDA1334A, DAC_UDA1334A));
+    assert(!board_config_dac_fits(DAC_UDA1334A, DAC_PCM5102));
+    assert(!board_config_dac_fits(DAC_SSM3582, DAC_UDA1334A));
+}
+
 int main(void)
 {
+    test_which_dacs_a_binary_takes();
     test_pull_ups_off_in_an_old_file_are_read_past();
     test_the_cases_shared_with_the_editor();
     test_what_the_values_become();

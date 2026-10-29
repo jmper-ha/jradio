@@ -436,6 +436,7 @@
     'hw.err.pin_usb': ['«{key}»: GPIO {gpio} принадлежит USB', '"{key}": GPIO {gpio} belongs to USB'],
     'hw.err.usb_pin_fixed': ['«{key}»: контроллер USB сидит на 19/20, другие выводы невозможны', '"{key}": the USB controller is on 19/20, no other pin will do'],
     'hw.err.bus_unwired': ['{device}: на шине {bus} не задан {pin}', '{device}: the {bus} bus has no {pin}'],
+    'hw.err.dac_address_taken': ['Адреса 0x10 и 0x11 на шине I2C занимает FM-тюнер RDA5807: перемычками ADDR0/ADDR1 выберите для SSM3582 другой адрес', 'The RDA5807 FM tuner holds 0x10 and 0x11 on the I2C bus: strap the SSM3582 to another address with ADDR0/ADDR1'],
     'hw.err.adc_with_fm_i2s': ['АЦП и I2S-выход RDA5807FP делят одну линию DIN: выберите что-то одно — «Звук» тюнера «Аналог» или уберите АЦП', 'The ADC and the RDA5807FP\'s I2S output share the one DIN line: choose one - set the tuner\'s audio to Analogue, or drop the ADC'],
     'hw.err.bad_value': ['«{key}»: недопустимое значение «{value}»', '"{key}": "{value}" is not a valid value'],
     'hw.err.sleep_not_rtc': ['Sleep на GPIO {gpio}: будить чип умеют только выводы 0–21, кнопка сна плату не разбудит — только пульт, если он есть',

@@ -502,6 +502,14 @@
       }
     }
 
+    /* The RDA5807 answers at 0x10 and 0x11 whatever is strapped, and would
+       take the amplifier's setup for its own. */
+    if (values.dac === 'ssm3582' && busOf(values, 'dac', 'i2c') === 'i2c0' &&
+        deviceEnabled(values, 'fm') && busOf(values, 'fm', 'i2c') === 'i2c0' &&
+        ['0x10', '0x11'].includes(values.dac_address)) {
+      errors.push({code: 'dac_address_taken', key: 'dac_address', gpio: null});
+    }
+
     /* One input line, one source of what comes down it. */
     if (deviceEnabled(values, 'adc') && deviceEnabled(values, 'fm') && !isNone(values.fm_i2s)) {
       errors.push({code: 'adc_with_fm_i2s', key: 'adc', gpio: null});

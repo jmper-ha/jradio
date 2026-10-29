@@ -89,6 +89,12 @@ static bool board_dac_is_ssm3582(void)
     return wiring()->dac == DAC_SSM3582;
 }
 
+// For the log: the chip the wiring names, which the build's name may not be.
+static const char *board_dac_name(void)
+{
+    return board_dac_is_ssm3582() ? "SSM3582" : BOARD_DAC_NAME;
+}
+
 static gpio_num_t wired(int8_t pin)
 {
     return pin >= 0 ? (gpio_num_t)pin : GPIO_NUM_NC;
@@ -546,7 +552,8 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
      * only while the input is made. */
     /* The SSM3582 is the other: it takes no 32 x Fs clock at any rate
      * (its datasheet, table 13), so its slots are always the wide ones. */
-    const bool wide_slots = (capture && board_has_adc()) || board_dac_is_ssm3582();
+    const bool through_adc = capture && board_has_adc();
+    const bool wide_slots = through_adc || board_dac_is_ssm3582();
     std_config.slot_cfg.slot_bit_width =
         wide_slots ? I2S_SLOT_BIT_WIDTH_32BIT : (i2s_slot_bit_width_t)I2S_SLOT_BIT_WIDTH;
     /* The word-select's width follows the slot: left at the 16 bits of the data
@@ -567,11 +574,11 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
          * stalled with EAGAIN, a status request took up to 5 s and a cover
          * 14 s, against 13 ms paused. At the weakest drive the PCM1808 still
          * reads it, and the web answers as fast as with FM paused. */
-        if (wide_slots) {
+        if (through_adc) {
             (void)gpio_set_drive_capability(wired(wiring()->i2s0_mclk), GPIO_DRIVE_CAP_0);
         }
         ESP_LOGI(TAG, "I2S input on GPIO %d, for the FM tuner%s", wiring()->i2s0_din,
-                 wide_slots ? ", through the ADC (master clock out, BCLK=64xFs)" : "");
+                 through_adc ? ", through the ADC (master clock out, BCLK=64xFs)" : "");
     }
     ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_dout)), TAG,
                         "enable I2S DOUT pad observation failed");
@@ -583,7 +590,7 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     ESP_LOGI(TAG,
              "%s I2S: Philips, 16-bit stereo in %u-bit slots, BCLK=%uxFs, "
              "DMA=%ux%u frames (%lu ms)",
-             board_dac_is_ssm3582() ? "SSM3582" : BOARD_DAC_NAME, slot_bits,
+             board_dac_name(), slot_bits,
              slot_bits * AUDIO_CHANNEL_COUNT,
              (unsigned)s_dma_desc_num, I2S_DMA_FRAME_NUM,
              (unsigned long)((s_dma_desc_num * I2S_DMA_FRAME_NUM * 1000U) /
@@ -1076,9 +1083,8 @@ esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloade
                                        pdMS_TO_TICKS(1000));
         }
         if (result == ESP_OK && *preloaded == pcm_length) {
-            ESP_LOGI(TAG,
-                     BOARD_DAC_NAME " I2S output enabled after %u-byte silent clock pre-roll",
-                     (unsigned int)board_audio_startup_silence_bytes(
+            ESP_LOGI(TAG, "%s I2S output enabled after %u-byte silent clock pre-roll",
+                     board_dac_name(), (unsigned int)board_audio_startup_silence_bytes(
                          s_dma_desc_num, sizeof(s_i2s_silence)));
         } else if (s_audio_enabled) {
             (void)i2s_channel_disable(s_i2s_tx);
@@ -1127,7 +1133,7 @@ esp_err_t board_audio_set_enabled(bool enabled)
                 board_audio_health_rearm();
                 s_audio_fade_frames = 0U;
             }
-            ESP_LOGI(TAG, BOARD_DAC_NAME " I2S output %s", enabled ? "enabled" : "disabled");
+            ESP_LOGI(TAG, "%s I2S output %s", board_dac_name(), enabled ? "enabled" : "disabled");
         }
         /* After the state is settled - including when the disable above
          * failed, which leaves the channel running and the amplifier is put
@@ -1299,7 +1305,7 @@ esp_err_t board_audio_self_test(uint32_t duration_ms)
     if (duration_ms == 0U || s_i2s_tx == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    ESP_LOGW(TAG, "starting " BOARD_DAC_NAME " self-test: 1000 Hz, %lu ms",
+    ESP_LOGW(TAG, "starting %s self-test: 1000 Hz, %lu ms", board_dac_name(),
              (unsigned long)duration_ms);
     if (xTaskCreatePinnedToCore(board_audio_probe_task, "i2s_probe", 2048, &probe, 10, NULL, 1) !=
         pdPASS) {
@@ -1337,7 +1343,7 @@ esp_err_t board_audio_self_test(uint32_t duration_ms)
              (unsigned long)probe.transitions[0], probe.saw_low[0], probe.saw_high[0],
              (unsigned long)probe.transitions[1], probe.saw_low[1], probe.saw_high[1],
              (unsigned long)probe.transitions[2], probe.saw_low[2], probe.saw_high[2]);
-    ESP_LOGW(TAG, BOARD_DAC_NAME " self-test complete");
+    ESP_LOGW(TAG, "%s self-test complete", board_dac_name());
     result = ESP_OK;
 
 cleanup:

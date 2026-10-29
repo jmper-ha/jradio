@@ -31,6 +31,10 @@ extern const lv_font_t ui_font_cyrillic_26;
  * face a step below the 14 px body, which on a 320 px panel is the volume
  * figure's own. See UI_SRC_LEVEL_PX. */
 extern const lv_font_t ui_font_level_12;
+/* The meter's L and R marks where its rows are too close together for two
+ * capitals of the body face, and nothing else: those two letters, 7 px tall.
+ * See UI_SRC_VU_MARK_SMALL. */
+extern const lv_font_t ui_font_vu_marks_9;
 /* DSEG7 Classic Bold (SIL OFL), digits, colon, dash and period only: the
  * screensaver's clock and the FM frequency. The period has no width of its
  * own - it sits in the gap after the digit before it, as on a real display.

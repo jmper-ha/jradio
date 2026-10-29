@@ -348,6 +348,19 @@
 #ifndef UI_SRC_VU_PITCH
 #define UI_SRC_VU_PITCH 18
 #endif
+/* The L and R marks: the body face, its capitals standing level with the
+ * rows - unless the shape's rows are closer than two of those capitals, when
+ * it asks for the 9 px face of the two letters alone and places them itself.
+ * The offsets are from UI_SRC_VU_Y to the top of each mark's label. */
+#ifndef UI_SRC_VU_MARK_SMALL
+#define UI_SRC_VU_MARK_SMALL 0
+#endif
+#ifndef UI_SRC_VU_MARK_L_DY
+#define UI_SRC_VU_MARK_L_DY (-3)
+#endif
+#ifndef UI_SRC_VU_MARK_R_DY
+#define UI_SRC_VU_MARK_R_DY (UI_SRC_VU_PITCH - 3)
+#endif
 /* The footer's left slot - the buffer reading or the track's time - stands
  * at the body's left margin on the footer row, unless the shape puts it
  * somewhere else: the short panel has it under the cover, where the space

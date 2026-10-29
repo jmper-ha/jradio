@@ -5599,7 +5599,11 @@ static void ui_create_source_screen(void)
         }
         lv_obj_t *mark = lv_label_create(s_source_screen);
         lv_label_set_text(mark, channel == 0U ? "L" : "R");
-        lv_obj_set_pos(mark, UI_SRC_BODY_X + 2, UI_SRC_VU_Y - 3 + (int)channel * UI_SRC_VU_PITCH);
+#if UI_SRC_VU_MARK_SMALL
+        lv_obj_set_style_text_font(mark, &ui_font_vu_marks_9, 0);
+#endif
+        lv_obj_set_pos(mark, UI_SRC_BODY_X + 2,
+                       UI_SRC_VU_Y + (channel == 0U ? UI_SRC_VU_MARK_L_DY : UI_SRC_VU_MARK_R_DY));
         ui_paint(mark, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
     }
 

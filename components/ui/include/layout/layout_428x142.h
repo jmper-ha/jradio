@@ -67,6 +67,14 @@
 #define UI_SRC_VU_Y 91
 #define UI_SRC_VU_BLOCK_H 6
 #define UI_SRC_VU_PITCH 9
+/* The body face's L and R are ten-pixel capitals and ran into each other at
+ * this pitch (seen on the panel 2026-10-29); no pitch that fits between the
+ * rules leaves room for two of them. The 9 px face's are seven: L from the
+ * first row's top, R a pixel above the second's, a pixel of air above, between
+ * and below. */
+#define UI_SRC_VU_MARK_SMALL 1
+#define UI_SRC_VU_MARK_L_DY 0
+#define UI_SRC_VU_MARK_R_DY (UI_SRC_VU_PITCH - 1)
 
 #define UI_SRC_FOOT_Y 123
 #define UI_SRC_STREAM_X UI_SRC_TEXT_X

@@ -723,6 +723,9 @@ static bool s_autoplay_pending;
 /* Armed by the alarm set to "last source" rather than by the boot: the same
  * steps, but past the autoplay switch, which is about the power button. */
 static bool s_autoplay_for_alarm;
+/* Armed by the remote's source key: that source's own place is resumed, not
+ * the last source's. AUDIO_SOURCE_NONE otherwise. */
+static audio_source_t s_autoplay_target = AUDIO_SOURCE_NONE;
 /* The remote's Mute: the level it took the sound down from, so Mute again
  * or any volume key puts it back. Not a setting - a muted board comes back
  * from a power cut at the level it was muted at, not silent. */
@@ -7315,6 +7318,40 @@ static audio_source_t ui_source_of_action(board_input_action_t action)
     }
 }
 
+/* A source key on the remote: the source picks up where it was left - the
+ * radio's last station, Yandex's, the server's place, the file on that
+ * volume - the way autoplay resumes the last source at power-on, and through
+ * autoplay's own steps, which know what each source has to wait for. Asked
+ * for by Ден, 2026-10-29: radio, then Yandex, then back to the radio, and
+ * the station from before plays at once.
+ *
+ * The list instead, as before, when there is nothing to resume (a volume
+ * with no file of its own, Yandex or the server never played), when the
+ * network it needs is down - the list says so - and when the key names the
+ * source already playing: pressed again, it is the way to that source's
+ * list, and restarting what plays would be no answer. */
+static void ui_remote_open_source(audio_source_t source)
+{
+    player_snapshot_t snapshot;
+    player_control_get_snapshot(&snapshot);
+    const ui_autoplay_action_t action = ui_autoplay_decide_for(
+        &s_device_settings, source, snapshot.usb_media, snapshot.sd_media, true,
+        BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(), board_has_fm_tuner());
+    const bool network = action == UI_AUTOPLAY_RADIO || action == UI_AUTOPLAY_YANDEX ||
+                         action == UI_AUTOPLAY_DLNA;
+    const bool resume = network || action == UI_AUTOPLAY_FILE;
+    if (!resume || (network && !snapshot.wifi_connected) ||
+        snapshot.active_source == source) {
+        ui_show_source();
+        return;
+    }
+    ESP_LOGI(TAG, "remote: resuming source %d", (int)source);
+    s_autoplay_target = source;
+    s_autoplay_for_alarm = false;
+    s_autoplay_pending = true;
+    s_autoplay_started_ms = ui_tick_get_ms();
+}
+
 /* The keys a remote has and the case does not. True when the action was one
  * of them, whatever it did: they are handled here, before any screen, because
  * Vol+ has to be volume on every screen and a digit a station from anywhere.
@@ -7376,7 +7413,7 @@ static bool ui_handle_remote_action(board_input_action_t action)
         /* Through the home screen's own path, which is what knows whether the
          * source is on this board, has its network, and how it opens. A
          * source not on the menu is a key that does nothing, quietly. */
-        if (ui_menu_select_source(&s_menu, source)) ui_show_source();
+        if (ui_menu_select_source(&s_menu, source)) ui_remote_open_source(source);
         return true;
     }
     return false;
@@ -8285,16 +8322,30 @@ static void ui_autoplay_bluetooth_step(const player_snapshot_t *snapshot, bool w
     s_waiting_for_source_item = false;
 }
 
+/* The volume a file action is about: the one the remote named, or the one
+ * the remembered path is on. */
+static audio_source_t ui_autoplay_target_source(void)
+{
+    return s_autoplay_target != AUDIO_SOURCE_NONE ? s_autoplay_target
+                                                  : ui_autoplay_source(&s_device_settings);
+}
+
 static void ui_autoplay_step(const player_snapshot_t *snapshot)
 {
     if (!s_autoplay_pending) {
         s_autoplay_for_alarm = false;
+        s_autoplay_target = AUDIO_SOURCE_NONE;
         return;
     }
     const ui_autoplay_action_t action =
-        (s_autoplay_for_alarm ? ui_autoplay_decide_resume : ui_autoplay_decide)(
-            &s_device_settings, snapshot->usb_media, snapshot->sd_media, false,
-            BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(), board_has_fm_tuner());
+        s_autoplay_target != AUDIO_SOURCE_NONE
+            ? ui_autoplay_decide_for(&s_device_settings, s_autoplay_target, snapshot->usb_media,
+                                     snapshot->sd_media, false, BOARD_HAS_YANDEX_MUSIC,
+                                     BOARD_HAS_DLNA, board_has_bluetooth(), board_has_fm_tuner())
+            : (s_autoplay_for_alarm ? ui_autoplay_decide_resume : ui_autoplay_decide)(
+                  &s_device_settings, snapshot->usb_media, snapshot->sd_media, false,
+                  BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(),
+                  board_has_fm_tuner());
     const bool waited =
         (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_WAIT_MS;
     // Hold off only while the answer could still change: a drive that has not
@@ -8441,12 +8492,12 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         return;
     }
     case UI_AUTOPLAY_FILE_UNAVAILABLE:
-        (void)ui_menu_select_source(&s_menu, ui_autoplay_source(&s_device_settings));
+        (void)ui_menu_select_source(&s_menu, ui_autoplay_target_source());
         ui_show_source();
         return;
     case UI_AUTOPLAY_FILE:
     case UI_AUTOPLAY_FILE_BROWSER: {
-        const audio_source_t source = ui_autoplay_source(&s_device_settings);
+        const audio_source_t source = ui_autoplay_target_source();
         const player_command_t select = {
             .kind = PLAYER_COMMAND_SELECT_SOURCE,
             .source = source,

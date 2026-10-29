@@ -81,6 +81,20 @@ ui_autoplay_action_t ui_autoplay_decide_resume(const device_settings_t *settings
                                                bool dlna_built, bool bluetooth_built,
                                                bool fm_built);
 
+/* The same question for a source named outright rather than the last one:
+ * the remote's source key, which resumes that source's own place - the radio
+ * its last station, Yandex its last station, the server its container, a
+ * volume its file - where the power button would resume the last source's.
+ * A file counts only on the volume asked for; one on the other volume is
+ * that volume's to resume, and this one opens on its browser. */
+ui_autoplay_action_t ui_autoplay_decide_for(const device_settings_t *settings,
+                                            audio_source_t source,
+                                            file_browser_media_t usb_media,
+                                            file_browser_media_t sd_media,
+                                            bool file_present, bool yandex_built,
+                                            bool dlna_built, bool bluetooth_built,
+                                            bool fm_built);
+
 // Which source the decision was about, so the caller can select it without
 // reading last_source a second time and getting the mapping wrong.
 audio_source_t ui_autoplay_source(const device_settings_t *settings);

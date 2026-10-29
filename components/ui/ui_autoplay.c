@@ -107,3 +107,41 @@ ui_autoplay_action_t ui_autoplay_decide_resume(const device_settings_t *settings
         return UI_AUTOPLAY_HOME;
     }
 }
+
+ui_autoplay_action_t ui_autoplay_decide_for(const device_settings_t *settings,
+                                            audio_source_t source,
+                                            file_browser_media_t usb_media,
+                                            file_browser_media_t sd_media,
+                                            bool file_present, bool yandex_built,
+                                            bool dlna_built, bool bluetooth_built,
+                                            bool fm_built)
+{
+    if (settings == NULL) return UI_AUTOPLAY_HOME;
+    switch (source) {
+    case AUDIO_SOURCE_INTERNET_RADIO: return UI_AUTOPLAY_RADIO;
+    case AUDIO_SOURCE_YANDEX:
+        if (!yandex_built || !settings->yandex_music || settings->last_yandex_id[0] == '\0') {
+            return UI_AUTOPLAY_HOME;
+        }
+        return UI_AUTOPLAY_YANDEX;
+    case AUDIO_SOURCE_DLNA:
+        if (!dlna_built || !settings->dlna || settings->last_dlna_container[0] == '\0') {
+            return UI_AUTOPLAY_HOME;
+        }
+        return UI_AUTOPLAY_DLNA;
+    case AUDIO_SOURCE_BLUETOOTH: return bluetooth_built ? UI_AUTOPLAY_BLUETOOTH : UI_AUTOPLAY_HOME;
+    case AUDIO_SOURCE_FM: return fm_built ? UI_AUTOPLAY_FM : UI_AUTOPLAY_HOME;
+    case AUDIO_SOURCE_USB:
+    case AUDIO_SOURCE_SD: {
+        const bool sd = source == AUDIO_SOURCE_SD;
+        if ((sd ? sd_media : usb_media) != FILE_BROWSER_MEDIA_READY) {
+            return UI_AUTOPLAY_FILE_UNAVAILABLE;
+        }
+        const bool here = settings->last_file[0] != '\0' &&
+                          file_browser_path_on_volume(settings->last_file,
+                                                      FILE_BROWSER_SD_ROOT) == sd;
+        return here && file_present ? UI_AUTOPLAY_FILE : UI_AUTOPLAY_FILE_BROWSER;
+    }
+    default: return UI_AUTOPLAY_HOME;
+    }
+}

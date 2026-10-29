@@ -300,6 +300,39 @@ static void test_fm_comes_back_on(void)
            UI_AUTOPLAY_HOME);
 }
 
+/* The remote's source key: the named source's own place, whatever the last
+ * source was and whether autoplay is on - it is about the power button. */
+static void test_a_named_source_resumes_its_own_place(void)
+{
+    const file_browser_media_t ready = FILE_BROWSER_MEDIA_READY;
+    // Yandex was last, autoplay off: the radio still resumes its station.
+    device_settings_t value = yandex_settings(false, "user:onyourwave", true);
+    assert(ui_autoplay_decide_for(&value, AUDIO_SOURCE_INTERNET_RADIO, ready, ready, true, true,
+                                  true, true, true) == UI_AUTOPLAY_RADIO);
+    assert(ui_autoplay_decide_for(&value, AUDIO_SOURCE_YANDEX, ready, ready, true, true, true,
+                                  true, true) == UI_AUTOPLAY_YANDEX);
+    // A source never played, or not on this board, has nothing to resume.
+    assert(ui_autoplay_decide_for(&value, AUDIO_SOURCE_DLNA, ready, ready, true, true, true,
+                                  true, true) == UI_AUTOPLAY_HOME);
+    assert(ui_autoplay_decide_for(&value, AUDIO_SOURCE_YANDEX, ready, ready, true, false, true,
+                                  true, true) == UI_AUTOPLAY_HOME);
+    assert(ui_autoplay_decide_for(&value, AUDIO_SOURCE_NONE, ready, ready, true, true, true,
+                                  true, true) == UI_AUTOPLAY_HOME);
+    assert(ui_autoplay_decide_for(NULL, AUDIO_SOURCE_INTERNET_RADIO, ready, ready, true, true,
+                                  true, true, true) == UI_AUTOPLAY_HOME);
+
+    // A file resumes only on its own volume; the other opens its browser.
+    value = settings(false, DEVICE_LAST_SOURCE_INTERNET_RADIO, "/sd0/dir/a.mp3");
+    assert(ui_autoplay_decide_for(&value, AUDIO_SOURCE_SD, ready, ready, true, true, true, true,
+                                  true) == UI_AUTOPLAY_FILE);
+    assert(ui_autoplay_decide_for(&value, AUDIO_SOURCE_USB, ready, ready, true, true, true, true,
+                                  true) == UI_AUTOPLAY_FILE_BROWSER);
+    assert(ui_autoplay_decide_for(&value, AUDIO_SOURCE_SD, ready, ready, false, true, true, true,
+                                  true) == UI_AUTOPLAY_FILE_BROWSER);
+    assert(ui_autoplay_decide_for(&value, AUDIO_SOURCE_SD, ready, FILE_BROWSER_MEDIA_ABSENT, true,
+                                  true, true, true, true) == UI_AUTOPLAY_FILE_UNAVAILABLE);
+}
+
 int main(void)
 {
     test_fm_comes_back_on();
@@ -322,6 +355,7 @@ int main(void)
     test_a_media_server_with_no_container_opens_the_home_screen();
     test_a_media_server_taken_off_the_home_screen_does_not_come_back();
     test_bluetooth_comes_back_to_its_screen();
+    test_a_named_source_resumes_its_own_place();
     puts("ui_autoplay tests passed");
     return 0;
 }

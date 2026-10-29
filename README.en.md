@@ -63,13 +63,13 @@ The full pinout and the choice of parts are in [Hardware](doc/hardware.en.md).
 | **Media server (DLNA)** | Finds the server on the network itself, walks the library, tags and covers - [more](doc/dlna.en.md) |
 | **Bluetooth** | Receives from a phone (track, cover, buttons, volume) and plays out to a Bluetooth speaker or headphones - [more](doc/usage.en.md#bluetooth) |
 | **Web interface** | The player, settings, the station editor with a search of the Radio Browser catalogue and pictures found for you, files, Wi-Fi, the remote, a backup - [more](doc/web.en.md) |
-| **Remote control** | Any IR remote: keys are learned in the browser, digits dial a station number, a learned key wakes the device from sleep - [more](doc/usage.en.md#the-remote-control) |
+| **Remote control** | Any IR remote: keys are learned in the browser, digits dial a station number, source keys carry on where each source was left, a learned key wakes the device from sleep - [more](doc/usage.en.md#the-remote-control) |
 | **Clock and weather** | Time from the internet or a DS3231 / DS1307 clock, the temperature and a sky icon next to the clock (Open-Meteo, wttr.in or OpenWeatherMap) |
 | **Screensaver** | Dimming, a black screen, or a drifting clock with the date, the weather and the track title |
 | **Themes** | Standard, high-contrast for displays whose text looks washed out, or your own - six colours picked on the web |
 | **Quick panel** | A window over the player: the sleep timer, the alarm, the brightness, the tone, loudness, the BT speaker - without leaving the screen |
-| **Alarm clock** | Internet radio or FM at a set time on chosen weekdays at its own volume, switching off at a set time; a sleeping device wakes itself |
-| **Sleep timer** | 15-120 minutes, then a fade-out and sleep |
+| **Alarm clock** | Internet radio, FM or the last source at a set time on chosen weekdays at its own volume, switching off at a set time; a sleeping device wakes itself |
+| **Sleep timer** | 15-120 minutes, then a fade-out and sleep; on boards with a sleep button or IR wake |
 | **Deep sleep** | Holding a button shuts the device down; the same button or the remote wakes it. With a power switch the whole periphery goes dark |
 | **Resume** | After power-on continues what was playing: the station, the track, the server folder |
 | **Two languages** | Russian and English - on the screen and in the browser, switched on the fly |

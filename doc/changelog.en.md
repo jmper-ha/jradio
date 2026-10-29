@@ -8,12 +8,32 @@ detail is in the commit history.
 
 ## Next version
 
+New:
+- The alarm can play the last source: "What to play" has a new choice,
+  "Last source". The radio wakes with whatever was on before it was switched
+  off - as after the power button with Resume on (a station, Yandex, a track,
+  a media server folder). It needs no station, and the Resume setting does
+  not affect the alarm. The "What to play" row is now on every board, with
+  FM in it only where there is a tuner.
+- The remote's source keys carry on where the source was left: listen to a
+  station, switch to Yandex, come back to the radio - the same station plays
+  at once, without the list. The same for Yandex, the media server, the USB
+  drive and the card (each with its own file). The list opens as before when
+  there is nothing to carry on with, no network, or the key names the source
+  already playing.
+
 Changed:
 - The sleep timer shows seconds in its last minute: "45 s" on the
   screensaver, ":45" beside the clock. It used to show "1" for the whole of
   that minute, which looked like a timer running late or not firing at all.
 
 Fixed:
+- On a board with neither a sleep button nor an IR receiver that wakes the
+  chip, the sleep timer only faded the sound out and brought it back - such a
+  board has nothing to wake it. It now has no timer: not in the quick panel,
+  the web or on the remote.
+- On the 428x142 panel the level meter's L and R ran into each other. They
+  are now set in a small face, each by its own row.
 - Asleep, the backlight of some panels glowed faintly: the backlight pin was
   let go in deep sleep, and the module's own pull-up put about 0.5 V on it.
   It is now held at 0 for the whole sleep, on any module, with no resistor.

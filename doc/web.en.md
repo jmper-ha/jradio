@@ -141,7 +141,7 @@ installed together.
 | `GET /api/cover` | The current cover, 96×96, BMP |
 | `GET /api/settings` | The device's settings, the time zone list, the time server |
 | `POST /api/settings` | One setting: `{"field":…,"value":…}` - including `timezone`, `ntp_server`, `weather*`, `screensaver*`, `alarm_*`, `fm_gain` (dB, -6 to +12), `theme` (`standard`/`contrast`/`custom`), the custom theme's colours `theme_ground`, `theme_text`, `theme_artist`, `theme_secondary`, `theme_dim`, `theme_accent`, `theme_saver` (`"#rrggbb"`) and `theme_reset` (`true` puts back the standard ones). The colours come only in the `GET`, not in the diffs |
-| `POST /api/sleep-timer` | `{"minutes":45}`, zero switches it off |
+| `POST /api/sleep-timer` | `{"minutes":45}`, zero switches it off; 409 when the board has nothing to wake it |
 | `GET /api/about` | The firmware, web interface and ESP-IDF versions |
 | `GET /api/backup`, `POST /api/restore` | The backup, see above |
 | `GET /api/ota` | The update's progress (`state`: `idle`, `receiving`, `confirm`, `restarting`, `failed`), the version and slot running; under `check`, the release's latest version, whether there is something to offer, and `history` - the changes of every version newer than the running one, newest first (`version`, `ru`, `en`) |

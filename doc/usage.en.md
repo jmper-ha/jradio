@@ -83,15 +83,24 @@ its code.
 | Back, Menu | As a long press of the encoder |
 | Quick panel | As Quick_menu |
 | Station list | Open the station or file list |
-| Sleep timer | The next step of the timer, round-robin |
+| Sleep timer | The next step of the timer, round-robin (if the board can sleep - below) |
 | Like / Dislike | Rate the Yandex Music track |
 | 0-9 | An internet-radio station number |
-| Radio, USB, SD, Bluetooth, Yandex, Media server | Switch the source |
+| Radio, USB, SD, Bluetooth, Yandex, Media server | Switch the source and carry on where it was left |
 | Sleep / wake | As holding Sleep - sleep; and wake |
 
 **Digits** dial a station by its list number: two digits in a row select at
 once; one digit selects after a second and a half, or at once when no
 two-digit number starts with it. Works only while internet radio is playing.
+
+**Source keys** carry on where the source was left: the radio from its last
+station, Yandex Music from its own last station, the media server from the
+same folder, the USB drive and the card each from its own last file. Listen
+to a station, switch to Yandex, come back to the radio - the same station
+plays at once. The source's list opens as before when there is nothing to
+carry on with (the source has not played yet, this volume has no file of its
+own), when there is no network, or when the key names the source already
+playing. The Resume setting does not affect the keys - it is about powering on.
 
 **Waking.** The key learned as "Sleep / wake" wakes the device from deep
 sleep on the first press. Other remotes in the room wake the chip too - that
@@ -256,8 +265,9 @@ through the rest. Without leaving the screen:
 
 The window closes by itself after ten seconds without a press. The BT speaker
 row is there only while the module answers, the Station row only while an
-internet station plays (what it is - below, under Even volume); the sleep timer cycles - off, 15,
-30, 45, 60, 90, 120 minutes. A change made in the browser shows in the window
+internet station plays (what it is - below, under Even volume), the Sleep
+timer row only when the board has something to wake it (below); the timer
+cycles - off, 15, 30, 45, 60, 90, 120 minutes. A change made in the browser shows in the window
 at once.
 
 ## Sleep, the timer, the alarm
@@ -278,7 +288,13 @@ there is nothing to resume.
 
 "Play for so long, then sleep": 15, 30, 45, 60, 90 or 120 minutes. Set in the
 web settings (the Time section), in the quick panel or with a remote key. The
-countdown shows on the player page and as a crescent next to the clock.
+countdown shows on the player page and as a crescent next to the clock; in
+the last minute in seconds ("45 s" on the screensaver, ":45" by the clock).
+
+The timer exists only on a board that something can wake: with a Sleep button
+or an IR receiver that wakes the chip (see The remote control). Without them sleep is
+impossible, and there is no timer on the screen, in the web or on the remote -
+otherwise it would only fade the sound out and bring it back.
 
 When the time is up, the volume fades to zero over ten seconds, and only then
 the device goes to sleep. Any press in those ten seconds cancels the sleep and
@@ -291,10 +307,16 @@ Play a station at a set time: the switch, the time, the weekdays, the station
 The alarm's volume applies to the ring only and does not overwrite yours. At
 least one day is always selected.
 
-On a board with an FM tuner there is a choice, "What to play": internet radio
-or FM radio, each with its own station. FM starts on the very minute - it needs
-no network. If the tuner is gone or the preset deleted, the alarm plays the
-internet radio station.
+"What to play": internet radio, FM radio (on a board with a tuner) or the
+**last source**. Radio and FM each have their own station. FM starts on the
+very minute - it needs no network. If the tuner is gone or the preset
+deleted, the alarm plays the internet radio station.
+
+"Last source" plays whatever was on before the radio was switched off - the
+way Resume does after the power button: a station, Yandex, a track, a media
+server folder. It needs no station, and the Resume setting does not affect
+it. With nothing to carry on with, it rings the internet radio station, if
+one was chosen.
 
 At the appointed minute the device raises the backlight, leaves the
 screensaver and starts the station.

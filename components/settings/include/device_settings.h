@@ -497,7 +497,7 @@ bool device_settings_set_alarm_days(device_settings_t *settings, unsigned int da
  * means none is chosen, which is what a device with an empty playlist has. */
 bool device_settings_set_alarm_station(device_settings_t *settings, unsigned int number);
 bool device_settings_set_alarm_volume(device_settings_t *settings, unsigned char volume);
-// ALARM_SOURCE_RADIO or ALARM_SOURCE_FM; stored as "radio" or "fm".
+// An alarm_source_t; stored as alarm_source_name() says.
 bool device_settings_set_alarm_source(device_settings_t *settings, unsigned int source);
 // The FM preset's number counting from 1; zero means none is chosen.
 bool device_settings_set_alarm_fm_station(device_settings_t *settings, unsigned int number);

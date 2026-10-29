@@ -926,8 +926,9 @@ function lastYandexTimer() {
   assert.equal(elements['#device-alarm-days-row'].hidden, false);
   assert.equal(elements['#device-alarm-time'].value, '06:40');
 
-  /* No tuner: no choice of source, and the radio's station. */
-  assert.equal(elements['#device-alarm-source-row'].hidden, true);
+  /* No tuner: the choice is the radio or the last source, and the radio's
+     station. */
+  assert.equal(elements['#device-alarm-source-row'].hidden, false);
   assert.equal(elements['#device-alarm-station-row'].hidden, false);
   assert.equal(elements['#device-alarm-fm-station-row'].hidden, true);
   assert.ok(!fetchCalls.some((call) => String(call.url).startsWith('/api/stations?source=fm')));
@@ -996,6 +997,21 @@ function lastYandexTimer() {
   assert.equal(elements['#device-alarm-station-row'].hidden, false);
   assert.equal(elements['#device-alarm-fm-station-row'].hidden, true);
   assert.equal(elements['#device-alarm-station'].value, '2');
+  // The last source: no station row at all - it plays whatever was on.
+  settingsReply = {...settingsReply, alarm_source: 'last'};
+  elements['#device-alarm-source'].value = 'last';
+  elements['#device-alarm-source'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' && call.options &&
+                                           call.options.method === 'POST').at(-1).options.body),
+    {field: 'alarm_source', value: 'last'});
+  assert.equal(elements['#device-alarm-station-row'].hidden, true);
+  assert.equal(elements['#device-alarm-fm-station-row'].hidden, true);
+  settingsReply = {...settingsReply, alarm_source: 'radio'};
+  elements['#device-alarm-source'].value = 'radio';
+  elements['#device-alarm-source'].emit('change');
+  await settle();
 
   /* A slider writes when it is let go, not while it is being dragged: the
      readout follows the handle on its own. Brightness is the page's only

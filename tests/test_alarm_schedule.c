@@ -256,9 +256,26 @@ static void test_the_source_and_its_station(void)
     config.fm_station = 5U;
     config.station = 0U;
     assert(alarm_config_valid(&config));
-    config.source = 2U;
+    config.source = 3U;
     assert(!alarm_config_valid(&config));
     assert(alarm_play_station(NULL, true) == 0U);
+}
+
+/* The last source: whatever was on, with no station of its own - valid with
+ * neither station chosen, and it stays LAST with or without a tuner. */
+static void test_the_last_source_needs_no_station(void)
+{
+    alarm_config_t config = weekday_alarm();
+    config.source = ALARM_SOURCE_LAST;
+    config.station = 0U;
+    config.fm_station = 0U;
+    assert(alarm_config_valid(&config));
+    assert(alarm_play_source(&config, true) == ALARM_SOURCE_LAST);
+    assert(alarm_play_source(&config, false) == ALARM_SOURCE_LAST);
+    assert(alarm_play_station(&config, true) == 0U);
+    assert(strcmp(alarm_source_name(ALARM_SOURCE_LAST), "last") == 0);
+    assert(strcmp(alarm_source_name(ALARM_SOURCE_FM), "fm") == 0);
+    assert(strcmp(alarm_source_name(ALARM_SOURCE_RADIO), "radio") == 0);
 }
 
 /* The switch-off alarm, its own time and days. 2026-10-27 is a Tuesday:
@@ -300,6 +317,7 @@ int main(void)
 {
     test_an_alarm_that_cannot_ring();
     test_the_source_and_its_station();
+    test_the_last_source_needs_no_station();
     test_the_switch_off_alarm();
     test_the_switch_off_does_not_fire_into_a_fresh_boot();
     test_later_today_and_tomorrow();

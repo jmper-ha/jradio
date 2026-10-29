@@ -24,10 +24,9 @@ bool alarm_config_valid(const alarm_config_t *config)
 {
     if (config == NULL) return false;
     if (!config->enabled) return false;
-    if (config->source == ALARM_SOURCE_FM ? config->fm_station == 0U : config->station == 0U) {
-        return false;
-    }
-    if (config->source > ALARM_SOURCE_FM) return false;
+    if (config->source > ALARM_SOURCE_LAST) return false;
+    if (config->source == ALARM_SOURCE_FM && config->fm_station == 0U) return false;
+    if (config->source == ALARM_SOURCE_RADIO && config->station == 0U) return false;
     if (config->days == 0U || config->days > ALARM_DAYS_ALL) return false;
     if (config->hour > 23U || config->minute > 59U) return false;
     return config->volume <= 100U;
@@ -36,6 +35,7 @@ bool alarm_config_valid(const alarm_config_t *config)
 alarm_source_t alarm_play_source(const alarm_config_t *config, bool fm_present)
 {
     if (config == NULL) return ALARM_SOURCE_RADIO;
+    if (config->source == ALARM_SOURCE_LAST) return ALARM_SOURCE_LAST;
     return config->source == ALARM_SOURCE_FM && fm_present && config->fm_station != 0U
                ? ALARM_SOURCE_FM
                : ALARM_SOURCE_RADIO;
@@ -44,8 +44,22 @@ alarm_source_t alarm_play_source(const alarm_config_t *config, bool fm_present)
 uint8_t alarm_play_station(const alarm_config_t *config, bool fm_present)
 {
     if (config == NULL) return 0U;
-    return alarm_play_source(config, fm_present) == ALARM_SOURCE_FM ? config->fm_station
-                                                                    : config->station;
+    switch (alarm_play_source(config, fm_present)) {
+    case ALARM_SOURCE_FM: return config->fm_station;
+    case ALARM_SOURCE_LAST: return 0U;
+    case ALARM_SOURCE_RADIO:
+    default: return config->station;
+    }
+}
+
+const char *alarm_source_name(alarm_source_t source)
+{
+    switch (source) {
+    case ALARM_SOURCE_FM: return "fm";
+    case ALARM_SOURCE_LAST: return "last";
+    case ALARM_SOURCE_RADIO:
+    default: return "radio";
+    }
 }
 
 bool alarm_off_valid(const alarm_off_t *off)

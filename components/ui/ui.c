@@ -720,6 +720,9 @@ static audio_source_t s_files_unavailable_source = AUDIO_SOURCE_NONE;
 #define UI_AUTOPLAY_BT_RETRY_MS 1500U
 #define UI_AUTOPLAY_BT_ATTEMPTS 4U
 static bool s_autoplay_pending;
+/* Armed by the alarm set to "last source" rather than by the boot: the same
+ * steps, but past the autoplay switch, which is about the power button. */
+static bool s_autoplay_for_alarm;
 /* The remote's Mute: the level it took the sound down from, so Mute again
  * or any volume key puts it back. Not a setting - a muted board comes back
  * from a power cut at the level it was muted at, not silent. */
@@ -8284,11 +8287,14 @@ static void ui_autoplay_bluetooth_step(const player_snapshot_t *snapshot, bool w
 
 static void ui_autoplay_step(const player_snapshot_t *snapshot)
 {
-    if (!s_autoplay_pending) return;
+    if (!s_autoplay_pending) {
+        s_autoplay_for_alarm = false;
+        return;
+    }
     const ui_autoplay_action_t action =
-        ui_autoplay_decide(&s_device_settings, snapshot->usb_media, snapshot->sd_media, false,
-                           BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(),
-                           board_has_fm_tuner());
+        (s_autoplay_for_alarm ? ui_autoplay_decide_resume : ui_autoplay_decide)(
+            &s_device_settings, snapshot->usb_media, snapshot->sd_media, false,
+            BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(), board_has_fm_tuner());
     const bool waited =
         (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_WAIT_MS;
     // Hold off only while the answer could still change: a drive that has not
@@ -8483,15 +8489,20 @@ static void ui_alarm_poll(uint32_t now_ms)
                               minute)) {
         return;
     }
-    const bool fm = alarm_play_source(&s_device_settings.alarm,
-                                      board_has_fm_tuner() &&
-                                          player_control_fm_preset_count() > 0U) ==
-                    ALARM_SOURCE_FM;
-    ESP_LOGI(TAG, "alarm: %02d:%02d, %s %u at volume %u", hour, minute,
-             fm ? "FM preset" : "station",
-             (unsigned int)(fm ? s_device_settings.alarm.fm_station
-                               : s_device_settings.alarm.station),
-             (unsigned int)s_device_settings.alarm.volume);
+    const alarm_source_t source = alarm_play_source(
+        &s_device_settings.alarm,
+        board_has_fm_tuner() && player_control_fm_preset_count() > 0U);
+    const bool fm = source == ALARM_SOURCE_FM;
+    if (source == ALARM_SOURCE_LAST) {
+        ESP_LOGI(TAG, "alarm: %02d:%02d, the last source at volume %u", hour, minute,
+                 (unsigned int)s_device_settings.alarm.volume);
+    } else {
+        ESP_LOGI(TAG, "alarm: %02d:%02d, %s %u at volume %u", hour, minute,
+                 fm ? "FM preset" : "station",
+                 (unsigned int)(fm ? s_device_settings.alarm.fm_station
+                                   : s_device_settings.alarm.station),
+                 (unsigned int)s_device_settings.alarm.volume);
+    }
     s_alarm_ring_pending = true;
     s_alarm_ring_started_ms = now_ms;
 }
@@ -8509,7 +8520,17 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
     const alarm_source_t source = alarm_play_source(&s_device_settings.alarm, fm_present);
     const bool waited =
         (uint32_t)(ui_tick_get_ms() - s_alarm_ring_started_ms) >= UI_ALARM_NETWORK_WAIT_MS;
-    if (source == ALARM_SOURCE_RADIO && !snapshot->wifi_connected && !waited) return;
+    /* The last source is resumed through autoplay's own steps, which wait for
+     * whatever that source needs - the network, the drive, the module - so
+     * only the radio's station waits here. A last source with nothing to
+     * resume rings the alarm's station, if one was ever chosen. */
+    const bool resume = source == ALARM_SOURCE_LAST &&
+                        ui_autoplay_decide_resume(&s_device_settings, FILE_BROWSER_MEDIA_READY,
+                                                  FILE_BROWSER_MEDIA_READY, true,
+                                                  BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA,
+                                                  board_has_bluetooth(),
+                                                  board_has_fm_tuner()) != UI_AUTOPLAY_HOME;
+    if (source != ALARM_SOURCE_FM && !resume && !snapshot->wifi_connected && !waited) return;
     s_alarm_ring_pending = false;
 
     /* The panel first, whatever else follows: the light is half of what an
@@ -8530,6 +8551,17 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
      * network at this point on an alarm boot, and would resume last night's
      * source over this morning's station. */
     s_autoplay_pending = false;
+
+    if (resume) {
+        s_autoplay_for_alarm = true;
+        s_autoplay_pending = true;
+        s_autoplay_started_ms = ui_tick_get_ms();
+        return;
+    }
+    if (source == ALARM_SOURCE_LAST && s_device_settings.alarm.station == 0U) {
+        ESP_LOGW(TAG, "alarm: no last source to resume and no station chosen");
+        return;
+    }
 
     const size_t index = (size_t)alarm_play_station(&s_device_settings.alarm, fm_present) - 1U;
     if (source == ALARM_SOURCE_FM) {

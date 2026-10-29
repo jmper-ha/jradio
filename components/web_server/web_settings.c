@@ -86,7 +86,7 @@ static const field_descriptor_t k_fields[] = {
     {"alarm_days", WEB_SETTINGS_FIELD_ALARM_DAYS, {NULL}, true, false},
     {"alarm_station", WEB_SETTINGS_FIELD_ALARM_STATION, {NULL}, true, false},
     {"alarm_volume", WEB_SETTINGS_FIELD_ALARM_VOLUME, {NULL}, true, false},
-    {"alarm_source", WEB_SETTINGS_FIELD_ALARM_SOURCE, {"radio", "fm"}, false, false},
+    {"alarm_source", WEB_SETTINGS_FIELD_ALARM_SOURCE, {"radio", "fm", "last"}, false, false},
     {"alarm_fm_station", WEB_SETTINGS_FIELD_ALARM_FM_STATION, {NULL}, true, false},
     {"alarm_off_enabled", WEB_SETTINGS_FIELD_ALARM_OFF_ENABLED, {NULL}, false, false},
     {"alarm_off_time", WEB_SETTINGS_FIELD_ALARM_OFF_TIME, {NULL}, false, true},
@@ -328,7 +328,7 @@ bool web_settings_apply(device_settings_t *settings,
     case WEB_SETTINGS_FIELD_ALARM_VOLUME:
         return device_settings_set_alarm_volume(settings, (unsigned char)change->value);
     case WEB_SETTINGS_FIELD_ALARM_SOURCE:
-        // The choice's index: 0 "radio", 1 "fm", as alarm_source_t counts.
+        // The choice's index: 0 "radio", 1 "fm", 2 "last", as alarm_source_t counts.
         return device_settings_set_alarm_source(settings, (unsigned int)change->value);
     case WEB_SETTINGS_FIELD_ALARM_FM_STATION:
         return device_settings_set_alarm_fm_station(settings, (unsigned int)change->value);
@@ -550,7 +550,7 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_literal(writer, ",\"alarm_volume\":");
     web_json_format(writer, "%u", (unsigned)view->alarm.volume);
     web_json_literal(writer, ",\"alarm_source\":");
-    web_json_string(writer, view->alarm.source == ALARM_SOURCE_FM ? "fm" : "radio");
+    web_json_string(writer, alarm_source_name((alarm_source_t)view->alarm.source));
     web_json_literal(writer, ",\"alarm_fm_station\":");
     web_json_format(writer, "%u", (unsigned)view->alarm.fm_station);
     web_json_literal(writer, ",\"alarm_off_enabled\":");

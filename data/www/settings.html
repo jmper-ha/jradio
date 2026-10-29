@@ -240,13 +240,15 @@
                     <button type="button" class="day-chip" data-day="0" data-i18n="alarm.sun">Вс</button>
                   </div>
                 </div>
-                <!-- What the alarm plays: only on a board with an FM tuner, and the
-                     station row below is the chosen source's own list. -->
+                <!-- What the alarm plays; the station row below is the chosen
+                     source's own list, and FM is offered only with a tuner. The
+                     last source is whatever was on, resumed as autoplay does. -->
                 <div class="device-row" id="device-alarm-source-row" hidden>
                   <label for="device-alarm-source" data-i18n="alarm.source">Что включать</label>
                   <select id="device-alarm-source" data-field="alarm_source">
                     <option value="radio" data-i18n="alarm.source_radio">Интернет-радио</option>
                     <option value="fm" data-i18n="alarm.source_fm">FM-радио</option>
+                    <option value="last" data-i18n="alarm.source_last">Последний источник</option>
                   </select>
                 </div>
                 <div class="device-row" id="device-alarm-station-row" hidden>

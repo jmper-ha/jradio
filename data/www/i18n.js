@@ -100,6 +100,7 @@
     'alarm.source': ['Что включать', 'What to play'],
     'alarm.source_radio': ['Интернет-радио', 'Internet radio'],
     'alarm.source_fm': ['FM-радио', 'FM radio'],
+    'alarm.source_last': ['Последний источник', 'Last source'],
     'alarm.fm_station': ['Станция FM', 'FM station'],
     'alarm.no_fm_stations': ['Нет FM-станций — отсканируйте на странице «Станции»', 'No FM stations — scan on the Stations page'],
     'alarm_off.group': ['Выключение по времени', 'Switch-off by time'],

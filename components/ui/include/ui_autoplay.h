@@ -71,6 +71,16 @@ ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
                                         bool dlna_built, bool bluetooth_built,
                                         bool fm_built);
 
+/* The same answer with the autoplay switch left out: what there is to resume
+ * at all. The alarm set to "last source" asks this - an alarm that plays
+ * nothing because autoplay is off would be no alarm. */
+ui_autoplay_action_t ui_autoplay_decide_resume(const device_settings_t *settings,
+                                               file_browser_media_t usb_media,
+                                               file_browser_media_t sd_media,
+                                               bool file_present, bool yandex_built,
+                                               bool dlna_built, bool bluetooth_built,
+                                               bool fm_built);
+
 // Which source the decision was about, so the caller can select it without
 // reading last_source a second time and getting the mapping wrong.
 audio_source_t ui_autoplay_source(const device_settings_t *settings);

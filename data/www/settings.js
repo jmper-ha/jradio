@@ -54,6 +54,7 @@
   const alarmDaysRow = document.querySelector('#device-alarm-days-row');
   const alarmStation = document.querySelector('#device-alarm-station');
   const alarmFmStation = document.querySelector('#device-alarm-fm-station');
+  const alarmSourceFm = document.querySelector('#device-alarm-source option[value="fm"]');
   // Rows the field table cannot gate on its own: each hangs on two settings.
   const alarmRows = {
     source: document.querySelector('#device-alarm-source-row'),
@@ -1186,9 +1187,15 @@
     if (typeof available.fm === 'boolean') alarmState.fm = available.fm;
     const on = alarmState.enabled;
     // FM is offered only where there is a tuner; without one it rings the radio.
+    // The last source needs no station: it plays whatever was on.
     const fm = alarmState.fm && alarmState.source === 'fm';
-    alarmRows.source.hidden = !on || !alarmState.fm;
-    alarmRows.station.hidden = !on || fm;
+    const last = alarmState.source === 'last';
+    alarmRows.source.hidden = !on;
+    if (alarmSourceFm) {
+      alarmSourceFm.hidden = !alarmState.fm;
+      alarmSourceFm.disabled = !alarmState.fm;
+    }
+    alarmRows.station.hidden = !on || fm || last;
     alarmRows.fmStation.hidden = !on || !fm;
     if (alarmState.fm && !alarmFmLoaded) {
       alarmFmLoaded = true;

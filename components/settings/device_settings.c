@@ -524,10 +524,11 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
             settings->alarm.volume = (unsigned char)parsed;
         }
     }
-    // Anything but "fm" is the radio, which every board has.
+    // Anything but "fm" or "last" is the radio, which every board has.
     if (read_value(&csv, "alarm_source", value, sizeof(value))) {
-        settings->alarm.source =
-            strcmp(value, "fm") == 0 ? (uint8_t)ALARM_SOURCE_FM : (uint8_t)ALARM_SOURCE_RADIO;
+        settings->alarm.source = strcmp(value, "fm") == 0     ? (uint8_t)ALARM_SOURCE_FM
+                                 : strcmp(value, "last") == 0 ? (uint8_t)ALARM_SOURCE_LAST
+                                                              : (uint8_t)ALARM_SOURCE_RADIO;
     }
     if (read_value(&csv, "alarm_fm_station", value, sizeof(value))) {
         char *end = NULL;
@@ -1308,9 +1309,9 @@ bool device_settings_set_alarm_volume(device_settings_t *settings, unsigned char
 
 bool device_settings_set_alarm_source(device_settings_t *settings, unsigned int source)
 {
-    if (settings == NULL || source > ALARM_SOURCE_FM) return false;
+    if (settings == NULL || source > ALARM_SOURCE_LAST) return false;
     if (settings->alarm.source == source) return true;
-    if (!save_value(settings, "alarm_source", source == ALARM_SOURCE_FM ? "fm" : "radio")) {
+    if (!save_value(settings, "alarm_source", alarm_source_name((alarm_source_t)source))) {
         return false;
     }
     settings->alarm.source = (uint8_t)source;

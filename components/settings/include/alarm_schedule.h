@@ -28,10 +28,14 @@
 #define ALARM_WEEK_MINUTES 10080U
 
 /* What the alarm plays. FM only on a board with a tuner; the setting is kept
- * either way, and a board that has lost its tuner rings the radio instead. */
+ * either way, and a board that has lost its tuner rings the radio instead.
+ * LAST is whatever was playing when the radio was switched off, started the
+ * way autoplay starts it after the power button - it needs no station of its
+ * own (asked for by Ден, 2026-10-29). */
 typedef enum {
     ALARM_SOURCE_RADIO = 0,
     ALARM_SOURCE_FM = 1,
+    ALARM_SOURCE_LAST = 2,
 } alarm_source_t;
 
 typedef struct {
@@ -69,18 +73,22 @@ typedef struct {
     uint8_t days;   /* as alarm_config_t's, never 0 */
 } alarm_off_t;
 
+/* The source as settings.csv and the web page spell it: "radio", "fm" or
+ * "last"; anything out of range is the radio. */
+const char *alarm_source_name(alarm_source_t source);
+
 /* Switched on, with a day and numbers in range. */
 bool alarm_off_valid(const alarm_off_t *off);
 bool alarm_off_due(const alarm_off_t *off, int weekday, int hour, int minute);
 
 /* Whether this configuration could ever ring: switched on, a station chosen
- * for its source, and the numbers in range. */
+ * for its source - none for LAST - and the numbers in range. */
 bool alarm_config_valid(const alarm_config_t *config);
 
 /* The station to play and from where: the FM preset when FM is chosen and the
  * board has a tuner (`fm_present`), the radio's station otherwise - also when
- * FM was chosen on a board that has lost its tuner since. 0 when there is
- * nothing to play. */
+ * FM was chosen on a board that has lost its tuner since. LAST is LAST, with
+ * no station: 0, as when there is nothing to play. */
 alarm_source_t alarm_play_source(const alarm_config_t *config, bool fm_present);
 uint8_t alarm_play_station(const alarm_config_t *config, bool fm_present);
 

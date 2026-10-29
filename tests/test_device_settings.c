@@ -816,7 +816,7 @@ static void test_the_alarm_persists_and_is_checked(void)
     assert(device_settings_set_alarm_off_enabled(&reloaded, true));
     assert(device_settings_set_alarm_off_time(&reloaded, 22U, 30U));
     assert(device_settings_set_alarm_off_days(&reloaded, 0x41U));
-    assert(!device_settings_set_alarm_source(&reloaded, 2U));
+    assert(!device_settings_set_alarm_source(&reloaded, 3U));
     assert(!device_settings_set_alarm_fm_station(&reloaded, DEVICE_ALARM_FM_STATION_MAX + 1U));
     assert(!device_settings_set_alarm_off_time(&reloaded, 24U, 0U));
     assert(!device_settings_set_alarm_off_time(&reloaded, 10U, 60U));
@@ -834,6 +834,12 @@ static void test_the_alarm_persists_and_is_checked(void)
     // The radio's station is kept beside the preset, not replaced by it.
     assert(again.alarm.station == 12U);
     assert(alarm_config_valid(&again.alarm));
+
+    // The last source is kept as its own word, and comes back as itself.
+    assert(device_settings_set_alarm_source(&again, ALARM_SOURCE_LAST));
+    device_settings_t last;
+    assert(device_settings_init_at(&last, test_path));
+    assert(last.alarm.source == ALARM_SOURCE_LAST);
 }
 
 /* A hand-edited card: every damaged field falls back to what the device would

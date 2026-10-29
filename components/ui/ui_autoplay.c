@@ -40,6 +40,18 @@ ui_autoplay_action_t ui_autoplay_decide(const device_settings_t *settings,
                                         bool fm_built)
 {
     if (settings == NULL || !settings->autoplay) return UI_AUTOPLAY_HOME;
+    return ui_autoplay_decide_resume(settings, usb_media, sd_media, file_present, yandex_built,
+                                     dlna_built, bluetooth_built, fm_built);
+}
+
+ui_autoplay_action_t ui_autoplay_decide_resume(const device_settings_t *settings,
+                                               file_browser_media_t usb_media,
+                                               file_browser_media_t sd_media,
+                                               bool file_present, bool yandex_built,
+                                               bool dlna_built, bool bluetooth_built,
+                                               bool fm_built)
+{
+    if (settings == NULL) return UI_AUTOPLAY_HOME;
 
     switch (settings->last_source) {
     case DEVICE_LAST_SOURCE_INTERNET_RADIO:

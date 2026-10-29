@@ -26,6 +26,7 @@
 #include "audio_volume.h"
 #include "board.h"
 #include "board_amplifier.h"
+#include "board_ssm3582.h"
 #include "board_config.h"
 #include "board_audio_health.h"
 #include "board_audio_startup.h"
@@ -79,6 +80,13 @@ _Static_assert(LEDC_TIMER_13_BIT == 13,
 static const board_config_t *wiring(void)
 {
     return board_config_get();
+}
+
+/* The SSM3582 in the DAC's place: picked in board.csv, so a run-time
+ * question rather than the build's AUDIO_DAC. */
+static bool board_dac_is_ssm3582(void)
+{
+    return wiring()->dac == DAC_SSM3582;
 }
 
 static gpio_num_t wired(int8_t pin)
@@ -536,7 +544,9 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
      * data stays 16 bits wide, left-aligned in the slot, so the DAC and the
      * samples read back are as they were; only the clock is twice as fast, and
      * only while the input is made. */
-    const bool wide_slots = capture && board_has_adc();
+    /* The SSM3582 is the other: it takes no 32 x Fs clock at any rate
+     * (its datasheet, table 13), so its slots are always the wide ones. */
+    const bool wide_slots = (capture && board_has_adc()) || board_dac_is_ssm3582();
     std_config.slot_cfg.slot_bit_width =
         wide_slots ? I2S_SLOT_BIT_WIDTH_32BIT : (i2s_slot_bit_width_t)I2S_SLOT_BIT_WIDTH;
     /* The word-select's width follows the slot: left at the 16 bits of the data
@@ -569,10 +579,12 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
                         "enable I2S BCLK pad observation failed");
     ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_lrck)), TAG,
                         "enable I2S LRCK pad observation failed");
+    const unsigned slot_bits = wide_slots ? 32U : (unsigned)I2S_SLOT_BIT_WIDTH;
     ESP_LOGI(TAG,
-             BOARD_DAC_NAME " I2S: Philips, 16-bit stereo in %u-bit slots, BCLK=%uxFs, "
+             "%s I2S: Philips, 16-bit stereo in %u-bit slots, BCLK=%uxFs, "
              "DMA=%ux%u frames (%lu ms)",
-             I2S_SLOT_BIT_WIDTH, I2S_SLOT_BIT_WIDTH * AUDIO_CHANNEL_COUNT,
+             board_dac_is_ssm3582() ? "SSM3582" : BOARD_DAC_NAME, slot_bits,
+             slot_bits * AUDIO_CHANNEL_COUNT,
              (unsigned)s_dma_desc_num, I2S_DMA_FRAME_NUM,
              (unsigned long)((s_dma_desc_num * I2S_DMA_FRAME_NUM * 1000U) /
                              AUDIO_DEFAULT_SAMPLE_RATE));
@@ -593,6 +605,10 @@ static bool s_dac_muted;
  * applied rather than at each site. */
 static void board_amp_drive(bool play)
 {
+    /* The SSM3582 is its own amplifier, and its power-down is the mute: the
+     * same three inputs decide it, and the callers already order it before
+     * the clock stops and after it starts, as the datasheet wants. */
+    if (board_dac_is_ssm3582()) board_ssm3582_set_powered(play);
     const int8_t pin = wiring()->amp_enable;
     if (pin < 0) {
         s_amp_playing = play;
@@ -652,6 +668,12 @@ static esp_err_t board_audio_init(void)
         };
         ESP_RETURN_ON_ERROR(gpio_config(&mute), TAG, "configure DAC mute");
         board_audio_set_dac_muted(false);
+    }
+    /* Told the format before it is given a clock. Not fatal: a chip that does
+     * not answer costs the sound, and the log says why. */
+    if (board_dac_is_ssm3582()) {
+        (void)board_ssm3582_init(wiring()->dac_address, wiring()->dac_gain,
+                                 AUDIO_DEFAULT_SAMPLE_RATE);
     }
     return board_audio_create_channel(AUDIO_DEFAULT_SAMPLE_RATE);
 }
@@ -1142,11 +1164,15 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
     esp_err_t result = ESP_OK;
     if (was_enabled) {
         board_audio_flush_tail();
+        // Down before the clock stops, as at every stop.
+        if (board_dac_is_ssm3582()) board_ssm3582_set_powered(false);
         result = i2s_channel_disable(s_i2s_tx);
         if (result == ESP_OK) {
             s_audio_enabled = false;
         }
     }
+    // Its rate band, while no clock runs.
+    if (board_dac_is_ssm3582()) board_ssm3582_set_rate(sample_rate);
     // Both halves share the clock, so both are stopped and both retimed.
     if (result == ESP_OK && was_capturing) {
         result = i2s_channel_disable(s_i2s_rx);
@@ -1174,6 +1200,10 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
         if (result == ESP_OK) {
             s_audio_enabled = true;
         }
+    }
+    // And up again after it starts, if the amplifier was meant to be playing.
+    if (board_dac_is_ssm3582() && s_audio_enabled && s_amp_playing) {
+        board_ssm3582_set_powered(true);
     }
     xSemaphoreGive(s_audio_mutex);
     if (result != ESP_OK) {

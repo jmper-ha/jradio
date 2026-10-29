@@ -41,7 +41,7 @@ DISPLAYS = [
     "ili9341_320_240", "ili9341_240_320", "st7789_320_240", "st7789_240_320",
     "st7789_320_170", "nv3007_428_142",
 ]
-DACS = ["pcm5102"]
+DACS = ["pcm5102", "ssm3582"]
 
 
 def read_macros(cc, include_dirs):
@@ -112,7 +112,13 @@ def board_csv(macros):
         for name in ("ds3231", "ds1307"):
             if value(macros, "RTC_CHIP") == value(macros, f"RTC_CHIP_{name.upper()}"):
                 rtc = name
-    i2c0 = (fm or rtc != "none") and defined("FM_I2C_SDA_GPIO") and defined("FM_I2C_SCL_GPIO")
+    ssm = defined("AUDIO_DAC") and value(macros, "AUDIO_DAC") == value(macros, "DAC_SSM3582")
+    i2c0 = (fm or rtc != "none" or ssm) and defined("FM_I2C_SDA_GPIO") and \
+        defined("FM_I2C_SCL_GPIO")
+    address = value(macros, "SSM3582_I2C_ADDRESS") if ssm else None
+    gain = value(macros, "SSM3582_GAIN_DB") if ssm else None
+    gain = 13 if gain is None else 21 if gain >= 21 else 19 if gain >= 19 else \
+        16 if gain >= 16 else 13
     reset = pin(macros, "TFT_RESET_GPIO") if defined("TFT_RESET_GPIO") else "rst"
     feature_on = value(macros, "FEATURE_ON")
     rows = [
@@ -155,6 +161,9 @@ def board_csv(macros):
          if defined("AUDIO_DAC") else "pcm5102"),
         ("dac_i2s", "0"),
         ("dac_mute", pin(macros, "AUDIO_DAC_MUTE_GPIO")),
+        ("dac_i2c", "0"),
+        ("dac_address", f"0x{0x10 if address is None else address:02x}"),
+        ("dac_gain", str(gain)),
         ("amp_enable", pin(macros, "AUDIO_AMP_GPIO")),
         ("amp_on_level", switch(macros, "AUDIO_AMP_ON_LEVEL", 1)),
         ("peripheral_power", pin(macros, "PERIPHERAL_POWER_GPIO")),

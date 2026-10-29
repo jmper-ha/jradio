@@ -60,6 +60,20 @@ void board_config_compiled(board_config_t *config)
 #ifdef AUDIO_DAC
     config->dac = (uint8_t)AUDIO_DAC;
 #endif
+#if defined(AUDIO_DAC) && AUDIO_DAC == DAC_SSM3582
+#ifdef SSM3582_I2C_ADDRESS
+    config->dac_address = (uint8_t)SSM3582_I2C_ADDRESS;
+#endif
+#ifdef SSM3582_GAIN_DB
+    config->dac_gain = SSM3582_GAIN_DB >= 21 ? 3U : SSM3582_GAIN_DB >= 19 ? 2U
+                       : SSM3582_GAIN_DB >= 16 ? 1U : 0U;
+#endif
+    // Its control is on I2C0, under the tuner's pin names - as for the clock.
+#if defined(FM_I2C_SDA_GPIO) && defined(FM_I2C_SCL_GPIO)
+    config->i2c0_sda = PIN(FM_I2C_SDA_GPIO);
+    config->i2c0_scl = PIN(FM_I2C_SCL_GPIO);
+#endif
+#endif
     config->i2s0_bclk = PIN(I2S_BCLK_GPIO);
     config->i2s0_lrck = PIN(I2S_LRCK_GPIO);
     config->i2s0_dout = PIN(I2S_DOUT_GPIO);

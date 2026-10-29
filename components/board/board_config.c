@@ -48,8 +48,8 @@ typedef struct {
     uint8_t id;
 } choice_t;
 
-/* The widest choice is the display: ten panels and the closing NULL. */
-#define CHOICES_MAX 11
+/* The widest choice is the SSM3582's address: sixteen and the closing NULL. */
+#define CHOICES_MAX 17
 
 typedef struct {
     const char *key;
@@ -117,9 +117,17 @@ static const field_t k_fields[] = {
     {"ir_receiver", KIND_OPT_PIN, DEV_IR, AT(ir_receiver), false, NULL, {{NULL, 0}}},
     {"dac", KIND_CHOICE, DEV_DAC, AT(dac), false, NULL,
      // The UDA1334A has a driver but has not been tried on a board yet.
-     {{"pcm5102", DAC_PCM5102}, {NULL, 0}}},
+     {{"pcm5102", DAC_PCM5102}, {"ssm3582", DAC_SSM3582}, {NULL, 0}}},
     {"dac_i2s", KIND_CHOICE, DEV_DAC, AT(dac_i2s), false, NULL, {{"0", 0}, {NULL, 0}}},
     {"dac_mute", KIND_OPT_PIN, DEV_DAC, AT(dac_mute), false, NULL, {{NULL, 0}}},
+    {"dac_i2c", KIND_CHOICE, DEV_DAC, AT(dac_i2c), false, NULL, {{"0", 0}, {NULL, 0}}},
+    {"dac_address", KIND_CHOICE, DEV_DAC, AT(dac_address), false, NULL,
+     {{"0x10", 0x10}, {"0x11", 0x11}, {"0x12", 0x12}, {"0x13", 0x13}, {"0x14", 0x14},
+      {"0x15", 0x15}, {"0x16", 0x16}, {"0x17", 0x17}, {"0x18", 0x18}, {"0x19", 0x19},
+      {"0x1a", 0x1A}, {"0x1b", 0x1B}, {"0x1c", 0x1C}, {"0x1d", 0x1D}, {"0x1e", 0x1E},
+      {"0x1f", 0x1F}, {NULL, 0}}},
+    {"dac_gain", KIND_CHOICE, DEV_DAC, AT(dac_gain), false, NULL,
+     {{"13", 0}, {"16", 1}, {"19", 2}, {"21", 3}, {NULL, 0}}},
     {"amp_enable", KIND_OPT_PIN, DEV_AMP, AT(amp_enable), false, NULL, {{NULL, 0}}},
     {"amp_on_level", KIND_BOOL, DEV_AMP, AT(amp_on_level), false, NULL, {{NULL, 0}}},
     {"peripheral_power", KIND_OPT_PIN, DEV_POWER, AT(peripheral_power), false, NULL,
@@ -212,6 +220,9 @@ void board_config_clear(board_config_t *config)
     config->adc_i2s = 0U;
     config->sd_spi = 3U;
     config->dac_i2s = 0U;
+    config->dac_i2c = 0U;
+    config->dac_address = 0x10U;
+    config->dac_gain = 0U;
     config->bt_uart = 1U;
     config->bt_i2s = 0U;
 }
@@ -371,7 +382,8 @@ static bool bus_used(const board_config_t *config, device_t bus)
     case DEV_UART1: return bt && config->bt_uart == 1U;
     case DEV_I2C0:
         return (device_enabled(config, DEV_FM) && config->fm_i2c == 0U) ||
-               (device_enabled(config, DEV_RTC) && config->rtc_i2c == 0U);
+               (device_enabled(config, DEV_RTC) && config->rtc_i2c == 0U) ||
+               (config->dac == DAC_SSM3582 && config->dac_i2c == 0U);
     default: return false;
     }
 }
@@ -538,6 +550,10 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
         check_bus(config, report, DEV_SD, k_spi3, 3U);
     }
     if (config->dac_i2s == 0U) check_bus(config, report, DEV_DAC, k_i2s0, 3U);
+    // The SSM3582 plays nothing until it is set up over I2C.
+    if (config->dac == DAC_SSM3582 && config->dac_i2c == 0U) {
+        check_bus(config, report, DEV_DAC, k_i2c0, 2U);
+    }
     if (device_enabled(config, DEV_BLUETOOTH)) {
         if (config->bt_uart == 1U) check_bus(config, report, DEV_BLUETOOTH, k_uart1, 2U);
         if (config->bt_i2s == 0U) check_bus(config, report, DEV_BLUETOOTH, k_i2s0, 3U);

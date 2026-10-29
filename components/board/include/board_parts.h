@@ -91,6 +91,14 @@
  * stops under it, so the firmware decays the output first - see
  * AUDIO_DAC_STOP_DECAY in board_audio_format.h. */
 #define DAC_UDA1334A 2
+/* SSM3582 class-D stereo amplifier with an I2S input: the DAC and the speaker
+ * amplifier in one chip. Same three I2S wires, but it takes no 32 x Fs bit
+ * clock (its datasheet, table 13), so its slots are 32 bits wide - 64 x Fs -
+ * and it does nothing until it is set up over I2C0: the format, the rate
+ * band, the analogue gain, its own power-down for the mute. The volume stays
+ * the samples', as for the other DACs. Selected at run time from board.csv;
+ * see board_ssm3582.c. */
+#define DAC_SSM3582 3
 
 #define FM_TUNER_NONE 0
 /* RDA5807 receiver: FM band, I2C control (components/fm_tuner). The M module

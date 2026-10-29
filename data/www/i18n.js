@@ -359,6 +359,8 @@
     'hw.f.button_sleep': ['Sleep — сон', 'Sleep'], 'hw.f.button_quick_menu': ['Quick_menu — быстрые настройки', 'Quick_menu - quick panel'],
     'hw.f.button_prev': ['Prev — назад', 'Prev'], 'hw.f.button_next': ['Next — вперёд', 'Next'],
     'hw.f.dac': ['Микросхема', 'Chip'], 'hw.f.dac_i2s': ['Шина', 'Bus'], 'hw.f.dac_mute': ['Mute (XSMT)', 'Mute (XSMT)'],
+    'hw.f.dac_i2c': ['Управление', 'Control'], 'hw.f.dac_address': ['Адрес I2C (ADDR0/ADDR1)', 'I2C address (ADDR0/ADDR1)'],
+    'hw.f.dac_gain': ['Усиление', 'Gain'],
     'hw.f.amp_enable': ['Включение', 'Enable'], 'hw.f.amp_on_level': ['Включён высоким уровнем', 'On is high'],
     'hw.f.peripheral_power': ['Ключ питания', 'Power switch'],
     'hw.f.peripheral_power_on_level': ['Включён высоким уровнем', 'On is high'],
@@ -390,6 +392,14 @@
 
     'hw.opt.none': ['нет', 'none'],
     'hw.opt.pcm5102': ['PCM5102', 'PCM5102'],
+    'hw.opt.ssm3582': ['SSM3582 (усилитель класса D)', 'SSM3582 (class-D amplifier)'],
+    /* The SSM3582's gain, with the peak it swings: more than the supply is clipping. */
+    'hw.opt.13': ['13 дБ (6,3 В пик)', '13 dB (6.3 V peak)'], 'hw.opt.16': ['16 дБ (8,9 В пик)', '16 dB (8.9 V peak)'],
+    'hw.opt.19': ['19 дБ (12,6 В пик)', '19 dB (12.6 V peak)'], 'hw.opt.21': ['21 дБ (16 В пик)', '21 dB (16 V peak)'],
+    'hw.opt.0x10': ['0x10', '0x10'], 'hw.opt.0x11': ['0x11', '0x11'], 'hw.opt.0x12': ['0x12', '0x12'], 'hw.opt.0x13': ['0x13', '0x13'],
+    'hw.opt.0x14': ['0x14', '0x14'], 'hw.opt.0x15': ['0x15', '0x15'], 'hw.opt.0x16': ['0x16', '0x16'], 'hw.opt.0x17': ['0x17', '0x17'],
+    'hw.opt.0x18': ['0x18', '0x18'], 'hw.opt.0x19': ['0x19', '0x19'], 'hw.opt.0x1a': ['0x1A', '0x1A'], 'hw.opt.0x1b': ['0x1B', '0x1B'],
+    'hw.opt.0x1c': ['0x1C', '0x1C'], 'hw.opt.0x1d': ['0x1D', '0x1D'], 'hw.opt.0x1e': ['0x1E', '0x1E'], 'hw.opt.0x1f': ['0x1F', '0x1F'],
     'hw.opt.rda5807': ['RDA5807 (M, FP)', 'RDA5807 (M, FP)'],
     'hw.opt.pcm1808': ['PCM1808', 'PCM1808'],
     'hw.opt.ds3231': ['DS3231 (питание 3,3 В)', 'DS3231 (3.3 V supply)'],

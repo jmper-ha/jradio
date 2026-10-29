@@ -122,6 +122,14 @@ typedef struct {
     uint8_t adc;
     uint8_t adc_i2s;
     uint8_t rtc_i2c;
+    /* The SSM3582's control: its bus (I2C0, beside the tuner and the clock),
+     * the address its ADDR0/ADDR1 strap (0x10-0x1F), and the analogue gain as
+     * its ANA_GAIN code - 0..3 for 13, 16, 19, 21 dB, chosen against the
+     * supply: 13 dB already reaches 6.3 V peak. Read only when `dac` is the
+     * SSM3582; a PCM5102 board keeps them at their defaults. */
+    uint8_t dac_i2c;
+    uint8_t dac_address;
+    uint8_t dac_gain;
 } board_config_t;
 
 typedef enum {

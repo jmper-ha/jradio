@@ -164,10 +164,19 @@
     {key: 'ir_receiver', kind: 'opt_pin', device: 'ir', dflt: NONE, enables: true, define: 'IR_RECEIVER_GPIO'},
 
     /* The DAC is always there: a player without an output is no player. The
-       chip stays a choice for the day a second one is supported. */
-    {key: 'dac', kind: 'choice', device: 'dac', options: ['pcm5102'], dflt: 'pcm5102', define: 'AUDIO_DAC'},
+       SSM3582 is a class-D amplifier with an I2S input in its place, set up
+       over I2C0 - its bus, the address its ADDR0/ADDR1 strap and the analogue
+       gain (13 dB already swings 6.3 V peak) are its rows alone. */
+    {key: 'dac', kind: 'choice', device: 'dac', options: ['pcm5102', 'ssm3582'], dflt: 'pcm5102', define: 'AUDIO_DAC'},
     {key: 'dac_i2s', kind: 'choice', device: 'dac', options: ['0'], dflt: '0', bus: 'i2s'},
     {key: 'dac_mute', kind: 'opt_pin', device: 'dac', dflt: NONE, define: 'AUDIO_DAC_MUTE_GPIO'},
+    {key: 'dac_i2c', kind: 'choice', device: 'dac', options: ['0'], dflt: '0', bus: 'i2c',
+     when: (values) => values.dac === 'ssm3582'},
+    {key: 'dac_address', kind: 'choice', device: 'dac', dflt: '0x10', define: 'SSM3582_I2C_ADDRESS',
+     options: Array.from({length: 16}, (_, index) => `0x${(0x10 + index).toString(16)}`),
+     when: (values) => values.dac === 'ssm3582'},
+    {key: 'dac_gain', kind: 'choice', device: 'dac', options: ['13', '16', '19', '21'], dflt: '13',
+     define: 'SSM3582_GAIN_DB', when: (values) => values.dac === 'ssm3582'},
     {key: 'amp_enable', kind: 'opt_pin', device: 'amp', dflt: NONE, enables: true, define: 'AUDIO_AMP_GPIO'},
     {key: 'amp_on_level', kind: 'bool', device: 'amp', dflt: 1, define: 'AUDIO_AMP_ON_LEVEL'},
 
@@ -254,7 +263,7 @@
   const BUS_NEEDS = {
     tft: {spi: ['sclk', 'mosi']},
     sd: {spi: ['sclk', 'mosi', 'miso']},
-    dac: {i2s: ['bclk', 'lrck', 'dout']},
+    dac: {i2s: ['bclk', 'lrck', 'dout'], i2c: ['sda', 'scl']},
     bluetooth: {uart: ['tx', 'rx'], i2s: ['bclk', 'lrck', 'dout']},
     fm: {i2c: ['sda', 'scl'], i2s: ['bclk', 'lrck', 'din']},
     adc: {i2s: ['bclk', 'lrck', 'din', 'mclk']},
@@ -393,6 +402,8 @@
   function busOf(values, device, busKind) {
     const field = FIELDS.find((item) => item.device === device && item.bus === busKind);
     if (!field) return null;
+    // A bus row the device does not have in this form - the PCM5102's I2C.
+    if (field.when && !field.when(values)) return null;
     const value = values[field.key];
     if (isNone(value)) return null;
     return busKind + value;
@@ -599,6 +610,14 @@
       ...gpio('I2S_BCLK_GPIO', 'i2s0_bclk'),
       ...gpio('I2S_LRCK_GPIO', 'i2s0_lrck'),
       ...(pin('dac_mute') === null ? [] : gpio('AUDIO_DAC_MUTE_GPIO', 'dac_mute')),
+      ...(values.dac === 'ssm3582'
+        ? ['/* Set up over I2C0 - the tuner\'s two pin defines, named here when nothing else on the bus names them. */',
+           `#define SSM3582_I2C_ADDRESS ${values.dac_address}`,
+           `#define SSM3582_GAIN_DB ${values.dac_gain}`,
+           ...(deviceEnabled(values, 'fm') || deviceEnabled(values, 'rtc')
+             ? []
+             : [...gpio('FM_I2C_SDA_GPIO', 'i2c0_sda'), ...gpio('FM_I2C_SCL_GPIO', 'i2c0_scl')])]
+        : []),
       ...(deviceEnabled(values, 'amp')
         ? ['', "/* The amplifier's MUTE / SD input, and the level that lets it play. */",
            ...gpio('AUDIO_AMP_GPIO', 'amp_enable'), `#define AUDIO_AMP_ON_LEVEL ${on('amp_on_level')}`]
@@ -718,6 +737,17 @@
       if (FIELD_BY_KEY.dac.options.includes(id)) values.dac = id; else unknown.push({key: 'AUDIO_DAC', value: dac});
     }
     asPin('i2s0_dout', 'I2S_DOUT_GPIO'); asPin('i2s0_bclk', 'I2S_BCLK_GPIO'); asPin('i2s0_lrck', 'I2S_LRCK_GPIO');
+    const address = take('SSM3582_I2C_ADDRESS');
+    if (address !== undefined) {
+      const text = `0x${Number(address).toString(16)}`;
+      if (FIELD_BY_KEY.dac_address.options.includes(text)) values.dac_address = text;
+      else unknown.push({key: 'SSM3582_I2C_ADDRESS', value: address});
+    }
+    const gain = take('SSM3582_GAIN_DB');
+    if (gain !== undefined) {
+      if (FIELD_BY_KEY.dac_gain.options.includes(gain)) values.dac_gain = gain;
+      else unknown.push({key: 'SSM3582_GAIN_DB', value: gain});
+    }
     /* Lines the editor no longer writes, because the firmware does not read
        them; a header from before, or the repository's own, still pastes
        without them showing as unknown. */

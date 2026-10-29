@@ -149,6 +149,15 @@
 /* #define AUDIO_AMP_GPIO 39 */
 /* #define AUDIO_AMP_ON_LEVEL 1 */
 
+/* An SSM3582 instead of the DAC - AUDIO_DAC DAC_SSM3582 above: a class-D
+ * amplifier with an I2S input, on the same three I2S wires and set up over
+ * I2C0, the tuner's two pins (FM_I2C_SDA_GPIO, FM_I2C_SCL_GPIO, named so even
+ * without a tuner, as for the clock). The address is what its ADDR0/ADDR1
+ * strap, 0x10-0x1F; the analogue gain one of 13, 16, 19, 21 dB - pick it for
+ * the supply: 13 dB already swings 6.3 V peak, more than a 5 V supply has. */
+/* #define SSM3582_I2C_ADDRESS 0x10 */
+/* #define SSM3582_GAIN_DB 13 */
+
 /* ======================================================================
  * Deep sleep - cutting power to everything outside the module
  * ====================================================================== */

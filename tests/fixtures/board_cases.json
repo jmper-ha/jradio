@@ -6,7 +6,7 @@
     "normalised as in both tests and sorted. Written by hand: a changed answer",
     "is a decision, made here, not a regeneration."
   ],
-  "base": "# key,value\nboard_format,1\nboard_name,\nmodule,esp32s3_n16r8\ndisplay,st7796s_480_320\nspi2_sclk,12\nspi2_mosi,11\nspi3_sclk,41\nspi3_mosi,42\nspi3_miso,40\ni2s0_bclk,18\ni2s0_lrck,17\ni2s0_dout,16\ni2s0_din,none\ni2s0_mclk,none\nuart1_tx,none\nuart1_rx,none\ni2c0_sda,none\ni2c0_scl,none\ntft_spi,2\ntft_cs,10\ntft_dc,47\ntft_reset,rst\ntft_backlight,2\nencoder_right,5\nencoder_left,7\nencoder_button,6\nencoder_pullups,1\nencoder_buttons,0\nbutton_sleep,21\nbutton_quick_menu,45\nbutton_prev,46\nbutton_next,9\nbuttons_pullups,1\nir_receiver,none\ndac,pcm5102\ndac_i2s,0\ndac_mute,none\namp_enable,none\namp_on_level,1\nperipheral_power,none\nperipheral_power_on_level,1\nusb_dp,20\nusb_dm,19\nsd_spi,3\nsd_cs,1\nbluetooth,none\nbt_uart,1\nbt_i2s,0\nfm_tuner,none\nfm_i2c,0\nfm_i2s,none\nadc,none\nadc_i2s,0\nrtc,none\nrtc_i2c,0\nyandex_music,1\ndlna,1\n",
+  "base": "# key,value\nboard_format,1\nboard_name,\nmodule,esp32s3_n16r8\ndisplay,st7796s_480_320\nspi2_sclk,12\nspi2_mosi,11\nspi3_sclk,41\nspi3_mosi,42\nspi3_miso,40\ni2s0_bclk,18\ni2s0_lrck,17\ni2s0_dout,16\ni2s0_din,none\ni2s0_mclk,none\nuart1_tx,none\nuart1_rx,none\ni2c0_sda,none\ni2c0_scl,none\ntft_spi,2\ntft_cs,10\ntft_dc,47\ntft_reset,rst\ntft_backlight,2\nencoder_right,5\nencoder_left,7\nencoder_button,6\nencoder_pullups,1\nencoder_buttons,0\nbutton_sleep,21\nbutton_quick_menu,45\nbutton_prev,46\nbutton_next,9\nbuttons_pullups,1\nir_receiver,none\ndac,pcm5102\ndac_i2s,0\ndac_mute,none\ndac_i2c,0\ndac_address,0x10\ndac_gain,13\namp_enable,none\namp_on_level,1\nperipheral_power,none\nperipheral_power_on_level,1\nusb_dp,20\nusb_dm,19\nsd_spi,3\nsd_cs,1\nbluetooth,none\nbt_uart,1\nbt_i2s,0\nfm_tuner,none\nfm_i2c,0\nfm_i2s,none\nadc,none\nadc_i2s,0\nrtc,none\nrtc_i2c,0\nyandex_music,1\ndlna,1\n",
   "cases": [
     {
       "name": "the README board as it is",
@@ -396,6 +396,43 @@
       "name": "a 1.8 V module with nothing on 47 or 48 says nothing",
       "csv": "module,esp32s3_n16r8v\ntft_dc,4\n",
       "errors": [],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "the SSM3582 with its I2C unwired",
+      "csv": "dac,ssm3582",
+      "errors": [
+        "bus_unwired dac i2c0_scl",
+        "bus_unwired dac i2c0_sda"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "the SSM3582 on I2C0, strapped to 0x1a, at 16 dB",
+      "csv": "dac,ssm3582\ni2c0_sda,8\ni2c0_scl,3\ndac_address,0x1a\ndac_gain,16",
+      "errors": [],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "a PCM5102 asks nothing of I2C, whatever its SSM3582 rows say",
+      "csv": "dac_address,0x1f\ndac_gain,21",
+      "errors": [],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "an SSM3582 address its straps cannot make",
+      "csv": "dac,ssm3582\ni2c0_sda,8\ni2c0_scl,3\ndac_address,0x20",
+      "errors": [
+        "bad_value dac_address"
+      ],
       "warnings": [],
       "unknown_keys": 0,
       "bad_lines": 0

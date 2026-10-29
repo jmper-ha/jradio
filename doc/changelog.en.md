@@ -8,6 +8,11 @@ detail is in the commit history.
 
 ## Next version
 
+Changed:
+- The sleep timer shows seconds in its last minute: "45 s" on the
+  screensaver, ":45" beside the clock. It used to show "1" for the whole of
+  that minute, which looked like a timer running late or not firing at all.
+
 Fixed:
 - Asleep, the backlight of some panels glowed faintly: the backlight pin was
   let go in deep sleep, and the module's own pull-up put about 0.5 V on it.

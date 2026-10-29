@@ -5962,6 +5962,19 @@ static void ui_load_menu_screen(void)
 {
     s_waiting_for_source_item = false;
     if (!ui_home_screen_exists()) {
+        /* Not while autoplay waits to resume: this select goes out at boot,
+         * before the Wi-Fi, and the controller refuses it - but the view
+         * machine holds it as pending for its 13 s, and autoplay's own
+         * select, a moment later with the network up, was refused as busy
+         * and never tried again. A user's board with the radio as its only
+         * source booted to the list and stayed silent, on power-on and on
+         * every wake (2026-10-29). Held back instead, and dropped when
+         * autoplay has started something; with nothing to resume it opens
+         * the radio as before. */
+        if (s_autoplay_pending) {
+            s_radio_home_pending = true;
+            return;
+        }
         s_radio_home_pending = !ui_open_radio_home();
         return;
     }
@@ -8417,6 +8430,8 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         return;
     }
     s_autoplay_pending = false;
+    // Autoplay opens what it resumes; the held-back radio home is not wanted.
+    if (action != UI_AUTOPLAY_HOME) s_radio_home_pending = false;
 
     switch (action) {
     case UI_AUTOPLAY_RADIO: {
@@ -8981,7 +8996,9 @@ static void ui_task(void *arg)
             ui_sync_player_snapshot(&snapshot);
             /* After the sync, not before: it is the snapshot that clears the
              * pending stop this is waiting on. */
-            if (s_radio_home_pending) s_radio_home_pending = !ui_open_radio_home();
+            if (s_radio_home_pending && !s_autoplay_pending) {
+                s_radio_home_pending = !ui_open_radio_home();
+            }
         }
         ui_scroll_tick();
         /* Driven from here because this is the one task that is always

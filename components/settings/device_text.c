@@ -205,6 +205,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_QUICK_LOUDNESS] = {"Тонкомп.", "Loudness"},
     [DEVICE_TEXT_QUICK_LEVEL_NUDGE] = {"Станция", "Station"},
     [DEVICE_TEXT_MINUTES_SHORT] = {"мин", "min"},
+    [DEVICE_TEXT_SECONDS_SHORT] = {"с", "s"},
 
     [DEVICE_TEXT_FM_MHZ] = {"МГц", "MHz"},
     [DEVICE_TEXT_FM_STEREO] = {"Стерео", "Stereo"},

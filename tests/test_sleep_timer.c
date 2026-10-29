@@ -83,10 +83,36 @@ static void test_the_countdown_survives_the_clock_wrapping(void)
     assert(sleep_timer_take_expired(&timer, 4U * MINUTE_MS + 1U));
 }
 
+/* What the panel shows: minutes down to the last one, then its seconds. */
+static void test_the_last_minute_counts_seconds(void)
+{
+    sleep_timer_t timer;
+    sleep_timer_init(&timer);
+    sleep_timer_reading_t reading = sleep_timer_reading(&timer, 0U);
+    assert(reading.value == 0U && !reading.seconds);
+
+    sleep_timer_arm(&timer, 5U, 0U);
+    reading = sleep_timer_reading(&timer, 0U);
+    assert(reading.value == 5U && !reading.seconds);
+    // A minute and a bit left still reads in minutes, rounded up.
+    reading = sleep_timer_reading(&timer, 5U * MINUTE_MS - 61U * 1000U);
+    assert(reading.value == 2U && !reading.seconds);
+    reading = sleep_timer_reading(&timer, 4U * MINUTE_MS);
+    assert(reading.value == 1U && !reading.seconds);
+    reading = sleep_timer_reading(&timer, 4U * MINUTE_MS + 15U * 1000U);
+    assert(reading.value == 45U && reading.seconds);
+    // The last part-second is still a second, not "no timer".
+    reading = sleep_timer_reading(&timer, 5U * MINUTE_MS - 1U);
+    assert(reading.value == 1U && reading.seconds);
+    reading = sleep_timer_reading(&timer, 5U * MINUTE_MS);
+    assert(reading.value == 0U);
+}
+
 int main(void)
 {
     test_arming_sets_the_whole_span();
     test_the_last_minute_reads_one();
+    test_the_last_minute_counts_seconds();
     test_expiry_is_reported_once();
     test_zero_minutes_cancels();
     test_a_longer_run_than_allowed_is_clamped();

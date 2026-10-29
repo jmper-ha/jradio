@@ -42,6 +42,16 @@ uint32_t sleep_timer_remaining_seconds(const sleep_timer_t *timer, uint32_t now_
  * "0". Zero means only "not running", so the panel can key the whole
  * indicator off this one number. */
 uint16_t sleep_timer_remaining_minutes(const sleep_timer_t *timer, uint32_t now_ms);
+/* What the panel shows: whole minutes, rounded up as above, until the last
+ * minute, and then the seconds. A "1" that stood for the whole of the last
+ * minute read as a timer that was late - users waited for it to reach 0 and
+ * the sound went on for up to another minute and the fade (2026-10-29).
+ * `value` 0 means not running, as for the minutes. */
+typedef struct {
+    uint16_t value;
+    bool seconds;
+} sleep_timer_reading_t;
+sleep_timer_reading_t sleep_timer_reading(const sleep_timer_t *timer, uint32_t now_ms);
 /* True once, the first time the deadline has passed, and disarms the timer
  * with it: whoever asks is the one who acts on it. */
 bool sleep_timer_take_expired(sleep_timer_t *timer, uint32_t now_ms);
@@ -53,6 +63,6 @@ void sleep_timer_service_init(void);
 void sleep_timer_service_set(uint16_t minutes);
 uint16_t sleep_timer_service_minutes(void);
 uint32_t sleep_timer_service_remaining_seconds(void);
-uint16_t sleep_timer_service_remaining_minutes(void);
+sleep_timer_reading_t sleep_timer_service_reading(void);
 bool sleep_timer_service_take_expired(void);
 #endif

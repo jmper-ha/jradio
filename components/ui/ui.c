@@ -376,11 +376,11 @@ typedef struct {
     weather_icon_t weather_icon_kind;
     /* The sleep timer's crescent and the minutes beside it, hidden while no
      * timer is running - which is nearly always, so they cost a hidden object
-     * and a compare. The minutes last drawn, so a strip is only touched on
-     * the minute it changes rather than every pass. */
+     * and a compare. The reading last drawn, so a strip is only touched when
+     * it changes rather than every pass. */
     lv_obj_t *sleep_icon;
     lv_obj_t *sleep_text;
-    uint16_t sleep_minutes;
+    sleep_timer_reading_t sleep_reading;
     /* Whether that same icon is currently the alarm's bell rather than the
      * timer's crescent: one mark at a time in the one slot. */
     bool alarm_shown;
@@ -1081,7 +1081,7 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     ui_paint(strip->sleep_text, UI_PAINT_TEXT, UI_ROLE_ACCENT, 0);
     lv_label_set_text(strip->sleep_text, "");
     lv_obj_add_flag(strip->sleep_text, LV_OBJ_FLAG_HIDDEN);
-    strip->sleep_minutes = 0U;
+    strip->sleep_reading = (sleep_timer_reading_t){0U, false};
     strip->alarm_shown = false;
 
     for (int bar = 0; bar < UI_WIFI_BARS; ++bar) {
@@ -1539,15 +1539,15 @@ static void ui_screensaver_refresh_text(bool force)
     /* The minutes left, with their unit: the line has room here, and "45"
      * alone beside a date and a temperature would be one number too many to
      * read at a glance in the dark. */
-    const uint16_t sleep_minutes = sleep_timer_service_remaining_minutes();
-    if (sleep_minutes != 0U) {
-        snprintf(text, sizeof(text), "%u %s", (unsigned)sleep_minutes,
-                 ui_text(DEVICE_TEXT_MINUTES_SHORT));
+    const sleep_timer_reading_t sleep = sleep_timer_service_reading();
+    if (sleep.value != 0U) {
+        snprintf(text, sizeof(text), "%u %s", (unsigned)sleep.value,
+                 ui_text(sleep.seconds ? DEVICE_TEXT_SECONDS_SHORT : DEVICE_TEXT_MINUTES_SHORT));
         changed |= ui_set_label_text_note_change(s_saver_sleep_text, text);
     }
-    if ((sleep_minutes != 0U) != s_saver_sleep_shown) {
+    if ((sleep.value != 0U) != s_saver_sleep_shown) {
         changed = true;
-        s_saver_sleep_shown = sleep_minutes != 0U;
+        s_saver_sleep_shown = sleep.value != 0U;
         if (s_saver_sleep_shown) {
             lv_obj_clear_flag(s_saver_sleep_icon, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(s_saver_sleep_text, LV_OBJ_FLAG_HIDDEN);
@@ -2383,13 +2383,17 @@ static void ui_screensaver_poll(uint32_t now_ms)
  * on its own, and when is on the settings page and in the browser. */
 static void ui_status_strip_update_sleep(ui_status_strip_t *strip)
 {
-    const uint16_t minutes = sleep_timer_service_remaining_minutes();
-    const bool alarm = minutes == 0U && alarm_config_valid(&s_device_settings.alarm);
-    if (minutes == strip->sleep_minutes && alarm == strip->alarm_shown) return;
-    const bool was_shown = strip->sleep_minutes != 0U || strip->alarm_shown;
+    const sleep_timer_reading_t reading = sleep_timer_service_reading();
+    const bool running = reading.value != 0U;
+    const bool alarm = !running && alarm_config_valid(&s_device_settings.alarm);
+    if (reading.value == strip->sleep_reading.value &&
+        reading.seconds == strip->sleep_reading.seconds && alarm == strip->alarm_shown) {
+        return;
+    }
+    const bool was_shown = strip->sleep_reading.value != 0U || strip->alarm_shown;
     const bool was_alarm = strip->alarm_shown;
-    const bool shown = minutes != 0U || alarm;
-    strip->sleep_minutes = minutes;
+    const bool shown = running || alarm;
+    strip->sleep_reading = reading;
     strip->alarm_shown = alarm;
 
     if (alarm != was_alarm) {
@@ -2404,9 +2408,11 @@ static void ui_status_strip_update_sleep(ui_status_strip_t *strip)
             lv_obj_add_flag(strip->sleep_icon, LV_OBJ_FLAG_HIDDEN);
         }
     }
-    if (minutes != 0U && UI_STRIP_SLEEP_TEXT_FITS) {
+    if (running && UI_STRIP_SLEEP_TEXT_FITS) {
+        /* Seconds as ":45" - the slot has room for three digits and no unit,
+         * and a bare "45" ticking down would read as minutes. */
         char text[8];
-        snprintf(text, sizeof(text), "%u", (unsigned)minutes);
+        snprintf(text, sizeof(text), reading.seconds ? ":%02u" : "%u", (unsigned)reading.value);
         ui_set_label_text_if_changed(strip->sleep_text, text);
         lv_obj_clear_flag(strip->sleep_text, LV_OBJ_FLAG_HIDDEN);
     } else {

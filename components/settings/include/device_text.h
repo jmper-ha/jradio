@@ -195,6 +195,8 @@ typedef enum {
 
     /* The sleep timer's unit, beside the minutes on the screensaver. */
     DEVICE_TEXT_MINUTES_SHORT,
+    // And the seconds', in its last minute.
+    DEVICE_TEXT_SECONDS_SHORT,
     // After a tone control's value on the quick panel.
     DEVICE_TEXT_DB_SHORT,
     /* Loudness on the quick panel, shortened: the full word is 124 px in the

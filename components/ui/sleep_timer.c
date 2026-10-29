@@ -54,6 +54,13 @@ uint16_t sleep_timer_remaining_minutes(const sleep_timer_t *timer, uint32_t now_
     return (uint16_t)((seconds + 59U) / 60U);
 }
 
+sleep_timer_reading_t sleep_timer_reading(const sleep_timer_t *timer, uint32_t now_ms)
+{
+    const uint32_t seconds = sleep_timer_remaining_seconds(timer, now_ms);
+    if (seconds > 0U && seconds < 60U) return (sleep_timer_reading_t){(uint16_t)seconds, true};
+    return (sleep_timer_reading_t){sleep_timer_remaining_minutes(timer, now_ms), false};
+}
+
 bool sleep_timer_take_expired(sleep_timer_t *timer, uint32_t now_ms)
 {
     if (!sleep_timer_armed(timer)) return false;
@@ -118,12 +125,12 @@ uint32_t sleep_timer_service_remaining_seconds(void)
     return seconds;
 }
 
-uint16_t sleep_timer_service_remaining_minutes(void)
+sleep_timer_reading_t sleep_timer_service_reading(void)
 {
     sleep_timer_lock();
-    const uint16_t minutes = sleep_timer_remaining_minutes(&s_timer, sleep_timer_now_ms());
+    const sleep_timer_reading_t reading = sleep_timer_reading(&s_timer, sleep_timer_now_ms());
     sleep_timer_unlock();
-    return minutes;
+    return reading;
 }
 
 bool sleep_timer_service_take_expired(void)

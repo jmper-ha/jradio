@@ -6,6 +6,20 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.9.3 — 31 October 2026
+
+New:
+- An FM station can be added without a scan. On the device: while tuning by
+  hand (triple press) a long press keeps the frequency and adds it to the end
+  of the list, and for a couple of seconds the line under the digits says
+  "Added to the list", "Already in the list" or "The list is full". In the
+  web FM tab a "Frequency, MHz" field under the list with an Add button, and
+  a row's frequency can be corrected. Such a station takes its name over RDS.
+
+Fixed:
+- The Device name reached the router only after a Wi-Fi reconnect: at boot
+  the radio introduced itself as `jradio-XXXX`.
+
 ## v1.9.2 — 31 October 2026
 
 New:

@@ -80,7 +80,8 @@ its code.
 | Play / pause, OK | As a press of the encoder |
 | Previous / Next | As Prev / Next |
 | Up / Down | As turning the encoder in a list |
-| Back, Menu | As a long press of the encoder |
+| Back (previous source) | Return to the source that played before this one, where it was left; again to come back |
+| Menu | As a long press of the encoder |
 | Quick panel | As Quick_menu |
 | Station list | Open the station or file list |
 | Sleep timer | The next step of the timer, round-robin (if the board can sleep - below) |

@@ -87,6 +87,9 @@ typedef enum {
     BOARD_INPUT_ACTION_SOURCE_YANDEX,
     BOARD_INPUT_ACTION_SOURCE_DLNA,
     BOARD_INPUT_ACTION_SOURCE_FM,
+    /* The source that played before this one, resumed as its own key would
+     * resume it. */
+    BOARD_INPUT_ACTION_SOURCE_PREVIOUS,
     /* The remote's navigation keys, apart from the case's: what each means
      * depends on the screen (ui_remote_keys.h) - on the player Up opens the
      * list, where the knob's turn would be the volume. */

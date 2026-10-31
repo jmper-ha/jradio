@@ -171,7 +171,7 @@
     'remote.f.up': ['Вверх по списку', 'Up the list'],
     'remote.f.down': ['Вниз по списку', 'Down the list'],
     'remote.f.ok': ['OK', 'OK'],
-    'remote.f.back': ['Назад / на главный', 'Back / home'],
+    'remote.f.back': ['Назад (прошлый источник)', 'Back (previous source)'],
     'remote.f.menu': ['Меню', 'Menu'],
     'remote.f.quick': ['Быстрые настройки', 'Quick panel'],
     'remote.f.list': ['Список станций', 'Station list'],

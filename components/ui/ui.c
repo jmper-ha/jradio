@@ -739,6 +739,11 @@ static bool s_autoplay_volume_has_file;
 /* A source key that came while the controller was still busy with the last
  * command - see ui_remote_source_poll(). AUDIO_SOURCE_NONE otherwise. */
 static audio_source_t s_remote_source_waiting = AUDIO_SOURCE_NONE;
+/* The source that played before the one playing now, for the remote's Back;
+ * and the last one seen playing, which it is worked out from. Not saved: a
+ * restart begins a new evening. */
+static audio_source_t s_previous_source = AUDIO_SOURCE_NONE;
+static audio_source_t s_last_seen_source = AUDIO_SOURCE_NONE;
 /* From the web server's task - see ui_request_source(). */
 static atomic_int s_web_source_request = ATOMIC_VAR_INIT(AUDIO_SOURCE_NONE);
 /* The remote's Mute: the level it took the sound down from, so Mute again
@@ -7426,6 +7431,16 @@ static void ui_remote_open_source(audio_source_t source)
  * refused by the command gate and lost - "the remote did not react", then
  * the next key switched to the source before it. The latest key wins, and
  * the gate's own timeout bounds the wait. */
+/* Between two sources the snapshot can read none for a moment; that is not a
+ * source anybody chose, so the one before it is what Back returns to. */
+static void ui_track_previous_source(const player_snapshot_t *snapshot)
+{
+    const audio_source_t active = snapshot->active_source;
+    if (active == AUDIO_SOURCE_NONE || active == s_last_seen_source) return;
+    s_previous_source = s_last_seen_source;
+    s_last_seen_source = active;
+}
+
 static void ui_remote_source_poll(void)
 {
     const int requested =
@@ -7497,6 +7512,14 @@ static bool ui_handle_remote_action(board_input_action_t action)
     }
     if (action == BOARD_INPUT_ACTION_LIST) {
         ui_show_station_list();
+        return true;
+    }
+    if (action == BOARD_INPUT_ACTION_SOURCE_PREVIOUS) {
+        // Nothing before this one yet: a key that does nothing, quietly.
+        if (s_previous_source != AUDIO_SOURCE_NONE) {
+            s_remote_source_waiting = s_previous_source;
+            ui_remote_source_poll();
+        }
         return true;
     }
     const audio_source_t source = ui_source_of_action(action);
@@ -8987,6 +9010,7 @@ static void ui_task(void *arg)
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
+        ui_track_previous_source(&snapshot);
         ui_remote_source_poll();
         ui_alarm_ring_step(&snapshot);
         // Only the strip on screen: the others are on parents LVGL is not

@@ -134,7 +134,7 @@ OpenWeatherMap), `remote.csv` (обученные кнопки пульта), `f
 | `GET /api/cover` | Текущая обложка, 96×96, BMP |
 | `GET /api/settings` | Настройки устройства, список часовых поясов, сервер времени |
 | `POST /api/settings` | Одна настройка: `{"field":…,"value":…}` — в том числе `timezone`, `ntp_server`, `weather*`, `screensaver*`, `alarm_*`, `fm_gain` (дБ, от −6 до +12), `theme` (`standard`/`contrast`/`custom`), цвета своей темы `theme_ground`, `theme_text`, `theme_artist`, `theme_secondary`, `theme_dim`, `theme_accent`, `theme_saver` (`"#rrggbb"`) и `theme_reset` (`true` — вернуть стандартные). Цвета приходят только в `GET`, не в диффах |
-| `POST /api/sleep-timer` | `{"minutes":45}`, ноль — выключить; 409, если плате нечем проснуться |
+| `POST /api/sleep-timer` | `{"minutes":45}`, ноль — выключить |
 | `GET /api/about` | Версии прошивки, веб-интерфейса и ESP-IDF |
 | `GET /api/backup`, `POST /api/restore` | Резервная копия, см. выше |
 | `GET /api/ota` | Ход обновления (`state`: `idle`, `receiving`, `confirm`, `restarting`, `failed`), работающая версия и раздел; в `check` — последняя версия релиза, есть ли что предложить и `history` — изменения всех версий новее установленной, от новой к старой (`version`, `ru`, `en`) |
@@ -153,7 +153,7 @@ OpenWeatherMap), `remote.csv` (обученные кнопки пульта), `f
 
 **Команды WebSocket:** `player.play`, `player.pause`, `player.toggle`,
 `player.next`, `player.previous_item`, `player.next_item`, `player.seek`
-(секунда), `player.like`, `player.dislike`, `source.select`, `list.select`,
+(секунда), `player.like`, `player.dislike`, `source.select`, `source.open` (как кнопка источника на пульте — с того же места), `list.select`,
 `browse.up`, `wifi.save`, `wifi.forget`, `wifi.prioritize`, `wifi.disconnect`.
 Обратно идут диффы секций `player`, `list`, `wifi`, `settings`. Крупное —
 плейлист, папки, позиция, обложка — идёт через REST, чтобы не грузить сокет.

@@ -102,6 +102,11 @@ plays at once. The source's list opens as before when there is nothing to
 carry on with (the source has not played yet, this volume has no file of its
 own), when there is no network, or when the key names the source already
 playing. The Resume setting does not affect the keys - it is about powering on.
+The source buttons at the top of the web player page work the same way.
+
+**Back** returns to the source that played before this one, also where it
+was left; press it again to come back. After power-on, until the source has
+changed once, the key does nothing.
 
 **Waking.** The key learned as "Sleep / wake" wakes the device from deep
 sleep on the first press. Other remotes in the room wake the chip too - that
@@ -292,10 +297,9 @@ web settings (the Time section), in the quick panel or with a remote key. The
 countdown shows on the player page and as a crescent next to the clock; in
 the last minute in seconds ("45 s" on the screensaver, ":45" by the clock).
 
-The timer exists only on a board that something can wake: with a Sleep button
-or an IR receiver that wakes the chip (see The remote control). Without them sleep is
-impossible, and there is no timer on the screen, in the web or on the remote -
-otherwise it would only fade the sound out and bring it back.
+A board with neither a Sleep button nor an IR receiver that wakes the chip
+(see The remote control) still goes to sleep on the timer and on the
+switch-off, but then only the alarm, the reset button or the power wakes it.
 
 When the time is up, the volume fades to zero over ten seconds, and only then
 the device goes to sleep. Any press in those ten seconds cancels the sleep and
@@ -354,8 +358,10 @@ changes either way show at once.
 Only in the web interface: the device name, time and time zone, the weather in
 detail, the alarm, the sleep timer, the backup.
 
-- **Device name** - how it is called in Bluetooth and as the setup access
-  point. An empty field is the built-in `jradio-XXXX`.
+- **Device name** - how it is called in Bluetooth, as the setup access
+  point and in the router's list of devices (there in Latin letters:
+  "Радио на кухне" becomes `Radio-na-kukhne`). An empty field is the built-in
+  `jradio-XXXX`.
 - **Yandex Music**, **DLNA** - the switches remove the source everywhere; a
   playback already running is not stopped.
 - **Buffer** - the left corner of the player's footer: a number ("Buffer 88%")

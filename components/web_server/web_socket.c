@@ -19,6 +19,7 @@
 
 #include "device_settings.h"
 #include "sleep_timer.h"
+#include "ui.h"
 #include "player_control.h"
 #include "station_catalog.h"
 #include "web_server.h"
@@ -1303,6 +1304,10 @@ static esp_err_t handle_text_frame(httpd_req_t *request, uint8_t *payload,
         request_id = command.request_id;
         if (command.kind == WEB_COMMAND_PLAYER) {
             accepted = player_control_post(&command.player);
+        } else if (command.kind == WEB_COMMAND_SOURCE_OPEN) {
+            /* As the remote's source key does it (asked to match,
+             * 2026-10-31): the tab used to open the source's list. */
+            accepted = ui_request_source(command.player.source);
         } else {
             accepted = web_socket_queue_wifi(command.kind, &command.wifi);
         }

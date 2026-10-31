@@ -712,7 +712,8 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
         parsed->player.kind = PLAYER_COMMAND_TOGGLE;
         return true;
     }
-    if (strcmp(action, "source.select") == 0) {
+    const bool source_open = strcmp(action, "source.open") == 0;
+    if (source_open || strcmp(action, "source.select") == 0) {
         if (fields != (COMMON_FIELDS | FIELD_SOURCE)) return false;
         const cJSON *source = object_item(root, "source");
         if (!json_string(source, sizeof("internet_radio") - 1U, false)) return false;
@@ -736,6 +737,7 @@ static bool parse_player_action(const cJSON *root, uint32_t fields,
             return false;
         }
         parsed->player.kind = PLAYER_COMMAND_SELECT_SOURCE;
+        if (source_open) parsed->kind = WEB_COMMAND_SOURCE_OPEN;
         return true;
     }
     if (strcmp(action, "player.next") == 0) {

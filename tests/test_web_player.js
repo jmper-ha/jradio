@@ -772,6 +772,12 @@ sendEvent(second, {
   assert.equal(elements['#list-offline'].hidden, true);
   assert.equal(elements['#list-count'].hidden, false);
   assert.equal(elements['#play-toggle'].disabled, false);
+  /* A tab does what the remote's source key does: the device resumes the
+     source where it was left, so it asks for that rather than a bare select. */
+  tabOf('internet_radio').emit('click');
+  const opened = JSON.parse(second.sent.at(-1));
+  assert.equal(opened.action, 'source.open');
+  assert.equal(opened.source, 'internet_radio');
 
   /* The case that got through: nothing has been selected yet, so the source is
      "none" and reads as needing nothing - while the list the device describes

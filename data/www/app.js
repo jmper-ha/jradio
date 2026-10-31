@@ -331,7 +331,7 @@
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'source-tab';
-        button.dataset.command = 'source.select';
+        button.dataset.command = 'source.open';
         button.dataset.source = source.id;
         const icon = sourceIcons[source.id];
         if (icon) {
@@ -347,8 +347,10 @@
         label.className = 'source-tab-label';
         label.textContent = source.label;
         button.append(label);
+        /* As the remote's source key: the source plays where it was left,
+           and opens on its list only when there is nothing to resume. */
         button.addEventListener('click', () => {
-          sendCommand('source.select', {source: source.id});
+          sendCommand('source.open', {source: source.id});
         });
         return button;
       });

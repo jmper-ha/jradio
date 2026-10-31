@@ -1,5 +1,6 @@
 #include "ui.h"
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -738,6 +739,8 @@ static bool s_autoplay_volume_has_file;
 /* A source key that came while the controller was still busy with the last
  * command - see ui_remote_source_poll(). AUDIO_SOURCE_NONE otherwise. */
 static audio_source_t s_remote_source_waiting = AUDIO_SOURCE_NONE;
+/* From the web server's task - see ui_request_source(). */
+static atomic_int s_web_source_request = ATOMIC_VAR_INIT(AUDIO_SOURCE_NONE);
 /* The remote's Mute: the level it took the sound down from, so Mute again
  * or any volume key puts it back. Not a setting - a muted board comes back
  * from a power cut at the level it was muted at, not silent. */
@@ -7425,6 +7428,9 @@ static void ui_remote_open_source(audio_source_t source)
  * the gate's own timeout bounds the wait. */
 static void ui_remote_source_poll(void)
 {
+    const int requested =
+        atomic_exchange_explicit(&s_web_source_request, AUDIO_SOURCE_NONE, memory_order_acq_rel);
+    if (requested != AUDIO_SOURCE_NONE) s_remote_source_waiting = (audio_source_t)requested;
     if (s_remote_source_waiting == AUDIO_SOURCE_NONE) return;
     if (ui_player_state_is_pending(&s_player_ui)) return;
     const audio_source_t source = s_remote_source_waiting;
@@ -9350,6 +9356,13 @@ esp_err_t ui_init(void)
     }
     ESP_LOGI(TAG, "LVGL UI initialized");
     return ESP_OK;
+}
+
+bool ui_request_source(audio_source_t source)
+{
+    if (source == AUDIO_SOURCE_NONE) return false;
+    atomic_store_explicit(&s_web_source_request, (int)source, memory_order_release);
+    return true;
 }
 
 bool ui_post_input(board_input_action_t action)

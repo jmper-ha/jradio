@@ -40,6 +40,11 @@ typedef enum {
     WEB_COMMAND_WIFI_FORGET,
     WEB_COMMAND_WIFI_PRIORITIZE,
     WEB_COMMAND_WIFI_DISCONNECT,
+    /* The page's source tab, done as the remote's source key does it: the
+     * source picks up where it was left rather than opening on its list.
+     * `player.source` names it. Not a player command: the resume is the
+     * screen's, which knows what each source waits for. */
+    WEB_COMMAND_SOURCE_OPEN,
 } web_command_kind_t;
 
 typedef struct {

@@ -6514,10 +6514,6 @@ static void ui_yandex_step_start(const player_snapshot_t *snapshot)
  * alone decides whether it is used - which is what the user asked for. */
 static void ui_enter_deep_sleep(void)
 {
-    if (!board_deep_sleep_supported()) {
-        ESP_LOGW(TAG, "deep sleep is not available on this board");
-        return;
-    }
     ESP_LOGW(TAG, "deep sleep requested");
     /* The screen goes first, before the second or so of shutting down below:
      * it is the only acknowledgement the user gets that the hold registered,
@@ -7477,8 +7473,6 @@ static bool ui_handle_remote_action(board_input_action_t action)
         ui_toggle_playback();
         return true;
     case BOARD_INPUT_ACTION_SLEEP_CYCLE: {
-        // A receiver that cannot wake the chip: no timer, as on the panel.
-        if (!board_deep_sleep_supported()) return true;
         const uint16_t next = ui_quick_sleep_step(sleep_timer_service_minutes(), 1);
         sleep_timer_service_set(next);
         ESP_LOGI(TAG, "remote: sleep timer %u min", (unsigned)next);
@@ -8850,16 +8844,6 @@ static void ui_alarm_stop_poll(uint32_t now_ms)
         return;
     }
     if (s_sleep_fading) return;
-    if (!board_deep_sleep_supported()) {
-        ESP_LOGI(TAG, "alarm: switch-off time; stopping the sound");
-        const player_command_t stop = {
-            .kind = PLAYER_COMMAND_STOP_SOURCE,
-            .source = AUDIO_SOURCE_NONE,
-            .item_index = PLAYER_ITEM_NONE,
-        };
-        (void)player_control_post(&stop);
-        return;
-    }
     ESP_LOGI(TAG, "alarm: switch-off time; fading out");
     s_sleep_fading = true;
     s_sleep_fade_started_ms = now_ms;
@@ -9304,11 +9288,6 @@ esp_err_t ui_init(void)
      * in the evening, and the sleep timer and the alarm have no rows on the
      * settings screen at all. The Bluetooth row is added by the poll. */
     ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_BRIGHTNESS, true);
-    /* Except the timer on a board with nothing to wake it - neither the sleep
-     * button nor the remote's receiver. It would fade the sound out and
-     * bring it back, and two users took that for a timer that does not work
-     * (2026-10-29). */
-    ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_SLEEP, board_deep_sleep_supported());
     ui_screensaver_init(&s_saver, ui_tick_get_ms());
     alarm_guard_init(&s_alarm_guard);
     /* Taken once, and it decides two things further down: the panel stays dark

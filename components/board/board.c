@@ -1730,7 +1730,13 @@ static void board_arm_wake_sources(uint32_t wake_after_seconds)
         const bool power = remote_control_power_frame(&power_bits);
         ir_wake_stub_arm(power ? &power_bits : NULL, wake_after_seconds > 0U);
     }
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_sleep_enable_ext1_wakeup_io(mask, ESP_EXT1_WAKEUP_ANY_LOW));
+    /* None at all on a board with neither: it sleeps on the sleep timer or
+     * the switch-off alarm all the same, and wakes on the alarm's timer, the
+     * reset button or the power (asked for by Ден, 2026-10-31). */
+    if (mask != 0U) {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(
+            esp_sleep_enable_ext1_wakeup_io(mask, ESP_EXT1_WAKEUP_ANY_LOW));
+    }
     if (wake_after_seconds > 0U) {
         ESP_ERROR_CHECK_WITHOUT_ABORT(
             esp_sleep_enable_timer_wakeup((uint64_t)wake_after_seconds * 1000000ULL));
@@ -1752,10 +1758,6 @@ bool board_woke_by_remote(void)
 
 void board_deep_sleep_again(uint32_t wake_after_seconds)
 {
-    if (!board_deep_sleep_supported()) {
-        ESP_LOGE(TAG, "deep sleep refused: neither the sleep button nor the receiver can wake the chip");
-        return;
-    }
     /* Nothing to shut down: this is a board that woke on the timer, found the
      * alarm still far off and never initialised anything. The peripheral rail
      * is where the previous sleep left it, held low across the wake. */
@@ -1767,8 +1769,7 @@ void board_deep_sleep_again(uint32_t wake_after_seconds)
 void board_deep_sleep(uint32_t wake_after_seconds)
 {
     if (!board_deep_sleep_supported()) {
-        ESP_LOGE(TAG, "deep sleep refused: neither the sleep button nor the receiver can wake the chip");
-        return;
+        ESP_LOGW(TAG, "deep sleep with no button or receiver to wake it: reset or power brings it back");
     }
     /* The screen first, because it is the one part of this the user sees:
      * the panel going dark is the acknowledgement that the hold registered,

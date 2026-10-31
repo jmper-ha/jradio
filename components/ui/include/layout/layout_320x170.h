@@ -24,15 +24,15 @@
  * its bottom edge on the row of dots. */
 #define UI_FEED_AXIS_Y 94
 
-/* The list home screen in the body face rather than the title's: six items
- * at the title's 24 px pitch end at 174 on a 170 px panel, so the rows are
- * the body's 19 px line with three pixels of air, and six of them end at
- * 162. The 24 px icon overhangs a 22 px row by a pixel each side, which the
- * bitmap's own margin absorbs. A seventh item would run under the notice
- * line; no board in the catalogue offers seven. */
+/* The list home screen in the body face rather than the title's, at the
+ * face's 19 px line and a pixel of air: seven rows end at 170, the panel's
+ * last line, and an eighth scrolls in with the cursor. Seven is a board with
+ * everything but Bluetooth, and it ran off the edge at 22 (seen on the panel
+ * 2026-10-31). The 24 px icon overhangs a 20 px row by two pixels each side,
+ * which the bitmap's own margin absorbs. */
 #define UI_MENU_FONT_PX 14
-#define UI_MENU_ROW_PITCH 22
-#define UI_MENU_ROW_H 22
+#define UI_MENU_ROW_PITCH 20
+#define UI_MENU_ROW_H 20
 
 /* The empty-browser screen: the drive under the strip, the sentence under
  * the drive, with the little air there is split between them. */
@@ -73,12 +73,17 @@
 #define UI_SRC_STREAM_H UI_SRC_LINE_H
 #define UI_SRC_STREAM_Y 88
 #define UI_SRC_RULE_TOP 109
-/* Two rows of 8 px blocks at a pitch of 12: the L and R marks are the body
- * face's capitals, ten pixels tall, and 12 is the pitch at which they do not
- * touch. */
+/* Two rows of 8 px blocks at a pitch of 12. */
 #define UI_SRC_VU_Y 112
 #define UI_SRC_VU_BLOCK_H 8
 #define UI_SRC_VU_PITCH 12
+/* The body face's L and R are ten-pixel capitals set three pixels above
+ * their rows, and on 8 px rows the R hung below its own (seen on the panel
+ * 2026-10-31). The 9 px face's seven-pixel capitals each stand on their row's
+ * top edge, inside the row, with four pixels between them. */
+#define UI_SRC_VU_MARK_SMALL 1
+#define UI_SRC_VU_MARK_L_DY 0
+#define UI_SRC_VU_MARK_R_DY UI_SRC_VU_PITCH
 
 /* The footer row: the buffer or the time under the cover, on the same line
  * as the controls beside it, and in the column the volume group where the

@@ -627,6 +627,8 @@ static ui_list_decor_t s_station_list_decor;
 static ui_list_decor_t s_yandex_decor;
 static ui_list_decor_t s_settings_decor;
 static ui_list_decor_t s_menu_decor;
+/* The first visible item on the home list's top row. */
+static uint8_t s_menu_window_top;
 static lv_obj_t *s_station_list_progress;
 static station_list_state_t s_station_list;
 static ui_player_state_t s_player_ui;
@@ -3407,11 +3409,14 @@ static void ui_update_menu_highlight(void)
     const uint8_t selected = ui_menu_selected_index(&s_menu);
     const ui_menu_visible_mask_t shown = ui_menu_visible_mask(&s_menu);
     const uint8_t visible = ui_menu_visible_count(shown);
+    s_menu_window_top = ui_menu_window_top(
+        s_menu_window_top, ui_menu_visible_position((ui_menu_item_t)selected, shown), visible,
+        UI_MENU_ROWS_FIT);
     bool on_screen[UI_MENU_ITEM_COUNT] = {false};
     size_t cursor_row = UI_MENU_ITEM_COUNT;
     for (uint8_t row = 0; row < UI_MENU_ITEM_COUNT; ++row) {
-        on_screen[row] = row < visible;
-        if (row >= visible) {
+        on_screen[row] = row < UI_MENU_ROWS_FIT && s_menu_window_top + row < visible;
+        if (!on_screen[row]) {
             // Hidden rather than blanked: the row tile is opaque and would
             // otherwise leave a bar of background colour below the last name.
             lv_obj_add_flag(s_menu_rows[row], LV_OBJ_FLAG_HIDDEN);
@@ -3420,7 +3425,8 @@ static void ui_update_menu_highlight(void)
         }
         lv_obj_clear_flag(s_menu_rows[row], LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(s_menu_icons[row], LV_OBJ_FLAG_HIDDEN);
-        const ui_menu_item_t item = ui_menu_visible_item_at(row, shown);
+        const ui_menu_item_t item =
+            ui_menu_visible_item_at((uint8_t)(s_menu_window_top + row), shown);
         const bool is_selected = (uint8_t)item == selected;
         if (is_selected) cursor_row = row;
         const bool enabled = ui_menu_item_is_enabled(item, shown, s_last_wifi_connected);
@@ -3466,6 +3472,10 @@ static void ui_create_menu_screen(void)
     // default font has no Cyrillic and renders it as empty boxes, which is a
     // mistake that only shows up when a label first receives Russian text.
     lv_obj_set_style_text_font(s_menu_screen, UI_FONT_MENU, 0);
+    /* The rows scroll by the window in ui_update_menu_highlight(); LVGL's own
+     * scrolling would only add a bar beside a list that already follows the
+     * cursor. */
+    lv_obj_clear_flag(s_menu_screen, LV_OBJ_FLAG_SCROLLABLE);
 
     ui_status_strip_create(s_menu_screen, &s_menu_strip, "jRadio");
 
@@ -3914,7 +3924,9 @@ static void ui_create_settings_screen(void)
      * half of the band needs to say the click leads somewhere. */
     s_settings_web_address = lv_label_create(s_settings_web_band);
     lv_obj_set_pos(s_settings_web_address, UI_SET_BAND_PAD, (UI_SET_BAND_H - 19) / 2);
-    lv_obj_set_width(s_settings_web_address, UI_SET_BAND_ADDRESS_W);
+    /* One line high: a long name ends in dots instead of wrapping into a
+     * second line the band cuts through. */
+    lv_obj_set_size(s_settings_web_address, UI_SET_BAND_ADDRESS_W, UI_FONT_BODY_LINE_H);
     lv_label_set_long_mode(s_settings_web_address, LV_LABEL_LONG_DOT);
     ui_paint(s_settings_web_address, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
     lv_label_set_text(s_settings_web_address, "");
@@ -4340,8 +4352,17 @@ static void ui_update_settings_web_band(void)
                         s_device_settings.language, UI_SET_BAND_SHOW_SCHEME, mounted, text,
                         sizeof(text));
     ui_set_label_text_if_changed(s_settings_web_address, text);
+    /* The setup network's line - "join jradio-XXXX" - is wider than the slot
+     * beside the hint on a 320 px panel, and wrapped into a second line the
+     * band cut in half: the network's name was the half that went (seen on
+     * the 320x170 module 2026-10-31). The name is the one thing a visitor
+     * cannot learn anywhere else, so the line takes the whole band and the
+     * hint gives way; the press still brings the code up. */
+    lv_point_t text_size;
+    lv_text_get_size(&text_size, text, UI_FONT_BODY, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    const bool whole_band = !mounted || text_size.x > UI_SET_BAND_ADDRESS_W;
     lv_obj_set_width(s_settings_web_address,
-                     mounted ? UI_SET_BAND_ADDRESS_W : TFT_WIDTH - 2 * UI_SET_BAND_PAD);
+                     whole_band ? TFT_WIDTH - 2 * UI_SET_BAND_PAD : UI_SET_BAND_ADDRESS_W);
 
     char payload[sizeof(s_qr_shown)];
     const bool available = mounted && ui_web_address_qr(status.mode, status.ipv4,
@@ -4355,7 +4376,8 @@ static void ui_update_settings_web_band(void)
      * string on it that ignored the switch, and on a Russian device it read as
      * the only English on the panel. */
     ui_set_label_text_if_changed(s_settings_web_hint,
-                                 available ? ui_text(DEVICE_TEXT_ROW_WEB_ADDRESS) : "");
+                                 available && !whole_band ? ui_text(DEVICE_TEXT_ROW_WEB_ADDRESS)
+                                                          : "");
 
     /* The band is the last cursor stop, so it highlights like a row: the same
      * tile colour and the same accent, or the screen has a selection nobody

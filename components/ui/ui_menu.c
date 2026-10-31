@@ -114,6 +114,16 @@ ui_menu_item_t ui_menu_visible_item_at(uint8_t position, ui_menu_visible_mask_t 
     return UI_MENU_ITEM_INTERNET_RADIO;
 }
 
+uint8_t ui_menu_window_top(uint8_t top, uint8_t cursor_row, uint8_t count, uint8_t fit)
+{
+    if (fit == 0U || count <= fit) return 0U;
+    if (top > count - fit) top = (uint8_t)(count - fit);
+    if (cursor_row >= count) cursor_row = (uint8_t)(count - 1U);
+    if (cursor_row < top) top = cursor_row;
+    if (cursor_row >= top + fit) top = (uint8_t)(cursor_row - fit + 1U);
+    return top;
+}
+
 ui_menu_item_t ui_menu_item_step(ui_menu_item_t item, int direction,
                                  ui_menu_visible_mask_t visible)
 {

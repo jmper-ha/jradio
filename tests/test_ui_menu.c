@@ -274,6 +274,22 @@ static void test_network_sources_need_a_network(void)
     }
 }
 
+/* Seven rows on a panel that holds six: the window moves only when the
+   cursor would leave it, and a list that fits never scrolls. */
+static void test_menu_window_follows_the_cursor(void)
+{
+    assert(ui_menu_window_top(0U, 6U, 6U, 8U) == 0U);
+    assert(ui_menu_window_top(3U, 2U, 8U, 8U) == 0U);
+    assert(ui_menu_window_top(0U, 5U, 7U, 6U) == 0U);
+    assert(ui_menu_window_top(0U, 6U, 7U, 6U) == 1U);
+    assert(ui_menu_window_top(1U, 3U, 7U, 6U) == 1U);
+    assert(ui_menu_window_top(1U, 0U, 7U, 6U) == 0U);
+    /* A row switched off under a scrolled window pulls it back in range. */
+    assert(ui_menu_window_top(2U, 5U, 7U, 6U) == 1U);
+    assert(ui_menu_window_top(0U, 7U, 8U, 5U) == 3U);
+    assert(ui_menu_window_top(0U, 0U, 8U, 0U) == 0U);
+}
+
 int main(void)
 {
     test_encoder_navigation_wraps();
@@ -285,6 +301,7 @@ int main(void)
     test_hiding_yandex_takes_its_row_out_of_the_run();
     test_the_two_switches_do_not_disturb_each_other();
     test_network_sources_need_a_network();
+    test_menu_window_follows_the_cursor();
     puts("ui_menu tests passed");
     return 0;
 }

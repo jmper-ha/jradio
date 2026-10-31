@@ -110,7 +110,7 @@ static void test_the_layout_measures_in_the_faces_it_declares(void)
     assert(UI_FONT_ICON_PX == 24 && UI_FONT_DISPLAY_PX == 32);
     assert(UI_FEED_ICON_LARGE_PX == 44);
     assert(UI_FEED_TILE == 60);
-    assert(UI_MENU_FONT_PX == 14 && UI_MENU_ROW_PITCH == 22);
+    assert(UI_MENU_FONT_PX == 14 && UI_MENU_ROW_PITCH == 20);
     /* The player's body stands beside the cover, not under it. */
     assert(UI_SRC_BODY_X == UI_SRC_ART_X + UI_SRC_ART_SIZE + 8);
     assert(UI_SRC_BODY_W == 196);

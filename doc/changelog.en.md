@@ -6,6 +6,43 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.9.2 — 31 October 2026
+
+New:
+- The source buttons at the top of the web player page work like the
+  remote's source keys: the source carries on where it was left, and the
+  list opens only when there is nothing to carry on with.
+- The remote's Back key returns to the source that played before this one,
+  also where it was left; press again to come back. It used to repeat Menu.
+- The router lists the radio under the Device name from the settings rather
+  than as "espressif". Russian letters are spelled in Latin ones: "Радио на
+  кухне" becomes `Radio-na-kukhne`.
+
+Changed:
+- The sleep timer and the switch-off put to sleep a board with neither a
+  sleep button nor an IR receiver too. The alarm, the reset button or the
+  power wakes it then. In v1.9.1 the timer was hidden on such a board, and
+  the switch-off only stopped the sound.
+
+Fixed:
+- The USB drive and the card from the remote: they shared one place to
+  carry on from, and after a file on the card the USB key opened the list
+  and played nothing (and the other way round). Each now keeps its own file.
+- A source key pressed while the radio was still switching was lost, and the
+  unfinished switch then landed after the next key: SD pressed, the drive
+  came up. Now the last key pressed wins.
+- The card started from the remote sometimes opened its folder and played
+  nothing: the file was looked for while the player was still reading the
+  card's root.
+- The remote's learning page said "No key came" or "Key … is not learned"
+  after a successful learning, while the key was saved and worked.
+- The 320x170 screen: the home menu's last item ran off the edge - seven
+  items fit now, and with more the menu scrolls (on 428x142 too); the R by
+  the level meter sat too low; in the settings the "join jradio-…" line was
+  cut off along with the network's name (on 320x240 as well).
+- On a board whose only source is internet radio, power-on and waking from
+  sleep opened the station list and the radio stayed silent, with Resume on.
+
 ## v1.9.1 — 29 October 2026
 
 New:

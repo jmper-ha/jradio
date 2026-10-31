@@ -191,7 +191,11 @@ name.
 
 **Manual tuning.** The digits turn orange, with "Tuning by hand" under them.
 Turning moves the frequency by 0.1 MHz and the sound follows the digits; a
-press keeps the frequency reached and gives the knob back to the volume. Prev
+press keeps the frequency reached and gives the knob back to the volume. A
+long press keeps it too and adds it to the end of the preset list; for a
+couple of seconds the line under the digits says "Added to the list",
+"Already in the list" or "The list is full". Such a station takes its name
+over RDS, if it sends one. Prev
 and Next inside the mode search the air. Any other button leaves and puts back
 the frequency you began on, and ten seconds without action close the mode by
 themselves, keeping what is tuned.
@@ -202,7 +206,9 @@ of the name and the radiotext meanwhile. What it finds, with the names the
 stations send over RDS, replaces the list - after a warning - and the names
 you gave to frequencies before are kept. When the search is over the radio
 stands on the first station found. The list is then edited on the same page:
-names, pictures, order, removal, up to 40 presets.
+names, pictures, order, removal, up to 40 presets. A station the scan missed
+can be added by its frequency in the field under the list, and a row's
+frequency can be corrected.
 
 The name and the radiotext come over RDS, and on a weak signal they may not
 come together though the sound plays fine: the RDS mark does not light then.

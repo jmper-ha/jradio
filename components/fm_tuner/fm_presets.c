@@ -142,3 +142,18 @@ bool fm_presets_find(const fm_presets_t *presets, uint32_t khz, size_t *index)
     }
     return false;
 }
+
+fm_presets_add_result_t fm_presets_add(fm_presets_t *presets, uint32_t khz, size_t *index)
+{
+    if (presets == NULL || khz < RDA5807_BAND_MIN_KHZ || khz > RDA5807_BAND_MAX_KHZ) {
+        return FM_PRESETS_OFF_BAND;
+    }
+    if (fm_presets_find(presets, khz, index)) return FM_PRESETS_ALREADY;
+    if (presets->count >= FM_PRESETS_MAX) return FM_PRESETS_FULL;
+    fm_preset_t *preset = &presets->presets[presets->count];
+    memset(preset, 0, sizeof(*preset));
+    preset->khz = khz;
+    if (index != NULL) *index = presets->count;
+    ++presets->count;
+    return FM_PRESETS_ADDED;
+}

@@ -138,6 +138,7 @@ function loadPage(options = {}) {
   card.id = 'fm-card';
   body.append(card);
   for (const [tag, id] of [['span', 'fm-status'], ['ul', 'fm-presets'], ['p', 'fm-presets-empty'],
+                           ['input', 'fm-add-frequency'], ['button', 'fm-add'],
                            ['button', 'fm-scan'], ['button', 'fm-save']]) {
     const element = new Element(tag);
     element.id = id;
@@ -200,7 +201,7 @@ async function main() {
   /* The saved list: in the file's order, the frequency beside a name field,
      a nameless preset left empty for its name. Nothing to save yet. */
   assert.deepStrictEqual(rows('fm-presets').map((row) => row.dataset.khz), ['88300', '101200']);
-  assert.strictEqual(rows('fm-presets')[0].querySelector('.fm-frequency').textContent, '88.3');
+  assert.strictEqual(rows('fm-presets')[0].querySelector('.fm-frequency').value, '88.3');
   assert.strictEqual(input(rows('fm-presets')[0]).value, 'Первая');
   assert.strictEqual(input(rows('fm-presets')[1]).value, '');
   assert.strictEqual($('fm-presets-empty').hidden, true);
@@ -248,6 +249,42 @@ async function main() {
   await settle();
   assert.strictEqual(posts.at(-1), 'Вторая станция\t101200\n');
   assert.strictEqual(iconPosts.length, 1);
+
+  /* A frequency typed under the list goes on its end without a name, either
+     spelling of the decimal; one off the band or already there is refused
+     and said so, and the list is left alone. */
+  $('fm-add-frequency').value = '95,6';
+  $('fm-add').emit('click');
+  assert.deepStrictEqual(rows('fm-presets').map((row) => row.dataset.khz), ['101200', '95600']);
+  assert.strictEqual(input(rows('fm-presets')[1]).value, '');
+  assert.strictEqual($('fm-add-frequency').value, '');
+  assert.strictEqual($('fm-save').disabled, false);
+  $('fm-add-frequency').value = '101.2';
+  $('fm-add').emit('click');
+  assert.strictEqual($('fm-status').textContent, '101.2 МГц уже в списке');
+  assert.strictEqual($('fm-add-frequency').classList.contains('is-error'), true);
+  $('fm-add-frequency').value = '76';
+  $('fm-add-frequency').emit('keydown', {key: 'Enter'});
+  assert.strictEqual($('fm-status').textContent, 'Частота — от 87,0 до 108,0 МГц');
+  assert.strictEqual(rows('fm-presets').length, 2);
+
+  /* A row's frequency is corrected in place; a wrong one goes back. */
+  const frequency = (row) => row.querySelector('.fm-frequency');
+  frequency(rows('fm-presets')[1]).value = '95.65';
+  frequency(rows('fm-presets')[1]).emit('change');
+  assert.strictEqual(frequency(rows('fm-presets')[1]).value, '95.7');
+  assert.strictEqual(rows('fm-presets')[1].dataset.khz, '95700');
+  frequency(rows('fm-presets')[1]).value = '101.2';
+  frequency(rows('fm-presets')[1]).emit('change');
+  assert.strictEqual(frequency(rows('fm-presets')[1]).value, '95.7');
+  assert.strictEqual($('fm-status').textContent, '101.2 МГц уже в списке');
+  $('fm-save').emit('click');
+  await settle();
+  assert.strictEqual(posts.at(-1), 'Вторая станция\t101200\n\t95700\n');
+  button(rows('fm-presets')[1], 'Удалить').emit('click');
+  $('fm-save').emit('click');
+  await settle();
+  assert.strictEqual(posts.at(-1), 'Вторая станция\t101200\n');
 
   /* A scan over a list that has stations asks first; saying no changes
      nothing and starts nothing. */

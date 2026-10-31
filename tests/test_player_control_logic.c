@@ -880,6 +880,19 @@ static void test_tuning_by_hand_is_the_tuners_alone(void)
     assert(player_control_decide(&state, &up) == PLAYER_OPERATION_INVALID);
 }
 
+static void test_a_preset_is_added_on_the_tuner_alone(void)
+{
+    player_snapshot_t state = {.active_source = AUDIO_SOURCE_FM,
+                               .playback_state = PLAYER_PLAYBACK_PLAYING};
+    player_command_t add = {.kind = PLAYER_COMMAND_FM_PRESET_ADD, .frequency_khz = 101300U};
+    assert(player_control_decide(&state, &add) == PLAYER_OPERATION_FM_PRESET_ADD);
+    add.frequency_khz = 86900U;
+    assert(player_control_decide(&state, &add) == PLAYER_OPERATION_INVALID);
+    add.frequency_khz = 101300U;
+    state.active_source = AUDIO_SOURCE_INTERNET_RADIO;
+    assert(player_control_decide(&state, &add) == PLAYER_OPERATION_INVALID);
+}
+
 static void test_a_nudge_is_a_stations_alone(void)
 {
     player_snapshot_t state = {.active_source = AUDIO_SOURCE_INTERNET_RADIO,
@@ -1057,6 +1070,7 @@ int main(void)
     test_a_list_row_leads_with_the_frequency();
     test_a_preset_takes_the_name_that_holds_still();
     test_tuning_by_hand_is_the_tuners_alone();
+    test_a_preset_is_added_on_the_tuner_alone();
     test_a_nudge_is_a_stations_alone();
     test_a_preset_is_chosen_without_a_network();
     test_snapshot_equality_notices_the_frequency();

@@ -1803,6 +1803,28 @@ static void player_control_task(void *arg)
              * pick after it - no list, no phone - so choosing FM is choosing
              * to hear it. A tuner that does not answer stays the source, in
              * ERROR, so the screen says why and a second choice retries. */
+/* A frequency the listener tuned to and kept. Saved at once, as the web page
+ * saves its list; a file that will not take it puts the list back as it was
+ * on disk, so the panel never shows a preset that the next boot would lose. */
+static void player_fm_preset_add(uint32_t khz)
+{
+    if (s_fm_presets == NULL) return;
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    const fm_presets_add_result_t result = fm_presets_add(s_fm_presets, khz, NULL);
+    xSemaphoreGive(s_fm_lock);
+    if (result != FM_PRESETS_ADDED) {
+        ESP_LOGI(TAG, "fm: %u kHz not added (%d)", (unsigned)khz, (int)result);
+        return;
+    }
+    if (player_fm_presets_save()) {
+        ESP_LOGI(TAG, "fm: %u kHz added as a preset", (unsigned)khz);
+        atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
+    } else {
+        ESP_LOGW(TAG, "fm: could not save %u kHz as a preset", (unsigned)khz);
+        player_control_fm_presets_reload();
+    }
+}
+
             if (command.source == AUDIO_SOURCE_FM) (void)player_fm_open();
             if (command.source == AUDIO_SOURCE_BLUETOOTH && !player_bt_open()) {
                 /* The module refused or went quiet: the source is not open,
@@ -2142,6 +2164,9 @@ static void player_control_task(void *arg)
             }
             const bool set = dislike ? !disliked : !liked;
             if (yandex_likes_set(track_id, dislike ? YANDEX_MARK_DISLIKE : YANDEX_MARK_LIKE,
+        case PLAYER_OPERATION_FM_PRESET_ADD:
+            player_fm_preset_add(command.frequency_khz);
+            break;
                                  set) != ESP_OK) {
                 break;
             }

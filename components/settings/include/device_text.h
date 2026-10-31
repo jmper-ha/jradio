@@ -216,6 +216,11 @@ typedef enum {
     DEVICE_TEXT_FM_SEEKING,
     DEVICE_TEXT_FM_SCANNING,
     DEVICE_TEXT_FM_TUNING,
+    /* A long press while tuning by hand keeps the frequency as a preset;
+     * these say for a moment how that went. */
+    DEVICE_TEXT_FM_PRESET_ADDED,
+    DEVICE_TEXT_FM_PRESET_ALREADY,
+    DEVICE_TEXT_FM_PRESET_FULL,
 
     /* The firmware update's window over every screen. */
     DEVICE_TEXT_OTA_TITLE,

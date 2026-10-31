@@ -656,6 +656,12 @@ static uint32_t s_fm_tune_follow_from;
 static uint32_t s_fm_tune_follow_ms;
 // A seek that comes back with no station leaves the digits where they were.
 #define UI_FM_TUNE_FOLLOW_MS 8000U
+/* What a long press while tuning did with the frequency, said under the
+ * digits for a moment: the press closes the mode, and without a word the
+ * listener cannot tell a kept preset from a press that only left. */
+static device_text_id_t s_fm_saved_note = DEVICE_TEXT_COUNT;
+static uint32_t s_fm_saved_note_ms;
+#define UI_FM_SAVED_NOTE_MS 2500U
 /* A source is open with nothing playing and nothing chosen - so its list is
  * what the screen should be showing. Armed when that source's screen is
  * loaded, and read a moment later, because "nothing is playing" is only true
@@ -3105,6 +3111,13 @@ static void ui_update_fm_status(const player_snapshot_t *snapshot)
     }
     ui_set_label_text_if_changed(s_source_fm_digits, digits);
     const char *state = ui_fm_tune_is_active(&s_fm_tune) ? ui_text(DEVICE_TEXT_FM_TUNING) : "";
+    if (s_fm_saved_note != DEVICE_TEXT_COUNT) {
+        if ((uint32_t)(ui_tick_get_ms() - s_fm_saved_note_ms) >= UI_FM_SAVED_NOTE_MS) {
+            s_fm_saved_note = DEVICE_TEXT_COUNT;
+        } else if (state[0] == '\0') {
+            state = ui_text(s_fm_saved_note);
+        }
+    }
     if (snapshot->playback_state != PLAYER_PLAYBACK_PLAYING &&
         snapshot->playback_state != PLAYER_PLAYBACK_PAUSED) {
         state = ui_radio_state_text(snapshot->playback_state);
@@ -6359,6 +6372,32 @@ static void ui_end_fm_tune(bool keep)
     }
 }
 
+/* The long press inside the mode: the frequency reached is kept, as a press
+ * keeps it, and goes into the presets as well - the way to a station the
+ * scan did not find, or one found later, without scanning the list away.
+ * The list is read here only to say what happened; the player adds it. */
+static void ui_fm_tune_keep_as_preset(void)
+{
+    const uint32_t khz = ui_fm_tune_khz(&s_fm_tune);
+    ui_end_fm_tune(true);
+    if (khz == 0U) return;
+    const size_t count = player_control_fm_preset_count();
+    bool already = false;
+    for (size_t index = 0U; index < count && !already; ++index) {
+        fm_preset_t preset;
+        already = player_control_fm_preset_at(index, &preset) && preset.khz == khz;
+    }
+    if (already) {
+        s_fm_saved_note = DEVICE_TEXT_FM_PRESET_ALREADY;
+    } else if (count >= FM_PRESETS_MAX) {
+        s_fm_saved_note = DEVICE_TEXT_FM_PRESET_FULL;
+    } else {
+        ui_fm_tune_post(PLAYER_COMMAND_FM_PRESET_ADD, khz);
+        s_fm_saved_note = DEVICE_TEXT_FM_PRESET_ADDED;
+    }
+    s_fm_saved_note_ms = ui_tick_get_ms();
+}
+
 /* Every pass: the frequency the knob has reached goes out at a measured pace,
  * a seek's result is taken up, and a mode left alone closes. */
 static void ui_fm_tune_tick(void)
@@ -6384,6 +6423,9 @@ static bool ui_fm_tune_input(board_input_action_t action)
         return true;
     case BOARD_INPUT_ACTION_ENCODER_BUTTON:
         ui_end_fm_tune(true);
+        return true;
+    case BOARD_INPUT_ACTION_ENCODER_LONG:
+        ui_fm_tune_keep_as_preset();
         return true;
     case BOARD_INPUT_ACTION_BTN_PREV:
     case BOARD_INPUT_ACTION_BTN_NEXT: {

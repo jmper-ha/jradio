@@ -78,7 +78,11 @@ player page leads there while FM is playing. A row of the list is
 pass up the band on the device, shows which frequency it is at, and when it
 ends replaces the list with what it found: after a warning, keeping the names
 you gave and taking the RDS names for the rest. The list goes to the device at
-once. What you edit by hand goes by "Save".
+once. A row's frequency can be corrected, and the "Frequency, MHz" field under
+the list with its Add button puts a station on the end of the list without a
+scan (101.2 or 101,2; 87.0 to 108.0 in steps of 0.1, no repeats). Such a
+station takes its name over RDS once the device has played it. What you edit
+by hand goes by "Save".
 
 A picture belongs to the preset, not to the frequency: 101.2 is another
 station in every city. The tile at the start of the row chooses a file, the

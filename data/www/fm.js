@@ -121,6 +121,8 @@
   const presetEmpty = document.querySelector('#fm-presets-empty');
   const scanButton = document.querySelector('#fm-scan');
   const saveButton = document.querySelector('#fm-save');
+  const addField = document.querySelector('#fm-add-frequency');
+  const addButton = document.querySelector('#fm-add');
 
   const POLL_MS = 700;
   const MAX_PRESETS = 40;
@@ -143,6 +145,24 @@
 
   function mhz(khz) {
     return (Math.round(khz / 100) / 10).toFixed(1);
+  }
+
+  /* What a person types: "101.2" or "101,2", on the chip's 100 kHz grid.
+     Null when it is not a frequency the tuner can stand on. */
+  function parseMhz(text) {
+    const value = Number(String(text).trim().replace(',', '.'));
+    if (String(text).trim() === '' || !Number.isFinite(value)) return null;
+    const khz = Math.round(value * 10) * 100;
+    return khz >= BAND_MIN && khz <= BAND_MAX ? khz : null;
+  }
+
+  /* Why `khz` cannot go into the list at `except` (or at the end), or ''. */
+  function frequencyProblem(khz, except) {
+    if (khz === null) return t('fm.bad_frequency');
+    if (presets.some((preset, at) => at !== except && preset.khz === khz)) {
+      return t('fm.already', {frequency: mhz(khz)});
+    }
+    return '';
   }
 
   function isIconName(value) {
@@ -369,11 +389,49 @@
     return cell;
   }
 
-  function frequencyLabel(khz) {
-    const span = document.createElement('span');
-    span.className = 'fm-frequency';
-    span.textContent = mhz(khz);
-    return span;
+  /* The row's frequency, editable: a station that moved, or one a scan
+     caught a step off. Taken when the field is left; anything that is not a
+     frequency, or is one already in the list, goes back to what it was. */
+  function frequencyField(index, row) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'fm-frequency';
+    input.setAttribute('inputmode', 'decimal');
+    input.maxLength = 6;
+    input.value = mhz(presets[index].khz);
+    input.setAttribute('aria-label', t('fm.frequency'));
+    input.addEventListener('change', () => {
+      const khz = parseMhz(input.value);
+      const problem = frequencyProblem(khz, index);
+      if (problem !== '') {
+        input.value = mhz(presets[index].khz);
+        setStatus(problem, true);
+        return;
+      }
+      input.value = mhz(khz);
+      if (khz === presets[index].khz) return;
+      presets[index] = {...presets[index], khz};
+      row.dataset.khz = String(khz);
+      markDirty();
+    });
+    return input;
+  }
+
+  /* A frequency typed under the list goes on its end without a name: the
+     device names it from RDS once it has played it, as it does a scan's. */
+  function addFrequency() {
+    const khz = parseMhz(addField.value);
+    const problem = presets.length >= MAX_PRESETS && khz !== null
+      ? t('fm.full', {count: MAX_PRESETS}) : frequencyProblem(khz, -1);
+    addField.classList.toggle('is-error', problem !== '');
+    if (problem !== '') {
+      setStatus(problem, true);
+      return;
+    }
+    presets = [...presets, {name: '', khz, icon: '', picture: null}];
+    addField.value = '';
+    markDirty();
+    renderPresets();
   }
 
   function move(index, step) {
@@ -392,7 +450,7 @@
       const row = document.createElement('li');
       row.dataset.khz = String(preset.khz);
       row.append(pictureCell(index));
-      row.append(frequencyLabel(preset.khz));
+      row.append(frequencyField(index, row));
       row.append(nameField(preset.name, (value) => {
         presets[index] = {...presets[index], name: value};
         markDirty();
@@ -590,6 +648,13 @@
 
   scanButton.addEventListener('click', startScan);
   saveButton.addEventListener('click', save);
+  if (addField !== null && addButton !== null) {
+    addButton.addEventListener('click', addFrequency);
+    addField.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') addFrequency();
+    });
+    addField.addEventListener('input', () => addField.classList.remove('is-error'));
+  }
   /* Rows are built here, not in the markup, so a language switch has to
      rebuild them for their labels. */
   window.jradioI18n.onChange(renderPresets);

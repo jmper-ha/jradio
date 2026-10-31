@@ -1547,11 +1547,27 @@ button.network-name:hover { color: var(--accent); }
 
 /* The FM lists: the frequency in a fixed column so a list of them reads down
    one edge, a name field that takes what is left, and the small controls. */
-.fm-list .fm-frequency {
+.fm-list .fm-frequency, .fm-add .fm-frequency {
   flex: 0 0 4.2rem;
+  width: 4.2rem;
+  height: 26px;
+  padding: 0 .4rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
 }
+.fm-list .fm-frequency.is-error, .fm-add .fm-frequency.is-error { border-color: var(--bad); }
+/* Under the list, in a row of its own: wide enough for the word in it. */
+.fm-add {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin-top: .6rem;
+}
+.fm-add .fm-frequency { flex-basis: 8rem; width: 8rem; }
 .fm-list .fm-name {
   flex: 1 1 8rem;
   min-width: 0;

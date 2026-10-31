@@ -89,6 +89,45 @@ static size_t narrow_source_sample_bytes(uint8_t bits_per_sample)
     return 0U;
 }
 
+static int16_t read_s16(const uint8_t *at)
+{
+    return (int16_t)((uint16_t)at[0] | ((uint16_t)at[1] << 8U));
+}
+
+static void write_s16(uint8_t *at, int32_t value)
+{
+    const uint16_t bits = (uint16_t)(int16_t)value;
+    at[0] = (uint8_t)(bits & 0xFFU);
+    at[1] = (uint8_t)(bits >> 8U);
+}
+
+bool audio_pcm_upsample_s16(const uint8_t *source, size_t source_bytes, uint32_t factor,
+                            const int16_t previous[2], uint8_t *destination,
+                            size_t destination_capacity)
+{
+    if (source == NULL || destination == NULL || previous == NULL || factor == 0U ||
+        source_bytes % 4U != 0U || source_bytes > destination_capacity / factor) {
+        return false;
+    }
+    int32_t last[2] = {previous[0], previous[1]};
+    uint8_t *out = destination;
+    for (size_t at = 0U; at < source_bytes; at += 4U) {
+        const int32_t next[2] = {read_s16(source + at), read_s16(source + at + 2U)};
+        for (uint32_t step = 1U; step <= factor; ++step) {
+            // Between two 16-bit samples, so never past either: no clipping.
+            for (unsigned channel = 0U; channel < 2U; ++channel) {
+                const int32_t value =
+                    last[channel] + (next[channel] - last[channel]) * (int32_t)step / (int32_t)factor;
+                write_s16(out + channel * 2U, value);
+            }
+            out += 4U;
+        }
+        last[0] = next[0];
+        last[1] = next[1];
+    }
+    return true;
+}
+
 size_t audio_pcm_narrowed_bytes(size_t source_bytes, uint8_t bits_per_sample)
 {
     const size_t sample_bytes = narrow_source_sample_bytes(bits_per_sample);

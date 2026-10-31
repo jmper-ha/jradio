@@ -63,6 +63,21 @@ size_t audio_pcm_stereo_bytes(size_t source_bytes, uint8_t channels);
 bool audio_pcm_mono_to_stereo_inplace_s16(uint8_t *buffer, size_t mono_bytes,
                                           size_t capacity, size_t *written);
 
+/* Raises interleaved 16-bit stereo `factor` times in rate, each new sample a
+ * straight line from the frame before: for a DAC that will not take the
+ * stream's own rate (the SSM3582 below 32 kHz). `previous` is the frame that
+ * came before `source` - {0, 0} after silence - so a block joins the last one
+ * without a step; the last frame written is the source's last, which is what
+ * the caller hands back next time. Linear is enough here: the stations at
+ * these rates carry nothing above their own Nyquist, and the image it leaves
+ * above that is down far enough under a class-D amplifier's own filter.
+ *
+ * Writes `source_bytes * factor`; false, writing nothing, when `factor` is 0,
+ * the source is not whole frames or the destination is short. */
+bool audio_pcm_upsample_s16(const uint8_t *source, size_t source_bytes, uint32_t factor,
+                            const int16_t previous[2], uint8_t *destination,
+                            size_t destination_capacity);
+
 /* Narrows 24- or 32-bit PCM to the 16-bit samples the output stage takes.
  *
  * A FLAC station is free to broadcast at 24 bits, and several do; esp_audio_codec

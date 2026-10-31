@@ -26,7 +26,9 @@
 #include "audio_volume.h"
 #include "board.h"
 #include "board_amplifier.h"
+#include "audio_pcm_convert.h"
 #include "board_ssm3582.h"
+#include "ssm3582.h"
 #include "board_config.h"
 #include "board_audio_health.h"
 #include "board_audio_startup.h"
@@ -902,6 +904,9 @@ static void board_audio_flush_tail(void)
     }
     s_audio_last_left = 0;
     s_audio_last_right = 0;
+    // The decay ended on zero, which is where the next block's line starts.
+    s_output_previous[0] = 0;
+    s_output_previous[1] = 0;
     /* The write above only queues: this is the wait for the queue - the tail
      * included - to reach the pins. */
     vTaskDelay(pdMS_TO_TICKS(((s_dma_desc_num * I2S_DMA_FRAME_NUM * 1000U) / rate) + 2U));
@@ -916,6 +921,73 @@ static void board_audio_flush_tail(void)
  * written in two halves, as the DMA drains at half the pace, and with the
  * tone or the loudness on they crackled. The volume's ramp and the levelling
  * were counted twice over the same samples too. Under s_audio_mutex. */
+/* The SSM3582 below 32 kHz: the bus runs at a multiple of the stream's rate
+ * and every block is filled in to it on the way out (ssm3582_rate_factor()).
+ * 1 everywhere else, and then nothing below touches the samples. The frame
+ * the last block ended on is where the next one's line starts. Under
+ * s_audio_mutex. */
+static uint32_t s_output_factor = 1U;
+static int16_t s_output_previous[2];
+static uint8_t *s_output_buffer;
+static size_t s_output_capacity;
+
+/* The block as the bus takes it: `shaped` itself at a factor of 1, else
+ * raised into s_output_buffer. NULL with no memory for that. */
+static const void *board_audio_output_block(const void *shaped, size_t length,
+                                            size_t *bus_length)
+{
+    *bus_length = length;
+    if (s_output_factor == 1U) return shaped;
+    const size_t need = length * s_output_factor;
+    if (need > s_output_capacity) {
+        uint8_t *grown =
+            heap_caps_realloc(s_output_buffer, need, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (grown == NULL) {
+            grown = heap_caps_realloc(s_output_buffer, need, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        }
+        if (grown == NULL) return NULL;
+        s_output_buffer = grown;
+        s_output_capacity = need;
+    }
+    if (!audio_pcm_upsample_s16(shaped, length, s_output_factor, s_output_previous,
+                                s_output_buffer, s_output_capacity)) {
+        return NULL;
+    }
+    *bus_length = need;
+    return s_output_buffer;
+}
+
+/* How much of `shaped` went, from how much of its raised form did. A run cut
+ * short counts as sent - its last sample or two are dropped rather than its
+ * first ones sent twice - and its frame is the next block's start. */
+static size_t board_audio_output_taken(const void *shaped, size_t bus_written)
+{
+    if (s_output_factor == 1U) return bus_written;
+    const size_t run = 4U * s_output_factor;
+    const size_t frames = (bus_written + run - 1U) / run;
+    if (frames > 0U) {
+        const uint8_t *last = (const uint8_t *)shaped + (frames - 1U) * 4U;
+        s_output_previous[0] = (int16_t)((uint16_t)last[0] | ((uint16_t)last[1] << 8U));
+        s_output_previous[1] = (int16_t)((uint16_t)last[2] | ((uint16_t)last[3] << 8U));
+    }
+    return frames * 4U;
+}
+
+/* Writes a shaped block through the output stage; `written` is in the
+ * block's own bytes. */
+static esp_err_t board_audio_bus_write(const void *shaped, size_t length, size_t *written,
+                                       TickType_t wait)
+{
+    *written = 0U;
+    size_t bus_length = 0U;
+    const void *bus = board_audio_output_block(shaped, length, &bus_length);
+    if (bus == NULL) return ESP_ERR_NO_MEM;
+    size_t bus_written = 0U;
+    const esp_err_t result = i2s_channel_write(s_i2s_tx, bus, bus_length, &bus_written, wait);
+    *written = board_audio_output_taken(shaped, bus_written);
+    return result;
+}
+
 static const uint8_t *s_shaped_rest_source;
 static const uint8_t *s_shaped_rest;
 static size_t s_shaped_rest_length;
@@ -954,8 +1026,7 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
                           pcm_length == s_shaped_rest_length;
         const void *out = rest ? s_shaped_rest : board_audio_shaped_block(pcm, pcm_length);
         s_shaped_rest_length = 0U;
-        result = i2s_channel_write(s_i2s_tx, out, pcm_length, written,
-                                   pdMS_TO_TICKS(timeout_ms));
+        result = board_audio_bus_write(out, pcm_length, written, pdMS_TO_TICKS(timeout_ms));
         // A timeout is a short write, not a lost one: what went is counted.
         if ((result == ESP_OK || result == ESP_ERR_TIMEOUT) && *written < pcm_length) {
             s_shaped_rest_source = (const uint8_t *)pcm + *written;
@@ -1078,9 +1149,10 @@ esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloade
             // is the step the fade exists for.
             s_audio_fade_frames = 0U;
             s_shaped_rest_length = 0U;
+            s_output_previous[0] = 0;
+            s_output_previous[1] = 0;
             const void *out = board_audio_shaped_block(pcm, pcm_length);
-            result = i2s_channel_write(s_i2s_tx, out, pcm_length, preloaded,
-                                       pdMS_TO_TICKS(1000));
+            result = board_audio_bus_write(out, pcm_length, preloaded, pdMS_TO_TICKS(1000));
         }
         if (result == ESP_OK && *preloaded == pcm_length) {
             ESP_LOGI(TAG, "%s I2S output enabled after %u-byte silent clock pre-roll",
@@ -1163,10 +1235,15 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
         return ESP_ERR_INVALID_ARG;
     }
 
-    const i2s_std_clk_config_t clock_config = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate);
     xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
     const bool was_enabled = s_audio_enabled;
     const bool was_capturing = s_capture_enabled;
+    /* Not with the input made: it shares the clock, and the tuner's ADC runs
+     * at the rate it sends, which is never one of the low ones. */
+    const uint32_t factor =
+        board_dac_is_ssm3582() && !was_capturing ? ssm3582_rate_factor(sample_rate) : 1U;
+    const uint32_t bus_rate = sample_rate * factor;
+    const i2s_std_clk_config_t clock_config = I2S_STD_CLK_DEFAULT_CONFIG(bus_rate);
     esp_err_t result = ESP_OK;
     if (was_enabled) {
         board_audio_flush_tail();
@@ -1178,7 +1255,7 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
         }
     }
     // Its rate band, while no clock runs.
-    if (board_dac_is_ssm3582()) board_ssm3582_set_rate(sample_rate);
+    if (board_dac_is_ssm3582()) board_ssm3582_set_rate(bus_rate);
     // Both halves share the clock, so both are stopped and both retimed.
     if (result == ESP_OK && was_capturing) {
         result = i2s_channel_disable(s_i2s_rx);
@@ -1198,6 +1275,13 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
         // The health window measures bytes against real time, so it is only
         // meaningful against the rate those bytes are actually clocked at.
         s_audio_sample_rate = sample_rate;
+        if (factor != s_output_factor || factor > 1U) {
+            ESP_LOGI(TAG, "%lu Hz goes out at %lu Hz", (unsigned long)sample_rate,
+                     (unsigned long)bus_rate);
+        }
+        s_output_factor = factor;
+        s_output_previous[0] = 0;
+        s_output_previous[1] = 0;
         if (s_rate_listener != NULL) s_rate_listener(sample_rate);
         board_audio_health_rearm();
     }

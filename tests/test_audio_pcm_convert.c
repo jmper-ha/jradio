@@ -313,8 +313,52 @@ static void test_an_empty_narrow_is_not_an_error(void)
     assert_guard_intact(buffer, 0U, sizeof(buffer));
 }
 
+static void put(uint8_t *at, int16_t left, int16_t right)
+{
+    const uint16_t l = (uint16_t)left;
+    const uint16_t r = (uint16_t)right;
+    at[0] = (uint8_t)l; at[1] = (uint8_t)(l >> 8U);
+    at[2] = (uint8_t)r; at[3] = (uint8_t)(r >> 8U);
+}
+
+static int16_t get(const uint8_t *buffer, size_t frame, unsigned channel)
+{
+    const uint8_t *at = buffer + frame * 4U + channel * 2U;
+    return (int16_t)((uint16_t)at[0] | ((uint16_t)at[1] << 8U));
+}
+
+/* Twice and four times over: each new frame on the line from the one before,
+   the last of each run the source's own, and the first block starting from
+   the frame it is given rather than from a step. */
+static void test_upsampling_fills_in_on_a_line(void)
+{
+    uint8_t source[8];
+    put(source, 100, -100);
+    put(source + 4, 300, 32767);
+    uint8_t out[32];
+    const int16_t silence[2] = {0, 0};
+    assert(audio_pcm_upsample_s16(source, sizeof(source), 2U, silence, out, sizeof(out)));
+    assert(get(out, 0, 0) == 50 && get(out, 0, 1) == -50);
+    assert(get(out, 1, 0) == 100 && get(out, 1, 1) == -100);
+    assert(get(out, 2, 0) == 200 && get(out, 2, 1) == 16333);
+    assert(get(out, 3, 0) == 300 && get(out, 3, 1) == 32767);
+
+    const int16_t previous[2] = {-32768, 0};
+    assert(audio_pcm_upsample_s16(source, 4U, 4U, previous, out, sizeof(out)));
+    assert(get(out, 0, 0) == -24551 && get(out, 0, 1) == -25);
+    assert(get(out, 3, 0) == 100 && get(out, 3, 1) == -100);
+
+    // Not whole frames, a short destination, no factor: nothing written.
+    memset(out, 0x5A, sizeof(out));
+    assert(!audio_pcm_upsample_s16(source, 6U, 2U, silence, out, sizeof(out)));
+    assert(!audio_pcm_upsample_s16(source, sizeof(source), 4U, silence, out, 31U));
+    assert(!audio_pcm_upsample_s16(source, sizeof(source), 0U, silence, out, sizeof(out)));
+    assert(out[0] == 0x5A);
+}
+
 int main(void)
 {
+    test_upsampling_fills_in_on_a_line();
     test_mono_is_duplicated_into_both_channels();
     test_stereo_passes_through_unchanged();
     test_a_full_mp3_frame_fits_the_stereo_buffer();

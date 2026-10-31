@@ -26,6 +26,22 @@ static void test_the_rate_bands(void)
     assert(ssm3582_dac_ctrl_word(384000U) == 0xFFU);
 }
 
+/* The low rates go out at a multiple that lands in a band 64 x Fs serves. */
+static void test_the_low_rates_go_out_multiplied(void)
+{
+    assert(ssm3582_rate_factor(44100U) == 1U);
+    assert(ssm3582_rate_factor(32000U) == 1U);
+    assert(ssm3582_rate_factor(96000U) == 1U);
+    const unsigned rates[] = {8000U, 11025U, 12000U, 16000U, 22050U, 24000U};
+    for (unsigned i = 0U; i < sizeof(rates) / sizeof(rates[0]); ++i) {
+        const uint32_t out = rates[i] * ssm3582_rate_factor(rates[i]);
+        assert(ssm3582_rate_takes_64fs(out));
+        assert(ssm3582_dac_ctrl_word(out) != 0xFFU);
+    }
+    assert(ssm3582_rate_factor(22050U) == 2U);
+    assert(ssm3582_rate_factor(11025U) == 4U);
+}
+
 /* Table 13: 64 x Fs from 32 kHz up, not below. */
 static void test_which_rates_a_64fs_clock_serves(void)
 {
@@ -58,6 +74,7 @@ int main(void)
 {
     test_the_rate_bands();
     test_which_rates_a_64fs_clock_serves();
+    test_the_low_rates_go_out_multiplied();
     test_power_gain_and_identity();
     puts("ssm3582 tests passed");
     return 0;

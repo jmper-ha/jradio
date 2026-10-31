@@ -12,6 +12,13 @@ bool ssm3582_rate_takes_64fs(uint32_t sample_rate)
     return sample_rate >= 32000U && sample_rate <= 192000U;
 }
 
+uint32_t ssm3582_rate_factor(uint32_t sample_rate)
+{
+    if (sample_rate >= 32000U) return 1U;
+    if (sample_rate >= 16000U) return 2U;
+    return 4U;
+}
+
 uint8_t ssm3582_dac_ctrl_word(uint32_t sample_rate)
 {
     // DAC_FS by table 30; the rest of the register is its reset value, 0.

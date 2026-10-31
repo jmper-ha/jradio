@@ -57,6 +57,14 @@
  * 100 and 8-12 kHz 200. */
 bool ssm3582_rate_takes_64fs(uint32_t sample_rate);
 
+/* How many times over a stream at this rate is sent so that the chip gets
+ * one it can take: 1 from 32 kHz up, 2 for 16-24 kHz (22.05 goes out at
+ * 44.1), 4 below 16 kHz (11.025 at 44.1, 8 at 32). The bus then runs at the
+ * multiplied rate and the samples are filled in between - see
+ * audio_pcm_upsample_s16(). The S3 has no wider clock to give the low rates,
+ * and they were silent (nikkov's test, 2026-10-31). */
+uint32_t ssm3582_rate_factor(uint32_t sample_rate);
+
 /* DAC_CTRL for a rate: DAC_FS, the band the rate is in, with every other bit
  * at its reset value - soft volume ramp, no high-pass, both channels on.
  * 0xFF for a rate in none of the bands. */

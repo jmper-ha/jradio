@@ -435,6 +435,13 @@ bool device_settings_set_ntp_server(device_settings_t *settings, const char *hos
 bool device_settings_set_device_name(device_settings_t *settings, const char *name);
 /* The built-in name for a Wi-Fi MAC: "jradio-XXXX". */
 void device_settings_default_name(const unsigned char mac[6], char *out, size_t size);
+/* The name as a router's client list can carry it - DHCP's host name, which
+ * is letters, digits and hyphens, at most 32 of them. Russian letters are
+ * spelled out in Latin ones and anything else becomes a hyphen, so "Радио на
+ * кухне" is "Radio-na-kukhne". False when nothing of the name survives; the
+ * caller then uses the built-in name. */
+#define DEVICE_HOST_NAME_MAX 33
+bool device_settings_host_name(const char *name, char *out, size_t size);
 /* The name as stored on the settings card, empty for the built-in one;
  * false before the first publish. */
 bool device_settings_published_name(char *out, size_t size);

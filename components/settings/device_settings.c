@@ -10,6 +10,7 @@
 #include "freertos/task.h"
 #endif
 
+#include <ctype.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1114,6 +1115,65 @@ void device_settings_default_name(const unsigned char mac[6], char *out, size_t 
 {
     if (out == NULL || size == 0U) return;
     snprintf(out, size, "jradio-%02X%02X", mac == NULL ? 0U : mac[4], mac == NULL ? 0U : mac[5]);
+}
+
+/* а..я in code-point order, then ё. Without this the router shows the
+ * vendor's "espressif" for every board, because a host name of Cyrillic
+ * letters is no host name at all. */
+static const char *const s_cyrillic_latin[33] = {
+    "a", "b", "v", "g", "d", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p", "r",
+    "s", "t", "u", "f", "kh", "ts", "ch", "sh", "shch", "", "y", "", "e", "yu", "ya", "e",
+};
+
+bool device_settings_host_name(const char *name, char *out, size_t size)
+{
+    if (out == NULL || size == 0U) return false;
+    out[0] = '\0';
+    if (name == NULL) return false;
+    size_t length = 0U;
+    bool hyphen_due = false;
+    const unsigned char *at = (const unsigned char *)name;
+    while (*at != '\0') {
+        const char *piece = NULL;
+        bool capital = false;
+        char ascii[2] = {0};
+        if (isalnum(*at)) {
+            ascii[0] = (char)*at;
+            piece = ascii;
+            ++at;
+        } else if ((at[0] == 0xD0U || at[0] == 0xD1U) && at[1] != '\0') {
+            /* Two-byte UTF-8: U+0400..U+047F. */
+            const unsigned code = ((unsigned)(at[0] & 0x1FU) << 6) | (at[1] & 0x3FU);
+            at += 2;
+            if (code >= 0x0410U && code <= 0x042FU) {
+                piece = s_cyrillic_latin[code - 0x0410U];
+                capital = true;
+            } else if (code >= 0x0430U && code <= 0x044FU) {
+                piece = s_cyrillic_latin[code - 0x0430U];
+            } else if (code == 0x0401U || code == 0x0451U) {
+                piece = s_cyrillic_latin[32];
+                capital = code == 0x0401U;
+            }
+        } else {
+            ++at;
+            /* The rest of a multi-byte character goes with its lead byte. */
+            while ((*at & 0xC0U) == 0x80U) ++at;
+        }
+        if (piece == NULL) {
+            hyphen_due = length > 0U;
+            continue;
+        }
+        if (piece[0] == '\0') continue;
+        const size_t piece_length = strlen(piece);
+        if (length + (hyphen_due ? 1U : 0U) + piece_length >= size) break;
+        if (hyphen_due) out[length++] = '-';
+        hyphen_due = false;
+        memcpy(out + length, piece, piece_length);
+        if (capital) out[length] = (char)toupper((unsigned char)out[length]);
+        length += piece_length;
+        out[length] = '\0';
+    }
+    return length > 0U;
 }
 
 bool device_settings_set_weather_provider(device_settings_t *settings,

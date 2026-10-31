@@ -360,8 +360,29 @@ static bool wifi_select_next_network(bool from_start)
     return selected;
 }
 
+/* The name the router lists this board under, from Settings. Left alone, DHCP
+ * sends lwIP's own "espressif" and every board on the network reads the same
+ * (asked for on the forum 2026-10-31). Set before each join rather than once:
+ * DHCP reads it when it starts, so a rename shows from the next connection. */
+static void wifi_set_station_host_name(void)
+{
+    char name[DEVICE_NAME_MAX];
+    char host[DEVICE_HOST_NAME_MAX];
+    device_settings_device_name(name, sizeof(name));
+    if (!device_settings_host_name(name, host, sizeof(host))) {
+        unsigned char mac[6] = {0};
+        (void)esp_read_mac(mac, ESP_MAC_WIFI_STA);
+        device_settings_default_name(mac, host, sizeof(host));
+    }
+    const esp_err_t err = esp_netif_set_hostname(s_sta_netif, host);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "host name %s refused: %s", host, esp_err_to_name(err));
+    }
+}
+
 static esp_err_t wifi_configure_current_network(void)
 {
+    wifi_set_station_host_name();
     wifi_settings_t settings = wifi_provisioning_saved_networks();
     char current[WIFI_SETTINGS_SSID_MAX_LEN + 1U];
     taskENTER_CRITICAL(&s_settings_lock);

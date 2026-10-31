@@ -465,6 +465,24 @@ static void test_the_clock_settings_persist_and_are_checked(void)
     assert(settings.device_name[0] == '\0');
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.device_name[0] == '\0');
+    /* What the router is told: Latin letters, digits and single hyphens, or
+       nothing at all for a name with none of them in it. */
+    char host[DEVICE_HOST_NAME_MAX];
+    assert(device_settings_host_name("Радио на кухне", host, sizeof(host)));
+    assert(strcmp(host, "Radio-na-kukhne") == 0);
+    assert(device_settings_host_name("jradio-B670", host, sizeof(host)));
+    assert(strcmp(host, "jradio-B670") == 0);
+    assert(device_settings_host_name(" Ёлка_№1 (зал) ", host, sizeof(host)));
+    assert(strcmp(host, "Elka-1-zal") == 0);
+    assert(device_settings_host_name("Щука объём", host, sizeof(host)));
+    assert(strcmp(host, "Shchuka-obem") == 0);
+    assert(!device_settings_host_name("  ★ ", host, sizeof(host)));
+    assert(host[0] == '\0');
+    assert(!device_settings_host_name("", host, sizeof(host)));
+    /* Sixteen letters of щ are 64 Latin ones; the name stops at 32, and
+       never in the middle of a letter's spelling. */
+    assert(device_settings_host_name("щщщщщщщщщщщщщщщщ", host, sizeof(host)));
+    assert(strlen(host) == 32U && strcmp(host + 28, "shch") == 0);
     char published[DEVICE_NAME_MAX] = "x";
     device_settings_publish(&settings);
     assert(device_settings_published_name(published, sizeof(published)));

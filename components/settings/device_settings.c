@@ -1482,13 +1482,57 @@ bool device_settings_set_fm_frequency(device_settings_t *settings, unsigned long
     return true;
 }
 
+/* Whether `path` lies under `root`, a mount point such as "/sd0". */
+static bool path_on_root(const char *path, const char *root)
+{
+    const size_t length = strlen(root);
+    return length > 0U && strncmp(path, root, length) == 0 &&
+           (path[length] == '/' || path[length] == '\0');
+}
+
+/* Two paths on the same volume: the same first component. */
+static bool same_volume(const char *a, const char *b)
+{
+    const char *end = a[0] == '/' ? strchr(a + 1, '/') : NULL;
+    const size_t length = end == NULL ? strlen(a) : (size_t)(end - a);
+    return strncmp(a, b, length) == 0 && (b[length] == '/' || b[length] == '\0');
+}
+
 bool device_settings_set_last_file(device_settings_t *settings, const char *path)
 {
     if (settings == NULL || path == NULL ||
         strlen(path) >= sizeof(settings->last_file)) return false;
     if (strcmp(settings->last_file, path) == 0) return true;
+    /* One resume point for the two volumes sent the remote's USB key to the
+     * card's file: switch between them and each had forgotten its own
+     * (reported on the forum 2026-10-31). Kept only on a change of volume,
+     * so a track change still costs the one write it always did. Not fatal
+     * if it fails: the volume opens on its browser, as it used to. */
+    if (settings->last_file[0] != '\0' && !same_volume(settings->last_file, path)) {
+        (void)save_value(settings, "other_volume_file", settings->last_file);
+    }
     if (!save_value(settings, "last_usb_file", path)) return false;
     memcpy(settings->last_file, path, strlen(path) + 1U);
+    return true;
+}
+
+bool device_settings_volume_file(const device_settings_t *settings, const char *volume_root,
+                                 char *out, size_t size)
+{
+    if (out == NULL || size == 0U) return false;
+    out[0] = '\0';
+    if (settings == NULL || volume_root == NULL) return false;
+    if (path_on_root(settings->last_file, volume_root)) {
+        if (strlen(settings->last_file) >= size) return false;
+        memcpy(out, settings->last_file, strlen(settings->last_file) + 1U);
+        return true;
+    }
+    if (settings->storage_path[0] == '\0' ||
+        !settings_csv_get(settings->storage_path, "other_volume_file", out, size) ||
+        !path_on_root(out, volume_root)) {
+        out[0] = '\0';
+        return false;
+    }
     return true;
 }
 

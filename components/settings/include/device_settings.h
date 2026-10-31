@@ -521,7 +521,15 @@ bool device_settings_set_last_source(device_settings_t *settings,
                                      device_last_source_t source);
 /* Refused outside the FM band, 87.0-108.0 MHz. */
 bool device_settings_set_fm_frequency(device_settings_t *settings, unsigned long khz);
+/* `last_file` is the latest file on either volume. When it moves to the other
+ * volume, the one it leaves is kept under a key of its own, so each volume
+ * has a place to resume - written only on that move, not on every track. */
 bool device_settings_set_last_file(device_settings_t *settings, const char *path);
+/* The file to resume on the volume mounted at `volume_root` ("/usb0",
+ * "/sd0"): the latest one if it is there, else the one kept when playback
+ * left that volume. False, with `out` empty, when the volume has none. */
+bool device_settings_volume_file(const device_settings_t *settings, const char *volume_root,
+                                 char *out, size_t size);
 /* The three together, because they are one identity and are only ever written
  * as one - into one key, so that no power cut can leave an id beside the
  * previous station's name. An empty id clears the point, which is what

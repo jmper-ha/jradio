@@ -85,10 +85,11 @@ ui_autoplay_action_t ui_autoplay_decide_resume(const device_settings_t *settings
  * the remote's source key, which resumes that source's own place - the radio
  * its last station, Yandex its last station, the server its container, a
  * volume its file - where the power button would resume the last source's.
- * A file counts only on the volume asked for; one on the other volume is
- * that volume's to resume, and this one opens on its browser. */
+ * For a volume, `volume_has_file` says whether it has a resume point of its
+ * own (device_settings_volume_file()); without one it opens on its
+ * browser. */
 ui_autoplay_action_t ui_autoplay_decide_for(const device_settings_t *settings,
-                                            audio_source_t source,
+                                            audio_source_t source, bool volume_has_file,
                                             file_browser_media_t usb_media,
                                             file_browser_media_t sd_media,
                                             bool file_present, bool yandex_built,

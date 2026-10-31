@@ -589,6 +589,43 @@ static void test_the_weather_settings_persist_and_are_checked(void)
     assert(strcmp(value, "wttr") == 0);
 }
 
+/* Each volume keeps the file it was left on: the drive's survives a spell
+   on the card and comes back after a reload, and a volume nothing was played
+   from has none. */
+static void test_each_volume_keeps_its_own_file(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    char path[DEVICE_LAST_FILE_MAX];
+    assert(!device_settings_volume_file(&settings, "/usb0", path, sizeof(path)));
+    assert(path[0] == '\0');
+
+    assert(device_settings_set_last_file(&settings, "/usb0/a/b/one.mp3"));
+    assert(device_settings_set_last_file(&settings, "/usb0/a/b/two.mp3"));
+    assert(!device_settings_volume_file(&settings, "/sd0", path, sizeof(path)));
+    assert(device_settings_set_last_file(&settings, "/sd0/three.flac"));
+    assert(device_settings_volume_file(&settings, "/usb0", path, sizeof(path)));
+    assert(strcmp(path, "/usb0/a/b/two.mp3") == 0);
+    assert(device_settings_volume_file(&settings, "/sd0", path, sizeof(path)));
+    assert(strcmp(path, "/sd0/three.flac") == 0);
+
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(strcmp(reloaded.last_file, "/sd0/three.flac") == 0);
+    assert(device_settings_volume_file(&reloaded, "/usb0", path, sizeof(path)));
+    assert(strcmp(path, "/usb0/a/b/two.mp3") == 0);
+
+    /* Back on the drive: the card's file is the one kept now. */
+    assert(device_settings_set_last_file(&settings, "/usb0/four.mp3"));
+    assert(device_settings_volume_file(&settings, "/sd0", path, sizeof(path)));
+    assert(strcmp(path, "/sd0/three.flac") == 0);
+    assert(device_settings_volume_file(&settings, "/usb0", path, sizeof(path)));
+    assert(strcmp(path, "/usb0/four.mp3") == 0);
+    /* A root that is only a prefix of another is not that volume. */
+    assert(!device_settings_volume_file(&settings, "/usb", path, sizeof(path)));
+}
+
 static void test_the_fm_frequency_persists_and_stays_in_the_band(void)
 {
     reset_file();
@@ -1073,6 +1110,7 @@ int main(void)
     test_the_custom_theme_colors_persist_all_or_none();
     test_the_bluetooth_output_persists_and_forgets();
     test_the_fm_frequency_persists_and_stays_in_the_band();
+    test_each_volume_keeps_its_own_file();
     test_defaults_and_load();
     test_values_and_unknown_lines_are_saved();
     test_invalid_values_do_not_change_model();

@@ -51,6 +51,10 @@ bool player_control_file_entry_at(size_t index, file_browser_entry_t *entry);
 // same directory changed" from "this is a different directory", and so the web
 // knows to re-fetch names it is no longer sent over the socket.
 unsigned int player_control_listing_revision(void);
+/* True while a source select is still under way. The source is published
+ * before a volume's root has been read into the shared listing, so a reader
+ * of that listing from another task waits for this to clear as well. */
+bool player_control_selecting(void);
 /* Says a listing this module does not own has changed - the station catalogue,
  * saved from the web, or a refreshed Yandex catalogue. The directory listing
  * bumps the counter by itself; these two are replaced elsewhere and would

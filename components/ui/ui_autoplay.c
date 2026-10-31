@@ -109,7 +109,7 @@ ui_autoplay_action_t ui_autoplay_decide_resume(const device_settings_t *settings
 }
 
 ui_autoplay_action_t ui_autoplay_decide_for(const device_settings_t *settings,
-                                            audio_source_t source,
+                                            audio_source_t source, bool volume_has_file,
                                             file_browser_media_t usb_media,
                                             file_browser_media_t sd_media,
                                             bool file_present, bool yandex_built,
@@ -137,10 +137,7 @@ ui_autoplay_action_t ui_autoplay_decide_for(const device_settings_t *settings,
         if ((sd ? sd_media : usb_media) != FILE_BROWSER_MEDIA_READY) {
             return UI_AUTOPLAY_FILE_UNAVAILABLE;
         }
-        const bool here = settings->last_file[0] != '\0' &&
-                          file_browser_path_on_volume(settings->last_file,
-                                                      FILE_BROWSER_SD_ROOT) == sd;
-        return here && file_present ? UI_AUTOPLAY_FILE : UI_AUTOPLAY_FILE_BROWSER;
+        return volume_has_file && file_present ? UI_AUTOPLAY_FILE : UI_AUTOPLAY_FILE_BROWSER;
     }
     default: return UI_AUTOPLAY_HOME;
     }

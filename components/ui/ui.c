@@ -731,6 +731,13 @@ static audio_source_t s_autoplay_target = AUDIO_SOURCE_NONE;
 /* Whether the select for that volume has gone to the controller - see the
  * file case in ui_autoplay_step(). */
 static bool s_autoplay_select_sent;
+/* Whether that volume has a file of its own to resume, read once when the
+ * key is pressed: the other volume's place lives in settings.csv, and the
+ * step runs every pass. */
+static bool s_autoplay_volume_has_file;
+/* A source key that came while the controller was still busy with the last
+ * command - see ui_remote_source_poll(). AUDIO_SOURCE_NONE otherwise. */
+static audio_source_t s_remote_source_waiting = AUDIO_SOURCE_NONE;
 /* The remote's Mute: the level it took the sound down from, so Mute again
  * or any volume key puts it back. Not a setting - a muted board comes back
  * from a power cut at the level it was muted at, not silent. */
@@ -7368,12 +7375,31 @@ static audio_source_t ui_source_of_action(board_input_action_t action)
  * network it needs is down - the list says so - and when the key names the
  * source already playing: pressed again, it is the way to that source's
  * list, and restarting what plays would be no answer. */
+/* The file a volume would resume, from its own resume point. */
+static bool ui_volume_resume_file(audio_source_t source, char *out, size_t size)
+{
+    out[0] = '\0';
+    if (!audio_source_is_files(source)) return false;
+    return device_settings_volume_file(
+        &s_device_settings, source == AUDIO_SOURCE_SD ? FILE_BROWSER_SD_ROOT : FILE_BROWSER_USB_ROOT,
+        out, size);
+}
+
 static void ui_remote_open_source(audio_source_t source)
 {
+    /* A newer key replaces a resume still under way: left armed, the drive's
+     * resume finished after the card's key and the drive came up instead
+     * (reported on the forum 2026-10-31). */
+    if (s_autoplay_pending && s_autoplay_target != AUDIO_SOURCE_NONE) {
+        s_autoplay_pending = false;
+        s_autoplay_target = AUDIO_SOURCE_NONE;
+    }
     player_snapshot_t snapshot;
     player_control_get_snapshot(&snapshot);
+    char path[DEVICE_LAST_FILE_MAX];
+    const bool volume_has_file = ui_volume_resume_file(source, path, sizeof(path));
     const ui_autoplay_action_t action = ui_autoplay_decide_for(
-        &s_device_settings, source, snapshot.usb_media, snapshot.sd_media, true,
+        &s_device_settings, source, volume_has_file, snapshot.usb_media, snapshot.sd_media, true,
         BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(), board_has_fm_tuner());
     const bool network = action == UI_AUTOPLAY_RADIO || action == UI_AUTOPLAY_YANDEX ||
                          action == UI_AUTOPLAY_DLNA;
@@ -7386,9 +7412,27 @@ static void ui_remote_open_source(audio_source_t source)
     ESP_LOGI(TAG, "remote: resuming source %d", (int)source);
     s_autoplay_target = source;
     s_autoplay_select_sent = false;
+    s_autoplay_volume_has_file = volume_has_file;
     s_autoplay_for_alarm = false;
     s_autoplay_pending = true;
     s_autoplay_started_ms = ui_tick_get_ms();
+}
+
+/* The source key waiting, acted on once the controller has taken the last
+ * command. Pressed while a select was still unconfirmed, the key used to be
+ * refused by the command gate and lost - "the remote did not react", then
+ * the next key switched to the source before it. The latest key wins, and
+ * the gate's own timeout bounds the wait. */
+static void ui_remote_source_poll(void)
+{
+    if (s_remote_source_waiting == AUDIO_SOURCE_NONE) return;
+    if (ui_player_state_is_pending(&s_player_ui)) return;
+    const audio_source_t source = s_remote_source_waiting;
+    s_remote_source_waiting = AUDIO_SOURCE_NONE;
+    /* Through the home screen's own path, which is what knows whether the
+     * source is on this board, has its network, and how it opens. A source
+     * not on the menu is a key that does nothing, quietly. */
+    if (ui_menu_select_source(&s_menu, source)) ui_remote_open_source(source);
 }
 
 /* The keys a remote has and the case does not. True when the action was one
@@ -7451,10 +7495,9 @@ static bool ui_handle_remote_action(board_input_action_t action)
     }
     const audio_source_t source = ui_source_of_action(action);
     if (source != AUDIO_SOURCE_NONE) {
-        /* Through the home screen's own path, which is what knows whether the
-         * source is on this board, has its network, and how it opens. A
-         * source not on the menu is a key that does nothing, quietly. */
-        if (ui_menu_select_source(&s_menu, source)) ui_remote_open_source(source);
+        // Now if the controller is free, else as soon as it is.
+        s_remote_source_waiting = source;
+        ui_remote_source_poll();
         return true;
     }
     return false;
@@ -8380,7 +8423,8 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
     }
     const ui_autoplay_action_t action =
         s_autoplay_target != AUDIO_SOURCE_NONE
-            ? ui_autoplay_decide_for(&s_device_settings, s_autoplay_target, snapshot->usb_media,
+            ? ui_autoplay_decide_for(&s_device_settings, s_autoplay_target,
+                                     s_autoplay_volume_has_file, snapshot->usb_media,
                                      snapshot->sd_media, false, BOARD_HAS_YANDEX_MUSIC,
                                      BOARD_HAS_DLNA, board_has_bluetooth(), board_has_fm_tuner())
             : (s_autoplay_for_alarm ? ui_autoplay_decide_resume : ui_autoplay_decide)(
@@ -8434,9 +8478,13 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
      * the search, and the file was not found (2026-10-29). At power-on there
      * is nothing to stop and the race was never seen; this is the remote's
      * case only. */
+    /* And once the select is over, not only once it names the volume: the
+     * source is published before the card is mounted and its root read, and
+     * resuming in that gap lost the file the same way (seen on the bench
+     * 2026-10-31: the file's folder read back as the root's seven entries). */
     if (s_autoplay_target != AUDIO_SOURCE_NONE &&
         (action == UI_AUTOPLAY_FILE || action == UI_AUTOPLAY_FILE_BROWSER) &&
-        snapshot->active_source != s_autoplay_target) {
+        (snapshot->active_source != s_autoplay_target || player_control_selecting())) {
         if (!s_autoplay_select_sent) {
             const player_command_t select = {
                 .kind = PLAYER_COMMAND_SELECT_SOURCE,
@@ -8576,7 +8624,15 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         // Whether the remembered file is still there is only knowable by
         // looking, so the attempt itself is the test: it opens the file's
         // directory either way, leaving the browser somewhere useful.
-        if (player_control_file_resume_path(s_device_settings.last_file)) {
+        /* The remote's volume resumes its own file, which is the latest one
+         * only if the last file played was on it. */
+        char path[DEVICE_LAST_FILE_MAX];
+        if (s_autoplay_target == AUDIO_SOURCE_NONE) {
+            snprintf(path, sizeof(path), "%s", s_device_settings.last_file);
+        } else {
+            (void)ui_volume_resume_file(source, path, sizeof(path));
+        }
+        if (path[0] != '\0' && player_control_file_resume_path(path)) {
             ui_load_source_screen(source);
             return;
         }
@@ -8925,6 +8981,7 @@ static void ui_task(void *arg)
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
+        ui_remote_source_poll();
         ui_alarm_ring_step(&snapshot);
         // Only the strip on screen: the others are on parents LVGL is not
         // drawing, so writing them would be work for nothing.

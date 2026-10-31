@@ -39,6 +39,7 @@ static const char *TAG = "remote";
 static remote_map_t s_map;
 static remote_function_t s_learning = REMOTE_FUNCTION_COUNT;
 static uint32_t s_learning_armed_ms;
+static bool s_learn_bound;
 static uint32_t s_revision;
 static SemaphoreHandle_t s_lock;
 
@@ -169,7 +170,12 @@ static void on_key(const ir_code_t *code, void *context)
             ESP_LOGI(TAG, "learned %s = %s%s%s", remote_function_name(s_learning), text,
                      displaced != REMOTE_FUNCTION_COUNT ? ", taken from " : "",
                      displaced != REMOTE_FUNCTION_COUNT ? remote_function_name(displaced) : "");
+            /* The press that taught the key was taken as a stranger's above,
+             * before it was bound, and the page named it "not learned" right
+             * under "learned". It is the function's now. */
+            s_last.function = s_learning;
             s_learning = REMOTE_FUNCTION_COUNT;
+            s_learn_bound = true;
             (void)map_save_locked();
             ++s_revision;
             s_held = REMOTE_FUNCTION_COUNT;
@@ -356,6 +362,7 @@ bool remote_control_learn(remote_function_t function)
     xSemaphoreTake(s_lock, portMAX_DELAY);
     s_learning = function;
     s_learning_armed_ms = now_ms();
+    s_learn_bound = false;
     ++s_revision;
     xSemaphoreGive(s_lock);
     ESP_LOGI(TAG, "learning %s: press the key", remote_function_name(function));
@@ -393,6 +400,11 @@ void remote_control_snapshot(remote_map_t *map, remote_function_t *learning)
     if (map != NULL) *map = s_map;
     if (learning != NULL) *learning = s_learning;
     xSemaphoreGive(s_lock);
+}
+
+bool remote_control_learn_bound(void)
+{
+    return s_learn_bound;
 }
 
 uint32_t remote_control_revision(void)

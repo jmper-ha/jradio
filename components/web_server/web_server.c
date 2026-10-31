@@ -1546,6 +1546,8 @@ static esp_err_t web_server_remote_get(httpd_req_t *request)
         web_json_literal(&writer, remote_function_name(learning));
         web_json_literal(&writer, "\"");
     }
+    web_json_literal(&writer, ",\"learned\":");
+    web_json_literal(&writer, remote_control_learn_bound() ? "true" : "false");
     web_json_literal(&writer, ",\"revision\":");
     web_json_format(&writer, "%u", (unsigned)remote_control_revision());
     web_json_literal(&writer, ",\"keys\":{");

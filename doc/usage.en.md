@@ -558,5 +558,5 @@ it; that one is installed the usual way, by cable or from the
   length nor a position. A track's length is computed from size and bitrate -
   it drifts a little on variable bitrate.
 - `.m4a` (AAC in an MP4 container) is not read - raw ADTS only.
-- HLS: MP3 or AAC segments; MPEG-TS is not parsed.
+- HLS: MP3 or AAC segments, MPEG-TS ones too; fMP4 is not read.
 - WAV - from drives only, 16-bit; it does not play from a media server.

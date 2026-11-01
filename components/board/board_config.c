@@ -40,6 +40,7 @@ typedef enum {
     DEV_FM,
     DEV_ADC,
     DEV_RTC,
+    DEV_TOUCH,
     DEV_FEATURES,
 } device_t;
 
@@ -146,6 +147,10 @@ static const field_t k_fields[] = {
      {{"none", RTC_CHIP_NONE}, {"ds3231", RTC_CHIP_DS3231}, {"ds1307", RTC_CHIP_DS1307},
       {NULL, 0}}},
     {"rtc_i2c", KIND_CHOICE, DEV_RTC, AT(rtc_i2c), false, NULL, {{"0", 0}, {NULL, 0}}},
+    {"touch", KIND_CHOICE, DEV_TOUCH, AT(touch), false, NULL,
+     {{"none", TOUCH_CHIP_NONE}, {"ft6336u", TOUCH_CHIP_FT6336U}, {NULL, 0}}},
+    {"touch_i2c", KIND_CHOICE, DEV_TOUCH, AT(touch_i2c), false, NULL, {{"0", 0}, {NULL, 0}}},
+    {"touch_int", KIND_OPT_PIN, DEV_TOUCH, AT(touch_int), false, NULL, {{NULL, 0}}},
     {"yandex_music", KIND_BOOL, DEV_FEATURES, AT(yandex_music), false, NULL, {{NULL, 0}}},
     {"dlna", KIND_BOOL, DEV_FEATURES, AT(dlna), false, NULL, {{NULL, 0}}},
 };
@@ -205,6 +210,8 @@ void board_config_clear(board_config_t *config)
     config->bluetooth = BLUETOOTH_NONE;
     config->fm_tuner = FM_TUNER_NONE;
     config->rtc = RTC_CHIP_NONE;
+    config->touch = TOUCH_CHIP_NONE;
+    config->touch_i2c = 0U;
     config->module = BOARD_MODULE_N16R8;
     config->rtc_i2c = 0U;
     config->fm_i2s = BOARD_BUS_NONE;
@@ -353,6 +360,7 @@ static bool device_enabled(const board_config_t *config, device_t device)
     case DEV_FM: return config->fm_tuner != FM_TUNER_NONE;
     case DEV_ADC: return config->adc != AUDIO_ADC_NONE;
     case DEV_RTC: return config->rtc != RTC_CHIP_NONE;
+    case DEV_TOUCH: return config->touch != TOUCH_CHIP_NONE;
     default: return true;
     }
 }
@@ -371,7 +379,8 @@ static bool bus_used(const board_config_t *config, device_t bus)
     case DEV_UART1: return bt && config->bt_uart == 1U;
     case DEV_I2C0:
         return (device_enabled(config, DEV_FM) && config->fm_i2c == 0U) ||
-               (device_enabled(config, DEV_RTC) && config->rtc_i2c == 0U);
+               (device_enabled(config, DEV_RTC) && config->rtc_i2c == 0U) ||
+               (device_enabled(config, DEV_TOUCH) && config->touch_i2c == 0U);
     default: return false;
     }
 }
@@ -447,6 +456,7 @@ static const char *device_name(device_t device)
     case DEV_FM: return "fm";
     case DEV_ADC: return "adc";
     case DEV_RTC: return "rtc";
+    case DEV_TOUCH: return "touch";
     default: return "";
     }
 }
@@ -550,6 +560,9 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     }
     if (device_enabled(config, DEV_RTC) && config->rtc_i2c == 0U) {
         check_bus(config, report, DEV_RTC, k_i2c0, 2U);
+    }
+    if (device_enabled(config, DEV_TOUCH) && config->touch_i2c == 0U) {
+        check_bus(config, report, DEV_TOUCH, k_i2c0, 2U);
     }
     if (device_enabled(config, DEV_ADC) && config->adc_i2s == 0U) {
         check_bus(config, report, DEV_ADC, k_i2s0_adc, 4U);

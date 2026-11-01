@@ -147,6 +147,14 @@ function test_the_header_round_trips_and_names_every_option() {
   assert.deepStrictEqual(hw.validate(both).errors, []);
   /* Switched off, the clock leaves the bus to whoever else is on it. */
   assert.strictEqual(hw.busUsed(hw.setDeviceEnabled(rtc, 'rtc', false), 'i2c0'), false);
+
+  // A touch panel alone names the bus's pins, and its interrupt line round-trips.
+  const touch = {...hw.setDeviceEnabled(hw.defaults(), 'touch', true), i2c0_sda: 8, i2c0_scl: 3, touch_int: 38};
+  assert.strictEqual(touch.touch, 'ft6336u');
+  assert.deepStrictEqual(hw.parseHeader(hw.toHeader(touch)).values, touch);
+  assert.deepStrictEqual(hw.parseHeader(hw.toHeader(touch)).unknown, []);
+  assert.deepStrictEqual(hw.validate(touch).errors, []);
+  assert.strictEqual(hw.busUsed(hw.setDeviceEnabled(touch, 'touch', false), 'i2c0'), false);
   assert.strictEqual(hw.busUsed(hw.setDeviceEnabled(both, 'rtc', false), 'i2c0'), true);
 }
 

@@ -48,6 +48,7 @@ typedef struct {
     uint8_t bluetooth;
     uint8_t fm_tuner;  // FM_TUNER_*
     uint8_t rtc;       // RTC_CHIP_*
+    uint8_t touch;     // TOUCH_CHIP_*
     /* BOARD_MODULE_*: which N16R8 it is. The firmware is the same for both;
      * what differs is GPIO 47 and 48, which sit on the memory's supply
      * (VDD_SPI) - 1.8 V on the "V" modules - and are checked against it. */
@@ -91,6 +92,7 @@ typedef struct {
     uint8_t buttons_pullups;
 
     int8_t ir_receiver;
+    int8_t touch_int;
     int8_t dac_mute;
     int8_t amp_enable;
     uint8_t amp_on_level;
@@ -107,7 +109,8 @@ typedef struct {
     /* Which bus each device names. Each has one possible value today and is
      * kept only so a file naming another is refused rather than obeyed:
      * tft_spi 2, sd_spi 3, dac_i2s 0, bt_uart 1, bt_i2s 0, fm_i2c 0, adc_i2s 0,
-     * rtc_i2c 0 - the clock shares I2C0 with the tuner.
+     * rtc_i2c 0 - the clock shares I2C0 with the tuner, and touch_i2c 0 - so
+     * does the touch panel.
      * The tuner's sound is the one a device may go without: fm_i2s is 0 when
      * its own I2S output is wired to the S3 (the RDA5807FP), BOARD_BUS_NONE
      * when only its analogue output is used - which an ADC may carry in
@@ -122,6 +125,7 @@ typedef struct {
     uint8_t adc;
     uint8_t adc_i2s;
     uint8_t rtc_i2c;
+    uint8_t touch_i2c;
 } board_config_t;
 
 typedef enum {
@@ -268,6 +272,8 @@ bool board_has_fm_tuner(void);
 /* RTC_CHIP_DS3231 or RTC_CHIP_DS1307 when the wiring has one, else
  * RTC_CHIP_NONE. */
 unsigned board_rtc_chip(void);
+
+bool board_has_touch(void);
 /* The RDA5807FP's own I2S output is wired to the S3: the chip is set to send
  * on it. */
 bool board_fm_chip_i2s(void);

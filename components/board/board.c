@@ -34,6 +34,7 @@
 #include "display/board_panel.h"
 #include "boot_splash.h"
 #include "board_options.h"
+#include "board_touch.h"
 #include "board_input.h"
 #include "ir_wake_stub.h"
 #include "board_features.h"
@@ -1616,6 +1617,8 @@ esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal)
 {
     if (s_panel == NULL) return ESP_ERR_INVALID_STATE;
     s_scroll_flipped = TFT_WIDTH > TFT_HEIGHT ? flip_horizontal : flip_vertical;
+    board_touch_set_mirror(flip_horizontal != (bool)TFT_MIRROR_X,
+                           flip_vertical != (bool)TFT_MIRROR_Y);
     return esp_lcd_panel_mirror(s_panel, flip_horizontal != (bool)TFT_MIRROR_X,
                                 flip_vertical != (bool)TFT_MIRROR_Y);
 }

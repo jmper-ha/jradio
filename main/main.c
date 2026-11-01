@@ -8,6 +8,7 @@
 #include "album_art.h"
 #include "alarm_schedule.h"
 #include "board_rtc.h"
+#include "board_touch.h"
 #include "ir_wake_stub.h"
 #include "board.h"
 #include "board_config.h"
@@ -306,6 +307,7 @@ void app_main(void)
          * has no FM source to drive it with yet. */
         start_optional("FM tuner", fm_tuner_init());
     }
+    if (board_has_touch()) start_optional("touch panel", board_touch_init());
     ESP_ERROR_CHECK(internet_radio_init());
     /* Nothing is installed here any more. A station that arrives one track at
      * a time names what feeds it when it starts - see

@@ -6,7 +6,7 @@
     "normalised as in both tests and sorted. Written by hand: a changed answer",
     "is a decision, made here, not a regeneration."
   ],
-  "base": "# key,value\nboard_format,1\nboard_name,\nmodule,esp32s3_n16r8\ndisplay,st7796s_480_320\nspi2_sclk,12\nspi2_mosi,11\nspi3_sclk,41\nspi3_mosi,42\nspi3_miso,40\ni2s0_bclk,18\ni2s0_lrck,17\ni2s0_dout,16\ni2s0_din,none\ni2s0_mclk,none\nuart1_tx,none\nuart1_rx,none\ni2c0_sda,none\ni2c0_scl,none\ntft_spi,2\ntft_cs,10\ntft_dc,47\ntft_reset,rst\ntft_backlight,2\nencoder_right,5\nencoder_left,7\nencoder_button,6\nencoder_pullups,1\nencoder_buttons,0\nbutton_sleep,21\nbutton_quick_menu,45\nbutton_prev,46\nbutton_next,9\nbuttons_pullups,1\nir_receiver,none\ndac,pcm5102\ndac_i2s,0\ndac_mute,none\namp_enable,none\namp_on_level,1\nperipheral_power,none\nperipheral_power_on_level,1\nusb_dp,20\nusb_dm,19\nsd_spi,3\nsd_cs,1\nbluetooth,none\nbt_uart,1\nbt_i2s,0\nfm_tuner,none\nfm_i2c,0\nfm_i2s,none\nadc,none\nadc_i2s,0\nrtc,none\nrtc_i2c,0\nyandex_music,1\ndlna,1\n",
+  "base": "# key,value\nboard_format,1\nboard_name,\nmodule,esp32s3_n16r8\ndisplay,st7796s_480_320\nspi2_sclk,12\nspi2_mosi,11\nspi3_sclk,41\nspi3_mosi,42\nspi3_miso,40\ni2s0_bclk,18\ni2s0_lrck,17\ni2s0_dout,16\ni2s0_din,none\ni2s0_mclk,none\nuart1_tx,none\nuart1_rx,none\ni2c0_sda,none\ni2c0_scl,none\ntft_spi,2\ntft_cs,10\ntft_dc,47\ntft_reset,rst\ntft_backlight,2\nencoder_right,5\nencoder_left,7\nencoder_button,6\nencoder_pullups,1\nencoder_buttons,0\nbutton_sleep,21\nbutton_quick_menu,45\nbutton_prev,46\nbutton_next,9\nbuttons_pullups,1\nir_receiver,none\ndac,pcm5102\ndac_i2s,0\ndac_mute,none\namp_enable,none\namp_on_level,1\nperipheral_power,none\nperipheral_power_on_level,1\nusb_dp,20\nusb_dm,19\nsd_spi,3\nsd_cs,1\nbluetooth,none\nbt_uart,1\nbt_i2s,0\nfm_tuner,none\nfm_i2c,0\nfm_i2s,none\nadc,none\nadc_i2s,0\nrtc,none\nrtc_i2c,0\ntouch,none\ntouch_i2c,0\ntouch_int,none\nyandex_music,1\ndlna,1\n",
   "cases": [
     {
       "name": "the README board as it is",
@@ -168,10 +168,39 @@
     },
     {
       "name": "keys the chip decides are read past, unknown ones kept aside",
-      "csv": "touch,xpt2046\nspi2_sclk,5",
+      "csv": "haptics,drv2605\nspi2_sclk,5",
       "errors": [],
       "warnings": [],
       "unknown_keys": 1,
+      "bad_lines": 0
+    },
+    {
+      "name": "the touch panel on I2C0 with its interrupt line",
+      "csv": "touch,ft6336u\ni2c0_sda,8\ni2c0_scl,3\ntouch_int,38",
+      "errors": [],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "the touch panel with no I2C wired",
+      "csv": "touch,ft6336u",
+      "errors": [
+        "bus_unwired touch i2c0_scl",
+        "bus_unwired touch i2c0_sda"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "a touch chip there is no driver for",
+      "csv": "touch,xpt2046\ni2c0_sda,8\ni2c0_scl,3",
+      "errors": [
+        "bad_value touch"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
       "bad_lines": 0
     },
     {

@@ -112,7 +112,10 @@ def board_csv(macros):
         for name in ("ds3231", "ds1307"):
             if value(macros, "RTC_CHIP") == value(macros, f"RTC_CHIP_{name.upper()}"):
                 rtc = name
-    i2c0 = (fm or rtc != "none") and defined("FM_I2C_SDA_GPIO") and defined("FM_I2C_SCL_GPIO")
+    touch = "none"
+    if defined("TOUCH_CHIP") and value(macros, "TOUCH_CHIP") == value(macros, "TOUCH_CHIP_FT6336U"):
+        touch = "ft6336u"
+    i2c0 = (fm or rtc != "none" or touch != "none") and defined("FM_I2C_SDA_GPIO") and defined("FM_I2C_SCL_GPIO")
     reset = pin(macros, "TFT_RESET_GPIO") if defined("TFT_RESET_GPIO") else "rst"
     feature_on = value(macros, "FEATURE_ON")
     rows = [
@@ -173,6 +176,9 @@ def board_csv(macros):
         ("adc_i2s", "0"),
         ("rtc", rtc),
         ("rtc_i2c", "0"),
+        ("touch", touch),
+        ("touch_i2c", "0"),
+        ("touch_int", pin(macros, "TOUCH_INT_GPIO") if touch != "none" else "none"),
         ("yandex_music", "1" if defined("YANDEX_MUSIC") and
          value(macros, "YANDEX_MUSIC") == feature_on else "0"),
         ("dlna", "1" if defined("DLNA") and value(macros, "DLNA") == feature_on else "0"),

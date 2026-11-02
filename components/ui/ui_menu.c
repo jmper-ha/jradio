@@ -186,6 +186,16 @@ bool ui_menu_handle_input(ui_menu_state_t *state, board_input_action_t action)
     return false;
 }
 
+bool ui_menu_select_item(ui_menu_state_t *state, ui_menu_item_t item)
+{
+    if (state == NULL || item >= UI_MENU_ITEM_COUNT ||
+        !ui_menu_item_is_visible(item, state->visible)) {
+        return false;
+    }
+    state->selected_index = (uint8_t)item;
+    return true;
+}
+
 bool ui_menu_select_source(ui_menu_state_t *state, audio_source_t source)
 {
     if (state == NULL || source == AUDIO_SOURCE_NONE) {

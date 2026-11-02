@@ -4,6 +4,17 @@
 #include "ui_station_list.h"
 
 
+static void test_select_takes_only_a_row_the_list_has(void)
+{
+    station_list_state_t state;
+    station_list_init(&state, 3U, 0U, 0U);
+    assert(station_list_select(&state, 2U));
+    assert(station_list_selected_index(&state) == 2U);
+    assert(!station_list_select(&state, 3U));
+    assert(station_list_selected_index(&state) == 2U);
+    assert(!station_list_select(NULL, 0U));
+}
+
 static void test_initial_index_skips_the_parent_row(void)
 {
     /* Nothing playing in a USB directory: the cursor belongs on the first
@@ -169,6 +180,7 @@ int main(void)
     assert(!station_list_idle_timeout_elapsed(&state, 1000 + 9999 + 9999, 10000));
 
     test_initial_index_skips_the_parent_row();
+    test_select_takes_only_a_row_the_list_has();
     test_progress_percent_tracks_the_cursor();
     test_progress_percent_handles_lists_that_cannot_scroll();
     test_progress_percent_clamps_a_cursor_past_the_end();

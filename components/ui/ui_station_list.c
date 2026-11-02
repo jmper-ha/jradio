@@ -47,6 +47,13 @@ bool station_list_handle_input(station_list_state_t *state, board_input_action_t
     return action == BOARD_INPUT_ACTION_ENCODER_BUTTON;
 }
 
+bool station_list_select(station_list_state_t *state, size_t index)
+{
+    if (state == NULL || index >= state->count) return false;
+    state->selected_index = index;
+    return true;
+}
+
 size_t station_list_selected_index(const station_list_state_t *state)
 {
     return state == NULL ? 0 : state->selected_index;

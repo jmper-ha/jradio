@@ -24,6 +24,8 @@
 #include "wifi_provisioning.h"
 #include "ui_about.h"
 #include "ui_autoplay.h"
+#include "ui_touch_gesture.h"
+#include "board_touch.h"
 #include "ui_buffer_graph.h"
 #include "ui_busy_bar.h"
 #include "ui_click_gesture.h"
@@ -8933,9 +8935,211 @@ static void ui_update_vu(void)
     }
 }
 
+/* The touch panel, on the home screens and the lists. It works them through
+ * ui_handle_input() with the encoder's own actions, so a screen has one way of
+ * being worked: a drag is the knob turned, a touch on a row is the cursor put
+ * there and the knob pressed. */
+typedef enum {
+    UI_TOUCH_TARGET_NONE = 0,
+    UI_TOUCH_TARGET_FEED,
+    UI_TOUCH_TARGET_MENU,
+    UI_TOUCH_TARGET_STATIONS,
+    UI_TOUCH_TARGET_YANDEX,
+    UI_TOUCH_TARGET_SETTINGS,
+} ui_touch_target_t;
+
+// A carousel has no rows to set a pitch; this is a short push of the finger.
+#define UI_TOUCH_FEED_STEP_PX 60
+
+static ui_touch_gesture_t s_touch;
+
+/* Who the finger is talking to. Nobody, on anything that sits over a screen:
+ * the update's question above all, where the press this would send is a yes. */
+static ui_touch_target_t ui_touch_target(void)
+{
+    if (s_ota_visible || s_quick.open) return UI_TOUCH_TARGET_NONE;
+    if (s_yandex_open) return UI_TOUCH_TARGET_YANDEX;
+    if (s_settings_open) {
+        return s_about_open || s_qr_open ? UI_TOUCH_TARGET_NONE : UI_TOUCH_TARGET_SETTINGS;
+    }
+    const ui_player_view_t view = ui_player_state_view(&s_player_ui);
+    if (view == UI_PLAYER_VIEW_STATION_LIST) return UI_TOUCH_TARGET_STATIONS;
+    if (view != UI_PLAYER_VIEW_MENU) return UI_TOUCH_TARGET_NONE;
+    if (s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED &&
+        lv_screen_active() == s_feed_screen) {
+        return UI_TOUCH_TARGET_FEED;
+    }
+    return lv_screen_active() == s_menu_screen ? UI_TOUCH_TARGET_MENU : UI_TOUCH_TARGET_NONE;
+}
+
+static void ui_touch_turn(int steps, board_input_action_t positive, board_input_action_t negative)
+{
+    for (int count = steps > 0 ? steps : -steps; count > 0; --count) {
+        ui_handle_input(steps > 0 ? positive : negative);
+    }
+}
+
+static void ui_touch_drag(ui_touch_target_t target, const ui_touch_event_t *event)
+{
+    const int steps = event->steps;
+    const bool menu_fits = target == UI_TOUCH_TARGET_MENU &&
+                           ui_menu_visible_count(ui_menu_visible_mask(&s_menu)) <= UI_MENU_ROWS_FIT;
+    /* Rolling on is for a list that moves. A number being edited would run off
+     * by however hard the finger left, and on a menu that stands still the
+     * cursor would only spin round the rows. */
+    if (event->coasting &&
+        (menu_fits || (target == UI_TOUCH_TARGET_SETTINGS &&
+                       ui_settings_model_is_editing(&s_settings_model)))) {
+        ui_touch_gesture_stop_coast(&s_touch);
+        return;
+    }
+    if (menu_fits) {
+        // The rows stand still, so it is the cursor that goes with the finger.
+        ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_RIGHT, BOARD_INPUT_ACTION_ENCODER_LEFT);
+        return;
+    }
+    /* The ring's tiles are the whole choice on that screen, and a flick that
+     * carried it past several of them lost the place: one more, then it stops. */
+    if (event->coasting && target == UI_TOUCH_TARGET_FEED) {
+        ui_touch_gesture_stop_coast(&s_touch);
+        ui_handle_input(steps > 0 ? BOARD_INPUT_ACTION_ENCODER_LEFT
+                                  : BOARD_INPUT_ACTION_ENCODER_RIGHT);
+        return;
+    }
+    switch (target) {
+    case UI_TOUCH_TARGET_FEED:
+        // The ring follows the finger: the tile on the left comes to the middle.
+        ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_LEFT, BOARD_INPUT_ACTION_ENCODER_RIGHT);
+        break;
+    case UI_TOUCH_TARGET_MENU:
+    case UI_TOUCH_TARGET_STATIONS:
+    case UI_TOUCH_TARGET_YANDEX:
+    case UI_TOUCH_TARGET_SETTINGS:
+        // The list follows the finger: pushed up, the next rows come in.
+        ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_LEFT, BOARD_INPUT_ACTION_ENCODER_RIGHT);
+        break;
+    default:
+        break;
+    }
+}
+
+static void ui_touch_tap_feed(int x, int y)
+{
+    if (y < UI_FEED_AXIS_Y - UI_FEED_TILE / 2 || y > UI_FEED_AXIS_Y + UI_FEED_TILE / 2) return;
+    const int dx = x - UI_FEED_CENTER_X;
+    const int distance = dx < 0 ? -dx : dx;
+    if (distance < UI_FEED_INNER_DX / 2) {
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+        return;
+    }
+    // A tile off to the side comes to the middle; it opens from there.
+    const int slots =
+        UI_FEED_SLOTS > 3 && distance >= (UI_FEED_INNER_DX + UI_FEED_OUTER_DX) / 2 ? 2 : 1;
+    ui_touch_turn(dx < 0 ? slots : -slots, BOARD_INPUT_ACTION_ENCODER_LEFT,
+                  BOARD_INPUT_ACTION_ENCODER_RIGHT);
+}
+
+static void ui_touch_tap_list(station_list_state_t *list, void (*update)(void), int y)
+{
+    const int row = ui_touch_row_at(y, UI_LIST_ROW_Y, UI_LIST_ROW_PITCH,
+                                    (int)UI_STATION_LIST_MAX_ROWS);
+    if (row < 0) return;
+    const int entry = station_list_window_top(list, UI_STATION_LIST_MAX_ROWS, NULL) + row;
+    if (entry < 0 || !station_list_select(list, (size_t)entry)) return;
+    update();
+    ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+}
+
+static void ui_touch_tap_menu(int y)
+{
+    const ui_menu_visible_mask_t shown = ui_menu_visible_mask(&s_menu);
+    const int row = ui_touch_row_at(y, UI_MENU_ROW_Y, UI_MENU_ROW_PITCH, (int)UI_MENU_ROWS_FIT);
+    if (row < 0 || s_menu_window_top + row >= ui_menu_visible_count(shown)) return;
+    const ui_menu_item_t item = ui_menu_visible_item_at((uint8_t)(s_menu_window_top + row), shown);
+    if (!ui_menu_select_item(&s_menu, item)) return;
+    ui_update_menu_highlight();
+    ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+}
+
+static void ui_touch_tap_settings(int y)
+{
+    // A number under the knob: the touch only lets go of it, as the press does.
+    if (ui_settings_model_is_editing(&s_settings_model)) {
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+        return;
+    }
+    const int row = ui_touch_row_at(y, UI_SET_ROW_Y, UI_SET_ROW_PITCH, (int)UI_SETTINGS_MAX_ROWS);
+    if (row < 0) return;
+    const size_t target = s_settings_model.window_top + (size_t)row;
+    if (target >= ui_settings_model_row_count(&s_settings_model)) return;
+    // By the model's own step, which knows where the cursor may not go.
+    while (s_settings_model.cursor != target) {
+        const int direction = s_settings_model.cursor < target ? 1 : -1;
+        if (ui_settings_model_move(&s_settings_model, direction) == UI_SETTINGS_MODEL_NO_CHANGE) {
+            return;
+        }
+    }
+    ui_update_settings();
+    ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+}
+
+static void ui_touch_poll(void)
+{
+    board_touch_point_t point = {0, 0};
+    const bool down = board_touch_read(&point);
+    const ui_touch_target_t target = ui_touch_target();
+    const bool feed = target == UI_TOUCH_TARGET_FEED;
+    const int step_px = feed                                 ? UI_TOUCH_FEED_STEP_PX
+                        : target == UI_TOUCH_TARGET_MENU     ? UI_MENU_ROW_PITCH
+                        : target == UI_TOUCH_TARGET_SETTINGS ? UI_SET_ROW_PITCH
+                                                             : UI_LIST_ROW_PITCH;
+    const ui_touch_event_t event = ui_touch_gesture_step(
+        &s_touch, down, point.x, point.y, ui_tick_get_ms(),
+        feed ? UI_TOUCH_AXIS_HORIZONTAL : UI_TOUCH_AXIS_VERTICAL, step_px);
+    switch (event.kind) {
+    case UI_TOUCH_EVENT_PRESSED:
+        /* A finger is somebody at the controls on any screen, and a press that
+         * only brings a resting screen back goes no further - as a key's does,
+         * which is the same two questions asked in ui_handle_input(). */
+        if (s_alarm_boot_dark ||
+            ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms())) {
+            ui_touch_gesture_ignore(&s_touch);
+        }
+        ui_handle_input(BOARD_INPUT_ACTION_NONE);
+        break;
+    case UI_TOUCH_EVENT_DRAG:
+        ui_touch_drag(target, &event);
+        break;
+    case UI_TOUCH_EVENT_TAP:
+        switch (target) {
+        case UI_TOUCH_TARGET_FEED:
+            ui_touch_tap_feed(event.x, event.y);
+            break;
+        case UI_TOUCH_TARGET_MENU:
+            ui_touch_tap_menu(event.y);
+            break;
+        case UI_TOUCH_TARGET_STATIONS:
+            ui_touch_tap_list(&s_station_list, ui_update_station_list, event.y);
+            break;
+        case UI_TOUCH_TARGET_YANDEX:
+            ui_touch_tap_list(&s_yandex_list, ui_update_yandex, event.y);
+            break;
+        case UI_TOUCH_TARGET_SETTINGS:
+            ui_touch_tap_settings(event.y);
+            break;
+        default:
+            break;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 static void ui_task(void *arg)
 {
     (void)arg;
+    ui_touch_gesture_init(&s_touch);
     while (true) {
         board_input_action_t action;
         if (xQueueReceive(s_input_queue, &action, pdMS_TO_TICKS(10)) == pdTRUE) {
@@ -8953,6 +9157,7 @@ static void ui_task(void *arg)
                 ui_handle_input(action);
             }
         }
+        ui_touch_poll();
         if (ui_click_gesture_poll(&s_like_click, ui_tick_get_ms()) == UI_CLICK_SINGLE) {
             ui_submit_like_press(false);
         }

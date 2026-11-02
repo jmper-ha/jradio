@@ -900,6 +900,27 @@ static void ui_set_label_text_if_changed(lv_obj_t *label, const char *text)
     }
 }
 
+/* For the screens that rewrite every row to change one. A style set redraws its
+ * object even with the value it already has, and LVGL does not look: on the
+ * settings list, rewritten on every pass, that kept the whole list repainting,
+ * 160 ms of every 180, with nothing on it changing and a finger waiting its
+ * turn. */
+static void ui_set_bg_color_if_changed(lv_obj_t *object, uint32_t colour)
+{
+    const lv_color_t wanted = lv_color_hex(colour);
+    if (!lv_color_eq(lv_obj_get_style_bg_color(object, 0), wanted)) {
+        lv_obj_set_style_bg_color(object, wanted, 0);
+    }
+}
+
+static void ui_set_text_color_if_changed(lv_obj_t *object, uint32_t colour)
+{
+    const lv_color_t wanted = lv_color_hex(colour);
+    if (!lv_color_eq(lv_obj_get_style_text_color(object, 0), wanted)) {
+        lv_obj_set_style_text_color(object, wanted, 0);
+    }
+}
+
 static ui_scroller_t ui_scroller_create(lv_obj_t *parent, int32_t x, int32_t y, int32_t width,
                                         int32_t height)
 {
@@ -3463,26 +3484,29 @@ static void ui_update_menu_highlight(void)
         // Raised tile plus accent text, the way the player screen marks what
         // it is playing. The arrow the old highlight needed is gone: a filled
         // row says the same thing without spending a character on it.
-        lv_obj_set_style_bg_color(s_menu_rows[row],
-                                  lv_color_hex(is_selected ? ui_hex(UI_ROLE_SELECTED)
-                                                           : ui_hex(UI_ROLE_GROUND)), 0);
-        lv_obj_set_style_bg_opa(s_menu_rows[row], LV_OPA_COVER, 0);
+        ui_set_bg_color_if_changed(s_menu_rows[row], is_selected ? ui_hex(UI_ROLE_SELECTED)
+                                                                 : ui_hex(UI_ROLE_GROUND));
+        if (lv_obj_get_style_bg_opa(s_menu_rows[row], 0) != LV_OPA_COVER) {
+            lv_obj_set_style_bg_opa(s_menu_rows[row], LV_OPA_COVER, 0);
+        }
         /* The cursor still lands on it - the row is real, it just cannot be
            started right now, and the press says why. */
-        lv_obj_set_style_text_color(s_menu_rows[row],
-                                    lv_color_hex(!enabled       ? ui_hex(UI_ROLE_DISABLED)
-                                                 : is_selected  ? ui_hex(UI_ROLE_ACCENT)
-                                                                : ui_hex(UI_ROLE_SECONDARY)), 0);
-        lv_label_set_text(s_menu_rows[row], ui_menu_item_label(item, s_device_settings.language));
-        lv_image_set_src(s_menu_icons[row],
-                         ui_feed_icon_image((ui_feed_item_t)item, UI_FEED_ICON_SMALL));
+        ui_set_text_color_if_changed(s_menu_rows[row], !enabled      ? ui_hex(UI_ROLE_DISABLED)
+                                                       : is_selected ? ui_hex(UI_ROLE_ACCENT)
+                                                                     : ui_hex(UI_ROLE_SECONDARY));
+        ui_set_label_text_if_changed(s_menu_rows[row],
+                                     ui_menu_item_label(item, s_device_settings.language));
+        const void *icon = ui_feed_icon_image((ui_feed_item_t)item, UI_FEED_ICON_SMALL);
+        if (lv_image_get_src(s_menu_icons[row]) != icon) lv_image_set_src(s_menu_icons[row], icon);
         // The icon follows the text rather than staying lit: a row that is not
         // under the cursor should read as one thing, not as a bright mark with
         // dim writing next to it.
-        lv_obj_set_style_image_recolor(s_menu_icons[row],
-                                       lv_color_hex(!enabled      ? ui_hex(UI_ROLE_DISABLED)
-                                                    : is_selected ? ui_hex(UI_ROLE_ACCENT)
-                                                                  : ui_hex(UI_ROLE_DIM)), 0);
+        const lv_color_t recolor = lv_color_hex(!enabled      ? ui_hex(UI_ROLE_DISABLED)
+                                                : is_selected ? ui_hex(UI_ROLE_ACCENT)
+                                                              : ui_hex(UI_ROLE_DIM));
+        if (!lv_color_eq(lv_obj_get_style_image_recolor(s_menu_icons[row], 0), recolor)) {
+            lv_obj_set_style_image_recolor(s_menu_icons[row], recolor, 0);
+        }
     }
     /* The stripe is drawn whether or not the row can be started: the cursor
      * is on it either way, and the disabled colour already says the rest. */
@@ -4414,15 +4438,14 @@ static void ui_update_settings_web_band(void)
      * can see. */
     const bool selected =
         ui_settings_model_selected(&s_settings_model) == UI_SETTINGS_ROW_ADDRESS_BAND;
-    lv_obj_set_style_bg_color(s_settings_web_band,
-                              lv_color_hex(selected ? ui_hex(UI_ROLE_CURSOR) : ui_hex(UI_ROLE_STRIP)), 0);
-    lv_obj_set_style_text_color(s_settings_web_address,
-                                lv_color_hex(selected ? ui_hex(UI_ROLE_ACCENT)
-                                             : mounted  ? ui_hex(UI_ROLE_TEXT)
-                                                        : UI_COLOR_NOTICE),
-                                0);
-    lv_obj_set_style_text_color(s_settings_web_hint,
-                                lv_color_hex(selected ? ui_hex(UI_ROLE_ACCENT) : ui_hex(UI_ROLE_DIM)), 0);
+    ui_set_bg_color_if_changed(s_settings_web_band,
+                               selected ? ui_hex(UI_ROLE_CURSOR) : ui_hex(UI_ROLE_STRIP));
+    ui_set_text_color_if_changed(s_settings_web_address,
+                                 selected  ? ui_hex(UI_ROLE_ACCENT)
+                                 : mounted ? ui_hex(UI_ROLE_TEXT)
+                                           : UI_COLOR_NOTICE);
+    ui_set_text_color_if_changed(s_settings_web_hint,
+                                 selected ? ui_hex(UI_ROLE_ACCENT) : ui_hex(UI_ROLE_DIM));
     ui_apply_qr(payload, available, text);
 }
 
@@ -4452,9 +4475,7 @@ static void ui_update_settings(void)
     const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
     const size_t window_top = ui_settings_model_window_top(&s_settings_model,
                                                            UI_SETTINGS_MAX_ROWS);
-    for (size_t index = 0; index < UI_SETTINGS_SWITCH_COUNT; ++index) {
-        lv_obj_add_flag(s_settings_switches[index], LV_OBJ_FLAG_HIDDEN);
-    }
+    bool switch_used[UI_SETTINGS_SWITCH_COUNT] = {false};
     /* Arrows rather than a scroll bar: the rows already reach both edges, and
      * the one thing the user needs to know is that the list continues. */
     ui_set_label_text_if_changed(s_settings_more_above,
@@ -4475,7 +4496,7 @@ static void ui_update_settings(void)
         if (model_row >= row_count) {
             /* Hidden, not merely blanked: a row's background is opaque, and
              * with the taller pitch an unused row reaches into the web band. */
-            lv_label_set_text(s_settings_rows[row], "");
+            ui_set_label_text_if_changed(s_settings_rows[row], "");
             lv_obj_add_flag(s_settings_rows[row], LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(s_settings_group_marks[row], LV_OBJ_FLAG_HIDDEN);
             continue;
@@ -4497,9 +4518,14 @@ static void ui_update_settings(void)
          * Set per row rather than at creation: which row is a heading changes
          * as groups open and close. */
         const bool top_level = is_group || item.kind == UI_SETTINGS_ROW_ACTION;
-        lv_obj_set_style_text_font(s_settings_rows[row],
-                                   top_level ? UI_FONT_TITLE : UI_FONT_BODY, 0);
-        lv_obj_set_style_pad_top(s_settings_rows[row], top_level ? 1 : 4, 0);
+        const lv_font_t *font = top_level ? UI_FONT_TITLE : UI_FONT_BODY;
+        if (lv_obj_get_style_text_font(s_settings_rows[row], 0) != font) {
+            lv_obj_set_style_text_font(s_settings_rows[row], font, 0);
+        }
+        const int32_t pad_top = top_level ? 1 : 4;
+        if (lv_obj_get_style_pad_top(s_settings_rows[row], 0) != pad_top) {
+            lv_obj_set_style_pad_top(s_settings_rows[row], pad_top, 0);
+        }
         const bool selected_row = item.id == selected;
         /* Field tiles darker than they were, for the same reason: the gap to
          * the cursor is what makes it visible, and both ends of it moved. */
@@ -4514,13 +4540,13 @@ static void ui_update_settings(void)
         const uint32_t text_colour = selected_row ? ui_hex(UI_ROLE_ACCENT)
                                      : is_group   ? ui_hex(UI_ROLE_SECONDARY)
                                                   : ui_hex(UI_ROLE_TEXT);
-        lv_obj_set_style_text_color(s_settings_rows[row], lv_color_hex(text_colour), 0);
+        ui_set_text_color_if_changed(s_settings_rows[row], text_colour);
         if (is_group) {
             ui_set_label_text_if_changed(
                 s_settings_group_marks[row],
                 ui_settings_model_is_expanded(&s_settings_model, item.group) ? LV_SYMBOL_DOWN
                                                                               : LV_SYMBOL_RIGHT);
-            lv_obj_set_style_text_color(s_settings_group_marks[row], lv_color_hex(text_colour), 0);
+            ui_set_text_color_if_changed(s_settings_group_marks[row], text_colour);
             lv_obj_remove_flag(s_settings_group_marks[row], LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(s_settings_group_marks[row], LV_OBJ_FLAG_HIDDEN);
@@ -4540,15 +4566,21 @@ static void ui_update_settings(void)
         }
         lv_obj_set_x(s_settings_rows[row], row_left);
         lv_obj_set_width(s_settings_rows[row], UI_SET_ROW_RIGHT - row_left);
-        lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(background), 0);
+        ui_set_bg_color_if_changed(s_settings_rows[row], background);
         if (has_switch) {
             lv_obj_t *toggle = s_settings_switches[switch_index];
+            switch_used[switch_index] = true;
             if (enabled) lv_obj_add_state(toggle, LV_STATE_CHECKED);
             else lv_obj_clear_state(toggle, LV_STATE_CHECKED);
             lv_obj_set_pos(toggle, 10,
                            UI_SET_ROW_Y + (int)row * UI_SET_ROW_PITCH + (UI_SET_ROW_H - 20) / 2);
             lv_obj_clear_flag(toggle, LV_OBJ_FLAG_HIDDEN);
         }
+    }
+    /* Afterwards, and only the ones no row took: hidden first and shown again,
+     * every switch on the screen redrew on every pass. */
+    for (size_t index = 0; index < UI_SETTINGS_SWITCH_COUNT; ++index) {
+        if (!switch_used[index]) lv_obj_add_flag(s_settings_switches[index], LV_OBJ_FLAG_HIDDEN);
     }
     ui_list_decor_update(&s_settings_decor, shown, cursor_row, cursor_left);
     /* The line under a heading is a rule, not a divider: it closes the

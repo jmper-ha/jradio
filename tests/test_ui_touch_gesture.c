@@ -267,8 +267,34 @@ static void test_row_at(void)
     assert(ui_touch_row_at(100, 40, 0, 5) == -1);
 }
 
+static void test_a_free_touch_runs_the_way_the_finger_first_went(void)
+{
+    ui_touch_gesture_t g;
+    ui_touch_gesture_init(&g);
+    (void)ui_touch_gesture_step(&g, true, 100, 100, 0, UI_TOUCH_AXIS_FREE, 30);
+    assert(ui_touch_gesture_axis(&g) == UI_TOUCH_AXIS_VERTICAL);
+    (void)ui_touch_gesture_step(&g, true, 120, 105, 10, UI_TOUCH_AXIS_FREE, 30);
+    assert(ui_touch_gesture_axis(&g) == UI_TOUCH_AXIS_HORIZONTAL);
+    ui_touch_event_t event = ui_touch_gesture_step(&g, true, 136, 105, 20, UI_TOUCH_AXIS_FREE, 16);
+    assert(event.kind == UI_TOUCH_EVENT_DRAG && event.steps == 1);
+    assert(event.axis == UI_TOUCH_AXIS_HORIZONTAL);
+    // And stays that way: this touch has said what it is about.
+    event = ui_touch_gesture_step(&g, true, 136, 300, 30, UI_TOUCH_AXIS_FREE, 16);
+    assert(event.kind == UI_TOUCH_EVENT_NONE);
+    (void)ui_touch_gesture_step(&g, false, 0, 0, 800, UI_TOUCH_AXIS_FREE, 16);
+
+    (void)ui_touch_gesture_step(&g, true, 100, 100, 1000, UI_TOUCH_AXIS_FREE, 30);
+    assert(ui_touch_gesture_axis(&g) == UI_TOUCH_AXIS_VERTICAL);
+    (void)ui_touch_gesture_step(&g, true, 105, 120, 1010, UI_TOUCH_AXIS_FREE, 30);
+    assert(ui_touch_gesture_axis(&g) == UI_TOUCH_AXIS_VERTICAL);
+    event = ui_touch_gesture_step(&g, true, 105, 150, 1020, UI_TOUCH_AXIS_FREE, 30);
+    assert(event.kind == UI_TOUCH_EVENT_DRAG && event.steps == 1);
+    assert(event.axis == UI_TOUCH_AXIS_VERTICAL);
+}
+
 int main(void)
 {
+    test_a_free_touch_runs_the_way_the_finger_first_went();
     test_a_touch_is_a_tap_where_it_came_down();
     test_a_resting_hand_is_no_tap();
     test_a_drag_counts_whole_steps_from_past_the_slop();

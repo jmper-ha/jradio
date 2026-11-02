@@ -12,6 +12,8 @@
 typedef enum {
     UI_TOUCH_AXIS_VERTICAL = 0,
     UI_TOUCH_AXIS_HORIZONTAL,
+    // For a screen where each way means something: the finger's first move picks.
+    UI_TOUCH_AXIS_FREE,
 } ui_touch_axis_t;
 
 typedef enum {
@@ -30,6 +32,8 @@ typedef struct {
     int steps;
     // DRAG: the finger has left and this is the list rolling on.
     bool coasting;
+    // DRAG: which way those steps run.
+    ui_touch_axis_t axis;
 } ui_touch_event_t;
 
 typedef struct {
@@ -55,6 +59,8 @@ typedef struct {
     float velocity;
     float coast_px;
     int step_px;
+    // The way this touch runs: the screen's, or what UI_TOUCH_AXIS_FREE settled on.
+    ui_touch_axis_t axis;
 } ui_touch_gesture_t;
 
 void ui_touch_gesture_init(ui_touch_gesture_t *gesture);
@@ -62,6 +68,10 @@ void ui_touch_gesture_init(ui_touch_gesture_t *gesture);
 /* One pass. `axis` and `step_px` belong to the screen under the finger. */
 ui_touch_event_t ui_touch_gesture_step(ui_touch_gesture_t *gesture, bool down, int x, int y,
                                        uint32_t now_ms, ui_touch_axis_t axis, int step_px);
+
+/* Which way this touch runs, for a screen whose step differs by direction: under
+ * UI_TOUCH_AXIS_FREE it is vertical until the finger has moved enough to say. */
+ui_touch_axis_t ui_touch_gesture_axis(const ui_touch_gesture_t *gesture);
 
 /* The rest of this press means nothing: it only woke the screen. */
 void ui_touch_gesture_ignore(ui_touch_gesture_t *gesture);

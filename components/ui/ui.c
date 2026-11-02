@@ -8978,12 +8978,29 @@ typedef enum {
     UI_TOUCH_TARGET_STATIONS,
     UI_TOUCH_TARGET_YANDEX,
     UI_TOUCH_TARGET_SETTINGS,
+    // The address's code or About over the settings: a touch only closes them.
+    UI_TOUCH_TARGET_OVERLAY,
 } ui_touch_target_t;
 
 // A carousel has no rows to set a pitch; this is a short push of the finger.
 #define UI_TOUCH_FEED_STEP_PX 60
+/* A finger lands below what its owner is looking at: 34 touches aimed at the
+ * middle of 36 px rows on the bench came in 12 px low on average, and six of them
+ * on the row beneath. Found by aiming, so it says nothing of whether the panel
+ * or the finger is the one that is off. */
+#define UI_TOUCH_AIM_Y_PX 12
+// A number moved sideways: the width of the panel covers a brightness end to end.
+#define UI_TOUCH_VALUE_STEP_PX 16
+/* The settings' arrows, wider than they are drawn and two rows tall each: a
+ * finger aimed at one 20 px mark lands anywhere over 44 px. Repeating no faster
+ * than the list can be redrawn, or a release would leave steps still to come. */
+#define UI_TOUCH_ARROW_W 56
+#define UI_TOUCH_ARROW_REPEAT_MS 180U
 
 static ui_touch_gesture_t s_touch;
+// The arrow held down, -1 up or 1 down, and when it last moved the list.
+static int s_touch_arrow;
+static uint32_t s_touch_arrow_ms;
 
 /* Who the finger is talking to. Nobody, on anything that sits over a screen:
  * the update's question above all, where the press this would send is a yes. */
@@ -8992,7 +9009,7 @@ static ui_touch_target_t ui_touch_target(void)
     if (s_ota_visible || s_quick.open) return UI_TOUCH_TARGET_NONE;
     if (s_yandex_open) return UI_TOUCH_TARGET_YANDEX;
     if (s_settings_open) {
-        return s_about_open || s_qr_open ? UI_TOUCH_TARGET_NONE : UI_TOUCH_TARGET_SETTINGS;
+        return s_about_open || s_qr_open ? UI_TOUCH_TARGET_OVERLAY : UI_TOUCH_TARGET_SETTINGS;
     }
     const ui_player_view_t view = ui_player_state_view(&s_player_ui);
     if (view == UI_PLAYER_VIEW_STATION_LIST) return UI_TOUCH_TARGET_STATIONS;
@@ -9011,22 +9028,81 @@ static void ui_touch_turn(int steps, board_input_action_t positive, board_input_
     }
 }
 
+/* A sideways drag on a number. The row under where the finger came down, armed
+ * or not, since the press that arms it is only the knob's way of saying which
+ * row it means and the finger has already said. */
+static void ui_touch_settings_value(int steps)
+{
+    if (!ui_settings_model_is_editing(&s_settings_model)) {
+        const int row = ui_touch_row_at(s_touch.start_y, UI_SET_ROW_Y, UI_SET_ROW_PITCH,
+                                        (int)UI_SETTINGS_MAX_ROWS);
+        if (row < 0) return;
+        const size_t target = s_settings_model.window_top + (size_t)row;
+        if (!ui_settings_row_is_number(ui_settings_model_row_at(&s_settings_model, target).id)) {
+            return;
+        }
+        while (s_settings_model.cursor != target) {
+            if (ui_settings_model_move(&s_settings_model,
+                                       s_settings_model.cursor < target ? 1 : -1) ==
+                UI_SETTINGS_MODEL_NO_CHANGE) {
+                return;
+            }
+        }
+    }
+    for (int count = steps > 0 ? steps : -steps; count > 0; --count) {
+        ui_settings_change_number(steps > 0 ? 1 : -1);
+    }
+    ui_update_settings();
+}
+
+// Which arrow is under the finger, if one is showing: -1 up, 1 down, otherwise 0.
+static int ui_touch_settings_arrow(int x, int y)
+{
+    if (x < TFT_WIDTH - UI_TOUCH_ARROW_W || y < UI_SET_ROW_Y) return 0;
+    if (y < UI_SET_ROW_Y + 2 * UI_SET_ROW_PITCH &&
+        ui_settings_model_has_rows_above(&s_settings_model)) {
+        return -1;
+    }
+    const int end = UI_SET_ROW_Y + (int)UI_SETTINGS_MAX_ROWS * UI_SET_ROW_PITCH;
+    if (y >= end - 2 * UI_SET_ROW_PITCH && y < end &&
+        ui_settings_model_has_rows_below(&s_settings_model, UI_SETTINGS_MAX_ROWS)) {
+        return 1;
+    }
+    return 0;
+}
+
+static void ui_touch_arrow_step(uint32_t now_ms)
+{
+    s_touch_arrow_ms = now_ms;
+    if (ui_settings_model_scroll(&s_settings_model, s_touch_arrow, UI_SETTINGS_MAX_ROWS) ==
+        UI_SETTINGS_MODEL_CHANGED) {
+        ui_update_settings();
+    }
+}
+
 static void ui_touch_drag(ui_touch_target_t target, const ui_touch_event_t *event)
 {
     const int steps = event->steps;
     const bool menu_fits = target == UI_TOUCH_TARGET_MENU &&
                            ui_menu_visible_count(ui_menu_visible_mask(&s_menu)) <= UI_MENU_ROWS_FIT;
-    /* Rolling on is for a list that moves. A number being edited would run off
-     * by however hard the finger left, and on a menu that stands still the
-     * cursor would only spin round the rows. */
-    if (event->coasting &&
-        (menu_fits || (target == UI_TOUCH_TARGET_SETTINGS &&
-                       ui_settings_model_is_editing(&s_settings_model)))) {
+    const bool settings = target == UI_TOUCH_TARGET_SETTINGS;
+    /* Rolling on is for a list whose rows move under a fixed cursor. A number
+     * being edited would run off by however hard the finger left, and where the
+     * rows stand still the cursor would only run away down them. */
+    if (event->coasting && (menu_fits || settings)) {
         ui_touch_gesture_stop_coast(&s_touch);
         return;
     }
-    if (menu_fits) {
-        // The rows stand still, so it is the cursor that goes with the finger.
+    if (settings && event->axis == UI_TOUCH_AXIS_HORIZONTAL) {
+        ui_touch_settings_value(steps);
+        return;
+    }
+    // Up and down have nothing to do with a number: it moves sideways.
+    if (settings && ui_settings_model_is_editing(&s_settings_model)) return;
+    /* The settings window moves only once the cursor reaches its edge, so there
+     * as on a menu that fits it is the cursor that goes with the finger. Pushed
+     * up the other way it ran down the screen against the finger. */
+    if (menu_fits || settings) {
         ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_RIGHT, BOARD_INPUT_ACTION_ENCODER_LEFT);
         return;
     }
@@ -9100,6 +9176,18 @@ static void ui_touch_tap_settings(int y)
         ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
         return;
     }
+    /* The band under the rows, and its code straight away. The cursor goes there
+     * only with every group shut, which is the only way the model lets it; open,
+     * it stays with its group and the code comes up over it just the same. */
+    if (y >= UI_SET_BAND_Y) {
+        if (s_settings_model.expanded_group < 0) {
+            while (ui_settings_model_move(&s_settings_model, 1) == UI_SETTINGS_MODEL_CHANGED) {
+            }
+            ui_update_settings();
+        }
+        ui_show_qr();
+        return;
+    }
     const int row = ui_touch_row_at(y, UI_SET_ROW_Y, UI_SET_ROW_PITCH, (int)UI_SETTINGS_MAX_ROWS);
     if (row < 0) return;
     const size_t target = s_settings_model.window_top + (size_t)row;
@@ -9119,15 +9207,31 @@ static void ui_touch_poll(void)
 {
     board_touch_point_t point = {0, 0};
     const bool down = board_touch_read(&point);
+    // Unsigned: an unguarded touch at the very top would come out at the bottom.
+    point.y = point.y > UI_TOUCH_AIM_Y_PX ? (uint16_t)(point.y - UI_TOUCH_AIM_Y_PX) : 0U;
     const ui_touch_target_t target = ui_touch_target();
     const bool feed = target == UI_TOUCH_TARGET_FEED;
-    const int step_px = feed                                 ? UI_TOUCH_FEED_STEP_PX
-                        : target == UI_TOUCH_TARGET_MENU     ? UI_MENU_ROW_PITCH
-                        : target == UI_TOUCH_TARGET_SETTINGS ? UI_SET_ROW_PITCH
-                                                             : UI_LIST_ROW_PITCH;
+    const bool settings = target == UI_TOUCH_TARGET_SETTINGS;
+    const int settings_step_px = ui_touch_gesture_axis(&s_touch) == UI_TOUCH_AXIS_HORIZONTAL
+                                     ? UI_TOUCH_VALUE_STEP_PX
+                                     : UI_SET_ROW_PITCH;
+    const int step_px = feed                             ? UI_TOUCH_FEED_STEP_PX
+                        : target == UI_TOUCH_TARGET_MENU ? UI_MENU_ROW_PITCH
+                        : settings                       ? settings_step_px
+                                                         : UI_LIST_ROW_PITCH;
+    const uint32_t now_ms = ui_tick_get_ms();
     const ui_touch_event_t event = ui_touch_gesture_step(
-        &s_touch, down, point.x, point.y, ui_tick_get_ms(),
-        feed ? UI_TOUCH_AXIS_HORIZONTAL : UI_TOUCH_AXIS_VERTICAL, step_px);
+        &s_touch, down, point.x, point.y, now_ms,
+        feed       ? UI_TOUCH_AXIS_HORIZONTAL
+        : settings ? UI_TOUCH_AXIS_FREE
+                   : UI_TOUCH_AXIS_VERTICAL,
+        step_px);
+    if (!down || !settings) {
+        s_touch_arrow = 0;
+    } else if (s_touch_arrow != 0 &&
+               (uint32_t)(now_ms - s_touch_arrow_ms) >= UI_TOUCH_ARROW_REPEAT_MS) {
+        ui_touch_arrow_step(now_ms);
+    }
     switch (event.kind) {
     case UI_TOUCH_EVENT_PRESSED:
         /* A finger is somebody at the controls on any screen, and a press that
@@ -9136,6 +9240,12 @@ static void ui_touch_poll(void)
         if (s_alarm_boot_dark ||
             ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms())) {
             ui_touch_gesture_ignore(&s_touch);
+        } else if (settings && !ui_settings_model_is_editing(&s_settings_model)) {
+            s_touch_arrow = ui_touch_settings_arrow(point.x, point.y);
+            if (s_touch_arrow != 0) {
+                ui_touch_gesture_ignore(&s_touch);
+                ui_touch_arrow_step(now_ms);
+            }
         }
         ui_handle_input(BOARD_INPUT_ACTION_NONE);
         break;
@@ -9158,6 +9268,9 @@ static void ui_touch_poll(void)
             break;
         case UI_TOUCH_TARGET_SETTINGS:
             ui_touch_tap_settings(event.y);
+            break;
+        case UI_TOUCH_TARGET_OVERLAY:
+            ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
             break;
         default:
             break;

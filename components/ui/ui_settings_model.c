@@ -303,6 +303,31 @@ size_t ui_settings_model_window_top(ui_settings_model_t *model, size_t visible_c
     return top;
 }
 
+ui_settings_model_result_t ui_settings_model_scroll(ui_settings_model_t *model, int direction,
+                                                    size_t visible_count)
+{
+    if (!valid_model(model) || direction == 0 || visible_count == 0U || model->editing) {
+        return UI_SETTINGS_MODEL_NO_CHANGE;
+    }
+    const size_t count = total_row_count(model);
+    if (count <= visible_count) return UI_SETTINGS_MODEL_NO_CHANGE;
+    const size_t top = ui_settings_model_window_top(model, visible_count);
+    if (direction < 0 ? top == 0U : top + visible_count >= count) {
+        return UI_SETTINGS_MODEL_NO_CHANGE;
+    }
+    const size_t next_top = direction < 0 ? top - 1U : top + 1U;
+    size_t cursor = model->cursor;
+    if (cursor < next_top) cursor = next_top;
+    if (cursor >= next_top + visible_count) cursor = next_top + visible_count - 1U;
+    size_t first;
+    size_t last;
+    movement_bounds(model, &first, &last);
+    if (cursor < first || cursor > last) return UI_SETTINGS_MODEL_NO_CHANGE;
+    model->cursor = cursor;
+    model->window_top = next_top;
+    return UI_SETTINGS_MODEL_CHANGED;
+}
+
 bool ui_settings_model_has_rows_above(const ui_settings_model_t *model)
 {
     return valid_model(model) && model->window_top > 0U;

@@ -60,6 +60,7 @@ static ui_touch_event_t coast(ui_touch_gesture_t *gesture, uint32_t now_ms)
         event.kind = UI_TOUCH_EVENT_DRAG;
         event.steps = steps;
         event.coasting = true;
+        event.axis = gesture->axis;
     }
     const float speed = gesture->velocity < 0.0f ? -gesture->velocity : gesture->velocity;
     if (speed < UI_TOUCH_COAST_STOP_PX_MS) ui_touch_gesture_init(gesture);
@@ -87,6 +88,7 @@ ui_touch_event_t ui_touch_gesture_step(ui_touch_gesture_t *gesture, bool down, i
         const float seen =
             flicked ? (float)gesture->seen_px / (float)gesture->seen_ms : 0.0f;
         const float speed = seen < 0.0f ? -seen : seen;
+        const ui_touch_axis_t flick_axis = gesture->axis;
         ui_touch_gesture_init(gesture);
         if (flicked && speed >= UI_TOUCH_COAST_MIN_PX_MS) {
             gesture->coasting = true;
@@ -95,6 +97,7 @@ ui_touch_event_t ui_touch_gesture_step(ui_touch_gesture_t *gesture, bool down, i
                                                                    : seen;
             gesture->last_ms = now_ms;
             gesture->step_px = step_px;
+            gesture->axis = flick_axis;
         }
         return event;
     }
@@ -106,13 +109,15 @@ ui_touch_event_t ui_touch_gesture_step(ui_touch_gesture_t *gesture, bool down, i
         gesture->start_x = x;
         gesture->start_y = y;
         gesture->start_ms = now_ms;
-        gesture->last_along = axis == UI_TOUCH_AXIS_HORIZONTAL ? x : y;
+        gesture->axis = axis == UI_TOUCH_AXIS_HORIZONTAL ? axis : UI_TOUCH_AXIS_VERTICAL;
+        gesture->last_along = gesture->axis == UI_TOUCH_AXIS_HORIZONTAL ? x : y;
         gesture->last_ms = now_ms;
         event.kind = UI_TOUCH_EVENT_PRESSED;
         return event;
     }
     if (gesture->ignored) return event;
-    const int along = axis == UI_TOUCH_AXIS_HORIZONTAL ? x : y;
+    if (axis != UI_TOUCH_AXIS_FREE) gesture->axis = axis;
+    const int along = gesture->axis == UI_TOUCH_AXIS_HORIZONTAL ? x : y;
     const uint32_t elapsed = now_ms - gesture->last_ms;
     if (elapsed > 0U) {
         gesture->seen_px += gesture->pending_px;
@@ -128,9 +133,13 @@ ui_touch_event_t ui_touch_gesture_step(ui_touch_gesture_t *gesture, bool down, i
             abs(y - gesture->start_y) < UI_TOUCH_DRAG_SLOP_PX) {
             return event;
         }
+        if (axis == UI_TOUCH_AXIS_FREE &&
+            abs(x - gesture->start_x) > abs(y - gesture->start_y)) {
+            gesture->axis = UI_TOUCH_AXIS_HORIZONTAL;
+        }
         // From here, or the slop itself would count as the first bit of a row.
         gesture->dragging = true;
-        gesture->anchor = along;
+        gesture->anchor = gesture->axis == UI_TOUCH_AXIS_HORIZONTAL ? x : y;
         return event;
     }
     if (step_px <= 0) return event;
@@ -139,8 +148,14 @@ ui_touch_event_t ui_touch_gesture_step(ui_touch_gesture_t *gesture, bool down, i
         gesture->anchor += steps * step_px;
         event.kind = UI_TOUCH_EVENT_DRAG;
         event.steps = steps;
+        event.axis = gesture->axis;
     }
     return event;
+}
+
+ui_touch_axis_t ui_touch_gesture_axis(const ui_touch_gesture_t *gesture)
+{
+    return gesture != NULL ? gesture->axis : UI_TOUCH_AXIS_VERTICAL;
 }
 
 void ui_touch_gesture_ignore(ui_touch_gesture_t *gesture)

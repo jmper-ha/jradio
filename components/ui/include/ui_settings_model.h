@@ -163,6 +163,13 @@ ui_settings_model_result_t ui_settings_model_toggle_edit(ui_settings_model_t *mo
  * mutable model because scrolling is a change to remember, not a view derived
  * fresh each frame. */
 size_t ui_settings_model_window_top(ui_settings_model_t *model, size_t visible_count);
+/* Moves the window one row without being asked by the cursor, for the arrows
+ * under a finger. The cursor is carried along when the window would otherwise
+ * leave it behind, since the window follows it back on the next draw. Refused
+ * at either end, on a number being edited, and where the cursor would have to
+ * leave an open group. */
+ui_settings_model_result_t ui_settings_model_scroll(ui_settings_model_t *model, int direction,
+                                                    size_t visible_count);
 /* True when there are rows above or below the window - what the screen needs
  * to say the list continues. */
 bool ui_settings_model_has_rows_above(const ui_settings_model_t *model);

@@ -2730,6 +2730,13 @@ bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_se
         *total_seconds = brief.duration_ms / 1000U;
         return true;
     }
+    if (source == AUDIO_SOURCE_DLNA) {
+        /* Counted here rather than asked for: the server only hands out a file
+         * and has no idea how far anybody is into it. */
+        if (!internet_radio_track_elapsed(elapsed_seconds)) return false;
+        *total_seconds = dlna_source_playing_seconds();
+        return true;
+    }
     if (!audio_source_is_files(source)) return false;
 
     file_player_status_t status;

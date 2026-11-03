@@ -341,6 +341,10 @@ typedef struct {
      * runs thousands of times a second and this is one byte of display. */
     atomic_uint input_fill_percent;
     uint32_t output_sample_rate;
+    /* What has gone out of this track, for the position a chain shows. Apart
+     * from pcm_bytes, which a chain carries over every track for the health
+     * report. 64 bits and under s_status_lock: hi-res wraps 32 in about an hour. */
+    uint64_t track_pcm_bytes;
     /* The reopening under way, NULL when there is none. The decode task starts
      * it, takes or drops what it produced, and frees it - and does not end, or
      * open anything else of the chain, while one runs: the rotor's link
@@ -600,6 +604,9 @@ static esp_err_t radio_pcm_output(internet_radio_context_t *radio, const uint8_t
     }
     *written_out = written;
     radio->pcm_bytes += written;
+    taskENTER_CRITICAL(&s_status_lock);
+    radio->track_pcm_bytes += written;
+    taskEXIT_CRITICAL(&s_status_lock);
     if (block_start) radio->pcm_blocks++;
     if (block_start && radio->pcm_blocks <= 4U) {
         ESP_LOGI(TAG, "PCM progress: block=%u bytes=%u written=%u total=%u peak=%u",
@@ -1998,6 +2005,7 @@ static void radio_stream_reset_status(internet_radio_context_t *radio)
     radio->output_started = false;
     radio->output_sample_rate = 0U;
     taskENTER_CRITICAL(&s_status_lock);
+    radio->track_pcm_bytes = 0U;
     radio->status.bitrate_kbps = 0U;
     radio->status.sample_rate_hz = 0U;
     snprintf(radio->status.codec, sizeof(radio->status.codec), "%s",
@@ -2830,6 +2838,9 @@ static bool radio_direct_resume_track(internet_radio_context_t *radio)
     const size_t played_bytes = radio->pcm_bytes;
     const size_t played_blocks = radio->pcm_blocks;
     const size_t resume_offset = radio->track_offset;
+    taskENTER_CRITICAL(&s_status_lock);
+    const uint64_t track_bytes = radio->track_pcm_bytes;
+    taskEXIT_CRITICAL(&s_status_lock);
     radio->range_offset = resume_offset;
     const esp_err_t err = radio_stream_open(radio, url);
     radio->range_offset = 0U;
@@ -2845,6 +2856,11 @@ static bool radio_direct_resume_track(internet_radio_context_t *radio)
     // The open reset the counter to zero; the body it returned starts where
     // the pause stopped, unless the Range was refused.
     radio->track_offset = radio->range_granted ? resume_offset : 0U;
+    if (radio->range_granted) {
+        taskENTER_CRITICAL(&s_status_lock);
+        radio->track_pcm_bytes = track_bytes;
+        taskEXIT_CRITICAL(&s_status_lock);
+    }
     ESP_LOGI(TAG, "resumed the track at %u bytes%s", (unsigned int)resume_offset,
              radio->range_granted ? "" : " - the server ignored it and started over");
     return true;
@@ -3571,6 +3587,23 @@ void internet_radio_get_status(internet_radio_status_t *status)
     taskEXIT_CRITICAL(&s_status_lock);
     status->buffer_percent = (uint8_t)atomic_load_explicit(&s_radio.input_fill_percent,
                                                            memory_order_relaxed);
+}
+
+bool internet_radio_track_elapsed(uint32_t *seconds)
+{
+    if (seconds == NULL) return false;
+    taskENTER_CRITICAL(&s_status_lock);
+    const internet_radio_state_t state = s_radio.status.state;
+    const uint64_t bytes = s_radio.track_pcm_bytes;
+    const uint32_t rate = s_radio.output_sample_rate;
+    taskEXIT_CRITICAL(&s_status_lock);
+    if (rate == 0U ||
+        (state != INTERNET_RADIO_STATE_PLAYING && state != INTERNET_RADIO_STATE_PAUSED)) {
+        return false;
+    }
+    *seconds = (uint32_t)(bytes / ((uint64_t)rate * AUDIO_CHANNEL_COUNT *
+                                   (AUDIO_BITS_PER_SAMPLE / 8U)));
+    return true;
 }
 
 size_t internet_radio_station_count(void)

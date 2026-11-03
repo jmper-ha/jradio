@@ -155,6 +155,15 @@ function test_the_header_round_trips_and_names_every_option() {
   assert.deepStrictEqual(hw.parseHeader(hw.toHeader(touch)).unknown, []);
   assert.deepStrictEqual(hw.validate(touch).errors, []);
   assert.strictEqual(hw.busUsed(hw.setDeviceEnabled(touch, 'touch', false), 'i2c0'), false);
+  // Offered on the ST7796S only, and leaving that display takes it off the board.
+  assert.ok(hw.deviceOffered(hw.defaults(), 'touch'));
+  assert.ok(hw.deviceOffered({...hw.defaults(), display: 'st7796s_320_480'}, 'touch'));
+  assert.ok(!hw.deviceOffered({...hw.defaults(), display: 'ili9488_480_320'}, 'touch'));
+  assert.ok(hw.deviceOffered({...hw.defaults(), display: 'ili9488_480_320'}, 'rtc'));
+  assert.strictEqual(hw.changeValue(touch, 'display', 'st7796s_320_480').touch, 'ft6336u');
+  assert.strictEqual(hw.changeValue(touch, 'display', 'ili9341_320_240').touch, hw.NONE);
+  // The card sits under the display's, not with the rest of I2C0's.
+  assert.ok(hw.DEVICES.indexOf('touch') === hw.DEVICES.indexOf('spi2') + 1);
   assert.strictEqual(hw.busUsed(hw.setDeviceEnabled(both, 'rtc', false), 'i2c0'), true);
 }
 
@@ -437,6 +446,29 @@ function loadPage(browserLanguage) {
     vm.runInContext(fs.readFileSync(path.join(dir, file), 'utf8'), context, {filename: file});
   }
   return {document, window, storage};
+}
+
+function test_the_touch_card_goes_with_the_display() {
+  const {document} = loadPage();
+  const card = document.getElementById('hw-parts').querySelectorAll('.device-group')
+    .find((section) => section.dataset.device === 'touch');
+  assert.ok(!card.hidden);
+  // Off, nothing but the switch; on, a list of the one chip with no dash in it.
+  assert.ok(card.querySelectorAll('.hw-row').every((row) => row.hidden));
+  const toggle = document.getElementById('hw-enable-touch');
+  toggle.checked = true;
+  toggle.emit('change');
+  const chip = document.getElementById('hw-touch');
+  assert.deepStrictEqual(chip.children.map((option) => option.value), ['ft6336u']);
+  assert.strictEqual(chip.value, 'ft6336u');
+  const display = document.getElementById('hw-display');
+  display.value = 'ili9488_480_320';
+  display.emit('change');
+  assert.ok(card.hidden);
+  assert.ok(!document.getElementById('hw-csv').textContent.includes('TOUCH_CHIP TOUCH_CHIP_'));
+  display.value = 'st7796s_320_480';
+  display.emit('change');
+  assert.ok(!card.hidden);
 }
 
 function test_the_page_builds_every_part_and_follows_the_clicks() {
@@ -752,6 +784,7 @@ test_the_fm_tuner_asks_for_its_pins();
 test_the_tuner_is_chosen_by_chip_and_sound();
 test_the_warnings_that_do_not_stop_a_file();
 test_the_header_is_the_devkit();
+test_the_touch_card_goes_with_the_display();
 test_the_page_builds_every_part_and_follows_the_clicks();
 test_every_label_the_page_needs_is_in_the_dictionary();
 test_the_language_switch_and_the_first_visit();

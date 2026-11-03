@@ -231,8 +231,9 @@
     {key: 'rtc_i2c', kind: 'choice', device: 'rtc', options: ['0'], dflt: '0', bus: 'i2c'},
 
     /* A touch panel on the same I2C0. Its interrupt line is optional: without
-       it the chip is asked over the bus. */
-    {key: 'touch', kind: 'choice', device: 'touch', options: [NONE, 'ft6336u'], dflt: NONE, enables: true, define: 'TOUCH_CHIP'},
+       it the chip is asked over the bus. The card's switch says none, so the
+       chip's list (`picks`) has no dash in it. */
+    {key: 'touch', kind: 'choice', device: 'touch', options: [NONE, 'ft6336u'], picks: ['ft6336u'], dflt: NONE, enables: true, define: 'TOUCH_CHIP'},
     {key: 'touch_i2c', kind: 'choice', device: 'touch', options: ['0'], dflt: '0', bus: 'i2c'},
     {key: 'touch_int', kind: 'opt_pin', device: 'touch', dflt: NONE, define: 'TOUCH_INT_GPIO'},
 
@@ -251,8 +252,8 @@
      it - the display's SPI2, the DAC's I2S, the card's SPI3, the module's
      UART - so the wires sit next to what they serve. */
   const DEVICES = [
-    'board', 'tft', 'spi2', 'encoder', 'buttons', 'ir', 'dac', 'i2s0', 'amp', 'power',
-    'usb', 'sd', 'spi3', 'bluetooth', 'uart1', 'fm', 'rtc', 'touch', 'i2c0',
+    'board', 'tft', 'spi2', 'touch', 'encoder', 'buttons', 'ir', 'dac', 'i2s0', 'amp', 'power',
+    'usb', 'sd', 'spi3', 'bluetooth', 'uart1', 'fm', 'rtc', 'i2c0',
   ];
   const BUSES = ['spi2', 'spi3', 'i2s0', 'uart1', 'i2c0'];
 
@@ -356,6 +357,12 @@
     return !isNone(values[field.key]);
   }
 
+  /* Whether the page offers a device on this board. The touch panel has been
+     tried on the ST7796S only, and it is sold glued to that glass. */
+  function deviceOffered(values, device) {
+    return device !== 'touch' || String(values.display).startsWith('st7796s_');
+  }
+
   function setDeviceEnabled(values, device, enabled) {
     const next = {...values};
     const field = FIELDS.find((item) => item.device === device && item.enables);
@@ -390,6 +397,8 @@
     const field = FIELD_BY_KEY[key];
     if (field && field.virtual) return field.write(values, value);
     const next = {...values, [key]: value};
+    // Going with its card: nothing on the page could switch it off afterwards.
+    if (key === 'display' && !deviceOffered(next, 'touch')) return setDeviceEnabled(next, 'touch', false);
     if (key !== 'fm_i2s') return next;
     if (isNone(value)) {
       if (!deviceEnabled(next, 'adc')) next.i2s0_din = NONE;
@@ -844,7 +853,7 @@
   return {
     NONE, RESET, UNSET, FORMAT, FIELDS, FIELD_BY_KEY, DEVICES, BUSES, HEADER, MODULES, DISPLAYS,
     RTC_GPIO_MAX, USB_PINS,
-    defaults, headerPins, headerGpios, pinNote, deviceEnabled, setDeviceEnabled, changeValue, valueOf,
+    defaults, headerPins, headerGpios, pinNote, deviceEnabled, deviceOffered, setDeviceEnabled, changeValue, valueOf,
     busOf, busUsed, signals, pinMap, validate, toCsv, parseCsv, toHeader, parseHeader, isNone, pinValue,
   };
 });

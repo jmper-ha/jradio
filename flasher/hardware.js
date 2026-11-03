@@ -144,7 +144,7 @@
       const select = document.createElement('select');
       select.id = `hw-${field.key}`;
       select.dataset.key = field.key;
-      for (const value of field.options) {
+      for (const value of field.picks || field.options) {
         const element = document.createElement('option');
         element.value = value;
         /* A bus by its kind and number, as the single-bus link above: the
@@ -421,13 +421,16 @@
                       (!hw.BUSES.includes(device) || hw.busUsed(values, device));
       if (toggle) toggle.checked = enabled;
       section.classList.toggle('is-off', !enabled);
+      /* Still shown when a loaded file has it on: a card that is gone could not
+         be switched off, and the file would go on claiming the part. */
+      section.hidden = !hw.deviceOffered(values, device) && !enabled;
       for (const row of section.querySelectorAll('.hw-row')) {
         const field = hw.FIELD_BY_KEY[row.dataset.key];
         /* An enabling field that is a type (the clock's chip, the Bluetooth
            module) stays live, so it can be chosen before the rest of the rows
            appear; one that is a pin has nothing to say while the switch is
            off - the switch is the whole answer. */
-        row.hidden = (!enabled && !(field.enables && field.kind === 'choice')) ||
+        row.hidden = (!enabled && !(field.enables && field.kind === 'choice' && !field.picks)) ||
                      Boolean(field.when && !field.when(values));
       }
     }

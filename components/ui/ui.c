@@ -9446,6 +9446,15 @@ static void ui_touch_drag(ui_touch_target_t target, const ui_touch_event_t *even
         ui_touch_drag_quick(event);
         return;
     }
+    if (target == UI_TOUCH_TARGET_STRIP) {
+        // Back the way it came, and only that: up has nowhere further to take it.
+        if (event->coasting) ui_touch_gesture_stop_coast(&s_touch);
+        if (event->steps > 0) {
+            if (!event->coasting) ui_touch_gesture_ignore(&s_touch);
+            ui_strip_close();
+        }
+        return;
+    }
     const int steps = event->steps;
     const bool menu_fits = target == UI_TOUCH_TARGET_MENU &&
                            ui_menu_visible_count(ui_menu_visible_mask(&s_menu)) <= UI_MENU_ROWS_FIT;
@@ -9680,6 +9689,8 @@ static void ui_touch_poll(void)
                         : settings ? (sideways ? UI_TOUCH_VALUE_STEP_PX : UI_SET_ROW_PITCH)
                         : player   ? player_step_px
                         : quick    ? (sideways ? UI_TOUCH_VALUE_STEP_PX : UI_QUICK_ROW_H)
+                        // Short: a finger starting on the strip has only its height to go.
+                        : target == UI_TOUCH_TARGET_STRIP ? UI_TOUCH_VALUE_STEP_PX
                                    : UI_LIST_ROW_PITCH;
     const uint32_t now_ms = ui_tick_get_ms();
     if (!lv_obj_has_flag(s_volume_overlay, LV_OBJ_FLAG_HIDDEN) &&

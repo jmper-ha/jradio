@@ -354,8 +354,38 @@ static void test_a_point_on_the_scrollbar_is_an_item(void)
     assert(ui_touch_scrollbar_item(120, 100, 80, 0) == 0);
 }
 
+static void test_the_strip_holds_what_the_source_can_do(void)
+{
+    ui_touch_strip_item_t items[UI_TOUCH_STRIP_MAX_ITEMS];
+    // Bluetooth: nothing but the way out.
+    assert(ui_touch_strip_items(false, false, false, false, items) == 1U);
+    assert(items[0] == UI_TOUCH_STRIP_EXIT);
+    // A station.
+    assert(ui_touch_strip_items(true, false, false, false, items) == 2U);
+    assert(items[0] == UI_TOUCH_STRIP_LIST && items[1] == UI_TOUCH_STRIP_EXIT);
+    // A file.
+    assert(ui_touch_strip_items(true, true, false, false, items) == 3U);
+    assert(items[1] == UI_TOUCH_STRIP_SEEK && items[2] == UI_TOUCH_STRIP_EXIT);
+    // The tuner.
+    assert(ui_touch_strip_items(true, false, true, false, items) == 3U);
+    assert(items[1] == UI_TOUCH_STRIP_TUNE);
+    // A track of Yandex's, the fullest.
+    assert(ui_touch_strip_items(true, true, false, true, items) == 5U);
+    assert(items[2] == UI_TOUCH_STRIP_LIKE && items[3] == UI_TOUCH_STRIP_DISLIKE);
+    assert(items[4] == UI_TOUCH_STRIP_EXIT);
+
+    assert(ui_touch_strip_cell(0, 480, 4U) == 0);
+    assert(ui_touch_strip_cell(119, 480, 4U) == 0);
+    assert(ui_touch_strip_cell(120, 480, 4U) == 1);
+    assert(ui_touch_strip_cell(479, 480, 4U) == 3);
+    assert(ui_touch_strip_cell(480, 480, 4U) == -1);
+    assert(ui_touch_strip_cell(-1, 480, 4U) == -1);
+    assert(ui_touch_strip_cell(10, 480, 0U) == -1);
+}
+
 int main(void)
 {
+    test_the_strip_holds_what_the_source_can_do();
     test_a_point_on_the_scrollbar_is_an_item();
     test_only_the_middle_of_the_player_pauses();
     test_held_still_it_is_a_long_touch_once();

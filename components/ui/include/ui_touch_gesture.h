@@ -104,6 +104,27 @@ bool ui_touch_player_tap_toggles(int x, int y, int width, int height);
  * the end: a finger working a bar does not stay on 4 px of it. */
 int ui_touch_scrollbar_item(int y, int track_y, int track_h, int count);
 
+/* The action strip under the player, which gathers what a finger has no gesture
+ * for. Only what this source can do at this moment, so nothing on it is a press
+ * that answers with nothing. */
+typedef enum {
+    UI_TOUCH_STRIP_LIST = 0,
+    UI_TOUCH_STRIP_SEEK,
+    UI_TOUCH_STRIP_TUNE,
+    UI_TOUCH_STRIP_LIKE,
+    UI_TOUCH_STRIP_DISLIKE,
+    UI_TOUCH_STRIP_EXIT,
+} ui_touch_strip_item_t;
+
+#define UI_TOUCH_STRIP_MAX_ITEMS 5U
+
+// Fills `items`, in the order they stand on the strip, and says how many.
+unsigned ui_touch_strip_items(bool has_list, bool can_seek, bool can_tune, bool can_rate,
+                              ui_touch_strip_item_t items[UI_TOUCH_STRIP_MAX_ITEMS]);
+
+// Which of `count` equal cells across `width` is under `x`, or -1 outside them.
+int ui_touch_strip_cell(int x, int width, unsigned count);
+
 /* The row under `y`, counted from `first_y`, or -1 off either end. Rows are
  * hit by their pitch rather than their height, so the gap between two of them
  * belongs to one of them and a finger never lands on nothing. */

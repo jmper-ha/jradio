@@ -9068,6 +9068,7 @@ typedef enum {
     UI_TOUCH_TARGET_OVERLAY,
     UI_TOUCH_TARGET_PLAYER,
     UI_TOUCH_TARGET_QUICK,
+    UI_TOUCH_TARGET_STRIP,
 } ui_touch_target_t;
 
 // A carousel has no rows to set a pitch; this is a short push of the finger.
@@ -9098,6 +9099,159 @@ static uint32_t s_touch_arrow_ms;
 // The finger came down on the quick panel's scrollbar and is working it.
 static bool s_touch_quick_bar;
 
+/* The action strip over the bottom of the player. Built at init, like the quick
+ * panel, for the same reason: an allocation that runs the LVGL pool out is a
+ * silent hang, and on a gesture it would come on some random evening. */
+#define UI_TOUCH_STRIP_H 60
+#define UI_TOUCH_STRIP_IDLE_MS 5000U
+static lv_obj_t *s_strip;
+static lv_obj_t *s_strip_label[UI_TOUCH_STRIP_MAX_ITEMS];
+// The two marks the footer already shows for a track, in place of a word.
+static lv_obj_t *s_strip_icon[UI_TOUCH_STRIP_MAX_ITEMS];
+static lv_obj_t *s_strip_divider[UI_TOUCH_STRIP_MAX_ITEMS - 1U];
+static ui_touch_strip_item_t s_strip_items[UI_TOUCH_STRIP_MAX_ITEMS];
+static unsigned s_strip_count;
+static uint32_t s_strip_opened_ms;
+
+static void ui_strip_create(void)
+{
+    s_strip = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(s_strip);
+    lv_obj_remove_flag(s_strip, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(s_strip, TFT_WIDTH, UI_TOUCH_STRIP_H);
+    lv_obj_set_pos(s_strip, 0, TFT_HEIGHT - UI_TOUCH_STRIP_H);
+    ui_paint(s_strip, UI_PAINT_BG, UI_ROLE_TILE, 0);
+    lv_obj_set_style_bg_opa(s_strip, LV_OPA_COVER, 0);
+    ui_paint(s_strip, UI_PAINT_BORDER, UI_ROLE_TILE_EDGE, 0);
+    lv_obj_set_style_border_width(s_strip, 1, 0);
+    lv_obj_set_style_border_side(s_strip, LV_BORDER_SIDE_TOP, 0);
+    lv_obj_add_flag(s_strip, LV_OBJ_FLAG_HIDDEN);
+    for (unsigned index = 0U; index < UI_TOUCH_STRIP_MAX_ITEMS; ++index) {
+        s_strip_label[index] = lv_label_create(s_strip);
+        lv_obj_set_style_text_font(s_strip_label[index], UI_FONT_BODY, 0);
+        lv_obj_set_style_text_align(s_strip_label[index], LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(s_strip_label[index], LV_LABEL_LONG_CLIP);
+        ui_paint(s_strip_label[index], UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
+        lv_label_set_text(s_strip_label[index], "");
+
+        s_strip_icon[index] = lv_image_create(s_strip);
+        lv_obj_remove_style_all(s_strip_icon[index]);
+        lv_image_set_src(s_strip_icon[index], &ui_feed_icon_heart_16);
+        lv_obj_set_size(s_strip_icon[index], 16, 16);
+        lv_image_set_scale(s_strip_icon[index], 512);
+        ui_paint(s_strip_icon[index], UI_PAINT_RECOLOR, UI_ROLE_TEXT, 0);
+        lv_obj_set_style_image_recolor_opa(s_strip_icon[index], LV_OPA_COVER, 0);
+        lv_obj_add_flag(s_strip_icon[index], LV_OBJ_FLAG_HIDDEN);
+    }
+    for (unsigned index = 0U; index + 1U < UI_TOUCH_STRIP_MAX_ITEMS; ++index) {
+        s_strip_divider[index] = lv_obj_create(s_strip);
+        lv_obj_remove_style_all(s_strip_divider[index]);
+        lv_obj_set_size(s_strip_divider[index], 1, UI_TOUCH_STRIP_H - 20);
+        ui_paint(s_strip_divider[index], UI_PAINT_BG, UI_ROLE_DIVIDER, 0);
+        lv_obj_set_style_bg_opa(s_strip_divider[index], LV_OPA_COVER, 0);
+    }
+}
+
+static bool ui_strip_is_open(void)
+{
+    return s_strip != NULL && !lv_obj_has_flag(s_strip, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void ui_strip_close(void)
+{
+    if (ui_strip_is_open()) lv_obj_add_flag(s_strip, LV_OBJ_FLAG_HIDDEN);
+}
+
+static device_text_id_t ui_strip_text(ui_touch_strip_item_t item)
+{
+    switch (item) {
+    case UI_TOUCH_STRIP_LIST: return DEVICE_TEXT_STRIP_LIST;
+    case UI_TOUCH_STRIP_SEEK: return DEVICE_TEXT_STRIP_SEEK;
+    case UI_TOUCH_STRIP_TUNE: return DEVICE_TEXT_STRIP_TUNE;
+    default: return DEVICE_TEXT_STRIP_EXIT;
+    }
+}
+
+static void ui_strip_open(void)
+{
+    const audio_source_t source = ui_player_state_source(&s_player_ui);
+    const player_playback_state_t playback = ui_player_state_playback(&s_player_ui);
+    /* The same questions the encoder's presses ask on this screen, so the strip
+     * offers what they would do. */
+    const bool has_list = audio_source_is_stations(source) || audio_source_is_files(source) ||
+                          source == AUDIO_SOURCE_DLNA || source == AUDIO_SOURCE_FM;
+    const bool fm = source == AUDIO_SOURCE_FM;
+    const bool tunable =
+        fm && (playback == PLAYER_PLAYBACK_PLAYING || playback == PLAYER_PLAYBACK_PAUSED);
+    s_strip_count = ui_touch_strip_items(has_list, !fm && ui_seek_available(), tunable,
+                                         source == AUDIO_SOURCE_YANDEX, s_strip_items);
+    const int cell = TFT_WIDTH / (int)s_strip_count;
+    for (unsigned index = 0U; index < UI_TOUCH_STRIP_MAX_ITEMS; ++index) {
+        lv_obj_t *label = s_strip_label[index];
+        lv_obj_t *icon = s_strip_icon[index];
+        const bool has_icon =
+            index < s_strip_count && (s_strip_items[index] == UI_TOUCH_STRIP_LIKE ||
+                                      s_strip_items[index] == UI_TOUCH_STRIP_DISLIKE);
+        if (has_icon) {
+            lv_image_set_src(icon, s_strip_items[index] == UI_TOUCH_STRIP_LIKE
+                                       ? &ui_feed_icon_heart_16
+                                       : &ui_feed_icon_heart_slash_16);
+            lv_obj_set_pos(icon, (int)index * cell + (cell - 16) / 2, (UI_TOUCH_STRIP_H - 16) / 2);
+            lv_obj_remove_flag(icon, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(icon, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (index >= s_strip_count || has_icon) {
+            lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            ui_set_label_text_if_changed(label, ui_text(ui_strip_text(s_strip_items[index])));
+            lv_obj_set_width(label, cell - 4);
+            lv_obj_set_pos(label, (int)index * cell + 2, (UI_TOUCH_STRIP_H - UI_FONT_BODY_LINE_H) / 2);
+            lv_obj_remove_flag(label, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (index + 1U < UI_TOUCH_STRIP_MAX_ITEMS) {
+            lv_obj_t *divider = s_strip_divider[index];
+            if (index + 1U < s_strip_count) {
+                lv_obj_set_pos(divider, (int)(index + 1U) * cell, 10);
+                lv_obj_remove_flag(divider, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(divider, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+    }
+    s_strip_opened_ms = ui_tick_get_ms();
+    lv_obj_remove_flag(s_strip, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void ui_touch_tap_strip(int x, int y)
+{
+    const int cell = y >= TFT_HEIGHT - UI_TOUCH_STRIP_H
+                         ? ui_touch_strip_cell(x, TFT_WIDTH, s_strip_count)
+                         : -1;
+    ui_strip_close();
+    if (cell < 0) return;
+    switch (s_strip_items[cell]) {
+    case UI_TOUCH_STRIP_LIST:
+        ui_open_source_list(ui_player_state_source(&s_player_ui));
+        break;
+    case UI_TOUCH_STRIP_SEEK:
+        ui_begin_seek();
+        break;
+    case UI_TOUCH_STRIP_TUNE:
+        ui_begin_fm_tune();
+        break;
+    case UI_TOUCH_STRIP_LIKE:
+        ui_submit_like_press(false);
+        break;
+    case UI_TOUCH_STRIP_DISLIKE:
+        ui_submit_like_press(true);
+        break;
+    case UI_TOUCH_STRIP_EXIT:
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_LONG);
+        break;
+    }
+}
+
 /* Who the finger is talking to. Nobody, on anything that sits over a screen:
  * the update's question above all, where the press this would send is a yes. */
 static ui_touch_target_t ui_touch_target(void)
@@ -9111,8 +9265,8 @@ static ui_touch_target_t ui_touch_target(void)
     const ui_player_view_t view = ui_player_state_view(&s_player_ui);
     if (view == UI_PLAYER_VIEW_STATION_LIST) return UI_TOUCH_TARGET_STATIONS;
     if (view == UI_PLAYER_VIEW_SOURCE) {
-        return lv_screen_active() == s_source_screen ? UI_TOUCH_TARGET_PLAYER
-                                                     : UI_TOUCH_TARGET_NONE;
+        if (lv_screen_active() != s_source_screen) return UI_TOUCH_TARGET_NONE;
+        return ui_strip_is_open() ? UI_TOUCH_TARGET_STRIP : UI_TOUCH_TARGET_PLAYER;
     }
     if (view != UI_PLAYER_VIEW_MENU) return UI_TOUCH_TARGET_NONE;
     if (s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED &&
@@ -9181,6 +9335,19 @@ static void ui_touch_arrow_step(uint32_t now_ms)
     }
 }
 
+/* Tuning by hand, a tap ends it and two search the air for the next station, the
+ * way that side of the screen goes. So the one tap has to wait out the second,
+ * which it need not anywhere else. */
+static ui_click_gesture_t s_touch_fm_click;
+
+static void ui_touch_tap_fm_tune(int x)
+{
+    if (ui_click_gesture_press(&s_touch_fm_click, ui_tick_get_ms(), false) == UI_CLICK_DOUBLE) {
+        ui_handle_input(x >= TFT_WIDTH / 2 ? BOARD_INPUT_ACTION_BTN_NEXT
+                                           : BOARD_INPUT_ACTION_BTN_PREV);
+    }
+}
+
 // A position or a frequency under the finger: a mode that owns the whole screen.
 static bool ui_touch_player_in_mode(void)
 {
@@ -9198,6 +9365,13 @@ static void ui_touch_drag_player(const ui_touch_event_t *event)
     if (ui_touch_player_in_mode()) {
         if (sideways) {
             ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_RIGHT, BOARD_INPUT_ACTION_ENCODER_LEFT);
+        } else if (steps < 0 && ui_touch_player_drag(s_touch.start_x, s_touch.start_y, event->axis,
+                                                     TFT_WIDTH, TFT_HEIGHT) ==
+                                    UI_TOUCH_PLAYER_ACTION_STRIP) {
+            // Up from the bottom edge, where the strip comes from: leave it all as it was.
+            ui_touch_gesture_ignore(&s_touch);
+            ui_end_seek();
+            ui_end_fm_tune(false);
         }
         return;
     }
@@ -9222,6 +9396,10 @@ static void ui_touch_drag_player(const ui_touch_event_t *event)
     case UI_TOUCH_PLAYER_QUICK_PANEL:
         ui_touch_gesture_ignore(&s_touch);
         if (steps > 0) ui_handle_input(BOARD_INPUT_ACTION_QUICK_MENU);
+        break;
+    case UI_TOUCH_PLAYER_ACTION_STRIP:
+        ui_touch_gesture_ignore(&s_touch);
+        if (steps < 0) ui_strip_open();
         break;
     default:
         break;
@@ -9437,7 +9615,19 @@ static void ui_touch_long(ui_touch_target_t target)
          * more easily than a thumb holds a knob down. */
         ui_close_station_list_to_source();
         break;
+    case UI_TOUCH_TARGET_STRIP:
+        ui_strip_close();
+        break;
     case UI_TOUCH_TARGET_PLAYER:
+        /* Scrubbing, it is the way out with the position left where it was:
+         * stopping the music is not what somebody changing their mind is after.
+         * Tuning, it keeps the frequency as a preset, as the encoder's does. */
+        if (ui_seek_is_active(&s_player_seek)) {
+            ui_end_seek();
+            break;
+        }
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_LONG);
+        break;
     case UI_TOUCH_TARGET_YANDEX:
     case UI_TOUCH_TARGET_SETTINGS:
     case UI_TOUCH_TARGET_OVERLAY:
@@ -9460,6 +9650,12 @@ static void ui_touch_poll(void)
     const bool settings = target == UI_TOUCH_TARGET_SETTINGS;
     const bool player = target == UI_TOUCH_TARGET_PLAYER;
     const bool quick = target == UI_TOUCH_TARGET_QUICK;
+    // Gone the moment it stops being the screen it was opened over.
+    if (ui_strip_is_open() &&
+        (target != UI_TOUCH_TARGET_STRIP ||
+         (uint32_t)(ui_tick_get_ms() - s_strip_opened_ms) >= UI_TOUCH_STRIP_IDLE_MS)) {
+        ui_strip_close();
+    }
     const bool sideways = ui_touch_gesture_axis(&s_touch) == UI_TOUCH_AXIS_HORIZONTAL;
     const int player_step_px =
         sideways ? (ui_touch_player_in_mode() ? UI_TOUCH_VALUE_STEP_PX : UI_TOUCH_SWIPE_PX)
@@ -9477,6 +9673,10 @@ static void ui_touch_poll(void)
     if (!lv_obj_has_flag(s_volume_overlay, LV_OBJ_FLAG_HIDDEN) &&
         (!player || (uint32_t)(now_ms - s_volume_overlay_shown_ms) >= UI_VOLUME_OVERLAY_MS)) {
         lv_obj_add_flag(s_volume_overlay, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (ui_click_gesture_poll(&s_touch_fm_click, now_ms) == UI_CLICK_SINGLE &&
+        ui_fm_tune_is_active(&s_fm_tune)) {
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
     }
     const ui_touch_event_t event = ui_touch_gesture_step(
         &s_touch, down, point.x, point.y, now_ms,
@@ -9542,7 +9742,9 @@ static void ui_touch_poll(void)
         case UI_TOUCH_TARGET_PLAYER:
             /* At once, unlike the press: the press has to wait to tell itself
              * from a double and a triple, and nothing here looks like either. */
-            if (ui_touch_player_in_mode()) {
+            if (ui_fm_tune_is_active(&s_fm_tune)) {
+                ui_touch_tap_fm_tune(event.x);
+            } else if (ui_touch_player_in_mode()) {
                 ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
             } else if (ui_touch_player_tap_toggles(event.x, event.y, TFT_WIDTH, TFT_HEIGHT)) {
                 ui_toggle_playback();
@@ -9550,6 +9752,9 @@ static void ui_touch_poll(void)
             break;
         case UI_TOUCH_TARGET_QUICK:
             ui_touch_tap_quick(event.x, event.y);
+            break;
+        case UI_TOUCH_TARGET_STRIP:
+            ui_touch_tap_strip(event.x, event.y);
             break;
         default:
             break;
@@ -9567,6 +9772,7 @@ static void ui_task(void *arg)
 {
     (void)arg;
     ui_touch_gesture_init(&s_touch);
+    ui_click_gesture_init(&s_touch_fm_click);
     while (true) {
         board_input_action_t action;
         if (xQueueReceive(s_input_queue, &action, pdMS_TO_TICKS(10)) == pdTRUE) {
@@ -9957,6 +10163,7 @@ esp_err_t ui_init(void)
     ui_create_weather_saver();
     ui_quick_create();
     ui_volume_overlay_create();
+    ui_strip_create();
     ui_ota_create();
     ui_quick_menu_init(&s_quick);
     /* Always there, both of them: the backlight is what somebody reaches for

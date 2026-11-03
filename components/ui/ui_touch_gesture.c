@@ -200,6 +200,28 @@ int ui_touch_scrollbar_item(int y, int track_y, int track_h, int count)
     return item < count ? item : count - 1;
 }
 
+unsigned ui_touch_strip_items(bool has_list, bool can_seek, bool can_tune, bool can_rate,
+                              ui_touch_strip_item_t items[UI_TOUCH_STRIP_MAX_ITEMS])
+{
+    unsigned count = 0U;
+    if (has_list) items[count++] = UI_TOUCH_STRIP_LIST;
+    if (can_seek) items[count++] = UI_TOUCH_STRIP_SEEK;
+    if (can_tune) items[count++] = UI_TOUCH_STRIP_TUNE;
+    if (can_rate) {
+        items[count++] = UI_TOUCH_STRIP_LIKE;
+        items[count++] = UI_TOUCH_STRIP_DISLIKE;
+    }
+    // There always is a way out, and it stands last: furthest from a slip.
+    if (count < UI_TOUCH_STRIP_MAX_ITEMS) items[count++] = UI_TOUCH_STRIP_EXIT;
+    return count;
+}
+
+int ui_touch_strip_cell(int x, int width, unsigned count)
+{
+    if (width <= 0 || count == 0U || x < 0 || x >= width) return -1;
+    return x * (int)count / width;
+}
+
 int ui_touch_row_at(int y, int first_y, int pitch, int rows)
 {
     if (pitch <= 0 || y < first_y) return -1;

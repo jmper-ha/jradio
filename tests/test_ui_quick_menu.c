@@ -37,7 +37,7 @@ static void test_the_button_opens_and_closes(void)
     assert(!state.open);
 }
 
-static void test_the_knob_walks_the_rows_and_wraps(void)
+static void test_the_knob_walks_the_rows_and_stops_at_the_ends(void)
 {
     ui_quick_menu_t state;
     open_with_all_rows(&state);
@@ -59,13 +59,17 @@ static void test_the_knob_walks_the_rows_and_wraps(void)
                UI_QUICK_RESULT_MOVED);
         assert(state.item == sound[index]);
     }
-    /* Round the end, so the last row is not a dead stop. */
+    /* The last row is the end of the list, and the first the other end. */
     assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1400U) ==
-           UI_QUICK_RESULT_MOVED);
-    assert(state.item == UI_QUICK_ITEM_SLEEP);
-    assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_LEFT, 1500U) ==
-           UI_QUICK_RESULT_MOVED);
+           UI_QUICK_RESULT_NONE);
     assert(state.item == UI_QUICK_ITEM_BT_OUTPUT);
+    for (int step = 0; step < 7; ++step) {
+        (void)ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_LEFT, 1500U);
+    }
+    assert(state.item == UI_QUICK_ITEM_SLEEP);
+    assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_LEFT, 1600U) ==
+           UI_QUICK_RESULT_NONE);
+    assert(state.item == UI_QUICK_ITEM_SLEEP);
 }
 
 static void test_the_click_hands_the_knob_to_the_value(void)
@@ -244,11 +248,29 @@ static void test_the_list_scrolls_under_the_window(void)
     assert(ui_quick_menu_row_item(&state, 0U) == UI_QUICK_ITEM_BASS);
     assert(ui_quick_menu_row_item(&state, 3U) == UI_QUICK_ITEM_BT_OUTPUT);
 
-    // Round to the first: the window goes back to the top.
-    (void)ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1200U);
-    assert(state.item == UI_QUICK_ITEM_SLEEP);
-    assert(ui_quick_menu_cursor_row(&state) == 0U);
-    assert(ui_quick_menu_row_item(&state, 0U) == UI_QUICK_ITEM_SLEEP);
+    // Up walks the cursor here; on the first row it has nothing left to walk.
+    assert(!ui_quick_menu_up_closes(&state));
+    ui_quick_menu_t first;
+    open_with_all_rows(&first);
+    assert(ui_quick_menu_up_closes(&first));
+    (void)ui_quick_menu_handle(&first, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1200U);
+    assert(!ui_quick_menu_up_closes(&first));
+    // On to brightness: the two rows between are switches, which do not edit.
+    (void)ui_quick_menu_handle(&first, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1210U);
+    (void)ui_quick_menu_handle(&first, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1220U);
+    (void)ui_quick_menu_handle(&first, BOARD_INPUT_ACTION_ENCODER_BUTTON, 1300U);
+    assert(first.editing);
+    assert(ui_quick_menu_up_closes(&first));
+    ui_quick_menu_close(&first);
+    assert(!ui_quick_menu_up_closes(&first));
+
+    // A window tall enough for all of them has nothing to scroll.
+    ui_quick_menu_set_rows(&state, 9U);
+    assert(state.top == 0U);
+    assert(ui_quick_menu_cursor_row(&state) == 7U);
+    assert(ui_quick_menu_row_item(&state, 7U) == UI_QUICK_ITEM_BT_OUTPUT);
+    assert(ui_quick_menu_row_item(&state, 8U) == UI_QUICK_ITEM_COUNT);
+    assert(ui_quick_menu_up_closes(&state));
 }
 
 /* A click on a switch flips it at once and leaves the knob on the rows; on a
@@ -440,7 +462,7 @@ static void test_null_is_survivable(void)
 int main(void)
 {
     test_the_button_opens_and_closes();
-    test_the_knob_walks_the_rows_and_wraps();
+    test_the_knob_walks_the_rows_and_stops_at_the_ends();
     test_the_click_hands_the_knob_to_the_value();
     test_holding_and_the_other_buttons_close_it();
     test_a_row_that_disappears_takes_the_cursor_with_it();

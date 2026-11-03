@@ -55,7 +55,8 @@ typedef uint32_t ui_quick_mask_t;
 #define UI_QUICK_VISIBLE(item) ((ui_quick_mask_t)1U << (unsigned)(item))
 #define UI_QUICK_VISIBLE_ALL ((ui_quick_mask_t)~(ui_quick_mask_t)0U)
 
-/* How many rows the window shows at once. It was all of them until the sound
+/* How many rows the window shows at once, unless the panel has room for more
+ * and says so through ui_quick_menu_set_rows(). It was all of them until the sound
  * moved in (2026-10-18): seven functions do not fit the height the layout
  * leaves, so the list scrolls under a window of four, and ui.c asserts this
  * against that height.
@@ -74,6 +75,7 @@ typedef struct {
     /* The first of the rows on screen, counted in visible items rather than in
      * enum values: the window scrolls, and what scrolls is what is drawn. */
     uint8_t top;
+    uint8_t rows;
     ui_quick_mask_t visible;
     uint32_t last_input_ms;
 } ui_quick_menu_t;
@@ -106,6 +108,14 @@ void ui_quick_menu_init(ui_quick_menu_t *state);
 /* Setting a row invisible moves the cursor off it, and leaves edit mode with
  * it: a knob still assigned to a row that is no longer drawn would change a
  * value nobody can see. */
+/* The window's height in rows: a number of the panel's shape, which this model
+ * does not know, so ui.c hands it over. */
+void ui_quick_menu_set_rows(ui_quick_menu_t *state, uint8_t rows);
+/* Whether a finger going up pushes the window back where it came from, rather
+ * than walking the cursor: only where up has nothing else to do - a row being
+ * edited, a list with nothing to scroll, a cursor already on the first row. */
+bool ui_quick_menu_up_closes(const ui_quick_menu_t *state);
+
 void ui_quick_menu_set_visible(ui_quick_menu_t *state, ui_quick_item_t item, bool visible);
 bool ui_quick_menu_item_visible(const ui_quick_menu_t *state, ui_quick_item_t item);
 uint8_t ui_quick_menu_visible_count(const ui_quick_menu_t *state);
@@ -144,7 +154,7 @@ extern const uint16_t ui_quick_sleep_choices[UI_QUICK_SLEEP_CHOICE_COUNT];
 uint16_t ui_quick_sleep_step(uint16_t minutes, int direction);
 
 /* What the window draws, row by row. `row` counts from the top of the window,
- * 0..UI_QUICK_ROWS-1, and a window with fewer functions than rows answers
+ * 0..rows-1, and a window with fewer functions than rows answers
  * UI_QUICK_ITEM_COUNT for the rows that have nothing in them. */
 ui_quick_item_t ui_quick_menu_row_item(const ui_quick_menu_t *state, uint8_t row);
 /* Which of those rows carries the cursor. */

@@ -13,6 +13,9 @@
 /* The player screen's edges and its volume strip. A finger aimed at a mark lands
  * anywhere over 44 px, so a band much narrower would need aiming at. */
 #define UI_TOUCH_PLAYER_EDGE_PX 36
+/* Wider at the top, where nothing else wants an up-and-down: a pull started just
+ * below the edge missed it on the bench, at y = 45 and 75 on the portrait panel. */
+#define UI_TOUCH_PLAYER_TOP_PX 80
 #define UI_TOUCH_PLAYER_VOLUME_W 70
 
 /* What a flick is, and how the list rolls on from one.
@@ -181,7 +184,7 @@ ui_touch_player_drag_t ui_touch_player_drag(int start_x, int start_y, ui_touch_a
                                             int width, int height)
 {
     if (axis == UI_TOUCH_AXIS_HORIZONTAL) return UI_TOUCH_PLAYER_SKIP;
-    if (start_y < UI_TOUCH_PLAYER_EDGE_PX) return UI_TOUCH_PLAYER_QUICK_PANEL;
+    if (start_y < UI_TOUCH_PLAYER_TOP_PX) return UI_TOUCH_PLAYER_QUICK_PANEL;
     if (start_y >= height - UI_TOUCH_PLAYER_EDGE_PX) return UI_TOUCH_PLAYER_ACTION_STRIP;
     return start_x >= width - UI_TOUCH_PLAYER_VOLUME_W ? UI_TOUCH_PLAYER_VOLUME
                                                        : UI_TOUCH_PLAYER_NOTHING;
@@ -191,6 +194,13 @@ bool ui_touch_player_tap_toggles(int x, int y, int width, int height)
 {
     return x >= width / 4 && x < width - width / 4 && y >= height / 4 &&
            y < height - height / 4;
+}
+
+ui_touch_axis_t ui_touch_player_axis(int start_y, int height)
+{
+    return start_y < UI_TOUCH_PLAYER_EDGE_PX || start_y >= height - UI_TOUCH_PLAYER_EDGE_PX
+               ? UI_TOUCH_AXIS_VERTICAL
+               : UI_TOUCH_AXIS_FREE;
 }
 
 int ui_touch_scrollbar_item(int y, int track_y, int track_h, int count)

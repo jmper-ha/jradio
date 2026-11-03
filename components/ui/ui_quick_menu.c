@@ -10,19 +10,16 @@ static bool item_visible(ui_quick_mask_t visible, ui_quick_item_t item)
     return (visible & UI_QUICK_VISIBLE(item)) != 0U;
 }
 
-/* The next visible row in `direction`, wrapping. Walks at most one full turn,
- * so a mask with a single row answers with that row rather than spinning. */
+/* The next visible row in `direction`, or the same one at either end of the
+ * list: going round lost the place, a scroll that ends says where it is. */
 static ui_quick_item_t item_step(ui_quick_item_t item, int direction, ui_quick_mask_t visible)
 {
     const int count = (int)UI_QUICK_ITEM_COUNT;
-    int next = (int)item;
-    for (int taken = 0; taken < count; ++taken) {
-        next += direction > 0 ? 1 : -1;
-        if (next >= count) next = 0;
-        if (next < 0) next = count - 1;
-        if (item_visible(visible, (ui_quick_item_t)next)) break;
+    for (int next = (int)item + (direction > 0 ? 1 : -1); next >= 0 && next < count;
+         next += direction > 0 ? 1 : -1) {
+        if (item_visible(visible, (ui_quick_item_t)next)) return (ui_quick_item_t)next;
     }
-    return (ui_quick_item_t)next;
+    return item;
 }
 
 /* The cursor's place in the visible sequence, and the item at a given place:
@@ -65,17 +62,17 @@ static uint8_t visible_count(ui_quick_mask_t visible)
 static void clamp_window(ui_quick_menu_t *state)
 {
     const uint8_t count = visible_count(state->visible);
-    if (count <= (uint8_t)UI_QUICK_ROWS) {
+    if (count <= state->rows) {
         state->top = 0U;
         return;
     }
-    const uint8_t last_top = (uint8_t)(count - (uint8_t)UI_QUICK_ROWS);
+    const uint8_t last_top = (uint8_t)(count - state->rows);
     if (state->top > last_top) state->top = last_top;
     const uint8_t at = position_of(state->visible, state->item);
     if (at < state->top) {
         state->top = at;
-    } else if (at >= (uint8_t)(state->top + (uint8_t)UI_QUICK_ROWS)) {
-        state->top = (uint8_t)(at - (uint8_t)UI_QUICK_ROWS + 1U);
+    } else if (at >= (uint8_t)(state->top + state->rows)) {
+        state->top = (uint8_t)(at - state->rows + 1U);
     }
 }
 
@@ -101,7 +98,15 @@ void ui_quick_menu_init(ui_quick_menu_t *state)
                      UI_QUICK_VISIBLE(UI_QUICK_ITEM_BASS) | UI_QUICK_VISIBLE(UI_QUICK_ITEM_TREBLE) |
                      UI_QUICK_VISIBLE(UI_QUICK_ITEM_LOUDNESS);
     state->top = 0U;
+    state->rows = (uint8_t)UI_QUICK_ROWS;
     state->last_input_ms = 0U;
+}
+
+void ui_quick_menu_set_rows(ui_quick_menu_t *state, uint8_t rows)
+{
+    if (state == NULL || rows == 0U) return;
+    state->rows = rows;
+    clamp_window(state);
 }
 
 void ui_quick_menu_set_visible(ui_quick_menu_t *state, ui_quick_item_t item, bool visible)
@@ -212,9 +217,16 @@ bool ui_quick_menu_idle_expired(const ui_quick_menu_t *state, uint32_t now_ms)
     return (uint32_t)(now_ms - state->last_input_ms) >= UI_QUICK_MENU_IDLE_MS;
 }
 
+bool ui_quick_menu_up_closes(const ui_quick_menu_t *state)
+{
+    if (state == NULL || !state->open) return false;
+    return state->editing || visible_count(state->visible) <= state->rows ||
+           position_of(state->visible, state->item) == 0U;
+}
+
 ui_quick_item_t ui_quick_menu_row_item(const ui_quick_menu_t *state, uint8_t row)
 {
-    if (state == NULL || row >= (uint8_t)UI_QUICK_ROWS) return UI_QUICK_ITEM_COUNT;
+    if (state == NULL || row >= state->rows) return UI_QUICK_ITEM_COUNT;
     return item_at_position(state->visible, (uint8_t)(state->top + row));
 }
 

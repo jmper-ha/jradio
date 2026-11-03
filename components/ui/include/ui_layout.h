@@ -482,7 +482,7 @@ _Static_assert(UI_QR_CAPTION_X + UI_QR_CAPTION_W <= TFT_WIDTH,
  * it. ui.c includes both and asserts that the two numbers agree, the same way
  * the font line heights are a checked copy. */
 #ifndef UI_QUICK_ROW_COUNT
-#define UI_QUICK_ROW_COUNT 4
+#define UI_QUICK_ROW_COUNT 4U
 #endif
 #ifndef UI_QUICK_W
 #define UI_QUICK_W ((TFT_WIDTH * 4) / 5)

@@ -328,6 +328,14 @@ static void test_a_player_drag_is_told_by_where_it_began(void)
            UI_TOUCH_PLAYER_ACTION_STRIP);
     assert(ui_touch_player_drag(100, 150, UI_TOUCH_AXIS_VERTICAL, 480, 320) ==
            UI_TOUCH_PLAYER_NOTHING);
+    // Started a little below the top edge it is still the pull.
+    assert(ui_touch_player_drag(145, 75, UI_TOUCH_AXIS_VERTICAL, 320, 480) ==
+           UI_TOUCH_PLAYER_QUICK_PANEL);
+    assert(ui_touch_player_axis(0, 480) == UI_TOUCH_AXIS_VERTICAL);
+    assert(ui_touch_player_axis(35, 480) == UI_TOUCH_AXIS_VERTICAL);
+    assert(ui_touch_player_axis(36, 480) == UI_TOUCH_AXIS_FREE);
+    assert(ui_touch_player_axis(443, 480) == UI_TOUCH_AXIS_FREE);
+    assert(ui_touch_player_axis(444, 480) == UI_TOUCH_AXIS_VERTICAL);
 }
 
 static void test_only_the_middle_of_the_player_pauses(void)

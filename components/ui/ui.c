@@ -6710,14 +6710,14 @@ static ui_quick_menu_t s_quick;
 static lv_obj_t *s_quick_window;
 /* One set of widgets per drawn row, rewritten as the list scrolls under them:
  * the rows are positions on the window, not the functions themselves. */
-static lv_obj_t *s_quick_row[UI_QUICK_ROWS];
-static lv_obj_t *s_quick_name[UI_QUICK_ROWS];
-static lv_obj_t *s_quick_value[UI_QUICK_ROWS];
+static lv_obj_t *s_quick_row[UI_QUICK_ROW_COUNT];
+static lv_obj_t *s_quick_name[UI_QUICK_ROW_COUNT];
+static lv_obj_t *s_quick_value[UI_QUICK_ROW_COUNT];
 /* Every row carries both a reading and a switch, and shows the one its function
  * needs: the two kinds of row have to line up on the same right edge, and a
  * widget created when the cursor first lands on a switch is an allocation on a
  * button press - the thing this window is built at start-up to avoid. */
-static lv_obj_t *s_quick_switch[UI_QUICK_ROWS];
+static lv_obj_t *s_quick_switch[UI_QUICK_ROW_COUNT];
 /* In the window's right padding, which the cursor's fill stops short of. It is
  * what says there is more below: four rows look like the whole list. */
 #define UI_QUICK_BAR_W 4
@@ -6725,8 +6725,6 @@ static lv_obj_t *s_quick_switch[UI_QUICK_ROWS];
 #define UI_QUICK_BAR_THUMB_MIN_H 12
 static lv_obj_t *s_quick_bar;
 static lv_obj_t *s_quick_bar_thumb;
-_Static_assert(UI_QUICK_ROWS == UI_QUICK_ROW_COUNT,
-               "the model draws a different number of rows than the layout leaves room for");
 /* Whether the window is up, which is not the same as the model being open: the
  * closing slide still runs for a fifth of a second after the model has let go
  * of the knob. */
@@ -6734,9 +6732,9 @@ static bool s_quick_visible;
 /* What is on the window now, so a poll that finds nothing changed costs no
  * invalidation. The panel is polled a hundred times a second and LVGL repaints
  * a label whose text is set again whether or not the text differs. */
-static char s_quick_value_shown[UI_QUICK_ROWS][32];
-static ui_quick_item_t s_quick_item_shown[UI_QUICK_ROWS];
-static bool s_quick_switch_shown[UI_QUICK_ROWS];
+static char s_quick_value_shown[UI_QUICK_ROW_COUNT][32];
+static ui_quick_item_t s_quick_item_shown[UI_QUICK_ROW_COUNT];
+static bool s_quick_switch_shown[UI_QUICK_ROW_COUNT];
 /* 0xFF means "nothing is highlighted yet", which is what the window is on the
  * pass that puts it up: without it the first row's fill would be skipped as
  * already correct. */
@@ -6972,7 +6970,7 @@ static void ui_quick_create(void)
     lv_obj_remove_style_all(s_quick_bar);
     lv_obj_remove_flag(s_quick_bar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(s_quick_bar, UI_QUICK_BAR_X, UI_QUICK_PAD_Y);
-    lv_obj_set_size(s_quick_bar, UI_QUICK_BAR_W, UI_QUICK_ROWS * UI_QUICK_ROW_H);
+    lv_obj_set_size(s_quick_bar, UI_QUICK_BAR_W, UI_QUICK_ROW_COUNT * UI_QUICK_ROW_H);
     lv_obj_set_style_radius(s_quick_bar, 2, 0);
     ui_paint(s_quick_bar, UI_PAINT_BG, UI_ROLE_TRACK, 0);
     lv_obj_set_style_bg_opa(s_quick_bar, LV_OPA_COVER, 0);
@@ -6985,7 +6983,7 @@ static void ui_quick_create(void)
     ui_paint(s_quick_bar_thumb, UI_PAINT_BG, UI_ROLE_ACCENT, 0);
     lv_obj_set_style_bg_opa(s_quick_bar_thumb, LV_OPA_COVER, 0);
 
-    for (unsigned row = 0U; row < UI_QUICK_ROWS; ++row) {
+    for (unsigned row = 0U; row < UI_QUICK_ROW_COUNT; ++row) {
         /* The row itself is only a fill: it carries the cursor, and the cursor
          * is what says which of the three the knob is on. */
         s_quick_row[row] = lv_obj_create(s_quick_window);
@@ -7149,10 +7147,10 @@ static void ui_quick_value_text(ui_quick_item_t item, char *out, size_t size)
 static void ui_quick_layout_rows(uint8_t rows)
 {
     if (rows == 0U) rows = 1U;
-    if (rows > (uint8_t)UI_QUICK_ROWS) rows = (uint8_t)UI_QUICK_ROWS;
+    if (rows > (uint8_t)UI_QUICK_ROW_COUNT) rows = (uint8_t)UI_QUICK_ROW_COUNT;
     s_quick_rows_shown = rows;
     lv_obj_set_size(s_quick_window, UI_QUICK_W, UI_QUICK_H_FOR(rows));
-    for (unsigned row = 0U; row < UI_QUICK_ROWS; ++row) {
+    for (unsigned row = 0U; row < UI_QUICK_ROW_COUNT; ++row) {
         const bool used = row < rows;
         if (used) {
             lv_obj_remove_flag(s_quick_row[row], LV_OBJ_FLAG_HIDDEN);
@@ -7184,10 +7182,10 @@ static void ui_quick_refresh(void)
     if (s_quick_window == NULL) return;
     const uint8_t rows = ui_quick_menu_visible_count(&s_quick);
     if (rows != s_quick_rows_shown) ui_quick_layout_rows(rows);
-    if (rows > (uint8_t)UI_QUICK_ROWS) {
-        const int track = (int)UI_QUICK_ROWS * UI_QUICK_ROW_H;
-        const int thumb = LV_MAX(track * (int)UI_QUICK_ROWS / (int)rows, UI_QUICK_BAR_THUMB_MIN_H);
-        const int last_top = (int)rows - (int)UI_QUICK_ROWS;
+    if (rows > (uint8_t)UI_QUICK_ROW_COUNT) {
+        const int track = (int)UI_QUICK_ROW_COUNT * UI_QUICK_ROW_H;
+        const int thumb = LV_MAX(track * (int)UI_QUICK_ROW_COUNT / (int)rows, UI_QUICK_BAR_THUMB_MIN_H);
+        const int last_top = (int)rows - (int)UI_QUICK_ROW_COUNT;
         lv_obj_set_height(s_quick_bar_thumb, thumb);
         lv_obj_set_y(s_quick_bar_thumb, (track - thumb) * (int)s_quick.top / last_top);
         lv_obj_remove_flag(s_quick_bar, LV_OBJ_FLAG_HIDDEN);
@@ -7199,7 +7197,7 @@ static void ui_quick_refresh(void)
      * and the mode are single values, and when either moves two rows change. */
     const bool marks_stale =
         cursor != s_quick_cursor_shown || s_quick.editing != s_quick_editing_shown;
-    for (unsigned row = 0U; row < UI_QUICK_ROWS; ++row) {
+    for (unsigned row = 0U; row < UI_QUICK_ROW_COUNT; ++row) {
         const ui_quick_item_t item = ui_quick_menu_row_item(&s_quick, (uint8_t)row);
         const bool item_moved = item != s_quick_item_shown[row];
         if (item_moved) {
@@ -7300,7 +7298,7 @@ static void ui_quick_show(void)
     /* Filled before it is on screen: the first frame of the slide already
      * carries the rows and the cursor. Every cache is put out of date first,
      * because what was drawn last time was another screen's worth of state. */
-    for (unsigned row = 0U; row < UI_QUICK_ROWS; ++row) {
+    for (unsigned row = 0U; row < UI_QUICK_ROW_COUNT; ++row) {
         s_quick_item_shown[row] = UI_QUICK_ITEM_COUNT;
         s_quick_value_shown[row][0] = '\0';
     }
@@ -9406,8 +9404,19 @@ static void ui_touch_drag_player(const ui_touch_event_t *event)
     }
 }
 
+static bool s_touch_quick_scrolled;
+
 static void ui_touch_drag_quick(const ui_touch_event_t *event)
 {
+    /* Back the way it came. Not a drag that has been walking the cursor up the
+     * list, which would run on through the first row and shut the window. */
+    if (event->axis != UI_TOUCH_AXIS_HORIZONTAL && event->steps < 0 && !s_touch_quick_scrolled &&
+        ui_quick_menu_up_closes(&s_quick)) {
+        if (event->coasting) ui_touch_gesture_stop_coast(&s_touch);
+        else ui_touch_gesture_ignore(&s_touch);
+        ui_handle_input(BOARD_INPUT_ACTION_QUICK_MENU);
+        return;
+    }
     if (event->coasting) {
         ui_touch_gesture_stop_coast(&s_touch);
         return;
@@ -9421,6 +9430,7 @@ static void ui_touch_drag_quick(const ui_touch_event_t *event)
                           BOARD_INPUT_ACTION_ENCODER_LEFT);
         }
     } else if (!s_quick.editing) {
+        s_touch_quick_scrolled = true;
         ui_touch_turn(event->steps, BOARD_INPUT_ACTION_ENCODER_RIGHT,
                       BOARD_INPUT_ACTION_ENCODER_LEFT);
     }
@@ -9565,9 +9575,11 @@ static void ui_touch_tap_quick(int x, int y)
         ui_handle_input(BOARD_INPUT_ACTION_QUICK_MENU);
         return;
     }
-    const int row = ui_touch_row_at(y, UI_QUICK_Y + UI_QUICK_PAD_Y, UI_QUICK_ROW_H, UI_QUICK_ROWS);
+    const int row = ui_touch_row_at(y, UI_QUICK_Y + UI_QUICK_PAD_Y, UI_QUICK_ROW_H, UI_QUICK_ROW_COUNT);
     if (row < 0 || ui_quick_menu_row_item(&s_quick, (uint8_t)row) == UI_QUICK_ITEM_COUNT) {
-        if (y >= UI_QUICK_Y + UI_QUICK_H) ui_handle_input(BOARD_INPUT_ACTION_QUICK_MENU);
+        if (y >= UI_QUICK_Y + UI_QUICK_H_FOR(s_quick_rows_shown)) {
+            ui_handle_input(BOARD_INPUT_ACTION_QUICK_MENU);
+        }
         return;
     }
     if (s_quick.editing) {
@@ -9591,9 +9603,9 @@ static void ui_touch_tap_quick(int x, int y)
 static bool ui_touch_on_quick_bar(int x, int y)
 {
     const int top = UI_QUICK_Y + UI_QUICK_PAD_Y;
-    return ui_quick_menu_visible_count(&s_quick) > (uint8_t)UI_QUICK_ROWS &&
+    return ui_quick_menu_visible_count(&s_quick) > (uint8_t)UI_QUICK_ROW_COUNT &&
            x >= UI_QUICK_X + UI_QUICK_W - UI_TOUCH_QUICK_BAR_INSIDE_PX && y >= top &&
-           y < top + (int)UI_QUICK_ROWS * UI_QUICK_ROW_H;
+           y < top + (int)UI_QUICK_ROW_COUNT * UI_QUICK_ROW_H;
 }
 
 // The cursor goes where the finger is on the bar, and the window goes with it.
@@ -9601,7 +9613,7 @@ static void ui_touch_quick_bar_move(int y)
 {
     if (s_quick.editing) ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
     const int item = ui_touch_scrollbar_item(y, UI_QUICK_Y + UI_QUICK_PAD_Y,
-                                             (int)UI_QUICK_ROWS * UI_QUICK_ROW_H,
+                                             (int)UI_QUICK_ROW_COUNT * UI_QUICK_ROW_H,
                                              (int)ui_quick_menu_visible_count(&s_quick));
     ui_touch_turn(item - (int)ui_quick_menu_position(&s_quick), BOARD_INPUT_ACTION_ENCODER_RIGHT,
                   BOARD_INPUT_ACTION_ENCODER_LEFT);
@@ -9680,9 +9692,12 @@ static void ui_touch_poll(void)
     }
     const ui_touch_event_t event = ui_touch_gesture_step(
         &s_touch, down, point.x, point.y, now_ms,
-        feed                          ? UI_TOUCH_AXIS_HORIZONTAL
-        : settings || player || quick ? UI_TOUCH_AXIS_FREE
-                                      : UI_TOUCH_AXIS_VERTICAL,
+        feed                ? UI_TOUCH_AXIS_HORIZONTAL
+        : player            ? (ui_touch_player_in_mode()
+                                   ? UI_TOUCH_AXIS_FREE
+                                   : ui_touch_player_axis(s_touch.start_y, TFT_HEIGHT))
+        : settings || quick ? UI_TOUCH_AXIS_FREE
+                            : UI_TOUCH_AXIS_VERTICAL,
         step_px);
     if (!down || !quick) {
         s_touch_quick_bar = false;
@@ -9697,6 +9712,7 @@ static void ui_touch_poll(void)
     }
     switch (event.kind) {
     case UI_TOUCH_EVENT_PRESSED:
+        s_touch_quick_scrolled = false;
         /* A finger is somebody at the controls on any screen, and a press that
          * only brings a resting screen back goes no further - as a key's does,
          * which is the same two questions asked in ui_handle_input(). */
@@ -10166,6 +10182,7 @@ esp_err_t ui_init(void)
     ui_strip_create();
     ui_ota_create();
     ui_quick_menu_init(&s_quick);
+    ui_quick_menu_set_rows(&s_quick, (uint8_t)UI_QUICK_ROW_COUNT);
     /* Always there, both of them: the backlight is what somebody reaches for
      * in the evening, and the sleep timer and the alarm have no rows on the
      * settings screen at all. The Bluetooth row is added by the poll. */

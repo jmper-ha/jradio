@@ -96,6 +96,11 @@ typedef enum {
 ui_touch_player_drag_t ui_touch_player_drag(int start_x, int start_y, ui_touch_axis_t axis,
                                             int width, int height);
 
+/* The way to read a touch on the player. From an edge it can only be a pull: the
+ * glass reports y = 0 there until the finger is well on it, so what moved first
+ * was x, and seven pulls of nine read as a swipe sideways on the bench. */
+ui_touch_axis_t ui_touch_player_axis(int start_y, int height);
+
 /* Whether a tap at this point is the pause: only in the middle of the screen, so
  * a hand reaching for an edge or the volume does not stop the music. */
 bool ui_touch_player_tap_toggles(int x, int y, int width, int height);

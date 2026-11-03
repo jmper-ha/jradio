@@ -33,6 +33,21 @@ bool radio_stream_format_is_ogg(radio_stream_format_t format)
            format == RADIO_STREAM_FORMAT_OGG_VORBIS || format == RADIO_STREAM_FORMAT_OGG_OPUS;
 }
 
+size_t radio_stream_format_next_ogg_start(const uint8_t *data, size_t length)
+{
+    // "OggS", version, then the flags, whose second bit marks a stream's first page.
+    static const size_t flags_at = 5U;
+    static const uint8_t first_page = 0x02U;
+    if (data == NULL) return length;
+    for (size_t at = 0U; at + flags_at < length; ++at) {
+        if (data[at] == 'O' && memcmp(data + at, "OggS", 4U) == 0 && data[at + 4U] == 0U &&
+            (data[at + flags_at] & first_page) != 0U) {
+            return at;
+        }
+    }
+    return length;
+}
+
 radio_stream_format_t radio_stream_format_from_ogg_page(const uint8_t *data, size_t length,
                                                         radio_stream_format_t fallback)
 {

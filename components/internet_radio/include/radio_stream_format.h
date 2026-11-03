@@ -40,6 +40,10 @@ bool radio_stream_format_is_ogg(radio_stream_format_t format);
  * caller can hand over whatever it had guessed and let the guess stand. */
 radio_stream_format_t radio_stream_format_from_ogg_page(const uint8_t *data, size_t length,
                                                         radio_stream_format_t fallback);
+/* Where the next Ogg stream begins in `data`, or `length` if none is in sight.
+ * A live station sends each song as a stream of its own, one straight after the
+ * other: the page that opens one is what says the decoder has to start over. */
+size_t radio_stream_format_next_ogg_start(const uint8_t *data, size_t length);
 const char *radio_stream_format_raw_uri(radio_stream_format_t format);
 const char *radio_stream_format_codec_name(radio_stream_format_t format);
 uint16_t radio_stream_bitrate_kbps_from_icy_header(const char *value);

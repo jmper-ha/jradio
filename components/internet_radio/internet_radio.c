@@ -68,6 +68,8 @@
  * backlog is: 32 KB is 2 s of a 128 kbps station, and reconnecting takes
  * about one. */
 #define RADIO_LIVE_STALL_MS 1500U
+// An Ogg page's flags byte, the last one needed to tell what the page is.
+#define RADIO_OGG_FLAGS_END 5U
 /* A read that was meant to take only what had arrived and took this long has
  * held the decode task past what the I2S DMA (93 ms) can cover. */
 #define RADIO_READ_SLOW_US 50000U
@@ -804,6 +806,12 @@ static void radio_direct_task(void *arg)
      * headers. Once per stream: the answer cannot change mid-stream, and the
      * bytes it needs are only there before the first decode call. */
     bool ogg_codec_named = false;
+    // A stream has started on this decoder, so the next one has to reset it.
+    bool ogg_stream_begun = false;
+    // The buffer's front is a stream's first page and has been dealt with.
+    bool ogg_start_handled = false;
+    // How far into the backlog no stream's first page was found.
+    size_t ogg_clean = 0U;
     TickType_t next_report = xTaskGetTickCount() + pdMS_TO_TICKS(RADIO_STARVATION_REPORT_MS);
 
     while (!fatal &&
@@ -1175,7 +1183,51 @@ static void radio_direct_task(void *arg)
         }
 
         if (!need_input && pcm_pending == 0U) {
-            if (!ogg_codec_named && radio_stream_format_is_ogg(radio->stream_format)) {
+            const bool ogg = radio_stream_format_is_ogg(radio->stream_format);
+            /* Held to the end of the song in hand, the next one only reaching the
+             * decoder after a reset. Given the join as it comes it read the
+             * song's last page and then swallowed every byte that followed
+             * without a sound or a complaint: no error, no stall, since nothing
+             * was left buffered to call one, and silence until somebody pressed
+             * pause and play.
+             *
+             * Only what has not been looked through yet: a live backlog runs to
+             * 128 KB in PSRAM and this is asked before every block. The last few
+             * bytes wait, since they may be the first of a page that opens one. */
+            size_t decode_length = available;
+            bool ogg_song_tail = false;
+            if (ogg) {
+                const uint8_t *const input = compressed + compressed_offset;
+                const bool at_start =
+                    available > RADIO_OGG_FLAGS_END &&
+                    radio_stream_format_next_ogg_start(input, RADIO_OGG_FLAGS_END + 1U) == 0U;
+                if (at_start && !ogg_start_handled) {
+                    if (ogg_stream_begun) {
+                        radio_decoder_reset(radio->decoder);
+                        last_pcm_tick = xTaskGetTickCount();
+                        decoder_synced = false;
+                    }
+                    ogg_stream_begun = true;
+                    /* Every song, not once: a reconnect asks Content-Type again,
+                     * which names FLAC for any Ogg, and the label stayed wrong. */
+                    ogg_codec_named = false;
+                }
+                ogg_start_handled = at_start;
+                if (ogg_clean > available) ogg_clean = 0U;
+                const size_t from = ogg_clean > 0U ? ogg_clean : (at_start ? 1U : 0U);
+                const size_t found =
+                    from + radio_stream_format_next_ogg_start(input + from, available - from);
+                ogg_song_tail = found < available;
+                ogg_clean = ogg_song_tail                    ? found
+                            : available > RADIO_OGG_FLAGS_END ? available - RADIO_OGG_FLAGS_END
+                                                              : 0U;
+                decode_length = ogg_clean;
+                if (decode_length == 0U) {
+                    need_input = true;
+                    continue;
+                }
+            }
+            if (!ogg_codec_named && ogg) {
                 ogg_codec_named = true;
                 const radio_stream_format_t carried = radio_stream_format_from_ogg_page(
                     compressed + compressed_offset, available, radio->stream_format);
@@ -1193,12 +1245,13 @@ static void radio_direct_task(void *arg)
             size_t pcm_bytes = 0U;
             radio_decoder_info_t info = {0};
             const radio_decoder_result_t result = radio_decoder_decode(
-                radio->decoder, compressed + compressed_offset, available, pcm,
+                radio->decoder, compressed + compressed_offset, decode_length, pcm,
                 pcm_capacity, &consumed, &pcm_bytes, &info);
             if (consumed > available) {
                 fatal = true;
                 break;
             }
+            ogg_clean = ogg_clean > consumed ? ogg_clean - consumed : 0U;
             if (consumed > 0U) {
                 available -= consumed;
                 // Just advance the read cursor instead of shifting the
@@ -1252,6 +1305,12 @@ static void radio_direct_task(void *arg)
                 pcm_pending = pcm_bytes;
                 pcm_delivered = 0U;
                 need_input = false;
+            } else if (result == RADIO_DECODER_NEED_MORE_DATA && ogg_song_tail && consumed == 0U) {
+                /* Whatever is left of the song will never be enough for it now,
+                 * and more from the network would not reach it. */
+                available -= decode_length;
+                compressed_offset += decode_length;
+                ogg_clean = 0U;
             } else if (result == RADIO_DECODER_NEED_MORE_DATA) {
                 /* Only when it could make no use of the backlog at all. A
                  * decoder that consumed bytes and produced nothing is

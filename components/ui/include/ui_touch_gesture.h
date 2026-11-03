@@ -21,6 +21,8 @@ typedef enum {
     UI_TOUCH_EVENT_PRESSED,
     UI_TOUCH_EVENT_TAP,
     UI_TOUCH_EVENT_DRAG,
+    // Held still long enough: what holding the encoder down means, on each screen.
+    UI_TOUCH_EVENT_LONG,
 } ui_touch_event_kind_t;
 
 typedef struct {
@@ -79,6 +81,28 @@ void ui_touch_gesture_ignore(ui_touch_gesture_t *gesture);
 /* Stops a rolling list where it is. For a screen where rolling on means
  * nothing good: a number being edited, a menu with nothing to scroll. */
 void ui_touch_gesture_stop_coast(ui_touch_gesture_t *gesture);
+
+/* What a drag on the player screen is, by where it started and which way it
+ * went. The top and bottom edges win over the rest: a panel has to be reachable
+ * in the corner as well, and the volume strip runs along the right side. */
+typedef enum {
+    UI_TOUCH_PLAYER_NOTHING = 0,
+    UI_TOUCH_PLAYER_SKIP,
+    UI_TOUCH_PLAYER_VOLUME,
+    UI_TOUCH_PLAYER_QUICK_PANEL,
+    UI_TOUCH_PLAYER_ACTION_STRIP,
+} ui_touch_player_drag_t;
+
+ui_touch_player_drag_t ui_touch_player_drag(int start_x, int start_y, ui_touch_axis_t axis,
+                                            int width, int height);
+
+/* Whether a tap at this point is the pause: only in the middle of the screen, so
+ * a hand reaching for an edge or the volume does not stop the music. */
+bool ui_touch_player_tap_toggles(int x, int y, int width, int height);
+
+/* The item a point on a scrollbar stands for, of `count`. Off either end it is
+ * the end: a finger working a bar does not stay on 4 px of it. */
+int ui_touch_scrollbar_item(int y, int track_y, int track_h, int count);
 
 /* The row under `y`, counted from `first_y`, or -1 off either end. Rows are
  * hit by their pitch rather than their height, so the gap between two of them

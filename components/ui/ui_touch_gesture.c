@@ -10,6 +10,10 @@
 /* Held longer than this it was not a touch on a row. Left unanswered rather
  * than treated as one: a hand resting on the glass must not start a station. */
 #define UI_TOUCH_TAP_MAX_MS 800U
+/* The player screen's edges and its volume strip. A finger aimed at a mark lands
+ * anywhere over 44 px, so a band much narrower would need aiming at. */
+#define UI_TOUCH_PLAYER_EDGE_PX 36
+#define UI_TOUCH_PLAYER_VOLUME_W 70
 
 /* What a flick is, and how the list rolls on from one.
  *
@@ -131,6 +135,11 @@ ui_touch_event_t ui_touch_gesture_step(ui_touch_gesture_t *gesture, bool down, i
     if (!gesture->dragging) {
         if (abs(x - gesture->start_x) < UI_TOUCH_DRAG_SLOP_PX &&
             abs(y - gesture->start_y) < UI_TOUCH_DRAG_SLOP_PX) {
+            if (!gesture->stopped_coast &&
+                (uint32_t)(now_ms - gesture->start_ms) >= UI_TOUCH_TAP_MAX_MS) {
+                gesture->ignored = true;
+                event.kind = UI_TOUCH_EVENT_LONG;
+            }
             return event;
         }
         if (axis == UI_TOUCH_AXIS_FREE &&
@@ -166,6 +175,29 @@ void ui_touch_gesture_ignore(ui_touch_gesture_t *gesture)
 void ui_touch_gesture_stop_coast(ui_touch_gesture_t *gesture)
 {
     if (gesture != NULL && gesture->coasting) ui_touch_gesture_init(gesture);
+}
+
+ui_touch_player_drag_t ui_touch_player_drag(int start_x, int start_y, ui_touch_axis_t axis,
+                                            int width, int height)
+{
+    if (axis == UI_TOUCH_AXIS_HORIZONTAL) return UI_TOUCH_PLAYER_SKIP;
+    if (start_y < UI_TOUCH_PLAYER_EDGE_PX) return UI_TOUCH_PLAYER_QUICK_PANEL;
+    if (start_y >= height - UI_TOUCH_PLAYER_EDGE_PX) return UI_TOUCH_PLAYER_ACTION_STRIP;
+    return start_x >= width - UI_TOUCH_PLAYER_VOLUME_W ? UI_TOUCH_PLAYER_VOLUME
+                                                       : UI_TOUCH_PLAYER_NOTHING;
+}
+
+bool ui_touch_player_tap_toggles(int x, int y, int width, int height)
+{
+    return x >= width / 4 && x < width - width / 4 && y >= height / 4 &&
+           y < height - height / 4;
+}
+
+int ui_touch_scrollbar_item(int y, int track_y, int track_h, int count)
+{
+    if (track_h <= 0 || count <= 0 || y < track_y) return 0;
+    const int item = (y - track_y) * count / track_h;
+    return item < count ? item : count - 1;
 }
 
 int ui_touch_row_at(int y, int first_y, int pitch, int rows)

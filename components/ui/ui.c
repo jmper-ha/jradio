@@ -6718,6 +6718,13 @@ static lv_obj_t *s_quick_value[UI_QUICK_ROWS];
  * widget created when the cursor first lands on a switch is an allocation on a
  * button press - the thing this window is built at start-up to avoid. */
 static lv_obj_t *s_quick_switch[UI_QUICK_ROWS];
+/* In the window's right padding, which the cursor's fill stops short of. It is
+ * what says there is more below: four rows look like the whole list. */
+#define UI_QUICK_BAR_W 4
+#define UI_QUICK_BAR_X (UI_QUICK_W - UI_QUICK_BAR_W - 2)
+#define UI_QUICK_BAR_THUMB_MIN_H 12
+static lv_obj_t *s_quick_bar;
+static lv_obj_t *s_quick_bar_thumb;
 _Static_assert(UI_QUICK_ROWS == UI_QUICK_ROW_COUNT,
                "the model draws a different number of rows than the layout leaves room for");
 /* Whether the window is up, which is not the same as the model being open: the
@@ -6895,6 +6902,58 @@ static void ui_quick_set_y(void *target, int32_t value)
     lv_obj_set_y((lv_obj_t *)target, (int32_t)value);
 }
 
+/* The volume under a finger, which covers the footer's reading on its way along
+ * the right edge: built here for the reason the quick panel is, an allocation on
+ * the gesture would be a press away from the pool running out. */
+#define UI_VOLUME_OVERLAY_W 156
+#define UI_VOLUME_OVERLAY_H 64
+#define UI_VOLUME_OVERLAY_MS 1200U
+static lv_obj_t *s_volume_overlay;
+static lv_obj_t *s_volume_overlay_text;
+static uint32_t s_volume_overlay_shown_ms;
+
+static void ui_volume_overlay_create(void)
+{
+    s_volume_overlay = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(s_volume_overlay);
+    lv_obj_remove_flag(s_volume_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(s_volume_overlay, UI_VOLUME_OVERLAY_W, UI_VOLUME_OVERLAY_H);
+    lv_obj_set_pos(s_volume_overlay, (TFT_WIDTH - UI_VOLUME_OVERLAY_W) / 2,
+                   (TFT_HEIGHT - UI_VOLUME_OVERLAY_H) / 2);
+    ui_paint(s_volume_overlay, UI_PAINT_BG, UI_ROLE_TILE, 0);
+    lv_obj_set_style_bg_opa(s_volume_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_volume_overlay, 8, 0);
+    ui_paint(s_volume_overlay, UI_PAINT_BORDER, UI_ROLE_TILE_EDGE, 0);
+    lv_obj_set_style_border_width(s_volume_overlay, 1, 0);
+    lv_obj_add_flag(s_volume_overlay, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *icon = lv_image_create(s_volume_overlay);
+    lv_obj_remove_style_all(icon);
+    lv_image_set_src(icon, &ui_feed_icon_volume_16);
+    lv_obj_set_size(icon, 16, 16);
+    lv_image_set_scale(icon, 512);
+    lv_obj_set_pos(icon, 20, (UI_VOLUME_OVERLAY_H - 16) / 2);
+    ui_paint(icon, UI_PAINT_RECOLOR, UI_ROLE_TEXT, 0);
+    lv_obj_set_style_image_recolor_opa(icon, LV_OPA_COVER, 0);
+
+    s_volume_overlay_text = lv_label_create(s_volume_overlay);
+    lv_obj_set_style_text_font(s_volume_overlay_text, &ui_font_bold_digits_40, 0);
+    ui_paint(s_volume_overlay_text, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
+    lv_label_set_text(s_volume_overlay_text, "");
+    lv_obj_align(s_volume_overlay_text, LV_ALIGN_LEFT_MID, 54, 0);
+}
+
+static void ui_volume_overlay_show(void)
+{
+    char text[8];
+    snprintf(text, sizeof(text), "%u", (unsigned int)board_audio_volume());
+    ui_set_label_text_if_changed(s_volume_overlay_text, text);
+    if (lv_obj_has_flag(s_volume_overlay, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_remove_flag(s_volume_overlay, LV_OBJ_FLAG_HIDDEN);
+    }
+    s_volume_overlay_shown_ms = ui_tick_get_ms();
+}
+
 static void ui_quick_create(void)
 {
     s_quick_window = lv_obj_create(lv_layer_top());
@@ -6908,6 +6967,23 @@ static void ui_quick_create(void)
     ui_paint(s_quick_window, UI_PAINT_BORDER, UI_ROLE_TILE_EDGE, 0);
     lv_obj_set_style_border_width(s_quick_window, 1, 0);
     lv_obj_add_flag(s_quick_window, LV_OBJ_FLAG_HIDDEN);
+
+    s_quick_bar = lv_obj_create(s_quick_window);
+    lv_obj_remove_style_all(s_quick_bar);
+    lv_obj_remove_flag(s_quick_bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(s_quick_bar, UI_QUICK_BAR_X, UI_QUICK_PAD_Y);
+    lv_obj_set_size(s_quick_bar, UI_QUICK_BAR_W, UI_QUICK_ROWS * UI_QUICK_ROW_H);
+    lv_obj_set_style_radius(s_quick_bar, 2, 0);
+    ui_paint(s_quick_bar, UI_PAINT_BG, UI_ROLE_TRACK, 0);
+    lv_obj_set_style_bg_opa(s_quick_bar, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_quick_bar, LV_OBJ_FLAG_HIDDEN);
+    s_quick_bar_thumb = lv_obj_create(s_quick_bar);
+    lv_obj_remove_style_all(s_quick_bar_thumb);
+    lv_obj_remove_flag(s_quick_bar_thumb, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_width(s_quick_bar_thumb, UI_QUICK_BAR_W);
+    lv_obj_set_style_radius(s_quick_bar_thumb, 2, 0);
+    ui_paint(s_quick_bar_thumb, UI_PAINT_BG, UI_ROLE_ACCENT, 0);
+    lv_obj_set_style_bg_opa(s_quick_bar_thumb, LV_OPA_COVER, 0);
 
     for (unsigned row = 0U; row < UI_QUICK_ROWS; ++row) {
         /* The row itself is only a fill: it carries the cursor, and the cursor
@@ -7108,6 +7184,16 @@ static void ui_quick_refresh(void)
     if (s_quick_window == NULL) return;
     const uint8_t rows = ui_quick_menu_visible_count(&s_quick);
     if (rows != s_quick_rows_shown) ui_quick_layout_rows(rows);
+    if (rows > (uint8_t)UI_QUICK_ROWS) {
+        const int track = (int)UI_QUICK_ROWS * UI_QUICK_ROW_H;
+        const int thumb = LV_MAX(track * (int)UI_QUICK_ROWS / (int)rows, UI_QUICK_BAR_THUMB_MIN_H);
+        const int last_top = (int)rows - (int)UI_QUICK_ROWS;
+        lv_obj_set_height(s_quick_bar_thumb, thumb);
+        lv_obj_set_y(s_quick_bar_thumb, (track - thumb) * (int)s_quick.top / last_top);
+        lv_obj_remove_flag(s_quick_bar, LV_OBJ_FLAG_HIDDEN);
+    } else if (!lv_obj_has_flag(s_quick_bar, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_add_flag(s_quick_bar, LV_OBJ_FLAG_HIDDEN);
+    }
     const uint8_t cursor = ui_quick_menu_cursor_row(&s_quick);
     /* One comparison for the whole window rather than one per row: the cursor
      * and the mode are single values, and when either moves two rows change. */
@@ -8980,6 +9066,8 @@ typedef enum {
     UI_TOUCH_TARGET_SETTINGS,
     // The address's code or About over the settings: a touch only closes them.
     UI_TOUCH_TARGET_OVERLAY,
+    UI_TOUCH_TARGET_PLAYER,
+    UI_TOUCH_TARGET_QUICK,
 } ui_touch_target_t;
 
 // A carousel has no rows to set a pitch; this is a short push of the finger.
@@ -8996,23 +9084,36 @@ typedef enum {
  * than the list can be redrawn, or a release would leave steps still to come. */
 #define UI_TOUCH_ARROW_W 56
 #define UI_TOUCH_ARROW_REPEAT_MS 180U
+// The length of a swipe on the player screen, and of a click of volume under it.
+#define UI_TOUCH_SWIPE_PX 60
+#define UI_TOUCH_VOLUME_STEP_PX 12
+/* The quick panel's scrollbar under a finger, from a little inside the window to
+ * the screen's edge: the bar is 4 px and the switches stand just left of it. */
+#define UI_TOUCH_QUICK_BAR_INSIDE_PX 14
 
 static ui_touch_gesture_t s_touch;
 // The arrow held down, -1 up or 1 down, and when it last moved the list.
 static int s_touch_arrow;
 static uint32_t s_touch_arrow_ms;
+// The finger came down on the quick panel's scrollbar and is working it.
+static bool s_touch_quick_bar;
 
 /* Who the finger is talking to. Nobody, on anything that sits over a screen:
  * the update's question above all, where the press this would send is a yes. */
 static ui_touch_target_t ui_touch_target(void)
 {
-    if (s_ota_visible || s_quick.open) return UI_TOUCH_TARGET_NONE;
+    if (s_ota_visible) return UI_TOUCH_TARGET_NONE;
+    if (s_quick.open) return UI_TOUCH_TARGET_QUICK;
     if (s_yandex_open) return UI_TOUCH_TARGET_YANDEX;
     if (s_settings_open) {
         return s_about_open || s_qr_open ? UI_TOUCH_TARGET_OVERLAY : UI_TOUCH_TARGET_SETTINGS;
     }
     const ui_player_view_t view = ui_player_state_view(&s_player_ui);
     if (view == UI_PLAYER_VIEW_STATION_LIST) return UI_TOUCH_TARGET_STATIONS;
+    if (view == UI_PLAYER_VIEW_SOURCE) {
+        return lv_screen_active() == s_source_screen ? UI_TOUCH_TARGET_PLAYER
+                                                     : UI_TOUCH_TARGET_NONE;
+    }
     if (view != UI_PLAYER_VIEW_MENU) return UI_TOUCH_TARGET_NONE;
     if (s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED &&
         lv_screen_active() == s_feed_screen) {
@@ -9080,8 +9181,83 @@ static void ui_touch_arrow_step(uint32_t now_ms)
     }
 }
 
+// A position or a frequency under the finger: a mode that owns the whole screen.
+static bool ui_touch_player_in_mode(void)
+{
+    return ui_seek_is_active(&s_player_seek) || ui_fm_tune_is_active(&s_fm_tune);
+}
+
+static void ui_touch_drag_player(const ui_touch_event_t *event)
+{
+    const int steps = event->steps;
+    if (event->coasting) {
+        ui_touch_gesture_stop_coast(&s_touch);
+        return;
+    }
+    const bool sideways = event->axis == UI_TOUCH_AXIS_HORIZONTAL;
+    if (ui_touch_player_in_mode()) {
+        if (sideways) {
+            ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_RIGHT, BOARD_INPUT_ACTION_ENCODER_LEFT);
+        }
+        return;
+    }
+    switch (ui_touch_player_drag(s_touch.start_x, s_touch.start_y, event->axis, TFT_WIDTH,
+                                 TFT_HEIGHT)) {
+    case UI_TOUCH_PLAYER_SKIP:
+        ui_touch_gesture_ignore(&s_touch);
+        /* Back is not a way on Yandex, where that button carries the like: a
+         * finger that only wanted the previous track would have marked this
+         * one. */
+        if (steps < 0) {
+            ui_handle_input(BOARD_INPUT_ACTION_BTN_NEXT);
+        } else if (ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_YANDEX) {
+            ui_handle_input(BOARD_INPUT_ACTION_BTN_PREV);
+        }
+        break;
+    case UI_TOUCH_PLAYER_VOLUME:
+        // Up is louder, against the way a list follows the finger.
+        ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_LEFT, BOARD_INPUT_ACTION_ENCODER_RIGHT);
+        ui_volume_overlay_show();
+        break;
+    case UI_TOUCH_PLAYER_QUICK_PANEL:
+        ui_touch_gesture_ignore(&s_touch);
+        if (steps > 0) ui_handle_input(BOARD_INPUT_ACTION_QUICK_MENU);
+        break;
+    default:
+        break;
+    }
+}
+
+static void ui_touch_drag_quick(const ui_touch_event_t *event)
+{
+    if (event->coasting) {
+        ui_touch_gesture_stop_coast(&s_touch);
+        return;
+    }
+    if (event->axis == UI_TOUCH_AXIS_HORIZONTAL) {
+        if (!s_quick.editing && !ui_quick_item_is_switch(s_quick.item)) {
+            ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+        }
+        if (s_quick.editing) {
+            ui_touch_turn(event->steps, BOARD_INPUT_ACTION_ENCODER_RIGHT,
+                          BOARD_INPUT_ACTION_ENCODER_LEFT);
+        }
+    } else if (!s_quick.editing) {
+        ui_touch_turn(event->steps, BOARD_INPUT_ACTION_ENCODER_RIGHT,
+                      BOARD_INPUT_ACTION_ENCODER_LEFT);
+    }
+}
+
 static void ui_touch_drag(ui_touch_target_t target, const ui_touch_event_t *event)
 {
+    if (target == UI_TOUCH_TARGET_PLAYER) {
+        ui_touch_drag_player(event);
+        return;
+    }
+    if (target == UI_TOUCH_TARGET_QUICK) {
+        ui_touch_drag_quick(event);
+        return;
+    }
     const int steps = event->steps;
     const bool menu_fits = target == UI_TOUCH_TARGET_MENU &&
                            ui_menu_visible_count(ui_menu_visible_mask(&s_menu)) <= UI_MENU_ROWS_FIT;
@@ -9203,6 +9379,76 @@ static void ui_touch_tap_settings(int y)
     ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
 }
 
+/* The panel is a window over the screen: a touch outside it closes it, as any
+ * other key does, and goes no further. */
+static void ui_touch_tap_quick(int x, int y)
+{
+    if (x < UI_QUICK_X || x >= UI_QUICK_X + UI_QUICK_W || y < UI_QUICK_Y) {
+        ui_handle_input(BOARD_INPUT_ACTION_QUICK_MENU);
+        return;
+    }
+    const int row = ui_touch_row_at(y, UI_QUICK_Y + UI_QUICK_PAD_Y, UI_QUICK_ROW_H, UI_QUICK_ROWS);
+    if (row < 0 || ui_quick_menu_row_item(&s_quick, (uint8_t)row) == UI_QUICK_ITEM_COUNT) {
+        if (y >= UI_QUICK_Y + UI_QUICK_H) ui_handle_input(BOARD_INPUT_ACTION_QUICK_MENU);
+        return;
+    }
+    if (s_quick.editing) {
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+        return;
+    }
+    const int moves = row - (int)ui_quick_menu_cursor_row(&s_quick);
+    ui_touch_turn(moves, BOARD_INPUT_ACTION_ENCODER_RIGHT, BOARD_INPUT_ACTION_ENCODER_LEFT);
+    /* These two are rings, so a touch goes straight to the next value: arming
+     * the row first would ask for a sideways drag to get through a short list
+     * somebody can as well tap through. */
+    if (s_quick.item == UI_QUICK_ITEM_SLEEP || s_quick.item == UI_QUICK_ITEM_LOUDNESS) {
+        s_quick.last_input_ms = ui_tick_get_ms();
+        ui_quick_apply_step(1);
+        ui_quick_refresh();
+        return;
+    }
+    ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+}
+
+static bool ui_touch_on_quick_bar(int x, int y)
+{
+    const int top = UI_QUICK_Y + UI_QUICK_PAD_Y;
+    return ui_quick_menu_visible_count(&s_quick) > (uint8_t)UI_QUICK_ROWS &&
+           x >= UI_QUICK_X + UI_QUICK_W - UI_TOUCH_QUICK_BAR_INSIDE_PX && y >= top &&
+           y < top + (int)UI_QUICK_ROWS * UI_QUICK_ROW_H;
+}
+
+// The cursor goes where the finger is on the bar, and the window goes with it.
+static void ui_touch_quick_bar_move(int y)
+{
+    if (s_quick.editing) ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+    const int item = ui_touch_scrollbar_item(y, UI_QUICK_Y + UI_QUICK_PAD_Y,
+                                             (int)UI_QUICK_ROWS * UI_QUICK_ROW_H,
+                                             (int)ui_quick_menu_visible_count(&s_quick));
+    ui_touch_turn(item - (int)ui_quick_menu_position(&s_quick), BOARD_INPUT_ACTION_ENCODER_RIGHT,
+                  BOARD_INPUT_ACTION_ENCODER_LEFT);
+}
+
+static void ui_touch_long(ui_touch_target_t target)
+{
+    switch (target) {
+    case UI_TOUCH_TARGET_STATIONS:
+        /* Not the encoder's way out, which stops the music: a finger rests
+         * more easily than a thumb holds a knob down. */
+        ui_close_station_list_to_source();
+        break;
+    case UI_TOUCH_TARGET_PLAYER:
+    case UI_TOUCH_TARGET_YANDEX:
+    case UI_TOUCH_TARGET_SETTINGS:
+    case UI_TOUCH_TARGET_OVERLAY:
+    case UI_TOUCH_TARGET_QUICK:
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_LONG);
+        break;
+    default:
+        break;
+    }
+}
+
 static void ui_touch_poll(void)
 {
     board_touch_point_t point = {0, 0};
@@ -9212,20 +9458,37 @@ static void ui_touch_poll(void)
     const ui_touch_target_t target = ui_touch_target();
     const bool feed = target == UI_TOUCH_TARGET_FEED;
     const bool settings = target == UI_TOUCH_TARGET_SETTINGS;
-    const int settings_step_px = ui_touch_gesture_axis(&s_touch) == UI_TOUCH_AXIS_HORIZONTAL
-                                     ? UI_TOUCH_VALUE_STEP_PX
-                                     : UI_SET_ROW_PITCH;
+    const bool player = target == UI_TOUCH_TARGET_PLAYER;
+    const bool quick = target == UI_TOUCH_TARGET_QUICK;
+    const bool sideways = ui_touch_gesture_axis(&s_touch) == UI_TOUCH_AXIS_HORIZONTAL;
+    const int player_step_px =
+        sideways ? (ui_touch_player_in_mode() ? UI_TOUCH_VALUE_STEP_PX : UI_TOUCH_SWIPE_PX)
+        : ui_touch_player_drag(s_touch.start_x, s_touch.start_y, UI_TOUCH_AXIS_VERTICAL, TFT_WIDTH,
+                               TFT_HEIGHT) == UI_TOUCH_PLAYER_VOLUME
+            ? UI_TOUCH_VOLUME_STEP_PX
+            : UI_TOUCH_SWIPE_PX;
     const int step_px = feed                             ? UI_TOUCH_FEED_STEP_PX
                         : target == UI_TOUCH_TARGET_MENU ? UI_MENU_ROW_PITCH
-                        : settings                       ? settings_step_px
-                                                         : UI_LIST_ROW_PITCH;
+                        : settings ? (sideways ? UI_TOUCH_VALUE_STEP_PX : UI_SET_ROW_PITCH)
+                        : player   ? player_step_px
+                        : quick    ? (sideways ? UI_TOUCH_VALUE_STEP_PX : UI_QUICK_ROW_H)
+                                   : UI_LIST_ROW_PITCH;
     const uint32_t now_ms = ui_tick_get_ms();
+    if (!lv_obj_has_flag(s_volume_overlay, LV_OBJ_FLAG_HIDDEN) &&
+        (!player || (uint32_t)(now_ms - s_volume_overlay_shown_ms) >= UI_VOLUME_OVERLAY_MS)) {
+        lv_obj_add_flag(s_volume_overlay, LV_OBJ_FLAG_HIDDEN);
+    }
     const ui_touch_event_t event = ui_touch_gesture_step(
         &s_touch, down, point.x, point.y, now_ms,
-        feed       ? UI_TOUCH_AXIS_HORIZONTAL
-        : settings ? UI_TOUCH_AXIS_FREE
-                   : UI_TOUCH_AXIS_VERTICAL,
+        feed                          ? UI_TOUCH_AXIS_HORIZONTAL
+        : settings || player || quick ? UI_TOUCH_AXIS_FREE
+                                      : UI_TOUCH_AXIS_VERTICAL,
         step_px);
+    if (!down || !quick) {
+        s_touch_quick_bar = false;
+    } else if (s_touch_quick_bar) {
+        ui_touch_quick_bar_move(point.y);
+    }
     if (!down || !settings) {
         s_touch_arrow = 0;
     } else if (s_touch_arrow != 0 &&
@@ -9246,6 +9509,10 @@ static void ui_touch_poll(void)
                 ui_touch_gesture_ignore(&s_touch);
                 ui_touch_arrow_step(now_ms);
             }
+        } else if (quick && ui_touch_on_quick_bar(point.x, point.y)) {
+            s_touch_quick_bar = true;
+            ui_touch_gesture_ignore(&s_touch);
+            ui_touch_quick_bar_move(point.y);
         }
         ui_handle_input(BOARD_INPUT_ACTION_NONE);
         break;
@@ -9272,9 +9539,24 @@ static void ui_touch_poll(void)
         case UI_TOUCH_TARGET_OVERLAY:
             ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
             break;
+        case UI_TOUCH_TARGET_PLAYER:
+            /* At once, unlike the press: the press has to wait to tell itself
+             * from a double and a triple, and nothing here looks like either. */
+            if (ui_touch_player_in_mode()) {
+                ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+            } else if (ui_touch_player_tap_toggles(event.x, event.y, TFT_WIDTH, TFT_HEIGHT)) {
+                ui_toggle_playback();
+            }
+            break;
+        case UI_TOUCH_TARGET_QUICK:
+            ui_touch_tap_quick(event.x, event.y);
+            break;
         default:
             break;
         }
+        break;
+    case UI_TOUCH_EVENT_LONG:
+        ui_touch_long(target);
         break;
     default:
         break;
@@ -9674,6 +9956,7 @@ esp_err_t ui_init(void)
     ui_create_screensaver();
     ui_create_weather_saver();
     ui_quick_create();
+    ui_volume_overlay_create();
     ui_ota_create();
     ui_quick_menu_init(&s_quick);
     /* Always there, both of them: the backlight is what somebody reaches for

@@ -292,8 +292,74 @@ static void test_a_free_touch_runs_the_way_the_finger_first_went(void)
     assert(event.axis == UI_TOUCH_AXIS_VERTICAL);
 }
 
+static void test_held_still_it_is_a_long_touch_once(void)
+{
+    ui_touch_gesture_t g;
+    ui_touch_gesture_init(&g);
+    assert(step(&g, true, 100, 100, 0).kind == UI_TOUCH_EVENT_PRESSED);
+    assert(step(&g, true, 103, 102, 700).kind == UI_TOUCH_EVENT_NONE);
+    assert(step(&g, true, 103, 102, 800).kind == UI_TOUCH_EVENT_LONG);
+    assert(step(&g, true, 103, 102, 900).kind == UI_TOUCH_EVENT_NONE);
+    assert(step(&g, false, 0, 0, 1000).kind == UI_TOUCH_EVENT_NONE);
+    // Moving first, it is a drag however long it then rests.
+    assert(step(&g, true, 100, 100, 2000).kind == UI_TOUCH_EVENT_PRESSED);
+    (void)step(&g, true, 100, 130, 2010);
+    assert(step(&g, true, 100, 130, 3000).kind == UI_TOUCH_EVENT_NONE);
+}
+
+static void test_a_player_drag_is_told_by_where_it_began(void)
+{
+    assert(ui_touch_player_drag(100, 100, UI_TOUCH_AXIS_HORIZONTAL, 480, 320) ==
+           UI_TOUCH_PLAYER_SKIP);
+    // Sideways from the volume strip or an edge is still a skip.
+    assert(ui_touch_player_drag(450, 100, UI_TOUCH_AXIS_HORIZONTAL, 480, 320) ==
+           UI_TOUCH_PLAYER_SKIP);
+    assert(ui_touch_player_drag(100, 10, UI_TOUCH_AXIS_HORIZONTAL, 480, 320) ==
+           UI_TOUCH_PLAYER_SKIP);
+    assert(ui_touch_player_drag(450, 100, UI_TOUCH_AXIS_VERTICAL, 480, 320) ==
+           UI_TOUCH_PLAYER_VOLUME);
+    assert(ui_touch_player_drag(409, 100, UI_TOUCH_AXIS_VERTICAL, 480, 320) ==
+           UI_TOUCH_PLAYER_NOTHING);
+    assert(ui_touch_player_drag(100, 10, UI_TOUCH_AXIS_VERTICAL, 480, 320) ==
+           UI_TOUCH_PLAYER_QUICK_PANEL);
+    assert(ui_touch_player_drag(450, 10, UI_TOUCH_AXIS_VERTICAL, 480, 320) ==
+           UI_TOUCH_PLAYER_QUICK_PANEL);
+    assert(ui_touch_player_drag(450, 300, UI_TOUCH_AXIS_VERTICAL, 480, 320) ==
+           UI_TOUCH_PLAYER_ACTION_STRIP);
+    assert(ui_touch_player_drag(100, 150, UI_TOUCH_AXIS_VERTICAL, 480, 320) ==
+           UI_TOUCH_PLAYER_NOTHING);
+}
+
+static void test_only_the_middle_of_the_player_pauses(void)
+{
+    assert(ui_touch_player_tap_toggles(240, 160, 480, 320));
+    assert(ui_touch_player_tap_toggles(120, 80, 480, 320));
+    assert(ui_touch_player_tap_toggles(359, 239, 480, 320));
+    assert(!ui_touch_player_tap_toggles(119, 160, 480, 320));
+    assert(!ui_touch_player_tap_toggles(360, 160, 480, 320));
+    assert(!ui_touch_player_tap_toggles(240, 79, 480, 320));
+    assert(!ui_touch_player_tap_toggles(240, 240, 480, 320));
+}
+
+static void test_a_point_on_the_scrollbar_is_an_item(void)
+{
+    assert(ui_touch_scrollbar_item(100, 100, 80, 8) == 0);
+    assert(ui_touch_scrollbar_item(109, 100, 80, 8) == 0);
+    assert(ui_touch_scrollbar_item(110, 100, 80, 8) == 1);
+    assert(ui_touch_scrollbar_item(179, 100, 80, 8) == 7);
+    // Off either end, the end.
+    assert(ui_touch_scrollbar_item(50, 100, 80, 8) == 0);
+    assert(ui_touch_scrollbar_item(300, 100, 80, 8) == 7);
+    assert(ui_touch_scrollbar_item(120, 100, 0, 8) == 0);
+    assert(ui_touch_scrollbar_item(120, 100, 80, 0) == 0);
+}
+
 int main(void)
 {
+    test_a_point_on_the_scrollbar_is_an_item();
+    test_only_the_middle_of_the_player_pauses();
+    test_held_still_it_is_a_long_touch_once();
+    test_a_player_drag_is_told_by_where_it_began();
     test_a_free_touch_runs_the_way_the_finger_first_went();
     test_a_touch_is_a_tap_where_it_came_down();
     test_a_resting_hand_is_no_tap();

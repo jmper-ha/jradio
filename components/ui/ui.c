@@ -612,6 +612,9 @@ static const char *s_yandex_notice;
 static lv_obj_t *s_station_list_screen;
 static lv_obj_t *s_station_list_title;
 static lv_obj_t *s_station_list_notice;
+/* A refused folder. Not the notice above, which stands where rows would be and
+ * belongs to a list that has none: this one comes up over a list that stays. */
+static lv_obj_t *s_station_list_refused;
 /* The notice replaces the list rather than sitting above it, so the two parts
  * that only make sense with rows behind them - the rule and the drive picture
  * that stands in for them - are held to be shown and hidden together with it. */
@@ -5490,6 +5493,18 @@ static void ui_create_station_list_screen(void)
     lv_obj_set_style_image_recolor_opa(s_station_list_notice_icon, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
 
+    s_station_list_refused = lv_label_create(s_station_list_screen);
+    lv_obj_set_pos(s_station_list_refused, UI_CONTENT_X, UI_LIST_RULE_Y - UI_FONT_BODY_LINE_H - 10);
+    lv_obj_set_size(s_station_list_refused, UI_CONTENT_W, UI_FONT_BODY_LINE_H + 8);
+    lv_obj_set_style_pad_top(s_station_list_refused, 4, 0);
+    lv_obj_set_style_text_align(s_station_list_refused, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(s_station_list_refused, UI_FONT_BODY, 0);
+    lv_obj_set_style_text_color(s_station_list_refused, lv_color_hex(UI_COLOR_NOTICE), 0);
+    ui_paint(s_station_list_refused, UI_PAINT_BG, UI_ROLE_GROUND, 0);
+    lv_obj_set_style_bg_opa(s_station_list_refused, LV_OPA_COVER, 0);
+    lv_label_set_text(s_station_list_refused, "");
+    lv_obj_add_flag(s_station_list_refused, LV_OBJ_FLAG_HIDDEN);
+
     s_station_list_notice = lv_label_create(s_station_list_screen);
     lv_label_set_text(s_station_list_notice, "");
     lv_obj_set_pos(s_station_list_notice, 10, UI_LIST_NOTICE_TEXT_Y);
@@ -8487,6 +8502,16 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
             (uint32_t)(ui_tick_get_ms() - s_browse_waiting_started_ms) >=
                 UI_BROWSE_WAIT_TIMEOUT_MS) {
             s_browse_waiting = false;
+        }
+        const bool refused =
+            ui_list_shows_dlna() && !s_browse_waiting && player_control_browse_failed();
+        if (refused == lv_obj_has_flag(s_station_list_refused, LV_OBJ_FLAG_HIDDEN)) {
+            if (refused) {
+                lv_label_set_text(s_station_list_refused, ui_text(DEVICE_TEXT_ERROR_FOLDER_FAILED));
+                lv_obj_clear_flag(s_station_list_refused, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(s_station_list_refused, LV_OBJ_FLAG_HIDDEN);
+            }
         }
         /* Every pass, not only when the rows change: the sweeping bar is the
          * one thing on this screen that moves while nothing else does, and it

@@ -51,6 +51,9 @@ bool player_control_file_entry_at(size_t index, file_browser_entry_t *entry);
 // same directory changed" from "this is a different directory", and so the web
 // knows to re-fetch names it is no longer sent over the socket.
 unsigned int player_control_listing_revision(void);
+/* A container the media server would not open, for the few seconds that is news.
+ * The rows on screen are still the parent's, so nothing else says it happened. */
+bool player_control_browse_failed(void);
 /* True while a source select is still under way. The source is published
  * before a volume's root has been read into the shared listing, so a reader
  * of that listing from another task waits for this to clear as well. */

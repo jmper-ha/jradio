@@ -1910,6 +1910,10 @@ static void player_control_task(void *arg)
                                           (uint32_t)(esp_timer_get_time() / 1000),
                                           memory_order_release);
                 }
+                // Anything else answers the last failure: it is no longer the news.
+                if (activated != DLNA_ACTIVATE_BROWSE_FAILED) {
+                    atomic_store_explicit(&s_browse_failed_at_ms, 0U, memory_order_release);
+                }
                 if (activated == DLNA_ACTIVATE_BROWSED ||
                     activated == DLNA_ACTIVATE_BROWSE_FAILED) {
                     atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
@@ -2366,12 +2370,18 @@ static const char *player_text(device_text_id_t id)
     return device_text(id, device_settings_published_language());
 }
 
-static void player_note_nothing_started(player_snapshot_t *snapshot)
+bool player_control_browse_failed(void)
 {
     const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
     const uint32_t failed =
         atomic_load_explicit(&s_browse_failed_at_ms, memory_order_acquire);
-    if (failed != 0U && (uint32_t)(now_ms - failed) < PLAYER_NO_RESUME_NOTICE_MS) {
+    return failed != 0U && (uint32_t)(now_ms - failed) < PLAYER_NO_RESUME_NOTICE_MS;
+}
+
+static void player_note_nothing_started(player_snapshot_t *snapshot)
+{
+    const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    if (player_control_browse_failed()) {
         snprintf(snapshot->error, sizeof(snapshot->error), "%s",
                  player_text(DEVICE_TEXT_ERROR_FOLDER_FAILED));
         return;

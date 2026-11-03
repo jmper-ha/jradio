@@ -17,6 +17,7 @@
 | Bluetooth | a second ESP32 module (WROOM-32) running [jradio-bt](https://github.com/jmper-ha/jradio-bt) | no |
 | FM tuner | an RDA5807FP (digital sound over I2S) or a module on an RDA5807M (analogue output, or over I2S through a PCM1808 ADC) | no |
 | Real-time clock | a DS3231 or DS1307 on I2C, with a cell - the time without a network and an alarm without Wi-Fi | no |
+| Touch panel | the FT6336U on the ST7796S module, on I2C - control by finger | no |
 | Amplifier | any with a MUTE / SD input - the firmware mutes it on pause | no |
 | Peripheral power switch | a load switch or a P-MOSFET - cuts the periphery in sleep | no |
 
@@ -391,6 +392,25 @@ In the hardware editor it is the "Real-time clock" card. Both chips answer at
 - **The cell.** Many modules carry a charging circuit for a LIR cell (a
   resistor and a diode by the holder). With a plain CR cell it must come off.
   If the log says "DS3231 lost the time" after a power cut, the cell is flat.
+
+## Touch panel: FT6336U
+
+It sits on the ST7796S module itself and comes out on its header. It has been
+tried on that module in landscape and in portrait, so Hardware offers it with
+that display only. It shares I2C0 with the tuner and the clock, on the same two
+pins.
+
+```c
+#define TOUCH_CHIP TOUCH_CHIP_FT6336U
+#define TOUCH_I2C_PERIPHERAL 0
+#define FM_I2C_SDA_GPIO 8
+#define FM_I2C_SCL_GPIO 3
+#define TOUCH_INT_GPIO 38             // CTP_INT, optional
+```
+
+Without `TOUCH_INT_GPIO` the panel is polled over the bus. With it, while nobody
+is touching the screen the bus is left alone and the firmware only looks at the
+pin.
 
 ## What the home screen shows
 

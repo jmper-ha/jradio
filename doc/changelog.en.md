@@ -6,6 +6,34 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.10.0 — 3 November 2026
+
+New:
+- The FT6336U touch panel on the ST7796S module, in landscape and in portrait.
+  In the menus, lists and settings: tap and scroll, and a setting's value moves
+  with a sideways drag. On the player screen: a tap in the middle pauses, a
+  sideways swipe changes the track, a drag along the right edge is the volume
+  with a large figure over the screen, a swipe from the top brings the quick
+  settings, a swipe from the bottom the action strip (the list, seeking, FM
+  tuning, the hearts on Yandex), and a long touch is the encoder's long press.
+  The panel is switched on in Hardware and for now is offered with the ST7796S
+  only. Wiring is in [Hardware](hardware.en.md).
+- On a media server (DLNA) the player shows the place in the track, its length
+  and the bar, as on files. There is still no seeking there.
+- When a media server refuses a folder, the screen says "The folder would not
+  open".
+- The player page reloads itself when the web files on the device have changed.
+
+Changed:
+- The quick settings no longer go round: the list stops at its first and last
+  row, with the encoder too. In portrait the window shows every row at once.
+- Settings and the main menu redraw only what changed, and the graphics are
+  built with optimisation: lists move faster.
+
+Fixed:
+- An Ogg station (Vorbis, FLAC) stopped when a song ended in the stream, and
+  played again only after pause and play.
+
 ## v1.9.3 — 31 October 2026
 
 New:

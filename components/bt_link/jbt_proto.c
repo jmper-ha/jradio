@@ -319,6 +319,7 @@ const char *jbt_msg_name(uint8_t type)
     case JBT_MSG_COVER_GET: return "COVER_GET";
     case JBT_MSG_FORGET: return "FORGET";
     case JBT_MSG_PING: return "PING";
+    case JBT_MSG_BUS: return "BUS";
     case JBT_MSG_STATUS: return "STATUS";
     case JBT_MSG_MODE_ACK: return "MODE_ACK";
     case JBT_MSG_TRACK: return "TRACK";

@@ -51,6 +51,15 @@ void bt_link_module_version(char *out, size_t out_size);
  * after asking for off has returned. */
 esp_err_t bt_link_set_mode(jbt_mode_t mode, uint32_t timeout_ms);
 
+/* Whether the module can follow a bus the board clocks. A module that has not
+ * said yet gets up to `timeout_ms` to; an older one answers false. */
+bool bt_link_module_can_follow(uint32_t timeout_ms);
+
+/* Whether a speaker is connected over a bus the module cannot read: a
+ * module older than JBT_MSG_BUS only knows 16-bit slots, so it connects and
+ * then sends nothing. */
+bool bt_link_output_needs_new_module(void);
+
 /* The module as an output. While on, and whenever the player is not using
  * the module as a phone's sink, the link keeps the module in source mode
  * listening to the I2S bus and connected to `address`; off, the module is

@@ -169,7 +169,9 @@
        gain (13 dB already swings 6.3 V peak) are its rows alone. */
     {key: 'dac', kind: 'choice', device: 'dac', options: ['pcm5102', 'ssm3582'], dflt: 'pcm5102', define: 'AUDIO_DAC'},
     {key: 'dac_i2s', kind: 'choice', device: 'dac', options: ['0'], dflt: '0', bus: 'i2s'},
-    {key: 'dac_mute', kind: 'opt_pin', device: 'dac', dflt: NONE, define: 'AUDIO_DAC_MUTE_GPIO'},
+    /* The SSM3582 is powered down over I2C and has no such pin. */
+    {key: 'dac_mute', kind: 'opt_pin', device: 'dac', dflt: NONE, define: 'AUDIO_DAC_MUTE_GPIO',
+     when: (values) => values.dac !== 'ssm3582'},
     {key: 'dac_i2c', kind: 'choice', device: 'dac', options: ['0'], dflt: '0', bus: 'i2c',
      when: (values) => values.dac === 'ssm3582'},
     {key: 'dac_address', kind: 'choice', device: 'dac', dflt: '0x10', define: 'SSM3582_I2C_ADDRESS',
@@ -196,6 +198,7 @@
     /* The module's audio goes over the DAC's I2S bus - both directions - so
        the card names that bus as its "sound". */
     {key: 'bt_i2s', kind: 'choice', device: 'bluetooth', options: ['0'], dflt: '0', bus: 'i2s'},
+    {key: 'bt_din', kind: 'opt_pin', device: 'bluetooth', dflt: NONE, define: 'BT_I2S_DIN_GPIO'},
 
     /* The FM tuner, controlled over I2C. Its sound is its own analogue
        output, or - the RDA5807FP - I2S into the S3, which then plays it
@@ -527,6 +530,12 @@
       errors.push({code: 'dac_address_taken', key: 'dac_address', gpio: null});
     }
 
+    /* Left to clock the bus itself the module runs it at 32 x Fs, and this
+       amplifier wants 50 at least: silence. */
+    if (values.dac === 'ssm3582' && deviceEnabled(values, 'bluetooth') && isNone(values.bt_din)) {
+      errors.push({code: 'bt_needs_din', key: 'bt_din', gpio: null});
+    }
+
     /* One input line, one source of what comes down it. */
     if (deviceEnabled(values, 'adc') && deviceEnabled(values, 'fm') && !isNone(values.fm_i2s)) {
       errors.push({code: 'adc_with_fm_i2s', key: 'adc', gpio: null});
@@ -670,7 +679,8 @@
         ? ['/* The jradio-bt module: commands over UART1, sound over the same I2S. */',
            `#define BLUETOOTH BLUETOOTH_${String(values.bluetooth).toUpperCase()}`,
            ...gpio('BT_UART_TX_GPIO', 'uart1_tx'),
-           ...gpio('BT_UART_RX_GPIO', 'uart1_rx')]
+           ...gpio('BT_UART_RX_GPIO', 'uart1_rx'),
+           ...(pin('bt_din') === null ? [] : gpio('BT_I2S_DIN_GPIO', 'bt_din'))]
         : ['/* No Bluetooth module: BLUETOOTH and the BT_UART_* lines would go here. */']),
       '',
       ...(deviceEnabled(values, 'fm')
@@ -807,6 +817,7 @@
       else unknown.push({key: 'BLUETOOTH', value: bluetooth});
     }
     asPin('uart1_tx', 'BT_UART_TX_GPIO'); asPin('uart1_rx', 'BT_UART_RX_GPIO');
+    asPin('bt_din', 'BT_I2S_DIN_GPIO');
     const tuner = take('FM_TUNER');
     if (tuner === undefined) values.fm_tuner = NONE;
     else {

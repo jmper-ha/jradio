@@ -177,6 +177,7 @@ def board_csv(macros):
         ("bluetooth", "jradio_bt" if bt else "none"),
         ("bt_uart", "1"),
         ("bt_i2s", "0"),
+        ("bt_din", pin(macros, "BT_I2S_DIN_GPIO") if bt and defined("BT_I2S_DIN_GPIO") else "none"),
         ("fm_tuner", "rda5807" if fm else "none"),
         ("fm_i2c", "0"),
         ("fm_i2s", "0" if fm_i2s else "none"),

@@ -143,6 +143,7 @@ static const field_t k_fields[] = {
      {{"none", BLUETOOTH_NONE}, {"jradio_bt", BLUETOOTH_JRADIO_BT}, {NULL, 0}}},
     {"bt_uart", KIND_CHOICE, DEV_BLUETOOTH, AT(bt_uart), false, NULL, {{"1", 1}, {NULL, 0}}},
     {"bt_i2s", KIND_CHOICE, DEV_BLUETOOTH, AT(bt_i2s), false, NULL, {{"0", 0}, {NULL, 0}}},
+    {"bt_din", KIND_OPT_PIN, DEV_BLUETOOTH, AT(bt_din), false, NULL, {{NULL, 0}}},
     {"fm_tuner", KIND_CHOICE, DEV_FM, AT(fm_tuner), false, NULL,
      {{"none", FM_TUNER_NONE}, {"rda5807", FM_TUNER_RDA5807}, {NULL, 0}}},
     {"fm_i2c", KIND_CHOICE, DEV_FM, AT(fm_i2c), false, NULL, {{"0", 0}, {NULL, 0}}},
@@ -232,6 +233,7 @@ void board_config_clear(board_config_t *config)
     config->dac_gain = 0U;
     config->bt_uart = 1U;
     config->bt_i2s = 0U;
+    config->bt_din = -1;
 }
 
 /* A whole decimal integer and nothing else. Out of int8_t's range reads as
@@ -582,6 +584,11 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     if (device_enabled(config, DEV_BLUETOOTH)) {
         if (config->bt_uart == 1U) check_bus(config, report, DEV_BLUETOOTH, k_uart1, 2U);
         if (config->bt_i2s == 0U) check_bus(config, report, DEV_BLUETOOTH, k_i2s0, 3U);
+        /* Left to clock the bus itself the module runs it at 32 x Fs, and this
+         * amplifier wants 50 at least: silence. */
+        if (config->dac == DAC_SSM3582 && config->bt_din < 0) {
+            add_issue(report, false, BOARD_ISSUE_BT_NEEDS_DIN, "bt_din", "bluetooth", -1);
+        }
     }
     if (device_enabled(config, DEV_FM) && config->fm_i2c == 0U) {
         check_bus(config, report, DEV_FM, k_i2c0, 2U);
@@ -657,6 +664,7 @@ const char *board_config_issue_name(board_issue_code_t code)
     case BOARD_ISSUE_BAD_VALUE: return "bad_value";
     case BOARD_ISSUE_ADC_WITH_FM_I2S: return "adc_with_fm_i2s";
     case BOARD_ISSUE_DAC_ADDRESS_TAKEN: return "dac_address_taken";
+    case BOARD_ISSUE_BT_NEEDS_DIN: return "bt_needs_din";
     case BOARD_ISSUE_SLEEP_NOT_RTC: return "sleep_not_rtc";
     case BOARD_ISSUE_IR_NOT_RTC: return "ir_not_rtc";
     case BOARD_ISSUE_SPI_NOT_IOMUX: return "spi_not_iomux";

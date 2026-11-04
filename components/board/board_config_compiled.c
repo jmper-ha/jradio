@@ -111,6 +111,9 @@ void board_config_compiled(board_config_t *config)
     config->bluetooth = BLUETOOTH_JRADIO_BT;
     config->uart1_tx = PIN(BT_UART_TX_GPIO);
     config->uart1_rx = PIN(BT_UART_RX_GPIO);
+#ifdef BT_I2S_DIN_GPIO
+    config->bt_din = PIN(BT_I2S_DIN_GPIO);
+#endif
 #endif
 #if defined(FM_TUNER) && FM_TUNER == FM_TUNER_RDA5807
     config->fm_tuner = FM_TUNER_RDA5807;

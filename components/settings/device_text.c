@@ -171,6 +171,8 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     [DEVICE_TEXT_ERROR_NOTHING_TO_RESUME] = {"Нечего продолжить - выберите",
      "Nothing to resume - choose something"},
     [DEVICE_TEXT_ERROR_FOLDER_FAILED] = {"Папка не открылась", "The folder would not open"},
+    [DEVICE_TEXT_ERROR_BT_MODULE_OLD] = {"Обновите прошивку модуля Bluetooth",
+     "Update the Bluetooth module's firmware"},
     [DEVICE_TEXT_ERROR_YANDEX_SUBSCRIPTION] = {"Нужна подписка Яндекс Музыки",
      "A Yandex Music subscription is needed"},
     [DEVICE_TEXT_ERROR_YANDEX_REFRESH] = {"Обновить станции", "Refresh the stations"},

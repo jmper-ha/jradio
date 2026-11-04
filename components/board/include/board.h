@@ -73,6 +73,12 @@ esp_err_t board_audio_reclaim_bus(void);
  * drift. The output has to be running for the clocks to be there. Only on a
  * board that wires the line; ESP_ERR_NOT_SUPPORTED elsewhere. */
 bool board_audio_capture_available(void);
+/* Which line the next input is made on: the module's (bt_din) or the tuner's
+ * (i2s0_din). Only with no input made, which is any time the output is stopped
+ * and the input was turned off. */
+esp_err_t board_audio_capture_select(bool from_bluetooth);
+// The bus's slot width, which whoever else reads or writes it has to match.
+uint8_t board_audio_slot_bits(void);
 esp_err_t board_audio_capture_set_enabled(bool enabled);
 esp_err_t board_audio_capture_read(void *pcm, size_t length, size_t *read, uint32_t timeout_ms);
 /* The DAC's soft mute, on boards that wire AUDIO_DAC_MUTE_GPIO; a no-op

@@ -139,6 +139,13 @@ static i2s_chan_handle_t s_i2s_tx;
  * tuner's sound. Created and deleted with the output. */
 static i2s_chan_handle_t s_i2s_rx;
 static bool s_capture_wanted;
+// Which line the input is made on: the Bluetooth module's, or the tuner's.
+static bool s_capture_from_bt;
+
+static int board_audio_capture_pin(void)
+{
+    return s_capture_from_bt ? wiring()->bt_din : wiring()->i2s0_din;
+}
 // The channel's ring as made: I2S_DMA_DESC_NUM, or _DUPLEX with the input.
 static uint32_t s_dma_desc_num = I2S_DMA_DESC_NUM;
 static bool s_capture_enabled;
@@ -503,7 +510,7 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
      * clocks for both directions, which is what makes the tuner's samples
      * arrive at the rate the DAC takes them. Only then - see
      * board_audio_rebuild_channel(). */
-    const bool capture = s_capture_wanted && wiring()->i2s0_din >= 0;
+    const bool capture = s_capture_wanted && board_audio_capture_pin() >= 0;
     s_dma_desc_num = capture ? I2S_DMA_DESC_NUM_DUPLEX : I2S_DMA_DESC_NUM;
     channel_config.dma_desc_num = s_dma_desc_num;
     ESP_RETURN_ON_ERROR(i2s_new_channel(&channel_config, &s_i2s_tx, capture ? &s_i2s_rx : NULL),
@@ -533,7 +540,8 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
              * FM station plays - and only with an ADC to feed it: a 256 x fs
              * clock on a wire beside the antenna's board is not something to
              * leave running under every other source. */
-            .mclk = capture && board_has_adc() ? wired(wiring()->i2s0_mclk) : I2S_GPIO_UNUSED,
+            .mclk = capture && !s_capture_from_bt && board_has_adc() ? wired(wiring()->i2s0_mclk)
+                                                                      : I2S_GPIO_UNUSED,
             .bclk = wired(wiring()->i2s0_bclk),
             .ws = wired(wiring()->i2s0_lrck),
             .dout = wired(wiring()->i2s0_dout),
@@ -555,7 +563,7 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
      * only while the input is made. */
     /* The SSM3582 is the other: it takes no 32 x Fs clock at any rate
      * (its datasheet, table 13), so its slots are always the wide ones. */
-    const bool through_adc = capture && board_has_adc();
+    const bool through_adc = capture && !s_capture_from_bt && board_has_adc();
     const bool wide_slots = through_adc || board_dac_is_ssm3582();
     std_config.slot_cfg.slot_bit_width =
         wide_slots ? I2S_SLOT_BIT_WIDTH_32BIT : (i2s_slot_bit_width_t)I2S_SLOT_BIT_WIDTH;
@@ -569,7 +577,7 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
         /* The same format both ways - the tuner is set to send what the DAC
          * is sent: Philips, 16-bit stereo - with the data line the other way. */
         std_config.gpio_cfg.dout = I2S_GPIO_UNUSED;
-        std_config.gpio_cfg.din = wired(wiring()->i2s0_din);
+        std_config.gpio_cfg.din = wired(board_audio_capture_pin());
         ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_rx, &std_config), TAG,
                             "configure I2S RX failed");
         /* At the pad's default 20 mA the ADC's 11.3 MHz clock, square and on
@@ -580,7 +588,8 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
         if (through_adc) {
             (void)gpio_set_drive_capability(wired(wiring()->i2s0_mclk), GPIO_DRIVE_CAP_0);
         }
-        ESP_LOGI(TAG, "I2S input on GPIO %d, for the FM tuner%s", wiring()->i2s0_din,
+        ESP_LOGI(TAG, "I2S input on GPIO %d, for the %s%s", board_audio_capture_pin(),
+                 s_capture_from_bt ? "Bluetooth module" : "FM tuner",
                  through_adc ? ", through the ADC (master clock out, BCLK=64xFs)" : "");
     }
     ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_dout)), TAG,
@@ -1306,7 +1315,23 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
 
 bool board_audio_capture_available(void)
 {
-    return wiring()->i2s0_din >= 0;
+    return board_audio_capture_pin() >= 0;
+}
+
+esp_err_t board_audio_capture_select(bool from_bluetooth)
+{
+    if (s_audio_mutex == NULL) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
+    // The line is chosen as the input is made, and an input held is on the old one.
+    const esp_err_t result = s_i2s_rx == NULL ? ESP_OK : ESP_ERR_INVALID_STATE;
+    if (result == ESP_OK) s_capture_from_bt = from_bluetooth;
+    xSemaphoreGive(s_audio_mutex);
+    return result;
+}
+
+uint8_t board_audio_slot_bits(void)
+{
+    return board_dac_is_ssm3582() ? 32U : (uint8_t)I2S_SLOT_BIT_WIDTH;
 }
 
 /* The channels made again, with the input or without it. The input's DMA

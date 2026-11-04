@@ -30,7 +30,10 @@
 extern "C" {
 #endif
 
-#define JBT_PROTOCOL_VERSION 1U
+/* 2: JBT_MSG_BUS. A host needing it reads the version a PONG carries, since a
+ * module of version 1 only logs a message it does not know. */
+#define JBT_PROTOCOL_VERSION 2U
+#define JBT_PROTOCOL_VERSION_FOLLOW 2U
 
 /* SLIP bytes. */
 #define JBT_SLIP_END 0xC0U
@@ -70,6 +73,9 @@ typedef enum {
     JBT_MSG_COVER_GET = 0x0B,   /* u32 offset, u16 max */
     JBT_MSG_FORGET = 0x0C,      /* addr[6], or empty for all */
     JBT_MSG_PING = 0x0D,        /* - */
+    /* u8 jbt_sink_bus_t, u8 slot bits (16 or 32): how the I2S bus is run, from
+     * the next mode on. Sent before SET_MODE; a module starts as DRIVE, 16. */
+    JBT_MSG_BUS = 0x0E,
     /* module -> host */
     JBT_MSG_STATUS = 0x80,      /* jbt_status_t fields, then TLV: PEER_NAME */
     JBT_MSG_MODE_ACK = 0x81,    /* u8 mode, u8 jbt_result_t */
@@ -95,9 +101,15 @@ typedef enum {
 
 typedef enum {
     JBT_MODE_OFF = 0,
-    JBT_MODE_SINK = 1,   /* phone -> module -> I2S out (module drives the bus) */
+    JBT_MODE_SINK = 1,   /* phone -> module -> I2S out (see jbt_sink_bus_t) */
     JBT_MODE_SOURCE = 2, /* I2S in (host drives the bus) -> module -> headphones */
 } jbt_mode_t;
+
+/* Who clocks the bus while a phone plays. */
+typedef enum {
+    JBT_SINK_BUS_DRIVE = 0,  /* the module, straight to the DAC, on the DAC's data line */
+    JBT_SINK_BUS_FOLLOW = 1, /* the host, which takes the samples on a line of their own */
+} jbt_sink_bus_t;
 
 typedef enum {
     JBT_CONN_NONE = 0,

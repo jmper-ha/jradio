@@ -323,6 +323,7 @@
 /* #define BLUETOOTH BLUETOOTH_JRADIO_BT */
 /* #define BT_UART_TX_GPIO 13 */
 /* #define BT_UART_RX_GPIO 14 */
+/* #define BT_I2S_DIN_GPIO 15 */
 /* The DAC's soft-mute line, when it is wired: while the module sends the
  * sound to a Bluetooth speaker the built-in output is muted, so the room
  * does not hear the same music twice, a few hundred milliseconds apart. On

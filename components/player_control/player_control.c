@@ -746,16 +746,133 @@ static uint8_t s_bt_volume_percent = 0xFFU;
  * while a phone's slider was being dragged. One at a time. */
 static SemaphoreHandle_t s_bt_volume_lock;
 
+static uint32_t player_now_ms(void);
+
+/* The phone's sound through this board, on a board with bt_din wired: the bus
+ * stays ours and the module's samples are read off a line of their own, into
+ * the same output as every other source - which is what gives Bluetooth the
+ * tone, the level and any output other than the DAC. */
+#define PLAYER_BT_PIPE_STACK 4096
+#define PLAYER_BT_PIPE_BYTES 1024U
+#define PLAYER_BT_PIPE_IO_MS 100U
+#define PLAYER_BT_PIPE_IDLE_MS 50U
+#define PLAYER_BT_PIPE_STOP_WAIT_MS 1000U
+#define PLAYER_BT_RATE_CHECK_MS 200U
+// A module too old to say would otherwise find out only by silence.
+#define PLAYER_BT_VERSION_WAIT_MS 3000U
+
+static atomic_bool s_bt_pipe_wanted = ATOMIC_VAR_INIT(false);
+/* When a module too old for bt_din was last refused, for the few seconds that
+ * is news: the source simply does not open, and nothing else would say why. */
+static atomic_uint s_bt_module_old_at_ms = ATOMIC_VAR_INIT(0U);
+static atomic_bool s_bt_pipe_playing = ATOMIC_VAR_INIT(false);
+
+static void player_bt_pipe_stop_output(void)
+{
+    // Output first: the input's channels are only dropped with it stopped.
+    (void)board_audio_set_enabled(false);
+    (void)board_audio_capture_set_enabled(false);
+    (void)board_audio_capture_select(false);
+    atomic_store_explicit(&s_bt_pipe_playing, false, memory_order_release);
+}
+
+static uint32_t player_bt_phone_rate(void)
+{
+    bt_link_brief_t brief;
+    bt_link_brief(&brief);
+    return brief.status.sample_rate != 0U ? brief.status.sample_rate : AUDIO_DEFAULT_SAMPLE_RATE;
+}
+
+static void player_bt_pipe_task(void *arg)
+{
+    (void)arg;
+    uint8_t *block = heap_caps_malloc(PLAYER_BT_PIPE_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (block == NULL) block = heap_caps_malloc(PLAYER_BT_PIPE_BYTES, MALLOC_CAP_INTERNAL);
+    if (block == NULL) {
+        ESP_LOGE(TAG, "bluetooth: no memory for the I2S pipe");
+        vTaskDelete(NULL);
+        return;
+    }
+    uint32_t rate = 0U;
+    uint32_t rate_checked = 0U;
+    for (;;) {
+        const bool play = atomic_load_explicit(&s_bt_pipe_wanted, memory_order_acquire);
+        const bool playing = atomic_load_explicit(&s_bt_pipe_playing, memory_order_acquire);
+        if (!play) {
+            if (playing) player_bt_pipe_stop_output();
+            vTaskDelay(pdMS_TO_TICKS(PLAYER_BT_PIPE_IDLE_MS));
+            continue;
+        }
+        const uint32_t now = player_now_ms();
+        if (!playing) {
+            /* The input goes on before the output: turning it on makes the
+             * channels again, which the output has to be stopped for. */
+            rate = player_bt_phone_rate();
+            rate_checked = now;
+            if (board_audio_capture_select(true) != ESP_OK ||
+                board_audio_set_sample_rate(rate) != ESP_OK ||
+                board_audio_capture_set_enabled(true) != ESP_OK ||
+                board_audio_set_enabled(true) != ESP_OK) {
+                ESP_LOGW(TAG, "bluetooth: the I2S pipe did not start");
+                player_bt_pipe_stop_output();
+                vTaskDelay(pdMS_TO_TICKS(PLAYER_BT_PIPE_STOP_WAIT_MS));
+                continue;
+            }
+            atomic_store_explicit(&s_bt_pipe_playing, true, memory_order_release);
+            ESP_LOGI(TAG, "bluetooth: sound over I2S at %u Hz", (unsigned)rate);
+        } else if ((uint32_t)(now - rate_checked) >= PLAYER_BT_RATE_CHECK_MS) {
+            rate_checked = now;
+            const uint32_t phone = player_bt_phone_rate();
+            if (phone != rate && board_audio_set_sample_rate(phone) == ESP_OK) {
+                rate = phone;
+                ESP_LOGI(TAG, "bluetooth: the phone moved to %u Hz", (unsigned)rate);
+            }
+        }
+        size_t read = 0U;
+        if (board_audio_capture_read(block, PLAYER_BT_PIPE_BYTES, &read, PLAYER_BT_PIPE_IO_MS) ==
+                ESP_OK &&
+            read > 0U) {
+            size_t written = 0U;
+            (void)board_audio_write(block, read, &written, PLAYER_BT_PIPE_IO_MS);
+        }
+    }
+}
+
+static void player_bt_pipe_run(bool run)
+{
+    atomic_store_explicit(&s_bt_pipe_wanted, run, memory_order_release);
+    /* Started and stopped both waited out: the module wants the clock running
+     * when it is told to follow it, and the next source finds the output free. */
+    const uint32_t started = player_now_ms();
+    while (atomic_load_explicit(&s_bt_pipe_playing, memory_order_acquire) != run &&
+           (uint32_t)(player_now_ms() - started) < PLAYER_BT_PIPE_STOP_WAIT_MS) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
 static bool player_bt_open(void)
 {
-    if (board_audio_release_bus() != ESP_OK) {
+    const bool through_s3 = board_bt_through_s3();
+    if (through_s3) {
+        if (!bt_link_module_can_follow(PLAYER_BT_VERSION_WAIT_MS)) {
+            ESP_LOGW(TAG, "bluetooth: bt_din is wired, but the module's firmware cannot follow "
+                          "the bus: update jradio-bt");
+            atomic_store_explicit(&s_bt_module_old_at_ms, player_now_ms(), memory_order_release);
+            return false;
+        }
+        player_bt_pipe_run(true);
+    } else if (board_audio_release_bus() != ESP_OK) {
         ESP_LOGW(TAG, "bluetooth: bus not released");
         return false;
     }
     const esp_err_t err = bt_link_set_mode(JBT_MODE_SINK, PLAYER_BT_MODE_TIMEOUT_MS);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "bluetooth: module did not take the bus: %s", esp_err_to_name(err));
-        (void)board_audio_reclaim_bus();
+        if (through_s3) {
+            player_bt_pipe_run(false);
+        } else {
+            (void)board_audio_reclaim_bus();
+        }
         return false;
     }
     s_bt_volume_percent = board_audio_volume();
@@ -780,7 +897,11 @@ static void player_bt_close(void)
          * the remaining case, a module that answers late. */
         ESP_LOGW(TAG, "bluetooth: module did not release the bus: %s", esp_err_to_name(err));
     }
-    (void)board_audio_reclaim_bus();
+    if (board_bt_through_s3()) {
+        player_bt_pipe_run(false);
+    } else {
+        (void)board_audio_reclaim_bus();
+    }
     album_art_clear();
 }
 
@@ -2290,6 +2411,14 @@ esp_err_t player_control_init(void)
             ESP_LOGW(TAG, "fm: no I2S pipe task");
         }
     }
+    if (board_bt_through_s3()) {
+        static StaticTask_t s_bt_pipe_control;
+        // As high as the tuner's: a late block is a click here too.
+        if (!player_fm_task_start(player_bt_pipe_task, "bt_pipe", PLAYER_BT_PIPE_STACK, 6,
+                                  &s_bt_pipe_control)) {
+            ESP_LOGW(TAG, "bluetooth: no I2S pipe task");
+        }
+    }
     bt_link_set_key_listener(player_speaker_key);
     if (s_command_queue != NULL) {
         return ESP_OK;
@@ -2381,6 +2510,13 @@ bool player_control_browse_failed(void)
 static void player_note_nothing_started(player_snapshot_t *snapshot)
 {
     const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    const uint32_t bt_old = atomic_load_explicit(&s_bt_module_old_at_ms, memory_order_acquire);
+    if ((bt_old != 0U && (uint32_t)(now_ms - bt_old) < PLAYER_NO_RESUME_NOTICE_MS) ||
+        bt_link_output_needs_new_module()) {
+        snprintf(snapshot->error, sizeof(snapshot->error), "%s",
+                 player_text(DEVICE_TEXT_ERROR_BT_MODULE_OLD));
+        return;
+    }
     if (player_control_browse_failed()) {
         snprintf(snapshot->error, sizeof(snapshot->error), "%s",
                  player_text(DEVICE_TEXT_ERROR_FOLDER_FAILED));

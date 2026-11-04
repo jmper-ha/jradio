@@ -109,8 +109,21 @@ static void bt_link_output_calls_reset(void)
 static esp_err_t bt_link_send(uint8_t type, uint8_t flags, const uint8_t *payload, size_t length);
 esp_err_t bt_link_set_volume(uint8_t volume);
 
+/* Before every mode, because a module forgets it across a reset. A board on
+ * the old wiring wants what a module starts with and says nothing, so an older
+ * module does not log a message it has no use for. */
+static void bt_link_tell_bus(void)
+{
+    const bool follow = board_bt_through_s3();
+    const uint8_t slot_bits = board_audio_slot_bits();
+    if (!follow && slot_bits == 16U) return;
+    const uint8_t payload[2] = {follow ? JBT_SINK_BUS_FOLLOW : JBT_SINK_BUS_DRIVE, slot_bits};
+    (void)bt_link_send(JBT_MSG_BUS, 0U, payload, sizeof(payload));
+}
+
 static esp_err_t bt_link_ask_mode(jbt_mode_t mode)
 {
+    bt_link_tell_bus();
     const uint8_t payload[1] = {(uint8_t)mode};
     return bt_link_send(JBT_MSG_SET_MODE, 0U, payload, sizeof(payload));
 }
@@ -167,8 +180,7 @@ static void bt_link_greet(void)
     (void)bt_link_send_name();
     bt_link_on_rate(board_audio_sample_rate());
     if (s_wanted_mode != JBT_MODE_OFF) {
-        const uint8_t payload[1] = {s_wanted_mode};
-        (void)bt_link_send(JBT_MSG_SET_MODE, 0U, payload, sizeof(payload));
+        (void)bt_link_ask_mode((jbt_mode_t)s_wanted_mode);
         ESP_LOGW(TAG, "asking the module for mode %u again", s_wanted_mode);
     }
     (void)bt_link_send(JBT_MSG_GET_STATUS, 0U, NULL, 0U);
@@ -714,14 +726,39 @@ esp_err_t bt_link_i2s_format(uint32_t sample_rate, uint8_t bits, uint8_t channel
     return bt_link_send(JBT_MSG_I2S_FORMAT, 0U, payload, writer.length);
 }
 
+bool bt_link_module_can_follow(uint32_t timeout_ms)
+{
+    if (s_state_lock == NULL) return false;
+    /* The version comes with the PONG the link task keeps asking for until it
+     * has one. */
+    for (uint32_t waited = 0U; waited <= timeout_ms; waited += 50U) {
+        bt_link_state_t state;
+        bt_link_snapshot(&state);
+        if (state.protocol != 0U) return state.protocol >= JBT_PROTOCOL_VERSION_FOLLOW;
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    return false;
+}
+
+bool bt_link_output_needs_new_module(void)
+{
+    /* Connected, not merely switched on: with the speaker off the sound is on
+     * the DAC, which plays perfectly well. */
+    if (!bt_link_output_connected() || s_state_lock == NULL) return false;
+    if (board_audio_slot_bits() == 16U) return false;
+    xSemaphoreTake(s_state_lock, portMAX_DELAY);
+    const uint8_t protocol = s_state.protocol;
+    xSemaphoreGive(s_state_lock);
+    return protocol != 0U && protocol < JBT_PROTOCOL_VERSION_FOLLOW;
+}
+
 esp_err_t bt_link_set_mode(jbt_mode_t mode, uint32_t timeout_ms)
 {
     s_wanted_mode = (uint8_t)mode;
     if (!s_alive) return ESP_ERR_INVALID_STATE;
     /* A stale ack from an earlier, abandoned wait must not satisfy this one. */
     (void)xSemaphoreTake(s_mode_ack, 0);
-    const uint8_t payload[1] = {(uint8_t)mode};
-    ESP_RETURN_ON_ERROR(bt_link_send(JBT_MSG_SET_MODE, 0U, payload, sizeof(payload)), TAG, "send");
+    ESP_RETURN_ON_ERROR(bt_link_ask_mode(mode), TAG, "send");
     /* A mode the module did not take is not wanted any more: left standing,
      * a refused sink would keep the output policy from ever putting the
      * speaker back. The module reports off after a failed switch anyway. */

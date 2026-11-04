@@ -68,6 +68,9 @@ typedef struct {
     int8_t i2s0_lrck;
     int8_t i2s0_dout;
     int8_t i2s0_din;
+    /* The Bluetooth module's samples coming in, when the board clocks the bus
+     * and plays them itself; absent, the module drives the DAC directly. */
+    int8_t bt_din;
     int8_t i2s0_mclk;
     int8_t uart1_tx;
     int8_t uart1_rx;
@@ -151,6 +154,7 @@ typedef enum {
     /* The SSM3582 strapped to 0x10 or 0x11, which the RDA5807 on the same
      * bus answers at - the bench's tuner answered for it, 2026-10-29. */
     BOARD_ISSUE_DAC_ADDRESS_TAKEN,
+    BOARD_ISSUE_BT_NEEDS_DIN,
     // Warnings: the board works, but not the way its builder expects.
     BOARD_ISSUE_SLEEP_NOT_RTC,
     BOARD_ISSUE_IR_NOT_RTC,
@@ -285,6 +289,8 @@ bool board_has_usb(void);
 bool board_has_sd_card(void);
 bool board_has_ir(void);
 bool board_has_bluetooth(void);
+// Whether a phone's sound comes in through the S3 (bt_din wired).
+bool board_bt_through_s3(void);
 bool board_has_fm_tuner(void);
 /* RTC_CHIP_DS3231 or RTC_CHIP_DS1307 when the wiring has one, else
  * RTC_CHIP_NONE. */

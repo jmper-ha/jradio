@@ -210,9 +210,10 @@ SSM3582 Artwork module.
 The amplifier needs no MUTE pin: the firmware powers it down over I2C, before the
 clock stops.
 
-**Bluetooth is silent with the SSM3582 for now.** The jradio-bt module clocks the
-bus itself at 32 x Fs, and this amplifier wants at least 50 x Fs. The phone
-connects, but the speakers stay silent. The other sources, FM included, play.
+**Bluetooth works with the SSM3582 only through the S3** - see [Sound through the
+S3](#sound-through-the-s3). The jradio-bt module on its own clocks the bus at
+32 x Fs, and this amplifier wants at least 50 x Fs, so without that wire the
+speakers stay silent. The configurator will not accept such a board.
 
 ### Powering the periphery down in sleep
 
@@ -292,6 +293,28 @@ speaker, wire its XSMT pin to a free GPIO:
 On the purple PCM5102 modules this is the XMT pad, pulled to 3.3 V by a jumper
 - cut the jumper and connect the pad to the GPIO (1 kΩ in series is fine).
 Without this line the DAC simply always plays.
+
+### Sound through the S3
+
+One more wire, and the S3 always runs the bus while the phone's sound passes
+through it like any other source. Tone and automatic level start working on
+Bluetooth, and with the SSM3582 so does the sound itself. It takes module
+firmware with protocol 2.
+
+| S3 (jRadio) | WROOM (jradio-bt) | What |
+|---|---|---|
+| any free pin, for example GPIO 15 | GPIO 23 | data from the module, through 33-47 Ω |
+
+```c
+#define BT_I2S_DIN_GPIO 15
+```
+
+In the configurator this is the "DIN from the module" field. The other wires stay:
+the one on GPIO 22 is still needed to send sound to a Bluetooth speaker. Without
+this line everything works as before: the module runs the bus and feeds the DAC
+itself. With the pin set and old module firmware, Bluetooth does not open and the
+screen asks for an update. With the SSM3582 the same message appears when sending
+to a speaker: old firmware cannot read its bus.
 
 ## FM radio: the RDA5807 tuner
 

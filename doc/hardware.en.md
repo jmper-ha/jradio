@@ -204,7 +204,8 @@ SSM3582 Artwork module.
   ground will do: that is 0x18. The ADDR pins are 1.8 V, do not feed them from outside.
 - **The output is bridged:** do not tie a speaker's minus to ground.
 - **Gain** (`dac_gain`, 13-21 dB) goes by the supply voltage: the signal clips
-  above it. 13 dB already reaches 6.3 V peak.
+  above it. 13 dB already reaches 6.3 V peak: on a 5 V supply the top fifth of
+  the volume range distorts, full volume takes 7-9 V.
 
 The amplifier needs no MUTE pin: the firmware powers it down over I2C, before the
 clock stops.

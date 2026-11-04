@@ -348,6 +348,13 @@ player_operation_t player_control_decide(const player_snapshot_t *state,
             return PLAYER_OPERATION_INVALID;
         }
         return PLAYER_OPERATION_FM_TUNE;
+    case PLAYER_COMMAND_FM_PRESET_ADD:
+        // Only what the tuner can be on; the list itself says the rest.
+        if (state->active_source != AUDIO_SOURCE_FM || command->frequency_khz < 87000U ||
+            command->frequency_khz > 108000U) {
+            return PLAYER_OPERATION_INVALID;
+        }
+        return PLAYER_OPERATION_FM_PRESET_ADD;
     case PLAYER_COMMAND_FM_SEEK_UP:
     case PLAYER_COMMAND_FM_SEEK_DOWN:
         if (state->active_source != AUDIO_SOURCE_FM) return PLAYER_OPERATION_INVALID;

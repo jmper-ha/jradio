@@ -70,6 +70,9 @@ static bool s_searching;
 static size_t s_playing = DLNA_SOURCE_ENTRY_MAX;
 static char s_playing_url[DLNA_URL_MAX];
 static char s_playing_title[DLNA_TITLE_MAX];
+/* Copied like the two beside it: the listing moves on while a track plays, as
+ * soon as somebody browses. */
+static uint32_t s_playing_seconds;
 
 /* Where a previous run left off, handed over before the source is opened and
  * spent by that open. See dlna_source_set_resume(). */
@@ -302,6 +305,7 @@ static const char *dlna_next_url(char *title, size_t title_size)
         }
     }
     snprintf(s_playing_title, sizeof(s_playing_title), "%s", s_entries[index].title);
+    s_playing_seconds = s_entries[index].duration_ms / 1000U;
     snprintf(art, sizeof(art), "%s", s_entries[index].art_url);
     unlock();
 
@@ -685,6 +689,14 @@ size_t dlna_source_playing_index(void)
     const size_t playing = s_playing < s_entry_count ? s_playing : DLNA_SOURCE_ENTRY_MAX;
     unlock();
     return playing;
+}
+
+uint32_t dlna_source_playing_seconds(void)
+{
+    lock();
+    const uint32_t seconds = s_playing_seconds;
+    unlock();
+    return seconds;
 }
 
 bool dlna_source_playing_point(char *server, size_t server_size, char *container,

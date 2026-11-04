@@ -137,6 +137,11 @@ typedef enum {
      * (audio_level.h). Only a station of the radio's takes one. Appended,
      * for the reason the ones above were. */
     PLAYER_COMMAND_LEVEL_NUDGE,
+    /* `frequency_khz` kept as a preset, tuned to by hand on the device. Here
+     * rather than in the UI because the player owns the file and writes it
+     * from a task whose stack is internal. Appended, for the reason the ones
+     * above were. */
+    PLAYER_COMMAND_FM_PRESET_ADD,
 } player_command_kind_t;
 
 typedef struct {
@@ -148,7 +153,7 @@ typedef struct {
     // lies about which one it carries is the kind of thing that survives a
     // rename.
     uint32_t position_seconds;
-    // Only PLAYER_COMMAND_FM_TUNE reads this, for the same reason.
+    // Only PLAYER_COMMAND_FM_TUNE and _FM_PRESET_ADD read this, for the same reason.
     uint32_t frequency_khz;
     // Only PLAYER_COMMAND_LEVEL_NUDGE reads this, whole decibels.
     int8_t level_nudge_db;
@@ -260,6 +265,7 @@ typedef enum {
     PLAYER_OPERATION_FM_SEEK_UP,
     PLAYER_OPERATION_FM_SEEK_DOWN,
     PLAYER_OPERATION_LEVEL_NUDGE,
+    PLAYER_OPERATION_FM_PRESET_ADD,
 } player_operation_t;
 
 /* Whether a drive being pulled out should take the picture on screen with it.

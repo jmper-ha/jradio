@@ -158,10 +158,18 @@
         <span id="fm-status" class="settings-status" role="status" aria-live="polite"></span>
       </div>
 
-      <p class="field-note" data-i18n="note.fm">«Сканировать» проходит весь диапазон, и найденные станции заменяют этот список. Дайте им имена и картинки и сохраните: на устройстве список открывается двойным нажатием, а Prev и Next ищут ближайшую станцию.</p>
+      <p class="field-note" data-i18n="note.fm">«Сканировать» проходит весь диапазон, и найденные станции заменяют этот список. Станцию можно и добавить по частоте, и поправить частоту в строке. Дайте им имена и картинки и сохраните: на устройстве список открывается двойным нажатием, а Prev и Next листают его; пока список пуст, они ищут ближайшую станцию. Станция без имени получает его по RDS.</p>
 
       <ul id="fm-presets" class="saved-networks fm-list"></ul>
-      <p id="fm-presets-empty" class="empty-state" data-i18n="fm.saved_empty">Станций пока нет — нажмите «Сканировать»</p>
+      <p id="fm-presets-empty" class="empty-state" data-i18n="fm.saved_empty">Станций пока нет — нажмите «Сканировать» или добавьте частоту</p>
+
+      <!-- A station the scan missed, without scanning the list away. -->
+      <div class="fm-add">
+        <input id="fm-add-frequency" class="fm-frequency" type="text" inputmode="decimal" maxlength="6"
+               data-i18n-placeholder="fm.frequency" placeholder="Частота, МГц"
+               data-i18n-aria="fm.frequency" aria-label="Частота, МГц">
+        <button id="fm-add" class="secondary-button" type="button" data-i18n="fm.add">Добавить</button>
+      </div>
 
       <div class="settings-actions">
         <button id="fm-scan" class="secondary-button" type="button" data-i18n="fm.scan">Сканировать</button>

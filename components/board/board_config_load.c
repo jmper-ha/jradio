@@ -148,6 +148,11 @@ unsigned board_rtc_chip(void)
     return board_config_get()->rtc;
 }
 
+bool board_has_touch(void)
+{
+    return board_config_get()->touch == TOUCH_CHIP_FT6336U;
+}
+
 bool board_has_fm_tuner(void)
 {
     return board_config_get()->fm_tuner == FM_TUNER_RDA5807;

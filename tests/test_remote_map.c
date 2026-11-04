@@ -154,7 +154,7 @@ static void test_what_each_function_does_on_the_board(void)
     assert(remote_function_action(REMOTE_PREV) == BOARD_INPUT_ACTION_REMOTE_PREV);
     assert(remote_function_action(REMOTE_NEXT) == BOARD_INPUT_ACTION_REMOTE_NEXT);
     assert(remote_function_action(REMOTE_SOURCE_FM) == BOARD_INPUT_ACTION_SOURCE_FM);
-    assert(remote_function_action(REMOTE_BACK) == BOARD_INPUT_ACTION_ENCODER_LONG);
+    assert(remote_function_action(REMOTE_BACK) == BOARD_INPUT_ACTION_SOURCE_PREVIOUS);
     assert(remote_function_action(REMOTE_QUICK) == BOARD_INPUT_ACTION_QUICK_MENU);
     assert(remote_function_action(REMOTE_DIGIT_0) == BOARD_INPUT_ACTION_DIGIT_0);
     assert(remote_function_action(REMOTE_DIGIT_7) == BOARD_INPUT_ACTION_DIGIT_7);

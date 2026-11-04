@@ -331,7 +331,7 @@
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'source-tab';
-        button.dataset.command = 'source.select';
+        button.dataset.command = 'source.open';
         button.dataset.source = source.id;
         const icon = sourceIcons[source.id];
         if (icon) {
@@ -347,8 +347,10 @@
         label.className = 'source-tab-label';
         label.textContent = source.label;
         button.append(label);
+        /* As the remote's source key: the source plays where it was left,
+           and opens on its list only when there is nothing to resume. */
         button.addEventListener('click', () => {
-          sendCommand('source.select', {source: source.id});
+          sendCommand('source.open', {source: source.id});
         });
         return button;
       });
@@ -1758,6 +1760,27 @@
     }, delay);
   }
 
+  /* A phone keeps a tab for weeks and hands it back without loading anything,
+     so after an update it went on running the old page against the new device:
+     the source tabs still only opened a list, long after they had learnt to
+     resume. Asked on every connection, since an update reboots the device and
+     a tab woken from the background has lost its socket either way. The first
+     answer is the version this page came with. */
+  let loadedWebVersion = null;
+
+  function reloadOnNewWebVersion() {
+    window.fetch('/api/about', {cache: 'no-store'})
+      .then((response) => (response && response.ok === true ? response.json() : null))
+      .then((about) => {
+        // A missing stamp says nothing about which page this is.
+        const version = about && about.web && about.web.present === true ? about.web.version : '';
+        if (!version) return;
+        if (loadedWebVersion === null) loadedWebVersion = version;
+        else if (version !== loadedWebVersion) window.location.reload();
+      })
+      .catch(() => {});
+  }
+
   function connect() {
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1773,6 +1796,7 @@
       if (socket !== currentSocket) return;
       reconnectAttempt = 0;
       setConnected(true);
+      reloadOnNewWebVersion();
     });
     currentSocket.addEventListener('message', (event) => {
       if (socket !== currentSocket) return;

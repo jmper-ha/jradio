@@ -119,6 +119,11 @@
 #define RTC_CHIP_DS3231 1
 #define RTC_CHIP_DS1307 2
 
+#define TOUCH_CHIP_NONE 0
+/* FT6336U capacitive touch on I2C0 at 0x38, on the flex of an ST7796S module.
+ * See board_touch.c. */
+#define TOUCH_CHIP_FT6336U 1
+
 #define AUDIO_ADC_NONE 0
 /* PCM1808 stereo ADC: line-level analogue in, I2S out. A slave of the DAC's
  * clocks, and it wants a master clock of 256 x fs on its SCKI pin, which the

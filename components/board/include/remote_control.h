@@ -51,6 +51,11 @@ bool remote_control_power_frame(uint32_t *bits);
 bool remote_control_learn(remote_function_t function);
 bool remote_control_forget(remote_function_t function);
 void remote_control_snapshot(remote_map_t *map, remote_function_t *learning);
+/* Whether the last arming ended with a key bound, as opposed to running out.
+ * The page used to guess it from the row's code changing, and a key learned
+ * again onto the function it already had moved nothing and read as "no key
+ * came". */
+bool remote_control_learn_bound(void);
 /* Bumped on every change to the table or to what is armed, so a page can
  * tell "something happened" from one number in the settings frame. */
 uint32_t remote_control_revision(void);

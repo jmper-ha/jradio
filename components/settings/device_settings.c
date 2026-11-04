@@ -10,6 +10,7 @@
 #include "freertos/task.h"
 #endif
 
+#include <ctype.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1116,6 +1117,65 @@ void device_settings_default_name(const unsigned char mac[6], char *out, size_t 
     snprintf(out, size, "jradio-%02X%02X", mac == NULL ? 0U : mac[4], mac == NULL ? 0U : mac[5]);
 }
 
+/* а..я in code-point order, then ё. Without this the router shows the
+ * vendor's "espressif" for every board, because a host name of Cyrillic
+ * letters is no host name at all. */
+static const char *const s_cyrillic_latin[33] = {
+    "a", "b", "v", "g", "d", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p", "r",
+    "s", "t", "u", "f", "kh", "ts", "ch", "sh", "shch", "", "y", "", "e", "yu", "ya", "e",
+};
+
+bool device_settings_host_name(const char *name, char *out, size_t size)
+{
+    if (out == NULL || size == 0U) return false;
+    out[0] = '\0';
+    if (name == NULL) return false;
+    size_t length = 0U;
+    bool hyphen_due = false;
+    const unsigned char *at = (const unsigned char *)name;
+    while (*at != '\0') {
+        const char *piece = NULL;
+        bool capital = false;
+        char ascii[2] = {0};
+        if (isalnum(*at)) {
+            ascii[0] = (char)*at;
+            piece = ascii;
+            ++at;
+        } else if ((at[0] == 0xD0U || at[0] == 0xD1U) && at[1] != '\0') {
+            /* Two-byte UTF-8: U+0400..U+047F. */
+            const unsigned code = ((unsigned)(at[0] & 0x1FU) << 6) | (at[1] & 0x3FU);
+            at += 2;
+            if (code >= 0x0410U && code <= 0x042FU) {
+                piece = s_cyrillic_latin[code - 0x0410U];
+                capital = true;
+            } else if (code >= 0x0430U && code <= 0x044FU) {
+                piece = s_cyrillic_latin[code - 0x0430U];
+            } else if (code == 0x0401U || code == 0x0451U) {
+                piece = s_cyrillic_latin[32];
+                capital = code == 0x0401U;
+            }
+        } else {
+            ++at;
+            /* The rest of a multi-byte character goes with its lead byte. */
+            while ((*at & 0xC0U) == 0x80U) ++at;
+        }
+        if (piece == NULL) {
+            hyphen_due = length > 0U;
+            continue;
+        }
+        if (piece[0] == '\0') continue;
+        const size_t piece_length = strlen(piece);
+        if (length + (hyphen_due ? 1U : 0U) + piece_length >= size) break;
+        if (hyphen_due) out[length++] = '-';
+        hyphen_due = false;
+        memcpy(out + length, piece, piece_length);
+        if (capital) out[length] = (char)toupper((unsigned char)out[length]);
+        length += piece_length;
+        out[length] = '\0';
+    }
+    return length > 0U;
+}
+
 bool device_settings_set_weather_provider(device_settings_t *settings,
                                           device_weather_provider_t provider)
 {
@@ -1422,13 +1482,57 @@ bool device_settings_set_fm_frequency(device_settings_t *settings, unsigned long
     return true;
 }
 
+/* Whether `path` lies under `root`, a mount point such as "/sd0". */
+static bool path_on_root(const char *path, const char *root)
+{
+    const size_t length = strlen(root);
+    return length > 0U && strncmp(path, root, length) == 0 &&
+           (path[length] == '/' || path[length] == '\0');
+}
+
+/* Two paths on the same volume: the same first component. */
+static bool same_volume(const char *a, const char *b)
+{
+    const char *end = a[0] == '/' ? strchr(a + 1, '/') : NULL;
+    const size_t length = end == NULL ? strlen(a) : (size_t)(end - a);
+    return strncmp(a, b, length) == 0 && (b[length] == '/' || b[length] == '\0');
+}
+
 bool device_settings_set_last_file(device_settings_t *settings, const char *path)
 {
     if (settings == NULL || path == NULL ||
         strlen(path) >= sizeof(settings->last_file)) return false;
     if (strcmp(settings->last_file, path) == 0) return true;
+    /* One resume point for the two volumes sent the remote's USB key to the
+     * card's file: switch between them and each had forgotten its own
+     * (reported on the forum 2026-10-31). Kept only on a change of volume,
+     * so a track change still costs the one write it always did. Not fatal
+     * if it fails: the volume opens on its browser, as it used to. */
+    if (settings->last_file[0] != '\0' && !same_volume(settings->last_file, path)) {
+        (void)save_value(settings, "other_volume_file", settings->last_file);
+    }
     if (!save_value(settings, "last_usb_file", path)) return false;
     memcpy(settings->last_file, path, strlen(path) + 1U);
+    return true;
+}
+
+bool device_settings_volume_file(const device_settings_t *settings, const char *volume_root,
+                                 char *out, size_t size)
+{
+    if (out == NULL || size == 0U) return false;
+    out[0] = '\0';
+    if (settings == NULL || volume_root == NULL) return false;
+    if (path_on_root(settings->last_file, volume_root)) {
+        if (strlen(settings->last_file) >= size) return false;
+        memcpy(out, settings->last_file, strlen(settings->last_file) + 1U);
+        return true;
+    }
+    if (settings->storage_path[0] == '\0' ||
+        !settings_csv_get(settings->storage_path, "other_volume_file", out, size) ||
+        !path_on_root(out, volume_root)) {
+        out[0] = '\0';
+        return false;
+    }
     return true;
 }
 

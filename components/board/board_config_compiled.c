@@ -130,6 +130,17 @@ void board_config_compiled(board_config_t *config)
     config->i2c0_scl = PIN(FM_I2C_SCL_GPIO);
 #endif
 #endif
+/* And so does the touch panel. */
+#if defined(TOUCH_CHIP) && TOUCH_CHIP == TOUCH_CHIP_FT6336U
+    config->touch = (uint8_t)TOUCH_CHIP;
+#if defined(TOUCH_INT_GPIO)
+    config->touch_int = PIN(TOUCH_INT_GPIO);
+#endif
+#if defined(FM_I2C_SDA_GPIO) && defined(FM_I2C_SCL_GPIO)
+    config->i2c0_sda = PIN(FM_I2C_SDA_GPIO);
+    config->i2c0_scl = PIN(FM_I2C_SCL_GPIO);
+#endif
+#endif
 #if defined(AUDIO_ADC) && AUDIO_ADC == AUDIO_ADC_PCM1808
     config->adc = AUDIO_ADC_PCM1808;
     config->i2s0_din = PIN(I2S_DIN_GPIO);

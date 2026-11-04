@@ -135,6 +135,9 @@ esptool_py_flash_target_image(flash board "${board_offset}" "${board_bin}")
 # The allocator sits in a component of its own so that lvgl can be linked
 # against it without a cycle: lvgl cannot depend on ui, which depends on lvgl.
 idf_component_get_property(lvgl_lib lvgl__lvgl COMPONENT_LIB)
+# Every frame is LVGL's software rendering, and at the project's -Og a list's
+# took about 240 ms on the 480 px panel, too slow for a touch to follow.
+target_compile_options(${lvgl_lib} PRIVATE -O2)
 idf_component_get_property(lvgl_pool_lib lvgl_pool COMPONENT_LIB)
 target_include_directories(${lvgl_lib} PRIVATE "${CMAKE_SOURCE_DIR}/components/lvgl_pool/include")
 target_link_libraries(${lvgl_lib} PRIVATE ${lvgl_pool_lib})

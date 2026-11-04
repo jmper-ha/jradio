@@ -77,6 +77,10 @@ esp_err_t internet_radio_stop(void);
 esp_err_t internet_radio_pause(void);
 esp_err_t internet_radio_resume(void);
 void internet_radio_get_status(internet_radio_status_t *status);
+/* How far into the current track the output is, counted from what has gone to
+ * the DAC. False until there is a format to count in, and when nothing is on.
+ * Means something only for a chain: a station has no start to count from. */
+bool internet_radio_track_elapsed(uint32_t *seconds);
 size_t internet_radio_station_count(void);
 const station_catalog_entry_t *internet_radio_station_at(size_t index);
 bool internet_radio_start_saved_station(void);

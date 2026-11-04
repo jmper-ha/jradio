@@ -150,6 +150,8 @@ void dlna_source_set_resume(const char *server, const char *container, const cha
 bool dlna_source_start_saved(void);
 /* Which row is playing, or DLNA_SOURCE_ENTRY_MAX when none is. */
 size_t dlna_source_playing_index(void);
+/* The length the server gave for the track last started, 0 when it gave none. */
+uint32_t dlna_source_playing_seconds(void);
 /* Moves to the next or previous playable row without waiting for the current
  * track to end. */
 bool dlna_source_skip(bool forward);

@@ -104,11 +104,15 @@
       setStatus(t('remote.press', {function: t(`remote.f.${learning}`)}), false);
       lastLearningCode = typeof keys[learning] === 'string' ? keys[learning] : null;
     } else if (lastLearning !== null) {
-      /* The arming ended: with a key, which moved the row's code, or with the
-         thirty seconds, which moved nothing. */
+      /* The arming ended, with a key or with the thirty seconds. The device
+         says which; the row's code is no answer, since a key learned again
+         onto its own function leaves it as it was. A device from before the
+         field is judged by the code. */
       const code = typeof keys[lastLearning] === 'string' ? keys[lastLearning] : null;
-      setStatus(code !== null && code !== lastLearningCode ? t('remote.learned') : t('remote.timeout'),
-                code === null || code === lastLearningCode);
+      const bound = typeof body.learned === 'boolean'
+        ? body.learned
+        : code !== null && code !== lastLearningCode;
+      setStatus(bound ? t('remote.learned') : t('remote.timeout'), !bound);
     }
     lastLearning = learning;
   }

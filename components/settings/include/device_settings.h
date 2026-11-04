@@ -435,6 +435,13 @@ bool device_settings_set_ntp_server(device_settings_t *settings, const char *hos
 bool device_settings_set_device_name(device_settings_t *settings, const char *name);
 /* The built-in name for a Wi-Fi MAC: "jradio-XXXX". */
 void device_settings_default_name(const unsigned char mac[6], char *out, size_t size);
+/* The name as a router's client list can carry it - DHCP's host name, which
+ * is letters, digits and hyphens, at most 32 of them. Russian letters are
+ * spelled out in Latin ones and anything else becomes a hyphen, so "Радио на
+ * кухне" is "Radio-na-kukhne". False when nothing of the name survives; the
+ * caller then uses the built-in name. */
+#define DEVICE_HOST_NAME_MAX 33
+bool device_settings_host_name(const char *name, char *out, size_t size);
 /* The name as stored on the settings card, empty for the built-in one;
  * false before the first publish. */
 bool device_settings_published_name(char *out, size_t size);
@@ -514,7 +521,15 @@ bool device_settings_set_last_source(device_settings_t *settings,
                                      device_last_source_t source);
 /* Refused outside the FM band, 87.0-108.0 MHz. */
 bool device_settings_set_fm_frequency(device_settings_t *settings, unsigned long khz);
+/* `last_file` is the latest file on either volume. When it moves to the other
+ * volume, the one it leaves is kept under a key of its own, so each volume
+ * has a place to resume - written only on that move, not on every track. */
 bool device_settings_set_last_file(device_settings_t *settings, const char *path);
+/* The file to resume on the volume mounted at `volume_root` ("/usb0",
+ * "/sd0"): the latest one if it is there, else the one kept when playback
+ * left that volume. False, with `out` empty, when the volume has none. */
+bool device_settings_volume_file(const device_settings_t *settings, const char *volume_root,
+                                 char *out, size_t size);
 /* The three together, because they are one identity and are only ever written
  * as one - into one key, so that no power cut can leave an id beside the
  * previous station's name. An empty id clears the point, which is what

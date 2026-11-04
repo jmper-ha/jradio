@@ -75,6 +75,9 @@ static atomic_size_t s_files_item_index = ATOMIC_VAR_INIT(PLAYER_ITEM_NONE);
  * together, and a browser showing stations when a directory changed pays for
  * it with one GET of the list it is already showing. */
 static atomic_uint s_listing_revision = ATOMIC_VAR_INIT(0U);
+/* True from the moment a source select is taken off the queue until it is
+ * done - the volume mounted and its root read. See player_control_selecting(). */
+static atomic_bool s_selecting = ATOMIC_VAR_INIT(false);
 /* Full path of the file being played. It is here rather than in the snapshot
  * because a path this long would not fit the 512-byte frame the snapshot is
  * diffed into for the web.
@@ -1727,6 +1730,28 @@ static void player_fm_learn_name(void)
     }
 }
 
+/* A frequency the listener tuned to and kept. Saved at once, as the web page
+ * saves its list; a file that will not take it puts the list back as it was
+ * on disk, so the panel never shows a preset that the next boot would lose. */
+static void player_fm_preset_add(uint32_t khz)
+{
+    if (s_fm_presets == NULL) return;
+    xSemaphoreTake(s_fm_lock, portMAX_DELAY);
+    const fm_presets_add_result_t result = fm_presets_add(s_fm_presets, khz, NULL);
+    xSemaphoreGive(s_fm_lock);
+    if (result != FM_PRESETS_ADDED) {
+        ESP_LOGI(TAG, "fm: %u kHz not added (%d)", (unsigned)khz, (int)result);
+        return;
+    }
+    if (player_fm_presets_save()) {
+        ESP_LOGI(TAG, "fm: %u kHz added as a preset", (unsigned)khz);
+        atomic_fetch_add_explicit(&s_listing_revision, 1U, memory_order_release);
+    } else {
+        ESP_LOGW(TAG, "fm: could not save %u kHz as a preset", (unsigned)khz);
+        player_control_fm_presets_reload();
+    }
+}
+
 static void player_control_task(void *arg)
 {
     (void)arg;
@@ -1751,6 +1776,9 @@ static void player_control_task(void *arg)
         // Named rather than switched on directly: the two track keys share one
         // branch and have to ask which of them they are.
         const player_operation_t operation = player_control_decide(&snapshot, &command);
+        if (operation == PLAYER_OPERATION_SELECT_SOURCE) {
+            atomic_store_explicit(&s_selecting, true, memory_order_release);
+        }
         switch (operation) {
         case PLAYER_OPERATION_SELECT_SOURCE: {
             // Re-selecting the same source (retry after an error) also lands
@@ -1881,6 +1909,10 @@ static void player_control_task(void *arg)
                     atomic_store_explicit(&s_browse_failed_at_ms,
                                           (uint32_t)(esp_timer_get_time() / 1000),
                                           memory_order_release);
+                }
+                // Anything else answers the last failure: it is no longer the news.
+                if (activated != DLNA_ACTIVATE_BROWSE_FAILED) {
+                    atomic_store_explicit(&s_browse_failed_at_ms, 0U, memory_order_release);
                 }
                 if (activated == DLNA_ACTIVATE_BROWSED ||
                     activated == DLNA_ACTIVATE_BROWSE_FAILED) {
@@ -2063,6 +2095,9 @@ static void player_control_task(void *arg)
         case PLAYER_OPERATION_FM_TUNE:
             player_fm_tune(command.frequency_khz);
             break;
+        case PLAYER_OPERATION_FM_PRESET_ADD:
+            player_fm_preset_add(command.frequency_khz);
+            break;
         case PLAYER_OPERATION_LEVEL_NUDGE:
             if (!internet_radio_set_level_nudge(command.level_nudge_db)) {
                 ESP_LOGW(TAG, "level nudge: no station open");
@@ -2164,6 +2199,7 @@ static void player_control_task(void *arg)
             ESP_LOGW(TAG, "invalid player command kind=%d", (int)command.kind);
             break;
         }
+        atomic_store_explicit(&s_selecting, false, memory_order_release);
         /* Once per command, which is every moment the playing station can have
          * changed - and one comparison when it has not. */
         player_sync_station_icon();
@@ -2334,12 +2370,18 @@ static const char *player_text(device_text_id_t id)
     return device_text(id, device_settings_published_language());
 }
 
-static void player_note_nothing_started(player_snapshot_t *snapshot)
+bool player_control_browse_failed(void)
 {
     const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
     const uint32_t failed =
         atomic_load_explicit(&s_browse_failed_at_ms, memory_order_acquire);
-    if (failed != 0U && (uint32_t)(now_ms - failed) < PLAYER_NO_RESUME_NOTICE_MS) {
+    return failed != 0U && (uint32_t)(now_ms - failed) < PLAYER_NO_RESUME_NOTICE_MS;
+}
+
+static void player_note_nothing_started(player_snapshot_t *snapshot)
+{
+    const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    if (player_control_browse_failed()) {
         snprintf(snapshot->error, sizeof(snapshot->error), "%s",
                  player_text(DEVICE_TEXT_ERROR_FOLDER_FAILED));
         return;
@@ -2698,6 +2740,13 @@ bool player_control_track_progress(uint32_t *elapsed_seconds, uint32_t *total_se
         *total_seconds = brief.duration_ms / 1000U;
         return true;
     }
+    if (source == AUDIO_SOURCE_DLNA) {
+        /* Counted here rather than asked for: the server only hands out a file
+         * and has no idea how far anybody is into it. */
+        if (!internet_radio_track_elapsed(elapsed_seconds)) return false;
+        *total_seconds = dlna_source_playing_seconds();
+        return true;
+    }
     if (!audio_source_is_files(source)) return false;
 
     file_player_status_t status;
@@ -2817,6 +2866,11 @@ static bool player_file_resume_cue(const char *path)
     if (row >= file_storage_entry_count()) return false;
     player_file_select_item(row, PLAYER_PLAYBACK_STOPPED);
     return true;
+}
+
+bool player_control_selecting(void)
+{
+    return atomic_load_explicit(&s_selecting, memory_order_acquire);
 }
 
 bool player_control_file_resume_path(const char *path)

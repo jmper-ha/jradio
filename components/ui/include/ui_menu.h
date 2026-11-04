@@ -68,6 +68,12 @@ bool ui_menu_item_is_visible(ui_menu_item_t item, ui_menu_visible_mask_t visible
 uint8_t ui_menu_visible_count(ui_menu_visible_mask_t visible);
 uint8_t ui_menu_visible_position(ui_menu_item_t item, ui_menu_visible_mask_t visible);
 ui_menu_item_t ui_menu_visible_item_at(uint8_t position, ui_menu_visible_mask_t visible);
+/* First row to draw when only `fit` rows go on the panel: the window follows
+ * the cursor off either edge and otherwise stays where `top` had it, so the
+ * rows do not move under a cursor that is already in view. Eight items at
+ * the title face's line need 192 px under the strip, which a 170 or 142 px
+ * panel has not got. */
+uint8_t ui_menu_window_top(uint8_t top, uint8_t cursor_row, uint8_t count, uint8_t fit);
 /* The next visible item in `direction`, wrapping. Shared with the feed screen,
  * which moves over the same items in a carousel. */
 ui_menu_item_t ui_menu_item_step(ui_menu_item_t item, int direction,
@@ -85,6 +91,8 @@ ui_menu_item_t ui_menu_item_step(ui_menu_item_t item, int direction,
 bool ui_menu_home_screen_needed(uint8_t visible_count);
 bool ui_menu_handle_input(ui_menu_state_t *state, board_input_action_t action);
 bool ui_menu_select_source(ui_menu_state_t *state, audio_source_t source);
+/* The cursor onto a row picked out by touch. False for a row that is hidden. */
+bool ui_menu_select_item(ui_menu_state_t *state, ui_menu_item_t item);
 uint8_t ui_menu_selected_index(const ui_menu_state_t *state);
 const char *ui_menu_item_label(ui_menu_item_t item, device_language_t language);
 audio_source_t ui_menu_activate(const ui_menu_state_t *state);

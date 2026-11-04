@@ -203,13 +203,15 @@ const progressCalls = [];
 // timer the page schedules.
 let progressReply = {cover: {present: false, generation: 0, width: 0, height: 0}};
 let progressFails = false;
+let aboutReply = {web: {version: 'v1.0.0', present: true}};
+let reloads = 0;
 const context = {
   console,
   document: documentRef,
   HTMLElement: Element,
   WebSocket: FakeWebSocket,
   window: {
-    location: {protocol: 'http:', host: 'radio.local'},
+    location: {protocol: 'http:', host: 'radio.local', reload() { reloads += 1; }},
     innerWidth: 1200,
     listeners: {},
     addEventListener(type, callback) { (this.listeners[type] ||= []).push(callback); },
@@ -232,6 +234,10 @@ const context = {
       if (entry) entry.cleared = true;
     },
     fetch(url, options) {
+      if (url === '/api/about') {
+        if (aboutReply === null) return Promise.reject(new Error('offline'));
+        return Promise.resolve({ok: true, json: () => Promise.resolve(aboutReply)});
+      }
       // The station names are fetched, not sent in the frame; this test is
       // about the player controls, so it answers that once and lets the
       // progress poll have the rest.
@@ -772,6 +778,12 @@ sendEvent(second, {
   assert.equal(elements['#list-offline'].hidden, true);
   assert.equal(elements['#list-count'].hidden, false);
   assert.equal(elements['#play-toggle'].disabled, false);
+  /* A tab does what the remote's source key does: the device resumes the
+     source where it was left, so it asks for that rather than a bare select. */
+  tabOf('internet_radio').emit('click');
+  const opened = JSON.parse(second.sent.at(-1));
+  assert.equal(opened.action, 'source.open');
+  assert.equal(opened.source, 'internet_radio');
 
   /* The case that got through: nothing has been selected yet, so the source is
      "none" and reads as needing nothing - while the list the device describes
@@ -1024,6 +1036,32 @@ sendEvent(second, {
   assert.equal(elements['#socket-state'].textContent, 'Нет связи');
   assert.equal(elements['#play-toggle'].disabled, true);
   assert.equal(elements['#volume-input'].disabled, true);
+
+  // Two connections on one version so far: nothing to reload for.
+  assert.equal(reloads, 0);
+  const reopen = async () => {
+    const before = FakeWebSocket.instances.length;
+    FakeWebSocket.instances.at(-1).emit('close');
+    assert.ok(firePendingTimer());
+    assert.equal(FakeWebSocket.instances.length, before + 1);
+    const socket = FakeWebSocket.instances.at(-1);
+    socket.readyState = FakeWebSocket.OPEN;
+    socket.emit('open');
+    await settle();
+  };
+  // No answer, or a device with no stamp, says nothing about the page.
+  aboutReply = null;
+  await reopen();
+  aboutReply = {web: {version: '', present: false}};
+  await reopen();
+  assert.equal(reloads, 0);
+  // Back on the same version, then the update.
+  aboutReply = {web: {version: 'v1.0.0', present: true}};
+  await reopen();
+  assert.equal(reloads, 0);
+  aboutReply = {web: {version: 'v1.0.1', present: true}};
+  await reopen();
+  assert.equal(reloads, 1);
 
   console.log('web player tests passed');
 })().catch((error) => {

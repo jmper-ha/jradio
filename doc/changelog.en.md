@@ -6,6 +6,85 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.10.0 — 3 November 2026
+
+New:
+- The FT6336U touch panel on the ST7796S module, in landscape and in portrait.
+  In the menus, lists and settings: tap and scroll, and a setting's value moves
+  with a sideways drag. On the player screen: a tap in the middle pauses, a
+  sideways swipe changes the track, a drag along the right edge is the volume
+  with a large figure over the screen, a swipe from the top brings the quick
+  settings, a swipe from the bottom the action strip (the list, seeking, FM
+  tuning, the hearts on Yandex), and a long touch is the encoder's long press.
+  The panel is switched on in Hardware and for now is offered with the ST7796S
+  only. Wiring is in [Hardware](hardware.en.md).
+- On a media server (DLNA) the player shows the place in the track, its length
+  and the bar, as on files. There is still no seeking there.
+- When a media server refuses a folder, the screen says "The folder would not
+  open".
+- The player page reloads itself when the web files on the device have changed.
+
+Changed:
+- The quick settings no longer go round: the list stops at its first and last
+  row, with the encoder too. In portrait the window shows every row at once.
+- Settings and the main menu redraw only what changed, and the graphics are
+  built with optimisation: lists move faster.
+
+Fixed:
+- An Ogg station (Vorbis, FLAC) stopped when a song ended in the stream, and
+  played again only after pause and play.
+
+## v1.9.3 — 31 October 2026
+
+New:
+- An FM station can be added without a scan. On the device: while tuning by
+  hand (triple press) a long press keeps the frequency and adds it to the end
+  of the list, and for a couple of seconds the line under the digits says
+  "Added to the list", "Already in the list" or "The list is full". In the
+  web FM tab a "Frequency, MHz" field under the list with an Add button, and
+  a row's frequency can be corrected. Such a station takes its name over RDS.
+
+Fixed:
+- The Device name reached the router only after a Wi-Fi reconnect: at boot
+  the radio introduced itself as `jradio-XXXX`.
+
+## v1.9.2 — 31 October 2026
+
+New:
+- The source buttons at the top of the web player page work like the
+  remote's source keys: the source carries on where it was left, and the
+  list opens only when there is nothing to carry on with.
+- The remote's Back key returns to the source that played before this one,
+  also where it was left; press again to come back. It used to repeat Menu.
+- The router lists the radio under the Device name from the settings rather
+  than as "espressif". Russian letters are spelled in Latin ones: "Радио на
+  кухне" becomes `Radio-na-kukhne`.
+
+Changed:
+- The sleep timer and the switch-off put to sleep a board with neither a
+  sleep button nor an IR receiver too. The alarm, the reset button or the
+  power wakes it then. In v1.9.1 the timer was hidden on such a board, and
+  the switch-off only stopped the sound.
+
+Fixed:
+- The USB drive and the card from the remote: they shared one place to
+  carry on from, and after a file on the card the USB key opened the list
+  and played nothing (and the other way round). Each now keeps its own file.
+- A source key pressed while the radio was still switching was lost, and the
+  unfinished switch then landed after the next key: SD pressed, the drive
+  came up. Now the last key pressed wins.
+- The card started from the remote sometimes opened its folder and played
+  nothing: the file was looked for while the player was still reading the
+  card's root.
+- The remote's learning page said "No key came" or "Key … is not learned"
+  after a successful learning, while the key was saved and worked.
+- The 320x170 screen: the home menu's last item ran off the edge - seven
+  items fit now, and with more the menu scrolls (on 428x142 too); the R by
+  the level meter sat too low; in the settings the "join jradio-…" line was
+  cut off along with the network's name (on 320x240 as well).
+- On a board whose only source is internet radio, power-on and waking from
+  sleep opened the station list and the radio stayed silent, with Resume on.
+
 ## v1.9.1 — 29 October 2026
 
 New:

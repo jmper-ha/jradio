@@ -78,7 +78,11 @@ player page leads there while FM is playing. A row of the list is
 pass up the band on the device, shows which frequency it is at, and when it
 ends replaces the list with what it found: after a warning, keeping the names
 you gave and taking the RDS names for the rest. The list goes to the device at
-once. What you edit by hand goes by "Save".
+once. A row's frequency can be corrected, and the "Frequency, MHz" field under
+the list with its Add button puts a station on the end of the list without a
+scan (101.2 or 101,2; 87.0 to 108.0 in steps of 0.1, no repeats). Such a
+station takes its name over RDS once the device has played it. What you edit
+by hand goes by "Save".
 
 A picture belongs to the preset, not to the frequency: 101.2 is another
 station in every city. The tile at the start of the row chooses a file, the
@@ -141,7 +145,7 @@ installed together.
 | `GET /api/cover` | The current cover, 96×96, BMP |
 | `GET /api/settings` | The device's settings, the time zone list, the time server |
 | `POST /api/settings` | One setting: `{"field":…,"value":…}` - including `timezone`, `ntp_server`, `weather*`, `screensaver*`, `alarm_*`, `fm_gain` (dB, -6 to +12), `theme` (`standard`/`contrast`/`custom`), the custom theme's colours `theme_ground`, `theme_text`, `theme_artist`, `theme_secondary`, `theme_dim`, `theme_accent`, `theme_saver` (`"#rrggbb"`) and `theme_reset` (`true` puts back the standard ones). The colours come only in the `GET`, not in the diffs |
-| `POST /api/sleep-timer` | `{"minutes":45}`, zero switches it off; 409 when the board has nothing to wake it |
+| `POST /api/sleep-timer` | `{"minutes":45}`, zero switches it off |
 | `GET /api/about` | The firmware, web interface and ESP-IDF versions |
 | `GET /api/backup`, `POST /api/restore` | The backup, see above |
 | `GET /api/ota` | The update's progress (`state`: `idle`, `receiving`, `confirm`, `restarting`, `failed`), the version and slot running; under `check`, the release's latest version, whether there is something to offer, and `history` - the changes of every version newer than the running one, newest first (`version`, `ru`, `en`) |
@@ -160,7 +164,7 @@ installed together.
 
 **WebSocket commands:** `player.play`, `player.pause`, `player.toggle`,
 `player.next`, `player.previous_item`, `player.next_item`, `player.seek` (a
-second), `player.like`, `player.dislike`, `source.select`, `list.select`,
+second), `player.like`, `player.dislike`, `source.select`, `source.open` (as the remote's source key - where it was left), `list.select`,
 `browse.up`, `wifi.save`, `wifi.forget`, `wifi.prioritize`, `wifi.disconnect`.
 Back come diffs of the `player`, `list`, `wifi` and `settings` sections. Big
 things - the playlist, folders, the position, the cover - go over REST so as

@@ -53,6 +53,18 @@ size_t fm_presets_write(const fm_presets_t *presets, char *out, size_t capacity)
 /* The preset on `khz`, or false. */
 bool fm_presets_find(const fm_presets_t *presets, uint32_t khz, size_t *index);
 
+typedef enum {
+    FM_PRESETS_ADDED = 0,
+    FM_PRESETS_ALREADY,
+    FM_PRESETS_FULL,
+    FM_PRESETS_OFF_BAND,
+} fm_presets_add_result_t;
+
+/* A frequency tuned by hand, kept at the end of the list without a name -
+ * the player fills it in from RDS, as it does for a scan's. A frequency
+ * already in the list is not added twice; `index` is where it is either way. */
+fm_presets_add_result_t fm_presets_add(fm_presets_t *presets, uint32_t khz, size_t *index);
+
 #ifdef __cplusplus
 }
 #endif

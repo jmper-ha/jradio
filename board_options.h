@@ -283,6 +283,22 @@
 // #define RTC_I2C_PERIPHERAL 0
 
 /* ======================================================================
+ * Touch panel (optional)
+ * ====================================================================== */
+
+/* The FT6336U of an ST7796S module, on the same I2C0 pins as the tuner and the
+ * clock. The module's header brings it out as CTP_SDA, CTP_SCL, CTP_INT and
+ * CTP_RST - SDA and SCL are not side by side. CTP_RST goes with LCD_RST to the
+ * board's reset; the firmware does not drive it.
+ *
+ * TOUCH_INT_GPIO is optional: without it the chip is asked over the bus on
+ * every read. Feed the module 3.3 V, as on the bench: what its lines carry when
+ * it runs from 5 V has not been measured. */
+// #define TOUCH_CHIP TOUCH_CHIP_FT6336U
+// #define TOUCH_I2C_PERIPHERAL 0
+// #define TOUCH_INT_GPIO 38
+
+/* ======================================================================
  * The module's own RGB LED
  * ====================================================================== */
 

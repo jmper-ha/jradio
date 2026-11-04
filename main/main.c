@@ -8,6 +8,7 @@
 #include "album_art.h"
 #include "alarm_schedule.h"
 #include "board_rtc.h"
+#include "board_touch.h"
 #include "ir_wake_stub.h"
 #include "board.h"
 #include "board_config.h"
@@ -209,6 +210,11 @@ void app_main(void)
     const bool settings_read = storage_mounted && device_settings_init(&boot_settings);
     if (!settings_read) {
         ESP_LOGW(TAG, "settings unreadable at boot; splash drawn unflipped");
+    } else {
+        /* Wi-Fi joins before the UI publishes its copy, and the join takes
+         * the DHCP host name from the published device name - unpublished,
+         * every boot went out as the default jradio-XXXX. */
+        device_settings_publish(&boot_settings);
     }
     /* Before the board, and the only thing that is: this may not be a boot at
      * all but a hop in the night, and a hop that lights the panel has already
@@ -301,6 +307,7 @@ void app_main(void)
          * has no FM source to drive it with yet. */
         start_optional("FM tuner", fm_tuner_init());
     }
+    if (board_has_touch()) start_optional("touch panel", board_touch_init());
     ESP_ERROR_CHECK(internet_radio_init());
     /* Nothing is installed here any more. A station that arrives one track at
      * a time names what feeds it when it starts - see

@@ -133,9 +133,10 @@ board_input_action_t remote_function_action(remote_function_t function)
     case REMOTE_UP: return BOARD_INPUT_ACTION_REMOTE_UP;
     case REMOTE_DOWN: return BOARD_INPUT_ACTION_REMOTE_DOWN;
     case REMOTE_OK: return BOARD_INPUT_ACTION_REMOTE_OK;
-    /* Both are the knob held: on every screen that is "back", and on the
-     * player it is the home screen. One gesture, two keys that name it. */
-    case REMOTE_BACK: return BOARD_INPUT_ACTION_ENCODER_LONG;
+    /* Back is the source before this one - asked for by Ден, 2026-10-31,
+     * when it was the knob held like Menu, two keys for one gesture. Menu
+     * keeps that: on every screen "back", on the player the home screen. */
+    case REMOTE_BACK: return BOARD_INPUT_ACTION_SOURCE_PREVIOUS;
     case REMOTE_MENU: return BOARD_INPUT_ACTION_ENCODER_LONG;
     case REMOTE_QUICK: return BOARD_INPUT_ACTION_QUICK_MENU;
     case REMOTE_LIST: return BOARD_INPUT_ACTION_LIST;

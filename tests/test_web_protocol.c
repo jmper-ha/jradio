@@ -340,6 +340,17 @@ static void test_accepts_source_and_station_selection(void)
     assert(command.player.kind == PLAYER_COMMAND_SELECT_SOURCE);
     assert(command.player.source == AUDIO_SOURCE_FM);
 
+    /* The tab: the same source names, but done as the remote's key. */
+    const char *open =
+        "{\"type\":\"command\",\"id\":\"source-7\","
+        "\"action\":\"source.open\",\"source\":\"sd\"}";
+    assert(parse(open, &command) == WEB_PROTOCOL_OK);
+    assert(command.kind == WEB_COMMAND_SOURCE_OPEN);
+    assert(command.player.source == AUDIO_SOURCE_SD);
+    assert(parse("{\"type\":\"command\",\"id\":\"1\",\"action\":\"source.open\","
+                 "\"source\":\"am\"}",
+                 &command) == WEB_PROTOCOL_INVALID);
+
     const char *station =
         "{\"type\":\"command\",\"id\":\"43\",\"action\":\"list.select\",\"index\":3}";
     assert(parse(station, &command) == WEB_PROTOCOL_OK);

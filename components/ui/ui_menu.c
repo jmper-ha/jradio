@@ -114,6 +114,16 @@ ui_menu_item_t ui_menu_visible_item_at(uint8_t position, ui_menu_visible_mask_t 
     return UI_MENU_ITEM_INTERNET_RADIO;
 }
 
+uint8_t ui_menu_window_top(uint8_t top, uint8_t cursor_row, uint8_t count, uint8_t fit)
+{
+    if (fit == 0U || count <= fit) return 0U;
+    if (top > count - fit) top = (uint8_t)(count - fit);
+    if (cursor_row >= count) cursor_row = (uint8_t)(count - 1U);
+    if (cursor_row < top) top = cursor_row;
+    if (cursor_row >= top + fit) top = (uint8_t)(cursor_row - fit + 1U);
+    return top;
+}
+
 ui_menu_item_t ui_menu_item_step(ui_menu_item_t item, int direction,
                                  ui_menu_visible_mask_t visible)
 {
@@ -174,6 +184,16 @@ bool ui_menu_handle_input(ui_menu_state_t *state, board_input_action_t action)
         return true;
     }
     return false;
+}
+
+bool ui_menu_select_item(ui_menu_state_t *state, ui_menu_item_t item)
+{
+    if (state == NULL || item >= UI_MENU_ITEM_COUNT ||
+        !ui_menu_item_is_visible(item, state->visible)) {
+        return false;
+    }
+    state->selected_index = (uint8_t)item;
+    return true;
 }
 
 bool ui_menu_select_source(ui_menu_state_t *state, audio_source_t source)

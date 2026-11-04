@@ -224,7 +224,7 @@ async function main() {
 
   /* The key arrives: the device's revision moves, the table is read again,
      the row shows the code and the status says so. */
-  reply = {...reply, learning: null, revision: reply.revision + 1,
+  reply = {...reply, learning: null, learned: true, revision: reply.revision + 1,
            keys: {...reply.keys, volume_down: 'nec:4:03'}};
   firePendingPolls();
   await settle();
@@ -243,7 +243,7 @@ async function main() {
   await settle();
   await settle();
   assert.strictEqual(row('ok').classList.contains('is-learning'), true);
-  reply = {...reply, learning: null, revision: reply.revision + 1};
+  reply = {...reply, learning: null, learned: false, revision: reply.revision + 1};
   firePendingPolls();
   await settle();
   await settle();
@@ -252,6 +252,22 @@ async function main() {
   assert.strictEqual(row('ok').children[1].textContent, 'nec:0:09');
   assert.strictEqual(status.textContent, 'Кнопки не дождались');
   assert.strictEqual(status.classList.contains('is-error'), true);
+
+  /* The same key learned again onto its own function: the code stays as it
+     was, and it is still "learned" - the device says so, the code cannot. */
+  row('ok').children[2].emit('click');
+  await settle();
+  await settle();
+  await settle();
+  assert.strictEqual(row('ok').classList.contains('is-learning'), true);
+  reply = {...reply, learning: null, learned: true, revision: reply.revision + 1};
+  firePendingPolls();
+  await settle();
+  await settle();
+  await settle();
+  assert.strictEqual(row('ok').children[1].textContent, 'nec:0:09');
+  assert.strictEqual(status.textContent, 'Записано');
+  assert.strictEqual(status.classList.contains('is-error'), false);
 
   /* Forget posts and re-reads. */
   row('volume_down').children[3].emit('click');

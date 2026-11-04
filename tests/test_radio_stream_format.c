@@ -189,8 +189,25 @@ static void test_content_type_overrides_url_guess(void)
     assert(format == RADIO_STREAM_FORMAT_MP3);
 }
 
+static void test_the_next_ogg_stream_is_found_by_its_first_page(void)
+{
+    uint8_t data[64] = {0};
+    memcpy(data + 20, "OggS", 4U);
+    // A page in the middle of a song says nothing.
+    assert(radio_stream_format_next_ogg_start(data, sizeof(data)) == sizeof(data));
+    data[25] = 0x04U;
+    assert(radio_stream_format_next_ogg_start(data, sizeof(data)) == sizeof(data));
+    data[25] = 0x02U;
+    assert(radio_stream_format_next_ogg_start(data, sizeof(data)) == 20U);
+    // Cut before its flags: not yet known, and asked again with more bytes.
+    assert(radio_stream_format_next_ogg_start(data, 25U) == 25U);
+    assert(radio_stream_format_next_ogg_start(data + 20, 6U) == 0U);
+    assert(radio_stream_format_next_ogg_start(NULL, 4U) == 4U);
+}
+
 int main(void)
 {
+    test_the_next_ogg_stream_is_found_by_its_first_page();
     test_aac_url_selects_aac_decoder();
     test_content_type_overrides_url_guess();
     test_mp3_and_unknown_urls_keep_mp3_decoder();

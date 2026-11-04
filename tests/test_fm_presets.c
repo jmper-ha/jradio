@@ -86,6 +86,25 @@ static void test_writing_reads_back_the_same(void)
     assert(strlen(small) == sizeof(small) - 1U);
 }
 
+static void test_a_frequency_tuned_by_hand_is_added_once(void)
+{
+    assert(parse("Europa\t106200\n") == 0U);
+    size_t index = 99U;
+    assert(fm_presets_add(&presets, 101200U, &index) == FM_PRESETS_ADDED);
+    assert(index == 1U && presets.count == 2U);
+    assert(presets.presets[1].khz == 101200U && presets.presets[1].name[0] == '\0');
+    // Already there: not twice, and where it stands.
+    assert(fm_presets_add(&presets, 106200U, &index) == FM_PRESETS_ALREADY);
+    assert(index == 0U && presets.count == 2U);
+    assert(fm_presets_add(&presets, 76000U, &index) == FM_PRESETS_OFF_BAND);
+    while (presets.count < FM_PRESETS_MAX) {
+        assert(fm_presets_add(&presets, 87500U + (uint32_t)presets.count * 100U, NULL) ==
+               FM_PRESETS_ADDED);
+    }
+    assert(fm_presets_add(&presets, 107900U, &index) == FM_PRESETS_FULL);
+    assert(presets.count == FM_PRESETS_MAX);
+}
+
 int main(void)
 {
     test_a_file_reads_in_its_order();
@@ -94,6 +113,7 @@ int main(void)
     test_a_long_name_is_cut_on_a_whole_character();
     test_the_list_stops_at_its_maximum();
     test_writing_reads_back_the_same();
+    test_a_frequency_tuned_by_hand_is_added_once();
     puts("fm_presets tests passed");
     return 0;
 }

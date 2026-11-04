@@ -465,6 +465,24 @@ static void test_the_clock_settings_persist_and_are_checked(void)
     assert(settings.device_name[0] == '\0');
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.device_name[0] == '\0');
+    /* What the router is told: Latin letters, digits and single hyphens, or
+       nothing at all for a name with none of them in it. */
+    char host[DEVICE_HOST_NAME_MAX];
+    assert(device_settings_host_name("Радио на кухне", host, sizeof(host)));
+    assert(strcmp(host, "Radio-na-kukhne") == 0);
+    assert(device_settings_host_name("jradio-B670", host, sizeof(host)));
+    assert(strcmp(host, "jradio-B670") == 0);
+    assert(device_settings_host_name(" Ёлка_№1 (зал) ", host, sizeof(host)));
+    assert(strcmp(host, "Elka-1-zal") == 0);
+    assert(device_settings_host_name("Щука объём", host, sizeof(host)));
+    assert(strcmp(host, "Shchuka-obem") == 0);
+    assert(!device_settings_host_name("  ★ ", host, sizeof(host)));
+    assert(host[0] == '\0');
+    assert(!device_settings_host_name("", host, sizeof(host)));
+    /* Sixteen letters of щ are 64 Latin ones; the name stops at 32, and
+       never in the middle of a letter's spelling. */
+    assert(device_settings_host_name("щщщщщщщщщщщщщщщщ", host, sizeof(host)));
+    assert(strlen(host) == 32U && strcmp(host + 28, "shch") == 0);
     char published[DEVICE_NAME_MAX] = "x";
     device_settings_publish(&settings);
     assert(device_settings_published_name(published, sizeof(published)));
@@ -569,6 +587,43 @@ static void test_the_weather_settings_persist_and_are_checked(void)
     assert(device_settings_set_weather_provider(&settings, DEVICE_WEATHER_WTTR));
     assert(settings_csv_get(test_path, "weather_service", value, sizeof(value)));
     assert(strcmp(value, "wttr") == 0);
+}
+
+/* Each volume keeps the file it was left on: the drive's survives a spell
+   on the card and comes back after a reload, and a volume nothing was played
+   from has none. */
+static void test_each_volume_keeps_its_own_file(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    char path[DEVICE_LAST_FILE_MAX];
+    assert(!device_settings_volume_file(&settings, "/usb0", path, sizeof(path)));
+    assert(path[0] == '\0');
+
+    assert(device_settings_set_last_file(&settings, "/usb0/a/b/one.mp3"));
+    assert(device_settings_set_last_file(&settings, "/usb0/a/b/two.mp3"));
+    assert(!device_settings_volume_file(&settings, "/sd0", path, sizeof(path)));
+    assert(device_settings_set_last_file(&settings, "/sd0/three.flac"));
+    assert(device_settings_volume_file(&settings, "/usb0", path, sizeof(path)));
+    assert(strcmp(path, "/usb0/a/b/two.mp3") == 0);
+    assert(device_settings_volume_file(&settings, "/sd0", path, sizeof(path)));
+    assert(strcmp(path, "/sd0/three.flac") == 0);
+
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(strcmp(reloaded.last_file, "/sd0/three.flac") == 0);
+    assert(device_settings_volume_file(&reloaded, "/usb0", path, sizeof(path)));
+    assert(strcmp(path, "/usb0/a/b/two.mp3") == 0);
+
+    /* Back on the drive: the card's file is the one kept now. */
+    assert(device_settings_set_last_file(&settings, "/usb0/four.mp3"));
+    assert(device_settings_volume_file(&settings, "/sd0", path, sizeof(path)));
+    assert(strcmp(path, "/sd0/three.flac") == 0);
+    assert(device_settings_volume_file(&settings, "/usb0", path, sizeof(path)));
+    assert(strcmp(path, "/usb0/four.mp3") == 0);
+    /* A root that is only a prefix of another is not that volume. */
+    assert(!device_settings_volume_file(&settings, "/usb", path, sizeof(path)));
 }
 
 static void test_the_fm_frequency_persists_and_stays_in_the_band(void)
@@ -1055,6 +1110,7 @@ int main(void)
     test_the_custom_theme_colors_persist_all_or_none();
     test_the_bluetooth_output_persists_and_forgets();
     test_the_fm_frequency_persists_and_stays_in_the_band();
+    test_each_volume_keeps_its_own_file();
     test_defaults_and_load();
     test_values_and_unknown_lines_are_saved();
     test_invalid_values_do_not_change_model();

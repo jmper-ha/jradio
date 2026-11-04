@@ -68,6 +68,8 @@
  * backlog is: 32 KB is 2 s of a 128 kbps station, and reconnecting takes
  * about one. */
 #define RADIO_LIVE_STALL_MS 1500U
+// An Ogg page's flags byte, the last one needed to tell what the page is.
+#define RADIO_OGG_FLAGS_END 5U
 /* A read that was meant to take only what had arrived and took this long has
  * held the decode task past what the I2S DMA (93 ms) can cover. */
 #define RADIO_READ_SLOW_US 50000U
@@ -339,6 +341,10 @@ typedef struct {
      * runs thousands of times a second and this is one byte of display. */
     atomic_uint input_fill_percent;
     uint32_t output_sample_rate;
+    /* What has gone out of this track, for the position a chain shows. Apart
+     * from pcm_bytes, which a chain carries over every track for the health
+     * report. 64 bits and under s_status_lock: hi-res wraps 32 in about an hour. */
+    uint64_t track_pcm_bytes;
     /* The reopening under way, NULL when there is none. The decode task starts
      * it, takes or drops what it produced, and frees it - and does not end, or
      * open anything else of the chain, while one runs: the rotor's link
@@ -598,6 +604,9 @@ static esp_err_t radio_pcm_output(internet_radio_context_t *radio, const uint8_t
     }
     *written_out = written;
     radio->pcm_bytes += written;
+    taskENTER_CRITICAL(&s_status_lock);
+    radio->track_pcm_bytes += written;
+    taskEXIT_CRITICAL(&s_status_lock);
     if (block_start) radio->pcm_blocks++;
     if (block_start && radio->pcm_blocks <= 4U) {
         ESP_LOGI(TAG, "PCM progress: block=%u bytes=%u written=%u total=%u peak=%u",
@@ -804,6 +813,12 @@ static void radio_direct_task(void *arg)
      * headers. Once per stream: the answer cannot change mid-stream, and the
      * bytes it needs are only there before the first decode call. */
     bool ogg_codec_named = false;
+    // A stream has started on this decoder, so the next one has to reset it.
+    bool ogg_stream_begun = false;
+    // The buffer's front is a stream's first page and has been dealt with.
+    bool ogg_start_handled = false;
+    // How far into the backlog no stream's first page was found.
+    size_t ogg_clean = 0U;
     TickType_t next_report = xTaskGetTickCount() + pdMS_TO_TICKS(RADIO_STARVATION_REPORT_MS);
 
     while (!fatal &&
@@ -1175,7 +1190,51 @@ static void radio_direct_task(void *arg)
         }
 
         if (!need_input && pcm_pending == 0U) {
-            if (!ogg_codec_named && radio_stream_format_is_ogg(radio->stream_format)) {
+            const bool ogg = radio_stream_format_is_ogg(radio->stream_format);
+            /* Held to the end of the song in hand, the next one only reaching the
+             * decoder after a reset. Given the join as it comes it read the
+             * song's last page and then swallowed every byte that followed
+             * without a sound or a complaint: no error, no stall, since nothing
+             * was left buffered to call one, and silence until somebody pressed
+             * pause and play.
+             *
+             * Only what has not been looked through yet: a live backlog runs to
+             * 128 KB in PSRAM and this is asked before every block. The last few
+             * bytes wait, since they may be the first of a page that opens one. */
+            size_t decode_length = available;
+            bool ogg_song_tail = false;
+            if (ogg) {
+                const uint8_t *const input = compressed + compressed_offset;
+                const bool at_start =
+                    available > RADIO_OGG_FLAGS_END &&
+                    radio_stream_format_next_ogg_start(input, RADIO_OGG_FLAGS_END + 1U) == 0U;
+                if (at_start && !ogg_start_handled) {
+                    if (ogg_stream_begun) {
+                        radio_decoder_reset(radio->decoder);
+                        last_pcm_tick = xTaskGetTickCount();
+                        decoder_synced = false;
+                    }
+                    ogg_stream_begun = true;
+                    /* Every song, not once: a reconnect asks Content-Type again,
+                     * which names FLAC for any Ogg, and the label stayed wrong. */
+                    ogg_codec_named = false;
+                }
+                ogg_start_handled = at_start;
+                if (ogg_clean > available) ogg_clean = 0U;
+                const size_t from = ogg_clean > 0U ? ogg_clean : (at_start ? 1U : 0U);
+                const size_t found =
+                    from + radio_stream_format_next_ogg_start(input + from, available - from);
+                ogg_song_tail = found < available;
+                ogg_clean = ogg_song_tail                    ? found
+                            : available > RADIO_OGG_FLAGS_END ? available - RADIO_OGG_FLAGS_END
+                                                              : 0U;
+                decode_length = ogg_clean;
+                if (decode_length == 0U) {
+                    need_input = true;
+                    continue;
+                }
+            }
+            if (!ogg_codec_named && ogg) {
                 ogg_codec_named = true;
                 const radio_stream_format_t carried = radio_stream_format_from_ogg_page(
                     compressed + compressed_offset, available, radio->stream_format);
@@ -1193,12 +1252,13 @@ static void radio_direct_task(void *arg)
             size_t pcm_bytes = 0U;
             radio_decoder_info_t info = {0};
             const radio_decoder_result_t result = radio_decoder_decode(
-                radio->decoder, compressed + compressed_offset, available, pcm,
+                radio->decoder, compressed + compressed_offset, decode_length, pcm,
                 pcm_capacity, &consumed, &pcm_bytes, &info);
             if (consumed > available) {
                 fatal = true;
                 break;
             }
+            ogg_clean = ogg_clean > consumed ? ogg_clean - consumed : 0U;
             if (consumed > 0U) {
                 available -= consumed;
                 // Just advance the read cursor instead of shifting the
@@ -1252,6 +1312,12 @@ static void radio_direct_task(void *arg)
                 pcm_pending = pcm_bytes;
                 pcm_delivered = 0U;
                 need_input = false;
+            } else if (result == RADIO_DECODER_NEED_MORE_DATA && ogg_song_tail && consumed == 0U) {
+                /* Whatever is left of the song will never be enough for it now,
+                 * and more from the network would not reach it. */
+                available -= decode_length;
+                compressed_offset += decode_length;
+                ogg_clean = 0U;
             } else if (result == RADIO_DECODER_NEED_MORE_DATA) {
                 /* Only when it could make no use of the backlog at all. A
                  * decoder that consumed bytes and produced nothing is
@@ -1939,6 +2005,7 @@ static void radio_stream_reset_status(internet_radio_context_t *radio)
     radio->output_started = false;
     radio->output_sample_rate = 0U;
     taskENTER_CRITICAL(&s_status_lock);
+    radio->track_pcm_bytes = 0U;
     radio->status.bitrate_kbps = 0U;
     radio->status.sample_rate_hz = 0U;
     snprintf(radio->status.codec, sizeof(radio->status.codec), "%s",
@@ -2771,6 +2838,9 @@ static bool radio_direct_resume_track(internet_radio_context_t *radio)
     const size_t played_bytes = radio->pcm_bytes;
     const size_t played_blocks = radio->pcm_blocks;
     const size_t resume_offset = radio->track_offset;
+    taskENTER_CRITICAL(&s_status_lock);
+    const uint64_t track_bytes = radio->track_pcm_bytes;
+    taskEXIT_CRITICAL(&s_status_lock);
     radio->range_offset = resume_offset;
     const esp_err_t err = radio_stream_open(radio, url);
     radio->range_offset = 0U;
@@ -2786,6 +2856,11 @@ static bool radio_direct_resume_track(internet_radio_context_t *radio)
     // The open reset the counter to zero; the body it returned starts where
     // the pause stopped, unless the Range was refused.
     radio->track_offset = radio->range_granted ? resume_offset : 0U;
+    if (radio->range_granted) {
+        taskENTER_CRITICAL(&s_status_lock);
+        radio->track_pcm_bytes = track_bytes;
+        taskEXIT_CRITICAL(&s_status_lock);
+    }
     ESP_LOGI(TAG, "resumed the track at %u bytes%s", (unsigned int)resume_offset,
              radio->range_granted ? "" : " - the server ignored it and started over");
     return true;
@@ -3512,6 +3587,23 @@ void internet_radio_get_status(internet_radio_status_t *status)
     taskEXIT_CRITICAL(&s_status_lock);
     status->buffer_percent = (uint8_t)atomic_load_explicit(&s_radio.input_fill_percent,
                                                            memory_order_relaxed);
+}
+
+bool internet_radio_track_elapsed(uint32_t *seconds)
+{
+    if (seconds == NULL) return false;
+    taskENTER_CRITICAL(&s_status_lock);
+    const internet_radio_state_t state = s_radio.status.state;
+    const uint64_t bytes = s_radio.track_pcm_bytes;
+    const uint32_t rate = s_radio.output_sample_rate;
+    taskEXIT_CRITICAL(&s_status_lock);
+    if (rate == 0U ||
+        (state != INTERNET_RADIO_STATE_PLAYING && state != INTERNET_RADIO_STATE_PAUSED)) {
+        return false;
+    }
+    *seconds = (uint32_t)(bytes / ((uint64_t)rate * AUDIO_CHANNEL_COUNT *
+                                   (AUDIO_BITS_PER_SAMPLE / 8U)));
+    return true;
 }
 
 size_t internet_radio_station_count(void)

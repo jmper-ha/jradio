@@ -443,6 +443,29 @@ static void test_the_window_follows_the_cursor_and_otherwise_holds_still(void)
     }
 }
 
+static void test_the_arrows_move_the_window_and_carry_the_cursor(void)
+{
+    ui_settings_model_t model;
+    ui_settings_model_init(&model, true);
+    const size_t visible = 3U;
+    assert(ui_settings_model_scroll(&model, -1, visible) == UI_SETTINGS_MODEL_NO_CHANGE);
+    assert(ui_settings_model_scroll(&model, 1, visible) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_window_top(&model, visible) == 1U);
+    // The cursor was on the row that left, and the window would have come back for it.
+    assert(model.cursor == 1U);
+    while (ui_settings_model_scroll(&model, 1, visible) == UI_SETTINGS_MODEL_CHANGED) {
+    }
+    assert(!ui_settings_model_has_rows_below(&model, visible));
+    assert(ui_settings_model_has_rows_above(&model));
+    const size_t bottom = ui_settings_model_window_top(&model, visible);
+    assert(model.cursor == bottom);
+    assert(ui_settings_model_scroll(&model, -1, visible) == UI_SETTINGS_MODEL_CHANGED);
+    assert(ui_settings_model_window_top(&model, visible) == bottom - 1U);
+    // Everything on the screen: no window to move.
+    assert(ui_settings_model_scroll(&model, 1, ui_settings_model_row_count(&model)) ==
+           UI_SETTINGS_MODEL_NO_CHANGE);
+}
+
 static void test_a_device_with_no_home_screen_drops_that_row(void)
 {
     /* With only the radio and Settings to switch between, the choice between
@@ -526,6 +549,7 @@ int main(void)
     test_the_sound_group_holds_two_numbers_and_a_choice();
     test_brightness_steps_and_stops_at_the_ends();
     test_the_window_follows_the_cursor_and_otherwise_holds_still();
+    test_the_arrows_move_the_window_and_carry_the_cursor();
     test_a_device_with_no_home_screen_drops_that_row();
     test_the_volume_step_moves_one_percent_and_stops_at_the_ends();
     test_the_longest_list_needs_the_window();

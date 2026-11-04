@@ -17,6 +17,9 @@ void station_list_init(station_list_state_t *state, size_t count, size_t initial
                        size_t active_index);
 bool station_list_handle_input(station_list_state_t *state, board_input_action_t action);
 size_t station_list_selected_index(const station_list_state_t *state);
+/* Puts the cursor on a row picked out directly, by touch rather than one turn
+ * at a time. False, and the cursor stays, for a row the list has not got. */
+bool station_list_select(station_list_state_t *state, size_t index);
 bool station_list_get_selection(const station_list_state_t *state,
                                 size_t *selected_index);
 size_t station_list_active_index(const station_list_state_t *state);

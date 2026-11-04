@@ -1,5 +1,6 @@
 #include "ui.h"
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -23,6 +24,8 @@
 #include "wifi_provisioning.h"
 #include "ui_about.h"
 #include "ui_autoplay.h"
+#include "ui_touch_gesture.h"
+#include "board_touch.h"
 #include "ui_buffer_graph.h"
 #include "ui_busy_bar.h"
 #include "ui_click_gesture.h"
@@ -609,6 +612,9 @@ static const char *s_yandex_notice;
 static lv_obj_t *s_station_list_screen;
 static lv_obj_t *s_station_list_title;
 static lv_obj_t *s_station_list_notice;
+/* A refused folder. Not the notice above, which stands where rows would be and
+ * belongs to a list that has none: this one comes up over a list that stays. */
+static lv_obj_t *s_station_list_refused;
 /* The notice replaces the list rather than sitting above it, so the two parts
  * that only make sense with rows behind them - the rule and the drive picture
  * that stands in for them - are held to be shown and hidden together with it. */
@@ -627,6 +633,8 @@ static ui_list_decor_t s_station_list_decor;
 static ui_list_decor_t s_yandex_decor;
 static ui_list_decor_t s_settings_decor;
 static ui_list_decor_t s_menu_decor;
+/* The first visible item on the home list's top row. */
+static uint8_t s_menu_window_top;
 static lv_obj_t *s_station_list_progress;
 static station_list_state_t s_station_list;
 static ui_player_state_t s_player_ui;
@@ -653,6 +661,12 @@ static uint32_t s_fm_tune_follow_from;
 static uint32_t s_fm_tune_follow_ms;
 // A seek that comes back with no station leaves the digits where they were.
 #define UI_FM_TUNE_FOLLOW_MS 8000U
+/* What a long press while tuning did with the frequency, said under the
+ * digits for a moment: the press closes the mode, and without a word the
+ * listener cannot tell a kept preset from a press that only left. */
+static device_text_id_t s_fm_saved_note = DEVICE_TEXT_COUNT;
+static uint32_t s_fm_saved_note_ms;
+#define UI_FM_SAVED_NOTE_MS 2500U
 /* A source is open with nothing playing and nothing chosen - so its list is
  * what the screen should be showing. Armed when that source's screen is
  * loaded, and read a moment later, because "nothing is playing" is only true
@@ -729,6 +743,20 @@ static audio_source_t s_autoplay_target = AUDIO_SOURCE_NONE;
 /* Whether the select for that volume has gone to the controller - see the
  * file case in ui_autoplay_step(). */
 static bool s_autoplay_select_sent;
+/* Whether that volume has a file of its own to resume, read once when the
+ * key is pressed: the other volume's place lives in settings.csv, and the
+ * step runs every pass. */
+static bool s_autoplay_volume_has_file;
+/* A source key that came while the controller was still busy with the last
+ * command - see ui_remote_source_poll(). AUDIO_SOURCE_NONE otherwise. */
+static audio_source_t s_remote_source_waiting = AUDIO_SOURCE_NONE;
+/* The source that played before the one playing now, for the remote's Back;
+ * and the last one seen playing, which it is worked out from. Not saved: a
+ * restart begins a new evening. */
+static audio_source_t s_previous_source = AUDIO_SOURCE_NONE;
+static audio_source_t s_last_seen_source = AUDIO_SOURCE_NONE;
+/* From the web server's task - see ui_request_source(). */
+static atomic_int s_web_source_request = ATOMIC_VAR_INIT(AUDIO_SOURCE_NONE);
 /* The remote's Mute: the level it took the sound down from, so Mute again
  * or any volume key puts it back. Not a setting - a muted board comes back
  * from a power cut at the level it was muted at, not silent. */
@@ -872,6 +900,27 @@ static void ui_set_label_text_if_changed(lv_obj_t *label, const char *text)
     const char *current = lv_label_get_text(label);
     if (current == NULL || strcmp(current, text) != 0) {
         lv_label_set_text(label, text);
+    }
+}
+
+/* For the screens that rewrite every row to change one. A style set redraws its
+ * object even with the value it already has, and LVGL does not look: on the
+ * settings list, rewritten on every pass, that kept the whole list repainting,
+ * 160 ms of every 180, with nothing on it changing and a finger waiting its
+ * turn. */
+static void ui_set_bg_color_if_changed(lv_obj_t *object, uint32_t colour)
+{
+    const lv_color_t wanted = lv_color_hex(colour);
+    if (!lv_color_eq(lv_obj_get_style_bg_color(object, 0), wanted)) {
+        lv_obj_set_style_bg_color(object, wanted, 0);
+    }
+}
+
+static void ui_set_text_color_if_changed(lv_obj_t *object, uint32_t colour)
+{
+    const lv_color_t wanted = lv_color_hex(colour);
+    if (!lv_color_eq(lv_obj_get_style_text_color(object, 0), wanted)) {
+        lv_obj_set_style_text_color(object, wanted, 0);
     }
 }
 
@@ -3088,6 +3137,13 @@ static void ui_update_fm_status(const player_snapshot_t *snapshot)
     }
     ui_set_label_text_if_changed(s_source_fm_digits, digits);
     const char *state = ui_fm_tune_is_active(&s_fm_tune) ? ui_text(DEVICE_TEXT_FM_TUNING) : "";
+    if (s_fm_saved_note != DEVICE_TEXT_COUNT) {
+        if ((uint32_t)(ui_tick_get_ms() - s_fm_saved_note_ms) >= UI_FM_SAVED_NOTE_MS) {
+            s_fm_saved_note = DEVICE_TEXT_COUNT;
+        } else if (state[0] == '\0') {
+            state = ui_text(s_fm_saved_note);
+        }
+    }
     if (snapshot->playback_state != PLAYER_PLAYBACK_PLAYING &&
         snapshot->playback_state != PLAYER_PLAYBACK_PAUSED) {
         state = ui_radio_state_text(snapshot->playback_state);
@@ -3407,11 +3463,14 @@ static void ui_update_menu_highlight(void)
     const uint8_t selected = ui_menu_selected_index(&s_menu);
     const ui_menu_visible_mask_t shown = ui_menu_visible_mask(&s_menu);
     const uint8_t visible = ui_menu_visible_count(shown);
+    s_menu_window_top = ui_menu_window_top(
+        s_menu_window_top, ui_menu_visible_position((ui_menu_item_t)selected, shown), visible,
+        UI_MENU_ROWS_FIT);
     bool on_screen[UI_MENU_ITEM_COUNT] = {false};
     size_t cursor_row = UI_MENU_ITEM_COUNT;
     for (uint8_t row = 0; row < UI_MENU_ITEM_COUNT; ++row) {
-        on_screen[row] = row < visible;
-        if (row >= visible) {
+        on_screen[row] = row < UI_MENU_ROWS_FIT && s_menu_window_top + row < visible;
+        if (!on_screen[row]) {
             // Hidden rather than blanked: the row tile is opaque and would
             // otherwise leave a bar of background colour below the last name.
             lv_obj_add_flag(s_menu_rows[row], LV_OBJ_FLAG_HIDDEN);
@@ -3420,33 +3479,37 @@ static void ui_update_menu_highlight(void)
         }
         lv_obj_clear_flag(s_menu_rows[row], LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(s_menu_icons[row], LV_OBJ_FLAG_HIDDEN);
-        const ui_menu_item_t item = ui_menu_visible_item_at(row, shown);
+        const ui_menu_item_t item =
+            ui_menu_visible_item_at((uint8_t)(s_menu_window_top + row), shown);
         const bool is_selected = (uint8_t)item == selected;
         if (is_selected) cursor_row = row;
         const bool enabled = ui_menu_item_is_enabled(item, shown, s_last_wifi_connected);
         // Raised tile plus accent text, the way the player screen marks what
         // it is playing. The arrow the old highlight needed is gone: a filled
         // row says the same thing without spending a character on it.
-        lv_obj_set_style_bg_color(s_menu_rows[row],
-                                  lv_color_hex(is_selected ? ui_hex(UI_ROLE_SELECTED)
-                                                           : ui_hex(UI_ROLE_GROUND)), 0);
-        lv_obj_set_style_bg_opa(s_menu_rows[row], LV_OPA_COVER, 0);
+        ui_set_bg_color_if_changed(s_menu_rows[row], is_selected ? ui_hex(UI_ROLE_SELECTED)
+                                                                 : ui_hex(UI_ROLE_GROUND));
+        if (lv_obj_get_style_bg_opa(s_menu_rows[row], 0) != LV_OPA_COVER) {
+            lv_obj_set_style_bg_opa(s_menu_rows[row], LV_OPA_COVER, 0);
+        }
         /* The cursor still lands on it - the row is real, it just cannot be
            started right now, and the press says why. */
-        lv_obj_set_style_text_color(s_menu_rows[row],
-                                    lv_color_hex(!enabled       ? ui_hex(UI_ROLE_DISABLED)
-                                                 : is_selected  ? ui_hex(UI_ROLE_ACCENT)
-                                                                : ui_hex(UI_ROLE_SECONDARY)), 0);
-        lv_label_set_text(s_menu_rows[row], ui_menu_item_label(item, s_device_settings.language));
-        lv_image_set_src(s_menu_icons[row],
-                         ui_feed_icon_image((ui_feed_item_t)item, UI_FEED_ICON_SMALL));
+        ui_set_text_color_if_changed(s_menu_rows[row], !enabled      ? ui_hex(UI_ROLE_DISABLED)
+                                                       : is_selected ? ui_hex(UI_ROLE_ACCENT)
+                                                                     : ui_hex(UI_ROLE_SECONDARY));
+        ui_set_label_text_if_changed(s_menu_rows[row],
+                                     ui_menu_item_label(item, s_device_settings.language));
+        const void *icon = ui_feed_icon_image((ui_feed_item_t)item, UI_FEED_ICON_SMALL);
+        if (lv_image_get_src(s_menu_icons[row]) != icon) lv_image_set_src(s_menu_icons[row], icon);
         // The icon follows the text rather than staying lit: a row that is not
         // under the cursor should read as one thing, not as a bright mark with
         // dim writing next to it.
-        lv_obj_set_style_image_recolor(s_menu_icons[row],
-                                       lv_color_hex(!enabled      ? ui_hex(UI_ROLE_DISABLED)
-                                                    : is_selected ? ui_hex(UI_ROLE_ACCENT)
-                                                                  : ui_hex(UI_ROLE_DIM)), 0);
+        const lv_color_t recolor = lv_color_hex(!enabled      ? ui_hex(UI_ROLE_DISABLED)
+                                                : is_selected ? ui_hex(UI_ROLE_ACCENT)
+                                                              : ui_hex(UI_ROLE_DIM));
+        if (!lv_color_eq(lv_obj_get_style_image_recolor(s_menu_icons[row], 0), recolor)) {
+            lv_obj_set_style_image_recolor(s_menu_icons[row], recolor, 0);
+        }
     }
     /* The stripe is drawn whether or not the row can be started: the cursor
      * is on it either way, and the disabled colour already says the rest. */
@@ -3466,6 +3529,10 @@ static void ui_create_menu_screen(void)
     // default font has no Cyrillic and renders it as empty boxes, which is a
     // mistake that only shows up when a label first receives Russian text.
     lv_obj_set_style_text_font(s_menu_screen, UI_FONT_MENU, 0);
+    /* The rows scroll by the window in ui_update_menu_highlight(); LVGL's own
+     * scrolling would only add a bar beside a list that already follows the
+     * cursor. */
+    lv_obj_clear_flag(s_menu_screen, LV_OBJ_FLAG_SCROLLABLE);
 
     ui_status_strip_create(s_menu_screen, &s_menu_strip, "jRadio");
 
@@ -3914,7 +3981,9 @@ static void ui_create_settings_screen(void)
      * half of the band needs to say the click leads somewhere. */
     s_settings_web_address = lv_label_create(s_settings_web_band);
     lv_obj_set_pos(s_settings_web_address, UI_SET_BAND_PAD, (UI_SET_BAND_H - 19) / 2);
-    lv_obj_set_width(s_settings_web_address, UI_SET_BAND_ADDRESS_W);
+    /* One line high: a long name ends in dots instead of wrapping into a
+     * second line the band cuts through. */
+    lv_obj_set_size(s_settings_web_address, UI_SET_BAND_ADDRESS_W, UI_FONT_BODY_LINE_H);
     lv_label_set_long_mode(s_settings_web_address, LV_LABEL_LONG_DOT);
     ui_paint(s_settings_web_address, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
     lv_label_set_text(s_settings_web_address, "");
@@ -4340,8 +4409,17 @@ static void ui_update_settings_web_band(void)
                         s_device_settings.language, UI_SET_BAND_SHOW_SCHEME, mounted, text,
                         sizeof(text));
     ui_set_label_text_if_changed(s_settings_web_address, text);
+    /* The setup network's line - "join jradio-XXXX" - is wider than the slot
+     * beside the hint on a 320 px panel, and wrapped into a second line the
+     * band cut in half: the network's name was the half that went (seen on
+     * the 320x170 module 2026-10-31). The name is the one thing a visitor
+     * cannot learn anywhere else, so the line takes the whole band and the
+     * hint gives way; the press still brings the code up. */
+    lv_point_t text_size;
+    lv_text_get_size(&text_size, text, UI_FONT_BODY, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    const bool whole_band = !mounted || text_size.x > UI_SET_BAND_ADDRESS_W;
     lv_obj_set_width(s_settings_web_address,
-                     mounted ? UI_SET_BAND_ADDRESS_W : TFT_WIDTH - 2 * UI_SET_BAND_PAD);
+                     whole_band ? TFT_WIDTH - 2 * UI_SET_BAND_PAD : UI_SET_BAND_ADDRESS_W);
 
     char payload[sizeof(s_qr_shown)];
     const bool available = mounted && ui_web_address_qr(status.mode, status.ipv4,
@@ -4355,22 +4433,22 @@ static void ui_update_settings_web_band(void)
      * string on it that ignored the switch, and on a Russian device it read as
      * the only English on the panel. */
     ui_set_label_text_if_changed(s_settings_web_hint,
-                                 available ? ui_text(DEVICE_TEXT_ROW_WEB_ADDRESS) : "");
+                                 available && !whole_band ? ui_text(DEVICE_TEXT_ROW_WEB_ADDRESS)
+                                                          : "");
 
     /* The band is the last cursor stop, so it highlights like a row: the same
      * tile colour and the same accent, or the screen has a selection nobody
      * can see. */
     const bool selected =
         ui_settings_model_selected(&s_settings_model) == UI_SETTINGS_ROW_ADDRESS_BAND;
-    lv_obj_set_style_bg_color(s_settings_web_band,
-                              lv_color_hex(selected ? ui_hex(UI_ROLE_CURSOR) : ui_hex(UI_ROLE_STRIP)), 0);
-    lv_obj_set_style_text_color(s_settings_web_address,
-                                lv_color_hex(selected ? ui_hex(UI_ROLE_ACCENT)
-                                             : mounted  ? ui_hex(UI_ROLE_TEXT)
-                                                        : UI_COLOR_NOTICE),
-                                0);
-    lv_obj_set_style_text_color(s_settings_web_hint,
-                                lv_color_hex(selected ? ui_hex(UI_ROLE_ACCENT) : ui_hex(UI_ROLE_DIM)), 0);
+    ui_set_bg_color_if_changed(s_settings_web_band,
+                               selected ? ui_hex(UI_ROLE_CURSOR) : ui_hex(UI_ROLE_STRIP));
+    ui_set_text_color_if_changed(s_settings_web_address,
+                                 selected  ? ui_hex(UI_ROLE_ACCENT)
+                                 : mounted ? ui_hex(UI_ROLE_TEXT)
+                                           : UI_COLOR_NOTICE);
+    ui_set_text_color_if_changed(s_settings_web_hint,
+                                 selected ? ui_hex(UI_ROLE_ACCENT) : ui_hex(UI_ROLE_DIM));
     ui_apply_qr(payload, available, text);
 }
 
@@ -4400,9 +4478,7 @@ static void ui_update_settings(void)
     const ui_settings_row_id_t selected = ui_settings_model_selected(&s_settings_model);
     const size_t window_top = ui_settings_model_window_top(&s_settings_model,
                                                            UI_SETTINGS_MAX_ROWS);
-    for (size_t index = 0; index < UI_SETTINGS_SWITCH_COUNT; ++index) {
-        lv_obj_add_flag(s_settings_switches[index], LV_OBJ_FLAG_HIDDEN);
-    }
+    bool switch_used[UI_SETTINGS_SWITCH_COUNT] = {false};
     /* Arrows rather than a scroll bar: the rows already reach both edges, and
      * the one thing the user needs to know is that the list continues. */
     ui_set_label_text_if_changed(s_settings_more_above,
@@ -4423,7 +4499,7 @@ static void ui_update_settings(void)
         if (model_row >= row_count) {
             /* Hidden, not merely blanked: a row's background is opaque, and
              * with the taller pitch an unused row reaches into the web band. */
-            lv_label_set_text(s_settings_rows[row], "");
+            ui_set_label_text_if_changed(s_settings_rows[row], "");
             lv_obj_add_flag(s_settings_rows[row], LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(s_settings_group_marks[row], LV_OBJ_FLAG_HIDDEN);
             continue;
@@ -4445,9 +4521,14 @@ static void ui_update_settings(void)
          * Set per row rather than at creation: which row is a heading changes
          * as groups open and close. */
         const bool top_level = is_group || item.kind == UI_SETTINGS_ROW_ACTION;
-        lv_obj_set_style_text_font(s_settings_rows[row],
-                                   top_level ? UI_FONT_TITLE : UI_FONT_BODY, 0);
-        lv_obj_set_style_pad_top(s_settings_rows[row], top_level ? 1 : 4, 0);
+        const lv_font_t *font = top_level ? UI_FONT_TITLE : UI_FONT_BODY;
+        if (lv_obj_get_style_text_font(s_settings_rows[row], 0) != font) {
+            lv_obj_set_style_text_font(s_settings_rows[row], font, 0);
+        }
+        const int32_t pad_top = top_level ? 1 : 4;
+        if (lv_obj_get_style_pad_top(s_settings_rows[row], 0) != pad_top) {
+            lv_obj_set_style_pad_top(s_settings_rows[row], pad_top, 0);
+        }
         const bool selected_row = item.id == selected;
         /* Field tiles darker than they were, for the same reason: the gap to
          * the cursor is what makes it visible, and both ends of it moved. */
@@ -4462,13 +4543,13 @@ static void ui_update_settings(void)
         const uint32_t text_colour = selected_row ? ui_hex(UI_ROLE_ACCENT)
                                      : is_group   ? ui_hex(UI_ROLE_SECONDARY)
                                                   : ui_hex(UI_ROLE_TEXT);
-        lv_obj_set_style_text_color(s_settings_rows[row], lv_color_hex(text_colour), 0);
+        ui_set_text_color_if_changed(s_settings_rows[row], text_colour);
         if (is_group) {
             ui_set_label_text_if_changed(
                 s_settings_group_marks[row],
                 ui_settings_model_is_expanded(&s_settings_model, item.group) ? LV_SYMBOL_DOWN
                                                                               : LV_SYMBOL_RIGHT);
-            lv_obj_set_style_text_color(s_settings_group_marks[row], lv_color_hex(text_colour), 0);
+            ui_set_text_color_if_changed(s_settings_group_marks[row], text_colour);
             lv_obj_remove_flag(s_settings_group_marks[row], LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(s_settings_group_marks[row], LV_OBJ_FLAG_HIDDEN);
@@ -4488,15 +4569,21 @@ static void ui_update_settings(void)
         }
         lv_obj_set_x(s_settings_rows[row], row_left);
         lv_obj_set_width(s_settings_rows[row], UI_SET_ROW_RIGHT - row_left);
-        lv_obj_set_style_bg_color(s_settings_rows[row], lv_color_hex(background), 0);
+        ui_set_bg_color_if_changed(s_settings_rows[row], background);
         if (has_switch) {
             lv_obj_t *toggle = s_settings_switches[switch_index];
+            switch_used[switch_index] = true;
             if (enabled) lv_obj_add_state(toggle, LV_STATE_CHECKED);
             else lv_obj_clear_state(toggle, LV_STATE_CHECKED);
             lv_obj_set_pos(toggle, 10,
                            UI_SET_ROW_Y + (int)row * UI_SET_ROW_PITCH + (UI_SET_ROW_H - 20) / 2);
             lv_obj_clear_flag(toggle, LV_OBJ_FLAG_HIDDEN);
         }
+    }
+    /* Afterwards, and only the ones no row took: hidden first and shown again,
+     * every switch on the screen redrew on every pass. */
+    for (size_t index = 0; index < UI_SETTINGS_SWITCH_COUNT; ++index) {
+        if (!switch_used[index]) lv_obj_add_flag(s_settings_switches[index], LV_OBJ_FLAG_HIDDEN);
     }
     ui_list_decor_update(&s_settings_decor, shown, cursor_row, cursor_left);
     /* The line under a heading is a rule, not a divider: it closes the
@@ -5406,6 +5493,18 @@ static void ui_create_station_list_screen(void)
     lv_obj_set_style_image_recolor_opa(s_station_list_notice_icon, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_station_list_notice_icon, LV_OBJ_FLAG_HIDDEN);
 
+    s_station_list_refused = lv_label_create(s_station_list_screen);
+    lv_obj_set_pos(s_station_list_refused, UI_CONTENT_X, UI_LIST_RULE_Y - UI_FONT_BODY_LINE_H - 10);
+    lv_obj_set_size(s_station_list_refused, UI_CONTENT_W, UI_FONT_BODY_LINE_H + 8);
+    lv_obj_set_style_pad_top(s_station_list_refused, 4, 0);
+    lv_obj_set_style_text_align(s_station_list_refused, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(s_station_list_refused, UI_FONT_BODY, 0);
+    lv_obj_set_style_text_color(s_station_list_refused, lv_color_hex(UI_COLOR_NOTICE), 0);
+    ui_paint(s_station_list_refused, UI_PAINT_BG, UI_ROLE_GROUND, 0);
+    lv_obj_set_style_bg_opa(s_station_list_refused, LV_OPA_COVER, 0);
+    lv_label_set_text(s_station_list_refused, "");
+    lv_obj_add_flag(s_station_list_refused, LV_OBJ_FLAG_HIDDEN);
+
     s_station_list_notice = lv_label_create(s_station_list_screen);
     lv_label_set_text(s_station_list_notice, "");
     lv_obj_set_pos(s_station_list_notice, 10, UI_LIST_NOTICE_TEXT_Y);
@@ -5962,6 +6061,19 @@ static void ui_load_menu_screen(void)
 {
     s_waiting_for_source_item = false;
     if (!ui_home_screen_exists()) {
+        /* Not while autoplay waits to resume: this select goes out at boot,
+         * before the Wi-Fi, and the controller refuses it - but the view
+         * machine holds it as pending for its 13 s, and autoplay's own
+         * select, a moment later with the network up, was refused as busy
+         * and never tried again. A user's board with the radio as its only
+         * source booted to the list and stayed silent, on power-on and on
+         * every wake (2026-10-29). Held back instead, and dropped when
+         * autoplay has started something; with nothing to resume it opens
+         * the radio as before. */
+        if (s_autoplay_pending) {
+            s_radio_home_pending = true;
+            return;
+        }
         s_radio_home_pending = !ui_open_radio_home();
         return;
     }
@@ -6309,6 +6421,32 @@ static void ui_end_fm_tune(bool keep)
     }
 }
 
+/* The long press inside the mode: the frequency reached is kept, as a press
+ * keeps it, and goes into the presets as well - the way to a station the
+ * scan did not find, or one found later, without scanning the list away.
+ * The list is read here only to say what happened; the player adds it. */
+static void ui_fm_tune_keep_as_preset(void)
+{
+    const uint32_t khz = ui_fm_tune_khz(&s_fm_tune);
+    ui_end_fm_tune(true);
+    if (khz == 0U) return;
+    const size_t count = player_control_fm_preset_count();
+    bool already = false;
+    for (size_t index = 0U; index < count && !already; ++index) {
+        fm_preset_t preset;
+        already = player_control_fm_preset_at(index, &preset) && preset.khz == khz;
+    }
+    if (already) {
+        s_fm_saved_note = DEVICE_TEXT_FM_PRESET_ALREADY;
+    } else if (count >= FM_PRESETS_MAX) {
+        s_fm_saved_note = DEVICE_TEXT_FM_PRESET_FULL;
+    } else {
+        ui_fm_tune_post(PLAYER_COMMAND_FM_PRESET_ADD, khz);
+        s_fm_saved_note = DEVICE_TEXT_FM_PRESET_ADDED;
+    }
+    s_fm_saved_note_ms = ui_tick_get_ms();
+}
+
 /* Every pass: the frequency the knob has reached goes out at a measured pace,
  * a seek's result is taken up, and a mode left alone closes. */
 static void ui_fm_tune_tick(void)
@@ -6334,6 +6472,9 @@ static bool ui_fm_tune_input(board_input_action_t action)
         return true;
     case BOARD_INPUT_ACTION_ENCODER_BUTTON:
         ui_end_fm_tune(true);
+        return true;
+    case BOARD_INPUT_ACTION_ENCODER_LONG:
+        ui_fm_tune_keep_as_preset();
         return true;
     case BOARD_INPUT_ACTION_BTN_PREV:
     case BOARD_INPUT_ACTION_BTN_NEXT: {
@@ -6464,10 +6605,6 @@ static void ui_yandex_step_start(const player_snapshot_t *snapshot)
  * alone decides whether it is used - which is what the user asked for. */
 static void ui_enter_deep_sleep(void)
 {
-    if (!board_deep_sleep_supported()) {
-        ESP_LOGW(TAG, "deep sleep is not available on this board");
-        return;
-    }
     ESP_LOGW(TAG, "deep sleep requested");
     /* The screen goes first, before the second or so of shutting down below:
      * it is the only acknowledgement the user gets that the hold registered,
@@ -6588,16 +6725,21 @@ static ui_quick_menu_t s_quick;
 static lv_obj_t *s_quick_window;
 /* One set of widgets per drawn row, rewritten as the list scrolls under them:
  * the rows are positions on the window, not the functions themselves. */
-static lv_obj_t *s_quick_row[UI_QUICK_ROWS];
-static lv_obj_t *s_quick_name[UI_QUICK_ROWS];
-static lv_obj_t *s_quick_value[UI_QUICK_ROWS];
+static lv_obj_t *s_quick_row[UI_QUICK_ROW_COUNT];
+static lv_obj_t *s_quick_name[UI_QUICK_ROW_COUNT];
+static lv_obj_t *s_quick_value[UI_QUICK_ROW_COUNT];
 /* Every row carries both a reading and a switch, and shows the one its function
  * needs: the two kinds of row have to line up on the same right edge, and a
  * widget created when the cursor first lands on a switch is an allocation on a
  * button press - the thing this window is built at start-up to avoid. */
-static lv_obj_t *s_quick_switch[UI_QUICK_ROWS];
-_Static_assert(UI_QUICK_ROWS == UI_QUICK_ROW_COUNT,
-               "the model draws a different number of rows than the layout leaves room for");
+static lv_obj_t *s_quick_switch[UI_QUICK_ROW_COUNT];
+/* In the window's right padding, which the cursor's fill stops short of. It is
+ * what says there is more below: four rows look like the whole list. */
+#define UI_QUICK_BAR_W 4
+#define UI_QUICK_BAR_X (UI_QUICK_W - UI_QUICK_BAR_W - 2)
+#define UI_QUICK_BAR_THUMB_MIN_H 12
+static lv_obj_t *s_quick_bar;
+static lv_obj_t *s_quick_bar_thumb;
 /* Whether the window is up, which is not the same as the model being open: the
  * closing slide still runs for a fifth of a second after the model has let go
  * of the knob. */
@@ -6605,9 +6747,9 @@ static bool s_quick_visible;
 /* What is on the window now, so a poll that finds nothing changed costs no
  * invalidation. The panel is polled a hundred times a second and LVGL repaints
  * a label whose text is set again whether or not the text differs. */
-static char s_quick_value_shown[UI_QUICK_ROWS][32];
-static ui_quick_item_t s_quick_item_shown[UI_QUICK_ROWS];
-static bool s_quick_switch_shown[UI_QUICK_ROWS];
+static char s_quick_value_shown[UI_QUICK_ROW_COUNT][32];
+static ui_quick_item_t s_quick_item_shown[UI_QUICK_ROW_COUNT];
+static bool s_quick_switch_shown[UI_QUICK_ROW_COUNT];
 /* 0xFF means "nothing is highlighted yet", which is what the window is on the
  * pass that puts it up: without it the first row's fill would be skipped as
  * already correct. */
@@ -6773,6 +6915,58 @@ static void ui_quick_set_y(void *target, int32_t value)
     lv_obj_set_y((lv_obj_t *)target, (int32_t)value);
 }
 
+/* The volume under a finger, which covers the footer's reading on its way along
+ * the right edge: built here for the reason the quick panel is, an allocation on
+ * the gesture would be a press away from the pool running out. */
+#define UI_VOLUME_OVERLAY_W 156
+#define UI_VOLUME_OVERLAY_H 64
+#define UI_VOLUME_OVERLAY_MS 1200U
+static lv_obj_t *s_volume_overlay;
+static lv_obj_t *s_volume_overlay_text;
+static uint32_t s_volume_overlay_shown_ms;
+
+static void ui_volume_overlay_create(void)
+{
+    s_volume_overlay = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(s_volume_overlay);
+    lv_obj_remove_flag(s_volume_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(s_volume_overlay, UI_VOLUME_OVERLAY_W, UI_VOLUME_OVERLAY_H);
+    lv_obj_set_pos(s_volume_overlay, (TFT_WIDTH - UI_VOLUME_OVERLAY_W) / 2,
+                   (TFT_HEIGHT - UI_VOLUME_OVERLAY_H) / 2);
+    ui_paint(s_volume_overlay, UI_PAINT_BG, UI_ROLE_TILE, 0);
+    lv_obj_set_style_bg_opa(s_volume_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_volume_overlay, 8, 0);
+    ui_paint(s_volume_overlay, UI_PAINT_BORDER, UI_ROLE_TILE_EDGE, 0);
+    lv_obj_set_style_border_width(s_volume_overlay, 1, 0);
+    lv_obj_add_flag(s_volume_overlay, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *icon = lv_image_create(s_volume_overlay);
+    lv_obj_remove_style_all(icon);
+    lv_image_set_src(icon, &ui_feed_icon_volume_16);
+    lv_obj_set_size(icon, 16, 16);
+    lv_image_set_scale(icon, 512);
+    lv_obj_set_pos(icon, 20, (UI_VOLUME_OVERLAY_H - 16) / 2);
+    ui_paint(icon, UI_PAINT_RECOLOR, UI_ROLE_TEXT, 0);
+    lv_obj_set_style_image_recolor_opa(icon, LV_OPA_COVER, 0);
+
+    s_volume_overlay_text = lv_label_create(s_volume_overlay);
+    lv_obj_set_style_text_font(s_volume_overlay_text, &ui_font_bold_digits_40, 0);
+    ui_paint(s_volume_overlay_text, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
+    lv_label_set_text(s_volume_overlay_text, "");
+    lv_obj_align(s_volume_overlay_text, LV_ALIGN_LEFT_MID, 54, 0);
+}
+
+static void ui_volume_overlay_show(void)
+{
+    char text[8];
+    snprintf(text, sizeof(text), "%u", (unsigned int)board_audio_volume());
+    ui_set_label_text_if_changed(s_volume_overlay_text, text);
+    if (lv_obj_has_flag(s_volume_overlay, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_remove_flag(s_volume_overlay, LV_OBJ_FLAG_HIDDEN);
+    }
+    s_volume_overlay_shown_ms = ui_tick_get_ms();
+}
+
 static void ui_quick_create(void)
 {
     s_quick_window = lv_obj_create(lv_layer_top());
@@ -6787,7 +6981,24 @@ static void ui_quick_create(void)
     lv_obj_set_style_border_width(s_quick_window, 1, 0);
     lv_obj_add_flag(s_quick_window, LV_OBJ_FLAG_HIDDEN);
 
-    for (unsigned row = 0U; row < UI_QUICK_ROWS; ++row) {
+    s_quick_bar = lv_obj_create(s_quick_window);
+    lv_obj_remove_style_all(s_quick_bar);
+    lv_obj_remove_flag(s_quick_bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(s_quick_bar, UI_QUICK_BAR_X, UI_QUICK_PAD_Y);
+    lv_obj_set_size(s_quick_bar, UI_QUICK_BAR_W, UI_QUICK_ROW_COUNT * UI_QUICK_ROW_H);
+    lv_obj_set_style_radius(s_quick_bar, 2, 0);
+    ui_paint(s_quick_bar, UI_PAINT_BG, UI_ROLE_TRACK, 0);
+    lv_obj_set_style_bg_opa(s_quick_bar, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_quick_bar, LV_OBJ_FLAG_HIDDEN);
+    s_quick_bar_thumb = lv_obj_create(s_quick_bar);
+    lv_obj_remove_style_all(s_quick_bar_thumb);
+    lv_obj_remove_flag(s_quick_bar_thumb, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_width(s_quick_bar_thumb, UI_QUICK_BAR_W);
+    lv_obj_set_style_radius(s_quick_bar_thumb, 2, 0);
+    ui_paint(s_quick_bar_thumb, UI_PAINT_BG, UI_ROLE_ACCENT, 0);
+    lv_obj_set_style_bg_opa(s_quick_bar_thumb, LV_OPA_COVER, 0);
+
+    for (unsigned row = 0U; row < UI_QUICK_ROW_COUNT; ++row) {
         /* The row itself is only a fill: it carries the cursor, and the cursor
          * is what says which of the three the knob is on. */
         s_quick_row[row] = lv_obj_create(s_quick_window);
@@ -6951,10 +7162,10 @@ static void ui_quick_value_text(ui_quick_item_t item, char *out, size_t size)
 static void ui_quick_layout_rows(uint8_t rows)
 {
     if (rows == 0U) rows = 1U;
-    if (rows > (uint8_t)UI_QUICK_ROWS) rows = (uint8_t)UI_QUICK_ROWS;
+    if (rows > (uint8_t)UI_QUICK_ROW_COUNT) rows = (uint8_t)UI_QUICK_ROW_COUNT;
     s_quick_rows_shown = rows;
     lv_obj_set_size(s_quick_window, UI_QUICK_W, UI_QUICK_H_FOR(rows));
-    for (unsigned row = 0U; row < UI_QUICK_ROWS; ++row) {
+    for (unsigned row = 0U; row < UI_QUICK_ROW_COUNT; ++row) {
         const bool used = row < rows;
         if (used) {
             lv_obj_remove_flag(s_quick_row[row], LV_OBJ_FLAG_HIDDEN);
@@ -6986,12 +7197,22 @@ static void ui_quick_refresh(void)
     if (s_quick_window == NULL) return;
     const uint8_t rows = ui_quick_menu_visible_count(&s_quick);
     if (rows != s_quick_rows_shown) ui_quick_layout_rows(rows);
+    if (rows > (uint8_t)UI_QUICK_ROW_COUNT) {
+        const int track = (int)UI_QUICK_ROW_COUNT * UI_QUICK_ROW_H;
+        const int thumb = LV_MAX(track * (int)UI_QUICK_ROW_COUNT / (int)rows, UI_QUICK_BAR_THUMB_MIN_H);
+        const int last_top = (int)rows - (int)UI_QUICK_ROW_COUNT;
+        lv_obj_set_height(s_quick_bar_thumb, thumb);
+        lv_obj_set_y(s_quick_bar_thumb, (track - thumb) * (int)s_quick.top / last_top);
+        lv_obj_remove_flag(s_quick_bar, LV_OBJ_FLAG_HIDDEN);
+    } else if (!lv_obj_has_flag(s_quick_bar, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_add_flag(s_quick_bar, LV_OBJ_FLAG_HIDDEN);
+    }
     const uint8_t cursor = ui_quick_menu_cursor_row(&s_quick);
     /* One comparison for the whole window rather than one per row: the cursor
      * and the mode are single values, and when either moves two rows change. */
     const bool marks_stale =
         cursor != s_quick_cursor_shown || s_quick.editing != s_quick_editing_shown;
-    for (unsigned row = 0U; row < UI_QUICK_ROWS; ++row) {
+    for (unsigned row = 0U; row < UI_QUICK_ROW_COUNT; ++row) {
         const ui_quick_item_t item = ui_quick_menu_row_item(&s_quick, (uint8_t)row);
         const bool item_moved = item != s_quick_item_shown[row];
         if (item_moved) {
@@ -7092,7 +7313,7 @@ static void ui_quick_show(void)
     /* Filled before it is on screen: the first frame of the slide already
      * carries the rows and the cursor. Every cache is put out of date first,
      * because what was drawn last time was another screen's worth of state. */
-    for (unsigned row = 0U; row < UI_QUICK_ROWS; ++row) {
+    for (unsigned row = 0U; row < UI_QUICK_ROW_COUNT; ++row) {
         s_quick_item_shown[row] = UI_QUICK_ITEM_COUNT;
         s_quick_value_shown[row][0] = '\0';
     }
@@ -7333,12 +7554,31 @@ static audio_source_t ui_source_of_action(board_input_action_t action)
  * network it needs is down - the list says so - and when the key names the
  * source already playing: pressed again, it is the way to that source's
  * list, and restarting what plays would be no answer. */
+/* The file a volume would resume, from its own resume point. */
+static bool ui_volume_resume_file(audio_source_t source, char *out, size_t size)
+{
+    out[0] = '\0';
+    if (!audio_source_is_files(source)) return false;
+    return device_settings_volume_file(
+        &s_device_settings, source == AUDIO_SOURCE_SD ? FILE_BROWSER_SD_ROOT : FILE_BROWSER_USB_ROOT,
+        out, size);
+}
+
 static void ui_remote_open_source(audio_source_t source)
 {
+    /* A newer key replaces a resume still under way: left armed, the drive's
+     * resume finished after the card's key and the drive came up instead
+     * (reported on the forum 2026-10-31). */
+    if (s_autoplay_pending && s_autoplay_target != AUDIO_SOURCE_NONE) {
+        s_autoplay_pending = false;
+        s_autoplay_target = AUDIO_SOURCE_NONE;
+    }
     player_snapshot_t snapshot;
     player_control_get_snapshot(&snapshot);
+    char path[DEVICE_LAST_FILE_MAX];
+    const bool volume_has_file = ui_volume_resume_file(source, path, sizeof(path));
     const ui_autoplay_action_t action = ui_autoplay_decide_for(
-        &s_device_settings, source, snapshot.usb_media, snapshot.sd_media, true,
+        &s_device_settings, source, volume_has_file, snapshot.usb_media, snapshot.sd_media, true,
         BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(), board_has_fm_tuner());
     const bool network = action == UI_AUTOPLAY_RADIO || action == UI_AUTOPLAY_YANDEX ||
                          action == UI_AUTOPLAY_DLNA;
@@ -7351,9 +7591,40 @@ static void ui_remote_open_source(audio_source_t source)
     ESP_LOGI(TAG, "remote: resuming source %d", (int)source);
     s_autoplay_target = source;
     s_autoplay_select_sent = false;
+    s_autoplay_volume_has_file = volume_has_file;
     s_autoplay_for_alarm = false;
     s_autoplay_pending = true;
     s_autoplay_started_ms = ui_tick_get_ms();
+}
+
+/* The source key waiting, acted on once the controller has taken the last
+ * command. Pressed while a select was still unconfirmed, the key used to be
+ * refused by the command gate and lost - "the remote did not react", then
+ * the next key switched to the source before it. The latest key wins, and
+ * the gate's own timeout bounds the wait. */
+/* Between two sources the snapshot can read none for a moment; that is not a
+ * source anybody chose, so the one before it is what Back returns to. */
+static void ui_track_previous_source(const player_snapshot_t *snapshot)
+{
+    const audio_source_t active = snapshot->active_source;
+    if (active == AUDIO_SOURCE_NONE || active == s_last_seen_source) return;
+    s_previous_source = s_last_seen_source;
+    s_last_seen_source = active;
+}
+
+static void ui_remote_source_poll(void)
+{
+    const int requested =
+        atomic_exchange_explicit(&s_web_source_request, AUDIO_SOURCE_NONE, memory_order_acq_rel);
+    if (requested != AUDIO_SOURCE_NONE) s_remote_source_waiting = (audio_source_t)requested;
+    if (s_remote_source_waiting == AUDIO_SOURCE_NONE) return;
+    if (ui_player_state_is_pending(&s_player_ui)) return;
+    const audio_source_t source = s_remote_source_waiting;
+    s_remote_source_waiting = AUDIO_SOURCE_NONE;
+    /* Through the home screen's own path, which is what knows whether the
+     * source is on this board, has its network, and how it opens. A source
+     * not on the menu is a key that does nothing, quietly. */
+    if (ui_menu_select_source(&s_menu, source)) ui_remote_open_source(source);
 }
 
 /* The keys a remote has and the case does not. True when the action was one
@@ -7377,8 +7648,6 @@ static bool ui_handle_remote_action(board_input_action_t action)
         ui_toggle_playback();
         return true;
     case BOARD_INPUT_ACTION_SLEEP_CYCLE: {
-        // A receiver that cannot wake the chip: no timer, as on the panel.
-        if (!board_deep_sleep_supported()) return true;
         const uint16_t next = ui_quick_sleep_step(sleep_timer_service_minutes(), 1);
         sleep_timer_service_set(next);
         ESP_LOGI(TAG, "remote: sleep timer %u min", (unsigned)next);
@@ -7414,12 +7683,19 @@ static bool ui_handle_remote_action(board_input_action_t action)
         ui_show_station_list();
         return true;
     }
+    if (action == BOARD_INPUT_ACTION_SOURCE_PREVIOUS) {
+        // Nothing before this one yet: a key that does nothing, quietly.
+        if (s_previous_source != AUDIO_SOURCE_NONE) {
+            s_remote_source_waiting = s_previous_source;
+            ui_remote_source_poll();
+        }
+        return true;
+    }
     const audio_source_t source = ui_source_of_action(action);
     if (source != AUDIO_SOURCE_NONE) {
-        /* Through the home screen's own path, which is what knows whether the
-         * source is on this board, has its network, and how it opens. A
-         * source not on the menu is a key that does nothing, quietly. */
-        if (ui_menu_select_source(&s_menu, source)) ui_remote_open_source(source);
+        // Now if the controller is free, else as soon as it is.
+        s_remote_source_waiting = source;
+        ui_remote_source_poll();
         return true;
     }
     return false;
@@ -8227,6 +8503,16 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
                 UI_BROWSE_WAIT_TIMEOUT_MS) {
             s_browse_waiting = false;
         }
+        const bool refused =
+            ui_list_shows_dlna() && !s_browse_waiting && player_control_browse_failed();
+        if (refused == lv_obj_has_flag(s_station_list_refused, LV_OBJ_FLAG_HIDDEN)) {
+            if (refused) {
+                lv_label_set_text(s_station_list_refused, ui_text(DEVICE_TEXT_ERROR_FOLDER_FAILED));
+                lv_obj_clear_flag(s_station_list_refused, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(s_station_list_refused, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
         /* Every pass, not only when the rows change: the sweeping bar is the
          * one thing on this screen that moves while nothing else does, and it
          * moves because this is called. The rest of the pass costs nothing
@@ -8345,7 +8631,8 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
     }
     const ui_autoplay_action_t action =
         s_autoplay_target != AUDIO_SOURCE_NONE
-            ? ui_autoplay_decide_for(&s_device_settings, s_autoplay_target, snapshot->usb_media,
+            ? ui_autoplay_decide_for(&s_device_settings, s_autoplay_target,
+                                     s_autoplay_volume_has_file, snapshot->usb_media,
                                      snapshot->sd_media, false, BOARD_HAS_YANDEX_MUSIC,
                                      BOARD_HAS_DLNA, board_has_bluetooth(), board_has_fm_tuner())
             : (s_autoplay_for_alarm ? ui_autoplay_decide_resume : ui_autoplay_decide)(
@@ -8399,9 +8686,13 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
      * the search, and the file was not found (2026-10-29). At power-on there
      * is nothing to stop and the race was never seen; this is the remote's
      * case only. */
+    /* And once the select is over, not only once it names the volume: the
+     * source is published before the card is mounted and its root read, and
+     * resuming in that gap lost the file the same way (seen on the bench
+     * 2026-10-31: the file's folder read back as the root's seven entries). */
     if (s_autoplay_target != AUDIO_SOURCE_NONE &&
         (action == UI_AUTOPLAY_FILE || action == UI_AUTOPLAY_FILE_BROWSER) &&
-        snapshot->active_source != s_autoplay_target) {
+        (snapshot->active_source != s_autoplay_target || player_control_selecting())) {
         if (!s_autoplay_select_sent) {
             const player_command_t select = {
                 .kind = PLAYER_COMMAND_SELECT_SOURCE,
@@ -8417,6 +8708,8 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         return;
     }
     s_autoplay_pending = false;
+    // Autoplay opens what it resumes; the held-back radio home is not wanted.
+    if (action != UI_AUTOPLAY_HOME) s_radio_home_pending = false;
 
     switch (action) {
     case UI_AUTOPLAY_RADIO: {
@@ -8539,7 +8832,15 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         // Whether the remembered file is still there is only knowable by
         // looking, so the attempt itself is the test: it opens the file's
         // directory either way, leaving the browser somewhere useful.
-        if (player_control_file_resume_path(s_device_settings.last_file)) {
+        /* The remote's volume resumes its own file, which is the latest one
+         * only if the last file played was on it. */
+        char path[DEVICE_LAST_FILE_MAX];
+        if (s_autoplay_target == AUDIO_SOURCE_NONE) {
+            snprintf(path, sizeof(path), "%s", s_device_settings.last_file);
+        } else {
+            (void)ui_volume_resume_file(source, path, sizeof(path));
+        }
+        if (path[0] != '\0' && player_control_file_resume_path(path)) {
             ui_load_source_screen(source);
             return;
         }
@@ -8728,16 +9029,6 @@ static void ui_alarm_stop_poll(uint32_t now_ms)
         return;
     }
     if (s_sleep_fading) return;
-    if (!board_deep_sleep_supported()) {
-        ESP_LOGI(TAG, "alarm: switch-off time; stopping the sound");
-        const player_command_t stop = {
-            .kind = PLAYER_COMMAND_STOP_SOURCE,
-            .source = AUDIO_SOURCE_NONE,
-            .item_index = PLAYER_ITEM_NONE,
-        };
-        (void)player_control_post(&stop);
-        return;
-    }
     ESP_LOGI(TAG, "alarm: switch-off time; fading out");
     s_sleep_fading = true;
     s_sleep_fade_started_ms = now_ms;
@@ -8785,9 +9076,755 @@ static void ui_update_vu(void)
     }
 }
 
+/* The touch panel, on the home screens and the lists. It works them through
+ * ui_handle_input() with the encoder's own actions, so a screen has one way of
+ * being worked: a drag is the knob turned, a touch on a row is the cursor put
+ * there and the knob pressed. */
+typedef enum {
+    UI_TOUCH_TARGET_NONE = 0,
+    UI_TOUCH_TARGET_FEED,
+    UI_TOUCH_TARGET_MENU,
+    UI_TOUCH_TARGET_STATIONS,
+    UI_TOUCH_TARGET_YANDEX,
+    UI_TOUCH_TARGET_SETTINGS,
+    // The address's code or About over the settings: a touch only closes them.
+    UI_TOUCH_TARGET_OVERLAY,
+    UI_TOUCH_TARGET_PLAYER,
+    UI_TOUCH_TARGET_QUICK,
+    UI_TOUCH_TARGET_STRIP,
+} ui_touch_target_t;
+
+// A carousel has no rows to set a pitch; this is a short push of the finger.
+#define UI_TOUCH_FEED_STEP_PX 60
+/* A finger lands below what its owner is looking at: 34 touches aimed at the
+ * middle of 36 px rows on the bench came in 12 px low on average, and six of them
+ * on the row beneath. Found by aiming, so it says nothing of whether the panel
+ * or the finger is the one that is off. */
+#define UI_TOUCH_AIM_Y_PX 12
+// A number moved sideways: the width of the panel covers a brightness end to end.
+#define UI_TOUCH_VALUE_STEP_PX 16
+/* The settings' arrows, wider than they are drawn and two rows tall each: a
+ * finger aimed at one 20 px mark lands anywhere over 44 px. Repeating no faster
+ * than the list can be redrawn, or a release would leave steps still to come. */
+#define UI_TOUCH_ARROW_W 56
+#define UI_TOUCH_ARROW_REPEAT_MS 180U
+// The length of a swipe on the player screen, and of a click of volume under it.
+#define UI_TOUCH_SWIPE_PX 60
+#define UI_TOUCH_VOLUME_STEP_PX 12
+/* The quick panel's scrollbar under a finger, from a little inside the window to
+ * the screen's edge: the bar is 4 px and the switches stand just left of it. */
+#define UI_TOUCH_QUICK_BAR_INSIDE_PX 14
+
+static ui_touch_gesture_t s_touch;
+// The arrow held down, -1 up or 1 down, and when it last moved the list.
+static int s_touch_arrow;
+static uint32_t s_touch_arrow_ms;
+// The finger came down on the quick panel's scrollbar and is working it.
+static bool s_touch_quick_bar;
+
+/* The action strip over the bottom of the player. Built at init, like the quick
+ * panel, for the same reason: an allocation that runs the LVGL pool out is a
+ * silent hang, and on a gesture it would come on some random evening. */
+#define UI_TOUCH_STRIP_H 60
+#define UI_TOUCH_STRIP_IDLE_MS 5000U
+static lv_obj_t *s_strip;
+static lv_obj_t *s_strip_label[UI_TOUCH_STRIP_MAX_ITEMS];
+// The two marks the footer already shows for a track, in place of a word.
+static lv_obj_t *s_strip_icon[UI_TOUCH_STRIP_MAX_ITEMS];
+static lv_obj_t *s_strip_divider[UI_TOUCH_STRIP_MAX_ITEMS - 1U];
+static ui_touch_strip_item_t s_strip_items[UI_TOUCH_STRIP_MAX_ITEMS];
+static unsigned s_strip_count;
+static uint32_t s_strip_opened_ms;
+
+static void ui_strip_create(void)
+{
+    s_strip = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(s_strip);
+    lv_obj_remove_flag(s_strip, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(s_strip, TFT_WIDTH, UI_TOUCH_STRIP_H);
+    lv_obj_set_pos(s_strip, 0, TFT_HEIGHT - UI_TOUCH_STRIP_H);
+    ui_paint(s_strip, UI_PAINT_BG, UI_ROLE_TILE, 0);
+    lv_obj_set_style_bg_opa(s_strip, LV_OPA_COVER, 0);
+    ui_paint(s_strip, UI_PAINT_BORDER, UI_ROLE_TILE_EDGE, 0);
+    lv_obj_set_style_border_width(s_strip, 1, 0);
+    lv_obj_set_style_border_side(s_strip, LV_BORDER_SIDE_TOP, 0);
+    lv_obj_add_flag(s_strip, LV_OBJ_FLAG_HIDDEN);
+    for (unsigned index = 0U; index < UI_TOUCH_STRIP_MAX_ITEMS; ++index) {
+        s_strip_label[index] = lv_label_create(s_strip);
+        lv_obj_set_style_text_font(s_strip_label[index], UI_FONT_BODY, 0);
+        lv_obj_set_style_text_align(s_strip_label[index], LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(s_strip_label[index], LV_LABEL_LONG_CLIP);
+        ui_paint(s_strip_label[index], UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
+        lv_label_set_text(s_strip_label[index], "");
+
+        s_strip_icon[index] = lv_image_create(s_strip);
+        lv_obj_remove_style_all(s_strip_icon[index]);
+        lv_image_set_src(s_strip_icon[index], &ui_feed_icon_heart_16);
+        lv_obj_set_size(s_strip_icon[index], 16, 16);
+        lv_image_set_scale(s_strip_icon[index], 512);
+        ui_paint(s_strip_icon[index], UI_PAINT_RECOLOR, UI_ROLE_TEXT, 0);
+        lv_obj_set_style_image_recolor_opa(s_strip_icon[index], LV_OPA_COVER, 0);
+        lv_obj_add_flag(s_strip_icon[index], LV_OBJ_FLAG_HIDDEN);
+    }
+    for (unsigned index = 0U; index + 1U < UI_TOUCH_STRIP_MAX_ITEMS; ++index) {
+        s_strip_divider[index] = lv_obj_create(s_strip);
+        lv_obj_remove_style_all(s_strip_divider[index]);
+        lv_obj_set_size(s_strip_divider[index], 1, UI_TOUCH_STRIP_H - 20);
+        ui_paint(s_strip_divider[index], UI_PAINT_BG, UI_ROLE_DIVIDER, 0);
+        lv_obj_set_style_bg_opa(s_strip_divider[index], LV_OPA_COVER, 0);
+    }
+}
+
+static bool ui_strip_is_open(void)
+{
+    return s_strip != NULL && !lv_obj_has_flag(s_strip, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void ui_strip_close(void)
+{
+    if (ui_strip_is_open()) lv_obj_add_flag(s_strip, LV_OBJ_FLAG_HIDDEN);
+}
+
+static device_text_id_t ui_strip_text(ui_touch_strip_item_t item)
+{
+    switch (item) {
+    case UI_TOUCH_STRIP_LIST: return DEVICE_TEXT_STRIP_LIST;
+    case UI_TOUCH_STRIP_SEEK: return DEVICE_TEXT_STRIP_SEEK;
+    case UI_TOUCH_STRIP_TUNE: return DEVICE_TEXT_STRIP_TUNE;
+    default: return DEVICE_TEXT_STRIP_EXIT;
+    }
+}
+
+static void ui_strip_open(void)
+{
+    const audio_source_t source = ui_player_state_source(&s_player_ui);
+    const player_playback_state_t playback = ui_player_state_playback(&s_player_ui);
+    /* The same questions the encoder's presses ask on this screen, so the strip
+     * offers what they would do. */
+    const bool has_list = audio_source_is_stations(source) || audio_source_is_files(source) ||
+                          source == AUDIO_SOURCE_DLNA || source == AUDIO_SOURCE_FM;
+    const bool fm = source == AUDIO_SOURCE_FM;
+    const bool tunable =
+        fm && (playback == PLAYER_PLAYBACK_PLAYING || playback == PLAYER_PLAYBACK_PAUSED);
+    s_strip_count = ui_touch_strip_items(has_list, !fm && ui_seek_available(), tunable,
+                                         source == AUDIO_SOURCE_YANDEX, s_strip_items);
+    const int cell = TFT_WIDTH / (int)s_strip_count;
+    for (unsigned index = 0U; index < UI_TOUCH_STRIP_MAX_ITEMS; ++index) {
+        lv_obj_t *label = s_strip_label[index];
+        lv_obj_t *icon = s_strip_icon[index];
+        const bool has_icon =
+            index < s_strip_count && (s_strip_items[index] == UI_TOUCH_STRIP_LIKE ||
+                                      s_strip_items[index] == UI_TOUCH_STRIP_DISLIKE);
+        if (has_icon) {
+            lv_image_set_src(icon, s_strip_items[index] == UI_TOUCH_STRIP_LIKE
+                                       ? &ui_feed_icon_heart_16
+                                       : &ui_feed_icon_heart_slash_16);
+            lv_obj_set_pos(icon, (int)index * cell + (cell - 16) / 2, (UI_TOUCH_STRIP_H - 16) / 2);
+            lv_obj_remove_flag(icon, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(icon, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (index >= s_strip_count || has_icon) {
+            lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            ui_set_label_text_if_changed(label, ui_text(ui_strip_text(s_strip_items[index])));
+            lv_obj_set_width(label, cell - 4);
+            lv_obj_set_pos(label, (int)index * cell + 2, (UI_TOUCH_STRIP_H - UI_FONT_BODY_LINE_H) / 2);
+            lv_obj_remove_flag(label, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (index + 1U < UI_TOUCH_STRIP_MAX_ITEMS) {
+            lv_obj_t *divider = s_strip_divider[index];
+            if (index + 1U < s_strip_count) {
+                lv_obj_set_pos(divider, (int)(index + 1U) * cell, 10);
+                lv_obj_remove_flag(divider, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(divider, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+    }
+    s_strip_opened_ms = ui_tick_get_ms();
+    lv_obj_remove_flag(s_strip, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void ui_touch_tap_strip(int x, int y)
+{
+    const int cell = y >= TFT_HEIGHT - UI_TOUCH_STRIP_H
+                         ? ui_touch_strip_cell(x, TFT_WIDTH, s_strip_count)
+                         : -1;
+    ui_strip_close();
+    if (cell < 0) return;
+    switch (s_strip_items[cell]) {
+    case UI_TOUCH_STRIP_LIST:
+        ui_open_source_list(ui_player_state_source(&s_player_ui));
+        break;
+    case UI_TOUCH_STRIP_SEEK:
+        ui_begin_seek();
+        break;
+    case UI_TOUCH_STRIP_TUNE:
+        ui_begin_fm_tune();
+        break;
+    case UI_TOUCH_STRIP_LIKE:
+        ui_submit_like_press(false);
+        break;
+    case UI_TOUCH_STRIP_DISLIKE:
+        ui_submit_like_press(true);
+        break;
+    case UI_TOUCH_STRIP_EXIT:
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_LONG);
+        break;
+    }
+}
+
+/* Who the finger is talking to. Nobody, on anything that sits over a screen:
+ * the update's question above all, where the press this would send is a yes. */
+static ui_touch_target_t ui_touch_target(void)
+{
+    if (s_ota_visible) return UI_TOUCH_TARGET_NONE;
+    if (s_quick.open) return UI_TOUCH_TARGET_QUICK;
+    if (s_yandex_open) return UI_TOUCH_TARGET_YANDEX;
+    if (s_settings_open) {
+        return s_about_open || s_qr_open ? UI_TOUCH_TARGET_OVERLAY : UI_TOUCH_TARGET_SETTINGS;
+    }
+    const ui_player_view_t view = ui_player_state_view(&s_player_ui);
+    if (view == UI_PLAYER_VIEW_STATION_LIST) return UI_TOUCH_TARGET_STATIONS;
+    if (view == UI_PLAYER_VIEW_SOURCE) {
+        if (lv_screen_active() != s_source_screen) return UI_TOUCH_TARGET_NONE;
+        return ui_strip_is_open() ? UI_TOUCH_TARGET_STRIP : UI_TOUCH_TARGET_PLAYER;
+    }
+    if (view != UI_PLAYER_VIEW_MENU) return UI_TOUCH_TARGET_NONE;
+    if (s_device_settings.home_screen == DEVICE_HOME_SCREEN_FEED &&
+        lv_screen_active() == s_feed_screen) {
+        return UI_TOUCH_TARGET_FEED;
+    }
+    return lv_screen_active() == s_menu_screen ? UI_TOUCH_TARGET_MENU : UI_TOUCH_TARGET_NONE;
+}
+
+static void ui_touch_turn(int steps, board_input_action_t positive, board_input_action_t negative)
+{
+    for (int count = steps > 0 ? steps : -steps; count > 0; --count) {
+        ui_handle_input(steps > 0 ? positive : negative);
+    }
+}
+
+/* A sideways drag on a number. The row under where the finger came down, armed
+ * or not, since the press that arms it is only the knob's way of saying which
+ * row it means and the finger has already said. */
+static void ui_touch_settings_value(int steps)
+{
+    if (!ui_settings_model_is_editing(&s_settings_model)) {
+        const int row = ui_touch_row_at(s_touch.start_y, UI_SET_ROW_Y, UI_SET_ROW_PITCH,
+                                        (int)UI_SETTINGS_MAX_ROWS);
+        if (row < 0) return;
+        const size_t target = s_settings_model.window_top + (size_t)row;
+        if (!ui_settings_row_is_number(ui_settings_model_row_at(&s_settings_model, target).id)) {
+            return;
+        }
+        while (s_settings_model.cursor != target) {
+            if (ui_settings_model_move(&s_settings_model,
+                                       s_settings_model.cursor < target ? 1 : -1) ==
+                UI_SETTINGS_MODEL_NO_CHANGE) {
+                return;
+            }
+        }
+    }
+    for (int count = steps > 0 ? steps : -steps; count > 0; --count) {
+        ui_settings_change_number(steps > 0 ? 1 : -1);
+    }
+    ui_update_settings();
+}
+
+// Which arrow is under the finger, if one is showing: -1 up, 1 down, otherwise 0.
+static int ui_touch_settings_arrow(int x, int y)
+{
+    if (x < TFT_WIDTH - UI_TOUCH_ARROW_W || y < UI_SET_ROW_Y) return 0;
+    if (y < UI_SET_ROW_Y + 2 * UI_SET_ROW_PITCH &&
+        ui_settings_model_has_rows_above(&s_settings_model)) {
+        return -1;
+    }
+    const int end = UI_SET_ROW_Y + (int)UI_SETTINGS_MAX_ROWS * UI_SET_ROW_PITCH;
+    if (y >= end - 2 * UI_SET_ROW_PITCH && y < end &&
+        ui_settings_model_has_rows_below(&s_settings_model, UI_SETTINGS_MAX_ROWS)) {
+        return 1;
+    }
+    return 0;
+}
+
+static void ui_touch_arrow_step(uint32_t now_ms)
+{
+    s_touch_arrow_ms = now_ms;
+    if (ui_settings_model_scroll(&s_settings_model, s_touch_arrow, UI_SETTINGS_MAX_ROWS) ==
+        UI_SETTINGS_MODEL_CHANGED) {
+        ui_update_settings();
+    }
+}
+
+/* Tuning by hand, a tap ends it and two search the air for the next station, the
+ * way that side of the screen goes. So the one tap has to wait out the second,
+ * which it need not anywhere else. */
+static ui_click_gesture_t s_touch_fm_click;
+
+static void ui_touch_tap_fm_tune(int x)
+{
+    if (ui_click_gesture_press(&s_touch_fm_click, ui_tick_get_ms(), false) == UI_CLICK_DOUBLE) {
+        ui_handle_input(x >= TFT_WIDTH / 2 ? BOARD_INPUT_ACTION_BTN_NEXT
+                                           : BOARD_INPUT_ACTION_BTN_PREV);
+    }
+}
+
+// A position or a frequency under the finger: a mode that owns the whole screen.
+static bool ui_touch_player_in_mode(void)
+{
+    return ui_seek_is_active(&s_player_seek) || ui_fm_tune_is_active(&s_fm_tune);
+}
+
+static void ui_touch_drag_player(const ui_touch_event_t *event)
+{
+    const int steps = event->steps;
+    if (event->coasting) {
+        ui_touch_gesture_stop_coast(&s_touch);
+        return;
+    }
+    const bool sideways = event->axis == UI_TOUCH_AXIS_HORIZONTAL;
+    if (ui_touch_player_in_mode()) {
+        if (sideways) {
+            ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_RIGHT, BOARD_INPUT_ACTION_ENCODER_LEFT);
+        } else if (steps < 0 && ui_touch_player_drag(s_touch.start_x, s_touch.start_y, event->axis,
+                                                     TFT_WIDTH, TFT_HEIGHT) ==
+                                    UI_TOUCH_PLAYER_ACTION_STRIP) {
+            // Up from the bottom edge, where the strip comes from: leave it all as it was.
+            ui_touch_gesture_ignore(&s_touch);
+            ui_end_seek();
+            ui_end_fm_tune(false);
+        }
+        return;
+    }
+    switch (ui_touch_player_drag(s_touch.start_x, s_touch.start_y, event->axis, TFT_WIDTH,
+                                 TFT_HEIGHT)) {
+    case UI_TOUCH_PLAYER_SKIP:
+        ui_touch_gesture_ignore(&s_touch);
+        /* Back is not a way on Yandex, where that button carries the like: a
+         * finger that only wanted the previous track would have marked this
+         * one. */
+        if (steps < 0) {
+            ui_handle_input(BOARD_INPUT_ACTION_BTN_NEXT);
+        } else if (ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_YANDEX) {
+            ui_handle_input(BOARD_INPUT_ACTION_BTN_PREV);
+        }
+        break;
+    case UI_TOUCH_PLAYER_VOLUME:
+        // Up is louder, against the way a list follows the finger.
+        ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_LEFT, BOARD_INPUT_ACTION_ENCODER_RIGHT);
+        ui_volume_overlay_show();
+        break;
+    case UI_TOUCH_PLAYER_QUICK_PANEL:
+        ui_touch_gesture_ignore(&s_touch);
+        if (steps > 0) ui_handle_input(BOARD_INPUT_ACTION_QUICK_MENU);
+        break;
+    case UI_TOUCH_PLAYER_ACTION_STRIP:
+        ui_touch_gesture_ignore(&s_touch);
+        if (steps < 0) ui_strip_open();
+        break;
+    default:
+        break;
+    }
+}
+
+static bool s_touch_quick_scrolled;
+
+static void ui_touch_drag_quick(const ui_touch_event_t *event)
+{
+    /* Back the way it came. Not a drag that has been walking the cursor up the
+     * list, which would run on through the first row and shut the window. */
+    if (event->axis != UI_TOUCH_AXIS_HORIZONTAL && event->steps < 0 && !s_touch_quick_scrolled &&
+        ui_quick_menu_up_closes(&s_quick)) {
+        if (event->coasting) ui_touch_gesture_stop_coast(&s_touch);
+        else ui_touch_gesture_ignore(&s_touch);
+        ui_handle_input(BOARD_INPUT_ACTION_QUICK_MENU);
+        return;
+    }
+    if (event->coasting) {
+        ui_touch_gesture_stop_coast(&s_touch);
+        return;
+    }
+    if (event->axis == UI_TOUCH_AXIS_HORIZONTAL) {
+        if (!s_quick.editing && !ui_quick_item_is_switch(s_quick.item)) {
+            ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+        }
+        if (s_quick.editing) {
+            ui_touch_turn(event->steps, BOARD_INPUT_ACTION_ENCODER_RIGHT,
+                          BOARD_INPUT_ACTION_ENCODER_LEFT);
+        }
+    } else if (!s_quick.editing) {
+        s_touch_quick_scrolled = true;
+        ui_touch_turn(event->steps, BOARD_INPUT_ACTION_ENCODER_RIGHT,
+                      BOARD_INPUT_ACTION_ENCODER_LEFT);
+    }
+}
+
+static void ui_touch_drag(ui_touch_target_t target, const ui_touch_event_t *event)
+{
+    if (target == UI_TOUCH_TARGET_PLAYER) {
+        ui_touch_drag_player(event);
+        return;
+    }
+    if (target == UI_TOUCH_TARGET_QUICK) {
+        ui_touch_drag_quick(event);
+        return;
+    }
+    if (target == UI_TOUCH_TARGET_STRIP) {
+        // Back the way it came, and only that: up has nowhere further to take it.
+        if (event->coasting) ui_touch_gesture_stop_coast(&s_touch);
+        if (event->steps > 0) {
+            if (!event->coasting) ui_touch_gesture_ignore(&s_touch);
+            ui_strip_close();
+        }
+        return;
+    }
+    const int steps = event->steps;
+    const bool menu_fits = target == UI_TOUCH_TARGET_MENU &&
+                           ui_menu_visible_count(ui_menu_visible_mask(&s_menu)) <= UI_MENU_ROWS_FIT;
+    const bool settings = target == UI_TOUCH_TARGET_SETTINGS;
+    /* Rolling on is for a list whose rows move under a fixed cursor. A number
+     * being edited would run off by however hard the finger left, and where the
+     * rows stand still the cursor would only run away down them. */
+    if (event->coasting && (menu_fits || settings)) {
+        ui_touch_gesture_stop_coast(&s_touch);
+        return;
+    }
+    if (settings && event->axis == UI_TOUCH_AXIS_HORIZONTAL) {
+        ui_touch_settings_value(steps);
+        return;
+    }
+    // Up and down have nothing to do with a number: it moves sideways.
+    if (settings && ui_settings_model_is_editing(&s_settings_model)) return;
+    /* The settings window moves only once the cursor reaches its edge, so there
+     * as on a menu that fits it is the cursor that goes with the finger. Pushed
+     * up the other way it ran down the screen against the finger. */
+    if (menu_fits || settings) {
+        ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_RIGHT, BOARD_INPUT_ACTION_ENCODER_LEFT);
+        return;
+    }
+    /* The ring's tiles are the whole choice on that screen, and a flick that
+     * carried it past several of them lost the place: one more, then it stops. */
+    if (event->coasting && target == UI_TOUCH_TARGET_FEED) {
+        ui_touch_gesture_stop_coast(&s_touch);
+        ui_handle_input(steps > 0 ? BOARD_INPUT_ACTION_ENCODER_LEFT
+                                  : BOARD_INPUT_ACTION_ENCODER_RIGHT);
+        return;
+    }
+    switch (target) {
+    case UI_TOUCH_TARGET_FEED:
+        // The ring follows the finger: the tile on the left comes to the middle.
+        ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_LEFT, BOARD_INPUT_ACTION_ENCODER_RIGHT);
+        break;
+    case UI_TOUCH_TARGET_MENU:
+    case UI_TOUCH_TARGET_STATIONS:
+    case UI_TOUCH_TARGET_YANDEX:
+    case UI_TOUCH_TARGET_SETTINGS:
+        // The list follows the finger: pushed up, the next rows come in.
+        ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_LEFT, BOARD_INPUT_ACTION_ENCODER_RIGHT);
+        break;
+    default:
+        break;
+    }
+}
+
+static void ui_touch_tap_feed(int x, int y)
+{
+    if (y < UI_FEED_AXIS_Y - UI_FEED_TILE / 2 || y > UI_FEED_AXIS_Y + UI_FEED_TILE / 2) return;
+    const int dx = x - UI_FEED_CENTER_X;
+    const int distance = dx < 0 ? -dx : dx;
+    if (distance < UI_FEED_INNER_DX / 2) {
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+        return;
+    }
+    // A tile off to the side comes to the middle; it opens from there.
+    const int slots =
+        UI_FEED_SLOTS > 3 && distance >= (UI_FEED_INNER_DX + UI_FEED_OUTER_DX) / 2 ? 2 : 1;
+    ui_touch_turn(dx < 0 ? slots : -slots, BOARD_INPUT_ACTION_ENCODER_LEFT,
+                  BOARD_INPUT_ACTION_ENCODER_RIGHT);
+}
+
+static void ui_touch_tap_list(station_list_state_t *list, void (*update)(void), int y)
+{
+    const int row = ui_touch_row_at(y, UI_LIST_ROW_Y, UI_LIST_ROW_PITCH,
+                                    (int)UI_STATION_LIST_MAX_ROWS);
+    if (row < 0) return;
+    const int entry = station_list_window_top(list, UI_STATION_LIST_MAX_ROWS, NULL) + row;
+    if (entry < 0 || !station_list_select(list, (size_t)entry)) return;
+    update();
+    ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+}
+
+static void ui_touch_tap_menu(int y)
+{
+    const ui_menu_visible_mask_t shown = ui_menu_visible_mask(&s_menu);
+    const int row = ui_touch_row_at(y, UI_MENU_ROW_Y, UI_MENU_ROW_PITCH, (int)UI_MENU_ROWS_FIT);
+    if (row < 0 || s_menu_window_top + row >= ui_menu_visible_count(shown)) return;
+    const ui_menu_item_t item = ui_menu_visible_item_at((uint8_t)(s_menu_window_top + row), shown);
+    if (!ui_menu_select_item(&s_menu, item)) return;
+    ui_update_menu_highlight();
+    ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+}
+
+static void ui_touch_tap_settings(int y)
+{
+    // A number under the knob: the touch only lets go of it, as the press does.
+    if (ui_settings_model_is_editing(&s_settings_model)) {
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+        return;
+    }
+    /* The band under the rows, and its code straight away. The cursor goes there
+     * only with every group shut, which is the only way the model lets it; open,
+     * it stays with its group and the code comes up over it just the same. */
+    if (y >= UI_SET_BAND_Y) {
+        if (s_settings_model.expanded_group < 0) {
+            while (ui_settings_model_move(&s_settings_model, 1) == UI_SETTINGS_MODEL_CHANGED) {
+            }
+            ui_update_settings();
+        }
+        ui_show_qr();
+        return;
+    }
+    const int row = ui_touch_row_at(y, UI_SET_ROW_Y, UI_SET_ROW_PITCH, (int)UI_SETTINGS_MAX_ROWS);
+    if (row < 0) return;
+    const size_t target = s_settings_model.window_top + (size_t)row;
+    if (target >= ui_settings_model_row_count(&s_settings_model)) return;
+    // By the model's own step, which knows where the cursor may not go.
+    while (s_settings_model.cursor != target) {
+        const int direction = s_settings_model.cursor < target ? 1 : -1;
+        if (ui_settings_model_move(&s_settings_model, direction) == UI_SETTINGS_MODEL_NO_CHANGE) {
+            return;
+        }
+    }
+    ui_update_settings();
+    ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+}
+
+/* The panel is a window over the screen: a touch outside it closes it, as any
+ * other key does, and goes no further. */
+static void ui_touch_tap_quick(int x, int y)
+{
+    if (x < UI_QUICK_X || x >= UI_QUICK_X + UI_QUICK_W || y < UI_QUICK_Y) {
+        ui_handle_input(BOARD_INPUT_ACTION_QUICK_MENU);
+        return;
+    }
+    const int row = ui_touch_row_at(y, UI_QUICK_Y + UI_QUICK_PAD_Y, UI_QUICK_ROW_H, UI_QUICK_ROW_COUNT);
+    if (row < 0 || ui_quick_menu_row_item(&s_quick, (uint8_t)row) == UI_QUICK_ITEM_COUNT) {
+        if (y >= UI_QUICK_Y + UI_QUICK_H_FOR(s_quick_rows_shown)) {
+            ui_handle_input(BOARD_INPUT_ACTION_QUICK_MENU);
+        }
+        return;
+    }
+    if (s_quick.editing) {
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+        return;
+    }
+    const int moves = row - (int)ui_quick_menu_cursor_row(&s_quick);
+    ui_touch_turn(moves, BOARD_INPUT_ACTION_ENCODER_RIGHT, BOARD_INPUT_ACTION_ENCODER_LEFT);
+    /* These two are rings, so a touch goes straight to the next value: arming
+     * the row first would ask for a sideways drag to get through a short list
+     * somebody can as well tap through. */
+    if (s_quick.item == UI_QUICK_ITEM_SLEEP || s_quick.item == UI_QUICK_ITEM_LOUDNESS) {
+        s_quick.last_input_ms = ui_tick_get_ms();
+        ui_quick_apply_step(1);
+        ui_quick_refresh();
+        return;
+    }
+    ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+}
+
+static bool ui_touch_on_quick_bar(int x, int y)
+{
+    const int top = UI_QUICK_Y + UI_QUICK_PAD_Y;
+    return ui_quick_menu_visible_count(&s_quick) > (uint8_t)UI_QUICK_ROW_COUNT &&
+           x >= UI_QUICK_X + UI_QUICK_W - UI_TOUCH_QUICK_BAR_INSIDE_PX && y >= top &&
+           y < top + (int)UI_QUICK_ROW_COUNT * UI_QUICK_ROW_H;
+}
+
+// The cursor goes where the finger is on the bar, and the window goes with it.
+static void ui_touch_quick_bar_move(int y)
+{
+    if (s_quick.editing) ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+    const int item = ui_touch_scrollbar_item(y, UI_QUICK_Y + UI_QUICK_PAD_Y,
+                                             (int)UI_QUICK_ROW_COUNT * UI_QUICK_ROW_H,
+                                             (int)ui_quick_menu_visible_count(&s_quick));
+    ui_touch_turn(item - (int)ui_quick_menu_position(&s_quick), BOARD_INPUT_ACTION_ENCODER_RIGHT,
+                  BOARD_INPUT_ACTION_ENCODER_LEFT);
+}
+
+static void ui_touch_long(ui_touch_target_t target)
+{
+    switch (target) {
+    case UI_TOUCH_TARGET_STATIONS:
+        /* Not the encoder's way out, which stops the music: a finger rests
+         * more easily than a thumb holds a knob down. */
+        ui_close_station_list_to_source();
+        break;
+    case UI_TOUCH_TARGET_STRIP:
+        ui_strip_close();
+        break;
+    case UI_TOUCH_TARGET_PLAYER:
+        /* Scrubbing, it is the way out with the position left where it was:
+         * stopping the music is not what somebody changing their mind is after.
+         * Tuning, it keeps the frequency as a preset, as the encoder's does. */
+        if (ui_seek_is_active(&s_player_seek)) {
+            ui_end_seek();
+            break;
+        }
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_LONG);
+        break;
+    case UI_TOUCH_TARGET_YANDEX:
+    case UI_TOUCH_TARGET_SETTINGS:
+    case UI_TOUCH_TARGET_OVERLAY:
+    case UI_TOUCH_TARGET_QUICK:
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_LONG);
+        break;
+    default:
+        break;
+    }
+}
+
+static void ui_touch_poll(void)
+{
+    board_touch_point_t point = {0, 0};
+    const bool down = board_touch_read(&point);
+    // Unsigned: an unguarded touch at the very top would come out at the bottom.
+    point.y = point.y > UI_TOUCH_AIM_Y_PX ? (uint16_t)(point.y - UI_TOUCH_AIM_Y_PX) : 0U;
+    const ui_touch_target_t target = ui_touch_target();
+    const bool feed = target == UI_TOUCH_TARGET_FEED;
+    const bool settings = target == UI_TOUCH_TARGET_SETTINGS;
+    const bool player = target == UI_TOUCH_TARGET_PLAYER;
+    const bool quick = target == UI_TOUCH_TARGET_QUICK;
+    // Gone the moment it stops being the screen it was opened over.
+    if (ui_strip_is_open() &&
+        (target != UI_TOUCH_TARGET_STRIP ||
+         (uint32_t)(ui_tick_get_ms() - s_strip_opened_ms) >= UI_TOUCH_STRIP_IDLE_MS)) {
+        ui_strip_close();
+    }
+    const bool sideways = ui_touch_gesture_axis(&s_touch) == UI_TOUCH_AXIS_HORIZONTAL;
+    const int player_step_px =
+        sideways ? (ui_touch_player_in_mode() ? UI_TOUCH_VALUE_STEP_PX : UI_TOUCH_SWIPE_PX)
+        : ui_touch_player_drag(s_touch.start_x, s_touch.start_y, UI_TOUCH_AXIS_VERTICAL, TFT_WIDTH,
+                               TFT_HEIGHT) == UI_TOUCH_PLAYER_VOLUME
+            ? UI_TOUCH_VOLUME_STEP_PX
+            : UI_TOUCH_SWIPE_PX;
+    const int step_px = feed                             ? UI_TOUCH_FEED_STEP_PX
+                        : target == UI_TOUCH_TARGET_MENU ? UI_MENU_ROW_PITCH
+                        : settings ? (sideways ? UI_TOUCH_VALUE_STEP_PX : UI_SET_ROW_PITCH)
+                        : player   ? player_step_px
+                        : quick    ? (sideways ? UI_TOUCH_VALUE_STEP_PX : UI_QUICK_ROW_H)
+                        // Short: a finger starting on the strip has only its height to go.
+                        : target == UI_TOUCH_TARGET_STRIP ? UI_TOUCH_VALUE_STEP_PX
+                                   : UI_LIST_ROW_PITCH;
+    const uint32_t now_ms = ui_tick_get_ms();
+    if (!lv_obj_has_flag(s_volume_overlay, LV_OBJ_FLAG_HIDDEN) &&
+        (!player || (uint32_t)(now_ms - s_volume_overlay_shown_ms) >= UI_VOLUME_OVERLAY_MS)) {
+        lv_obj_add_flag(s_volume_overlay, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (ui_click_gesture_poll(&s_touch_fm_click, now_ms) == UI_CLICK_SINGLE &&
+        ui_fm_tune_is_active(&s_fm_tune)) {
+        ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+    }
+    const ui_touch_event_t event = ui_touch_gesture_step(
+        &s_touch, down, point.x, point.y, now_ms,
+        feed                ? UI_TOUCH_AXIS_HORIZONTAL
+        : player            ? (ui_touch_player_in_mode()
+                                   ? UI_TOUCH_AXIS_FREE
+                                   : ui_touch_player_axis(s_touch.start_y, TFT_HEIGHT))
+        : settings || quick ? UI_TOUCH_AXIS_FREE
+                            : UI_TOUCH_AXIS_VERTICAL,
+        step_px);
+    if (!down || !quick) {
+        s_touch_quick_bar = false;
+    } else if (s_touch_quick_bar) {
+        ui_touch_quick_bar_move(point.y);
+    }
+    if (!down || !settings) {
+        s_touch_arrow = 0;
+    } else if (s_touch_arrow != 0 &&
+               (uint32_t)(now_ms - s_touch_arrow_ms) >= UI_TOUCH_ARROW_REPEAT_MS) {
+        ui_touch_arrow_step(now_ms);
+    }
+    switch (event.kind) {
+    case UI_TOUCH_EVENT_PRESSED:
+        s_touch_quick_scrolled = false;
+        /* A finger is somebody at the controls on any screen, and a press that
+         * only brings a resting screen back goes no further - as a key's does,
+         * which is the same two questions asked in ui_handle_input(). */
+        if (s_alarm_boot_dark ||
+            ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms())) {
+            ui_touch_gesture_ignore(&s_touch);
+        } else if (settings && !ui_settings_model_is_editing(&s_settings_model)) {
+            s_touch_arrow = ui_touch_settings_arrow(point.x, point.y);
+            if (s_touch_arrow != 0) {
+                ui_touch_gesture_ignore(&s_touch);
+                ui_touch_arrow_step(now_ms);
+            }
+        } else if (quick && ui_touch_on_quick_bar(point.x, point.y)) {
+            s_touch_quick_bar = true;
+            ui_touch_gesture_ignore(&s_touch);
+            ui_touch_quick_bar_move(point.y);
+        }
+        ui_handle_input(BOARD_INPUT_ACTION_NONE);
+        break;
+    case UI_TOUCH_EVENT_DRAG:
+        ui_touch_drag(target, &event);
+        break;
+    case UI_TOUCH_EVENT_TAP:
+        switch (target) {
+        case UI_TOUCH_TARGET_FEED:
+            ui_touch_tap_feed(event.x, event.y);
+            break;
+        case UI_TOUCH_TARGET_MENU:
+            ui_touch_tap_menu(event.y);
+            break;
+        case UI_TOUCH_TARGET_STATIONS:
+            ui_touch_tap_list(&s_station_list, ui_update_station_list, event.y);
+            break;
+        case UI_TOUCH_TARGET_YANDEX:
+            ui_touch_tap_list(&s_yandex_list, ui_update_yandex, event.y);
+            break;
+        case UI_TOUCH_TARGET_SETTINGS:
+            ui_touch_tap_settings(event.y);
+            break;
+        case UI_TOUCH_TARGET_OVERLAY:
+            ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+            break;
+        case UI_TOUCH_TARGET_PLAYER:
+            /* At once, unlike the press: the press has to wait to tell itself
+             * from a double and a triple, and nothing here looks like either. */
+            if (ui_fm_tune_is_active(&s_fm_tune)) {
+                ui_touch_tap_fm_tune(event.x);
+            } else if (ui_touch_player_in_mode()) {
+                ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+            } else if (ui_touch_player_tap_toggles(event.x, event.y, TFT_WIDTH, TFT_HEIGHT)) {
+                ui_toggle_playback();
+            }
+            break;
+        case UI_TOUCH_TARGET_QUICK:
+            ui_touch_tap_quick(event.x, event.y);
+            break;
+        case UI_TOUCH_TARGET_STRIP:
+            ui_touch_tap_strip(event.x, event.y);
+            break;
+        default:
+            break;
+        }
+        break;
+    case UI_TOUCH_EVENT_LONG:
+        ui_touch_long(target);
+        break;
+    default:
+        break;
+    }
+}
+
 static void ui_task(void *arg)
 {
     (void)arg;
+    ui_touch_gesture_init(&s_touch);
+    ui_click_gesture_init(&s_touch_fm_click);
     while (true) {
         board_input_action_t action;
         if (xQueueReceive(s_input_queue, &action, pdMS_TO_TICKS(10)) == pdTRUE) {
@@ -8805,6 +9842,7 @@ static void ui_task(void *arg)
                 ui_handle_input(action);
             }
         }
+        ui_touch_poll();
         if (ui_click_gesture_poll(&s_like_click, ui_tick_get_ms()) == UI_CLICK_SINGLE) {
             ui_submit_like_press(false);
         }
@@ -8888,6 +9926,8 @@ static void ui_task(void *arg)
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
+        ui_track_previous_source(&snapshot);
+        ui_remote_source_poll();
         ui_alarm_ring_step(&snapshot);
         // Only the strip on screen: the others are on parents LVGL is not
         // drawing, so writing them would be work for nothing.
@@ -8981,7 +10021,9 @@ static void ui_task(void *arg)
             ui_sync_player_snapshot(&snapshot);
             /* After the sync, not before: it is the snapshot that clears the
              * pending stop this is waiting on. */
-            if (s_radio_home_pending) s_radio_home_pending = !ui_open_radio_home();
+            if (s_radio_home_pending && !s_autoplay_pending) {
+                s_radio_home_pending = !ui_open_radio_home();
+            }
         }
         ui_scroll_tick();
         /* Driven from here because this is the one task that is always
@@ -9172,17 +10214,15 @@ esp_err_t ui_init(void)
     ui_create_screensaver();
     ui_create_weather_saver();
     ui_quick_create();
+    ui_volume_overlay_create();
+    ui_strip_create();
     ui_ota_create();
     ui_quick_menu_init(&s_quick);
+    ui_quick_menu_set_rows(&s_quick, (uint8_t)UI_QUICK_ROW_COUNT);
     /* Always there, both of them: the backlight is what somebody reaches for
      * in the evening, and the sleep timer and the alarm have no rows on the
      * settings screen at all. The Bluetooth row is added by the poll. */
     ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_BRIGHTNESS, true);
-    /* Except the timer on a board with nothing to wake it - neither the sleep
-     * button nor the remote's receiver. It would fade the sound out and
-     * bring it back, and two users took that for a timer that does not work
-     * (2026-10-29). */
-    ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_SLEEP, board_deep_sleep_supported());
     ui_screensaver_init(&s_saver, ui_tick_get_ms());
     alarm_guard_init(&s_alarm_guard);
     /* Taken once, and it decides two things further down: the panel stays dark
@@ -9254,6 +10294,13 @@ esp_err_t ui_init(void)
     }
     ESP_LOGI(TAG, "LVGL UI initialized");
     return ESP_OK;
+}
+
+bool ui_request_source(audio_source_t source)
+{
+    if (source == AUDIO_SOURCE_NONE) return false;
+    atomic_store_explicit(&s_web_source_request, (int)source, memory_order_release);
+    return true;
 }
 
 bool ui_post_input(board_input_action_t action)

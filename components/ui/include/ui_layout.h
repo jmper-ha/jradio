@@ -332,6 +332,10 @@
 #ifndef UI_MENU_ROW_H
 #define UI_MENU_ROW_H UI_FONT_LINE_H(UI_MENU_FONT_PX)
 #endif
+/* How many of those rows the panel holds under the strip. Fewer than the
+ * items there are, and the rows scroll with the cursor rather than run off
+ * the bottom edge. */
+#define UI_MENU_ROWS_FIT ((TFT_HEIGHT - UI_MENU_ROW_Y) / UI_MENU_ROW_PITCH)
 
 /* The player's body - the rules, the meter, the position bar and the footer
  * - starts at the left margin like every other block, and runs to the right
@@ -478,7 +482,7 @@ _Static_assert(UI_QR_CAPTION_X + UI_QR_CAPTION_W <= TFT_WIDTH,
  * it. ui.c includes both and asserts that the two numbers agree, the same way
  * the font line heights are a checked copy. */
 #ifndef UI_QUICK_ROW_COUNT
-#define UI_QUICK_ROW_COUNT 4
+#define UI_QUICK_ROW_COUNT 4U
 #endif
 #ifndef UI_QUICK_W
 #define UI_QUICK_W ((TFT_WIDTH * 4) / 5)

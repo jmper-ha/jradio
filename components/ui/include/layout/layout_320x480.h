@@ -147,6 +147,11 @@
  * is read off the panel with. */
 #define UI_FONT_DISPLAY_PX 48
 
+/* The quick panel, which on this shape has the height for every function it can
+ * have, so nothing scrolls. The face stays the body's: in the title face, at a
+ * row a finger would like, the window took the whole screen and read as one. */
+#define UI_QUICK_ROW_COUNT 9U
+
 /* The note drawn on an empty cover tile, at the same share of it the smaller
  * panels' note takes: two thirds of the tile, which is a note half its height.
  * A size the generator has to have drawn - see tools/gen_feed_icons.py. */

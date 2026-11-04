@@ -9,7 +9,7 @@
 | Processor | an ESP32-S3 module with 16 MB flash and 8 MB PSRAM (e.g. ESP32-S3-WROOM-1 N16R8; the N16R8V / N32R8V with 1.8 V memory do too - their GPIO 47 and 48 swing 1.8 V, which the Hardware editor flags) | yes |
 | Display | over SPI: ILI9341 or ST7789 320×240, ILI9488 or ST7796S 480×320, ST7789 320×170 | yes |
 | Encoder | rotary, with a push button | yes |
-| DAC | PCM5102 (a module with line out) | yes |
+| DAC | PCM5102 (a module with line out) or the SSM3582 amplifier | yes |
 | Buttons | four tactile: sleep, quick panel, previous, next | no |
 | USB stick | a USB-A socket on the D−/D+ pins | no |
 | microSD | a slot over SPI | no |
@@ -178,6 +178,40 @@ does not hiss into the speakers. Two rules against clicks:
   first milliseconds of boot nobody drives it;
 - the firmware mutes before stopping I2S itself, so a DAC that lost its clock
   does not thump into the speakers.
+
+### The SSM3582 amplifier
+
+The SSM3582 takes the PCM5102's place: a class-D stereo amplifier with an I2S
+input, the speakers connect straight to it. In the configurator it is the
+"SSM3582" DAC, in `board.csv` it is `dac,ssm3582`. Tried on the ChipStudio
+SSM3582 Artwork module.
+
+| Module | ESP32-S3 |
+|---|---|
+| DATA | I2S DOUT (16) |
+| BC | I2S BCLK (18) |
+| LR | I2S LRCK (17) |
+| SDA, SCL | the I2C0 bus |
+| GND | GND |
+
+- **Vin takes 5-16 V from a supply of its own.** Without power the module holds
+  SDA to ground and the whole bus goes quiet: clock, touch, tuner. Power it
+  before the board or together with it. The module and the ESP32 share a ground.
+- **The address is set by the ADDR0 and ADDR1 jumpers and read at power-up.**
+  Change them with the power off and do not leave a pin floating: the address
+  table has no such level, and the amplifier may not answer. The RDA5807 tuner
+  holds 0x10 and 0x11. With a tuner, ADDR0 through 47 kOhm to ground and ADDR1 to
+  ground will do: that is 0x18. The ADDR pins are 1.8 V, do not feed them from outside.
+- **The output is bridged:** do not tie a speaker's minus to ground.
+- **Gain** (`dac_gain`, 13-21 dB) goes by the supply voltage: the signal clips
+  above it. 13 dB already reaches 6.3 V peak.
+
+The amplifier needs no MUTE pin: the firmware powers it down over I2C, before the
+clock stops.
+
+**Bluetooth is silent with the SSM3582 for now.** The jradio-bt module clocks the
+bus itself at 32 x Fs, and this amplifier wants at least 50 x Fs. The phone
+connects, but the speakers stay silent. The other sources, FM included, play.
 
 ### Powering the periphery down in sleep
 

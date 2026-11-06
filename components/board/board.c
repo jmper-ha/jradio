@@ -1764,8 +1764,13 @@ esp_err_t board_display_set_rotation(bool flip_vertical, bool flip_horizontal)
     s_scroll_flipped = TFT_WIDTH > TFT_HEIGHT ? flip_horizontal : flip_vertical;
     board_touch_set_mirror(flip_horizontal != (bool)TFT_MIRROR_X,
                            flip_vertical != (bool)TFT_MIRROR_Y);
-    return esp_lcd_panel_mirror(s_panel, flip_horizontal != (bool)TFT_MIRROR_X,
-                                flip_vertical != (bool)TFT_MIRROR_Y);
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(s_panel, flip_horizontal != (bool)TFT_MIRROR_X,
+                                             flip_vertical != (bool)TFT_MIRROR_Y),
+                        TAG, "mirror failed");
+    /* The window moves with the mirror, which reads the controller from its
+     * other end: see TFT_Y_GAP_FLIPPED. */
+    return esp_lcd_panel_set_gap(s_panel, flip_horizontal ? TFT_X_GAP_FLIPPED : TFT_X_GAP,
+                                 flip_vertical ? TFT_Y_GAP_FLIPPED : TFT_Y_GAP);
 }
 
 /* XOR with the profile's baseline for the same reason as the mirrors: the

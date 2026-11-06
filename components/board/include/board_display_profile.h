@@ -107,6 +107,15 @@
 #ifndef TFT_Y_GAP
 #define TFT_Y_GAP 0
 #endif
+/* The same margins with the user's flip of that axis on: the mirror reads
+ * the controller from its other end, so a module whose margins differ needs
+ * the other one. Equal to the plain gap unless the profile says otherwise. */
+#ifndef TFT_X_GAP_FLIPPED
+#define TFT_X_GAP_FLIPPED TFT_X_GAP
+#endif
+#ifndef TFT_Y_GAP_FLIPPED
+#define TFT_Y_GAP_FLIPPED TFT_Y_GAP
+#endif
 
 /* The panel's reset line, when the module brings one out. Revision 1's ILI9341
  * has its reset tied to the ESP32's own, so no GPIO is wired and -1 is what

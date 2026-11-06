@@ -1115,8 +1115,11 @@
     const active_index = value.active_index === null || Number.isSafeInteger(value.active_index)
       ? value.active_index
       : null;
+    /* An empty kind is the device saying there is no list - the phone's
+       source. Refused as unknown, it left the radio's stations on the page
+       after a switch to Bluetooth (2026-11-06). */
     const kind = safeString(value.kind);
-    if (kind !== 'files' && kind !== 'stations') return null;
+    if (kind !== 'files' && kind !== 'stations' && kind !== '') return null;
     // Both listings arrive as a header only; the entries are fetched
     // separately, so the ones already on screen are kept until they do - but
     // only when they belong to the same source: rows of a catalogue that has

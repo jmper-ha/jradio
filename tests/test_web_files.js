@@ -601,6 +601,18 @@ socket.emit('open');
   assert.deepEqual(labels(), ['Радио Шоколад'],
     'каталог радио принимается и до выбора источника');
 
+  /* The phone has no list: the device says so with an empty kind, and the
+     radio's stations must leave the page rather than stay clickable. */
+  sendEvent(socket, {
+    type: 'player.update', revision: 17, active_source: 'bluetooth',
+    player: {...usbPlayer(), mode: 'Bluetooth', context: ''},
+  });
+  sendEvent(socket, {
+    type: 'list.update', revision: 18,
+    list: {kind: '', active_index: null, revision: 17, count: 0},
+  });
+  assert.equal(elements['#media-list'].hidden, true, 'у телефона списка нет');
+
   /* A media server browses the way a volume does, so the page draws the same
      kind of list - but the names come from somewhere else. Keying the address
      off the kind alone would fetch the drive's files and show them under the

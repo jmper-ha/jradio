@@ -159,9 +159,11 @@
 #ifndef UI_FEED_DOT_Y
 #define UI_FEED_DOT_Y (TFT_HEIGHT - 40)
 #endif
-/* The last line of the screen, under the dots. */
+/* The last line of the screen, under the dots, measured by the body face's
+ * line: a fixed 22 from the bottom left the 18 px face's 24 px line hanging
+ * off the large panels. */
 #ifndef UI_FEED_NOTICE_Y
-#define UI_FEED_NOTICE_Y (TFT_HEIGHT - 22)
+#define UI_FEED_NOTICE_Y (TFT_HEIGHT - UI_FONT_BODY_LINE_H - 3)
 #endif
 
 /* The other home screen: the same items as a list. Eight rows of 24 px start
@@ -374,6 +376,19 @@
 #endif
 #ifndef UI_SRC_BUFFER_Y
 #define UI_SRC_BUFFER_Y UI_SRC_FOOT_Y
+#endif
+/* The volume figure's digits centred on the bar and the icon beside it,
+ * both centred 8.5 px into the footer row. Set on the row's top like the
+ * rest, the digits sat a pixel low in the 14 px face and four in the 18 px
+ * one, where a taller line puts them further from the top (2026-11-06, the
+ * forum noticed). From the faces' own boxes: digits 10 px tall on a baseline
+ * 15 px down in the 14 px face, 13 px on 19 px in the 18 px one. */
+#ifndef UI_SRC_VOLUME_TEXT_Y
+#if UI_FONT_BODY_PX > 14
+#define UI_SRC_VOLUME_TEXT_Y (UI_SRC_FOOT_Y - 4)
+#else
+#define UI_SRC_VOLUME_TEXT_Y (UI_SRC_FOOT_Y - 1)
+#endif
 #endif
 /* The pause badge is centred on the screen, which on every panel but the
  * short one is over the names; there it is over the cover, which is the

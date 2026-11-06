@@ -1080,8 +1080,10 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
      * title face, and its 35 px lines in a 31 px strip left the clock and the
      * temperature cut off at the bottom on the ST7796S. */
     strip->context = lv_label_create(screen);
-    lv_obj_set_pos(strip->context, UI_STRIP_CONTEXT_X, 6);
-    lv_obj_set_size(strip->context, UI_STRIP_CONTEXT_W, 19);
+    lv_obj_set_pos(strip->context, UI_STRIP_CONTEXT_X, 5);
+    /* The face's own line, not the 14 px one's 19: on the 18 px panels a
+     * fixed 19 cut the bottom off "jRadio" and the screen names (2026-11-06). */
+    lv_obj_set_size(strip->context, UI_STRIP_CONTEXT_W, UI_FONT_BODY_LINE_H);
     lv_obj_set_style_text_font(strip->context, UI_FONT_BODY, 0);
     lv_label_set_long_mode(strip->context, LV_LABEL_LONG_DOT);
     ui_paint(strip->context, UI_PAINT_TEXT, UI_ROLE_ACCENT, 0);
@@ -1156,8 +1158,10 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
         strip->bars[bar] = block;
         strip->bar_colour[bar] = ui_hex(UI_ROLE_BAR_OFF);
     }
+    /* On the clock's line, as the temperature is: a pixel lower, the two
+     * figures at that end of the strip did not line up (2026-11-06). */
     strip->rssi = lv_label_create(screen);
-    lv_obj_set_pos(strip->rssi, UI_STRIP_RSSI_X, 6);
+    lv_obj_set_pos(strip->rssi, UI_STRIP_RSSI_X, 5);
     lv_obj_set_style_text_font(strip->rssi, UI_FONT_BODY, 0);
     ui_paint(strip->rssi, UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
     lv_label_set_text(strip->rssi, "");
@@ -3404,7 +3408,9 @@ static void ui_create_feed_screen(void)
 
     s_feed_title = lv_label_create(s_feed_screen);
     lv_obj_set_pos(s_feed_title, 0, UI_STRIP_H + 8);
-    lv_obj_set_size(s_feed_title, TFT_WIDTH, 28);
+    /* As tall as the face's line: a fixed 28 fitted the 20 px face and cut
+     * the bottom off the 26 px one on the large panels (2026-11-06). */
+    lv_obj_set_size(s_feed_title, TFT_WIDTH, UI_FONT_TITLE_LINE_H);
     lv_obj_set_style_text_align(s_feed_title, LV_TEXT_ALIGN_CENTER, 0);
     /* A real 20 px face, not the 14 px one scaled up.
      *
@@ -3419,7 +3425,7 @@ static void ui_create_feed_screen(void)
     ui_paint(s_feed_title, UI_PAINT_TEXT, UI_ROLE_TEXT, 0);
     s_feed_notice = lv_label_create(s_feed_screen);
     lv_obj_set_pos(s_feed_notice, 8, UI_FEED_NOTICE_Y);
-    lv_obj_set_size(s_feed_notice, TFT_WIDTH - 16, 18);
+    lv_obj_set_size(s_feed_notice, TFT_WIDTH - 16, UI_FONT_BODY_LINE_H);
     lv_obj_set_style_text_align(s_feed_notice, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(s_feed_notice, lv_color_hex(0xFFCC80), 0);
     lv_label_set_text(s_feed_notice, "");
@@ -3572,7 +3578,7 @@ static void ui_create_menu_screen(void)
     s_menu_notice = lv_label_create(s_menu_screen);
     lv_label_set_text(s_menu_notice, "");
     lv_obj_set_style_text_font(s_menu_notice, UI_FONT_BODY, 0);
-    lv_obj_set_pos(s_menu_notice, 12, TFT_HEIGHT - 19);
+    lv_obj_set_pos(s_menu_notice, 12, TFT_HEIGHT - UI_FONT_BODY_LINE_H);
     lv_obj_set_style_text_color(s_menu_notice, lv_color_hex(UI_COLOR_NOTICE), 0);
     ui_update_menu_highlight();
 }
@@ -5824,7 +5830,7 @@ static void ui_create_source_screen(void)
     lv_obj_clear_flag(fill, LV_OBJ_FLAG_SCROLLABLE);
 
     s_source_volume = lv_label_create(s_source_screen);
-    lv_obj_set_pos(s_source_volume, UI_SRC_VOLUME_TEXT_X, UI_SRC_FOOT_Y);
+    lv_obj_set_pos(s_source_volume, UI_SRC_VOLUME_TEXT_X, UI_SRC_VOLUME_TEXT_Y);
     ui_paint(s_source_volume, UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
     lv_label_set_text(s_source_volume, "");
     /* Right-aligned on the volume figure's right edge, in the strip between

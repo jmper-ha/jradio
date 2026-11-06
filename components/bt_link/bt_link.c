@@ -53,6 +53,11 @@ static int64_t s_last_ping_us;
  * so the mode is asked for again the moment it answers, from the link task,
  * with no one waiting on the ack. */
 static volatile uint8_t s_wanted_mode = JBT_MODE_OFF;
+/* Set while bt_link_set_mode waits for its ack. The output policy asks for
+ * source mode whenever the module is not in it, and asked between an off and
+ * its ack - the module still a sink - it got its source answered first, which
+ * the waiter read as the off refused (2026-11-06). It waits its turn now. */
+static volatile bool s_mode_waiting;
 /* The cover being fetched: PSRAM, allocated on the first cover and kept.
  * One request in flight; asked again when no piece has come for a while,
  * because a frame lost to noise would otherwise stall the picture until the
@@ -109,14 +114,20 @@ static void bt_link_output_calls_reset(void)
 static esp_err_t bt_link_send(uint8_t type, uint8_t flags, const uint8_t *payload, size_t length);
 esp_err_t bt_link_set_volume(uint8_t volume);
 
-/* Before every mode, because a module forgets it across a reset. A board on
- * the old wiring wants what a module starts with and says nothing, so an older
- * module does not log a message it has no use for. */
+/* Before every mode, because a module forgets it across a reset. The default
+ * is said too, to a module that knows the message: it keeps the last bus it
+ * was given for as long as it has power, so a board reflashed from the new
+ * wiring to the old one found it still following - silence until the module
+ * was unplugged (2026-11-06). An older module is not told the default, which
+ * it has anyway, so it does not log a message it has no use for. */
 static void bt_link_tell_bus(void)
 {
     const bool follow = board_bt_through_s3();
     const uint8_t slot_bits = board_audio_slot_bits();
-    if (!follow && slot_bits == 16U) return;
+    xSemaphoreTake(s_state_lock, portMAX_DELAY);
+    const uint8_t protocol = s_state.protocol;
+    xSemaphoreGive(s_state_lock);
+    if (!follow && slot_bits == 16U && protocol < JBT_PROTOCOL_VERSION_FOLLOW) return;
     const uint8_t payload[2] = {follow ? JBT_SINK_BUS_FOLLOW : JBT_SINK_BUS_DRIVE, slot_bits};
     (void)bt_link_send(JBT_MSG_BUS, 0U, payload, sizeof(payload));
 }
@@ -283,8 +294,12 @@ static void bt_link_on_frame(const jbt_frame_t *frame)
         return;
     }
     xSemaphoreTake(s_state_lock, portMAX_DELAY);
+    const uint8_t protocol_before = s_state.protocol;
     const uint32_t changed = bt_link_model_apply(&s_state, frame);
     xSemaphoreGive(s_state_lock);
+    /* The greeting goes out on the first frame, before the version is known,
+     * so a module that understands BUS hears the default only now. */
+    if ((changed & BT_LINK_CHANGED_PONG) && protocol_before == 0U) bt_link_tell_bus();
     if (changed & BT_LINK_CHANGED_COVER_INFO) {
         /* Nothing, or something already shown: take it down or leave it.
          * Something new: the first piece is asked for below, on the tick. */
@@ -433,7 +448,7 @@ static void bt_link_task(void *arg)
         }
         /* The output: hold the module in source mode and on its speaker,
          * unless the player has it as a sink. */
-        if (s_alive && s_output_enabled && s_wanted_mode != JBT_MODE_SINK &&
+        if (s_alive && s_output_enabled && s_wanted_mode != JBT_MODE_SINK && !s_mode_waiting &&
             now - s_output_tried_us > (int64_t)BT_LINK_OUTPUT_RETRY_MS * 1000) {
             s_output_tried_us = now;
             bt_link_state_t state;
@@ -758,11 +773,19 @@ esp_err_t bt_link_set_mode(jbt_mode_t mode, uint32_t timeout_ms)
     if (!s_alive) return ESP_ERR_INVALID_STATE;
     /* A stale ack from an earlier, abandoned wait must not satisfy this one. */
     (void)xSemaphoreTake(s_mode_ack, 0);
-    ESP_RETURN_ON_ERROR(bt_link_ask_mode(mode), TAG, "send");
+    s_mode_waiting = true;
+    const esp_err_t sent = bt_link_ask_mode(mode);
+    if (sent != ESP_OK) {
+        s_mode_waiting = false;
+        ESP_LOGE(TAG, "send: %s", esp_err_to_name(sent));
+        return sent;
+    }
     /* A mode the module did not take is not wanted any more: left standing,
      * a refused sink would keep the output policy from ever putting the
      * speaker back. The module reports off after a failed switch anyway. */
-    if (xSemaphoreTake(s_mode_ack, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
+    const bool acked = xSemaphoreTake(s_mode_ack, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
+    s_mode_waiting = false;
+    if (!acked) {
         ESP_LOGW(TAG, "no MODE_ACK for mode %d in %u ms", (int)mode, (unsigned)timeout_ms);
         s_wanted_mode = JBT_MODE_OFF;
         return ESP_ERR_TIMEOUT;

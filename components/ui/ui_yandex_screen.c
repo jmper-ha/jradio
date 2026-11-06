@@ -33,7 +33,9 @@ static void ui_yandex_build_catalog(yandex_catalog_state_t catalog_state,
     switch (catalog_state) {
     case YANDEX_CATALOG_LOADING:
         view->status = device_text(DEVICE_TEXT_YANDEX_LOADING, language);
-        view->hint = device_text(DEVICE_TEXT_HINT_BACK, language);
+        /* Nothing to do but wait, and "hold - back" is true of every screen:
+         * said here alone, it made this one look unlike the rest (2026-11-06). */
+        view->hint = "";
         break;
     case YANDEX_CATALOG_FAILED:
         view->status = device_text(DEVICE_TEXT_YANDEX_LIST_FAILED, language);

@@ -95,8 +95,9 @@ static void test_the_wait_for_stations_says_what_it_is_waiting_for(void)
     ui_yandex_view_build(&status, YANDEX_CATALOG_LOADING, 0U, DEVICE_LANGUAGE_RU, &view);
     assert(view.mode == UI_YANDEX_MODE_MESSAGE);
     assert(strstr(view.status, "Загрузка") != NULL);
-    /* Nothing to retry while a request is already in the air. */
-    assert(strstr(view.hint, "повторить") == NULL);
+    /* Nothing to retry while a request is already in the air, and nothing
+     * to say about the keys that every other screen does not say either. */
+    assert(view.hint[0] == '\0');
 }
 
 static void test_a_failed_fetch_is_retryable_and_an_empty_answer_is_not_a_failure(void)
@@ -200,7 +201,11 @@ static void test_no_hint_names_a_button_that_was_taken_away(void)
                                      &view);
                 assert(strstr(view.hint, "F2") == NULL);
                 assert(strstr(view.hint, "F1") == NULL);
-                assert(view.hint[0] != '\0');
+                /* The wait for the stations is the one screen with nothing
+                 * to offer the keys. */
+                const bool waiting = auth[a] == YANDEX_AUTH_AUTHORIZED &&
+                                     states[c] == YANDEX_CATALOG_LOADING;
+                assert(waiting || view.hint[0] != '\0');
             }
         }
     }

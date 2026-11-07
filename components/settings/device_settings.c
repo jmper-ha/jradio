@@ -291,6 +291,9 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         if (strcmp(value, "feed") == 0) settings->home_screen = DEVICE_HOME_SCREEN_FEED;
         else if (strcmp(value, "text") != 0) settings->home_screen = DEVICE_HOME_SCREEN_TEXT;
     }
+    if (read_value(&csv, "feed_reverse", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->feed_reverse);
+    }
     if (read_value(&csv, "scroll", value, sizeof(value))) {
         if (strcmp(value, "left") == 0) settings->scroll = DEVICE_SCROLL_LEFT;
         else if (strcmp(value, "bounce") != 0) settings->scroll = DEVICE_SCROLL_BOUNCE;
@@ -677,6 +680,15 @@ bool device_settings_set_home_screen(device_settings_t *settings,
     if (!save_value(settings, "home_screen",
                     home_screen == DEVICE_HOME_SCREEN_FEED ? "feed" : "text")) return false;
     settings->home_screen = home_screen;
+    return true;
+}
+
+bool device_settings_set_feed_reverse(device_settings_t *settings, bool enabled)
+{
+    if (settings == NULL) return false;
+    if (settings->feed_reverse == enabled) return true;
+    if (!save_value(settings, "feed_reverse", enabled ? "1" : "0")) return false;
+    settings->feed_reverse = enabled;
     return true;
 }
 

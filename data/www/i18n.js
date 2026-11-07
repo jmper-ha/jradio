@@ -720,6 +720,7 @@
     'settings.home_screen': ['Главный экран', 'Home screen'],
     'settings.home_list': ['Список', 'List'],
     'settings.home_feed': ['Лента', 'Feed'],
+    'settings.feed_reverse': ['Лента в обратную сторону', 'Feed turns the other way'],
     'settings.scroll': ['Скроллинг', 'Scrolling'],
     'settings.scroll_bounce': ['Влево-вправо', 'Back and forth'],
     'settings.scroll_left': ['Влево', 'Leftwards'],

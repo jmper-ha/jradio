@@ -58,6 +58,39 @@ ui_feed_item_t ui_feed_model_selected(const ui_feed_model_t *model)
     return (ui_feed_item_t)model->selected;
 }
 
+int ui_feed_model_turn_step(bool clockwise, bool reversed)
+{
+    /* The encoder's physical clockwise direction is opposite to the visual
+     * feed order on this board: clockwise steps back along the menu, which
+     * slides the ring and the lit dot to the left. */
+    return clockwise != reversed ? -1 : 1;
+}
+
+ui_feed_item_t ui_feed_model_item_in_slot(const ui_feed_model_t *model, unsigned slot,
+                                          unsigned slots)
+{
+    const ui_menu_visible_mask_t shown = ui_feed_model_visible_mask(model);
+    const int visible = (int)ui_menu_visible_count(shown);
+    if (visible == 0) return UI_FEED_INTERNET_RADIO;
+    /* The next item on the left and the previous on the right. The dots run
+     * in menu order left to right, so a step forward lights the dot to the
+     * right; with the next item on the right as well, the ring slid left
+     * under that same step and the two went opposite ways (seen on the panel
+     * 2026-10-27). This way the ring turns the way the dot moves, like a
+     * drum. */
+    const int offset = (int)(slots / 2U) - (int)slot;
+    int index = (int)ui_feed_model_lit_dot(model) + offset;
+    while (index < 0) index += visible;
+    index %= visible;
+    return (ui_feed_item_t)ui_menu_visible_item_at((uint8_t)index, shown);
+}
+
+unsigned ui_feed_model_lit_dot(const ui_feed_model_t *model)
+{
+    return ui_menu_visible_position((ui_menu_item_t)ui_feed_model_selected(model),
+                                    ui_feed_model_visible_mask(model));
+}
+
 bool ui_feed_model_activate(ui_feed_item_t item, audio_source_t *source_out)
 {
     if (source_out == NULL) return false;

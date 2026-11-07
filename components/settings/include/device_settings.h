@@ -255,6 +255,10 @@ typedef enum {
 typedef struct {
     device_language_t language;
     device_home_screen_t home_screen;
+    /* The carousel turns the other way under the encoder - icons and dots
+     * together, since both follow one cursor. Only the home screen: a volume
+     * that rose to the left would be a different device. */
+    bool feed_reverse;
     device_scroll_t scroll;
     device_buffer_view_t buffer_view;
     device_files_end_t files_end;
@@ -366,6 +370,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path);
 bool device_settings_set_language(device_settings_t *settings, device_language_t language);
 bool device_settings_set_home_screen(device_settings_t *settings,
                                      device_home_screen_t home_screen);
+bool device_settings_set_feed_reverse(device_settings_t *settings, bool enabled);
 bool device_settings_set_scroll(device_settings_t *settings, device_scroll_t scroll);
 bool device_settings_set_buffer_view(device_settings_t *settings,
                                      device_buffer_view_t buffer_view);

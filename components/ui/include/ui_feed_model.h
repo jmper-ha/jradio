@@ -33,6 +33,20 @@ void ui_feed_model_set_source_visible(ui_feed_model_t *model, ui_menu_item_t ite
 ui_menu_visible_mask_t ui_feed_model_visible_mask(const ui_feed_model_t *model);
 void ui_feed_model_move(ui_feed_model_t *model, int direction);
 ui_feed_item_t ui_feed_model_selected(const ui_feed_model_t *model);
+
+/* The cursor's step for one detent. The ring and the dots are both drawn from
+ * the cursor, so whichever way this goes they go together; `reversed` is the
+ * home screen's own setting and nothing else reads it. */
+int ui_feed_model_turn_step(bool clockwise, bool reversed);
+
+/* What the carousel draws: the item in `slot` of `slots` (counted from the
+ * left, the selected one in the middle), and which dot is lit (counted from
+ * the left over the items shown). Here rather than in ui.c so the claim that
+ * the two move the same way is something a test can check on every panel's
+ * slot count. */
+ui_feed_item_t ui_feed_model_item_in_slot(const ui_feed_model_t *model, unsigned slot,
+                                          unsigned slots);
+unsigned ui_feed_model_lit_dot(const ui_feed_model_t *model);
 bool ui_feed_model_activate(ui_feed_item_t item, audio_source_t *source_out);
 
 /* Puts the cursor on the item that starts `source` - the inverse of

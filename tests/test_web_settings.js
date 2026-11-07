@@ -85,6 +85,7 @@ const ids = [
   'yandex-refresh', 'yandex-stations-block', 'yandex-stations',
   'yandex-stations-empty',
   'device-status', 'device-language', 'device-home-screen', 'device-home-screen-row',
+  'device-feed-reverse', 'device-feed-reverse-row',
   'device-scroll', 'device-buffer-view', 'device-files-end',
   'device-autoplay', 'device-yandex', 'device-yandex-row',
   'device-dlna', 'device-dlna-row',
@@ -195,7 +196,7 @@ let remoteFetches = 0;
 // What GET /api/settings would answer. Deliberately not the defaults: a page
 // that ignored the document entirely would still look right against them.
 let settingsReply = {
-  language: 'ru', home_screen: 'text', scroll: 'bounce', buffer_view: 'graph',
+  language: 'ru', home_screen: 'text', feed_reverse: false, scroll: 'bounce', buffer_view: 'graph',
   autoplay: false, files_end: 'repeat',
   yandex_music: true, dlna: false, flip_vertical: false, flip_horizontal: true,
   invert_colors: true, volume_step: 7, theme: 'custom',
@@ -738,6 +739,8 @@ function lastYandexTimer() {
   assert.equal(elements['#device-dlna-row'].hidden, false);
   assert.equal(elements['#device-dlna'].checked, false);
   assert.equal(elements['#device-home-screen-row'].hidden, false);
+  // The carousel's direction is the carousel's: the fixture's home is a list.
+  assert.equal(elements['#device-feed-reverse-row'].hidden, true);
   /* The Bluetooth block is on the page while the module answers, and the
      speaker beside its switch comes from its own endpoint: none chosen yet. */
   assert.equal(elements['#bt-output-block'].hidden, false);
@@ -1120,6 +1123,35 @@ function lastYandexTimer() {
                                            call.options.method === 'POST')
       .at(-1).options.body),
     {field: 'screensaver_when', value: 'idle'});
+  /* The carousel brings its direction switch with it, and the switch posts a
+     bool like any other. */
+  settingsReply = {...settingsReply, home_screen: 'feed'};
+  elements['#device-home-screen'].value = 'feed';
+  elements['#device-home-screen'].emit('change');
+  await settle();
+  assert.equal(elements['#device-feed-reverse-row'].hidden, false);
+  assert.equal(elements['#device-feed-reverse'].checked, false);
+  settingsReply = {...settingsReply, feed_reverse: true};
+  elements['#device-feed-reverse'].checked = true;
+  elements['#device-feed-reverse'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
+                                           call.options &&
+                                           call.options.method === 'POST')
+      .at(-1).options.body),
+    {field: 'feed_reverse', value: true});
+  assert.equal(elements['#device-feed-reverse'].checked, true);
+  // A build with nowhere else to go has no carousel, whatever the card says.
+  settingsReply = {...settingsReply, available: {...settingsReply.available, home_screen: false}};
+  elements['#device-home-screen'].emit('change');
+  await settle();
+  assert.equal(elements['#device-feed-reverse-row'].hidden, true);
+  settingsReply = {...settingsReply, home_screen: 'text', feed_reverse: false,
+                   available: {...settingsReply.available, home_screen: true}};
+  elements['#device-home-screen'].value = 'text';
+  elements['#device-home-screen'].emit('change');
+  await settle();
 
   /* A write the device refuses puts the control back to what it actually
      holds: a switch left showing a change that never landed is worse than no

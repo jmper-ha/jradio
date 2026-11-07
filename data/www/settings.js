@@ -81,6 +81,11 @@
     {field: 'language', kind: 'choice', node: document.querySelector('#device-language')},
     {field: 'home_screen', kind: 'choice', node: document.querySelector('#device-home-screen'),
      row: document.querySelector('#device-home-screen-row'), gate: 'home_screen'},
+    /* Which way the encoder turns the carousel. Only the carousel has one, so
+       the row is there only while the carousel is the home screen. */
+    {field: 'feed_reverse', kind: 'switch', node: document.querySelector('#device-feed-reverse'),
+     row: document.querySelector('#device-feed-reverse-row'), gate: 'home_screen',
+     when: {field: 'home_screen', is: 'feed'}},
     {field: 'scroll', kind: 'choice', node: document.querySelector('#device-scroll')},
     {field: 'buffer_view', kind: 'choice', node: document.querySelector('#device-buffer-view')},
     {field: 'autoplay', kind: 'switch', node: document.querySelector('#device-autoplay')},
@@ -1288,8 +1293,11 @@
       if (entry.row && entry.when && typeof payload[entry.when.field] === 'string') {
         // `not` hides the row on one value, `is` shows it on one value only.
         const shown = payload[entry.when.field];
-        entry.row.hidden = entry.when.is !== undefined ? shown !== entry.when.is
-                                                       : shown === entry.when.not;
+        // A gate still applies: the field's value cannot bring back a row
+        // the build does not have.
+        entry.row.hidden = (entry.gate !== undefined && available[entry.gate] !== true) ||
+                           (entry.when.is !== undefined ? shown !== entry.when.is
+                                                        : shown === entry.when.not);
       }
       /* A row that belongs to a switch: gone while it is off, and its value
          untouched - it is still on the card, and turning the switch back on

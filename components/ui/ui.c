@@ -3300,16 +3300,11 @@ static void ui_update_feed_screen(void)
 {
     const ui_feed_item_t selected = ui_feed_model_selected(&s_feed_model);
     /* One entry per slot in view, ordered left to right, with the selected
-     * item in the middle - and the next item on the left, the previous on
-     * the right. The dots under the ring run in menu order, left to right,
-     * so a turn to the right lights the dot to the right; with the next item
-     * on the right as well, the ring slid left under that same turn, and the
-     * two went opposite ways (seen on the panel 2026-10-27). Now the ring
-     * turns the way the dot moves, like a drum. Portrait drops the outer pair rather than moving it
-     * inwards: at 240 px there is no room for a fourth and fifth tile that is
-     * not either off the panel or on top of its neighbour. */
+     * item in the middle; which item goes where is ui_feed_model's. Portrait
+     * drops the outer pair rather than moving it inwards: at 240 px there is
+     * no room for a fourth and fifth tile that is not either off the panel or
+     * on top of its neighbour. */
 #if UI_FEED_SLOTS == 3
-    const int offsets[UI_FEED_SLOTS] = {1, 0, -1};
     const int centers[UI_FEED_SLOTS] = {
         UI_FEED_CENTER_X - UI_FEED_INNER_DX, UI_FEED_CENTER_X,
         UI_FEED_CENTER_X + UI_FEED_INNER_DX,
@@ -3324,7 +3319,6 @@ static void ui_update_feed_screen(void)
         ui_hex(UI_ROLE_FEED_NEAR), ui_hex(UI_ROLE_ACCENT), ui_hex(UI_ROLE_FEED_NEAR),
     };
 #else
-    const int offsets[UI_FEED_SLOTS] = {2, 1, 0, -1, -2};
     const int centers[UI_FEED_SLOTS] = {
         UI_FEED_CENTER_X - UI_FEED_OUTER_DX, UI_FEED_CENTER_X - UI_FEED_INNER_DX,
         UI_FEED_CENTER_X,
@@ -3348,12 +3342,10 @@ static void ui_update_feed_screen(void)
      * item switched off, stepping past the last one has to land on the first
      * visible one, and the dot row has to lose a dot. */
     const int visible = (int)ui_menu_visible_count(shown);
-    const int position = (int)ui_menu_visible_position((ui_menu_item_t)selected, shown);
+    const int position = (int)ui_feed_model_lit_dot(&s_feed_model);
     for (size_t slot = 0; slot < (size_t)UI_FEED_SLOTS; ++slot) {
-        int index = position + offsets[slot];
-        while (index < 0) index += visible;
-        index %= visible;
-        const ui_feed_item_t item = (ui_feed_item_t)ui_menu_visible_item_at((uint8_t)index, shown);
+        const ui_feed_item_t item =
+            ui_feed_model_item_in_slot(&s_feed_model, (unsigned)slot, UI_FEED_SLOTS);
         const bool center = slot == (size_t)UI_FEED_SLOTS / 2U;
         lv_image_set_src(s_feed_icons[slot], ui_feed_icon_image(item, sizes[slot]));
         /* The tile is bigger than the icon inside it, so the object is placed
@@ -8156,13 +8148,11 @@ static void ui_handle_input(board_input_action_t action)
         lv_screen_active() == s_feed_screen) {
         if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
             action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
-            /*
-             * The encoder's physical clockwise direction is opposite to the
-             * visual feed order on this board.  Keep the common menu semantics
-             * unchanged and reverse movement only for the horizontal feed.
-             */
+            /* Reversed here and nowhere else: the common menu semantics, the
+             * volume and the lists keep their direction. */
             ui_feed_model_move(&s_feed_model,
-                               action == BOARD_INPUT_ACTION_ENCODER_RIGHT ? -1 : 1);
+                               ui_feed_model_turn_step(action == BOARD_INPUT_ACTION_ENCODER_RIGHT,
+                                                       s_device_settings.feed_reverse));
             ui_update_feed_screen();
         } else if (action == BOARD_INPUT_ACTION_ENCODER_BUTTON) {
             const ui_feed_item_t item = ui_feed_model_selected(&s_feed_model);
@@ -9312,6 +9302,16 @@ static void ui_touch_turn(int steps, board_input_action_t positive, board_input_
     }
 }
 
+/* Positive steps bring the tile on the left to the middle. The finger moves
+ * the ring itself, so the reversed setting - which is about which way the
+ * encoder turns it - must not turn it against the finger: the actions are
+ * swapped here to undo the swap the feed's handler makes. */
+static void ui_touch_turn_feed(int steps)
+{
+    if (s_device_settings.feed_reverse) steps = -steps;
+    ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_LEFT, BOARD_INPUT_ACTION_ENCODER_RIGHT);
+}
+
 /* A sideways drag on a number. The row under where the finger came down, armed
  * or not, since the press that arms it is only the knob's way of saying which
  * row it means and the finger has already said. */
@@ -9514,14 +9514,13 @@ static void ui_touch_drag(ui_touch_target_t target, const ui_touch_event_t *even
      * carried it past several of them lost the place: one more, then it stops. */
     if (event->coasting && target == UI_TOUCH_TARGET_FEED) {
         ui_touch_gesture_stop_coast(&s_touch);
-        ui_handle_input(steps > 0 ? BOARD_INPUT_ACTION_ENCODER_LEFT
-                                  : BOARD_INPUT_ACTION_ENCODER_RIGHT);
+        ui_touch_turn_feed(steps > 0 ? 1 : -1);
         return;
     }
     switch (target) {
     case UI_TOUCH_TARGET_FEED:
         // The ring follows the finger: the tile on the left comes to the middle.
-        ui_touch_turn(steps, BOARD_INPUT_ACTION_ENCODER_LEFT, BOARD_INPUT_ACTION_ENCODER_RIGHT);
+        ui_touch_turn_feed(steps);
         break;
     case UI_TOUCH_TARGET_MENU:
     case UI_TOUCH_TARGET_STATIONS:
@@ -9547,8 +9546,7 @@ static void ui_touch_tap_feed(int x, int y)
     // A tile off to the side comes to the middle; it opens from there.
     const int slots =
         UI_FEED_SLOTS > 3 && distance >= (UI_FEED_INNER_DX + UI_FEED_OUTER_DX) / 2 ? 2 : 1;
-    ui_touch_turn(dx < 0 ? slots : -slots, BOARD_INPUT_ACTION_ENCODER_LEFT,
-                  BOARD_INPUT_ACTION_ENCODER_RIGHT);
+    ui_touch_turn_feed(dx < 0 ? slots : -slots);
 }
 
 static void ui_touch_tap_list(station_list_state_t *list, void (*update)(void), int y)

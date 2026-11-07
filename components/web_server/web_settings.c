@@ -48,6 +48,7 @@ static const char *const k_theme_color_names[DEVICE_THEME_COLORS] = {
 static const field_descriptor_t k_fields[] = {
     {"language", WEB_SETTINGS_FIELD_LANGUAGE, {"ru", "en"}, false, false},
     {"home_screen", WEB_SETTINGS_FIELD_HOME_SCREEN, {"text", "feed"}, false, false},
+    {"feed_reverse", WEB_SETTINGS_FIELD_FEED_REVERSE, {NULL}, false, false},
     {"scroll", WEB_SETTINGS_FIELD_SCROLL, {"bounce", "left"}, false, false},
     {"buffer_view", WEB_SETTINGS_FIELD_BUFFER_VIEW, {"text", "graph"}, false, false},
     {"autoplay", WEB_SETTINGS_FIELD_AUTOPLAY, {NULL}, false, false},
@@ -247,6 +248,8 @@ bool web_settings_apply(device_settings_t *settings,
     case WEB_SETTINGS_FIELD_HOME_SCREEN:
         return device_settings_set_home_screen(settings,
                                                (device_home_screen_t)change->value);
+    case WEB_SETTINGS_FIELD_FEED_REVERSE:
+        return device_settings_set_feed_reverse(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_SCROLL:
         return device_settings_set_scroll(settings, (device_scroll_t)change->value);
     case WEB_SETTINGS_FIELD_BUFFER_VIEW:
@@ -377,6 +380,7 @@ void web_settings_make_view(web_settings_view_t *view,
     *view = (web_settings_view_t){
         .language = (uint8_t)settings->language,
         .home_screen = (uint8_t)settings->home_screen,
+        .feed_reverse = settings->feed_reverse,
         .scroll = (uint8_t)settings->scroll,
         .buffer_view = (uint8_t)settings->buffer_view,
         .files_end = (uint8_t)settings->files_end,
@@ -428,6 +432,7 @@ bool web_settings_view_equal(const web_settings_view_t *left,
      * decide whether the browser gets told. */
     return left->language == right->language &&
            left->home_screen == right->home_screen &&
+           left->feed_reverse == right->feed_reverse &&
            left->scroll == right->scroll &&
            left->buffer_view == right->buffer_view && left->files_end == right->files_end &&
            left->volume == right->volume &&
@@ -487,6 +492,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_literal(writer, ",\"home_screen\":");
     web_json_string(writer,
                     view->home_screen == DEVICE_HOME_SCREEN_FEED ? "feed" : "text");
+    web_json_literal(writer, ",\"feed_reverse\":");
+    web_json_literal(writer, view->feed_reverse ? "true" : "false");
     web_json_literal(writer, ",\"scroll\":");
     web_json_string(writer, view->scroll == DEVICE_SCROLL_LEFT ? "left" : "bounce");
     web_json_literal(writer, ",\"buffer_view\":");

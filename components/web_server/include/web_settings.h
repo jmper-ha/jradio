@@ -100,6 +100,7 @@ typedef enum {
     // One station as loud as the next.
     WEB_SETTINGS_FIELD_LEVEL_NORMALIZE,
     WEB_SETTINGS_FIELD_SCREENSAVER_WHEN,
+    WEB_SETTINGS_FIELD_FEED_REVERSE,
     /* Not a device setting at all - a secret that goes to its own file - but
      * it arrives on the same page in the same shape, so it is parsed here and
      * routed by the handler: web_settings_apply() refuses it. */
@@ -149,6 +150,7 @@ bool web_settings_apply(device_settings_t *settings,
 typedef struct web_settings_view {
     uint8_t language;
     uint8_t home_screen;
+    bool feed_reverse;
     uint8_t scroll;
     uint8_t buffer_view;
     uint8_t files_end;

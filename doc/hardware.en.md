@@ -309,8 +309,10 @@ firmware with protocol 2.
 #define BT_I2S_DIN_GPIO 15
 ```
 
-In the configurator this is the "DIN from the module" field. The other wires stay:
-the one on GPIO 22 is still needed to send sound to a Bluetooth speaker. Without
+In the configurator this is the "DIN from the module" field. UART, BCLK and LRCK
+stay. With it, the module's GPIO 22 wire is needed only to send to a Bluetooth
+speaker: the module takes the radio's sound from that line. Without a speaker it
+can be left off. Without
 this line everything works as before: the module runs the bus and feeds the DAC
 itself. With the pin set and old module firmware, Bluetooth does not open and the
 screen asks for an update. With the SSM3582 the same message appears when sending

@@ -6,6 +6,37 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.11.0 — 7 November 2026
+
+New:
+- The SSM3582 class-D amplifier in place of a DAC: stereo, with the volume
+  kept digital, so the tone, loudness and volume levelling work as usual. It
+  is chosen in Hardware, along with its I2C address and gain. Stations below
+  32 kHz (22.05 kHz, say) are played at twice the rate. Wiring and the traps
+  (power on Vin, the ADDR pins, 5 V and clipping at full volume) are in
+  [Hardware](hardware.en.md#the-ssm3582-amplifier).
+- Bluetooth through the S3: with one more wire from the module (GPIO 23) to a
+  free pin of the board, the phone's sound goes through the radio rather than
+  around it. Bluetooth gets the tone, loudness and volume levelling, and a
+  phone plays through the SSM3582. The wire is set in Hardware as "DIN from
+  the module (sound through the S3)"; without it everything works as before,
+  with nothing to solder. The new way needs jradio-bt 1.2.0 on the module -
+  with an older one the screen asks for the update. Details are in
+  [Sound through the S3](hardware.en.md#sound-through-the-s3).
+
+Fixed:
+- With the speaker output on, leaving Bluetooth for another source logged a
+  false "module did not release the bus".
+- The web page kept the station list after Bluetooth was chosen.
+- An NV3007 flipped in the settings showed a line of coloured noise along an
+  edge: the flip moved the picture's window by two rows.
+- The Wi-Fi figure in the top strip sat a pixel below the clock and the
+  temperature, and the volume figure below the bar beside it.
+- On the 480x320 and 320x480 panels the bottom of the main menu's item name
+  and of the top strip's labels ("jRadio", "Stations") was cut off.
+- The Yandex stations' loading screen no longer shows the "hold - back" hint,
+  which no other screen has.
+
 ## v1.10.0 — 3 November 2026
 
 New:

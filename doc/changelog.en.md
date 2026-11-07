@@ -6,6 +6,14 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.11.1 — 7 November 2026
+
+New:
+- A "Feed turns the other way" switch in the web settings, under Home
+  screen: the encoder turns the home carousel the other way, the icons and
+  the dots under them together. Volume, lists and menus stay as they were,
+  and on a touch screen the carousel still follows the finger.
+
 ## v1.11.0 — 7 November 2026
 
 New:

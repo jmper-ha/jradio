@@ -48,6 +48,10 @@ void board_deep_sleep(uint32_t wake_after_seconds);
  * which is still held off from the sleep before it. Arms both sources and
  * touches nothing else. Does not return. */
 void board_deep_sleep_again(uint32_t wake_after_seconds);
+/* The same, from a board the power has just come back to: nothing holds the
+ * peripheral rail yet - the hold of the last sleep went with the power - so
+ * it is driven off and held first. Does not return. */
+void board_deep_sleep_cold(uint32_t wake_after_seconds);
 /* True when this boot was started by the infrared receiver's pin and not the
  * button - which says a remote sent something, not yet that it was ours. */
 bool board_woke_by_remote(void);

@@ -274,6 +274,12 @@ typedef struct {
      * screen. What "what was playing" means is the two fields below: the
      * radio's own last-station URL is stored separately by station_resume. */
     bool autoplay;
+    /* After a power cut, carry on as before: asleep if it slept, playing if
+     * it played - or, with the alarm and the switch-off both set, as their
+     * schedule says. Only a board that can wake again offers it: on any other
+     * a power-on that went back to sleep would never come back. Off by
+     * default, since a plain power-on then stops being a way to wake it. */
+    bool power_restore;
     /* Whether Yandex Music appears on the home screen. Stored whatever the
      * firmware was built with - this layer does not know about build options,
      * and a card moved into a build that has the feature should find the
@@ -382,6 +388,7 @@ bool device_settings_set_flip_horizontal_value(device_settings_t *settings, int 
 bool device_settings_set_invert_colors(device_settings_t *settings, bool enabled);
 bool device_settings_set_invert_colors_value(device_settings_t *settings, int value);
 bool device_settings_set_autoplay(device_settings_t *settings, bool enabled);
+bool device_settings_set_power_restore(device_settings_t *settings, bool enabled);
 bool device_settings_set_yandex_music(device_settings_t *settings, bool enabled);
 bool device_settings_set_dlna(device_settings_t *settings, bool enabled);
 bool device_settings_set_bt_output(device_settings_t *settings, bool enabled);

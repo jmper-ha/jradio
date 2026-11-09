@@ -6665,6 +6665,8 @@ static void ui_enter_deep_sleep(void)
     const bool clock_valid = device_clock_moment(&weekday, &hour, &minute, &second);
     const uint32_t wake_after = alarm_sleep_wake_after_seconds(
         &s_device_settings.alarm, clock_valid, weekday, hour, minute, second);
+    /* For the power coming back while it sleeps - see power_restore_decide(). */
+    power_mark_write(POWER_MARK_ASLEEP);
     board_deep_sleep(wake_after);  /* does not return */
 }
 
@@ -10268,12 +10270,16 @@ esp_err_t ui_init(void)
     /* Never on a boot the alarm asked for: it is still set here, nothing has
      * had a key to press yet, and the station about to ring is not the one
      * that was playing last night. */
+    /* Back from a power cut into something that was playing: resumed past
+     * the autoplay switch, which is about the power button, as the alarm set
+     * to "last source" resumes it. */
+    s_autoplay_for_alarm = power_restore_take_resume();
     s_autoplay_pending = !s_alarm_boot_dark &&
-                         ui_autoplay_decide(&s_device_settings, FILE_BROWSER_MEDIA_READY,
-                                            FILE_BROWSER_MEDIA_READY, true,
-                                            BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA,
-                                            board_has_bluetooth(),
-                                            board_has_fm_tuner()) != UI_AUTOPLAY_HOME;
+                         (s_autoplay_for_alarm ? ui_autoplay_decide_resume : ui_autoplay_decide)(
+                             &s_device_settings, FILE_BROWSER_MEDIA_READY,
+                             FILE_BROWSER_MEDIA_READY, true, BOARD_HAS_YANDEX_MUSIC,
+                             BOARD_HAS_DLNA, board_has_bluetooth(),
+                             board_has_fm_tuner()) != UI_AUTOPLAY_HOME;
     s_autoplay_started_ms = ui_tick_get_ms();
     /* Through the same call the rest of the firmware uses, so a device with no
      * home screen boots straight into the radio instead of onto a screen it

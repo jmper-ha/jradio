@@ -174,6 +174,49 @@ typedef enum {
 alarm_boot_action_t alarm_boot_decide(const alarm_config_t *config, bool clock_valid,
                                       uint32_t seconds_to_alarm, uint32_t *sleep_seconds);
 
+/* Which of the two came last before this minute, looking back up to a week:
+ * the alarm's ringing (true - the radio should be on) or the switch-off
+ * (false). The minute itself counts as passed, and a tie - both set to the
+ * same minute - goes to the switch-off, since a board left asleep is the
+ * safer guess. False, leaving `*on` alone, unless both are valid. */
+bool alarm_schedule_on_now(const alarm_config_t *alarm, const alarm_off_t *off, int weekday,
+                           int hour, int minute, bool *on);
+
+/* The power coming back: what a board switched on by its supply rather than
+ * by a key should do, when the user has asked it to carry on as it was (asked
+ * on the forum 2026-11-08: a shop's radio switching its amplifier woke at
+ * night after a power cut). With the alarm and the switch-off both set the
+ * schedule decides, since what was going on before the cut may be hours out
+ * of date by the time the power comes back; without them, whether the board
+ * was asleep when it went. */
+typedef enum {
+    /* Not a power-on, or not asked for: the ordinary boot. */
+    POWER_RESTORE_BOOT = 0,
+    /* Boot, and resume what was playing past the autoplay switch. */
+    POWER_RESTORE_PLAY,
+    /* Back to sleep, waking for the alarm if there is one. */
+    POWER_RESTORE_SLEEP,
+    /* The schedule decides, and the clock is not known yet: sleep a while
+     * and ask again - a router that lost the same power takes minutes. */
+    POWER_RESTORE_WAIT_FOR_CLOCK,
+} power_restore_action_t;
+
+/* What the mark the board keeps across the cut says. */
+typedef enum {
+    POWER_MARK_AWAKE = 0,
+    POWER_MARK_ASLEEP = 1,
+    /* Asleep after a power-on, waiting for a clock to decide by. */
+    POWER_MARK_WAITING = 2,
+} power_mark_t;
+
+/* How long POWER_RESTORE_WAIT_FOR_CLOCK sleeps before asking again. */
+#define POWER_RESTORE_RETRY_SECONDS 300U
+
+power_restore_action_t power_restore_decide(bool enabled, bool powered_on, power_mark_t mark,
+                                            const alarm_config_t *alarm,
+                                            const alarm_off_t *off, bool clock_valid,
+                                            int weekday, int hour, int minute);
+
 #ifdef ESP_PLATFORM
 /* This boot exists because the alarm is about to go off.
  *
@@ -185,6 +228,18 @@ alarm_boot_action_t alarm_boot_decide(const alarm_config_t *config, bool clock_v
 void alarm_boot_mark_pending(void);
 bool alarm_boot_pending(void);
 bool alarm_boot_take_pending(void);
+
+/* The mark, in NVS: written as the board goes to sleep and by the power-on
+ * check, cleared by a boot that carries on. A write of the value already
+ * there writes nothing, so this costs a flash write only when it changes -
+ * about twice a day. Read as AWAKE when it was never written. */
+power_mark_t power_mark_read(void);
+void power_mark_write(power_mark_t mark);
+
+/* This boot came back from a power cut into something that was playing:
+ * resume it past the autoplay switch. Set and taken like the alarm's. */
+void power_restore_mark_resume(void);
+bool power_restore_take_resume(void);
 #endif
 
 /* "HH:MM" both ways, since the setting is stored and sent as text. The parser

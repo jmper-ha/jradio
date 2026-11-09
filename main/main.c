@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 
 #include "esp_sleep.h"
+#include "esp_system.h"
 
 #include "album_art.h"
 #include "alarm_schedule.h"
@@ -135,6 +136,84 @@ static bool alarm_quiet_wake(const device_settings_t *settings, bool settings_re
     return !rtc;
 }
 
+/* The power coming back, the third quiet wake (asked on the forum 2026-11-08:
+ * a shop's radio that switched its amplifier on at night after a power cut).
+ * A board the supply switched on, with the user's word to carry on as it was,
+ * decides here - before the panel or the peripheral rail - whether that is
+ * playing or asleep: by the alarm and the switch-off when both are set, by
+ * the mark left at the last sleep otherwise. The schedule needs the time, and
+ * a power cut took that too: the RTC chip if it answers, the network if not,
+ * and with neither a sleep of a few minutes and another try - a router out in
+ * the same cut takes minutes of its own.
+ *
+ * Also what a timer wake with the mark at WAITING is: such a retry. `handled`
+ * says so, and the alarm's check is not asked about that timer. Returns true
+ * when Wi-Fi and the clock have been started, like the alarm's. */
+static bool power_restore_quiet_wake(const device_settings_t *settings, bool settings_read,
+                                     bool *handled)
+{
+    *handled = false;
+    const esp_reset_reason_t reason = esp_reset_reason();
+    const bool powered_on = reason == ESP_RST_POWERON || reason == ESP_RST_BROWNOUT;
+    const power_mark_t mark = power_mark_read();
+    const bool retry =
+        mark == POWER_MARK_WAITING && esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
+    /* Never on a board with no way back: a power-on that went to sleep there
+     * would be a radio that cannot be switched on again. */
+    if (!settings_read || !settings->power_restore || !board_deep_sleep_supported() ||
+        !(powered_on || retry)) {
+        return false;
+    }
+    *handled = true;
+
+    bool network = false;
+    bool clock_valid = false;
+    int weekday = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    /* The time only when something here would read it: the schedule, or an
+     * alarm to arm for the sleep. */
+    if (alarm_config_valid(&settings->alarm)) {
+        if (board_rtc_restore()) {
+            device_clock_set_timezone(settings->timezone);
+        } else {
+            start_optional("Wi-Fi", wifi_provisioning_init());
+            start_optional("Wi-Fi", wifi_provisioning_start());
+            device_clock_init(settings->ntp_server, settings->timezone);
+            (void)device_clock_wait_sync(ALARM_SYNC_WAIT_MS);
+            network = true;
+        }
+        clock_valid = device_clock_moment(&weekday, &hour, &minute, &second);
+    }
+    const power_restore_action_t action =
+        power_restore_decide(true, true, mark, &settings->alarm, &settings->alarm_off,
+                             clock_valid, weekday, hour, minute);
+    if (action == POWER_RESTORE_PLAY) {
+        ESP_LOGI(TAG, "power back: carrying on with what was playing");
+        power_restore_mark_resume();
+        return network;
+    }
+    if (action == POWER_RESTORE_BOOT) return network;
+    uint32_t wake_after = POWER_RESTORE_RETRY_SECONDS;
+    power_mark_t next = POWER_MARK_WAITING;
+    if (action == POWER_RESTORE_SLEEP && (clock_valid || !alarm_config_valid(&settings->alarm))) {
+        wake_after = alarm_sleep_wake_after_seconds(&settings->alarm, clock_valid, weekday, hour,
+                                                    minute, second);
+        next = POWER_MARK_ASLEEP;
+        ESP_LOGI(TAG, "power back: it was asleep; sleeping on");
+    } else {
+        /* No clock: the schedule cannot be read, or the alarm cannot be armed.
+         * Asked again in a few minutes, still dark. */
+        ESP_LOGI(TAG, "power back: no clock yet; trying again in %u s",
+                 (unsigned int)POWER_RESTORE_RETRY_SECONDS);
+    }
+    power_mark_write(next);
+    if (network) (void)wifi_provisioning_stop();
+    board_deep_sleep_cold(wake_after);  /* does not return */
+    return network;
+}
+
 /* The other quiet wake: the infrared receiver's pin. Any remote in the room
  * wakes the chip - the television's, pointed elsewhere - so the boot stops
  * here, listens for a moment, and goes back down unless what came was our
@@ -223,8 +302,13 @@ void app_main(void)
     /* Every time-server answer is written into the real-time clock, if the
      * wiring has one - set before either place below starts the clock. */
     device_clock_on_sync(board_rtc_store);
-    const bool network_started = alarm_quiet_wake(&boot_settings, settings_read);
+    bool power_handled = false;
+    bool network_started = power_restore_quiet_wake(&boot_settings, settings_read,
+                                                    &power_handled);
+    if (!power_handled) network_started = alarm_quiet_wake(&boot_settings, settings_read);
     remote_quiet_wake(&boot_settings, settings_read);
+    /* Past all three: this boot carries on, whatever the board was before. */
+    power_mark_write(POWER_MARK_AWAKE);
     // Fatal on purpose: without the board there is no screen, no sound and no
     // controls, and without player_control and the UI there is nothing to
     // drive them with. A reboot loop is at least an honest signal there.

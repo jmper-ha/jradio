@@ -294,6 +294,9 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     if (read_value(&csv, "feed_reverse", value, sizeof(value))) {
         (void)parse_bool(value, &settings->feed_reverse);
     }
+    if (read_value(&csv, "power_restore", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->power_restore);
+    }
     if (read_value(&csv, "scroll", value, sizeof(value))) {
         if (strcmp(value, "left") == 0) settings->scroll = DEVICE_SCROLL_LEFT;
         else if (strcmp(value, "bounce") != 0) settings->scroll = DEVICE_SCROLL_BOUNCE;
@@ -689,6 +692,15 @@ bool device_settings_set_feed_reverse(device_settings_t *settings, bool enabled)
     if (settings->feed_reverse == enabled) return true;
     if (!save_value(settings, "feed_reverse", enabled ? "1" : "0")) return false;
     settings->feed_reverse = enabled;
+    return true;
+}
+
+bool device_settings_set_power_restore(device_settings_t *settings, bool enabled)
+{
+    if (settings == NULL) return false;
+    if (settings->power_restore == enabled) return true;
+    if (!save_value(settings, "power_restore", enabled ? "1" : "0")) return false;
+    settings->power_restore = enabled;
     return true;
 }
 

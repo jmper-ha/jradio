@@ -1919,6 +1919,43 @@ void board_deep_sleep_again(uint32_t wake_after_seconds)
     esp_deep_sleep_start();
 }
 
+/* The backlight's pin held low through the sleep - see board_deep_sleep().
+ * `pwm` says whether the LED controller drives it now: not on a board the
+ * power has just come back to, where nothing has been set up yet. */
+static void board_backlight_hold_off(bool pwm)
+{
+    const int8_t backlight = wiring()->tft_backlight;
+    if (backlight < 0) return;
+    if (pwm) (void)ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0U);
+    const gpio_config_t low = {
+        .pin_bit_mask = 1ULL << backlight,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    (void)gpio_config(&low);
+    (void)gpio_set_level(backlight, 0);
+    (void)gpio_hold_en(backlight);
+    gpio_deep_sleep_hold_en();
+}
+
+void board_deep_sleep_cold(uint32_t wake_after_seconds)
+{
+    /* The panel's light too: with nobody driving its pin, a module's own
+     * pull-up lit an empty panel all night on the bench. */
+    board_backlight_hold_off(false);
+    /* Off from the first moment the firmware owns the pin: until then the
+     * switch is wherever its own pull leaves it, which only a resistor on
+     * the board can decide. */
+    board_peripheral_power(false);
+    if (wiring()->peripheral_power >= 0) {
+        (void)gpio_hold_en(wiring()->peripheral_power);
+        gpio_deep_sleep_hold_en();
+    }
+    board_deep_sleep_again(wake_after_seconds);
+}
+
 void board_deep_sleep(uint32_t wake_after_seconds)
 {
     if (!board_deep_sleep_supported()) {
@@ -1943,21 +1980,7 @@ void board_deep_sleep(uint32_t wake_after_seconds)
      * and held low by the chip's own driver, the way the peripheral switch
      * below is, it stays at 0 V on any module; board_backlight_init() lifts
      * the hold. (On 47 or 48, which sleep unpowered, no hold can help.) */
-    const int8_t backlight = wiring()->tft_backlight;
-    if (backlight >= 0) {
-        (void)ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0U);
-        const gpio_config_t low = {
-            .pin_bit_mask = 1ULL << backlight,
-            .mode = GPIO_MODE_OUTPUT,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,
-            .intr_type = GPIO_INTR_DISABLE,
-        };
-        (void)gpio_config(&low);
-        (void)gpio_set_level(backlight, 0);
-        (void)gpio_hold_en(backlight);
-        gpio_deep_sleep_hold_en();
-    }
+    board_backlight_hold_off(true);
     /* Playback has already been stopped by the caller; this is the belt to
      * that braces, because the rail under the amplifier is about to go. */
     board_amp_drive(false);

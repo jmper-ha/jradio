@@ -89,6 +89,8 @@
     {field: 'scroll', kind: 'choice', node: document.querySelector('#device-scroll')},
     {field: 'buffer_view', kind: 'choice', node: document.querySelector('#device-buffer-view')},
     {field: 'autoplay', kind: 'switch', node: document.querySelector('#device-autoplay')},
+    {field: 'power_restore', kind: 'switch', node: document.querySelector('#device-power-restore'),
+     row: document.querySelector('#device-power-restore-row'), gate: 'sleep'},
     {field: 'files_end', kind: 'choice', node: document.querySelector('#device-files-end')},
     {field: 'yandex_music', kind: 'switch', node: document.querySelector('#device-yandex'),
      row: document.querySelector('#device-yandex-row'), gate: 'yandex_music'},

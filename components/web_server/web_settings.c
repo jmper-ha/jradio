@@ -49,6 +49,7 @@ static const field_descriptor_t k_fields[] = {
     {"language", WEB_SETTINGS_FIELD_LANGUAGE, {"ru", "en"}, false, false},
     {"home_screen", WEB_SETTINGS_FIELD_HOME_SCREEN, {"text", "feed"}, false, false},
     {"feed_reverse", WEB_SETTINGS_FIELD_FEED_REVERSE, {NULL}, false, false},
+    {"power_restore", WEB_SETTINGS_FIELD_POWER_RESTORE, {NULL}, false, false},
     {"scroll", WEB_SETTINGS_FIELD_SCROLL, {"bounce", "left"}, false, false},
     {"buffer_view", WEB_SETTINGS_FIELD_BUFFER_VIEW, {"text", "graph"}, false, false},
     {"autoplay", WEB_SETTINGS_FIELD_AUTOPLAY, {NULL}, false, false},
@@ -250,6 +251,8 @@ bool web_settings_apply(device_settings_t *settings,
                                                (device_home_screen_t)change->value);
     case WEB_SETTINGS_FIELD_FEED_REVERSE:
         return device_settings_set_feed_reverse(settings, change->value != 0);
+    case WEB_SETTINGS_FIELD_POWER_RESTORE:
+        return device_settings_set_power_restore(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_SCROLL:
         return device_settings_set_scroll(settings, (device_scroll_t)change->value);
     case WEB_SETTINGS_FIELD_BUFFER_VIEW:
@@ -381,6 +384,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .language = (uint8_t)settings->language,
         .home_screen = (uint8_t)settings->home_screen,
         .feed_reverse = settings->feed_reverse,
+        .power_restore = settings->power_restore,
         .scroll = (uint8_t)settings->scroll,
         .buffer_view = (uint8_t)settings->buffer_view,
         .files_end = (uint8_t)settings->files_end,
@@ -417,6 +421,7 @@ void web_settings_make_view(web_settings_view_t *view,
          * first function. */
         .remote_available = false,
         .fm_available = false,
+        .sleep_available = false,
         .remote_learning = -1,
         .remote_revision = 0U,
     };
@@ -433,6 +438,7 @@ bool web_settings_view_equal(const web_settings_view_t *left,
     return left->language == right->language &&
            left->home_screen == right->home_screen &&
            left->feed_reverse == right->feed_reverse &&
+           left->power_restore == right->power_restore &&
            left->scroll == right->scroll &&
            left->buffer_view == right->buffer_view && left->files_end == right->files_end &&
            left->volume == right->volume &&
@@ -472,6 +478,7 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->bt_available == right->bt_available &&
            left->remote_available == right->remote_available &&
            left->fm_available == right->fm_available &&
+           left->sleep_available == right->sleep_available &&
            left->remote_learning == right->remote_learning &&
            left->remote_revision == right->remote_revision;
 }
@@ -494,6 +501,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
                     view->home_screen == DEVICE_HOME_SCREEN_FEED ? "feed" : "text");
     web_json_literal(writer, ",\"feed_reverse\":");
     web_json_literal(writer, view->feed_reverse ? "true" : "false");
+    web_json_literal(writer, ",\"power_restore\":");
+    web_json_literal(writer, view->power_restore ? "true" : "false");
     web_json_literal(writer, ",\"scroll\":");
     web_json_string(writer, view->scroll == DEVICE_SCROLL_LEFT ? "left" : "bounce");
     web_json_literal(writer, ",\"buffer_view\":");
@@ -594,6 +603,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_literal(writer, view->remote_available ? "true" : "false");
     web_json_literal(writer, ",\"fm\":");
     web_json_literal(writer, view->fm_available ? "true" : "false");
+    web_json_literal(writer, ",\"sleep\":");
+    web_json_literal(writer, view->sleep_available ? "true" : "false");
     web_json_literal(writer, "},\"remote_learning\":");
     if (view->remote_learning < 0) {
         web_json_literal(writer, "null");

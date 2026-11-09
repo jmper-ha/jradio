@@ -151,6 +151,52 @@ bool alarm_off_guard_take_due(alarm_guard_t *guard, const alarm_off_t *off, int 
     return guard_step(guard, alarm_off_due(off, weekday, hour, minute));
 }
 
+/* Minutes since the most recent of `days` at hour:minute, the current minute
+ * counting as 0. */
+static unsigned int minutes_since(uint8_t days, uint8_t at_hour, uint8_t at_minute,
+                                  unsigned int now)
+{
+    unsigned int best = ALARM_WEEK_MINUTES;
+    for (int day = 0; day < 7; ++day) {
+        if ((days & (uint8_t)(1U << day)) == 0U) continue;
+        const unsigned int at = week_minute(day, (int)at_hour, (int)at_minute);
+        const unsigned int ago = (now + ALARM_WEEK_MINUTES - at) % ALARM_WEEK_MINUTES;
+        if (ago < best) best = ago;
+    }
+    return best;
+}
+
+bool alarm_schedule_on_now(const alarm_config_t *alarm, const alarm_off_t *off, int weekday,
+                           int hour, int minute, bool *on)
+{
+    if (!alarm_config_valid(alarm) || !alarm_off_valid(off) ||
+        !moment_valid(weekday, hour, minute) || on == NULL) {
+        return false;
+    }
+    const unsigned int now = week_minute(weekday, hour, minute);
+    *on = minutes_since(alarm->days, alarm->hour, alarm->minute, now) <
+          minutes_since(off->days, off->hour, off->minute, now);
+    return true;
+}
+
+power_restore_action_t power_restore_decide(bool enabled, bool powered_on, power_mark_t mark,
+                                            const alarm_config_t *alarm,
+                                            const alarm_off_t *off, bool clock_valid,
+                                            int weekday, int hour, int minute)
+{
+    if (!enabled || !powered_on) return POWER_RESTORE_BOOT;
+    if (alarm_config_valid(alarm) && alarm_off_valid(off)) {
+        bool on = false;
+        if (!clock_valid || !alarm_schedule_on_now(alarm, off, weekday, hour, minute, &on)) {
+            return POWER_RESTORE_WAIT_FOR_CLOCK;
+        }
+        return on ? POWER_RESTORE_PLAY : POWER_RESTORE_SLEEP;
+    }
+    /* A board left waiting for a clock by a schedule that has since been
+     * switched off in the browser was asleep, as far as anyone could see. */
+    return mark == POWER_MARK_AWAKE ? POWER_RESTORE_PLAY : POWER_RESTORE_SLEEP;
+}
+
 uint32_t alarm_hop_lead_seconds(uint32_t seconds_to_alarm)
 {
     /* The quiet check only earns its Wi-Fi if there is a real sleep left after
@@ -189,7 +235,35 @@ alarm_boot_action_t alarm_boot_decide(const alarm_config_t *config, bool clock_v
 }
 
 #ifdef ESP_PLATFORM
+#include "settings_nvs.h"
+
 static bool s_boot_pending;
+static bool s_power_resume;
+
+#define POWER_MARK_KEY "power_mark"
+
+power_mark_t power_mark_read(void)
+{
+    uint8_t value = 0U;
+    if (!settings_nvs_get_u8(POWER_MARK_KEY, &value) || value > POWER_MARK_WAITING) {
+        return POWER_MARK_AWAKE;
+    }
+    return (power_mark_t)value;
+}
+
+void power_mark_write(power_mark_t mark)
+{
+    (void)settings_nvs_set_u8(POWER_MARK_KEY, (uint8_t)mark);
+}
+
+void power_restore_mark_resume(void) { s_power_resume = true; }
+
+bool power_restore_take_resume(void)
+{
+    const bool resume = s_power_resume;
+    s_power_resume = false;
+    return resume;
+}
 
 void alarm_boot_mark_pending(void) { s_boot_pending = true; }
 

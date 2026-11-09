@@ -135,6 +135,12 @@
                   <label for="device-autoplay" data-i18n="settings.autoplay">Автовоспроизведение</label>
                   <input id="device-autoplay" type="checkbox" data-field="autoplay">
                 </div>
+                <!-- Only on a board that can be woken again: a power-on that
+                     goes back to sleep needs a button or a remote to undo. -->
+                <div class="device-row" id="device-power-restore-row" hidden>
+                  <label for="device-power-restore" data-i18n="settings.power_restore">SmartStart</label>
+                  <input id="device-power-restore" type="checkbox" data-field="power_restore">
+                </div>
                 <div class="device-row">
                   <label for="device-files-end" data-i18n="settings.files_end">Конец папки</label>
                   <select id="device-files-end" data-field="files_end">

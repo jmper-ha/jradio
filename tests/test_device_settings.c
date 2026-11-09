@@ -1073,6 +1073,8 @@ static void test_tone_and_loudness_persist(void)
     // Not tone at all, but a switch kept the same way: off until turned on.
     assert(!settings.feed_reverse);
     assert(device_settings_set_feed_reverse(&settings, true));
+    assert(!settings.power_restore);
+    assert(device_settings_set_power_restore(&settings, true));
     assert(device_settings_set_tone_bass(&settings, -4));
     assert(device_settings_set_tone_treble(&settings, 7));
     assert(device_settings_set_loudness(&settings, DEVICE_LOUDNESS_MEDIUM));
@@ -1086,6 +1088,7 @@ static void test_tone_and_loudness_persist(void)
     assert(reloaded.loudness == DEVICE_LOUDNESS_MEDIUM && reloaded.loudness_treble);
     assert(reloaded.level_normalize);
     assert(reloaded.feed_reverse);
+    assert(reloaded.power_restore);
     char value[16];
     assert(settings_csv_get(test_path, "loudness", value, sizeof(value)));
     assert(strcmp(value, "medium") == 0);

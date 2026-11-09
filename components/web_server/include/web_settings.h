@@ -101,6 +101,7 @@ typedef enum {
     WEB_SETTINGS_FIELD_LEVEL_NORMALIZE,
     WEB_SETTINGS_FIELD_SCREENSAVER_WHEN,
     WEB_SETTINGS_FIELD_FEED_REVERSE,
+    WEB_SETTINGS_FIELD_POWER_RESTORE,
     /* Not a device setting at all - a secret that goes to its own file - but
      * it arrives on the same page in the same shape, so it is parsed here and
      * routed by the handler: web_settings_apply() refuses it. */
@@ -151,6 +152,7 @@ typedef struct web_settings_view {
     uint8_t language;
     uint8_t home_screen;
     bool feed_reverse;
+    bool power_restore;
     uint8_t scroll;
     uint8_t buffer_view;
     uint8_t files_end;
@@ -212,6 +214,10 @@ typedef struct web_settings_view {
     /* The FM tuner, for the section that scans and keeps its presets; filled
      * by the same caller. */
     bool fm_available;
+    /* A button or a receiver that can wake the board from deep sleep: what
+     * the power-cut switch needs before it can be offered. Filled by the
+     * same caller. */
+    bool sleep_available;
     int remote_learning;
     uint32_t remote_revision;
 } web_settings_view_t;

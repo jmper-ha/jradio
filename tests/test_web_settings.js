@@ -86,6 +86,7 @@ const ids = [
   'yandex-stations-empty',
   'device-status', 'device-language', 'device-home-screen', 'device-home-screen-row',
   'device-feed-reverse', 'device-feed-reverse-row',
+  'device-power-restore', 'device-power-restore-row',
   'device-scroll', 'device-buffer-view', 'device-files-end',
   'device-autoplay', 'device-yandex', 'device-yandex-row',
   'device-dlna', 'device-dlna-row',
@@ -197,7 +198,7 @@ let remoteFetches = 0;
 // that ignored the document entirely would still look right against them.
 let settingsReply = {
   language: 'ru', home_screen: 'text', feed_reverse: false, scroll: 'bounce', buffer_view: 'graph',
-  autoplay: false, files_end: 'repeat',
+  autoplay: false, power_restore: false, files_end: 'repeat',
   yandex_music: true, dlna: false, flip_vertical: false, flip_horizontal: true,
   invert_colors: true, volume_step: 7, theme: 'custom',
   tone_bass: 4, tone_treble: -3, loudness: 'off', loudness_treble: true, tone_min: -12, tone_max: 12,
@@ -741,6 +742,8 @@ function lastYandexTimer() {
   assert.equal(elements['#device-home-screen-row'].hidden, false);
   // The carousel's direction is the carousel's: the fixture's home is a list.
   assert.equal(elements['#device-feed-reverse-row'].hidden, true);
+  // The fixture's board says nothing of waking from sleep: no power-cut switch.
+  assert.equal(elements['#device-power-restore-row'].hidden, true);
   /* The Bluetooth block is on the page while the module answers, and the
      speaker beside its switch comes from its own endpoint: none chosen yet. */
   assert.equal(elements['#bt-output-block'].hidden, false);
@@ -1142,6 +1145,26 @@ function lastYandexTimer() {
       .at(-1).options.body),
     {field: 'feed_reverse', value: true});
   assert.equal(elements['#device-feed-reverse'].checked, true);
+  /* A board that can wake again offers the power-cut switch, and it posts a
+     bool too. */
+  settingsReply = {...settingsReply, available: {...settingsReply.available, sleep: true}};
+  elements['#device-home-screen'].emit('change');
+  await settle();
+  assert.equal(elements['#device-power-restore-row'].hidden, false);
+  assert.equal(elements['#device-power-restore'].checked, false);
+  settingsReply = {...settingsReply, power_restore: true};
+  elements['#device-power-restore'].checked = true;
+  elements['#device-power-restore'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
+                                           call.options &&
+                                           call.options.method === 'POST')
+      .at(-1).options.body),
+    {field: 'power_restore', value: true});
+  assert.equal(elements['#device-power-restore'].checked, true);
+  settingsReply = {...settingsReply, power_restore: false,
+                   available: {...settingsReply.available, sleep: false}};
   // A build with nowhere else to go has no carousel, whatever the card says.
   settingsReply = {...settingsReply, available: {...settingsReply.available, home_screen: false}};
   elements['#device-home-screen'].emit('change');

@@ -728,6 +728,7 @@
     'settings.buffer_text': ['Текст', 'Text'],
     'settings.buffer_graph': ['График', 'Graph'],
     'settings.autoplay': ['Автовоспроизведение', 'Autoplay'],
+    'settings.power_restore': ['SmartStart', 'SmartStart'],
     'settings.files_end': ['Конец папки', 'End of folder'],
     'settings.files_end_stop': ['Стоп', 'Stop'],
     'settings.files_end_repeat': ['Сначала', 'Start over'],

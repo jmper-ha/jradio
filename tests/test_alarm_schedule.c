@@ -313,8 +313,77 @@ static void test_the_switch_off_does_not_fire_into_a_fresh_boot(void)
     assert(!alarm_off_guard_take_due(&guard, &off, 3, 23, 0));
 }
 
+static alarm_off_t evening_off(void)
+{
+    return (alarm_off_t){.enabled = true, .hour = 21U, .minute = 0U, .days = ALARM_DAYS_ALL};
+}
+
+static void test_the_schedule_says_on_or_off(void)
+{
+    const alarm_config_t alarm = weekday_alarm(); // 07:30, Monday to Friday
+    const alarm_off_t off = evening_off();         // 21:00, every day
+    bool on = false;
+    assert(alarm_schedule_on_now(&alarm, &off, TUE, 12, 0, &on) && on);
+    assert(alarm_schedule_on_now(&alarm, &off, TUE, 3, 0, &on) && !on);
+    assert(alarm_schedule_on_now(&alarm, &off, TUE, 22, 0, &on) && !on);
+    // Each one's own minute counts as passed.
+    assert(alarm_schedule_on_now(&alarm, &off, TUE, 7, 30, &on) && on);
+    assert(alarm_schedule_on_now(&alarm, &off, TUE, 7, 29, &on) && !on);
+    assert(alarm_schedule_on_now(&alarm, &off, TUE, 21, 0, &on) && !on);
+    // No alarm at the weekend: Saturday noon is still Friday night's sleep.
+    assert(alarm_schedule_on_now(&alarm, &off, SAT, 12, 0, &on) && !on);
+    // Across the week's wrap: Monday morning after the alarm, from Sunday's off.
+    assert(alarm_schedule_on_now(&alarm, &off, MON, 8, 0, &on) && on);
+    // A tie goes to the switch-off.
+    alarm_off_t same = off;
+    same.hour = 7U;
+    same.minute = 30U;
+    assert(alarm_schedule_on_now(&alarm, &same, TUE, 12, 0, &on) && !on);
+    // Both have to be set.
+    alarm_off_t disabled = off;
+    disabled.enabled = false;
+    on = true;
+    assert(!alarm_schedule_on_now(&alarm, &disabled, TUE, 12, 0, &on) && on);
+    alarm_config_t silent = alarm;
+    silent.enabled = false;
+    assert(!alarm_schedule_on_now(&silent, &off, TUE, 12, 0, &on));
+}
+
+static void test_what_the_power_coming_back_decides(void)
+{
+    const alarm_config_t alarm = weekday_alarm();
+    const alarm_off_t off = evening_off();
+    alarm_off_t no_off = off;
+    no_off.enabled = false;
+
+    // Switched off, or not a power-on: nothing changes.
+    assert(power_restore_decide(false, true, POWER_MARK_ASLEEP, &alarm, &off, true, TUE, 3, 0) ==
+           POWER_RESTORE_BOOT);
+    assert(power_restore_decide(true, false, POWER_MARK_ASLEEP, &alarm, &off, true, TUE, 3, 0) ==
+           POWER_RESTORE_BOOT);
+    // The schedule wins over the mark, both ways.
+    assert(power_restore_decide(true, true, POWER_MARK_AWAKE, &alarm, &off, true, TUE, 3, 0) ==
+           POWER_RESTORE_SLEEP);
+    assert(power_restore_decide(true, true, POWER_MARK_ASLEEP, &alarm, &off, true, TUE, 12, 0) ==
+           POWER_RESTORE_PLAY);
+    // And waits for a clock to decide by.
+    assert(power_restore_decide(true, true, POWER_MARK_ASLEEP, &alarm, &off, false, 0, 0, 0) ==
+           POWER_RESTORE_WAIT_FOR_CLOCK);
+    assert(power_restore_decide(true, true, POWER_MARK_WAITING, &alarm, &off, true, TUE, 12, 0) ==
+           POWER_RESTORE_PLAY);
+    // No schedule: the mark, and no clock needed.
+    assert(power_restore_decide(true, true, POWER_MARK_AWAKE, &alarm, &no_off, false, 0, 0, 0) ==
+           POWER_RESTORE_PLAY);
+    assert(power_restore_decide(true, true, POWER_MARK_ASLEEP, &alarm, &no_off, false, 0, 0, 0) ==
+           POWER_RESTORE_SLEEP);
+    assert(power_restore_decide(true, true, POWER_MARK_WAITING, &alarm, &no_off, false, 0, 0,
+                                0) == POWER_RESTORE_SLEEP);
+}
+
 int main(void)
 {
+    test_the_schedule_says_on_or_off();
+    test_what_the_power_coming_back_decides();
     test_an_alarm_that_cannot_ring();
     test_the_source_and_its_station();
     test_the_last_source_needs_no_station();

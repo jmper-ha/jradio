@@ -352,6 +352,41 @@ menu as well: the sound fades over ten seconds and the radio sleeps until the
 next alarm; any key pressed in those seconds keeps it on. A radio switched on
 during that very minute is left on.
 
+### SmartStart: after a power cut
+
+Normally power coming on is switching on: the radio boots even if it was
+asleep before the cut. With SmartStart (web settings, the "Device" section)
+it carries on as it was - for a radio that switches an amplifier through the
+peripheral power switch by its alarm and switch-off, and must not switch it
+on at night after an outage.
+
+- **The alarm and the switch-off both enabled** - the schedule decides:
+  whichever of the two came last. The alarm - the radio plays; the switch-off
+  - it sleeps until the next alarm. So a radio that played by day stays
+  asleep if the power comes back at night.
+- **No schedule** - asleep before the cut, asleep after it; playing - it
+  carries on with what was playing, whatever "Autoplay" says.
+
+The schedule needs the time, and the cut took that too. A
+[DS3231](hardware.en.md#real-time-clock-ds3231-or-ds1307) gives it if it is
+fed directly rather than through the peripheral switch; without one, a time
+server over Wi-Fi, about ten seconds of dark screen. If the network is not
+there yet either (a router takes a while after the same cut), the radio
+sleeps and tries again every five minutes. All that time the screen is dark
+and the peripheral switch is closed.
+
+The setting is offered only on a board that something can wake: the Sleep
+button or the remote. With it **the reset button no longer wakes** a sleeping
+radio - to the firmware it looks like power coming on. That goes for flashing
+over the UART cable too: the radio may go straight to sleep afterwards. The
+Sleep button or the remote wakes it.
+
+Until the firmware starts - the first fraction of a second after power
+comes on - nothing drives the pins. So that the amplifier and the backlight
+do not blink, pull the peripheral switch and the backlight to "off" with a
+resistor, see
+["Powering the periphery down in sleep"](hardware.en.md#powering-the-periphery-down-in-sleep).
+
 ## Settings
 
 On the device: language, home screen style, scrolling of long lines, the

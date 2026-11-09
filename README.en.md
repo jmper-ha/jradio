@@ -68,7 +68,7 @@ The full pinout and the choice of parts are in [Hardware](doc/hardware.en.md).
 | **Screensaver** | Dimming, a black screen, or a drifting clock with the date, the weather and the track title |
 | **Themes** | Standard, high-contrast for displays whose text looks washed out, or your own - six colours picked on the web |
 | **Quick panel** | A window over the player: the sleep timer, the alarm, the brightness, the tone, loudness, the BT speaker - without leaving the screen |
-| **Alarm clock** | Internet radio, FM or the last source at a set time on chosen weekdays at its own volume, switching off at a set time; a sleeping device wakes itself |
+| **Alarm clock** | Internet radio, FM or the last source at a set time on chosen weekdays at its own volume, switching off at a set time; a sleeping device wakes itself; SmartStart - after a power cut it carries on as it was, or as the schedule says |
 | **Touch screen** | The FT6336U panel on the ST7796S module: tap and scroll in menus and lists, gestures on the player screen, settings' values with a sideways drag |
 | **Sleep timer** | 15-120 minutes, then a fade-out and sleep; on boards with a sleep button or IR wake |
 | **Deep sleep** | Holding a button shuts the device down; the same button or the remote wakes it. With a power switch the whole periphery goes dark |

@@ -233,6 +233,15 @@ The switch must carry the whole periphery with margin: the panel with its
 backlight and the Bluetooth module draw noticeably more at their peaks than on
 average.
 
+Pull the switch's control input to "closed" with a 10-100 kOhm resistor (for
+a P-MOSFET in the positive rail the gate to the positive rail, for a load
+switch EN to ground). For the first fraction of a second after power comes on
+nothing drives the S3's pin, and without the resistor the periphery switches
+on for a moment. This matters most with
+[SmartStart](usage.en.md#smartstart-after-a-power-cut), when the switch feeds
+an amplifier. Where you can, pull the backlight pin to ground as well:
+otherwise it flashes briefly when power comes on.
+
 ## The IR receiver: the remote
 
 Any three-pin 38 kHz receiver gives a full remote control - how to use it is in

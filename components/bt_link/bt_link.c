@@ -120,10 +120,13 @@ esp_err_t bt_link_set_volume(uint8_t volume);
  * wiring to the old one found it still following - silence until the module
  * was unplugged (2026-11-06). An older module is not told the default, which
  * it has anyway, so it does not log a message it has no use for. */
-static void bt_link_tell_bus(void)
+static void bt_link_tell_bus(jbt_mode_t mode)
 {
     const bool follow = board_bt_through_s3();
-    const uint8_t slot_bits = board_audio_slot_bits();
+    /* As a sink that follows, the module writes to the S3's input, which is
+     * made in wide slots; otherwise it reads or drives the DAC's bus. */
+    const uint8_t slot_bits = follow && mode == JBT_MODE_SINK ? board_audio_bt_capture_slot_bits()
+                                                              : board_audio_slot_bits();
     xSemaphoreTake(s_state_lock, portMAX_DELAY);
     const uint8_t protocol = s_state.protocol;
     xSemaphoreGive(s_state_lock);
@@ -134,7 +137,7 @@ static void bt_link_tell_bus(void)
 
 static esp_err_t bt_link_ask_mode(jbt_mode_t mode)
 {
-    bt_link_tell_bus();
+    bt_link_tell_bus(mode);
     const uint8_t payload[1] = {(uint8_t)mode};
     return bt_link_send(JBT_MSG_SET_MODE, 0U, payload, sizeof(payload));
 }
@@ -299,7 +302,9 @@ static void bt_link_on_frame(const jbt_frame_t *frame)
     xSemaphoreGive(s_state_lock);
     /* The greeting goes out on the first frame, before the version is known,
      * so a module that understands BUS hears the default only now. */
-    if ((changed & BT_LINK_CHANGED_PONG) && protocol_before == 0U) bt_link_tell_bus();
+    if ((changed & BT_LINK_CHANGED_PONG) && protocol_before == 0U) {
+        bt_link_tell_bus((jbt_mode_t)s_wanted_mode);
+    }
     if (changed & BT_LINK_CHANGED_COVER_INFO) {
         /* Nothing, or something already shown: take it down or leave it.
          * Something new: the first piece is asked for below, on the tick. */

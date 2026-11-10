@@ -83,6 +83,8 @@ bool board_audio_capture_available(void);
 esp_err_t board_audio_capture_select(bool from_bluetooth);
 // The bus's slot width, which whoever else reads or writes it has to match.
 uint8_t board_audio_slot_bits(void);
+// The width while the input is the Bluetooth module's line instead.
+uint8_t board_audio_bt_capture_slot_bits(void);
 esp_err_t board_audio_capture_set_enabled(bool enabled);
 esp_err_t board_audio_capture_read(void *pcm, size_t length, size_t *read, uint32_t timeout_ms);
 /* The DAC's soft mute, on boards that wire AUDIO_DAC_MUTE_GPIO; a no-op

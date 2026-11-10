@@ -563,8 +563,13 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
      * only while the input is made. */
     /* The SSM3582 is the other: it takes no 32 x Fs clock at any rate
      * (its datasheet, table 13), so its slots are always the wide ones. */
+    /* And the Bluetooth module, which follows this bus as a slave: in 16-bit
+     * slots its sound hissed, worse with the treble up, on a forum user's
+     * PCM5102, while the SSM3582's 32-bit slots played it clean - through a
+     * PCM5102 too (2026-11-10). bt_link tells the module the same width. */
     const bool through_adc = capture && !s_capture_from_bt && board_has_adc();
-    const bool wide_slots = through_adc || board_dac_is_ssm3582();
+    const bool wide_slots = through_adc || (capture && s_capture_from_bt) ||
+                            board_dac_is_ssm3582();
     std_config.slot_cfg.slot_bit_width =
         wide_slots ? I2S_SLOT_BIT_WIDTH_32BIT : (i2s_slot_bit_width_t)I2S_SLOT_BIT_WIDTH;
     /* The word-select's width follows the slot: left at the 16 bits of the data
@@ -1332,6 +1337,11 @@ esp_err_t board_audio_capture_select(bool from_bluetooth)
 uint8_t board_audio_slot_bits(void)
 {
     return board_dac_is_ssm3582() ? 32U : (uint8_t)I2S_SLOT_BIT_WIDTH;
+}
+
+uint8_t board_audio_bt_capture_slot_bits(void)
+{
+    return 32U;
 }
 
 /* The channels made again, with the input or without it. The input's DMA

@@ -2386,6 +2386,61 @@ static esp_err_t web_server_cover_get(httpd_req_t *request)
     return httpd_resp_send_chunk(request, NULL, 0);
 }
 
+/* When a new connection takes the last slot, the oldest plain HTTP one is
+ * closed, so the next has somewhere to go. Chrome keeps up to six keep-alive
+ * connections per host name and the page's polls keep them busy, and with
+ * <host>.local beside the address one browser held all twelve slots: every
+ * page, on either name, then failed with a reset (2026-11-10). httpd's own
+ * LRU purge would do this too but picks among WebSocket sessions as well,
+ * and a dropped socket is a page that stops updating; a browser simply opens
+ * a keep-alive connection again. Oldest by opening, since httpd keeps its
+ * last-use counter to itself. Runs on the server task, between requests. */
+static struct {
+    int fd;
+    uint32_t opened;
+} s_session_ages[WEB_SOCKET_SERVER_SOCKET_CAPACITY];
+static uint32_t s_session_opened;
+
+static esp_err_t web_server_session_open(httpd_handle_t server, int fd)
+{
+    size_t count = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
+    int fds[WEB_SOCKET_SERVER_SOCKET_CAPACITY];
+    if (httpd_get_client_list(server, &count, fds) != ESP_OK) return ESP_OK;
+    /* The new fd takes the entry of a session that is gone: no close hook is
+     * needed to keep the table, only the server's own list of live ones. A
+     * stale entry still holding this number would make the new one look old. */
+    for (size_t entry = 0; entry < WEB_SOCKET_SERVER_SOCKET_CAPACITY; ++entry) {
+        if (s_session_ages[entry].fd == fd) s_session_ages[entry].fd = -1;
+    }
+    for (size_t entry = 0; entry < WEB_SOCKET_SERVER_SOCKET_CAPACITY; ++entry) {
+        bool live = false;
+        for (size_t index = 0; index < count; ++index) {
+            if (fds[index] == s_session_ages[entry].fd) live = true;
+        }
+        if (!live) {
+            s_session_ages[entry].fd = fd;
+            s_session_ages[entry].opened = ++s_session_opened;
+            break;
+        }
+    }
+    if (count < WEB_SOCKET_SERVER_SOCKET_CAPACITY) return ESP_OK;
+    int oldest = -1;
+    uint32_t oldest_age = 0U;
+    for (size_t entry = 0; entry < WEB_SOCKET_SERVER_SOCKET_CAPACITY; ++entry) {
+        const int candidate = s_session_ages[entry].fd;
+        if (candidate == fd || httpd_ws_get_fd_info(server, candidate) != HTTPD_WS_CLIENT_HTTP) {
+            continue;
+        }
+        const uint32_t age = s_session_opened - s_session_ages[entry].opened;
+        if (oldest < 0 || age > oldest_age) {
+            oldest = candidate;
+            oldest_age = age;
+        }
+    }
+    if (oldest >= 0) (void)httpd_sess_trigger_close(server, oldest);
+    return ESP_OK;
+}
+
 esp_err_t web_server_start(void)
 {
     if (s_server != NULL) {
@@ -2432,6 +2487,7 @@ esp_err_t web_server_start(void)
         config.max_open_sockets = WEB_SOCKET_SERVER_SOCKET_CAPACITY;
         config.send_wait_timeout = 1;
         config.lru_purge_enable = false;
+        config.open_fn = web_server_session_open;
         ESP_RETURN_ON_ERROR(httpd_start(&s_server, &config), TAG, "start HTTP server");
         const httpd_uri_t handlers[] = {
             {.uri = "/", .method = HTTP_GET, .handler = web_server_root_get},

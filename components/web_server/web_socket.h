@@ -12,9 +12,9 @@
 
 /* Six rather than four: a slot is only freed once the device notices the
  * client is gone, and a closed laptop lid or a sleeping phone leaves the
- * session hanging. Eviction is off (lru_purge_enable = false in
- * web_server.c), so a full pool refuses new connections, which on the page
- * reads as "Нет связи" with no explanation. */
+ * session hanging. httpd's eviction is off (lru_purge_enable = false in
+ * web_server.c) and its own closes only plain HTTP sessions, so a socket is
+ * never dropped to make room: past six the page reads as "Нет связи". */
 #define WEB_SOCKET_MAX_CLIENTS 6U
 // Total httpd session slots: WebSocket clients plus headroom for the several
 // concurrent plain HTTP connections a browser opens while loading a page

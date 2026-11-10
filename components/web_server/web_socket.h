@@ -63,6 +63,7 @@ typedef struct {
     wifi_provisioning_mode_t mode;
     char active_ssid[WIFI_SETTINGS_SSID_MAX_LEN + 1U];
     char ipv4[16];
+    char host[33];
     int32_t last_error;
     bool save_pending;
     uint8_t saved_count;

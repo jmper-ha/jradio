@@ -13,6 +13,7 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "mdns.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -360,6 +361,30 @@ static bool wifi_select_next_network(bool from_start)
     return selected;
 }
 
+/* The same name on the local network itself, as <host>.local, for a router
+ * that does not put DHCP names in its DNS (asked on the forum 2026-11-10).
+ * Started once, and renamed with the board: like DHCP, it is read again
+ * before each join. Its memory and its task's stack are in PSRAM - see
+ * sdkconfig.defaults: kept internal, it took 7 KB off the largest internal
+ * block, which is what the decoder's stack and TLS are cut from. */
+static volatile bool s_mdns_started;
+static char s_mdns_name[DEVICE_NAME_MAX];
+
+static void wifi_announce_host_name(const char *host, const char *instance)
+{
+    if (!s_mdns_started) {
+        const esp_err_t err = mdns_init();
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "mDNS not started: %s", esp_err_to_name(err));
+            return;
+        }
+        (void)mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+        s_mdns_started = true;
+    }
+    (void)mdns_hostname_set(host);
+    (void)mdns_instance_name_set(instance[0] != '\0' ? instance : host);
+}
+
 /* The name the router lists this board under, from Settings. Left alone, DHCP
  * sends lwIP's own "espressif" and every board on the network reads the same
  * (asked for on the forum 2026-10-31). Set before each join rather than once:
@@ -378,6 +403,29 @@ static void wifi_set_station_host_name(void)
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "host name %s refused: %s", host, esp_err_to_name(err));
     }
+    wifi_announce_host_name(host, name);
+    taskENTER_CRITICAL(&s_status_lock);
+    snprintf(s_status.host, sizeof(s_status.host), "%s", host);
+    snprintf(s_mdns_name, sizeof(s_mdns_name), "%s", name);
+    taskEXIT_CRITICAL(&s_status_lock);
+}
+
+/* A rename from Settings, at once rather than from the next join: the page
+ * said the name was saved, and <host>.local kept answering to the old one
+ * until a reboot. Settings are published for any change, so an unchanged
+ * name is left alone - announcing again sends packets to every listener.
+ * mDNS is only started by a join, from the Wi-Fi task; before that there is
+ * nothing to rename and the join reads the new name itself. The router's
+ * list still changes from the next lease - DHCP sends the name only then. */
+void wifi_provisioning_rename(void)
+{
+    if (s_sta_netif == NULL || !s_mdns_started) return;
+    char name[DEVICE_NAME_MAX];
+    device_settings_device_name(name, sizeof(name));
+    taskENTER_CRITICAL(&s_status_lock);
+    const bool same = strcmp(name, s_mdns_name) == 0;
+    taskEXIT_CRITICAL(&s_status_lock);
+    if (!same) wifi_set_station_host_name();
 }
 
 static esp_err_t wifi_configure_current_network(void)

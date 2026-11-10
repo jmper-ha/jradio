@@ -56,6 +56,7 @@ static web_socket_wifi_state_t sample_wifi(void)
     };
     strcpy(wifi.active_ssid, "home");
     strcpy(wifi.ipv4, "192.168.1.183");
+    strcpy(wifi.host, "jradio-home");
     strcpy(wifi.saved_ssids[0], "home");
     return wifi;
 }
@@ -329,8 +330,19 @@ static void test_section_diff_and_update_types_are_bounded(void)
         assert(cJSON_IsObject(root));
         assert(strcmp(cJSON_GetObjectItemCaseSensitive(root, "type")->valuestring,
                       types[index]) == 0);
+        if (kinds[index] == WEB_SOCKET_EVENT_WIFI_UPDATE) {
+            const cJSON *wifi = cJSON_GetObjectItemCaseSensitive(root, "wifi");
+            assert(strcmp(cJSON_GetObjectItemCaseSensitive(wifi, "host")->valuestring,
+                          "jradio-home") == 0);
+        }
         cJSON_Delete(root);
     }
+    // A rename is a change the page has to hear about.
+    web_socket_wifi_state_t renamed = current_wifi;
+    strcpy(renamed.host, "kitchen");
+    assert((web_socket_changed_sections(&previous_player, &current_wifi, &previous_settings,
+                                        &current_player, &renamed, &current_settings) &
+            WEB_SOCKET_SECTION_WIFI) != 0U);
 }
 
 static void fill_json_expensive_text(char *output, size_t capacity)

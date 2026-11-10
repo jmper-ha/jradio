@@ -502,6 +502,7 @@ static esp_err_t web_server_status_get(httpd_req_t *request)
     cJSON_AddStringToObject(root, "mode", web_server_mode_name(status.mode));
     cJSON_AddStringToObject(root, "active_ssid", status.active_ssid);
     cJSON_AddStringToObject(root, "ip", status.ipv4);
+    cJSON_AddStringToObject(root, "host", status.host);
     cJSON_AddNumberToObject(root, "last_error", status.last_error);
     cJSON_AddBoolToObject(root, "save_pending", status.save_pending);
 

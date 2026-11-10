@@ -3,7 +3,11 @@
 [← README](../README.en.md) · [Русский](web.md)
 
 Opens in a browser at the device's address (shown at the bottom of the
-settings screen) from a phone or a computer on the same network. Nothing to
+settings screen) from a phone or a computer on the same network. Instead of
+the digits you can type the name: `http://jradio-xxxx.local` - the one on the
+"Network name" row of the Wi-Fi settings. Windows 10 and later, macOS, iOS
+and Linux with Avahi understand it; on Android it depends on the version and
+the browser. Nothing to
 install. Russian and English, a dark and a light theme.
 
 **There is no authentication and `Origin` is not checked. The interface is

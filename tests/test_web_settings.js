@@ -76,7 +76,7 @@ const ids = [
   'about-firmware', 'about-built', 'about-web', 'about-idf', 'about-notice',
   'about-module-label', 'about-module',
   'about-author',
-  'wifi-status', 'wifi-active', 'wifi-ip', 'saved-networks',
+  'wifi-status', 'wifi-active', 'wifi-ip', 'wifi-host', 'saved-networks',
   'saved-networks-empty', 'wifi-add', 'wifi-cancel', 'wifi-scan',
   'wifi-scan-block', 'scan-networks', 'scan-empty', 'wifi-chosen',
   'wifi-chosen-name', 'wifi-ssid-row',
@@ -413,10 +413,12 @@ sendEvent(first, {
 assert.notEqual(elements['#wifi-active'].textContent, 'stale');
 
 sendEvent(first, snapshot(5, {
-  mode: 'sta_connected', active_ssid: 'home', ip: '192.168.1.10',
+  mode: 'sta_connected', active_ssid: 'home', ip: '192.168.1.10', host: 'jradio-home',
   save_pending: false, last_error: 0, saved: [{ssid: 'home', blocked: false}],
 }));
 assert.equal(elements['#wifi-active'].textContent, 'home');
+// The name the board answers to over mDNS, with the suffix it answers on.
+assert.equal(elements['#wifi-host'].textContent, 'jradio-home.local');
 assert.equal(elements['#saved-networks'].children.length, 1);
 
 // The field starts hidden, whatever the markup happened to say.

@@ -290,6 +290,8 @@ static void write_wifi(web_json_writer_t *writer,
     web_json_string(writer, wifi->active_ssid);
     web_json_literal(writer, ",\"ip\":");
     web_json_string(writer, wifi->ipv4);
+    web_json_literal(writer, ",\"host\":");
+    web_json_string(writer, wifi->host);
     web_json_literal(writer, ",\"save_pending\":");
     web_json_literal(writer, wifi->save_pending ? "true" : "false");
     web_json_literal(writer, ",\"last_error\":");
@@ -430,7 +432,7 @@ static bool wifi_state_equal(const web_socket_wifi_state_t *left,
         left->save_pending != right->save_pending ||
         left->saved_count != right->saved_count ||
         strcmp(left->active_ssid, right->active_ssid) != 0 ||
-        strcmp(left->ipv4, right->ipv4) != 0) {
+        strcmp(left->ipv4, right->ipv4) != 0 || strcmp(left->host, right->host) != 0) {
         return false;
     }
     const uint8_t count = left->saved_count <= WIFI_SETTINGS_MAX_NETWORKS
@@ -578,6 +580,7 @@ static void capture_wifi_state(web_socket_wifi_state_t *output)
     snprintf(output->active_ssid, sizeof(output->active_ssid), "%s",
              status.active_ssid);
     snprintf(output->ipv4, sizeof(output->ipv4), "%s", status.ipv4);
+    snprintf(output->host, sizeof(output->host), "%s", status.host);
     output->saved_count = saved.count <= WIFI_SETTINGS_MAX_NETWORKS
                               ? saved.count
                               : WIFI_SETTINGS_MAX_NETWORKS;

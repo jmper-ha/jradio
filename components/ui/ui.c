@@ -4672,12 +4672,13 @@ static void ui_apply_bt_output(void)
 
 /* The name the module answers to, from the settings just published: the
  * link sends it only when it changed. After the publish, since that is
- * where the resolved name comes from. */
+ * where the resolved name comes from. The network's <host>.local follows. */
 static void ui_apply_device_name(void)
 {
     char name[DEVICE_NAME_MAX];
     device_settings_device_name(name, sizeof(name));
     (void)bt_link_set_name(name);
+    wifi_provisioning_rename();
 }
 
 static void ui_adopt_speaker(void)

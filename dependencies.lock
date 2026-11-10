@@ -83,6 +83,16 @@ dependencies:
     - esp32p4
     - esp32c3
     version: 1.4.0
+  espressif/mdns:
+    component_hash: 2fa43caa78cc170842255bc7bf71f306bc815cae12e9496bfb12372423019ac7
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.15.1
   espressif/usb_host_msc:
     component_hash: a7330d2bc4f81c21fd335df073405085bbad5cdf084a1be79fb52383d0d0d6fd
     dependencies:
@@ -135,10 +145,11 @@ direct_dependencies:
 - espressif/esp_audio_codec
 - espressif/esp_lcd_ili9341
 - espressif/esp_lcd_st7796
+- espressif/mdns
 - espressif/usb_host_msc
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: f92898d205c71a6073aa554c4bdd24f39151dc4424831e8099741f56d3c7460d
+manifest_hash: 4e254b2694378af9530a5949f78e762d0fa6d1f4cfddaeec58e48b826b215d00
 target: esp32s3
 version: 2.0.0

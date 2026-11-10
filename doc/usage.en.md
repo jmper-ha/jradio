@@ -402,7 +402,8 @@ detail, the alarm, the sleep timer, the backup.
 - **Device name** - how it is called in Bluetooth, as the setup access
   point and in the router's list of devices (there in Latin letters:
   "Радио на кухне" becomes `Radio-na-kukhne`). An empty field is the built-in
-  `jradio-XXXX`.
+  `jradio-XXXX`. The same Latin name with `.local` opens the web interface:
+  `http://Radio-na-kukhne.local`.
 - **Yandex Music**, **DLNA** - the switches remove the source everywhere; a
   playback already running is not stopped.
 - **Buffer** - the left corner of the player's footer: a number ("Buffer 88%")

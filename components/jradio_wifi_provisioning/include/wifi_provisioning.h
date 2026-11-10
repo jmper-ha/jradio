@@ -15,6 +15,10 @@ typedef struct {
     wifi_provisioning_mode_t mode;
     char active_ssid[WIFI_SETTINGS_SSID_MAX_LEN + 1];
     char ipv4[16];
+    /* The name the station goes by on the network - DHCP's, and the one
+     * answered as <host>.local. DEVICE_HOST_NAME_MAX, which this header does
+     * not see. */
+    char host[33];
     int32_t last_error;
     bool save_pending;
 } wifi_provisioning_status_t;
@@ -89,6 +93,8 @@ esp_err_t wifi_provisioning_prioritize_network(const char *ssid);
  * time the device out. Nothing brings Wi-Fi back - waking is a reboot. */
 esp_err_t wifi_provisioning_stop(void);
 esp_err_t wifi_provisioning_disconnect_active(void);
+/* Announces a device name changed in Settings, without waiting for a join. */
+void wifi_provisioning_rename(void);
 
 /* Looking around for networks to join. Offered only while the setup AP is up:
  * a scan hops every channel for a few seconds, which would stall the stream

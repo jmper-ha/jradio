@@ -149,6 +149,14 @@ CONFIG_LWIP_TCP_OOSEQ_MAX_PBUFS=12
 # link's stack was the difference between Yandex Music playing and not.
 CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
 
+# mDNS (<host>.local) keeps its memory and its task's stack in PSRAM. Left
+# internal, it took 7 KB off the largest internal block, which is what the
+# decoder's stack and TLS are cut from; from PSRAM, starting it cost 644 bytes
+# of internal RAM. There is no console to give its commands to.
+CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM=y
+CONFIG_MDNS_MEMORY_ALLOC_SPIRAM=y
+# CONFIG_MDNS_ENABLE_CONSOLE_CLI is not set
+
 # Waking by remote: the boot after a deep sleep either lights the screen for
 # our Power key or goes straight back down for anybody else's remote, and
 # both are felt as the delay after the press. Verifying the 2.6 MB image costs

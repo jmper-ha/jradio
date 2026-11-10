@@ -737,11 +737,11 @@
     'settings.ntp': ['Сервер времени', 'Time server'],
     'settings.device_name': ['Имя устройства', 'Device name'],
     'settings.device_name_note_wifi': [
-      'Так называется сеть Wi‑Fi устройства при первой настройке. Пусто — имя из заводского номера.',
-      'What the device\'s Wi‑Fi network is called during first setup. Empty means the built-in name.'],
+      'Так называется сеть Wi‑Fi устройства при первой настройке, латиницей — адрес имя.local в браузере. Пусто — имя из заводского номера.',
+      'What the device\'s Wi‑Fi network is called during first setup; in Latin letters, the name.local address in a browser. Empty means the built-in name.'],
     'settings.device_name_note': [
-      'Так устройство называется в Bluetooth и как сеть Wi‑Fi при первой настройке. Пусто — имя из заводского номера.',
-      'What the device is called over Bluetooth and as the Wi‑Fi network during first setup. Empty means the built-in name.'],
+      'Так устройство называется в Bluetooth и как сеть Wi‑Fi при первой настройке, латиницей — адрес имя.local в браузере. Пусто — имя из заводского номера.',
+      'What the device is called over Bluetooth and as the Wi‑Fi network during first setup; in Latin letters, the name.local address in a browser. Empty means the built-in name.'],
     'settings.group_weather': ['Погода', 'Weather'],
     'bt.group': ['Звук на Bluetooth', 'Sound over Bluetooth'],
     'bt.output': ['Отправлять на колонку', 'Send to a speaker'],
@@ -811,6 +811,7 @@
     'wifi.waiting': ['Ожидание данных', 'Waiting for data'],
     'wifi.current': ['Текущая сеть', 'Current network'],
     'wifi.ip': ['IP-адрес', 'IP address'],
+    'wifi.host': ['Имя в сети', 'Network name'],
     'wifi.saved': ['Сохранённые сети', 'Saved networks'],
     'wifi.saved_empty': ['Сохранённых сетей пока нет', 'No saved networks yet'],
     'wifi.nearby': ['Сети вокруг', 'Networks nearby'],

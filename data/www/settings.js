@@ -12,6 +12,7 @@
   const wifiStatus = document.querySelector('#wifi-status');
   const wifiActive = document.querySelector('#wifi-active');
   const wifiIp = document.querySelector('#wifi-ip');
+  const wifiHost = document.querySelector('#wifi-host');
   const savedNetworks = document.querySelector('#saved-networks');
   const savedNetworksEmpty = document.querySelector('#saved-networks-empty');
   const wifiAdd = document.querySelector('#wifi-add');
@@ -239,6 +240,7 @@
       mode: safeString(wifi.mode, 'unknown'),
       active_ssid: safeString(wifi.active_ssid),
       ip: safeString(wifi.ip),
+      host: safeString(wifi.host),
       save_pending: wifi.save_pending === true,
       last_error: Number.isSafeInteger(wifi.last_error) ? wifi.last_error : 0,
       // The order is the order the device tries them in, so it is never sorted
@@ -750,6 +752,8 @@
     const editDone = editSatisfied(wifi);
     wifiActive.textContent = wifi.active_ssid || '—';
     wifiIp.textContent = wifi.ip || '—';
+    // Answered over mDNS only once the station is on the network.
+    wifiHost.textContent = wifi.ip && wifi.host ? `${wifi.host}.local` : '—';
     renderSavedNetworks(wifi);
     applyWifiMode(wifi);
     if (editDone) {

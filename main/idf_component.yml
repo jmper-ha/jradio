@@ -15,6 +15,7 @@ dependencies:
   #   # All dependencies of `main` are public by default.
   #   public: true
   joltwallet/littlefs: ^1.20.4
+  espressif/mdns: ^1.8.0
   espressif/esp_audio_codec: ^2.5.0
   esphome/micro-flac: ^0.2.0
   esphome/micro-mp3: ^0.4.0

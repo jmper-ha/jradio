@@ -140,6 +140,15 @@ uint32_t bt_link_model_apply(bt_link_state_t *state, const jbt_frame_t *frame)
         /* The ack names the mode the module is in now, which is the truth
          * about the bus whatever the last STATUS said. */
         state->status.mode = mode;
+        /* Back to the phone: the screen has shown another source's picture
+         * since, so the cover fetched before is fetched again. Remembered,
+         * the same cover announced on the return was taken for one already
+         * up, and the phone's track played with the radio's picture until
+         * the next track (2026-11-11). */
+        if (mode == JBT_MODE_SINK) {
+            state->cover_received = 0U;
+            state->cover_done_hash = 0U;
+        }
         return BT_LINK_CHANGED_MODE_ACK;
     }
     case JBT_MSG_COVER_INFO: {

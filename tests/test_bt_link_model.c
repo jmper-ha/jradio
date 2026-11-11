@@ -231,6 +231,20 @@ static void test_a_cover_is_fetched_piece_by_piece_and_only_once(void)
     assert(bt_link_model_apply(&state, &announce) == BT_LINK_CHANGED_COVER_INFO);
     assert(!bt_link_model_cover_wanted(&state, &offset, &length));
 
+    /* Away to another source and back to the phone: the same cover is
+     * fetched again, since another picture has been on the screen. */
+    const uint8_t sink_ack[2] = {JBT_MODE_SINK, 0U};
+    const jbt_frame_t back = frame_of(JBT_MSG_MODE_ACK, sink_ack, 2U);
+    assert(bt_link_model_apply(&state, &back) == BT_LINK_CHANGED_MODE_ACK);
+    assert(bt_link_model_cover_wanted(&state, &offset, &length) && offset == 0U);
+    assert(bt_link_model_apply(&state, &announce) == BT_LINK_CHANGED_COVER_INFO);
+    while (bt_link_model_cover_wanted(&state, &offset, &length)) {
+        memcpy(piece, &offset, 4U);
+        frame = frame_of(JBT_MSG_COVER_DATA, piece, 4U + length);
+        assert(bt_link_model_cover_data(&state, &frame, &offset, &bytes, &n, &complete));
+    }
+    assert(complete && state.cover_done_hash == 0xABCD1234U);
+
     /* The phone's player closed: the picture is not wanted, and once the
      * phone plays again it is fetched back; a pause holds it. */
     const uint8_t stopped[1] = {JBT_PLAY_STOPPED};

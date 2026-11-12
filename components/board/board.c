@@ -138,7 +138,8 @@ static bool s_scroll_flipped;
 static SemaphoreHandle_t s_lcd_transfer_done;
 static i2s_chan_handle_t s_i2s_tx;
 /* The input half of the same controller, when i2s0_din is wired: the FM
- * tuner's sound. Created and deleted with the output. */
+ * tuner's sound. Created and deleted with the output. Beside S/PDIF it is
+ * I2S1's instead, on the DAC's clock pins - see board_audio_create_channel(). */
 static i2s_chan_handle_t s_i2s_rx;
 static bool s_capture_wanted;
 // Which line the input is made on: the Bluetooth module's, or the tuner's.
@@ -158,6 +159,12 @@ static int board_audio_capture_pin(void)
 // The channel's ring as made: I2S_DMA_DESC_NUM, or _DUPLEX with the input.
 static uint32_t s_dma_desc_num = I2S_DMA_DESC_NUM;
 static bool s_capture_enabled;
+/* The input's reads run outside the audio mutex, so a switch of output that
+ * makes the channels again under a playing input first holds them off: the
+ * reader counts itself in, and the switch waits for the count to fall. A
+ * channel deleted under a read hung the board. */
+static atomic_bool s_capture_held;
+static atomic_uint s_capture_readers;
 static SemaphoreHandle_t s_audio_mutex;
 static bool s_audio_enabled;
 static const uint8_t s_i2s_silence[I2S_DMA_BUFFER_BYTES];
@@ -598,6 +605,27 @@ static void board_spdif_reset(void)
     atomic_store_explicit(&s_spdif_tail, 0U, memory_order_relaxed);
 }
 
+/* Silence ahead of an input's first block. An input's frames come a DMA
+ * buffer at a time, 512 together, while the interrupt takes 255 each time:
+ * at one rate, but from an empty ring the two met short now and then, a gap
+ * of silence each time - 1 to 4 every ten seconds. The DAC's ring starts full
+ * of silence and never had them. The clocks are locked, so the cushion stays
+ * as deep as it was put in. Under s_audio_mutex, the head being the writer's. */
+#define SPDIF_INPUT_CUSHION_FRAMES (2U * I2S_DMA_FRAME_NUM)
+static void board_spdif_cushion(void)
+{
+    const unsigned int head = atomic_load_explicit(&s_spdif_head, memory_order_relaxed);
+    for (size_t done = 0U; done < SPDIF_INPUT_CUSHION_FRAMES;) {
+        const size_t at = (head + done) & (SPDIF_RING_FRAMES - 1U);
+        size_t run = SPDIF_RING_FRAMES - at;
+        if (run > SPDIF_INPUT_CUSHION_FRAMES - done) run = SPDIF_INPUT_CUSHION_FRAMES - done;
+        memset(&s_spdif_ring[2U * at], 0, run * 4U);
+        done += run;
+    }
+    atomic_store_explicit(&s_spdif_head, head + SPDIF_INPUT_CUSHION_FRAMES,
+                          memory_order_release);
+}
+
 /* As i2s_channel_write: as much as fits by `wait`, and a timeout with the
  * rest counted in `written` when it did not all fit. */
 static esp_err_t board_spdif_write(const void *pcm, size_t length, size_t *written,
@@ -674,9 +702,22 @@ static esp_err_t board_spdif_preload(void)
  * bus while the input is made - the tuner's or the module's samples come in
  * on this controller's clocks - and while a Bluetooth speaker has the sound,
  * since the module takes it off the I2S lines. */
-static bool board_audio_spdif_chosen(bool capture)
+static bool board_audio_spdif_chosen(void)
 {
-    return s_spdif_wanted && wiring()->spdif_out >= 0 && !capture && !s_dac_muted;
+    return s_spdif_wanted && wiring()->spdif_out >= 0 && !s_dac_muted;
+}
+
+/* The input's clock beside S/PDIF. Its master clock is made the same as the
+ * output's - 256 x twice the rate - so both controllers divide one source by
+ * the same fraction and run at exactly the same rate: two dividers of their
+ * own would drift apart, and the ring between them would one day run dry or
+ * over. Every input here is 48 kHz or under, which goes out undecimated. An
+ * ADC gets that 512 x Fs on its MCLK, which the PCM1808 takes up to 48 kHz. */
+static i2s_std_clk_config_t board_audio_input_clock(uint32_t sample_rate)
+{
+    i2s_std_clk_config_t clock = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate);
+    if (s_spdif_on) clock.mclk_multiple = I2S_MCLK_MULTIPLE_512;
+    return clock;
 }
 
 /* An output's pin it is not using, driven low: a DAC with a clock line left
@@ -701,7 +742,7 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
      * board_audio_rebuild_channel(). */
     const bool capture = s_capture_wanted && board_audio_capture_pin() >= 0;
     s_dma_desc_num = capture ? I2S_DMA_DESC_NUM_DUPLEX : I2S_DMA_DESC_NUM;
-    s_spdif_on = board_audio_spdif_chosen(capture);
+    s_spdif_on = board_audio_spdif_chosen();
     if (s_spdif_on) {
         s_dma_desc_num = I2S_DMA_DESC_NUM_SPDIF;
         channel_config.dma_frame_num = I2S_DMA_FRAME_NUM_SPDIF;
@@ -738,8 +779,20 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
         channel_config.dma_frame_num = I2S_DMA_FRAME_NUM;
         channel_config.auto_clear_after_cb = I2S_AUTO_CLEAR_AFTER_CB != 0;
     }
-    ESP_RETURN_ON_ERROR(i2s_new_channel(&channel_config, &s_i2s_tx, capture ? &s_i2s_rx : NULL),
+    /* S/PDIF's clocks are twice the rate and wider than any input's, so the
+     * input moves to the other controller, which clocks the tuner or the
+     * module on the DAC's pins, idle while S/PDIF plays. */
+    const bool split = capture && s_spdif_on;
+    ESP_RETURN_ON_ERROR(i2s_new_channel(&channel_config, &s_i2s_tx,
+                                        capture && !split ? &s_i2s_rx : NULL),
                         TAG, "create I2S channels failed");
+    if (split) {
+        i2s_chan_config_t input_config = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
+        input_config.dma_desc_num = I2S_DMA_DESC_NUM_DUPLEX;
+        input_config.dma_frame_num = I2S_DMA_FRAME_NUM;
+        ESP_RETURN_ON_ERROR(i2s_new_channel(&input_config, NULL, &s_i2s_rx), TAG,
+                            "create I2S1 input failed");
+    }
     s_capture_enabled = false;
     if (!capture) board_adc_clock_park();
 
@@ -807,6 +860,7 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
      * it was made for, LRCK is high for 16 of 64 BCLKs instead of 32, and the
      * ADC's right channel gets a window too short for its word. */
     if (wide_slots) std_config.slot_cfg.ws_width = 32;
+    i2s_std_config_t input_config = std_config;
     if (s_spdif_on) {
         /* Two 32-bit words a subframe, at twice the rate: 128 bits a frame,
          * one per biphase cell. MSB timing, so the cells are not a bit late
@@ -816,6 +870,7 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
         std_config.clk_cfg = (i2s_std_clk_config_t)I2S_STD_CLK_DEFAULT_CONFIG(2U * s_spdif_rate);
         std_config.slot_cfg = (i2s_std_slot_config_t)I2S_STD_MSB_SLOT_DEFAULT_CONFIG(
             I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO);
+        std_config.gpio_cfg.mclk = I2S_GPIO_UNUSED;
         std_config.gpio_cfg.bclk = I2S_GPIO_UNUSED;
         std_config.gpio_cfg.ws = I2S_GPIO_UNUSED;
         std_config.gpio_cfg.dout = wired(wiring()->spdif_out);
@@ -825,9 +880,10 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     if (capture) {
         /* The same format both ways - the tuner is set to send what the DAC
          * is sent: Philips, 16-bit stereo - with the data line the other way. */
-        std_config.gpio_cfg.dout = I2S_GPIO_UNUSED;
-        std_config.gpio_cfg.din = wired(board_audio_capture_pin());
-        ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_rx, &std_config), TAG,
+        input_config.clk_cfg = board_audio_input_clock(sample_rate);
+        input_config.gpio_cfg.dout = I2S_GPIO_UNUSED;
+        input_config.gpio_cfg.din = wired(board_audio_capture_pin());
+        ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_rx, &input_config), TAG,
                             "configure I2S RX failed");
         /* At the pad's default 20 mA the ADC's 11.3 MHz clock, square and on
          * a flying wire, choked the Wi-Fi beside it: while FM played, sends
@@ -837,14 +893,17 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
         if (through_adc) {
             (void)gpio_set_drive_capability(wired(wiring()->i2s0_mclk), GPIO_DRIVE_CAP_0);
         }
-        ESP_LOGI(TAG, "I2S input on GPIO %d, for the %s%s", board_audio_capture_pin(),
+        ESP_LOGI(TAG, "I2S input on GPIO %d, for the %s%s%s", board_audio_capture_pin(),
                  s_capture_from_bt ? "Bluetooth module" : "FM tuner",
-                 through_adc ? ", through the ADC (master clock out, BCLK=64xFs)" : "");
+                 through_adc ? ", through the ADC (master clock out, BCLK=64xFs)" : "",
+                 split ? ", on I2S1 beside S/PDIF" : "");
     }
     s_tx_running = false;
     if (s_spdif_on) {
-        board_audio_park_pin(wiring()->i2s0_bclk);
-        board_audio_park_pin(wiring()->i2s0_lrck);
+        if (!split) {
+            board_audio_park_pin(wiring()->i2s0_bclk);
+            board_audio_park_pin(wiring()->i2s0_lrck);
+        }
         board_audio_park_pin(wiring()->i2s0_dout);
         ESP_LOGI(TAG, "S/PDIF out on GPIO %d: %lu Hz, DMA=%ux%u frames", wiring()->spdif_out,
                  (unsigned long)s_spdif_rate, (unsigned)s_dma_desc_num,
@@ -1488,6 +1547,7 @@ esp_err_t board_audio_set_enabled(bool enabled)
     if (enabled != s_audio_enabled) {
         if (enabled) {
             result = board_tx_on(true);
+            if (result == ESP_OK && s_spdif_on && s_i2s_rx != NULL) board_spdif_cushion();
         } else {
             /* Decayed to zero and clocked out first: the DAC is then holding
              * silence, and a clock that stops under silence is silent. */
@@ -1567,7 +1627,9 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
         result = i2s_channel_reconfig_std_clock(s_i2s_tx, &clock_config);
     }
     if (result == ESP_OK && s_i2s_rx != NULL) {
-        result = i2s_channel_reconfig_std_clock(s_i2s_rx, &clock_config);
+        const i2s_std_clk_config_t input_clock =
+            s_spdif_on ? board_audio_input_clock(sample_rate) : clock_config;
+        result = i2s_channel_reconfig_std_clock(s_i2s_rx, &input_clock);
     }
     if (result == ESP_OK && was_capturing) {
         result = i2s_channel_enable(s_i2s_rx);
@@ -1675,15 +1737,24 @@ static void board_audio_reselect(void)
 {
     // A released bus is the module's; reclaiming it makes the right channel.
     if (s_i2s_tx == NULL || s_bus_released) return;
-    const bool capture = s_capture_wanted && board_audio_capture_pin() >= 0;
-    if (board_audio_spdif_chosen(capture) == s_spdif_on) return;
+    if (board_audio_spdif_chosen() == s_spdif_on) return;
     const bool was_enabled = s_audio_enabled;
+    const bool was_capturing = s_capture_enabled;
+    atomic_store(&s_capture_held, true);
+    while (atomic_load(&s_capture_readers) != 0U) vTaskDelay(1);
     board_audio_flush_tail();
     s_audio_enabled = false;
     board_amp_apply();
     esp_err_t result = board_audio_rebuild_channel(s_capture_wanted);
+    // The input first, as its pipe starts it: the module follows its clock.
+    if (result == ESP_OK && was_capturing && s_i2s_rx != NULL) {
+        result = i2s_channel_enable(s_i2s_rx);
+        if (result == ESP_OK) s_capture_enabled = true;
+    }
+    atomic_store(&s_capture_held, false);
     if (result == ESP_OK && was_enabled) {
         result = board_tx_on(true);
+        if (result == ESP_OK && s_spdif_on && s_i2s_rx != NULL) board_spdif_cushion();
         if (result == ESP_OK) {
             s_audio_enabled = true;
             s_audio_fade_frames = 0U;
@@ -1745,13 +1816,25 @@ esp_err_t board_audio_capture_set_enabled(bool enabled)
 /* Outside the audio mutex: a read waits for the DMA, and holding the lock
  * across that would stall the writes it feeds. The channel is only taken
  * away by the bus hand-over, which the FM source is never running through,
- * and by board_audio_capture_set_enabled(false) from the one task reading. */
+ * by board_audio_capture_set_enabled(false) from the one task reading, and
+ * by a switch of output, which holds reads off first. */
 esp_err_t board_audio_capture_read(void *pcm, size_t length, size_t *read, uint32_t timeout_ms)
 {
     if (pcm == NULL || read == NULL) return ESP_ERR_INVALID_ARG;
     *read = 0U;
-    if (s_i2s_rx == NULL || !s_capture_enabled) return ESP_ERR_INVALID_STATE;
-    return i2s_channel_read(s_i2s_rx, pcm, length, read, pdMS_TO_TICKS(timeout_ms));
+    atomic_fetch_add(&s_capture_readers, 1U);
+    esp_err_t result = ESP_ERR_INVALID_STATE;
+    if (atomic_load(&s_capture_held)) {
+        atomic_fetch_sub(&s_capture_readers, 1U);
+        // Not straight back: the pipe would spin against the switch's task.
+        vTaskDelay(pdMS_TO_TICKS(10));
+        return result;
+    }
+    if (s_i2s_rx != NULL && s_capture_enabled) {
+        result = i2s_channel_read(s_i2s_rx, pcm, length, read, pdMS_TO_TICKS(timeout_ms));
+    }
+    atomic_fetch_sub(&s_capture_readers, 1U);
+    return result;
 }
 
 esp_err_t board_audio_self_test(uint32_t duration_ms)

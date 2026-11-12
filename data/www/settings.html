@@ -190,7 +190,7 @@
                   <label for="device-spdif-output" data-i18n="settings.spdif_output">Звук на S/PDIF</label>
                   <input id="device-spdif-output" type="checkbox" data-field="spdif_output">
                 </div>
-                <p class="field-note" data-i18n="note.spdif_output">Звук идёт на коаксиальный выход S/PDIF вместо встроенного ЦАП. Записи выше 48 кГц уходят на половине или четверти частоты. FM и Bluetooth с телефона пока играют через ЦАП, а пока подключена колонка Bluetooth, звук у неё.</p>
+                <p class="field-note" data-i18n="note.spdif_output">Звук идёт на коаксиальный выход S/PDIF вместо встроенного ЦАП. Записи выше 48 кГц уходят на половине или четверти частоты. Bluetooth с телефона идёт сюда же, если провод DIN от модуля заведён на ESP32, иначе играет через ЦАП. Пока подключена колонка Bluetooth, звук у неё.</p>
               </div>
 
               <div class="device-group" id="bt-output-block" hidden>

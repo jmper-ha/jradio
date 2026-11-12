@@ -192,7 +192,7 @@ static void bt_link_greet(void)
 {
     if (s_name[0] == '\0') device_settings_device_name(s_name, sizeof(s_name));
     (void)bt_link_send_name();
-    bt_link_on_rate(board_audio_sample_rate());
+    bt_link_on_rate(board_audio_bus_rate());
     if (s_wanted_mode != JBT_MODE_OFF) {
         (void)bt_link_ask_mode((jbt_mode_t)s_wanted_mode);
         ESP_LOGW(TAG, "asking the module for mode %u again", s_wanted_mode);

@@ -160,6 +160,17 @@ static bool s_dac_muted;
  * goes on sending silence when a source stops: a stopped line costs a
  * receiver its lock, and the first half second of the next start. */
 static bool s_tx_running;
+/* A Bluetooth speaker's bus over 48 kHz: brought down 2:1 or 4:1, as for
+ * S/PDIF. The module reads the bus itself and brings it to the 44.1 kHz SBC
+ * wants, and at 96 kHz that left Bluedroid no time: its packets backed up
+ * until the WROOM's heap ran out, and the speaker played solid noise. 1
+ * otherwise. Under s_audio_mutex. */
+static unsigned s_bus_down = 1U;
+/* What of the last block, brought down, the DMA did not take: the filter has
+ * had all of it, so it goes out before anything new. Held in
+ * s_output_buffer, which the SSM3582's factor leaves alone over 48 kHz. */
+static size_t s_bus_pending_at;
+static size_t s_bus_pending_length;
 
 static int board_audio_capture_pin(void)
 {
@@ -557,6 +568,8 @@ static size_t s_spdif_depth = SPDIF_RING_FRAMES / 2U;
 // The rate on the line, and how far the stream's is brought down to it.
 static uint32_t s_spdif_rate = AUDIO_DEFAULT_SAMPLE_RATE;
 static unsigned s_spdif_factor = 1U;
+/* The decimator, S/PDIF's or a Bluetooth speaker's - see s_bus_down; never
+ * both at once, since a speaker takes the bus from S/PDIF. */
 static audio_decimate_t *s_spdif_decimate;
 static audio_spdif_encoder_t s_spdif;
 static int16_t *s_spdif_ring;
@@ -710,6 +723,22 @@ static esp_err_t board_spdif_preload(void)
  * bus while the input is made - the tuner's or the module's samples come in
  * on this controller's clocks - and while a Bluetooth speaker has the sound,
  * since the module takes it off the I2S lines. */
+/* Internal RAM first, unlike every other buffer here: the filter reads its
+ * line some seventy times an output frame, and from PSRAM 96 kHz came out at
+ * 88% of real time. NULL with no memory anywhere. */
+static audio_decimate_t *board_audio_decimator(void)
+{
+    if (s_spdif_decimate == NULL) {
+        s_spdif_decimate = heap_caps_malloc(sizeof(*s_spdif_decimate),
+                                            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (s_spdif_decimate == NULL) {
+        s_spdif_decimate = heap_caps_malloc(sizeof(*s_spdif_decimate),
+                                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    return s_spdif_decimate;
+}
+
 static bool board_audio_spdif_chosen(void)
 {
     /* Without a DAC the setting has nothing to choose between. A Bluetooth
@@ -754,6 +783,9 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     const bool capture = s_capture_wanted && board_audio_capture_pin() >= 0;
     s_dma_desc_num = capture ? I2S_DMA_DESC_NUM_DUPLEX : I2S_DMA_DESC_NUM;
     s_spdif_on = board_audio_spdif_chosen();
+    // Made at the stream's rate; board_audio_set_sample_rate() brings it down.
+    s_bus_down = 1U;
+    s_bus_pending_length = 0U;
     if (s_spdif_on) {
         s_dma_desc_num = I2S_DMA_DESC_NUM_SPDIF;
         channel_config.dma_frame_num = I2S_DMA_FRAME_NUM_SPDIF;
@@ -761,17 +793,7 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     channel_config.dma_desc_num = s_dma_desc_num;
     // The interrupt refills every buffer itself, and a clear would undo it.
     channel_config.auto_clear_after_cb = I2S_AUTO_CLEAR_AFTER_CB != 0 && !s_spdif_on;
-    if (s_spdif_on && s_spdif_decimate == NULL) {
-        /* Internal RAM first, unlike every other buffer here: the filter
-         * reads its line some seventy times an output frame, and from PSRAM
-         * 96 kHz came out at 88% of real time. */
-        s_spdif_decimate = heap_caps_malloc(sizeof(*s_spdif_decimate),
-                                            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-        if (s_spdif_decimate == NULL) {
-            s_spdif_decimate = heap_caps_malloc(sizeof(*s_spdif_decimate),
-                                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        }
-    }
+    if (s_spdif_on) (void)board_audio_decimator();
     if (s_spdif_on && s_spdif_ring == NULL) {
         s_spdif_ring = heap_caps_malloc(SPDIF_RING_FRAMES * 4U, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (s_spdif_ring == NULL) {
@@ -1137,6 +1159,8 @@ static esp_err_t board_tx_on(bool preload)
 
 static esp_err_t board_tx_off(void)
 {
+    // A stopped channel drops what it held; what waited behind it goes too.
+    s_bus_pending_length = 0U;
     if (!s_tx_running) return ESP_OK;
     const esp_err_t result = i2s_channel_disable(s_i2s_tx);
     if (result == ESP_OK) s_tx_running = false;
@@ -1351,6 +1375,40 @@ static size_t board_audio_output_taken(const void *shaped, size_t bus_written)
     return frames * 4U;
 }
 
+
+static esp_err_t board_audio_bus_write_down(const void *shaped, size_t length,
+                                            size_t *written, TickType_t wait)
+{
+    if (s_bus_pending_length > 0U) {
+        size_t sent = 0U;
+        const esp_err_t result =
+            i2s_channel_write(s_i2s_tx, s_output_buffer + s_bus_pending_at,
+                              s_bus_pending_length, &sent, wait);
+        s_bus_pending_at += sent;
+        s_bus_pending_length -= sent;
+        if (s_bus_pending_length > 0U) return result == ESP_OK ? ESP_ERR_TIMEOUT : result;
+    }
+    if (length > s_output_capacity) {
+        uint8_t *grown =
+            heap_caps_realloc(s_output_buffer, length, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (grown == NULL) {
+            grown = heap_caps_realloc(s_output_buffer, length, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        }
+        if (grown == NULL) return ESP_ERR_NO_MEM;
+        s_output_buffer = grown;
+        s_output_capacity = length;
+    }
+    // Never more out than in, so the block's own size holds what comes out.
+    const size_t made = audio_decimate_s16(s_spdif_decimate, (const int16_t *)shaped, length / 4U,
+                                           (int16_t *)s_output_buffer);
+    *written = length;
+    size_t sent = 0U;
+    const esp_err_t result = i2s_channel_write(s_i2s_tx, s_output_buffer, made * 4U, &sent, wait);
+    s_bus_pending_at = sent;
+    s_bus_pending_length = made * 4U - sent;
+    return result == ESP_ERR_TIMEOUT ? ESP_OK : result;
+}
+
 /* Writes a shaped block through the output stage; `written` is in the
  * block's own bytes. */
 static esp_err_t board_audio_bus_write(const void *shaped, size_t length, size_t *written,
@@ -1358,6 +1416,7 @@ static esp_err_t board_audio_bus_write(const void *shaped, size_t length, size_t
 {
     *written = 0U;
     if (s_spdif_on) return board_spdif_write(shaped, length, written, wait);
+    if (s_bus_down > 1U) return board_audio_bus_write_down(shaped, length, written, wait);
     size_t bus_length = 0U;
     const void *bus = board_audio_output_block(shaped, length, &bus_length);
     if (bus == NULL) return ESP_ERR_NO_MEM;
@@ -1593,10 +1652,24 @@ esp_err_t board_audio_set_enabled(bool enabled)
 
 static board_audio_rate_listener_t s_rate_listener;
 
+/* The rate the bus is clocked at, which the module hears: the stream's,
+ * raised for the SSM3582 or brought down for a speaker. Beside S/PDIF the bus
+ * is I2S1's input, at the stream's. */
+static uint32_t board_audio_line_rate(void)
+{
+    if (s_spdif_on) return s_audio_sample_rate;
+    return s_audio_sample_rate * s_output_factor / s_bus_down;
+}
+
 void board_audio_set_rate_listener(board_audio_rate_listener_t listener)
 {
     s_rate_listener = listener;
-    if (listener != NULL) listener(s_audio_sample_rate);
+    if (listener != NULL) listener(board_audio_line_rate());
+}
+
+uint32_t board_audio_bus_rate(void)
+{
+    return board_audio_line_rate();
 }
 
 uint32_t board_audio_sample_rate(void)
@@ -1619,9 +1692,13 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
     const uint32_t factor = board_dac_is_ssm3582() && !was_capturing && !s_spdif_on
                                 ? ssm3582_rate_factor(sample_rate)
                                 : 1U;
+    const unsigned down =
+        !s_spdif_on && s_dac_muted && board_audio_decimator() != NULL
+            ? audio_decimate_factor(sample_rate)
+            : 1U;
     const uint32_t bus_rate = s_spdif_on
                                   ? 2U * (sample_rate / audio_decimate_factor(sample_rate))
-                                  : sample_rate * factor;
+                                  : sample_rate * factor / down;
     const i2s_std_clk_config_t clock_config = I2S_STD_CLK_DEFAULT_CONFIG(bus_rate);
     esp_err_t result = ESP_OK;
     if (was_enabled) {
@@ -1654,18 +1731,22 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
         // The health window measures bytes against real time, so it is only
         // meaningful against the rate those bytes are actually clocked at.
         s_audio_sample_rate = sample_rate;
-        if (factor != s_output_factor || factor > 1U) {
+        if (factor != s_output_factor || factor > 1U || down > 1U) {
             ESP_LOGI(TAG, "%lu Hz goes out at %lu Hz", (unsigned long)sample_rate,
                      (unsigned long)bus_rate);
         }
         s_output_factor = factor;
+        s_bus_down = down;
+        // Whatever was waiting was for the old line.
+        s_bus_pending_length = 0U;
+        if (down > 1U) audio_decimate_init(s_spdif_decimate, down);
         if (s_spdif_on) {
             // What waits in the ring was decoded for the old rate.
             board_spdif_set_rate(sample_rate);
         }
         s_output_previous[0] = 0;
         s_output_previous[1] = 0;
-        if (s_rate_listener != NULL) s_rate_listener(sample_rate);
+        if (s_rate_listener != NULL) s_rate_listener(board_audio_line_rate());
         board_audio_health_rearm();
     }
     // The DAC's ring starts again from what was in it, as it always has.
@@ -1803,7 +1884,14 @@ void board_audio_set_dac_muted(bool muted)
     s_dac_muted = muted;
     board_audio_reselect();
     board_dac_mute_apply();
+    /* A speaker coming or going under a track over 48 kHz moves the bus's
+     * rate: the made channel has the stream's, and s_bus_down the old one. */
+    const unsigned down = !s_spdif_on && s_dac_muted ? audio_decimate_factor(s_audio_sample_rate)
+                                                     : 1U;
+    const bool retime = down != s_bus_down;
+    const uint32_t rate = s_audio_sample_rate;
     xSemaphoreGive(s_audio_mutex);
+    if (retime) (void)board_audio_set_sample_rate(rate);
 }
 
 esp_err_t board_audio_capture_set_enabled(bool enabled)

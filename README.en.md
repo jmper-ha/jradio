@@ -42,7 +42,7 @@ or from a browser - a phone or a computer on the same network.
 |---|---|
 | Processor | an ESP32-S3 module, 16 MB flash, 8 MB PSRAM |
 | Display | over SPI: ILI9341 or ST7789 320×240, ILI9488 or ST7796S 480×320 - landscape or portrait; ST7789 320×170 (the 1.9" module); NV3007 428×142 (the bar module) |
-| Audio | PCM5102 DAC over I2S, line out, 16-bit stereo, or an SSM3582 amplifier for speakers; optional control of an amplifier's MUTE |
+| Audio | PCM5102 DAC over I2S, line out, 16-bit stereo, or an SSM3582 amplifier for speakers; optional coaxial S/PDIF out and control of an amplifier's MUTE |
 | Media | a USB stick (USB Host) and microSD; FAT16/FAT32 |
 | Network | 2.4 GHz Wi-Fi, up to five saved networks |
 | Controls | an encoder with a button, four buttons, an IR remote (any, learned) |

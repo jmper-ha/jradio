@@ -464,6 +464,9 @@ detail, the alarm, the sleep timer, the backup.
     quieter than the streams - raise it then; at a high setting the loudest
     moments are clipped. On the device it is turned with the encoder right on
     the row, on the web with a slider in the FM radio group.
+  - **Sound over S/PDIF** - only with an S/PDIF out on the board: the sound
+    goes to the coaxial output instead of the DAC, switched live. Wiring and
+    what goes there - in [Hardware](hardware.en.md#spdif-out).
 
   They act on everything that plays through the radio itself: internet
   radio, Yandex Music, files, DLNA, FM through the ADC (even volume - on all

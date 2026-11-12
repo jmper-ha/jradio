@@ -19,6 +19,7 @@
 | Real-time clock | a DS3231 or DS1307 on I2C, with a cell - the time without a network and an alarm without Wi-Fi | no |
 | Touch panel | the FT6336U on the ST7796S module, on I2C - control by finger | no |
 | Amplifier | any with a MUTE / SD input - the firmware mutes it on pause | no |
+| S/PDIF out | coaxial, on a free pin: two resistors and a capacitor | no |
 | Peripheral power switch | a load switch or a P-MOSFET - cuts the periphery in sleep | no |
 
 Everything optional is up to you: what is not on the board is not in the menu
@@ -214,6 +215,51 @@ clock stops.
 S3](#sound-through-the-s3). The jradio-bt module on its own clocks the bus at
 32 x Fs, and this amplifier wants at least 50 x Fs, so without that wire the
 speakers stay silent. The configurator will not accept such a board.
+
+### S/PDIF out
+
+A digital output to a receiver or an external DAC, coaxial, over one wire. No
+extra chip: the S3 makes the signal itself, on any free pin.
+
+```c
+#define AUDIO_SPDIF_GPIO 1
+```
+
+In the configurator it is the "S/PDIF out (coaxial)" field of the DAC. GPIO 1
+is the microSD's CS by default: without a card it is free to take, with one
+pick another free pin.
+
+To the RCA socket through a divider and a capacitor: the pin's 3.3 V becomes
+about 0.5 V across a 75 ohm load, which the input expects, and no DC reaches
+the receiver.
+
+| From | Through | To |
+|---|---|---|
+| the S3 pin | 220 ohm | the divider's node |
+| the divider's node | 100 ohm | GND |
+| the divider's node | 100 nF | the RCA's centre pin |
+| GND | - | the RCA's shell |
+
+It is turned on in the settings, in the Sound group: "Sound over S/PDIF", on
+the device and on the web. The row is there only with the pin set. It switches
+live, and the track plays on.
+
+- **One output plays.** While the sound is on S/PDIF, the DAC and the
+  amplifier are muted.
+- **Volume, tone, loudness and auto level all work** - what goes out is the
+  processed sound. To give a receiver the full level and set the volume on it,
+  put the radio's volume at the top.
+- **Recordings above 48 kHz go out at half or a quarter of their rate**
+  (96 -> 48, 192 -> 48 kHz), through a filter. The S3 has no audio PLL, its
+  clock divider makes the edges jitter, and at 96 kHz the receiver does not
+  lock.
+- **FM and Bluetooth.** FM with sound over I2S and Bluetooth through the S3 go
+  to S/PDIF. Bluetooth without the "DIN from the module" wire plays through the
+  DAC. While a Bluetooth speaker is connected, the sound is its.
+- **On pause the line carries silence, not nothing:** the receiver keeps its
+  lock, and a track's start after a pause is not eaten.
+- An external DAC may play quieter than the PCM5102: that one gives 2.1 V,
+  cheap boxes about 1 V. That is the analogue side; the digital level is full.
 
 ### Powering the periphery down in sleep
 

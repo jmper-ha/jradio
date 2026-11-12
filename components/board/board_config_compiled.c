@@ -80,6 +80,9 @@ void board_config_compiled(board_config_t *config)
 #ifdef AUDIO_DAC_MUTE_GPIO
     config->dac_mute = PIN(AUDIO_DAC_MUTE_GPIO);
 #endif
+#ifdef AUDIO_SPDIF_GPIO
+    config->spdif_out = PIN(AUDIO_SPDIF_GPIO);
+#endif
 #ifdef AUDIO_AMP_GPIO
     config->amp_enable = PIN(AUDIO_AMP_GPIO);
 #endif

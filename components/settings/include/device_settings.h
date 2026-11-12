@@ -321,6 +321,10 @@ typedef struct {
      * corrected and remembered per station. Off until it has been listened
      * to on the bench. */
     bool level_normalize;
+    /* The sound on the S/PDIF output instead of the DAC, on a board that has
+     * one (board_has_spdif()). Off by default: a board that grows the pin
+     * keeps playing where it did until the listener asks. */
+    bool spdif_output;
     /* FM's level against the other sources, dB, DEVICE_FM_GAIN_DB_MIN..MAX. */
     signed char fm_gain;
     /* The time zone as an id out of device_timezone.h, not a POSIX string:
@@ -432,6 +436,7 @@ bool device_settings_save_tone_later(device_settings_t *settings, int bass_db, i
 bool device_settings_set_loudness(device_settings_t *settings, unsigned int loudness);
 bool device_settings_set_loudness_treble(device_settings_t *settings, bool enabled);
 bool device_settings_set_level_normalize(device_settings_t *settings, bool enabled);
+bool device_settings_set_spdif_output(device_settings_t *settings, bool enabled);
 /* An id this build knows, out of device_timezone.h; anything else is refused
  * rather than stored, since a zone the firmware cannot translate is a clock
  * that silently stays on the old one. */

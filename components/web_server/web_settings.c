@@ -98,6 +98,7 @@ static const field_descriptor_t k_fields[] = {
     {"loudness", WEB_SETTINGS_FIELD_LOUDNESS, {WEB_SETTINGS_LOUDNESS_NAMES}, false, false},
     {"loudness_treble", WEB_SETTINGS_FIELD_LOUDNESS_TREBLE, {NULL}, false, false},
     {"level_normalize", WEB_SETTINGS_FIELD_LEVEL_NORMALIZE, {NULL}, false, false},
+    {"spdif_output", WEB_SETTINGS_FIELD_SPDIF_OUTPUT, {NULL}, false, false},
     {"screensaver_when", WEB_SETTINGS_FIELD_SCREENSAVER_WHEN, {"always", "idle"}, false, false},
 };
 
@@ -358,6 +359,8 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_loudness_treble(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_LEVEL_NORMALIZE:
         return device_settings_set_level_normalize(settings, change->value != 0);
+    case WEB_SETTINGS_FIELD_SPDIF_OUTPUT:
+        return device_settings_set_spdif_output(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_SCREENSAVER_WHEN:
         // The choice's index: 0 "always", 1 "idle", as device_screensaver_when_t counts.
         return device_settings_set_screensaver_when(settings,
@@ -413,6 +416,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .loudness = settings->loudness,
         .loudness_treble = settings->loudness_treble,
         .level_normalize = settings->level_normalize,
+        .spdif_output = settings->spdif_output,
         .home_screen_available = home_screen_available,
         .yandex_available = yandex_available,
         .dlna_available = dlna_available,
@@ -421,6 +425,7 @@ void web_settings_make_view(web_settings_view_t *view,
          * first function. */
         .remote_available = false,
         .fm_available = false,
+        .spdif_available = false,
         .sleep_available = false,
         .remote_learning = -1,
         .remote_revision = 0U,
@@ -472,12 +477,14 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->loudness == right->loudness &&
            left->loudness_treble == right->loudness_treble &&
            left->level_normalize == right->level_normalize &&
+           left->spdif_output == right->spdif_output &&
            left->home_screen_available == right->home_screen_available &&
            left->yandex_available == right->yandex_available &&
            left->dlna_available == right->dlna_available &&
            left->bt_available == right->bt_available &&
            left->remote_available == right->remote_available &&
            left->fm_available == right->fm_available &&
+           left->spdif_available == right->spdif_available &&
            left->sleep_available == right->sleep_available &&
            left->remote_learning == right->remote_learning &&
            left->remote_revision == right->remote_revision;
@@ -589,6 +596,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_literal(writer, view->loudness_treble ? "true" : "false");
     web_json_literal(writer, ",\"level_normalize\":");
     web_json_literal(writer, view->level_normalize ? "true" : "false");
+    web_json_literal(writer, ",\"spdif_output\":");
+    web_json_literal(writer, view->spdif_output ? "true" : "false");
     /* What this build has, not what it is set to: a switch for a source the
      * firmware was compiled without would change a value nothing reads. */
     web_json_literal(writer, ",\"available\":{\"home_screen\":");
@@ -603,6 +612,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_literal(writer, view->remote_available ? "true" : "false");
     web_json_literal(writer, ",\"fm\":");
     web_json_literal(writer, view->fm_available ? "true" : "false");
+    web_json_literal(writer, ",\"spdif\":");
+    web_json_literal(writer, view->spdif_available ? "true" : "false");
     web_json_literal(writer, ",\"sleep\":");
     web_json_literal(writer, view->sleep_available ? "true" : "false");
     web_json_literal(writer, "},\"remote_learning\":");

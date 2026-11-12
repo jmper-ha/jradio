@@ -344,6 +344,9 @@ static void test_apply_writes_through_to_the_file(void)
     assert(web_settings_apply(&settings, &tone_change));
     assert(parse_one("{\"field\":\"level_normalize\",\"value\":true}", &tone_change));
     assert(web_settings_apply(&settings, &tone_change));
+    assert(parse_one("{\"field\":\"spdif_output\",\"value\":true}", &tone_change));
+    assert(tone_change.field == WEB_SETTINGS_FIELD_SPDIF_OUTPUT);
+    assert(web_settings_apply(&settings, &tone_change));
     assert(parse_one("{\"field\":\"feed_reverse\",\"value\":true}", &tone_change));
     assert(tone_change.field == WEB_SETTINGS_FIELD_FEED_REVERSE);
     assert(web_settings_apply(&settings, &tone_change));
@@ -381,6 +384,7 @@ static void test_apply_writes_through_to_the_file(void)
     assert(reloaded.tone_bass == -4 && reloaded.tone_treble == 6);
     assert(reloaded.loudness == DEVICE_LOUDNESS_MEDIUM && reloaded.loudness_treble);
     assert(reloaded.level_normalize);
+    assert(reloaded.spdif_output);
     assert(reloaded.feed_reverse);
     assert(reloaded.power_restore);
     char nothing[8];
@@ -445,7 +449,7 @@ static void test_document_names_what_the_build_has(void)
     // A build without Yandex Music or a media server says so, so the page
     // drops those rows rather than offering switches behind which there is
     // nothing.
-    assert(strstr(document, "\"yandex_music\":false,\"dlna\":false,\"bt_output\":false,\"remote\":false,\"fm\":false,\"sleep\":false}") != NULL);
+    assert(strstr(document, "\"yandex_music\":false,\"dlna\":false,\"bt_output\":false,\"remote\":false,\"fm\":false,\"spdif\":false,\"sleep\":false}") != NULL);
     /* The remote's part of the frame: no receiver, nothing armed, and a
        revision the page compares to know when to fetch the table. */
     assert(strstr(document, "\"remote_learning\":null,\"remote_revision\":0") != NULL);
@@ -478,6 +482,7 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"loudness\":\"off\"") != NULL);
     assert(strstr(document, "\"loudness_treble\":false") != NULL);
     assert(strstr(document, "\"level_normalize\":false") != NULL);
+    assert(strstr(document, "\"spdif_output\":false") != NULL);
     assert(strstr(document, "\"feed_reverse\":false") != NULL);
     assert(strstr(document, "\"power_restore\":false") != NULL);
     assert(strstr(document, "\"sleep\":false") != NULL);
@@ -593,6 +598,12 @@ static void test_view_comparison_notices_every_field(void)
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.bt_output = !base.bt_output;
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.spdif_output = !base.spdif_output;
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.spdif_available = !base.spdif_available;
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.bt_available = !base.bt_available;

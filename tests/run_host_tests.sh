@@ -120,6 +120,8 @@ if grep -Ein '0x(101820|1E2C3A|18242E|26343F|334454|F2A33C|FFFFFF|B0BEC5|78909C|
     exit 1
 fi
 run_test audio_pcm_convert tests/test_audio_pcm_convert.c components/board/audio_pcm_convert.c
+run_test audio_spdif tests/test_audio_spdif.c components/board/audio_spdif.c
+run_test audio_decimate tests/test_audio_decimate.c components/board/audio_decimate.c -lm
 run_test audio_volume tests/test_audio_volume.c components/board/audio_volume.c
 run_test audio_tone tests/test_audio_tone.c components/board/audio_tone.c components/board/audio_volume.c -lm
 run_test audio_level tests/test_audio_level.c components/board/audio_level.c \

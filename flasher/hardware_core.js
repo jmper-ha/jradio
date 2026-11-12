@@ -172,6 +172,8 @@
     /* The SSM3582 is powered down over I2C and has no such pin. */
     {key: 'dac_mute', kind: 'opt_pin', device: 'dac', dflt: NONE, define: 'AUDIO_DAC_MUTE_GPIO',
      when: (values) => values.dac !== 'ssm3582'},
+    /* S/PDIF on its own pin, encoded on I2S0; the settings choose it or the DAC. */
+    {key: 'spdif_out', kind: 'opt_pin', device: 'dac', dflt: NONE, define: 'AUDIO_SPDIF_GPIO'},
     {key: 'dac_i2c', kind: 'choice', device: 'dac', options: ['0'], dflt: '0', bus: 'i2c',
      when: (values) => values.dac === 'ssm3582'},
     {key: 'dac_address', kind: 'choice', device: 'dac', dflt: '0x10', define: 'SSM3582_I2C_ADDRESS',
@@ -644,6 +646,7 @@
       ...gpio('I2S_BCLK_GPIO', 'i2s0_bclk'),
       ...gpio('I2S_LRCK_GPIO', 'i2s0_lrck'),
       ...(pin('dac_mute') === null ? [] : gpio('AUDIO_DAC_MUTE_GPIO', 'dac_mute')),
+      ...(pin('spdif_out') === null ? [] : gpio('AUDIO_SPDIF_GPIO', 'spdif_out')),
       ...(values.dac === 'ssm3582'
         ? ['/* Set up over I2C0 - the tuner\'s two pin defines, named here when nothing else on the bus names them. */',
            `#define SSM3582_I2C_ADDRESS ${values.dac_address}`,
@@ -798,6 +801,7 @@
        without them showing as unknown. */
     take('AUDIO_DAC_HAS_MCLK');
     asPin('dac_mute', 'AUDIO_DAC_MUTE_GPIO');
+    asPin('spdif_out', 'AUDIO_SPDIF_GPIO');
     asPin('amp_enable', 'AUDIO_AMP_GPIO'); asBool('amp_on_level', 'AUDIO_AMP_ON_LEVEL');
     asPin('peripheral_power', 'PERIPHERAL_POWER_GPIO'); asBool('peripheral_power_on_level', 'PERIPHERAL_POWER_ON_LEVEL');
     /* USB is on or off by its pins being named; the numbers are fixed. */

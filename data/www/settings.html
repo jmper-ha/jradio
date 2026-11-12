@@ -183,6 +183,16 @@
                 <p class="field-note" data-i18n="note.fm_gain">Громкость FM относительно интернет-радио и файлов. Если FM заметно тише, поднимите; громкие места при большом усилении могут ограничиваться.</p>
               </div>
 
+              <!-- Only on a board with an S/PDIF output: the device says so in `available`. -->
+              <div class="device-group" id="device-spdif-block" hidden>
+                <h3 data-i18n="settings.group_output">Выход звука</h3>
+                <div class="device-row">
+                  <label for="device-spdif-output" data-i18n="settings.spdif_output">Звук на S/PDIF</label>
+                  <input id="device-spdif-output" type="checkbox" data-field="spdif_output">
+                </div>
+                <p class="field-note" data-i18n="note.spdif_output">Звук идёт на коаксиальный выход S/PDIF вместо встроенного ЦАП. Записи выше 48 кГц уходят на половине или четверти частоты. FM и Bluetooth с телефона пока играют через ЦАП, а пока подключена колонка Bluetooth, звук у неё.</p>
+              </div>
+
               <div class="device-group" id="bt-output-block" hidden>
                 <h3 data-i18n="bt.group">Звук на Bluetooth</h3>
                 <div class="device-row">

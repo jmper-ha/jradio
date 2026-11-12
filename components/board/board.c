@@ -27,6 +27,8 @@
 #include "board.h"
 #include "board_amplifier.h"
 #include "audio_pcm_convert.h"
+#include "audio_decimate.h"
+#include "audio_spdif.h"
 #include "board_ssm3582.h"
 #include "ssm3582.h"
 #include "board_config.h"
@@ -141,6 +143,13 @@ static i2s_chan_handle_t s_i2s_rx;
 static bool s_capture_wanted;
 // Which line the input is made on: the Bluetooth module's, or the tuner's.
 static bool s_capture_from_bt;
+/* A Bluetooth speaker has the sound (bt_link): the DAC is muted, and S/PDIF
+ * gives the bus back to I2S for the module, which follows it as a slave. */
+static bool s_dac_muted;
+/* The TX channel clocking out. Apart from s_audio_enabled for S/PDIF, which
+ * goes on sending silence when a source stops: a stopped line costs a
+ * receiver its lock, and the first half second of the next start. */
+static bool s_tx_running;
 
 static int board_audio_capture_pin(void)
 {
@@ -181,20 +190,22 @@ static size_t s_audio_gain_scratch_size;
 /* Frames clocked out since output was last enabled, counted only as far as the
  * fade needs. Guarded by s_audio_mutex like the scratch. */
 static uint32_t s_audio_fade_frames;
-#if AUDIO_DAC_STOP_DECAY
 /* The last frame handed to I2S, and the buffer the stop decays it to zero in:
  * a stop that just disables the channel leaves the DAC holding that level.
- * Both guarded by s_audio_mutex, like the fade and the scratch above. Only on
- * a DAC that needs it - see AUDIO_DAC_STOP_DECAY in board_audio_format.h. */
+ * Both guarded by s_audio_mutex, like the fade and the scratch above. Used on
+ * a DAC that needs it - see AUDIO_DAC_STOP_DECAY in board_audio_format.h -
+ * and on S/PDIF always. */
 static int16_t s_audio_last_left;
 static int16_t s_audio_last_right;
 static uint8_t *s_audio_tail;
 #define BOARD_AUDIO_TAIL_BYTES (AUDIO_VOLUME_FADE_FRAMES * AUDIO_VOLUME_FRAME_BYTES)
-#endif
-/* Defined with the rest of the audio block below, called from the stop paths
- * above it. Both compile to nothing on a DAC that mutes itself. */
+// Defined with the rest of the audio block below, called from the stop paths above it.
 static void board_audio_remember_tail(const void *pcm, size_t pcm_length);
 static void board_audio_flush_tail(void);
+static esp_err_t board_tx_off(void);
+/* The frame the last block ended on, where the SSM3582's raised line starts
+ * the next one - see s_output_factor below. The stop's decay ends it on zero. */
+static int16_t s_output_previous[2];
 
 static void board_audio_level_note(unsigned int value, atomic_uint *slot)
 {
@@ -501,18 +512,232 @@ static void board_adc_clock_park(void)
 /* The channel on its own, apart from the mutex: it is created at boot and
  * again every time the bus comes back from the Bluetooth module, which owns
  * the same three pins while a phone plays through it. */
+/* S/PDIF instead of the DAC, on its own pin (spdif_out), when the settings
+ * ask for it - see board_audio_spdif_chosen() for when the DAC keeps it. */
+static bool s_spdif_wanted;
+/* The DMA's buffers are encoded in its own interrupt, as each one comes back
+ * to be refilled, from PCM waiting in PSRAM. An encoded frame is four times a
+ * PCM one: written ahead through i2s_channel_write, 35 ms of ring ran dry
+ * several times every ten seconds, and 70 ms of it - 48 KB of internal RAM -
+ * left too little for TLS and the web server's sends. Here the depth is the
+ * PCM ring and costs no internal RAM; the four buffers, the 16 KB the DAC's
+ * ring has, only cover the interrupt's latency. */
+#define I2S_DMA_DESC_NUM_SPDIF 4U
+/* A DMA buffer holds at most 4092 bytes, so the driver cuts 512 of these
+ * 8-byte frames to 511 - and the half audio frame left over at the end of
+ * every buffer went out stale, an extra subframe each time. 44.1 kHz played
+ * through it; at 96 kHz, one every 2.7 ms, the box only crackled. 510 is a
+ * whole number of audio frames. */
+#define I2S_DMA_FRAME_NUM_SPDIF 510U
+#define SPDIF_BUFFER_FRAMES (I2S_DMA_FRAME_NUM_SPDIF / 2U)
+/* The ring is kept 93 ms deep at any rate, the depth the DAC's own ring has
+ * at 44.1 kHz: 4096 frames was all of one of the file player's blocks, and at
+ * 96 kHz the 43 ms it left to read and decode the next one was sometimes not
+ * enough. A power of two, which holds 93 ms of the most that goes out, 48 kHz
+ * - the ring is filled after audio_decimate brings a higher rate down. */
+#define SPDIF_RING_FRAMES 8192U
+#define SPDIF_RING_MS 93U
+static bool s_spdif_on;
+static size_t s_spdif_depth = SPDIF_RING_FRAMES / 2U;
+// The rate on the line, and how far the stream's is brought down to it.
+static uint32_t s_spdif_rate = AUDIO_DEFAULT_SAMPLE_RATE;
+static unsigned s_spdif_factor = 1U;
+static audio_decimate_t *s_spdif_decimate;
+static audio_spdif_encoder_t s_spdif;
+static int16_t *s_spdif_ring;
+// Frames written and frames played, free-running: the writer moves only the
+// head, the interrupt only the tail.
+static atomic_uint s_spdif_head = ATOMIC_VAR_INIT(0U);
+static atomic_uint s_spdif_tail = ATOMIC_VAR_INIT(0U);
+static SemaphoreHandle_t s_spdif_room;
+
+static IRAM_ATTR bool board_spdif_on_sent(i2s_chan_handle_t handle, i2s_event_data_t *event,
+                                          void *context)
+{
+    (void)handle;
+    (void)context;
+    uint32_t *words = (uint32_t *)event->dma_buf;
+    const size_t frames = event->size / (AUDIO_SPDIF_WORDS_PER_FRAME * 4U);
+    const unsigned int tail = atomic_load_explicit(&s_spdif_tail, memory_order_relaxed);
+    const unsigned int head = atomic_load_explicit(&s_spdif_head, memory_order_acquire);
+    const size_t ready = head - tail;
+    const size_t take = ready < frames ? ready : frames;
+    for (size_t done = 0U; done < take;) {
+        const size_t at = (tail + done) & (SPDIF_RING_FRAMES - 1U);
+        size_t run = SPDIF_RING_FRAMES - at;
+        if (run > take - done) run = take - done;
+        audio_spdif_encode_s16(&s_spdif, &s_spdif_ring[2U * at], run,
+                               &words[AUDIO_SPDIF_WORDS_PER_FRAME * done]);
+        done += run;
+    }
+    if (take < frames) {
+        audio_spdif_encode_s16(&s_spdif, NULL, frames - take,
+                               &words[AUDIO_SPDIF_WORDS_PER_FRAME * take]);
+        /* Not before the first block has been written - that wait is the
+         * start - and not once the output is stopped: the line goes on with
+         * silence then, so the receiver keeps its lock for the next start. */
+        if (head != 0U && s_audio_enabled) {
+            atomic_fetch_add_explicit(&s_audio_underruns, 1U, memory_order_relaxed);
+        }
+    }
+    atomic_store_explicit(&s_spdif_tail, tail + (unsigned int)take, memory_order_release);
+    BaseType_t woken = pdFALSE;
+    xSemaphoreGiveFromISR(s_spdif_room, &woken);
+    return woken == pdTRUE;
+}
+
+// Only while the channel is stopped - the interrupt is the ring's reader.
+static void board_spdif_reset(void)
+{
+    audio_decimate_init(s_spdif_decimate, s_spdif_factor);
+    size_t depth = (size_t)s_spdif_rate * SPDIF_RING_MS / 1000U;
+    if (depth > SPDIF_RING_FRAMES) depth = SPDIF_RING_FRAMES;
+    if (depth < 2U * SPDIF_BUFFER_FRAMES) depth = 2U * SPDIF_BUFFER_FRAMES;
+    s_spdif_depth = depth;
+    atomic_store_explicit(&s_spdif_head, 0U, memory_order_relaxed);
+    atomic_store_explicit(&s_spdif_tail, 0U, memory_order_relaxed);
+}
+
+/* As i2s_channel_write: as much as fits by `wait`, and a timeout with the
+ * rest counted in `written` when it did not all fit. */
+static esp_err_t board_spdif_write(const void *pcm, size_t length, size_t *written,
+                                   TickType_t wait)
+{
+    const int16_t *samples = (const int16_t *)pcm;
+    const size_t frames = length / 4U;
+    const TickType_t started = xTaskGetTickCount();
+    size_t done = 0U;
+    for (;;) {
+        const unsigned int head = atomic_load_explicit(&s_spdif_head, memory_order_relaxed);
+        const unsigned int tail = atomic_load_explicit(&s_spdif_tail, memory_order_acquire);
+        const size_t queued = head - tail;
+        size_t room = queued < s_spdif_depth ? s_spdif_depth - queued : 0U;
+        // Up to the ring's end, so the decimator writes into it in one run.
+        const size_t at = head & (SPDIF_RING_FRAMES - 1U);
+        if (room > SPDIF_RING_FRAMES - at) room = SPDIF_RING_FRAMES - at;
+        /* Only what the room takes once brought down, so the filter never
+         * runs ahead of what was accepted - a short write leaves it exactly
+         * where the rest of the block is to start. */
+        size_t take = room * s_spdif_factor;
+        if (take > frames - done) take = frames - done;
+        const size_t made = audio_decimate_s16(s_spdif_decimate, &samples[2U * done], take,
+                                               &s_spdif_ring[2U * at]);
+        atomic_store_explicit(&s_spdif_head, head + (unsigned int)made, memory_order_release);
+        done += take;
+        if (done == frames) break;
+        if (take > 0U) continue;
+        const TickType_t elapsed = xTaskGetTickCount() - started;
+        if (elapsed >= wait || xSemaphoreTake(s_spdif_room, wait - elapsed) != pdTRUE) {
+            *written = done * 4U;
+            return ESP_ERR_TIMEOUT;
+        }
+    }
+    *written = length;
+    return ESP_OK;
+}
+
+/* The line's rate for a stream's: the receiver's lock is what limits it,
+ * see audio_decimate.h. Only while the channel is stopped. */
+static void board_spdif_set_rate(uint32_t sample_rate)
+{
+    s_spdif_factor = audio_decimate_factor(sample_rate);
+    s_spdif_rate = sample_rate / s_spdif_factor;
+    audio_spdif_init(&s_spdif, s_spdif_rate);
+    board_spdif_reset();
+    if (s_spdif_factor > 1U) {
+        ESP_LOGI(TAG, "S/PDIF: %lu Hz goes out at %lu Hz", (unsigned long)sample_rate,
+                 (unsigned long)s_spdif_rate);
+    }
+}
+
+// The ring the channel starts from, encoded silence instead of raw zeros.
+static esp_err_t board_spdif_preload(void)
+{
+    board_spdif_reset();
+    enum { FRAMES = SPDIF_BUFFER_FRAMES, BYTES = FRAMES * AUDIO_SPDIF_WORDS_PER_FRAME * 4U };
+    uint32_t *words = heap_caps_malloc(BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (words == NULL) words = heap_caps_malloc(BYTES, MALLOC_CAP_8BIT);
+    if (words == NULL) return ESP_ERR_NO_MEM;
+    esp_err_t result = ESP_OK;
+    for (size_t descriptor = 0; descriptor < s_dma_desc_num && result == ESP_OK; ++descriptor) {
+        audio_spdif_encode_s16(&s_spdif, NULL, FRAMES, words);
+        size_t loaded = 0U;
+        result = i2s_channel_preload_data(s_i2s_tx, words, BYTES, &loaded);
+        if (loaded != BYTES) break;
+    }
+    free(words);
+    if (result != ESP_OK) ESP_LOGE(TAG, "preload S/PDIF silence failed: %s", esp_err_to_name(result));
+    return result;
+}
+
+/* Whether the channel about to be made is the S/PDIF one. The DAC keeps the
+ * bus while the input is made - the tuner's or the module's samples come in
+ * on this controller's clocks - and while a Bluetooth speaker has the sound,
+ * since the module takes it off the I2S lines. */
+static bool board_audio_spdif_chosen(bool capture)
+{
+    return s_spdif_wanted && wiring()->spdif_out >= 0 && !capture && !s_dac_muted;
+}
+
+/* An output's pin it is not using, driven low: a DAC with a clock line left
+ * floating can take noise for a clock, and a receiver on a floating S/PDIF
+ * line hunts. A deleted channel leaves its pads routed to the peripheral, so
+ * this follows every channel made. */
+static void board_audio_park_pin(int8_t pin)
+{
+    if (pin < 0) return;
+    (void)gpio_reset_pin((gpio_num_t)pin);
+    (void)gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
+    (void)gpio_set_level((gpio_num_t)pin, 0);
+}
+
 static esp_err_t board_audio_create_channel(uint32_t sample_rate)
 {
     i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     channel_config.dma_frame_num = I2S_DMA_FRAME_NUM;
-    channel_config.auto_clear_after_cb = I2S_AUTO_CLEAR_AFTER_CB != 0;
     /* Full duplex while the input is in use: one controller, one pair of
      * clocks for both directions, which is what makes the tuner's samples
      * arrive at the rate the DAC takes them. Only then - see
      * board_audio_rebuild_channel(). */
     const bool capture = s_capture_wanted && board_audio_capture_pin() >= 0;
     s_dma_desc_num = capture ? I2S_DMA_DESC_NUM_DUPLEX : I2S_DMA_DESC_NUM;
+    s_spdif_on = board_audio_spdif_chosen(capture);
+    if (s_spdif_on) {
+        s_dma_desc_num = I2S_DMA_DESC_NUM_SPDIF;
+        channel_config.dma_frame_num = I2S_DMA_FRAME_NUM_SPDIF;
+    }
     channel_config.dma_desc_num = s_dma_desc_num;
+    // The interrupt refills every buffer itself, and a clear would undo it.
+    channel_config.auto_clear_after_cb = I2S_AUTO_CLEAR_AFTER_CB != 0 && !s_spdif_on;
+    if (s_spdif_on && s_spdif_decimate == NULL) {
+        /* Internal RAM first, unlike every other buffer here: the filter
+         * reads its line some seventy times an output frame, and from PSRAM
+         * 96 kHz came out at 88% of real time. */
+        s_spdif_decimate = heap_caps_malloc(sizeof(*s_spdif_decimate),
+                                            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (s_spdif_decimate == NULL) {
+            s_spdif_decimate = heap_caps_malloc(sizeof(*s_spdif_decimate),
+                                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        }
+    }
+    if (s_spdif_on && s_spdif_ring == NULL) {
+        s_spdif_ring = heap_caps_malloc(SPDIF_RING_FRAMES * 4U, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (s_spdif_ring == NULL) {
+            s_spdif_ring = heap_caps_malloc(SPDIF_RING_FRAMES * 4U,
+                                            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        }
+        if (s_spdif_room == NULL) s_spdif_room = xSemaphoreCreateBinary();
+    }
+    // Short of any of it the DAC plays, which beats no sound at all.
+    if (s_spdif_on &&
+        (s_spdif_decimate == NULL || s_spdif_ring == NULL || s_spdif_room == NULL)) {
+        ESP_LOGE(TAG, "no memory for S/PDIF; the DAC plays instead");
+        s_spdif_on = false;
+        s_dma_desc_num = I2S_DMA_DESC_NUM;
+        channel_config.dma_desc_num = s_dma_desc_num;
+        channel_config.dma_frame_num = I2S_DMA_FRAME_NUM;
+        channel_config.auto_clear_after_cb = I2S_AUTO_CLEAR_AFTER_CB != 0;
+    }
     ESP_RETURN_ON_ERROR(i2s_new_channel(&channel_config, &s_i2s_tx, capture ? &s_i2s_rx : NULL),
                         TAG, "create I2S channels failed");
     s_capture_enabled = false;
@@ -521,9 +746,15 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
     /* A TX "send queue overflow" means the DMA ran out of filled descriptors
      * and replayed/zeroed a buffer - i.e. an audible dropout. Nothing else in
      * the system notices this, so count it here and let callers poll. */
-    const i2s_event_callbacks_t audio_callbacks = {
+    i2s_event_callbacks_t audio_callbacks = {
         .on_send_q_ovf = board_audio_on_send_q_ovf,
     };
+    /* Nobody reads the driver's queue of free buffers then, so it is always
+     * full; the interrupt counts the gaps itself. */
+    if (s_spdif_on) {
+        audio_callbacks.on_send_q_ovf = NULL;
+        audio_callbacks.on_sent = board_spdif_on_sent;
+    }
     ESP_RETURN_ON_ERROR(i2s_channel_register_event_callback(s_i2s_tx, &audio_callbacks, NULL),
                         TAG, "register I2S TX callbacks failed");
 
@@ -576,6 +807,19 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
      * it was made for, LRCK is high for 16 of 64 BCLKs instead of 32, and the
      * ADC's right channel gets a window too short for its word. */
     if (wide_slots) std_config.slot_cfg.ws_width = 32;
+    if (s_spdif_on) {
+        /* Two 32-bit words a subframe, at twice the rate: 128 bits a frame,
+         * one per biphase cell. MSB timing, so the cells are not a bit late
+         * against the word clock - nothing reads that clock, and it and the
+         * bit clock stay inside the chip: only the data line is wired. */
+        board_spdif_set_rate(sample_rate);
+        std_config.clk_cfg = (i2s_std_clk_config_t)I2S_STD_CLK_DEFAULT_CONFIG(2U * s_spdif_rate);
+        std_config.slot_cfg = (i2s_std_slot_config_t)I2S_STD_MSB_SLOT_DEFAULT_CONFIG(
+            I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO);
+        std_config.gpio_cfg.bclk = I2S_GPIO_UNUSED;
+        std_config.gpio_cfg.ws = I2S_GPIO_UNUSED;
+        std_config.gpio_cfg.dout = wired(wiring()->spdif_out);
+    }
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_tx, &std_config), TAG,
                         "configure I2S TX failed");
     if (capture) {
@@ -597,6 +841,18 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
                  s_capture_from_bt ? "Bluetooth module" : "FM tuner",
                  through_adc ? ", through the ADC (master clock out, BCLK=64xFs)" : "");
     }
+    s_tx_running = false;
+    if (s_spdif_on) {
+        board_audio_park_pin(wiring()->i2s0_bclk);
+        board_audio_park_pin(wiring()->i2s0_lrck);
+        board_audio_park_pin(wiring()->i2s0_dout);
+        ESP_LOGI(TAG, "S/PDIF out on GPIO %d: %lu Hz, DMA=%ux%u frames", wiring()->spdif_out,
+                 (unsigned long)s_spdif_rate, (unsigned)s_dma_desc_num,
+                 (unsigned)I2S_DMA_FRAME_NUM_SPDIF);
+        s_audio_enabled = false;
+        return ESP_OK;
+    }
+    board_audio_park_pin(wiring()->spdif_out);
     ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_dout)), TAG,
                         "enable I2S DOUT pad observation failed");
     ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_bclk)), TAG,
@@ -622,7 +878,6 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
  * s_audio_enabled that decide it - see board_amplifier_should_play(). */
 static bool s_amp_playing;
 static bool s_bus_released;
-static bool s_dac_muted;
 
 /* Writes the pin, or does nothing at all on a board with no such pin. Every
  * caller is one of the three inputs changing, so this is where the rule is
@@ -645,22 +900,32 @@ static void board_amp_drive(bool play)
     ESP_LOGI(TAG, "amplifier %s", play ? "unmuted" : "muted");
 }
 
-static void board_amp_apply(void)
+// The DAC is out of it while a Bluetooth speaker or S/PDIF has the sound.
+static bool board_dac_silenced(void)
 {
-    board_amp_drive(board_amplifier_should_play(s_audio_enabled, s_bus_released, s_dac_muted));
+    return s_dac_muted || s_spdif_on;
 }
 
-void board_audio_set_dac_muted(bool muted)
+static void board_amp_apply(void)
 {
-    s_dac_muted = muted;
+    board_amp_drive(
+        board_amplifier_should_play(s_audio_enabled, s_bus_released, board_dac_silenced()));
+}
+
+static void board_dac_mute_apply(void)
+{
     board_amp_apply();
     const int8_t pin = wiring()->dac_mute;
     if (pin < 0) return;
     /* XSMT on the PCM5102A: low is mute, and the chip ramps the output down
      * and up itself, so there is no click either way. */
+    const bool muted = board_dac_silenced();
+    if (gpio_get_level(pin) == (muted ? 0 : 1)) return;
     (void)gpio_set_level(pin, muted ? 0 : 1);
     ESP_LOGI(TAG, "DAC %s", muted ? "muted" : "unmuted");
 }
+
+static void board_audio_reselect(void);
 
 static esp_err_t board_audio_init(void)
 {
@@ -713,11 +978,9 @@ esp_err_t board_audio_release_bus(void)
          * module picks up the same DAC a moment later. */
         s_bus_released = true;
         board_amp_apply();
-        if (s_audio_enabled) {
-            board_audio_flush_tail();
-            (void)i2s_channel_disable(s_i2s_tx);
-            s_audio_enabled = false;
-        }
+        if (s_audio_enabled) board_audio_flush_tail();
+        (void)board_tx_off();
+        s_audio_enabled = false;
         /* Deleting the channel is the only way to take the peripheral off
          * the pads: a disabled channel still drives its idle levels, and the
          * module about to clock the DAC would be fighting them. Then plain
@@ -763,6 +1026,7 @@ esp_err_t board_audio_reclaim_bus(void)
 
 static esp_err_t board_audio_preload_silence(void)
 {
+    if (s_spdif_on) return board_spdif_preload();
 #if I2S_PRELOAD_SILENCE
     size_t total_loaded = 0U;
     for (size_t descriptor = 0; descriptor < s_dma_desc_num; ++descriptor) {
@@ -784,6 +1048,25 @@ static esp_err_t board_audio_preload_silence(void)
     }
 #endif
     return ESP_OK;
+}
+
+/* The channel's clock on and off. It starts from silence, plain or encoded;
+ * one already running is left as it is - S/PDIF between two sources. */
+static esp_err_t board_tx_on(bool preload)
+{
+    if (s_tx_running) return ESP_OK;
+    esp_err_t result = preload ? board_audio_preload_silence() : ESP_OK;
+    if (result == ESP_OK) result = i2s_channel_enable(s_i2s_tx);
+    if (result == ESP_OK) s_tx_running = true;
+    return result;
+}
+
+static esp_err_t board_tx_off(void)
+{
+    if (!s_tx_running) return ESP_OK;
+    const esp_err_t result = i2s_channel_disable(s_i2s_tx);
+    if (result == ESP_OK) s_tx_running = false;
+    return result;
 }
 
 _Static_assert(AUDIO_VOLUME_FRAME_BYTES == I2S_BYTES_PER_FRAME,
@@ -874,15 +1157,10 @@ static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
  * the wire, after the volume, which is the value the DAC actually sees. */
 static void board_audio_remember_tail(const void *pcm, size_t pcm_length)
 {
-#if !AUDIO_DAC_STOP_DECAY
-    (void)pcm;
-    (void)pcm_length;
-#else
     if (pcm == NULL || pcm_length < AUDIO_VOLUME_FRAME_BYTES) return;
     const uint8_t *frame = (const uint8_t *)pcm + pcm_length - AUDIO_VOLUME_FRAME_BYTES;
     s_audio_last_left = (int16_t)((uint16_t)frame[0] | ((uint16_t)frame[1] << 8U));
     s_audio_last_right = (int16_t)((uint16_t)frame[2] | ((uint16_t)frame[3] << 8U));
-#endif
 }
 
 /* Decays the output to zero and waits for the DMA to clock it out, so the
@@ -896,8 +1174,12 @@ static void board_audio_remember_tail(const void *pcm, size_t pcm_length)
  * and no click on a DAC that does not mute itself. */
 static void board_audio_flush_tail(void)
 {
-#if AUDIO_DAC_STOP_DECAY
     if (!s_audio_enabled || s_i2s_tx == NULL) return;
+    /* S/PDIF whatever this board's DAC does: what is at the far end of the
+     * cable may not mute itself, and the line goes on after the stop. */
+#if !AUDIO_DAC_STOP_DECAY
+    if (!s_spdif_on) return;
+#endif
     if (s_audio_tail == NULL) {
         /* PSRAM first like every other buffer here; a board without it falls
          * back to internal memory, and a board with neither stops the way it
@@ -914,8 +1196,13 @@ static void board_audio_flush_tail(void)
         audio_volume_fill_decay(s_audio_tail, AUDIO_VOLUME_FADE_FRAMES, s_audio_last_left,
                                 s_audio_last_right);
         size_t written = 0U;
-        (void)i2s_channel_write(s_i2s_tx, s_audio_tail, BOARD_AUDIO_TAIL_BYTES, &written,
-                                pdMS_TO_TICKS(200));
+        if (s_spdif_on) {
+            (void)board_spdif_write(s_audio_tail, BOARD_AUDIO_TAIL_BYTES, &written,
+                                    pdMS_TO_TICKS(200));
+        } else {
+            (void)i2s_channel_write(s_i2s_tx, s_audio_tail, BOARD_AUDIO_TAIL_BYTES, &written,
+                                    pdMS_TO_TICKS(200));
+        }
     }
     s_audio_last_left = 0;
     s_audio_last_right = 0;
@@ -924,8 +1211,11 @@ static void board_audio_flush_tail(void)
     s_output_previous[1] = 0;
     /* The write above only queues: this is the wait for the queue - the tail
      * included - to reach the pins. */
-    vTaskDelay(pdMS_TO_TICKS(((s_dma_desc_num * I2S_DMA_FRAME_NUM * 1000U) / rate) + 2U));
-#endif
+    const uint32_t queued_ms = s_spdif_on
+                                   ? SPDIF_RING_MS + (s_dma_desc_num * SPDIF_BUFFER_FRAMES * 1000U) /
+                                                         s_spdif_rate
+                                   : (s_dma_desc_num * I2S_DMA_FRAME_NUM * 1000U) / rate;
+    vTaskDelay(pdMS_TO_TICKS(queued_ms + 2U));
 }
 
 /* What is left of the last block written in part: where its source resumes,
@@ -942,7 +1232,6 @@ static void board_audio_flush_tail(void)
  * the last block ended on is where the next one's line starts. Under
  * s_audio_mutex. */
 static uint32_t s_output_factor = 1U;
-static int16_t s_output_previous[2];
 static uint8_t *s_output_buffer;
 static size_t s_output_capacity;
 
@@ -994,6 +1283,7 @@ static esp_err_t board_audio_bus_write(const void *shaped, size_t length, size_t
                                        TickType_t wait)
 {
     *written = 0U;
+    if (s_spdif_on) return board_spdif_write(shaped, length, written, wait);
     size_t bus_length = 0U;
     const void *bus = board_audio_output_block(shaped, length, &bus_length);
     if (bus == NULL) return ESP_ERR_NO_MEM;
@@ -1153,10 +1443,7 @@ esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloade
     xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
     esp_err_t result = ESP_ERR_INVALID_STATE;
     if (!s_audio_enabled) {
-        result = board_audio_preload_silence();
-        if (result == ESP_OK) {
-            result = i2s_channel_enable(s_i2s_tx);
-        }
+        result = board_tx_on(true);
         if (result == ESP_OK) {
             s_audio_enabled = true;
             board_audio_health_rearm();
@@ -1174,7 +1461,7 @@ esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloade
                      board_dac_name(), (unsigned int)board_audio_startup_silence_bytes(
                          s_dma_desc_num, sizeof(s_i2s_silence)));
         } else if (s_audio_enabled) {
-            (void)i2s_channel_disable(s_i2s_tx);
+            (void)board_tx_off();
             s_audio_enabled = false;
             if (result == ESP_OK) {
                 result = ESP_FAIL;
@@ -1200,10 +1487,7 @@ esp_err_t board_audio_set_enabled(bool enabled)
     esp_err_t result = ESP_OK;
     if (enabled != s_audio_enabled) {
         if (enabled) {
-            result = board_audio_preload_silence();
-            if (result == ESP_OK) {
-                result = i2s_channel_enable(s_i2s_tx);
-            }
+            result = board_tx_on(true);
         } else {
             /* Decayed to zero and clocked out first: the DAC is then holding
              * silence, and a clock that stops under silence is silent. */
@@ -1212,7 +1496,8 @@ esp_err_t board_audio_set_enabled(bool enabled)
              * after it: a DAC whose BCLK disappears under it thumps, and not
              * hearing that is the whole point of the pin. */
             board_amp_drive(false);
-            result = i2s_channel_disable(s_i2s_tx);
+            // S/PDIF goes on, with silence: see s_tx_running.
+            result = s_spdif_on ? ESP_OK : board_tx_off();
         }
         if (result == ESP_OK) {
             s_audio_enabled = enabled;
@@ -1252,23 +1537,25 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
 
     xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
     const bool was_enabled = s_audio_enabled;
+    const bool was_running = s_tx_running;
     const bool was_capturing = s_capture_enabled;
     /* Not with the input made: it shares the clock, and the tuner's ADC runs
      * at the rate it sends, which is never one of the low ones. */
-    const uint32_t factor =
-        board_dac_is_ssm3582() && !was_capturing ? ssm3582_rate_factor(sample_rate) : 1U;
-    const uint32_t bus_rate = sample_rate * factor;
+    const uint32_t factor = board_dac_is_ssm3582() && !was_capturing && !s_spdif_on
+                                ? ssm3582_rate_factor(sample_rate)
+                                : 1U;
+    const uint32_t bus_rate = s_spdif_on
+                                  ? 2U * (sample_rate / audio_decimate_factor(sample_rate))
+                                  : sample_rate * factor;
     const i2s_std_clk_config_t clock_config = I2S_STD_CLK_DEFAULT_CONFIG(bus_rate);
     esp_err_t result = ESP_OK;
     if (was_enabled) {
         board_audio_flush_tail();
         // Down before the clock stops, as at every stop.
         if (board_dac_is_ssm3582()) board_ssm3582_set_powered(false);
-        result = i2s_channel_disable(s_i2s_tx);
-        if (result == ESP_OK) {
-            s_audio_enabled = false;
-        }
     }
+    result = board_tx_off();
+    if (result == ESP_OK) s_audio_enabled = false;
     // Its rate band, while no clock runs.
     if (board_dac_is_ssm3582()) board_ssm3582_set_rate(bus_rate);
     // Both halves share the clock, so both are stopped and both retimed.
@@ -1295,17 +1582,18 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
                      (unsigned long)bus_rate);
         }
         s_output_factor = factor;
+        if (s_spdif_on) {
+            // What waits in the ring was decoded for the old rate.
+            board_spdif_set_rate(sample_rate);
+        }
         s_output_previous[0] = 0;
         s_output_previous[1] = 0;
         if (s_rate_listener != NULL) s_rate_listener(sample_rate);
         board_audio_health_rearm();
     }
-    if (result == ESP_OK && was_enabled) {
-        result = i2s_channel_enable(s_i2s_tx);
-        if (result == ESP_OK) {
-            s_audio_enabled = true;
-        }
-    }
+    // The DAC's ring starts again from what was in it, as it always has.
+    if (result == ESP_OK && was_running) result = board_tx_on(s_spdif_on);
+    if (result == ESP_OK && was_enabled) s_audio_enabled = true;
     // And up again after it starts, if the amplifier was meant to be playing.
     if (board_dac_is_ssm3582() && s_audio_enabled && s_amp_playing) {
         board_ssm3582_set_powered(true);
@@ -1352,6 +1640,8 @@ uint8_t board_audio_bt_capture_slot_bits(void)
 static esp_err_t board_audio_rebuild_channel(bool capture)
 {
     if (s_i2s_tx == NULL || s_audio_enabled) return ESP_ERR_INVALID_STATE;
+    // S/PDIF's silence after a stop: a running channel cannot be deleted.
+    (void)board_tx_off();
     if (s_i2s_rx != NULL) {
         if (s_capture_enabled) (void)i2s_channel_disable(s_i2s_rx);
         s_capture_enabled = false;
@@ -1375,6 +1665,59 @@ static esp_err_t board_audio_rebuild_channel(bool capture)
         if (output != ESP_OK) ESP_LOGE(TAG, "I2S output lost: %s", esp_err_to_name(output));
     }
     return result;
+}
+
+/* Makes the channel again when the output it should be on has changed - the
+ * setting, or a Bluetooth speaker coming or going. What was playing goes on
+ * in the other output, from silence and the start's fade. Under
+ * s_audio_mutex. */
+static void board_audio_reselect(void)
+{
+    // A released bus is the module's; reclaiming it makes the right channel.
+    if (s_i2s_tx == NULL || s_bus_released) return;
+    const bool capture = s_capture_wanted && board_audio_capture_pin() >= 0;
+    if (board_audio_spdif_chosen(capture) == s_spdif_on) return;
+    const bool was_enabled = s_audio_enabled;
+    board_audio_flush_tail();
+    s_audio_enabled = false;
+    board_amp_apply();
+    esp_err_t result = board_audio_rebuild_channel(s_capture_wanted);
+    if (result == ESP_OK && was_enabled) {
+        result = board_tx_on(true);
+        if (result == ESP_OK) {
+            s_audio_enabled = true;
+            s_audio_fade_frames = 0U;
+            s_shaped_rest_length = 0U;
+            board_audio_health_rearm();
+        }
+    }
+    board_dac_mute_apply();
+    ESP_LOGI(TAG, "sound now on %s%s", s_spdif_on ? "S/PDIF" : board_dac_name(),
+             result == ESP_OK ? "" : " - the channel failed to come back");
+}
+
+void board_audio_set_spdif(bool enabled)
+{
+    if (s_audio_mutex == NULL) return;
+    xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
+    s_spdif_wanted = enabled;
+    board_audio_reselect();
+    xSemaphoreGive(s_audio_mutex);
+}
+
+bool board_audio_spdif_active(void)
+{
+    return s_spdif_on;
+}
+
+void board_audio_set_dac_muted(bool muted)
+{
+    if (s_audio_mutex == NULL) return;
+    xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
+    s_dac_muted = muted;
+    board_audio_reselect();
+    board_dac_mute_apply();
+    xSemaphoreGive(s_audio_mutex);
 }
 
 esp_err_t board_audio_capture_set_enabled(bool enabled)

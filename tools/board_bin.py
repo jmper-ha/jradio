@@ -163,6 +163,7 @@ def board_csv(macros):
          if defined("AUDIO_DAC") else "pcm5102"),
         ("dac_i2s", "0"),
         ("dac_mute", pin(macros, "AUDIO_DAC_MUTE_GPIO")),
+        ("spdif_out", pin(macros, "AUDIO_SPDIF_GPIO")),
         ("dac_i2c", "0"),
         ("dac_address", f"0x{0x10 if address is None else address:02x}"),
         ("dac_gain", str(gain)),

@@ -293,6 +293,12 @@ static void test_the_sound_group_holds_two_numbers_and_a_choice(void)
     assert(ui_settings_model_row_count(&model) == 11U);
     assert(ui_settings_model_row_at(&model, 8U).id == UI_SETTINGS_ROW_FM_GAIN_FIELD);
     assert(ui_settings_row_is_number(UI_SETTINGS_ROW_FM_GAIN_FIELD));
+    // The S/PDIF switch only with the output wired, last in the group.
+    ui_settings_model_set_spdif(true);
+    assert(ui_settings_model_row_count(&model) == 12U);
+    assert(ui_settings_model_row_at(&model, 9U).id == UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD);
+    assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD));
+    ui_settings_model_set_spdif(false);
     ui_settings_model_set_fm(BOARD_HAS_FM_RADIO);
     assert(ui_settings_model_row_at(&model, 3U).id == UI_SETTINGS_ROW_TONE_BASS_FIELD);
     assert(ui_settings_model_row_at(&model, 4U).id == UI_SETTINGS_ROW_TONE_TREBLE_FIELD);

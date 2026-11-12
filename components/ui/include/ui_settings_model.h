@@ -52,6 +52,9 @@ typedef enum {
     /* FM against the other sources, a decibel a detent. Only on a board with
      * a tuner; last in Sound, since it is set once for the tuner. */
     UI_SETTINGS_ROW_FM_GAIN_FIELD,
+    /* The sound on S/PDIF instead of the DAC: a switch, only on a board that
+     * wires the output. After the FM level - set once, for the receiver. */
+    UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD,
     UI_SETTINGS_ROW_DISPLAY_GROUP,
     UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
     /* The mode only. Its wait and its idle level are numbers nobody sets
@@ -136,6 +139,8 @@ void ui_settings_model_init(ui_settings_model_t *model, bool home_screen);
 void ui_settings_model_set_bluetooth(bool fitted);
 // The same for the FM tuner, whose level row is there only with one.
 void ui_settings_model_set_fm(bool fitted);
+// And for the S/PDIF output, whose switch is there only with one.
+void ui_settings_model_set_spdif(bool fitted);
 ui_settings_model_result_t ui_settings_model_move(ui_settings_model_t *model, int direction);
 ui_settings_model_result_t ui_settings_model_activate(ui_settings_model_t *model);
 ui_settings_row_id_t ui_settings_model_selected(const ui_settings_model_t *model);

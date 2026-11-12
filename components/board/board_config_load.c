@@ -138,6 +138,11 @@ bool board_has_ir(void)
     return board_config_get()->ir_receiver >= 0;
 }
 
+bool board_has_spdif(void)
+{
+    return board_config_get()->spdif_out >= 0;
+}
+
 bool board_bt_through_s3(void)
 {
     return board_has_bluetooth() && board_config_get()->bt_din >= 0;

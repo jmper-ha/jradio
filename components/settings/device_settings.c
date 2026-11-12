@@ -248,6 +248,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         .loudness = DEVICE_LOUDNESS_OFF,
         .loudness_treble = false,
         .level_normalize = false,
+        .spdif_output = false,
         .fm_gain = 0,
         .screensaver_seconds = DEVICE_SCREENSAVER_SECONDS_DEFAULT,
         .screensaver_brightness = DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT,
@@ -451,6 +452,9 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     }
     if (read_value(&csv, "level_normalize", value, sizeof(value))) {
         (void)parse_bool(value, &settings->level_normalize);
+    }
+    if (read_value(&csv, "spdif_output", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->spdif_output);
     }
     if (read_value(&csv, "fm_gain", value, sizeof(value))) {
         char *end = NULL;
@@ -1081,6 +1085,15 @@ bool device_settings_set_level_normalize(device_settings_t *settings, bool enabl
     if (settings->level_normalize == enabled) return true;
     if (!save_value(settings, "level_normalize", enabled ? "1" : "0")) return false;
     settings->level_normalize = enabled;
+    return true;
+}
+
+bool device_settings_set_spdif_output(device_settings_t *settings, bool enabled)
+{
+    if (settings == NULL) return false;
+    if (settings->spdif_output == enabled) return true;
+    if (!save_value(settings, "spdif_output", enabled ? "1" : "0")) return false;
+    settings->spdif_output = enabled;
     return true;
 }
 

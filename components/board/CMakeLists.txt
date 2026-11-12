@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "audio_pcm_convert.c" "audio_volume.c" "board.c" "board_amplifier.c"
+    SRCS "audio_decimate.c" "audio_pcm_convert.c" "audio_spdif.c" "audio_volume.c" "board.c" "board_amplifier.c"
          "board_config.c" "board_config_compiled.c" "board_config_load.c"
          "board_audio_health.c"
          "audio_tone.c" "audio_level.c" "board_audio_startup.c" "board_input.c" "board_i2c.c" "board_rtc.c" "rtc_chip.c" "board_touch.c" "touch_chip.c"
@@ -18,5 +18,7 @@ idf_component_register(
 
 # The tone shelves run on every sample of every stream that has them on, and the
 # levelling's meter on every sample while it is on; at the project's -Og they
-# cost several times what they do optimised.
-set_source_files_properties(audio_tone.c audio_level.c PROPERTIES COMPILE_OPTIONS "-O2")
+# cost several times what they do optimised. So do the S/PDIF output's
+# decimator and encoder, the encoder inside the DMA's interrupt.
+set_source_files_properties(audio_tone.c audio_level.c audio_decimate.c audio_spdif.c
+                            PROPERTIES COMPILE_OPTIONS "-O2")

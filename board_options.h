@@ -332,6 +332,13 @@
  * pull-up, which must be opened before the pin is driven. Leave undefined
  * when not wired: the output then plays on regardless. */
 /* #define AUDIO_DAC_MUTE_GPIO 15 */
+/* A coaxial S/PDIF output beside the DAC; the settings choose which one
+ * plays. Any free GPIO, through a divider to the 0.5 V the input expects:
+ * GPIO - 220 R - node, node - 100 R - GND, node - 100 nF - RCA centre, RCA
+ * shield to GND. Above 48 kHz the stream goes out at half or a quarter of
+ * its rate - the S3 has no audio PLL, and a 96 kHz line from its divider
+ * jitters past what a receiver locks to. Leave undefined for none. */
+/* #define AUDIO_SPDIF_GPIO 8 */
 
 /* An infrared receiver (TSOP38238, VS1838B and the like) for a remote
  * control: its output pin, idle high, low for the carrier. Any GPIO does -

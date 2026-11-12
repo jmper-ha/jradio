@@ -1075,6 +1075,9 @@ static void test_tone_and_loudness_persist(void)
     assert(device_settings_set_feed_reverse(&settings, true));
     assert(!settings.power_restore);
     assert(device_settings_set_power_restore(&settings, true));
+    // The output too: the DAC until S/PDIF is asked for.
+    assert(!settings.spdif_output);
+    assert(device_settings_set_spdif_output(&settings, true));
     assert(device_settings_set_tone_bass(&settings, -4));
     assert(device_settings_set_tone_treble(&settings, 7));
     assert(device_settings_set_loudness(&settings, DEVICE_LOUDNESS_MEDIUM));
@@ -1089,6 +1092,7 @@ static void test_tone_and_loudness_persist(void)
     assert(reloaded.level_normalize);
     assert(reloaded.feed_reverse);
     assert(reloaded.power_restore);
+    assert(reloaded.spdif_output);
     char value[16];
     assert(settings_csv_get(test_path, "loudness", value, sizeof(value)));
     assert(strcmp(value, "medium") == 0);

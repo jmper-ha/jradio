@@ -119,6 +119,12 @@ static const ui_settings_row_t s_field_rows[] = {
         .group = UI_SETTINGS_GROUP_SOUND,
         .kind = UI_SETTINGS_ROW_FIELD,
     },
+    // In every build; field_is_present() asks whether the output is wired.
+    {
+        .id = UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD,
+        .group = UI_SETTINGS_GROUP_SOUND,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
     {
         .id = UI_SETTINGS_ROW_BRIGHTNESS_FIELD,
         .group = UI_SETTINGS_GROUP_DISPLAY,
@@ -192,11 +198,19 @@ void ui_settings_model_set_fm(bool fitted)
     s_fm_fitted = fitted;
 }
 
+static bool s_spdif_fitted;
+
+void ui_settings_model_set_spdif(bool fitted)
+{
+    s_spdif_fitted = fitted;
+}
+
 static bool field_is_present(const ui_settings_model_t *model, ui_settings_row_id_t id)
 {
     if (id == UI_SETTINGS_ROW_HOME_SCREEN_FIELD) return model->home_screen;
     if (id == UI_SETTINGS_ROW_BT_OUTPUT_FIELD) return s_bluetooth_fitted;
     if (id == UI_SETTINGS_ROW_FM_GAIN_FIELD) return s_fm_fitted;
+    if (id == UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD) return s_spdif_fitted;
     return true;
 }
 

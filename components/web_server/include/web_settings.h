@@ -99,6 +99,8 @@ typedef enum {
     WEB_SETTINGS_FIELD_LOUDNESS_TREBLE,
     // One station as loud as the next.
     WEB_SETTINGS_FIELD_LEVEL_NORMALIZE,
+    // The sound on S/PDIF instead of the DAC.
+    WEB_SETTINGS_FIELD_SPDIF_OUTPUT,
     WEB_SETTINGS_FIELD_SCREENSAVER_WHEN,
     WEB_SETTINGS_FIELD_FEED_REVERSE,
     WEB_SETTINGS_FIELD_POWER_RESTORE,
@@ -199,6 +201,7 @@ typedef struct web_settings_view {
     uint8_t loudness;
     bool loudness_treble;
     bool level_normalize;
+    bool spdif_output;
     bool home_screen_available;
     bool yandex_available;
     bool dlna_available;
@@ -214,6 +217,8 @@ typedef struct web_settings_view {
     /* The FM tuner, for the section that scans and keeps its presets; filled
      * by the same caller. */
     bool fm_available;
+    // An S/PDIF output on the board; filled by the same caller.
+    bool spdif_available;
     /* A button or a receiver that can wake the board from deep sleep: what
      * the power-cut switch needs before it can be offered. Filled by the
      * same caller. */

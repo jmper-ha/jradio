@@ -104,6 +104,7 @@ const ids = [
   'device-theme-accent', 'device-theme-accent-row',
   'device-theme-saver', 'device-theme-saver-row',
   'device-fm-gain', 'device-fm-gain-value', 'device-fm-gain-block',
+  'device-spdif-output', 'device-spdif-block',
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
   'device-idle-brightness-value', 'device-screensaver-after-row', 'device-screensaver-when',
   'device-screensaver-when-row',
@@ -1167,6 +1168,25 @@ function lastYandexTimer() {
   assert.equal(elements['#device-power-restore'].checked, true);
   settingsReply = {...settingsReply, power_restore: false,
                    available: {...settingsReply.available, sleep: false}};
+  /* The S/PDIF switch only on a board with the output, and a bool when it is
+     there. */
+  assert.equal(elements['#device-spdif-block'].hidden, true);
+  settingsReply = {...settingsReply, available: {...settingsReply.available, spdif: true}};
+  elements['#device-home-screen'].emit('change');
+  await settle();
+  assert.equal(elements['#device-spdif-block'].hidden, false);
+  settingsReply = {...settingsReply, spdif_output: true};
+  elements['#device-spdif-output'].checked = true;
+  elements['#device-spdif-output'].emit('change');
+  await settle();
+  assert.deepEqual(
+    JSON.parse(fetchCalls.filter((call) => call.url === '/api/settings' &&
+                                           call.options &&
+                                           call.options.method === 'POST')
+      .at(-1).options.body),
+    {field: 'spdif_output', value: true});
+  settingsReply = {...settingsReply, spdif_output: false,
+                   available: {...settingsReply.available, spdif: false}};
   // A build with nowhere else to go has no carousel, whatever the card says.
   settingsReply = {...settingsReply, available: {...settingsReply.available, home_screen: false}};
   elements['#device-home-screen'].emit('change');

@@ -505,7 +505,7 @@ static lv_obj_t *s_settings_more_above;
 static lv_obj_t *s_settings_more_below;
 /* One per boolean setting, not per row on screen: only one group is open at
  * a time, so at most three are ever visible, but each keeps its own object. */
-#define UI_SETTINGS_SWITCH_COUNT 10U
+#define UI_SETTINGS_SWITCH_COUNT 11U
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
@@ -4218,6 +4218,10 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_LEVEL_NORMALIZE,
                                  s_device_settings.level_normalize);
         break;
+    case UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD:
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_SPDIF_OUTPUT,
+                                 s_device_settings.spdif_output);
+        break;
     case UI_SETTINGS_ROW_FM_GAIN_FIELD: {
         const bool editing = ui_settings_model_is_editing(&s_settings_model) &&
                              ui_settings_model_selected(&s_settings_model) == row->id;
@@ -4322,6 +4326,10 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     case UI_SETTINGS_ROW_LEVEL_NORMALIZE_FIELD:
         *index = 9U;
         *value = s_device_settings.level_normalize;
+        return true;
+    case UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD:
+        *index = 10U;
+        *value = s_device_settings.spdif_output;
         return true;
     default:
         return false;
@@ -4723,6 +4731,13 @@ static void ui_apply_tone(void)
     player_control_set_fm_gain((int)s_device_settings.fm_gain);
 }
 
+/* The output, as the settings say - on a board without the S/PDIF pin the
+ * setting can be on from another board's card and still means the DAC. */
+static void ui_apply_audio_output(void)
+{
+    board_audio_set_spdif(s_device_settings.spdif_output && board_has_spdif());
+}
+
 static void ui_reload_settings(void)
 {
     /* A knob being turned right now has not reached the file yet - the write
@@ -4752,6 +4767,7 @@ static void ui_reload_settings(void)
     ui_backlight_apply(s_device_settings.brightness);
     if (!volume_pending) board_audio_set_volume(s_device_settings.volume);
     ui_apply_tone();
+    ui_apply_audio_output();
     /* The zone applies to the next reading of the clock and the server only
      * costs SNTP a restart if it actually changed - so this is cheap enough to
      * call on every settings change rather than working out which one it
@@ -5274,6 +5290,11 @@ static void ui_settings_change_selected(void)
         changed = device_settings_set_level_normalize(&s_device_settings,
                                                       !s_device_settings.level_normalize);
         if (changed) ui_apply_tone();
+        break;
+    case UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD:
+        changed = device_settings_set_spdif_output(&s_device_settings,
+                                                   !s_device_settings.spdif_output);
+        if (changed) ui_apply_audio_output();
         break;
     case UI_SETTINGS_ROW_THEME_FIELD:
         /* Round the three. Custom is on the ring even before anyone has set
@@ -10254,12 +10275,14 @@ esp_err_t ui_init(void)
     ui_apply_source_visibility();
     ui_settings_model_set_bluetooth(board_has_bluetooth());
     ui_settings_model_set_fm(board_has_fm_tuner());
+    ui_settings_model_set_spdif(board_has_spdif());
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
     // Before anything can play: the board defaults to full volume, and coming
     // back from a power cut at full blast when the user had it at 20 is the
     // kind of surprise a saved setting exists to prevent.
     board_audio_set_volume(s_device_settings.volume);
     ui_apply_tone();
+    ui_apply_audio_output();
     ui_apply_bt_output();
     // Before the task starts: a browser that connects first would otherwise be
     // told the device has no settings at all.

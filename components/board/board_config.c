@@ -121,6 +121,7 @@ static const field_t k_fields[] = {
      {{"pcm5102", DAC_PCM5102}, {"ssm3582", DAC_SSM3582}, {NULL, 0}}},
     {"dac_i2s", KIND_CHOICE, DEV_DAC, AT(dac_i2s), false, NULL, {{"0", 0}, {NULL, 0}}},
     {"dac_mute", KIND_OPT_PIN, DEV_DAC, AT(dac_mute), false, NULL, {{NULL, 0}}},
+    {"spdif_out", KIND_OPT_PIN, DEV_DAC, AT(spdif_out), false, NULL, {{NULL, 0}}},
     {"dac_i2c", KIND_CHOICE, DEV_DAC, AT(dac_i2c), false, NULL, {{"0", 0}, {NULL, 0}}},
     {"dac_address", KIND_CHOICE, DEV_DAC, AT(dac_address), false, NULL,
      {{"0x10", 0x10}, {"0x11", 0x11}, {"0x12", 0x12}, {"0x13", 0x13}, {"0x14", 0x14},
@@ -234,6 +235,7 @@ void board_config_clear(board_config_t *config)
     config->bt_uart = 1U;
     config->bt_i2s = 0U;
     config->bt_din = -1;
+    config->spdif_out = -1;
 }
 
 /* A whole decimal integer and nothing else. Out of int8_t's range reads as

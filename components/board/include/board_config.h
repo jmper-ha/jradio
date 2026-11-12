@@ -97,6 +97,9 @@ typedef struct {
     int8_t ir_receiver;
     int8_t touch_int;
     int8_t dac_mute;
+    /* A coaxial S/PDIF output, encoded in software on I2S0: the settings
+     * then choose it or the DAC. Its own pin, so a board keeps both. */
+    int8_t spdif_out;
     int8_t amp_enable;
     uint8_t amp_on_level;
     int8_t peripheral_power;
@@ -288,6 +291,7 @@ board_config_source_t board_config_source(void);
 bool board_has_usb(void);
 bool board_has_sd_card(void);
 bool board_has_ir(void);
+bool board_has_spdif(void);
 bool board_has_bluetooth(void);
 // Whether a phone's sound comes in through the S3 (bt_din wired).
 bool board_bt_through_s3(void);

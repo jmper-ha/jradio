@@ -465,7 +465,7 @@ detail, the alarm, the sleep timer, the backup.
     moments are clipped. On the device it is turned with the encoder right on
     the row, on the web with a slider in the FM radio group.
   - **Sound over S/PDIF** - only with an S/PDIF out on the board: the sound
-    goes to the coaxial output instead of the DAC, switched live. Wiring and
+    goes to the digital output instead of the DAC, switched live. Wiring and
     what goes there - in [Hardware](hardware.en.md#spdif-out).
 
   They act on everything that plays through the radio itself: internet

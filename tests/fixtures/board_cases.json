@@ -501,6 +501,52 @@
       "warnings": [],
       "unknown_keys": 0,
       "bad_lines": 0
+    },
+    {
+      "name": "S/PDIF alone, no DAC and no I2S bus",
+      "csv": "dac,none\nspdif_out,38\ni2s0_bclk,none\ni2s0_lrck,none\ni2s0_dout,none",
+      "errors": [],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "no DAC, S/PDIF on the DAC's old data pin",
+      "csv": "dac,none\nspdif_out,16",
+      "errors": [],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "no DAC and no S/PDIF pin",
+      "csv": "dac,none",
+      "errors": [
+        "pin_missing spdif_out"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "no DAC, Bluetooth with the module playing a phone itself",
+      "csv": "dac,none\nspdif_out,38\nbluetooth,jradio_bt\nuart1_tx,13\nuart1_rx,14",
+      "errors": [
+        "bt_needs_din_no_dac bt_din"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
+    },
+    {
+      "name": "no DAC, the tuner's I2S still wants the clocks",
+      "csv": "dac,none\nspdif_out,38\ni2s0_bclk,none\nfm_tuner,rda5807\ni2c0_sda,8\ni2c0_scl,3\nfm_i2s,0\ni2s0_din,39",
+      "errors": [
+        "bus_unwired fm i2s0_bclk"
+      ],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
     }
   ]
 }

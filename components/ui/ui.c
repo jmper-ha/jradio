@@ -10275,7 +10275,7 @@ esp_err_t ui_init(void)
     ui_apply_source_visibility();
     ui_settings_model_set_bluetooth(board_has_bluetooth());
     ui_settings_model_set_fm(board_has_fm_tuner());
-    ui_settings_model_set_spdif(board_has_spdif());
+    ui_settings_model_set_spdif(board_has_spdif() && board_has_dac());
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
     // Before anything can play: the board defaults to full volume, and coming
     // back from a power cut at full blast when the user had it at 20 is the

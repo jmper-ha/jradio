@@ -11,7 +11,10 @@
  * Not in board_options.h: none of it is a wiring choice. Selecting a different
  * DAC would replace the whole set at once. */
 
-#if AUDIO_DAC == DAC_PCM5102 || AUDIO_DAC == DAC_UDA1334A || AUDIO_DAC == DAC_SSM3582
+/* DAC_NONE is a board with S/PDIF alone: the same 16-bit stereo, the same
+ * I2S0, only nothing on the DAC's pins. */
+#if AUDIO_DAC == DAC_PCM5102 || AUDIO_DAC == DAC_UDA1334A || AUDIO_DAC == DAC_SSM3582 || \
+    AUDIO_DAC == DAC_NONE
 
 /* The slots are fixed 16-bit stereo: mono sources are duplicated into both
  * channels by the players rather than reconfigured, and the sample width has
@@ -55,6 +58,9 @@
  * is the name and the stop, which is its own power-down, before the clock
  * goes: no decay needed. */
 #define BOARD_DAC_NAME "SSM3582"
+#define AUDIO_DAC_STOP_DECAY 0
+#elif AUDIO_DAC == DAC_NONE
+#define BOARD_DAC_NAME "no DAC"
 #define AUDIO_DAC_STOP_DECAY 0
 #else
 #define BOARD_DAC_NAME "UDA1334A"

@@ -1492,7 +1492,8 @@ void web_server_fill_remote(struct web_settings_view *view)
     if (view == NULL) return;
     view->remote_available = board_has_ir();
     view->fm_available = board_has_fm_tuner() && fm_tuner_present();
-    view->spdif_available = board_has_spdif();
+    // Without a DAC it is the only output, and nothing to switch.
+    view->spdif_available = board_has_spdif() && board_has_dac();
     view->sleep_available = board_deep_sleep_supported();
     remote_function_t learning = REMOTE_FUNCTION_COUNT;
     if (board_has_ir()) remote_control_snapshot(NULL, &learning);

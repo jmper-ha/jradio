@@ -20,7 +20,10 @@ static void test_a_selected_part_resolves_to_a_real_catalogue_entry(void)
      * unknown identifier and fails to compile, rather than evaluating to 0 and
      * silently selecting "none". */
     assert(DISPLAY != DISPLAY_NONE);
+    // No DAC is a choice only with S/PDIF to play on instead.
+#ifndef AUDIO_SPDIF_GPIO
     assert(AUDIO_DAC != DAC_NONE);
+#endif
 }
 
 static void test_display_group_is_complete_and_consistent(void)

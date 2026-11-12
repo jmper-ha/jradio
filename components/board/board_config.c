@@ -118,7 +118,7 @@ static const field_t k_fields[] = {
     {"ir_receiver", KIND_OPT_PIN, DEV_IR, AT(ir_receiver), false, NULL, {{NULL, 0}}},
     {"dac", KIND_CHOICE, DEV_DAC, AT(dac), false, NULL,
      // The UDA1334A has a driver but has not been tried on a board yet.
-     {{"pcm5102", DAC_PCM5102}, {"ssm3582", DAC_SSM3582}, {NULL, 0}}},
+     {{"pcm5102", DAC_PCM5102}, {"ssm3582", DAC_SSM3582}, {"none", DAC_NONE}, {NULL, 0}}},
     {"dac_i2s", KIND_CHOICE, DEV_DAC, AT(dac_i2s), false, NULL, {{"0", 0}, {NULL, 0}}},
     {"dac_mute", KIND_OPT_PIN, DEV_DAC, AT(dac_mute), false, NULL, {{NULL, 0}}},
     {"spdif_out", KIND_OPT_PIN, DEV_DAC, AT(spdif_out), false, NULL, {{NULL, 0}}},
@@ -364,7 +364,8 @@ void board_config_parse_csv(const char *text, size_t length, board_config_t *con
 bool board_config_dac_fits(uint8_t wired, uint8_t built)
 {
     if (wired == built) return true;
-    const bool wired_pcm = wired == DAC_PCM5102 || wired == DAC_SSM3582;
+    // No DAC is S/PDIF alone, which any of these builds makes.
+    const bool wired_pcm = wired == DAC_PCM5102 || wired == DAC_SSM3582 || wired == DAC_NONE;
     const bool built_pcm = built == DAC_PCM5102 || built == DAC_SSM3582;
     return wired_pcm && built_pcm;
 }
@@ -397,7 +398,9 @@ static bool bus_used(const board_config_t *config, device_t bus)
     case DEV_SPI2: return true;  // the display's, and the display is always there
     case DEV_SPI3: return device_enabled(config, DEV_SD) && config->sd_spi == 3U;
     case DEV_I2S0:
-        return config->dac_i2s == 0U || (bt && config->bt_i2s == 0U) ||
+        return (config->dac != DAC_NONE && config->dac_i2s == 0U) ||
+               (bt && config->bt_i2s == 0U) ||
+               (device_enabled(config, DEV_FM) && config->fm_i2s == 0U) ||
                (device_enabled(config, DEV_ADC) && config->adc_i2s == 0U);
     case DEV_UART1: return bt && config->bt_uart == 1U;
     case DEV_I2C0:
@@ -571,7 +574,13 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     if (device_enabled(config, DEV_SD) && config->sd_spi == 3U) {
         check_bus(config, report, DEV_SD, k_spi3, 3U);
     }
-    if (config->dac_i2s == 0U) check_bus(config, report, DEV_DAC, k_i2s0, 3U);
+    if (config->dac != DAC_NONE && config->dac_i2s == 0U) {
+        check_bus(config, report, DEV_DAC, k_i2s0, 3U);
+    }
+    // Without a DAC the sound has only S/PDIF to go out on.
+    if (config->dac == DAC_NONE && config->spdif_out < 0) {
+        add_issue(report, false, BOARD_ISSUE_PIN_MISSING, "spdif_out", NULL, -1);
+    }
     // The SSM3582 plays nothing until it is set up over I2C.
     if (config->dac == DAC_SSM3582 && config->dac_i2c == 0U) {
         check_bus(config, report, DEV_DAC, k_i2c0, 2U);
@@ -590,6 +599,11 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
          * amplifier wants 50 at least: silence. */
         if (config->dac == DAC_SSM3582 && config->bt_din < 0) {
             add_issue(report, false, BOARD_ISSUE_BT_NEEDS_DIN, "bt_din", "bluetooth", -1);
+        }
+        /* Left to itself the module plays a phone into the DAC; without one
+         * the phone has to come through the S3 to reach S/PDIF. */
+        if (config->dac == DAC_NONE && config->bt_din < 0) {
+            add_issue(report, false, BOARD_ISSUE_BT_NEEDS_DIN_NO_DAC, "bt_din", "bluetooth", -1);
         }
     }
     if (device_enabled(config, DEV_FM) && config->fm_i2c == 0U) {
@@ -667,6 +681,7 @@ const char *board_config_issue_name(board_issue_code_t code)
     case BOARD_ISSUE_ADC_WITH_FM_I2S: return "adc_with_fm_i2s";
     case BOARD_ISSUE_DAC_ADDRESS_TAKEN: return "dac_address_taken";
     case BOARD_ISSUE_BT_NEEDS_DIN: return "bt_needs_din";
+    case BOARD_ISSUE_BT_NEEDS_DIN_NO_DAC: return "bt_needs_din_no_dac";
     case BOARD_ISSUE_SLEEP_NOT_RTC: return "sleep_not_rtc";
     case BOARD_ISSUE_IR_NOT_RTC: return "ir_not_rtc";
     case BOARD_ISSUE_SPI_NOT_IOMUX: return "spi_not_iomux";

@@ -97,7 +97,16 @@ static bool board_dac_is_ssm3582(void)
 // For the log: the chip the wiring names, which the build's name may not be.
 static const char *board_dac_name(void)
 {
+    if (!board_has_dac()) return "I2S bus";
     return board_dac_is_ssm3582() ? "SSM3582" : BOARD_DAC_NAME;
+}
+
+static bool s_spdif_on;
+
+// What the sound goes out of now, for the log.
+static const char *board_output_name(void)
+{
+    return s_spdif_on ? "S/PDIF" : board_dac_name();
 }
 
 static gpio_num_t wired(int8_t pin)
@@ -544,7 +553,6 @@ static bool s_spdif_wanted;
  * - the ring is filled after audio_decimate brings a higher rate down. */
 #define SPDIF_RING_FRAMES 8192U
 #define SPDIF_RING_MS 93U
-static bool s_spdif_on;
 static size_t s_spdif_depth = SPDIF_RING_FRAMES / 2U;
 // The rate on the line, and how far the stream's is brought down to it.
 static uint32_t s_spdif_rate = AUDIO_DEFAULT_SAMPLE_RATE;
@@ -704,7 +712,10 @@ static esp_err_t board_spdif_preload(void)
  * since the module takes it off the I2S lines. */
 static bool board_audio_spdif_chosen(void)
 {
-    return s_spdif_wanted && wiring()->spdif_out >= 0 && !s_dac_muted;
+    /* Without a DAC the setting has nothing to choose between. A Bluetooth
+     * speaker still takes the bus: the module reads the DAC's data line,
+     * whether or not a DAC is on it. */
+    return (s_spdif_wanted || !board_has_dac()) && wiring()->spdif_out >= 0 && !s_dac_muted;
 }
 
 /* The input's clock beside S/PDIF. Its master clock is made the same as the
@@ -912,12 +923,16 @@ static esp_err_t board_audio_create_channel(uint32_t sample_rate)
         return ESP_OK;
     }
     board_audio_park_pin(wiring()->spdif_out);
-    ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_dout)), TAG,
-                        "enable I2S DOUT pad observation failed");
-    ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_bclk)), TAG,
-                        "enable I2S BCLK pad observation failed");
-    ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_lrck)), TAG,
-                        "enable I2S LRCK pad observation failed");
+    /* A board without a DAC may have no bus wired at all, and the channel
+     * then clocks nothing - only S/PDIF short of memory comes here. */
+    if (wiring()->i2s0_dout >= 0 && wiring()->i2s0_bclk >= 0 && wiring()->i2s0_lrck >= 0) {
+        ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_dout)), TAG,
+                            "enable I2S DOUT pad observation failed");
+        ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_bclk)), TAG,
+                            "enable I2S BCLK pad observation failed");
+        ESP_RETURN_ON_ERROR(gpio_input_enable(wired(wiring()->i2s0_lrck)), TAG,
+                            "enable I2S LRCK pad observation failed");
+    }
     const unsigned slot_bits = wide_slots ? 32U : (unsigned)I2S_SLOT_BIT_WIDTH;
     ESP_LOGI(TAG,
              "%s I2S: Philips, 16-bit stereo in %u-bit slots, BCLK=%uxFs, "
@@ -1516,8 +1531,8 @@ esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloade
             result = board_audio_bus_write(out, pcm_length, preloaded, pdMS_TO_TICKS(1000));
         }
         if (result == ESP_OK && *preloaded == pcm_length) {
-            ESP_LOGI(TAG, "%s I2S output enabled after %u-byte silent clock pre-roll",
-                     board_dac_name(), (unsigned int)board_audio_startup_silence_bytes(
+            ESP_LOGI(TAG, "%s output enabled after %u-byte silent clock pre-roll",
+                     board_output_name(), (unsigned int)board_audio_startup_silence_bytes(
                          s_dma_desc_num, sizeof(s_i2s_silence)));
         } else if (s_audio_enabled) {
             (void)board_tx_off();
@@ -1565,7 +1580,7 @@ esp_err_t board_audio_set_enabled(bool enabled)
                 board_audio_health_rearm();
                 s_audio_fade_frames = 0U;
             }
-            ESP_LOGI(TAG, "%s I2S output %s", board_dac_name(), enabled ? "enabled" : "disabled");
+            ESP_LOGI(TAG, "%s output %s", board_output_name(), enabled ? "enabled" : "disabled");
         }
         /* After the state is settled - including when the disable above
          * failed, which leaves the channel running and the amplifier is put
@@ -1763,7 +1778,7 @@ static void board_audio_reselect(void)
         }
     }
     board_dac_mute_apply();
-    ESP_LOGI(TAG, "sound now on %s%s", s_spdif_on ? "S/PDIF" : board_dac_name(),
+    ESP_LOGI(TAG, "sound now on %s%s", board_output_name(),
              result == ESP_OK ? "" : " - the channel failed to come back");
 }
 
@@ -1850,6 +1865,10 @@ esp_err_t board_audio_self_test(uint32_t duration_ms)
 
     if (duration_ms == 0U || s_i2s_tx == NULL) {
         return ESP_ERR_INVALID_ARG;
+    }
+    // It watches the DAC's pads, which S/PDIF leaves idle.
+    if (s_spdif_on) {
+        return ESP_ERR_NOT_SUPPORTED;
     }
     ESP_LOGW(TAG, "starting %s self-test: 1000 Hz, %lu ms", board_dac_name(),
              (unsigned long)duration_ms);

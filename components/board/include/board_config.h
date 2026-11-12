@@ -97,7 +97,7 @@ typedef struct {
     int8_t ir_receiver;
     int8_t touch_int;
     int8_t dac_mute;
-    /* A coaxial S/PDIF output, encoded in software on I2S0: the settings
+    /* An S/PDIF output, coaxial or optical, encoded in software on I2S0: the settings
      * then choose it or the DAC. Its own pin, so a board keeps both. */
     int8_t spdif_out;
     int8_t amp_enable;
@@ -158,6 +158,8 @@ typedef enum {
      * bus answers at - the bench's tuner answered for it, 2026-10-29. */
     BOARD_ISSUE_DAC_ADDRESS_TAKEN,
     BOARD_ISSUE_BT_NEEDS_DIN,
+    // No DAC, and Bluetooth with no line into the S3: a phone would play nowhere.
+    BOARD_ISSUE_BT_NEEDS_DIN_NO_DAC,
     // Warnings: the board works, but not the way its builder expects.
     BOARD_ISSUE_SLEEP_NOT_RTC,
     BOARD_ISSUE_IR_NOT_RTC,
@@ -292,6 +294,8 @@ bool board_has_usb(void);
 bool board_has_sd_card(void);
 bool board_has_ir(void);
 bool board_has_spdif(void);
+// A DAC or the SSM3582 on I2S0; without one the sound is S/PDIF's alone.
+bool board_has_dac(void);
 bool board_has_bluetooth(void);
 // Whether a phone's sound comes in through the S3 (bt_din wired).
 bool board_bt_through_s3(void);

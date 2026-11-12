@@ -40,6 +40,7 @@ static void normalise(const board_issue_t *issue, char *out, size_t size)
     case BOARD_ISSUE_ADC_WITH_FM_I2S:
     case BOARD_ISSUE_DAC_ADDRESS_TAKEN:
     case BOARD_ISSUE_BT_NEEDS_DIN:
+    case BOARD_ISSUE_BT_NEEDS_DIN_NO_DAC:
     case BOARD_ISSUE_PIN_MISSING:
         snprintf(out, size, "%s %s", name, issue->key);
         break;

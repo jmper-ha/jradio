@@ -143,6 +143,11 @@ bool board_has_spdif(void)
     return board_config_get()->spdif_out >= 0;
 }
 
+bool board_has_dac(void)
+{
+    return board_config_get()->dac != DAC_NONE;
+}
+
 bool board_bt_through_s3(void)
 {
     return board_has_bluetooth() && board_config_get()->bt_din >= 0;

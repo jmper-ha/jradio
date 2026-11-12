@@ -19,7 +19,7 @@
 | Real-time clock | a DS3231 or DS1307 on I2C, with a cell - the time without a network and an alarm without Wi-Fi | no |
 | Touch panel | the FT6336U on the ST7796S module, on I2C - control by finger | no |
 | Amplifier | any with a MUTE / SD input - the firmware mutes it on pause | no |
-| S/PDIF out | coaxial, on a free pin: two resistors and a capacitor | no |
+| S/PDIF out | digital, on a free pin: coaxial (two resistors and a capacitor) or an optical transmitter | no |
 | Peripheral power switch | a load switch or a P-MOSFET - cuts the periphery in sleep | no |
 
 Everything optional is up to you: what is not on the board is not in the menu
@@ -218,18 +218,18 @@ speakers stay silent. The configurator will not accept such a board.
 
 ### S/PDIF out
 
-A digital output to a receiver or an external DAC, coaxial, over one wire. No
-extra chip: the S3 makes the signal itself, on any free pin.
+A digital output to a receiver or an external DAC, over one wire: coaxial or
+optical. No extra chip: the S3 makes the signal itself, on any free pin.
 
 ```c
 #define AUDIO_SPDIF_GPIO 1
 ```
 
-In the configurator it is the "S/PDIF out (coaxial)" field of the DAC. GPIO 1
+In the configurator it is the "S/PDIF out" field of the DAC. GPIO 1
 is the microSD's CS by default: without a card it is free to take, with one
 pick another free pin.
 
-To the RCA socket through a divider and a capacitor: the pin's 3.3 V becomes
+**Coaxial.** To the RCA socket through a divider and a capacitor: the pin's 3.3 V becomes
 about 0.5 V across a 75 ohm load, which the input expects, and no DC reaches
 the receiver.
 
@@ -240,12 +240,21 @@ the receiver.
 | the divider's node | 100 nF | the RCA's centre pin |
 | GND | - | the RCA's shell |
 
+**Optical.** A 3.3 V Toslink transmitter (a TOTX177, say, or a module with
+one): 3.3 V and GND, its data input straight on the pin, no divider. Only the
+coaxial one has been tried on the bench.
+
 It is turned on in the settings, in the Sound group: "Sound over S/PDIF", on
 the device and on the web. The row is there only with the pin set. It switches
 live, and the track plays on.
 
 - **One output plays.** While the sound is on S/PDIF, the DAC and the
   amplifier are muted.
+- **No DAC at all is fine.** In the configurator the DAC is "none, S/PDIF
+  only" (`AUDIO_DAC DAC_NONE` in `board_options.h`): the sound always goes to
+  S/PDIF, and the settings have no switch. BCLK and LRCK are still needed with
+  a tuner over I2S or the Bluetooth module, which run on that bus. Bluetooth
+  without a DAC needs the "DIN from the module" wire.
 - **Volume, tone, loudness and auto level all work** - what goes out is the
   processed sound. To give a receiver the full level and set the volume on it,
   put the radio's volume at the top.

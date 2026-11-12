@@ -24,7 +24,8 @@ function normalisedIssue(issue) {
   if (issue.code === 'pin_conflict') return `pin_conflict ${issue.gpio}`;
   if (issue.code === 'bus_unwired') return `bus_unwired ${issue.device} ${issue.bus}_${issue.pin}`;
   if (issue.code === 'bad_value' || issue.code === 'pin_missing' || issue.code === 'adc_with_fm_i2s' ||
-      issue.code === 'dac_address_taken' || issue.code === 'bt_needs_din') return `${issue.code} ${issue.key}`;
+      issue.code === 'dac_address_taken' || issue.code === 'bt_needs_din' ||
+      issue.code === 'bt_needs_din_no_dac') return `${issue.code} ${issue.key}`;
   return `${issue.code} ${issue.key} ${issue.gpio}`;
 }
 

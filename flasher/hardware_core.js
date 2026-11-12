@@ -163,15 +163,17 @@
     /* The infrared receiver: one pin, off by default like the README board. */
     {key: 'ir_receiver', kind: 'opt_pin', device: 'ir', dflt: NONE, enables: true, define: 'IR_RECEIVER_GPIO'},
 
-    /* The DAC is always there: a player without an output is no player. The
-       SSM3582 is a class-D amplifier with an I2S input in its place, set up
-       over I2C0 - its bus, the address its ADDR0/ADDR1 strap and the analogue
-       gain (13 dB already swings 6.3 V peak) are its rows alone. */
-    {key: 'dac', kind: 'choice', device: 'dac', options: ['pcm5102', 'ssm3582'], dflt: 'pcm5102', define: 'AUDIO_DAC'},
-    {key: 'dac_i2s', kind: 'choice', device: 'dac', options: ['0'], dflt: '0', bus: 'i2s'},
+    /* The output is always there: a player without one is no player. The
+       SSM3582 is a class-D amplifier with an I2S input in the DAC's place, set
+       up over I2C0 - its bus, the address its ADDR0/ADDR1 strap and the
+       analogue gain (13 dB already swings 6.3 V peak) are its rows alone.
+       "none" is S/PDIF alone, for a board that goes to a receiver. */
+    {key: 'dac', kind: 'choice', device: 'dac', options: ['pcm5102', 'ssm3582', 'none'], dflt: 'pcm5102', define: 'AUDIO_DAC'},
+    {key: 'dac_i2s', kind: 'choice', device: 'dac', options: ['0'], dflt: '0', bus: 'i2s',
+     when: (values) => values.dac !== 'none'},
     /* The SSM3582 is powered down over I2C and has no such pin. */
     {key: 'dac_mute', kind: 'opt_pin', device: 'dac', dflt: NONE, define: 'AUDIO_DAC_MUTE_GPIO',
-     when: (values) => values.dac !== 'ssm3582'},
+     when: (values) => values.dac === 'pcm5102'},
     /* S/PDIF on its own pin, encoded on I2S0; the settings choose it or the DAC. */
     {key: 'spdif_out', kind: 'opt_pin', device: 'dac', dflt: NONE, define: 'AUDIO_SPDIF_GPIO'},
     {key: 'dac_i2c', kind: 'choice', device: 'dac', options: ['0'], dflt: '0', bus: 'i2c',
@@ -536,6 +538,15 @@
        amplifier wants 50 at least: silence. */
     if (values.dac === 'ssm3582' && deviceEnabled(values, 'bluetooth') && isNone(values.bt_din)) {
       errors.push({code: 'bt_needs_din', key: 'bt_din', gpio: null});
+    }
+    /* Left to itself the module plays a phone into the DAC; without one the
+       phone has to come through the S3 to reach S/PDIF. */
+    if (values.dac === 'none' && deviceEnabled(values, 'bluetooth') && isNone(values.bt_din)) {
+      errors.push({code: 'bt_needs_din_no_dac', key: 'bt_din', gpio: null});
+    }
+    /* Without a DAC the sound has only S/PDIF to go out on. */
+    if (values.dac === 'none' && isNone(values.spdif_out)) {
+      errors.push({code: 'pin_missing', key: 'spdif_out'});
     }
 
     /* One input line, one source of what comes down it. */

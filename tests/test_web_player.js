@@ -561,6 +561,18 @@ assert.equal(elements['#next-item'].hidden, false);
 assert.equal(elements['#next-item'].disabled, false);
 elements['#next-item'].emit('click');
 assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.next_item');
+/* A phone over Bluetooth too: the keys are its own previous and next, as the
+   remote's are. */
+sendEvent(second, {
+  type: 'player.update', revision: 8, active_source: 'bluetooth',
+  player: {state: 'playing', mode: 'Bluetooth', artist: 'Des Rocs', title: 'Never Ending Moment',
+           context: '', codec: 'SBC', bitrate_kbps: 0, sample_rate_hz: 44100, error: ''},
+});
+assert.equal(elements['#previous-item'].hidden, false);
+assert.equal(elements['#next-item'].hidden, false);
+assert.equal(elements['#previous-item'].disabled, false);
+elements['#previous-item'].emit('click');
+assert.equal(JSON.parse(second.sent.at(-1)).action, 'player.previous_item');
 sendEvent(second, {
   type: 'player.update', revision: 8, active_source: 'internet_radio',
   player: player('Радио снова'),

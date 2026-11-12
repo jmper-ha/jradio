@@ -1067,10 +1067,12 @@
        one at all. Nothing wraps, so at either end of the list the key does
        nothing; the device refuses it rather than rolling over. The tuner has
        them too, as on the device: there they search the band for the nearest
-       station down or up, which is the chip's own seek. */
+       station down or up, which is the chip's own seek. And a phone over
+       Bluetooth, whose own previous and next they become - the remote's keys
+       did that all along, and the page had no arrows for it. */
     const steppable = state.activeSource === 'usb' || state.activeSource === 'sd' ||
       state.activeSource === 'internet_radio' || state.activeSource === 'dlna' ||
-      state.activeSource === 'fm';
+      state.activeSource === 'fm' || state.activeSource === 'bluetooth';
     const stepReady = steppable && state.connected &&
       player.state !== 'stopped' && player.state !== 'error';
     previousItem.hidden = !steppable;

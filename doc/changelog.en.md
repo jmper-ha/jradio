@@ -6,6 +6,45 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.12.0 — 13 November 2026
+
+New:
+- A digital S/PDIF output on a free pin of the board: coaxial (two
+  resistors and a capacitor) or an optical transmitter. The pin is set in
+  Hardware, and it is switched on in the settings, in the Sound group:
+  "Sound over S/PDIF". One output plays at a time: while the sound is on
+  S/PDIF the DAC is muted. Tone, loudness and automatic level control work.
+  Recordings above 48 kHz go out at half or a quarter of their rate: the
+  ESP32-S3 has no audio PLL, and at 96 kHz a receiver does not stay locked.
+  FM over I2S and Bluetooth through the S3 go to S/PDIF too. Wiring is in
+  [Hardware](hardware.en.md#spdif-out).
+- A board without a DAC, S/PDIF only: in Hardware, the DAC has a "none,
+  S/PDIF only" choice. The sound then always goes to S/PDIF, and the switch
+  is gone from the settings.
+- Soft start: on a change of station or source the sound rises from silence
+  to the set volume over two seconds, so a loud station does not blast. A
+  change of track in files or in a wave is as before. On by default; it is
+  switched off in the settings (Sound on the device, "Changing station" on
+  the web).
+- SmartStart: after a power cut the radio goes back to how it was - playing
+  or asleep. With an alarm and a switch-off set, the schedule decides. It is
+  switched on in the web settings, in the Device section; details are in
+  [Usage](usage.en.md#smartstart-after-a-power-cut).
+- The web interface opens by name: `http://<name>.local`. The name is shown
+  in the Wi-Fi settings, on the "Network name" row.
+
+Fixed:
+- 24-bit / 96 kHz FLAC files from USB dropped out every few seconds.
+- A 96 kHz file played on a Bluetooth speaker as solid noise.
+- Bluetooth through the S3 hissed on a PCM5102, worse with the treble up.
+- Back on Bluetooth from another source, the previous source's picture
+  stayed instead of the phone's cover (together with jradio-bt module
+  firmware 1.2.2).
+- On the web, a phone over Bluetooth had no "previous" and "next" arrows,
+  though the remote skipped its tracks.
+- With a browser opening pages both by address and by the `.local` name,
+  the server could stop answering new pages until the browser restarted.
+
 ## v1.11.1 — 7 November 2026
 
 New:

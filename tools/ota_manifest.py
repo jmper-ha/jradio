@@ -17,8 +17,9 @@ releases/latest/download/ota.json, and a manifest that arrived before its
 files would send radios to a 404.
 
 The change list comes from doc/changelog.md and changelog.en.md, so there is
-one place it is written: the sections of this version and the HISTORY_MAX - 1
-released before it, newest first. A radio that skipped a few releases is
+one place it is written: the sections of this version and up to
+HISTORY_MAX - 1 released before it, newest first, as many as fit in
+MANIFEST_BUDGET. A radio that skipped a few releases is
 shown every one it is about to get, not only the last - it keeps the ones
 newer than itself. A tag with no section of its own stops the release here
 rather than shipping an update that cannot say what it changes.
@@ -48,9 +49,14 @@ def fail(message):
     sys.exit("ota_manifest.py: " + message)
 
 
-# Sections in one ota.json: room for a radio a good while behind, at about a
-# kilobyte a version in two languages, inside the 24 KB the radio reads.
+# Sections in one ota.json: room for a radio a good while behind.
 HISTORY_MAX = 10
+# What one ota.json may weigh. A count alone did not hold it: a version is
+# half a kilobyte or seven in two languages, and v1.12.0's ten came to 40.7
+# KB, against the 48 KB a radio from 1.8.0 on reads and the 24 KB of one
+# before it, which saw no update at all. The oldest sections go first; a
+# kilobyte is left of the 24 for the reader's own end.
+MANIFEST_BUDGET = 23 * 1024
 
 RELEASE_HEADING = re.compile(r"^##\s+(v\d+\.\d+\.\d+)(\s|$)")
 
@@ -106,6 +112,10 @@ def check_mark(path):
         head = handle.read(MARK_OFFSET + 4)
     if head[MARK_OFFSET:MARK_OFFSET + 4] != MARK_MAGIC:
         fail("%s has no display mark at offset %d" % (path, MARK_OFFSET))
+
+
+def manifest_text(manifest):
+    return json.dumps(manifest, ensure_ascii=False, indent=1) + "\n"
 
 
 def main(argv=None):
@@ -165,9 +175,15 @@ def main(argv=None):
         "www": describe(www_source, base + "ota-www.tar"),
         "firmware": firmware,
     }
+    text = manifest_text(manifest)
+    while len(text.encode("utf-8")) > MANIFEST_BUDGET and len(history) > 1:
+        history.pop()
+        text = manifest_text(manifest)
+    if len(text.encode("utf-8")) > MANIFEST_BUDGET:
+        fail("ota.json is %d bytes with this version's notes alone, over %d"
+             % (len(text.encode("utf-8")), MANIFEST_BUDGET))
     with open(os.path.join(args.out, "ota.json"), "w", encoding="utf-8") as out:
-        json.dump(manifest, out, ensure_ascii=False, indent=1)
-        out.write("\n")
+        out.write(text)
 
 
 if __name__ == "__main__":

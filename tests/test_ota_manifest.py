@@ -132,10 +132,40 @@ def test_the_history_stops_at_its_limit_and_skips_later_sections():
             "v1.%d.0" % minor for minor in range(12, 2, -1)]
 
 
+def test_the_oldest_sections_go_when_the_manifest_would_not_fit():
+    with tempfile.TemporaryDirectory() as root:
+        lay_out(root)
+        # About 4 KB a version in two languages: ten would be 40.
+        sections = "".join("## v1.%d.0 — 2026\n\nНовое:\n- %s\n\n" % (minor, "Пункт. " * 160)
+                           for minor in range(10, 0, -1))
+        for name in ("ru.md", "en.md"):
+            with open(os.path.join(root, name), "w", encoding="utf-8") as handle:
+                handle.write("# История\n\n" + sections)
+        run(root, "v1.10.0")
+        path = os.path.join(root, "out", "ota.json")
+        assert os.path.getsize(path) <= ota_manifest.MANIFEST_BUDGET
+        with open(path, encoding="utf-8") as handle:
+            versions = [entry["version"] for entry in json.load(handle)["history"]]
+        # The newest kept, in order, and not one more dropped than it took.
+        assert versions == ["v1.%d.0" % minor for minor in range(10, 10 - len(versions), -1)]
+        assert 1 < len(versions) < 10
+
+
+def test_a_version_too_long_to_fit_alone_is_not_released():
+    with tempfile.TemporaryDirectory() as root:
+        lay_out(root)
+        for name in ("ru.md", "en.md"):
+            with open(os.path.join(root, name), "w", encoding="utf-8") as handle:
+                handle.write("# История\n\n## v1.6.0 — 2026\n\nНовое:\n- %s\n" % ("Пункт. " * 2000))
+        assert "notes alone" in refused(root)
+
+
 if __name__ == "__main__":
     test_every_display_gets_its_two_names_and_one_manifest()
     test_a_tag_without_a_changelog_section_is_not_released()
     test_only_a_release_version_goes_out()
     test_a_build_without_the_display_mark_is_not_released()
     test_the_history_stops_at_its_limit_and_skips_later_sections()
+    test_the_oldest_sections_go_when_the_manifest_would_not_fit()
+    test_a_version_too_long_to_fit_alone_is_not_released()
     print("ota manifest tests passed")

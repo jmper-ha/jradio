@@ -13,6 +13,7 @@
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include "album_art.h"
 #include "audio_pcm_convert.h"
@@ -167,6 +168,10 @@ typedef struct {
     size_t available;
     size_t offset;
     bool eof;
+    /* The decoder's path: the buffer may be topped up while the output
+     * drains. Not WAV's, which writes out of the same buffer and moves the
+     * file itself. */
+    bool reads_ahead;
     bool output_started;
     uint32_t output_sample_rate;
     /* For the position readout. `pcm_bytes` counts what reached the output,
@@ -537,16 +542,19 @@ static void load_tags(file_player_context_t *ctx)
 
 static bool refill(file_player_context_t *ctx)
 {
-    if (ctx->offset > 0U) {
-        // Files are cheap to read, so compact on every refill rather than
-        // tracking a lazy read cursor the way the network path has to.
+    /* Compacted only once the end has less than a read's room: the buffer is
+     * kept topped up while the output drains (write_pcm), and moving all of
+     * it for every 4 KB read would move a block's worth seven times over. */
+    if (ctx->offset > 0U &&
+        FILE_PLAYER_INPUT_SIZE - ctx->offset - ctx->available < FILE_PLAYER_READ_CHUNK) {
         memmove(ctx->compressed, ctx->compressed + ctx->offset, ctx->available);
         ctx->offset = 0U;
     }
-    const size_t room = FILE_PLAYER_INPUT_SIZE - ctx->available;
+    const size_t room = FILE_PLAYER_INPUT_SIZE - ctx->offset - ctx->available;
     if (room == 0U) return false;
     const size_t want = room < FILE_PLAYER_READ_CHUNK ? room : FILE_PLAYER_READ_CHUNK;
-    const size_t received = fread(ctx->compressed + ctx->available, 1U, want, ctx->file);
+    const size_t received =
+        fread(ctx->compressed + ctx->offset + ctx->available, 1U, want, ctx->file);
     ctx->available += received;
     if (received < want) ctx->eof = true;
     return received > 0U;
@@ -709,7 +717,31 @@ static esp_err_t write_pcm(file_player_context_t *ctx, const uint8_t *pcm, size_
                      (unsigned int)ctx->output_sample_rate, (unsigned int)length);
         }
     } else {
-        result = board_audio_write(pcm, length, &written, 1000U);
+        /* Not one wait for the whole block. At 96 kHz the DAC's ring holds
+         * exactly one 4096-frame block, 43 ms, and reading the next block's
+         * bytes only after this one had gone took up to 30 of them - with
+         * the decode on top, a buffer ran dry every few seconds. So the file
+         * is read while the ring drains, and once this block is in, the next
+         * one only has to be decoded. */
+        const int64_t deadline = esp_timer_get_time() + 1000000;
+        uint32_t wait_ms = 0U;
+        for (;;) {
+            size_t part = 0U;
+            result = board_audio_write(pcm + written, length - written, &part, wait_ms);
+            written += part;
+            if (result == ESP_ERR_TIMEOUT) result = ESP_OK;
+            if (result != ESP_OK || written == length) break;
+            if (esp_timer_get_time() > deadline) {
+                result = ESP_ERR_TIMEOUT;
+                break;
+            }
+            // Nothing left to read ahead: wait for the ring instead of spinning.
+            const bool read_ahead = ctx->reads_ahead && !ctx->eof &&
+                                    FILE_PLAYER_INPUT_SIZE - ctx->available >=
+                                        FILE_PLAYER_READ_CHUNK &&
+                                    refill(ctx);
+            wait_ms = read_ahead ? 0U : 1000U;
+        }
     }
     if (result != ESP_OK || written != length) {
         ESP_LOGE(TAG, "PCM output failed: err=%s written=%u expected=%u",
@@ -1204,6 +1236,7 @@ static void file_player_run_track(void)
     }
 
     unsigned int pcm_blocks = 0U;
+    ctx.reads_ahead = !is_wav;
     if (!failed && is_wav) {
         // WAV goes from the file to I2S a chunk at a time with no backlog in
         // between, so there is no fill to report - and 0 would read as starved.

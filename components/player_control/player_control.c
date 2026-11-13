@@ -1900,6 +1900,10 @@ static void player_control_task(void *arg)
         if (operation == PLAYER_OPERATION_SELECT_SOURCE) {
             atomic_store_explicit(&s_selecting, true, memory_order_release);
         }
+        // Before the operation: its stream may start before it returns.
+        if (player_operation_swells(operation, snapshot.active_source)) {
+            board_audio_swell_arm();
+        }
         switch (operation) {
         case PLAYER_OPERATION_SELECT_SOURCE: {
             // Re-selecting the same source (retry after an error) also lands

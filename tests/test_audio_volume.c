@@ -179,6 +179,31 @@ static void test_the_fade_starts_at_silence_and_ends_at_the_setting(void)
                                   AUDIO_VOLUME_FADE_FRAMES) < quiet);
 }
 
+static void test_the_swell_rises_by_the_square_of_the_time(void)
+{
+    const uint32_t frames = 44100U * AUDIO_VOLUME_SWELL_MS / 1000U;
+    const uint16_t gain = audio_volume_gain(100U);
+    assert(audio_volume_swell_gain(gain, 0U, frames) == 0U);
+    // -12 dB halfway and -24 dB a quarter in: even to the ear, not half
+    // the loudness in the first instant.
+    assert(audio_volume_swell_gain(gain, frames / 2U, frames) == gain / 4U);
+    assert(audio_volume_swell_gain(gain, frames / 4U, frames) == gain / 16U);
+    assert(audio_volume_swell_gain(gain, frames, frames) == gain);
+    assert(audio_volume_swell_gain(gain, frames * 3U, frames) == gain);
+    assert(audio_volume_swell_gain(gain, 0U, 0U) == gain);
+    // Never louder than the setting on the way up, and never backwards.
+    uint16_t previous = 0U;
+    for (uint32_t done = 0U; done <= frames; done += 441U) {
+        const uint16_t now = audio_volume_swell_gain(gain, done, frames);
+        assert(now >= previous && now <= gain);
+        previous = now;
+    }
+    // A long swell at 192 kHz does not overflow the arithmetic.
+    const uint32_t hires = 192000U * AUDIO_VOLUME_SWELL_MS / 1000U;
+    assert(audio_volume_swell_gain(gain, hires - 1U, hires) <= gain);
+    assert(audio_volume_swell_gain(gain, hires - 1U, hires) > gain - 64U);
+}
+
 static void test_a_ramp_moves_within_the_block_not_between_blocks(void)
 {
     /* Four frames of full-scale left, silent right. A per-block fade would
@@ -298,6 +323,7 @@ int main(void)
     test_an_odd_trailing_byte_is_carried_through();
     test_stepping_stops_at_the_ends();
     test_the_fade_starts_at_silence_and_ends_at_the_setting();
+    test_the_swell_rises_by_the_square_of_the_time();
     test_a_ramp_moves_within_the_block_not_between_blocks();
     test_the_decay_tail_ends_at_silence();
     puts("audio_volume tests passed");

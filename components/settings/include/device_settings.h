@@ -325,6 +325,11 @@ typedef struct {
      * one (board_has_spdif()). Off by default: a board that grows the pin
      * keeps playing where it did until the listener asks. */
     bool spdif_output;
+    /* A change of station or source rising from silence over two seconds
+     * (board's audio_volume_swell_gain) rather than arriving at full level.
+     * On by default: asked for on the forum by a listener whose house jumped
+     * at every switch in the evening. */
+    bool soft_start;
     /* FM's level against the other sources, dB, DEVICE_FM_GAIN_DB_MIN..MAX. */
     signed char fm_gain;
     /* The time zone as an id out of device_timezone.h, not a POSIX string:
@@ -437,6 +442,7 @@ bool device_settings_set_loudness(device_settings_t *settings, unsigned int loud
 bool device_settings_set_loudness_treble(device_settings_t *settings, bool enabled);
 bool device_settings_set_level_normalize(device_settings_t *settings, bool enabled);
 bool device_settings_set_spdif_output(device_settings_t *settings, bool enabled);
+bool device_settings_set_soft_start(device_settings_t *settings, bool enabled);
 /* An id this build knows, out of device_timezone.h; anything else is refused
  * rather than stored, since a zone the firmware cannot translate is a clock
  * that silently stays on the old one. */

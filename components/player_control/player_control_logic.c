@@ -389,6 +389,22 @@ bool player_media_removal_clears_cover(audio_source_t active_source)
     return audio_source_is_files(active_source);
 }
 
+bool player_operation_swells(player_operation_t operation, audio_source_t active_source)
+{
+    switch (operation) {
+    case PLAYER_OPERATION_SELECT_SOURCE:
+    case PLAYER_OPERATION_START_SAVED:
+    case PLAYER_OPERATION_TEST_STREAM:
+        return true;
+    case PLAYER_OPERATION_START_ITEM:
+    case PLAYER_OPERATION_PREVIOUS_ITEM:
+    case PLAYER_OPERATION_NEXT_ITEM:
+        return active_source == AUDIO_SOURCE_NONE || audio_source_is_stations(active_source);
+    default:
+        return false;
+    }
+}
+
 void player_fm_frequency_text(uint32_t khz, char *out, size_t out_size)
 {
     if (out == NULL || out_size == 0U) return;

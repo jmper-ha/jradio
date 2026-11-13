@@ -49,6 +49,8 @@ typedef enum {
     UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD,
     // One station as loud as the next: a switch.
     UI_SETTINGS_ROW_LEVEL_NORMALIZE_FIELD,
+    // A new station rising from silence: a switch, beside the levelling.
+    UI_SETTINGS_ROW_SOFT_START_FIELD,
     /* FM against the other sources, a decibel a detent. Only on a board with
      * a tuner; last in Sound, since it is set once for the tuner. */
     UI_SETTINGS_ROW_FM_GAIN_FIELD,

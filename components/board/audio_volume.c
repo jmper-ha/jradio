@@ -59,6 +59,13 @@ uint16_t audio_volume_fade_gain(uint16_t gain, uint32_t frames_done, uint32_t fa
     return (uint16_t)(((uint32_t)gain * frames_done) / fade_frames);
 }
 
+uint16_t audio_volume_swell_gain(uint16_t gain, uint32_t frames_done, uint32_t swell_frames)
+{
+    if (swell_frames == 0U || frames_done >= swell_frames) return gain;
+    const uint64_t done = frames_done;
+    return (uint16_t)(((uint64_t)gain * done * done) / ((uint64_t)swell_frames * swell_frames));
+}
+
 void audio_volume_block_gains(uint16_t previous_end, uint16_t target, uint32_t fade_done,
                               uint32_t fade_frames, uint32_t frames, uint16_t *start,
                               uint16_t *end)

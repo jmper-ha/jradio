@@ -777,6 +777,29 @@ static void test_only_a_volume_loses_its_cover_when_a_drive_goes(void)
     assert(!player_media_removal_clears_cover(AUDIO_SOURCE_BLUETOOTH));
 }
 
+static void test_a_change_of_station_swells_and_a_track_does_not(void)
+{
+    assert(player_operation_swells(PLAYER_OPERATION_SELECT_SOURCE, AUDIO_SOURCE_USB));
+    assert(player_operation_swells(PLAYER_OPERATION_START_SAVED, AUDIO_SOURCE_NONE));
+    assert(player_operation_swells(PLAYER_OPERATION_TEST_STREAM, AUDIO_SOURCE_INTERNET_RADIO));
+    assert(player_operation_swells(PLAYER_OPERATION_START_ITEM, AUDIO_SOURCE_INTERNET_RADIO));
+    assert(player_operation_swells(PLAYER_OPERATION_NEXT_ITEM, AUDIO_SOURCE_INTERNET_RADIO));
+    assert(player_operation_swells(PLAYER_OPERATION_PREVIOUS_ITEM, AUDIO_SOURCE_INTERNET_RADIO));
+    assert(player_operation_swells(PLAYER_OPERATION_START_ITEM, AUDIO_SOURCE_YANDEX));
+
+    // Tracks: a file's, a media server's, a wave's.
+    assert(!player_operation_swells(PLAYER_OPERATION_START_ITEM, AUDIO_SOURCE_USB));
+    assert(!player_operation_swells(PLAYER_OPERATION_NEXT_ITEM, AUDIO_SOURCE_SD));
+    assert(!player_operation_swells(PLAYER_OPERATION_START_ITEM, AUDIO_SOURCE_DLNA));
+    assert(!player_operation_swells(PLAYER_OPERATION_NEXT_TRACK, AUDIO_SOURCE_YANDEX));
+    assert(!player_operation_swells(PLAYER_OPERATION_ADVANCE_ITEM, AUDIO_SOURCE_USB));
+    // Sound that runs on without the output starting again.
+    assert(!player_operation_swells(PLAYER_OPERATION_START_ITEM, AUDIO_SOURCE_FM));
+    assert(!player_operation_swells(PLAYER_OPERATION_NEXT_ITEM, AUDIO_SOURCE_BLUETOOTH));
+    assert(!player_operation_swells(PLAYER_OPERATION_RESUME, AUDIO_SOURCE_INTERNET_RADIO));
+    assert(!player_operation_swells(PLAYER_OPERATION_PAUSE, AUDIO_SOURCE_INTERNET_RADIO));
+}
+
 static void test_the_phone_is_a_source_only_while_the_module_answers(void)
 {
     /* The capability is the module's heartbeat: a board built for one that
@@ -1065,6 +1088,7 @@ static void test_snapshot_equality_notices_the_frequency(void)
 
 int main(void)
 {
+    test_a_change_of_station_swells_and_a_track_does_not();
     test_the_tuner_is_a_source_while_it_answers_and_seeks_on_the_keys();
     test_a_frequency_reads_with_one_decimal();
     test_a_list_row_leads_with_the_frequency();

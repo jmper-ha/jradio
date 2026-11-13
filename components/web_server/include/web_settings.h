@@ -101,6 +101,8 @@ typedef enum {
     WEB_SETTINGS_FIELD_LEVEL_NORMALIZE,
     // The sound on S/PDIF instead of the DAC.
     WEB_SETTINGS_FIELD_SPDIF_OUTPUT,
+    // A new station rising from silence.
+    WEB_SETTINGS_FIELD_SOFT_START,
     WEB_SETTINGS_FIELD_SCREENSAVER_WHEN,
     WEB_SETTINGS_FIELD_FEED_REVERSE,
     WEB_SETTINGS_FIELD_POWER_RESTORE,
@@ -202,6 +204,7 @@ typedef struct web_settings_view {
     bool loudness_treble;
     bool level_normalize;
     bool spdif_output;
+    bool soft_start;
     bool home_screen_available;
     bool yandex_available;
     bool dlna_available;

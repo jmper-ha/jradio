@@ -505,7 +505,7 @@ static lv_obj_t *s_settings_more_above;
 static lv_obj_t *s_settings_more_below;
 /* One per boolean setting, not per row on screen: only one group is open at
  * a time, so at most three are ever visible, but each keeps its own object. */
-#define UI_SETTINGS_SWITCH_COUNT 11U
+#define UI_SETTINGS_SWITCH_COUNT 12U
 static lv_obj_t *s_settings_switches[UI_SETTINGS_SWITCH_COUNT];
 static lv_obj_t *s_settings_web_band;
 static lv_obj_t *s_settings_web_address;
@@ -4218,6 +4218,10 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_LEVEL_NORMALIZE,
                                  s_device_settings.level_normalize);
         break;
+    case UI_SETTINGS_ROW_SOFT_START_FIELD:
+        ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_SOFT_START,
+                                 s_device_settings.soft_start);
+        break;
     case UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD:
         ui_settings_switch_field(text, text_size, DEVICE_TEXT_ROW_SPDIF_OUTPUT,
                                  s_device_settings.spdif_output);
@@ -4330,6 +4334,10 @@ static bool ui_settings_row_switch(ui_settings_row_id_t id, size_t *index, bool 
     case UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD:
         *index = 10U;
         *value = s_device_settings.spdif_output;
+        return true;
+    case UI_SETTINGS_ROW_SOFT_START_FIELD:
+        *index = 11U;
+        *value = s_device_settings.soft_start;
         return true;
     default:
         return false;
@@ -4728,6 +4736,7 @@ static void ui_apply_tone(void)
     };
     board_audio_set_tone(&tone);
     board_audio_set_levelling(s_device_settings.level_normalize);
+    board_audio_set_swell(s_device_settings.soft_start);
     player_control_set_fm_gain((int)s_device_settings.fm_gain);
 }
 
@@ -5289,6 +5298,11 @@ static void ui_settings_change_selected(void)
     case UI_SETTINGS_ROW_LEVEL_NORMALIZE_FIELD:
         changed = device_settings_set_level_normalize(&s_device_settings,
                                                       !s_device_settings.level_normalize);
+        if (changed) ui_apply_tone();
+        break;
+    case UI_SETTINGS_ROW_SOFT_START_FIELD:
+        changed = device_settings_set_soft_start(&s_device_settings,
+                                                 !s_device_settings.soft_start);
         if (changed) ui_apply_tone();
         break;
     case UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD:

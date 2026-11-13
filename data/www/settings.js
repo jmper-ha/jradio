@@ -184,6 +184,7 @@
      row: document.querySelector('#device-fm-gain-block'), gate: 'fm'},
     {field: 'spdif_output', kind: 'switch', node: document.querySelector('#device-spdif-output'),
      row: document.querySelector('#device-spdif-block'), gate: 'spdif'},
+    {field: 'soft_start', kind: 'switch', node: document.querySelector('#device-soft-start')},
   ];
 
   const reconnectDelays = Object.freeze([500, 1000, 2000, 4000, 8000]);

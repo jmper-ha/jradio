@@ -280,6 +280,14 @@ typedef enum {
  * host task and cannot be staged on a host. */
 bool player_media_removal_clears_cover(audio_source_t active_source);
 
+/* Whether `operation` changes the station or the source - the change the
+ * slow start (board_audio_swell_arm) is for. A station picked, stepped to or
+ * started from stop, a new source, a test stream: yes. A track of a file,
+ * of a media server or of a wave: no - a song would creep in, and an album
+ * without gaps would get one. Neither an FM preset nor the phone: their sound
+ * runs on without the output starting again, so nothing would take the arm. */
+bool player_operation_swells(player_operation_t operation, audio_source_t active_source);
+
 /* 101200 -> "101.2": the way a frequency is read out, one decimal, the
  * hundreds of kHz that FM stations sit on. */
 void player_fm_frequency_text(uint32_t khz, char *out, size_t out_size);

@@ -370,6 +370,41 @@ static uint16_t board_audio_levelled_gain(const void *pcm, uint32_t frames, uint
     return levelled;
 }
 
+/* Armed by the player, begun by the next stream start. An arm no stream
+ * follows lapses - a station that never connected, an FM preset that starts
+ * nothing - rather than turning up on some track minutes later. Long enough
+ * for a Yandex wave, which is three TLS handshakes before its first block. */
+#define BOARD_SWELL_ARM_TICKS pdMS_TO_TICKS(30000)
+static atomic_bool s_swell_enabled = ATOMIC_VAR_INIT(true);
+/* The tick it was armed at, made odd so that 0 is "not armed". */
+static atomic_uint s_swell_armed_at = ATOMIC_VAR_INIT(0U);
+/* Frames of the swell in this stream, and how many have gone. Guarded by
+ * s_audio_mutex, like the fade. */
+static uint32_t s_swell_frames;
+static uint32_t s_swell_done;
+
+void board_audio_set_swell(bool enabled)
+{
+    atomic_store_explicit(&s_swell_enabled, enabled, memory_order_relaxed);
+}
+
+void board_audio_swell_arm(void)
+{
+    if (!atomic_load_explicit(&s_swell_enabled, memory_order_relaxed)) return;
+    atomic_store_explicit(&s_swell_armed_at, (unsigned)xTaskGetTickCount() | 1U,
+                          memory_order_relaxed);
+}
+
+static void board_audio_swell_begin(void)
+{
+    const unsigned armed = atomic_exchange_explicit(&s_swell_armed_at, 0U, memory_order_relaxed);
+    s_swell_done = 0U;
+    s_swell_frames = 0U;
+    if (armed == 0U || !atomic_load_explicit(&s_swell_enabled, memory_order_relaxed)) return;
+    if ((TickType_t)(xTaskGetTickCount() - (TickType_t)armed) > BOARD_SWELL_ARM_TICKS) return;
+    s_swell_frames = (uint32_t)(((uint64_t)s_audio_sample_rate * AUDIO_VOLUME_SWELL_MS) / 1000U);
+}
+
 void board_audio_set_volume(uint8_t percent)
 {
     if (percent > AUDIO_VOLUME_MAX_PERCENT) percent = AUDIO_VOLUME_MAX_PERCENT;
@@ -1191,13 +1226,17 @@ static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
      * across the block with it and the tone's headroom is worked out from
      * the two together. Measured here, before either: what the station
      * sends, like the meter. */
-    const uint16_t gain =
+    const uint16_t levelled =
         board_audio_levelled_gain(pcm, frames, audio_volume_gain(board_audio_volume()));
     uint16_t gain_start;
     uint16_t gain_end;
     /* The start of a stream - the fade's first block - is where the tone
      * filters forget the last one: its tail is not this stream's. */
     const bool stream_start = s_audio_fade_frames == 0U;
+    if (stream_start) board_audio_swell_begin();
+    // Where the block should end, so the ramp across it climbs the swell.
+    const uint16_t gain = audio_volume_swell_gain(levelled, s_swell_done + frames, s_swell_frames);
+    if (s_swell_done < s_swell_frames) s_swell_done += frames;
     audio_volume_block_gains(s_audio_gain_end, gain, s_audio_fade_frames,
                              AUDIO_VOLUME_FADE_FRAMES, frames, &gain_start, &gain_end);
     s_audio_gain_end = gain_end;

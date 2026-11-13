@@ -47,6 +47,16 @@ uint16_t audio_volume_gain(uint8_t percent);
 #define AUDIO_VOLUME_FRAME_BYTES 4U
 uint16_t audio_volume_fade_gain(uint16_t gain, uint32_t frames_done, uint32_t fade_frames);
 
+/* The slow start after a change of station or source, when the listener has
+ * asked for it: from silence to the setting over `swell_frames`, the
+ * multiplier rising with the square of the time - about -24 dB a quarter of
+ * the way in, -12 dB halfway. Linear in amplitude the first half second was
+ * already most of the way, and a station that came on too loud still made
+ * the house jump (a forum request, 2026-11-13); the square is close to
+ * even to the ear. Past the end it returns `gain`, like the fade above. */
+#define AUDIO_VOLUME_SWELL_MS 2000U
+uint16_t audio_volume_swell_gain(uint16_t gain, uint32_t frames_done, uint32_t swell_frames);
+
 /* The gains one block of `frames` runs between. During the start fade, the
  * fade's; after it, from where the previous block ended to the setting now.
  *

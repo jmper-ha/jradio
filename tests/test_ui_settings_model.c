@@ -285,18 +285,18 @@ static void test_the_sound_group_holds_two_numbers_and_a_choice(void)
     assert(ui_settings_model_move(&model, 1) == UI_SETTINGS_MODEL_CHANGED);
     assert(ui_settings_model_selected(&model) == UI_SETTINGS_ROW_SOUND_GROUP);
     assert(ui_settings_model_activate(&model) == UI_SETTINGS_MODEL_CHANGED);
-    // Four headings, five fields, About.
-    assert(ui_settings_model_row_count(&model) == 10U);
-    assert(ui_settings_model_row_at(&model, 8U).id == UI_SETTINGS_ROW_DISPLAY_GROUP);
+    // Four headings, six fields, About.
+    assert(ui_settings_model_row_count(&model) == 11U);
+    assert(ui_settings_model_row_at(&model, 9U).id == UI_SETTINGS_ROW_DISPLAY_GROUP);
     // With one, the level is the last of them.
     ui_settings_model_set_fm(true);
-    assert(ui_settings_model_row_count(&model) == 11U);
-    assert(ui_settings_model_row_at(&model, 8U).id == UI_SETTINGS_ROW_FM_GAIN_FIELD);
+    assert(ui_settings_model_row_count(&model) == 12U);
+    assert(ui_settings_model_row_at(&model, 9U).id == UI_SETTINGS_ROW_FM_GAIN_FIELD);
     assert(ui_settings_row_is_number(UI_SETTINGS_ROW_FM_GAIN_FIELD));
     // The S/PDIF switch only with the output wired, last in the group.
     ui_settings_model_set_spdif(true);
-    assert(ui_settings_model_row_count(&model) == 12U);
-    assert(ui_settings_model_row_at(&model, 9U).id == UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD);
+    assert(ui_settings_model_row_count(&model) == 13U);
+    assert(ui_settings_model_row_at(&model, 10U).id == UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD);
     assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_SPDIF_OUTPUT_FIELD));
     ui_settings_model_set_spdif(false);
     ui_settings_model_set_fm(BOARD_HAS_FM_RADIO);
@@ -306,6 +306,9 @@ static void test_the_sound_group_holds_two_numbers_and_a_choice(void)
     assert(ui_settings_model_row_at(&model, 6U).id == UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD);
     assert(ui_settings_model_row_at(&model, 7U).id == UI_SETTINGS_ROW_LEVEL_NORMALIZE_FIELD);
     assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_LEVEL_NORMALIZE_FIELD));
+    // The slow start right under the levelling: both are about a station's level.
+    assert(ui_settings_model_row_at(&model, 8U).id == UI_SETTINGS_ROW_SOFT_START_FIELD);
+    assert(!ui_settings_row_is_number(UI_SETTINGS_ROW_SOFT_START_FIELD));
     // The tone controls take the knob; loudness and its switch are clicked.
     assert(ui_settings_row_is_number(UI_SETTINGS_ROW_TONE_BASS_FIELD));
     assert(ui_settings_row_is_number(UI_SETTINGS_ROW_TONE_TREBLE_FIELD));

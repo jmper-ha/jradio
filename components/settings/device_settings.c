@@ -249,6 +249,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         .loudness_treble = false,
         .level_normalize = false,
         .spdif_output = false,
+        .soft_start = true,
         .fm_gain = 0,
         .screensaver_seconds = DEVICE_SCREENSAVER_SECONDS_DEFAULT,
         .screensaver_brightness = DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT,
@@ -455,6 +456,9 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
     }
     if (read_value(&csv, "spdif_output", value, sizeof(value))) {
         (void)parse_bool(value, &settings->spdif_output);
+    }
+    if (read_value(&csv, "soft_start", value, sizeof(value))) {
+        (void)parse_bool(value, &settings->soft_start);
     }
     if (read_value(&csv, "fm_gain", value, sizeof(value))) {
         char *end = NULL;
@@ -1094,6 +1098,15 @@ bool device_settings_set_spdif_output(device_settings_t *settings, bool enabled)
     if (settings->spdif_output == enabled) return true;
     if (!save_value(settings, "spdif_output", enabled ? "1" : "0")) return false;
     settings->spdif_output = enabled;
+    return true;
+}
+
+bool device_settings_set_soft_start(device_settings_t *settings, bool enabled)
+{
+    if (settings == NULL) return false;
+    if (settings->soft_start == enabled) return true;
+    if (!save_value(settings, "soft_start", enabled ? "1" : "0")) return false;
+    settings->soft_start = enabled;
     return true;
 }
 

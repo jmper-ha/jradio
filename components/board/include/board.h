@@ -156,6 +156,13 @@ uint8_t board_audio_volume(void);
  * Not the Bluetooth module's sound, which reaches the DAC past this board. */
 void board_audio_set_tone(const audio_tone_settings_t *settings);
 
+/* The slow start (audio_volume_swell_gain): on, the player's word that the
+ * station or source has changed makes the next stream start rise from
+ * silence over AUDIO_VOLUME_SWELL_MS. Only that one: a track of a file or a
+ * chain starts the output too, and a song should not creep in. */
+void board_audio_set_swell(bool enabled);
+void board_audio_swell_arm(void);
+
 /* Levelling (audio_level.h). The player says when a station or source
  * begins and where it should start - what was learned for it before, or
  * what its tags say - and reads back what was found, to keep. Picked up at

@@ -113,6 +113,11 @@ static const ui_settings_row_t s_field_rows[] = {
         .group = UI_SETTINGS_GROUP_SOUND,
         .kind = UI_SETTINGS_ROW_FIELD,
     },
+    {
+        .id = UI_SETTINGS_ROW_SOFT_START_FIELD,
+        .group = UI_SETTINGS_GROUP_SOUND,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
     // In every build; field_is_present() asks whether a tuner is fitted.
     {
         .id = UI_SETTINGS_ROW_FM_GAIN_FIELD,

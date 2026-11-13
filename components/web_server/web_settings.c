@@ -99,6 +99,7 @@ static const field_descriptor_t k_fields[] = {
     {"loudness_treble", WEB_SETTINGS_FIELD_LOUDNESS_TREBLE, {NULL}, false, false},
     {"level_normalize", WEB_SETTINGS_FIELD_LEVEL_NORMALIZE, {NULL}, false, false},
     {"spdif_output", WEB_SETTINGS_FIELD_SPDIF_OUTPUT, {NULL}, false, false},
+    {"soft_start", WEB_SETTINGS_FIELD_SOFT_START, {NULL}, false, false},
     {"screensaver_when", WEB_SETTINGS_FIELD_SCREENSAVER_WHEN, {"always", "idle"}, false, false},
 };
 
@@ -361,6 +362,8 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_level_normalize(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_SPDIF_OUTPUT:
         return device_settings_set_spdif_output(settings, change->value != 0);
+    case WEB_SETTINGS_FIELD_SOFT_START:
+        return device_settings_set_soft_start(settings, change->value != 0);
     case WEB_SETTINGS_FIELD_SCREENSAVER_WHEN:
         // The choice's index: 0 "always", 1 "idle", as device_screensaver_when_t counts.
         return device_settings_set_screensaver_when(settings,
@@ -417,6 +420,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .loudness_treble = settings->loudness_treble,
         .level_normalize = settings->level_normalize,
         .spdif_output = settings->spdif_output,
+        .soft_start = settings->soft_start,
         .home_screen_available = home_screen_available,
         .yandex_available = yandex_available,
         .dlna_available = dlna_available,
@@ -478,6 +482,7 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->loudness_treble == right->loudness_treble &&
            left->level_normalize == right->level_normalize &&
            left->spdif_output == right->spdif_output &&
+           left->soft_start == right->soft_start &&
            left->home_screen_available == right->home_screen_available &&
            left->yandex_available == right->yandex_available &&
            left->dlna_available == right->dlna_available &&
@@ -598,6 +603,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_literal(writer, view->level_normalize ? "true" : "false");
     web_json_literal(writer, ",\"spdif_output\":");
     web_json_literal(writer, view->spdif_output ? "true" : "false");
+    web_json_literal(writer, ",\"soft_start\":");
+    web_json_literal(writer, view->soft_start ? "true" : "false");
     /* What this build has, not what it is set to: a switch for a source the
      * firmware was compiled without would change a value nothing reads. */
     web_json_literal(writer, ",\"available\":{\"home_screen\":");

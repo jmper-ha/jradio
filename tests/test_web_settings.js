@@ -104,7 +104,7 @@ const ids = [
   'device-theme-accent', 'device-theme-accent-row',
   'device-theme-saver', 'device-theme-saver-row',
   'device-fm-gain', 'device-fm-gain-value', 'device-fm-gain-block',
-  'device-spdif-output', 'device-spdif-block',
+  'device-spdif-output', 'device-spdif-block', 'device-soft-start',
   'device-screensaver', 'device-screensaver-after', 'device-idle-brightness',
   'device-idle-brightness-value', 'device-screensaver-after-row', 'device-screensaver-when',
   'device-screensaver-when-row',

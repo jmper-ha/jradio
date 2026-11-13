@@ -76,6 +76,7 @@ static const device_text_entry_t k_text[DEVICE_TEXT_COUNT] = {
     /* Right under loudness, which is what makes "lift" mean its lift. */
     [DEVICE_TEXT_ROW_LOUDNESS_TREBLE] = {"Подъём высоких", "Treble lift"},
     [DEVICE_TEXT_ROW_LEVEL_NORMALIZE] = {"Ровная громкость", "Even volume"},
+    [DEVICE_TEXT_ROW_SOFT_START] = {"Плавный старт", "Soft start"},
     [DEVICE_TEXT_ROW_FM_GAIN] = {"Уровень FM", "FM level"},
     [DEVICE_TEXT_ROW_SPDIF_OUTPUT] = {"Звук на S/PDIF", "Sound over S/PDIF"},
     [DEVICE_TEXT_LEVEL_MEASURING] = {"…", "…"},

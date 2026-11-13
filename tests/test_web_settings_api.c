@@ -347,6 +347,9 @@ static void test_apply_writes_through_to_the_file(void)
     assert(parse_one("{\"field\":\"spdif_output\",\"value\":true}", &tone_change));
     assert(tone_change.field == WEB_SETTINGS_FIELD_SPDIF_OUTPUT);
     assert(web_settings_apply(&settings, &tone_change));
+    assert(parse_one("{\"field\":\"soft_start\",\"value\":false}", &tone_change));
+    assert(tone_change.field == WEB_SETTINGS_FIELD_SOFT_START);
+    assert(web_settings_apply(&settings, &tone_change));
     assert(parse_one("{\"field\":\"feed_reverse\",\"value\":true}", &tone_change));
     assert(tone_change.field == WEB_SETTINGS_FIELD_FEED_REVERSE);
     assert(web_settings_apply(&settings, &tone_change));
@@ -385,6 +388,7 @@ static void test_apply_writes_through_to_the_file(void)
     assert(reloaded.loudness == DEVICE_LOUDNESS_MEDIUM && reloaded.loudness_treble);
     assert(reloaded.level_normalize);
     assert(reloaded.spdif_output);
+    assert(!reloaded.soft_start);
     assert(reloaded.feed_reverse);
     assert(reloaded.power_restore);
     char nothing[8];
@@ -483,6 +487,7 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"loudness_treble\":false") != NULL);
     assert(strstr(document, "\"level_normalize\":false") != NULL);
     assert(strstr(document, "\"spdif_output\":false") != NULL);
+    assert(strstr(document, "\"soft_start\":true") != NULL);
     assert(strstr(document, "\"feed_reverse\":false") != NULL);
     assert(strstr(document, "\"power_restore\":false") != NULL);
     assert(strstr(document, "\"sleep\":false") != NULL);
@@ -601,6 +606,9 @@ static void test_view_comparison_notices_every_field(void)
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.spdif_output = !base.spdif_output;
+    assert(!web_settings_view_equal(&base, &other));
+    other = base;
+    other.soft_start = !base.soft_start;
     assert(!web_settings_view_equal(&base, &other));
     other = base;
     other.spdif_available = !base.spdif_available;

@@ -1078,6 +1078,9 @@ static void test_tone_and_loudness_persist(void)
     // The output too: the DAC until S/PDIF is asked for.
     assert(!settings.spdif_output);
     assert(device_settings_set_spdif_output(&settings, true));
+    // The slow start is the one that begins on, and is kept off once turned.
+    assert(settings.soft_start);
+    assert(device_settings_set_soft_start(&settings, false));
     assert(device_settings_set_tone_bass(&settings, -4));
     assert(device_settings_set_tone_treble(&settings, 7));
     assert(device_settings_set_loudness(&settings, DEVICE_LOUDNESS_MEDIUM));
@@ -1093,6 +1096,7 @@ static void test_tone_and_loudness_persist(void)
     assert(reloaded.feed_reverse);
     assert(reloaded.power_restore);
     assert(reloaded.spdif_output);
+    assert(!reloaded.soft_start);
     char value[16];
     assert(settings_csv_get(test_path, "loudness", value, sizeof(value)));
     assert(strcmp(value, "medium") == 0);

@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "wifi_provisioning.h"
 #include "yandex_auth.h"
 
 /* The header every unofficial client sends; the API answers differently, and
@@ -138,10 +139,17 @@ esp_err_t yandex_api_get(const char *path, char *response, size_t response_size,
      * moment later - and the saved station was given up all the same. A GET
      * changes nothing on the server, so asking twice is safe; a server that
      * answered, even with an error, is not asked again, and neither is a
-     * request that could not be made at all. */
+     * request that could not be made at all.
+     *
+     * And not while there is no network to ask over. With the Wi-Fi gone a
+     * lookup fails only after some 7 s, so three of them held a track's
+     * pickup for 17 s - longer than a stop waits for the decoder, and the
+     * stop that the lost network sends gave up on it (a user's log,
+     * 2026-11-15): Yandex was never resumed when the router came back. */
     esp_err_t err = ESP_FAIL;
     for (int attempt = 0; attempt < YANDEX_API_CONNECT_ATTEMPTS; ++attempt) {
         if (attempt > 0) {
+            if (wifi_provisioning_status().mode != WIFI_PROVISIONING_STA_CONNECTED) break;
             ESP_LOGW(TAG, "no answer for %s; trying again", path);
             vTaskDelay(pdMS_TO_TICKS(YANDEX_API_CONNECT_RETRY_MS));
         }

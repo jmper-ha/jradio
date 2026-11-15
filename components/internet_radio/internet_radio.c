@@ -1920,7 +1920,12 @@ static void radio_reopen_task(void *arg)
             if (job->direct[0] != '\0') {
                 ESP_LOGI(TAG, "the track's last address did not answer; asking for a new one");
             }
-            const char *url = job->resolve();
+            /* A stop asked for while the old address was being tried: the
+             * new link is two API calls the stop would have to wait out, and
+             * nothing would play it. */
+            const char *url = atomic_load_explicit(job->stop, memory_order_acquire)
+                                  ? NULL
+                                  : job->resolve();
             if (url == NULL) {
                 ESP_LOGW(TAG, "the track could not be resolved again");
             } else if (radio_http_connect_client(url, job->offset, &job->client,

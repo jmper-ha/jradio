@@ -78,6 +78,13 @@ static atomic_uint s_listing_revision = ATOMIC_VAR_INIT(0U);
 /* True from the moment a source select is taken off the queue until it is
  * done - the volume mounted and its root read. See player_control_selecting(). */
 static atomic_bool s_selecting = ATOMIC_VAR_INIT(false);
+/* A station's stop that timed out waiting for the decoder. The decoder still
+ * ends - the stop was asked for - but nothing came back to finish the stop,
+ * and the source stayed "active" with no task under it: a select of the same
+ * source was taken as already done and a play as already playing, so Yandex
+ * was never resumed when the network came back (a user's log, 2026-11-15).
+ * Finished before the next command. Only this task touches it. */
+static bool s_stop_unfinished;
 /* Full path of the file being played. It is here rather than in the snapshot
  * because a path this long would not fit the 512-byte frame the snapshot is
  * diffed into for the web.
@@ -1624,6 +1631,7 @@ static bool player_stop_active_source(audio_source_t source)
         const esp_err_t result = internet_radio_stop();
         if (result != ESP_OK) {
             ESP_LOGW(TAG, "internet radio stop failed: %s", esp_err_to_name(result));
+            s_stop_unfinished = true;
             return false;
         }
         if (source == AUDIO_SOURCE_YANDEX) {
@@ -1647,6 +1655,7 @@ static bool player_stop_active_source(audio_source_t source)
         const esp_err_t result = internet_radio_stop();
         if (result != ESP_OK) {
             ESP_LOGW(TAG, "internet radio stop failed: %s", esp_err_to_name(result));
+            s_stop_unfinished = true;
             return false;
         }
         album_art_clear();
@@ -1679,6 +1688,7 @@ static bool player_stop_active_source(audio_source_t source)
     const audio_source_result_t result = audio_source_manager_stop(&s_manager, source);
     if (result == AUDIO_SOURCE_OK) {
         atomic_store_explicit(&s_active_source, AUDIO_SOURCE_NONE, memory_order_release);
+        s_stop_unfinished = false;
         return true;
     }
     ESP_LOGW(TAG, "audio source stop failed: source=%d result=%d", (int)source, (int)result);
@@ -1890,6 +1900,18 @@ static void player_control_task(void *arg)
             player_sync_station_icon();
             player_fm_learn_name();
             continue;
+        }
+
+        if (s_stop_unfinished) {
+            /* By now the decoder has normally ended, and the stop returns at
+             * once; if it is still going, this waits for it as a stop does. */
+            const audio_source_t active =
+                atomic_load_explicit(&s_active_source, memory_order_acquire);
+            if (!audio_source_is_stations(active) && active != AUDIO_SOURCE_DLNA) {
+                s_stop_unfinished = false;
+            } else if (player_stop_active_source(active)) {
+                ESP_LOGI(TAG, "the stop that timed out is finished");
+            }
         }
 
         player_snapshot_t snapshot;

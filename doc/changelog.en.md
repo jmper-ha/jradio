@@ -6,6 +6,25 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.12.1 — 15 November 2026
+
+New:
+- On the web, the volume, tone and settings sliders move with the mouse
+  wheel: one step of the slider per notch. A wheel already scrolling the page
+  goes on scrolling it and leaves the sliders alone.
+
+Fixed:
+- After a power cut that took the router down too, the radio stayed on
+  "Could not connect" until it was restarted. Not finding a network, the
+  radio raises its own setup access point, and it never left it again. Now
+  it looks for the saved networks once a minute and goes back to one when it
+  hears it. While a phone is on the access point, it does not look.
+- With no network yet at power-on, autoplay no longer starts the station
+  blind: the station's screen waits with "Waiting for network..." and starts
+  it when the network arrives. Likewise, a network lost while playing no
+  longer sends the radio to the home screen; the station goes on once the
+  network is back.
+
 ## v1.12.0 — 13 November 2026
 
 New:

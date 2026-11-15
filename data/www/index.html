@@ -175,8 +175,11 @@
               <span id="track-elapsed" class="track-time">0:00</span>
               <div id="progress-rail" class="progress-rail">
                 <div id="progress-fill" class="progress-fill"></div>
+                <!-- data-no-wheel: a second per notch is no way to find a
+                     place in a track, and the slider is where the pointer
+                     rests while reading the page. -->
                 <input id="progress-seek" class="progress-seek" type="range"
-                       min="0" max="0" step="1" value="0"
+                       min="0" max="0" step="1" value="0" data-no-wheel
                        data-i18n-aria="player.position" aria-label="Позиция в треке" disabled>
               </div>
               <span id="track-total" class="track-time">0:00</span>

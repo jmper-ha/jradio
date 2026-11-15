@@ -65,3 +65,81 @@
     wire();
   }
 })();
+
+/* The mouse wheel moves a slider - the volume, the tone, the settings - one
+   step per notch. Here because this is the one script every page loads, and a
+   listener on the document needs nothing from the page around it.
+
+   A wheel that is scrolling the page goes on scrolling it when a slider slides
+   under the pointer: the settings are a long page of sliders, and reading down
+   it must not move them. Only a wheel that starts on a slider turns it.
+
+   The slider hears what a drag would have said: an input per step, and one
+   change once the wheel has stopped. The change is what writes the settings to
+   the card, and a write per notch would be a flash erase per notch. */
+(function () {
+  'use strict';
+
+  // A trackpad sends a stream of small deltas; this much travel is one step.
+  var STEP_TRAVEL = 40;
+  var SCROLL_GRACE_MS = 400;
+  var SETTLE_MS = 400;
+  var scrolledAt = -Infinity;
+  var turning = null;
+  var travel = 0;
+  var timer = 0;
+
+  function settle() {
+    var input = turning;
+    clearTimeout(timer);
+    timer = 0;
+    turning = null;
+    travel = 0;
+    if (input) input.dispatchEvent(new Event('change', {bubbles: true}));
+  }
+
+  function turnable(node) {
+    return node && node.tagName === 'INPUT' && node.type === 'range' && !node.disabled &&
+      !node.hasAttribute('data-no-wheel');
+  }
+
+  document.addEventListener('wheel', function (event) {
+    var input = event.target;
+    var now = Date.now();
+    // Ctrl and the wheel is the browser's zoom.
+    if (!turnable(input) || event.ctrlKey || !event.deltaY) {
+      scrolledAt = now;
+      return;
+    }
+    if (input !== turning && now - scrolledAt < SCROLL_GRACE_MS) {
+      scrolledAt = now;
+      return;
+    }
+    event.preventDefault();
+    if (turning && turning !== input) settle();
+    turning = input;
+    clearTimeout(timer);
+    timer = setTimeout(settle, SETTLE_MS);
+
+    var up;
+    if (event.deltaMode !== 0 || Math.abs(event.deltaY) >= STEP_TRAVEL) {
+      travel = 0;
+      up = event.deltaY < 0;
+    } else {
+      travel += event.deltaY;
+      if (Math.abs(travel) < STEP_TRAVEL) return;
+      up = travel < 0;
+      travel = 0;
+    }
+    var step = Number(input.step) || 1;
+    var min = Number(input.min);
+    var max = Number(input.max);
+    var before = Number(input.value);
+    var value = before + (up ? step : -step);
+    if (Number.isFinite(min)) value = Math.max(min, value);
+    if (Number.isFinite(max)) value = Math.min(max, value);
+    if (value === before) return;
+    input.value = String(value);
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+  }, {passive: false});
+})();

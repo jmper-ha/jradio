@@ -336,6 +336,63 @@ static void test_a_named_source_resumes_its_own_place(void)
                                   true, true, true, true) == UI_AUTOPLAY_FILE_UNAVAILABLE);
 }
 
+static void test_a_failed_start_is_tried_again_until_it_plays(void)
+{
+    ui_autoplay_retry_t retry;
+    ui_autoplay_retry_arm(&retry, AUDIO_SOURCE_INTERNET_RADIO);
+    // Autoplay's own select has not landed yet: not a reason to give up.
+    assert(!ui_autoplay_retry_due(&retry, AUDIO_SOURCE_NONE, false, false, 0U));
+    assert(retry.armed);
+    // Connecting, then the first failure: the wait starts from the failure.
+    assert(!ui_autoplay_retry_due(&retry, AUDIO_SOURCE_INTERNET_RADIO, false, false, 100U));
+    assert(!ui_autoplay_retry_due(&retry, AUDIO_SOURCE_INTERNET_RADIO, true, false, 12000U));
+    assert(ui_autoplay_retry_pending(&retry, AUDIO_SOURCE_INTERNET_RADIO, true, false));
+    assert(!ui_autoplay_retry_due(&retry, AUDIO_SOURCE_INTERNET_RADIO, true, false, 16999U));
+    assert(ui_autoplay_retry_due(&retry, AUDIO_SOURCE_INTERNET_RADIO, true, false, 17000U));
+    // The error is still on screen until the play is taken: no second send.
+    assert(!ui_autoplay_retry_due(&retry, AUDIO_SOURCE_INTERNET_RADIO, true, false, 17010U));
+    assert(!ui_autoplay_retry_due(&retry, AUDIO_SOURCE_INTERNET_RADIO, false, false, 17020U));
+    // The try under way is still the reconnecting, not a fresh start.
+    assert(ui_autoplay_retry_pending(&retry, AUDIO_SOURCE_INTERNET_RADIO, false, false));
+    assert(!ui_autoplay_retry_due(&retry, AUDIO_SOURCE_INTERNET_RADIO, true, false, 18000U));
+    assert(ui_autoplay_retry_due(&retry, AUDIO_SOURCE_INTERNET_RADIO, true, false, 23000U));
+    // It plays: done, and an error after that is an ordinary one.
+    assert(!ui_autoplay_retry_due(&retry, AUDIO_SOURCE_INTERNET_RADIO, false, true, 30000U));
+    assert(!retry.armed);
+    assert(!ui_autoplay_retry_pending(&retry, AUDIO_SOURCE_INTERNET_RADIO, true, false));
+    assert(!ui_autoplay_retry_due(&retry, AUDIO_SOURCE_INTERNET_RADIO, true, false, 90000U));
+}
+
+static void test_the_retry_slows_down_and_never_stops_by_itself(void)
+{
+    assert(ui_autoplay_retry_delay_ms(0U) == 5000U);
+    assert(ui_autoplay_retry_delay_ms(5U) == 5000U);
+    assert(ui_autoplay_retry_delay_ms(6U) == 15000U);
+    assert(ui_autoplay_retry_delay_ms(12U) == 30000U);
+    assert(ui_autoplay_retry_delay_ms(1000U) == 30000U);
+
+    ui_autoplay_retry_t retry;
+    ui_autoplay_retry_arm(&retry, AUDIO_SOURCE_YANDEX);
+    uint32_t now = 0U;
+    for (uint32_t attempt = 0U; attempt < 40U; ++attempt) {
+        assert(!ui_autoplay_retry_due(&retry, AUDIO_SOURCE_YANDEX, true, false, now));
+        now += ui_autoplay_retry_delay_ms(attempt);
+        assert(ui_autoplay_retry_due(&retry, AUDIO_SOURCE_YANDEX, true, false, now));
+    }
+    assert(retry.armed);
+}
+
+static void test_another_source_chosen_ends_the_retry(void)
+{
+    ui_autoplay_retry_t retry;
+    ui_autoplay_retry_arm(&retry, AUDIO_SOURCE_YANDEX);
+    assert(!ui_autoplay_retry_due(&retry, AUDIO_SOURCE_YANDEX, true, false, 0U));
+    assert(!ui_autoplay_retry_due(&retry, AUDIO_SOURCE_USB, false, true, 1000U));
+    assert(!retry.armed);
+    assert(!ui_autoplay_retry_due(&retry, AUDIO_SOURCE_YANDEX, true, false, 60000U));
+    assert(!ui_autoplay_retry_pending(&retry, AUDIO_SOURCE_YANDEX, true, false));
+}
+
 int main(void)
 {
     test_fm_comes_back_on();
@@ -359,6 +416,9 @@ int main(void)
     test_a_media_server_taken_off_the_home_screen_does_not_come_back();
     test_bluetooth_comes_back_to_its_screen();
     test_a_named_source_resumes_its_own_place();
+    test_a_failed_start_is_tried_again_until_it_plays();
+    test_the_retry_slows_down_and_never_stops_by_itself();
+    test_another_source_chosen_ends_the_retry();
     puts("ui_autoplay tests passed");
     return 0;
 }

@@ -179,6 +179,8 @@ bool player_control_playing_file_path(char *out, size_t out_size)
  * player, and there is no event that would clear it - the source stays exactly
  * as stopped as it was. */
 static atomic_uint s_no_resume_at_ms = ATOMIC_VAR_INIT(0U);
+// See player_control_start_failures().
+static atomic_uint s_start_failures = ATOMIC_VAR_INIT(0U);
 /* And when a container on a media server refused to open, for the same reason
  * and with the same lifetime. */
 static atomic_uint s_browse_failed_at_ms = ATOMIC_VAR_INIT(0U);
@@ -2160,6 +2162,7 @@ static void player_control_task(void *arg)
                                   started ? 0U : (uint32_t)(esp_timer_get_time() / 1000),
                                   memory_order_release);
             if (!started) {
+                atomic_fetch_add_explicit(&s_start_failures, 1U, memory_order_release);
                 ESP_LOGW(TAG, "start saved: nothing to start on source %d",
                          (int)snapshot.active_source);
             }
@@ -3033,6 +3036,11 @@ static bool player_file_resume_cue(const char *path)
 bool player_control_selecting(void)
 {
     return atomic_load_explicit(&s_selecting, memory_order_acquire);
+}
+
+unsigned int player_control_start_failures(void)
+{
+    return atomic_load_explicit(&s_start_failures, memory_order_acquire);
 }
 
 bool player_control_file_resume_path(const char *path)

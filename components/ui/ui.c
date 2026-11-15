@@ -769,6 +769,15 @@ static uint32_t s_autoplay_started_ms;
 /* The station's screen is up and autoplay is waiting on it for the network.
  * See ui_autoplay_hold_for_network(). */
 static bool s_autoplay_network_held;
+/* The station or wave autoplay started, tried again while it fails to start.
+ * See ui_autoplay_retry_t. */
+static ui_autoplay_retry_t s_autoplay_retry;
+// player_control_start_failures() when the last play went out.
+static unsigned int s_autoplay_retry_failures;
+/* Set around the retry's own play. Any other command from this screen is the
+ * listener deciding - a stop above all, which would otherwise leave
+ * "reconnecting" on screen over a player told to be quiet. */
+static bool s_autoplay_retry_sending;
 static bool s_files_list_open_requested;
 static unsigned int s_files_list_open_revision;
 /* A browse the device has been asked for and has not answered yet.
@@ -2828,9 +2837,28 @@ static void ui_update_playback_marks(const player_snapshot_t *snapshot)
  * subscription, was a screen with no explanation on it. */
 static void ui_set_state_line(const char *state, const char *artist, bool error);
 
+/* Whether the play autoplay sent last failed. A station's shows as its error
+ * state; a Yandex station's does not - the API out of reach, it never opened
+ * a stream, and the player reads plain "stopped" (bench, 2026-11-15) - so a
+ * play refused since the last one went out counts as well. */
+static bool ui_autoplay_retry_failed(const player_snapshot_t *snapshot)
+{
+    return snapshot->playback_state == PLAYER_PLAYBACK_ERROR ||
+           (snapshot->playback_state == PLAYER_PLAYBACK_STOPPED &&
+            player_control_start_failures() != s_autoplay_retry_failures);
+}
+
 static void ui_set_state_line_from(const player_snapshot_t *snapshot,
                                    const char *state, const char *artist)
 {
+    // A start that will be tried again is not a failure to report yet.
+    if (ui_autoplay_retry_pending(&s_autoplay_retry, snapshot->active_source,
+                                  ui_autoplay_retry_failed(snapshot),
+                                  snapshot->playback_state == PLAYER_PLAYBACK_PLAYING ||
+                                      snapshot->playback_state == PLAYER_PLAYBACK_PAUSED)) {
+        ui_set_state_line(ui_text(DEVICE_TEXT_STATE_RECONNECTING), artist, false);
+        return;
+    }
     if (snapshot->error[0] != '\0') {
         ui_set_state_line(snapshot->error, artist, true);
         return;
@@ -5937,6 +5965,8 @@ static bool ui_submit_player_command(const player_command_t *command)
                  (int)command->kind);
         return false;
     }
+    // Autoplay's own select and play come before it arms the retry.
+    if (!s_autoplay_retry_sending) ui_autoplay_retry_disarm(&s_autoplay_retry);
     return true;
 }
 
@@ -8724,6 +8754,35 @@ static void ui_autoplay_hold_for_network(ui_autoplay_action_t action)
     ESP_LOGI(TAG, "autoplay: no network yet; waiting for it on the player");
 }
 
+/* After autoplay has done its part: the start it sent, sent again while it
+ * fails. The same PLAY - the radio's last station, the Yandex station handed
+ * over before the first one, both still where autoplay left them. */
+static void ui_autoplay_retry_step(const player_snapshot_t *snapshot)
+{
+    /* With the Wi-Fi gone again the play would only be refused; the wait for
+     * the network on the player takes that case. */
+    if (!snapshot->wifi_connected) return;
+    const player_playback_state_t state = snapshot->playback_state;
+    if (!ui_autoplay_retry_due(&s_autoplay_retry, snapshot->active_source,
+                               ui_autoplay_retry_failed(snapshot),
+                               state == PLAYER_PLAYBACK_PLAYING ||
+                                   state == PLAYER_PLAYBACK_PAUSED,
+                               ui_tick_get_ms())) {
+        return;
+    }
+    ESP_LOGI(TAG, "autoplay: the start failed; trying again (%u)",
+             (unsigned)s_autoplay_retry.attempts);
+    const player_command_t play = {
+        .kind = PLAYER_COMMAND_PLAY,
+        .source = s_autoplay_retry.source,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    s_autoplay_retry_failures = player_control_start_failures();
+    s_autoplay_retry_sending = true;
+    (void)ui_submit_player_command(&play);
+    s_autoplay_retry_sending = false;
+}
+
 static void ui_autoplay_step(const player_snapshot_t *snapshot)
 {
     if (!s_autoplay_pending) {
@@ -8827,6 +8886,8 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
             .source = AUDIO_SOURCE_INTERNET_RADIO,
             .item_index = PLAYER_ITEM_NONE,
         };
+        // Before either command: the player may refuse the play at once.
+        s_autoplay_retry_failures = player_control_start_failures();
         if (!ui_submit_player_command(&select)) return;
         /* Selecting the source only opens it; starting the last station is a
          * separate ask, and autoplay is the only thing that makes it. The two
@@ -8838,6 +8899,7 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
             .item_index = PLAYER_ITEM_NONE,
         };
         (void)ui_submit_player_command(&play);
+        ui_autoplay_retry_arm(&s_autoplay_retry, AUDIO_SOURCE_INTERNET_RADIO);
         ui_load_source_screen(AUDIO_SOURCE_INTERNET_RADIO);
         // That screen arms the "no station to play" fallback, which opens the
         // list after a moment. Autoplay has a station, so the only thing that
@@ -8889,6 +8951,8 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
             .source = AUDIO_SOURCE_YANDEX,
             .item_index = PLAYER_ITEM_NONE,
         };
+        // Before either command: the player may refuse the play at once.
+        s_autoplay_retry_failures = player_control_start_failures();
         if (!ui_submit_player_command(&select)) return;
         const player_command_t play = {
             .kind = PLAYER_COMMAND_PLAY,
@@ -8896,6 +8960,7 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
             .item_index = PLAYER_ITEM_NONE,
         };
         (void)ui_submit_player_command(&play);
+        ui_autoplay_retry_arm(&s_autoplay_retry, AUDIO_SOURCE_YANDEX);
         ui_load_source_screen(AUDIO_SOURCE_YANDEX);
         // As for the radio: that screen arms the "nothing to play" fallback,
         // and autoplay has a station, so it could only flip away from the
@@ -10039,6 +10104,7 @@ static void ui_task(void *arg)
         player_snapshot_t snapshot;
         player_control_get_snapshot(&snapshot);
         ui_autoplay_step(&snapshot);
+        ui_autoplay_retry_step(&snapshot);
         ui_track_previous_source(&snapshot);
         ui_remote_source_poll();
         ui_alarm_ring_step(&snapshot);

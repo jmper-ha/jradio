@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "audio_source.h"
 #include "device_settings.h"
@@ -99,3 +100,42 @@ ui_autoplay_action_t ui_autoplay_decide_for(const device_settings_t *settings,
 // Which source the decision was about, so the caller can select it without
 // reading last_source a second time and getting the mapping wrong.
 audio_source_t ui_autoplay_source(const device_settings_t *settings);
+
+/* A network source that autoplay started and that failed to start, tried
+ * again until it plays. The network being back is not the internet being
+ * back: a user's provider box answers some minutes after the router does
+ * (forum, 2026-11-15), so the station autoplay starts the moment the Wi-Fi
+ * returns fails its three quick tries and stayed on "Ошибка" until somebody
+ * pressed play. A station that dropped while playing is reconnected for as
+ * long as it takes (internet_radio_state.h); one that never began was not.
+ *
+ * Without a limit, the same way: a few minutes without internet is ordinary
+ * here. It ends when the source plays or is paused, and when another source
+ * is chosen - the listener taking over says what is wanted better than any
+ * count of tries would. */
+typedef struct {
+    bool armed;
+    audio_source_t source;
+    uint32_t attempts;
+    // Whether the failure now on screen has been seen, and when to try again.
+    bool failure_seen;
+    uint32_t due_ms;
+} ui_autoplay_retry_t;
+
+void ui_autoplay_retry_arm(ui_autoplay_retry_t *retry, audio_source_t source);
+void ui_autoplay_retry_disarm(ui_autoplay_retry_t *retry);
+// The wait after the `attempt`th try again (from 0) fails.
+uint32_t ui_autoplay_retry_delay_ms(uint32_t attempt);
+
+/* One pass with what the snapshot says. True when a start is due now; the
+ * caller sends it. `failed` is the source in its error state, `settled` is
+ * it playing or paused. */
+bool ui_autoplay_retry_due(ui_autoplay_retry_t *retry, audio_source_t active_source,
+                           bool failed, bool settled, uint32_t now_ms);
+
+/* Whether the screen should say "reconnecting": a failure that will be tried
+ * again, and the try after it while it runs. A Yandex try without internet
+ * takes about a minute and reads "stopped" throughout, so going by the
+ * failure alone the word was on screen for the five seconds between tries. */
+bool ui_autoplay_retry_pending(const ui_autoplay_retry_t *retry, audio_source_t active_source,
+                               bool failed, bool settled);

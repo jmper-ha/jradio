@@ -142,3 +142,66 @@ ui_autoplay_action_t ui_autoplay_decide_for(const device_settings_t *settings,
     default: return UI_AUTOPLAY_HOME;
     }
 }
+
+void ui_autoplay_retry_arm(ui_autoplay_retry_t *retry, audio_source_t source)
+{
+    if (retry == NULL) return;
+    *retry = (ui_autoplay_retry_t){.armed = true, .source = source};
+}
+
+void ui_autoplay_retry_disarm(ui_autoplay_retry_t *retry)
+{
+    if (retry == NULL) return;
+    *retry = (ui_autoplay_retry_t){.armed = false, .source = AUDIO_SOURCE_NONE};
+}
+
+/* Every 5 s for the first half minute, which is the router's DNS a moment
+ * late; then every 15 and every 30 s, the provider's box taking its minutes.
+ * A start that cannot reach its host holds the player's task for its whole
+ * timeout, so a press made meanwhile waits behind it - the reason this does
+ * not go faster. */
+uint32_t ui_autoplay_retry_delay_ms(uint32_t attempt)
+{
+    if (attempt < 6U) return 5000U;
+    if (attempt < 12U) return 15000U;
+    return 30000U;
+}
+
+bool ui_autoplay_retry_due(ui_autoplay_retry_t *retry, audio_source_t active_source,
+                           bool failed, bool settled, uint32_t now_ms)
+{
+    if (retry == NULL || !retry->armed) return false;
+    /* None is the moment between autoplay's select and its taking effect, not
+     * the listener's choice. */
+    if (active_source != AUDIO_SOURCE_NONE && active_source != retry->source) {
+        ui_autoplay_retry_disarm(retry);
+        return false;
+    }
+    if (settled && active_source == retry->source) {
+        ui_autoplay_retry_disarm(retry);
+        return false;
+    }
+    /* Timed from the failure, not from the try: a try at a host that does not
+     * answer takes longer than the wait, and timing from it would send the
+     * next one the moment this one failed. */
+    if (!failed) {
+        retry->failure_seen = false;
+        return false;
+    }
+    if (!retry->failure_seen) {
+        retry->failure_seen = true;
+        retry->due_ms = now_ms + ui_autoplay_retry_delay_ms(retry->attempts);
+        return false;
+    }
+    if ((int32_t)(now_ms - retry->due_ms) < 0) return false;
+    ++retry->attempts;
+    retry->failure_seen = false;
+    return true;
+}
+
+bool ui_autoplay_retry_pending(const ui_autoplay_retry_t *retry, audio_source_t active_source,
+                               bool failed, bool settled)
+{
+    return retry != NULL && retry->armed && active_source == retry->source && !settled &&
+           (failed || retry->attempts > 0U);
+}

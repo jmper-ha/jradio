@@ -58,6 +58,11 @@ bool player_control_browse_failed(void);
  * before a volume's root has been read into the shared listing, so a reader
  * of that listing from another task waits for this to clear as well. */
 bool player_control_selecting(void);
+/* Counts the plays that started nothing. A Yandex station that cannot reach
+ * the API never gets as far as a stream, so it fails without passing through
+ * an error state - the player only reads "stopped" - and this is how a caller
+ * waiting on its own play can tell that it was refused. */
+unsigned int player_control_start_failures(void);
 /* Says a listing this module does not own has changed - the station catalogue,
  * saved from the web, or a refreshed Yandex catalogue. The directory listing
  * bumps the counter by itself; these two are replaced elsewhere and would

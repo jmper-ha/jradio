@@ -22,7 +22,10 @@
 #include "device_settings.h"
 
 #define WIFI_PROVISIONING_RETRIES_PER_NETWORK 3
-#define WIFI_RECONNECT_TASK_STACK_SIZE 4096
+/* 4 KB left 1.7 KB unused until the setup AP began scanning for the saved
+ * networks: a blocking scan and the switch back to station mode took the
+ * least seen down to 508 bytes on the bench (2026-11-15). */
+#define WIFI_RECONNECT_TASK_STACK_SIZE 5120
 /* A scan of every channel takes a few seconds; well past that it is not slow,
  * it is stuck, and the page needs an answer rather than another "wait". */
 #define WIFI_SCAN_TIMEOUT_MS 15000
@@ -100,6 +103,14 @@ static TickType_t s_scan_started_tick;
 static portMUX_TYPE s_scan_lock = portMUX_INITIALIZER_UNLOCKED;
 
 #define WIFI_RECONNECT_TASK_POLL_MS 1000
+
+/* How often the setup AP looks for a saved network. The walk down the list
+ * takes seconds, and after a power cut the radio finishes it long before the
+ * router has booted: it raised the AP and stayed there until the next power
+ * cycle (reported on the forum 2026-11-15). A minute keeps the AP usable for
+ * setting up while costing a router coming back at most that long. */
+#define WIFI_REJOIN_INTERVAL_MS 60000
+static TickType_t s_rejoin_checked_tick;
 
 typedef struct {
     enum {
@@ -334,6 +345,7 @@ static esp_err_t wifi_start_ap_setup(void)
     ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_AP, &config), TAG, "configure AP");
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "start AP");
     s_wifi_started = true;
+    s_rejoin_checked_tick = xTaskGetTickCount();
     ESP_LOGI(TAG, "AP setup started ssid=%s ip=192.168.4.1", ssid);
     return ESP_OK;
 }
@@ -563,6 +575,72 @@ static bool restore_pending_settings(int32_t error)
     return restored;
 }
 
+/* Scans from the setup AP and reports whether a saved network is in the air
+ * again. Scanning rather than trying to join: a join takes the AP down for the
+ * length of the walk, a scan only for a moment. And never with a phone on the
+ * AP, which is someone setting the radio up - the one time the AP is wanted,
+ * and when the page runs scans of its own.
+ *
+ * The join itself is the caller's, after this has returned. This task's stack
+ * had 1.7 KB to spare, and the first version joined from in here, on top of a
+ * copy of the saved networks: the radio rebooted the moment the router came
+ * back. Nothing is copied now - each heard name is looked up in the list
+ * under the lock. */
+static bool wifi_rejoin_due(void)
+{
+    if (s_stopped || wifi_provisioning_status().mode != WIFI_PROVISIONING_AP_SETUP) return false;
+    const TickType_t now = xTaskGetTickCount();
+    if (now - s_rejoin_checked_tick < pdMS_TO_TICKS(WIFI_REJOIN_INTERVAL_MS)) return false;
+    s_rejoin_checked_tick = now;
+
+    // An empty list is what the AP is for; a network being saved is under way.
+    taskENTER_CRITICAL(&s_settings_lock);
+    const bool any = !s_pending_commit && wifi_provisioning_next_network(
+                                              &s_settings, &s_blocked, NULL) !=
+                                              WIFI_SETTINGS_MAX_NETWORKS;
+    taskEXIT_CRITICAL(&s_settings_lock);
+    taskENTER_CRITICAL(&s_scan_lock);
+    const bool scan_idle = s_scan_state == WIFI_SCAN_IDLE;
+    taskEXIT_CRITICAL(&s_scan_lock);
+    // Static for the stack's sake; only this task reads it.
+    static wifi_sta_list_t stations;
+    if (!any || !scan_idle ||
+        (esp_wifi_ap_get_sta_list(&stations) == ESP_OK && stations.num > 0)) {
+        return false;
+    }
+
+    bool found = false;
+    uint16_t count = 0U;
+    // Blocking, on this task: it has nothing else to do while the AP is up.
+    esp_err_t err = esp_wifi_scan_start(NULL, true);
+    if (err == ESP_OK) err = esp_wifi_scan_get_ap_num(&count);
+    if (err == ESP_OK && count > 0U) {
+        if (count > WIFI_PROVISIONING_SCAN_MAX) count = WIFI_PROVISIONING_SCAN_MAX;
+        wifi_ap_record_t *records = calloc(count, sizeof(*records));
+        if (records == NULL) {
+            esp_wifi_clear_ap_list();
+            err = ESP_ERR_NO_MEM;
+        } else {
+            err = esp_wifi_scan_get_ap_records(&count, records);
+            for (uint16_t index = 0; err == ESP_OK && index < count && !found; ++index) {
+                char ssid[WIFI_SETTINGS_SSID_MAX_LEN + 1U];
+                copy_ssid(ssid, (const char *)records[index].ssid);
+                taskENTER_CRITICAL(&s_settings_lock);
+                found = wifi_provisioning_rejoins(&s_settings, &s_blocked, ssid);
+                taskEXIT_CRITICAL(&s_settings_lock);
+                if (found) ESP_LOGI(TAG, "saved network %s is back; leaving the setup AP", ssid);
+            }
+            free(records);
+        }
+    }
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "rejoin scan failed err=%s", esp_err_to_name(err));
+        return false;
+    }
+    if (!found) ESP_LOGI(TAG, "rejoin scan: no saved network among %u heard", (unsigned)count);
+    return found;
+}
+
 static void wifi_reconnect_task(void *arg)
 {
     (void)arg;
@@ -573,6 +651,12 @@ static void wifi_reconnect_task(void *arg)
                           pdMS_TO_TICKS(WIFI_RECONNECT_TASK_POLL_MS)) != pdTRUE) {
             uint8_t pending_reason = 0U;
             if (!take_pending_disconnect(&pending_reason)) {
+                if (wifi_rejoin_due()) {
+                    const esp_err_t err = wifi_restart_from_top();
+                    if (err != ESP_OK) {
+                        ESP_LOGE(TAG, "rejoining failed err=%s", esp_err_to_name(err));
+                    }
+                }
                 continue;
             }
             command.type = WIFI_COMMAND_DISCONNECTED;
@@ -1324,6 +1408,14 @@ uint8_t wifi_provisioning_next_network(const wifi_settings_t *settings,
         }
     }
     return WIFI_SETTINGS_MAX_NETWORKS;
+}
+
+bool wifi_provisioning_rejoins(const wifi_settings_t *settings,
+                               const wifi_blocked_ssids_t *blocked, const char *ssid)
+{
+    if (settings == NULL || ssid == NULL || ssid[0] == '\0') return false;
+    return wifi_settings_index_of(settings, ssid) != WIFI_SETTINGS_MAX_NETWORKS &&
+           !wifi_blocked_contains(blocked, ssid);
 }
 
 bool wifi_provisioning_should_reconnect(wifi_provisioning_mode_t mode)

@@ -92,6 +92,22 @@ static void test_switched_off_networks_are_skipped(void)
     assert(wifi_provisioning_next_network(&settings, &blocked, NULL) == 0);
 }
 
+static void test_the_setup_ap_rejoins_only_a_saved_network(void)
+{
+    const wifi_settings_t settings = three_networks();
+    wifi_blocked_ssids_t blocked = {0};
+
+    assert(wifi_provisioning_rejoins(&settings, &blocked, "guest"));
+    assert(!wifi_provisioning_rejoins(&settings, &blocked, "neighbour"));
+    // A hidden network is heard with no name, and no name is no network.
+    assert(!wifi_provisioning_rejoins(&settings, &blocked, ""));
+    /* Switched off by the user stays off: hearing it again is no reason to
+       go back to a network they left on purpose. */
+    assert(wifi_blocked_add(&blocked, "guest"));
+    assert(!wifi_provisioning_rejoins(&settings, &blocked, "guest"));
+    assert(wifi_provisioning_rejoins(&settings, &blocked, "home"));
+}
+
 static void test_disconnect_reconnect_policy(void)
 {
     assert(wifi_provisioning_should_reconnect(WIFI_PROVISIONING_AP_SETUP) == false);
@@ -140,6 +156,7 @@ int main(void)
     test_the_walk_follows_the_saved_order();
     test_an_unknown_name_starts_the_walk_over();
     test_switched_off_networks_are_skipped();
+    test_the_setup_ap_rejoins_only_a_saved_network();
     test_disconnect_reconnect_policy();
     test_reset_saved_state_forgets_pending_and_committed_networks();
     test_public_saved_network_view_contains_only_ssids();

@@ -60,6 +60,12 @@ uint8_t wifi_provisioning_next_network(const wifi_settings_t *settings,
                                        const wifi_blocked_ssids_t *blocked,
                                        const char *after_ssid);
 
+/* Whether a name heard in a scan from the setup AP is one the radio would
+ * join: saved, and not switched off by the user. Hearing one is what takes the
+ * radio back out of the AP after its networks all failed. */
+bool wifi_provisioning_rejoins(const wifi_settings_t *settings,
+                               const wifi_blocked_ssids_t *blocked, const char *ssid);
+
 bool wifi_provisioning_should_reconnect(wifi_provisioning_mode_t mode);
 void wifi_provisioning_reset_saved_state(wifi_settings_t *current, wifi_settings_t *committed,
                                          bool *pending_commit);

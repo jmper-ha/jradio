@@ -766,6 +766,9 @@ static ui_station_dial_t s_dial;
 static uint8_t s_autoplay_bt_attempts;
 static uint32_t s_autoplay_bt_asked_ms;
 static uint32_t s_autoplay_started_ms;
+/* The station's screen is up and autoplay is waiting on it for the network.
+ * See ui_autoplay_hold_for_network(). */
+static bool s_autoplay_network_held;
 static bool s_files_list_open_requested;
 static unsigned int s_files_list_open_revision;
 /* A browse the device has been asked for and has not answered yet.
@@ -8366,6 +8369,39 @@ static void ui_remember_playing(const player_snapshot_t *snapshot)
  * network and giving up there is a retry that usually succeeds within seconds,
  * and throwing the user out of the player every time the air goes quiet would
  * be worse than the wait. */
+static void ui_autoplay_hold_for_network(ui_autoplay_action_t action);
+
+/* What happens once it has. Taking the listener home was right while the setup
+ * AP was the end of the road; it now listens for the saved networks and goes
+ * back to one when it is heard, so the station is waited for on its screen the
+ * way autoplay waits for it at boot, and resumed when the network is back.
+ * Found on the bench 2026-11-15: the access points switched off under a
+ * playing station and back on, and the radio rejoined and stayed on the home
+ * screen. The source is still stopped: a stream retrying behind the screen
+ * has nothing to reach. */
+static void ui_wait_for_network_on_player(audio_source_t source)
+{
+    const player_command_t stop = {
+        .kind = PLAYER_COMMAND_STOP_SOURCE,
+        .source = AUDIO_SOURCE_NONE,
+        .item_index = PLAYER_ITEM_NONE,
+    };
+    if (!ui_submit_player_command(&stop)) {
+        ui_show_menu();
+        return;
+    }
+    s_autoplay_target = source;
+    s_autoplay_select_sent = false;
+    s_autoplay_volume_has_file = false;
+    s_autoplay_for_alarm = false;
+    s_autoplay_pending = true;
+    // Already past the boot's wait: there is no lease on its way to wait for.
+    s_autoplay_started_ms = ui_tick_get_ms() - UI_AUTOPLAY_NETWORK_WAIT_MS;
+    s_autoplay_network_held = false;
+    ui_autoplay_hold_for_network(source == AUDIO_SOURCE_YANDEX ? UI_AUTOPLAY_YANDEX
+                                                               : UI_AUTOPLAY_RADIO);
+}
+
 static bool ui_network_lost_for_good(const player_snapshot_t *snapshot)
 {
     const bool lost = snapshot->wifi_setup_ap && !s_last_wifi_setup_ap;
@@ -8395,7 +8431,7 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     s_last_wifi_connected = snapshot->wifi_connected;
     if (wifi_changed) ui_refresh_home_screen();
     if (ui_network_lost_for_good(snapshot)) {
-        ui_show_menu();
+        ui_wait_for_network_on_player(snapshot->active_source);
         return;
     }
     s_last_usb_media = snapshot->usb_media;
@@ -8656,11 +8692,44 @@ static audio_source_t ui_autoplay_target_source(void)
                                                   : ui_autoplay_source(&s_device_settings);
 }
 
+/* Past the network's wait with the network still down. The station used to
+ * be started anyway, failed with "could not connect" and was never tried
+ * again: after a power cut that took the router down too, the radio sat on
+ * that line until it was switched off and on (reported on the forum
+ * 2026-11-15). Now its screen goes up saying what it waits for, and the start
+ * goes out when the network arrives, however long the router takes.
+ *
+ * Leaving the screen is the listener taking over, and drops the wait - a
+ * station starting by itself minutes after they went elsewhere would be the
+ * surprise this is not meant to be. */
+static void ui_autoplay_hold_for_network(ui_autoplay_action_t action)
+{
+    if (s_autoplay_network_held) {
+        if (lv_screen_active() == s_source_screen) return;
+        s_autoplay_pending = false;
+        s_autoplay_network_held = false;
+        ESP_LOGI(TAG, "autoplay: dropped, the player was left while waiting for the network");
+        return;
+    }
+    const audio_source_t source = action == UI_AUTOPLAY_YANDEX ? AUDIO_SOURCE_YANDEX
+                                  : action == UI_AUTOPLAY_DLNA ? AUDIO_SOURCE_DLNA
+                                                               : AUDIO_SOURCE_INTERNET_RADIO;
+    s_radio_home_pending = false;
+    ui_load_source_screen(source);
+    // Nothing has been asked to play, so the "nothing to play" fallback could
+    // only take the screen away.
+    s_waiting_for_source_item = false;
+    ui_set_state_line(ui_text(DEVICE_TEXT_WAITING_NETWORK), "", false);
+    s_autoplay_network_held = true;
+    ESP_LOGI(TAG, "autoplay: no network yet; waiting for it on the player");
+}
+
 static void ui_autoplay_step(const player_snapshot_t *snapshot)
 {
     if (!s_autoplay_pending) {
         s_autoplay_for_alarm = false;
         s_autoplay_target = AUDIO_SOURCE_NONE;
+        s_autoplay_network_held = false;
         return;
     }
     const ui_autoplay_action_t action =
@@ -8703,9 +8772,11 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
         (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_NETWORK_WAIT_MS;
     if ((action == UI_AUTOPLAY_RADIO || action == UI_AUTOPLAY_YANDEX ||
          action == UI_AUTOPLAY_DLNA) &&
-        !snapshot->wifi_connected && !waited_for_network) {
+        !snapshot->wifi_connected) {
+        if (waited_for_network) ui_autoplay_hold_for_network(action);
         return;
     }
+    s_autoplay_network_held = false;
     /* The only action that is not settled in one pass: it is confirmed by the
      * snapshot, and until then it keeps its place in the queue. */
     if (action == UI_AUTOPLAY_BLUETOOTH) {

@@ -6,6 +6,21 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.12.2 — 15 November 2026
+
+Fixed:
+- When the Wi-Fi went in the middle of a Yandex Music track, the music did
+  not resume once the network was back. The radio tried to finish the track
+  and kept asking Yandex for a new link with no network, and the stop that
+  should have waited for it gave up. Now the request is not repeated without
+  a network, and the wave carries on by itself when the network returns.
+- With the Wi-Fi up but no internet yet (the router back, the provider's
+  optical terminal not), a station started by autoplay failed with "Could not
+  connect to the station" and stayed that way. Now the radio tries again -
+  every 5 seconds at first, then less often - until the station or the Yandex
+  wave plays, and the screen says "Reconnecting" meanwhile. Any press, or
+  choosing another source, ends the tries.
+
 ## v1.12.1 — 15 November 2026
 
 New:

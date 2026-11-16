@@ -8429,6 +8429,7 @@ static void ui_wait_for_network_on_player(audio_source_t source)
     s_autoplay_started_ms = ui_tick_get_ms() - UI_AUTOPLAY_NETWORK_WAIT_MS;
     s_autoplay_network_held = false;
     ui_autoplay_hold_for_network(source == AUDIO_SOURCE_YANDEX ? UI_AUTOPLAY_YANDEX
+                                 : source == AUDIO_SOURCE_DLNA ? UI_AUTOPLAY_DLNA
                                                                : UI_AUTOPLAY_RADIO);
 }
 
@@ -8436,8 +8437,23 @@ static bool ui_network_lost_for_good(const player_snapshot_t *snapshot)
 {
     const bool lost = snapshot->wifi_setup_ap && !s_last_wifi_setup_ap;
     s_last_wifi_setup_ap = snapshot->wifi_setup_ap;
-    return lost && (snapshot->active_source == AUDIO_SOURCE_INTERNET_RADIO ||
-                    snapshot->active_source == AUDIO_SOURCE_YANDEX);
+    /* A track - a media server's, a Yandex wave's - is not stopped for the
+     * setup AP: its pickup waits for the network and goes on from the byte it
+     * stopped at, which a stop and a fresh start would lose. */
+    if (lost && snapshot->active_source == AUDIO_SOURCE_INTERNET_RADIO) return true;
+    /* Or a source that failed with no network, which is not the network's
+     * walk to the setup AP: the next track of a chain is tried three times
+     * and then ends in an error, and a drop shorter than that walk left the
+     * source failed with the network back. The media server sat stopped like
+     * that (Ден, 2026-11-16); waited out, it resumes where the resume point
+     * says, as it does at power-on. Once: the failed source stays in the
+     * snapshot until the stop sent for it lands, and asked again the stop
+     * was refused as busy (bench, 2026-11-16). */
+    return !s_autoplay_network_held && !snapshot->wifi_connected &&
+           snapshot->playback_state == PLAYER_PLAYBACK_ERROR &&
+           (snapshot->active_source == AUDIO_SOURCE_INTERNET_RADIO ||
+            snapshot->active_source == AUDIO_SOURCE_YANDEX ||
+            snapshot->active_source == AUDIO_SOURCE_DLNA);
 }
 
 static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)

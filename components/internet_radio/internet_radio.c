@@ -21,6 +21,7 @@
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "esp_netif.h"
 #include "esp_timer.h"
 #include "lwip/dns.h"
 #include "lwip/tcpip.h"
@@ -1875,6 +1876,31 @@ static bool radio_reopen_wait(const radio_reopen_t *job, uint32_t delay_ms)
     }
 }
 
+static bool radio_network_up(void)
+{
+    esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    esp_netif_ip_info_t ip;
+    return sta != NULL && esp_netif_is_netif_up(sta) &&
+           esp_netif_get_ip_info(sta, &ip) == ESP_OK && ip.ip.addr != 0U;
+}
+
+/* A track is not given up on while there is no network to fetch it over. Its
+ * three tries took some 20 s of an outage, then the chain moved to the next
+ * track - and that one failed too, so a media server's album came back on a
+ * track the listener had not got to, from its start (bench, 2026-11-16). The
+ * pickup waits here instead, and the track goes on from the byte it stopped
+ * at. False on a stop or a pause, which end the wait like any other. */
+static bool radio_reopen_wait_for_network(const radio_reopen_t *job)
+{
+    if (radio_network_up()) return true;
+    ESP_LOGW(TAG, "no network; the track waits for it at %u bytes", (unsigned int)job->offset);
+    while (!radio_network_up()) {
+        if (!radio_reopen_wait(job, 500U)) return false;
+    }
+    ESP_LOGI(TAG, "the network is back; picking the track up");
+    return true;
+}
+
 static void radio_reopen_task(void *arg)
 {
     radio_reopen_t *job = arg;
@@ -1903,7 +1929,7 @@ static void radio_reopen_task(void *arg)
                      (unsigned int)attempt + 1U,
                      (unsigned int)internet_radio_reconnect_delay_ms(attempt));
         }
-    } else {
+    } else if (radio_reopen_wait_for_network(job)) {
         /* The address the track was last served from, first: Yandex hands
          * out the same one for minutes - four pickups in a row over a minute
          * and a half went to one storage node with one signature in a user's

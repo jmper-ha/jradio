@@ -122,6 +122,15 @@ bool ui_feed_model_activate(ui_feed_item_t item, audio_source_t *source_out)
 bool ui_feed_model_select_source(ui_feed_model_t *model, audio_source_t source)
 {
     if (model == NULL || source == AUDIO_SOURCE_NONE) return false;
+    /* Yandex is the one item that starts nothing of its own - it opens the
+     * account's list, and a row there starts the source - so activation does
+     * not name it, and leaving a playing wave for the home screen landed on
+     * whichever icon the cursor had last been on (Ден, 2026-11-16). */
+    if (source == AUDIO_SOURCE_YANDEX) {
+        if (!ui_menu_item_is_visible((ui_menu_item_t)UI_FEED_YANDEX, model->visible)) return false;
+        model->selected = UI_FEED_YANDEX;
+        return true;
+    }
     // Asks the mapping above rather than carrying a second copy of it, so the
     // two directions cannot drift apart as items are added.
     for (uint8_t index = 0U; index < UI_FEED_ITEM_COUNT; ++index) {

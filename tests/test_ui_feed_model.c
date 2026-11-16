@@ -102,6 +102,11 @@ static void test_the_cursor_follows_the_source_that_started(void)
     assert(ui_feed_model_selected(&model) == UI_FEED_USB);
     assert(ui_feed_model_select_source(&model, AUDIO_SOURCE_INTERNET_RADIO));
     assert(ui_feed_model_selected(&model) == UI_FEED_INTERNET_RADIO);
+#if BOARD_HAS_YANDEX_MUSIC
+    // Not started by its icon, which opens a list, but its icon all the same.
+    assert(ui_feed_model_select_source(&model, AUDIO_SOURCE_YANDEX));
+    assert(ui_feed_model_selected(&model) == UI_FEED_YANDEX);
+#endif
 
     /* Nothing on the feed starts these, so the cursor stays where the user
      * put it rather than jumping to item 0. */

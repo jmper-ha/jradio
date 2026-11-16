@@ -7797,6 +7797,30 @@ static board_input_action_t ui_remote_keys_apply(board_input_action_t action)
     return step.action;
 }
 
+/* The player screen while it waits for the network. The wait stops the
+ * source, and the view machine takes a stop for the home screen at once - so
+ * the knob went to a menu that was not on screen, and with the network gone
+ * for good the listener could not get off the player to another source (Ден,
+ * 2026-11-16). Here it is the player's: the knob is the volume, and the hold
+ * gives up the wait and goes home. */
+static bool ui_network_wait_input(board_input_action_t action)
+{
+    if (!s_autoplay_network_held || lv_screen_active() != s_source_screen) return false;
+    if (action == BOARD_INPUT_ACTION_ENCODER_LONG) {
+        s_autoplay_pending = false;
+        s_autoplay_network_held = false;
+        ui_autoplay_retry_disarm(&s_autoplay_retry);
+        ESP_LOGI(TAG, "autoplay: the wait for the network left for the home screen");
+        ui_load_menu_screen();
+    } else if (action == BOARD_INPUT_ACTION_ENCODER_LEFT ||
+               action == BOARD_INPUT_ACTION_ENCODER_RIGHT) {
+        ui_volume_step(action == BOARD_INPUT_ACTION_ENCODER_RIGHT ? ui_encoder_volume_step()
+                                                                  : -ui_encoder_volume_step());
+    }
+    // Anything else would start or browse a source there is no network for.
+    return true;
+}
+
 static void ui_handle_input(board_input_action_t action)
 {
     /* Before the screensaver, and from every screen: holding F1 means sleep
@@ -7952,6 +7976,7 @@ static void ui_handle_input(board_input_action_t action)
         }
         return;
     }
+    if (ui_network_wait_input(action)) return;
     if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
         station_list_note_activity(&s_station_list, ui_tick_get_ms());
         if (action == BOARD_INPUT_ACTION_ENCODER_LONG) {

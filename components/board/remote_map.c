@@ -191,6 +191,27 @@ remote_function_t remote_map_learn(remote_map_t *map, remote_function_t function
     return displaced;
 }
 
+void remote_pair_init(remote_pair_t *pair)
+{
+    if (pair == NULL) return;
+    *pair = (remote_pair_t){.last = {.kind = IR_CODE_NONE}};
+}
+
+bool remote_pair_feed(remote_pair_t *pair, const ir_code_t *code, uint32_t now_ms)
+{
+    if (pair == NULL || code == NULL) return false;
+    // A repeat code says the key is still down; it is no frame of a pair.
+    if (code->kind == IR_CODE_NEC_REPEAT) return false;
+    const bool second = !pair->last_was_second && pair->last.kind == IR_CODE_NEC &&
+                        code->kind == IR_CODE_NEC &&
+                        (uint32_t)(now_ms - pair->last_ms) <= REMOTE_PAIR_GAP_MS &&
+                        !ir_code_same_key(&pair->last, code);
+    pair->last = *code;
+    pair->last_ms = now_ms;
+    pair->last_was_second = second;
+    return second;
+}
+
 void remote_map_forget(remote_map_t *map, remote_function_t function)
 {
     if (map == NULL || (unsigned)function >= (unsigned)REMOTE_FUNCTION_COUNT) return;

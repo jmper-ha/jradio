@@ -95,6 +95,29 @@ remote_function_t remote_map_learn(remote_map_t *map, remote_function_t function
                                    const ir_code_t *code);
 void remote_map_forget(remote_map_t *map, remote_function_t function);
 
+/* Pioneer's remotes send many keys as two NEC frames 92 ms apart: the first
+ * the same for all of them (a1:81 on the bench's, ad:99 on a user's), the
+ * second the key's own. Learned by its first frame, every such key was one
+ * key (forum, 2026-11-15). A frame is the second of a pair when it follows a
+ * different NEC frame this closely - a remote repeating one key resends that
+ * same frame, and two keys pressed by a hand are never this close. */
+/* 200 rather than the 92 ms the frames are apart: they are timed when they
+ * are handled, not when they arrived, and the receiver's task does other
+ * things in between. */
+#define REMOTE_PAIR_GAP_MS 200U
+
+/* Held, the remote sends the pair over and over, so the frame after a second
+ * frame is the next pair's first, not a pair of its own. */
+typedef struct {
+    ir_code_t last;
+    uint32_t last_ms;
+    bool last_was_second;
+} remote_pair_t;
+
+void remote_pair_init(remote_pair_t *pair);
+// Notes the frame; true when it is the second frame of a pair.
+bool remote_pair_feed(remote_pair_t *pair, const ir_code_t *code, uint32_t now_ms);
+
 /* remote.csv in and out. The text form keeps only what differs from nothing:
  * every bound function as "name,code", an unbound one as "name,none" so a
  * forgotten default stays forgotten. Parsing starts from the compiled table

@@ -175,6 +175,41 @@ static void test_what_each_function_does_on_the_board(void)
     assert(!remote_function_repeats(REMOTE_POWER));
 }
 
+static void test_a_two_frame_key_is_told_by_its_second_frame(void)
+{
+    /* The bench's Pioneer remote: a1:81 before every two-frame key, 92 ms
+     * ahead of the key's own frame; single-frame keys resend themselves. */
+    ir_code_t prefix;
+    ir_code_t play;
+    ir_code_t stop;
+    ir_code_t single;
+    ir_code_t repeat = {.kind = IR_CODE_NEC_REPEAT};
+    assert(ir_code_parse("nec:a1:81", &prefix));
+    assert(ir_code_parse("nec:af:bc", &play));
+    assert(ir_code_parse("nec:af:a5", &stop));
+    assert(ir_code_parse("nec:a1:84", &single));
+    remote_pair_t pair;
+    remote_pair_init(&pair);
+    // One press: the pair three times over, 92 ms between frames.
+    for (uint32_t round = 0U; round < 3U; ++round) {
+        const uint32_t at = 1000U + round * 184U;
+        assert(!remote_pair_feed(&pair, &prefix, at));
+        assert(remote_pair_feed(&pair, &play, at + 92U));
+    }
+    // A single-frame key resends itself: never a pair.
+    for (uint32_t round = 0U; round < 5U; ++round) {
+        assert(!remote_pair_feed(&pair, &single, 3000U + round * 92U));
+    }
+    // Two keys a hand pressed, not one remote's pair.
+    assert(!remote_pair_feed(&pair, &play, 5000U));
+    assert(!remote_pair_feed(&pair, &stop, 5400U));
+    // A repeat code is neither, and leaves the pairing where it was.
+    assert(!remote_pair_feed(&pair, &prefix, 6000U));
+    assert(!remote_pair_feed(&pair, &repeat, 6040U));
+    assert(remote_pair_feed(&pair, &play, 6092U));
+    assert(!remote_pair_feed(NULL, &play, 7000U));
+}
+
 int main(void)
 {
     test_every_function_has_a_name_and_the_names_round_trip();
@@ -183,6 +218,7 @@ int main(void)
     test_the_file_round_trips_and_a_forgotten_default_stays_forgotten();
     test_a_file_overlays_the_compiled_table_and_skips_what_it_cannot_read();
     test_what_each_function_does_on_the_board();
+    test_a_two_frame_key_is_told_by_its_second_frame();
     printf("remote_map tests passed\n");
     return 0;
 }

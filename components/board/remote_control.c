@@ -26,7 +26,10 @@ static const char *TAG = "remote";
 #define REMOTE_REPEAT_GAP_MS 250U
 /* A held key starts ramping after this long, so a press that is a little slow
  * to come off the key does not step the volume twice. */
-#define REMOTE_HOLD_BEFORE_RAMP_MS 350U
+/* 450 rather than 350: one short press of a Pioneer remote is its frame - or
+ * its pair of frames - sent for 368 ms, and at 350 the last copy of a single
+ * tap counted as the hold's first ramp step and moved the volume twice. */
+#define REMOTE_HOLD_BEFORE_RAMP_MS 450U
 /* And ramps a step per this many repeat frames: every frame was measured as
  * the whole volume range in two seconds, which is a jump, not a ramp. Every
  * second frame is about five steps a second - four seconds end to end, the
@@ -55,6 +58,14 @@ static remote_last_key_t s_last;
 static uint32_t s_last_ms;
 
 static bool s_loaded;
+
+/* The two-frame keys of Pioneer's remotes - see remote_pair_t. A key learned
+ * by its first frame is learned again by its second when that follows. The
+ * shared first frame is left bound to nothing, even when learning it took it
+ * from another function: bound, it would fire that function under every
+ * two-frame key of the remote. */
+static remote_pair_t s_pair;
+static remote_function_t s_relearn = REMOTE_FUNCTION_COUNT;
 
 static uint32_t now_ms(void)
 {
@@ -144,6 +155,7 @@ static void on_key(const ir_code_t *code, void *context)
     (void)context;
     const uint32_t now = now_ms();
     xSemaphoreTake(s_lock, portMAX_DELAY);
+    const bool second = remote_pair_feed(&s_pair, code, now);
 
     if (code->kind == IR_CODE_NEC_REPEAT) {
         /* A repeat only keeps the last key fresh. */
@@ -154,6 +166,26 @@ static void on_key(const ir_code_t *code, void *context)
         s_last.seen = true;
         s_last_ms = now;
     }
+
+    /* The frame after the one just learned, and the second of a pair: that
+     * one was the shared first frame, and this is the key. */
+    if (second && s_relearn != REMOTE_FUNCTION_COUNT) {
+        const remote_function_t function = s_relearn;
+        (void)remote_map_learn(&s_map, function, code);
+        char text[24];
+        ir_code_format(code, text, sizeof(text));
+        ESP_LOGI(TAG, "learned %s = %s, the second frame of a pair",
+                 remote_function_name(function), text);
+        s_relearn = REMOTE_FUNCTION_COUNT;
+        s_last.function = function;
+        s_last.code = *code;
+        (void)map_save_locked();
+        ++s_revision;
+        s_held = REMOTE_FUNCTION_COUNT;
+        xSemaphoreGive(s_lock);
+        return;
+    }
+    if (code->kind != IR_CODE_NEC_REPEAT) s_relearn = REMOTE_FUNCTION_COUNT;
 
     /* Learning first: an armed function takes the next real key and nothing
      * acts, whatever the key used to mean. */
@@ -167,6 +199,8 @@ static void on_key(const ir_code_t *code, void *context)
             char text[24];
             ir_code_format(code, text, sizeof(text));
             const remote_function_t displaced = remote_map_learn(&s_map, s_learning, code);
+            // Held open for the pair's second frame; see s_relearn.
+            if (code->kind == IR_CODE_NEC) s_relearn = s_learning;
             ESP_LOGI(TAG, "learned %s = %s%s%s", remote_function_name(s_learning), text,
                      displaced != REMOTE_FUNCTION_COUNT ? ", taken from " : "",
                      displaced != REMOTE_FUNCTION_COUNT ? remote_function_name(displaced) : "");
@@ -177,6 +211,12 @@ static void on_key(const ir_code_t *code, void *context)
             s_learning = REMOTE_FUNCTION_COUNT;
             s_learn_bound = true;
             (void)map_save_locked();
+            /* The pair's second frame waited in the receiver's queue while
+             * remote.csv was written - 120 ms once on the bench, 700 ms the
+             * next time - so its gap is counted from here, not from the
+             * first frame. A different key pressed by hand is seconds away
+             * either way. */
+            s_pair.last_ms = now_ms();
             ++s_revision;
             s_held = REMOTE_FUNCTION_COUNT;
             xSemaphoreGive(s_lock);
@@ -201,14 +241,21 @@ static void on_key(const ir_code_t *code, void *context)
             char text[24];
             ir_code_format(code, text, sizeof(text));
             ESP_LOGD(TAG, "%s is not a key of ours", text);
-            s_held = REMOTE_FUNCTION_COUNT;
+            /* Unless it comes right behind the held key: that is the first
+             * frame of its pair, sent again while the key stays down. */
+            if ((uint32_t)(now - s_held_last_ms) > REMOTE_PAIR_GAP_MS) {
+                s_held = REMOTE_FUNCTION_COUNT;
+            }
             xSemaphoreGive(s_lock);
             return;
         }
         /* The same key again within a repeat's time is the key held, on a
-         * remote that repeats by sending the frame again. */
+         * remote that repeats by sending the frame again - or the pair, which
+         * takes a frame longer to come round. */
+        const uint32_t repeat_ms =
+            second ? REMOTE_RAW_REPEAT_MS + REMOTE_PAIR_GAP_MS : REMOTE_RAW_REPEAT_MS;
         if (s_held == function && ir_code_same_key(&s_held_code, code) &&
-            (uint32_t)(now - s_held_last_ms) <= REMOTE_RAW_REPEAT_MS) {
+            (uint32_t)(now - s_held_last_ms) <= repeat_ms) {
             repeat = true;
         } else {
             s_held = function;
@@ -238,6 +285,7 @@ static esp_err_t load_once(void)
         if (s_lock == NULL) return ESP_ERR_NO_MEM;
     }
     if (!s_loaded) {
+        remote_pair_init(&s_pair);
         map_load();
         s_loaded = true;
     }

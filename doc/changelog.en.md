@@ -6,6 +6,27 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.12.3 — 16 November 2026
+
+Fixed:
+- After a Wi-Fi drop a media server (DLNA) stayed stopped. Now a DLNA or
+  Yandex Music track waits for the network and, once it is back, goes on
+  from where it stopped rather than from the next track. If the source did
+  fail while there was no network, the radio waits for it on the player
+  screen and starts it by itself.
+- The encoder did nothing on the "Waiting for network..." screen. Now it
+  sets the volume, and a long press ends the wait and opens the home
+  screen, where another source can be chosen.
+- Pioneer remotes: many keys share their first frame (`nec:ad:99`, for
+  example), and learning recorded all of them as one code. Now such a key
+  is told by its second frame. Keys already learned as the shared code
+  need learning again.
+- Leaving a Yandex Music wave for the home screen put the feed cursor on
+  another icon instead of Yandex.
+- The phone's cover over Bluetooth could be missing from the first track
+  after a connect: the module was short of memory and did not ask for it
+  again. Fixed in the jradio-bt 1.2.3 module firmware.
+
 ## v1.12.2 — 15 November 2026
 
 Fixed:

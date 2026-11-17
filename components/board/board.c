@@ -1051,8 +1051,15 @@ static void board_dac_mute_apply(void)
     /* XSMT on the PCM5102A: low is mute, and the chip ramps the output down
      * and up itself, so there is no click either way. */
     const bool muted = board_dac_silenced();
-    if (gpio_get_level(pin) == (muted ? 0 : 1)) return;
-    (void)gpio_set_level(pin, muted ? 0 : 1);
+    /* Remembered rather than read back: the pin is an output only, and
+     * gpio_get_level() on it reads the input path, which says 0 - so a mute
+     * was taken for one already in place and XSMT stayed high, the speakers
+     * playing on beside a Bluetooth speaker from 1.12.0 (a user's report,
+     * 2026-11-17). */
+    static int level = -1;
+    if (level == (muted ? 0 : 1)) return;
+    level = muted ? 0 : 1;
+    (void)gpio_set_level(pin, level);
     ESP_LOGI(TAG, "DAC %s", muted ? "muted" : "unmuted");
 }
 

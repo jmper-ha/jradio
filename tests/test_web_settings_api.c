@@ -160,6 +160,12 @@ static void test_numbers_are_range_checked(void)
     assert(parse_one("{\"field\":\"fm_gain\",\"value\":12}", &change));
     assert(!parse_one("{\"field\":\"fm_gain\",\"value\":-7}", &change));
     assert(!parse_one("{\"field\":\"fm_gain\",\"value\":13}", &change));
+    // The balance: a step either side of the middle, ten at most.
+    assert(parse_one("{\"field\":\"balance\",\"value\":-10}", &change));
+    assert(change.field == WEB_SETTINGS_FIELD_BALANCE && change.value == -10);
+    assert(parse_one("{\"field\":\"balance\",\"value\":10}", &change));
+    assert(!parse_one("{\"field\":\"balance\",\"value\":-11}", &change));
+    assert(!parse_one("{\"field\":\"balance\",\"value\":11}", &change));
     // The tone controls are a signed range too: a cut is a setting.
     assert(parse_one("{\"field\":\"tone_bass\",\"value\":-12}", &change));
     assert(change.field == WEB_SETTINGS_FIELD_TONE_BASS && change.value == -12);
@@ -232,6 +238,9 @@ static void test_apply_writes_through_to_the_file(void)
     const web_settings_change_t fm_gain = {WEB_SETTINGS_FIELD_FM_GAIN, -4, ""};
     assert(web_settings_apply(&settings, &fm_gain));
     assert(settings.fm_gain == -4);
+    const web_settings_change_t balance = {WEB_SETTINGS_FIELD_BALANCE, 3, ""};
+    assert(web_settings_apply(&settings, &balance));
+    assert(settings.balance == 3);
     const web_settings_change_t theme = {WEB_SETTINGS_FIELD_THEME, DEVICE_THEME_CUSTOM, ""};
     assert(web_settings_apply(&settings, &theme));
     const web_settings_change_t accent = {WEB_SETTINGS_FIELD_THEME_ACCENT, 0, "#00ff00"};
@@ -444,6 +453,7 @@ static void test_document_names_what_the_build_has(void)
     assert(strstr(document, "\"fm_gain\":0") != NULL);
     assert(strstr(document, "\"fm_gain_min\":-6") != NULL);
     assert(strstr(document, "\"fm_gain_max\":12") != NULL);
+    assert(strstr(document, "\"balance\":0") != NULL);
     // The theme lives; its colours are in the document, in the picker's case.
     assert(strstr(document, "\"theme\":\"standard\"") != NULL);
     assert(strstr(document, "\"theme_ground\":\"#101820\"") != NULL);

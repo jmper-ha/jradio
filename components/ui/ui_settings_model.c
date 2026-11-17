@@ -99,6 +99,11 @@ static const ui_settings_row_t s_field_rows[] = {
         .kind = UI_SETTINGS_ROW_FIELD,
     },
     {
+        .id = UI_SETTINGS_ROW_BALANCE_FIELD,
+        .group = UI_SETTINGS_GROUP_SOUND,
+        .kind = UI_SETTINGS_ROW_FIELD,
+    },
+    {
         .id = UI_SETTINGS_ROW_LOUDNESS_FIELD,
         .group = UI_SETTINGS_GROUP_SOUND,
         .kind = UI_SETTINGS_ROW_FIELD,
@@ -362,7 +367,7 @@ bool ui_settings_row_is_number(ui_settings_row_id_t id)
 {
     return id == UI_SETTINGS_ROW_BRIGHTNESS_FIELD || id == UI_SETTINGS_ROW_VOLUME_STEP_FIELD ||
            id == UI_SETTINGS_ROW_TONE_BASS_FIELD || id == UI_SETTINGS_ROW_TONE_TREBLE_FIELD ||
-           id == UI_SETTINGS_ROW_FM_GAIN_FIELD;
+           id == UI_SETTINGS_ROW_FM_GAIN_FIELD || id == UI_SETTINGS_ROW_BALANCE_FIELD;
 }
 
 bool ui_settings_model_is_editing(const ui_settings_model_t *model)
@@ -496,6 +501,14 @@ int ui_settings_tone_step(int value, int direction)
     int stepped = value + (direction > 0 ? 1 : direction < 0 ? -1 : 0);
     if (stepped < UI_SETTINGS_TONE_MIN) stepped = UI_SETTINGS_TONE_MIN;
     if (stepped > UI_SETTINGS_TONE_MAX) stepped = UI_SETTINGS_TONE_MAX;
+    return stepped;
+}
+
+int ui_settings_balance_step(int value, int direction)
+{
+    int stepped = value + (direction > 0 ? 1 : direction < 0 ? -1 : 0);
+    if (stepped < UI_SETTINGS_BALANCE_MIN) stepped = UI_SETTINGS_BALANCE_MIN;
+    if (stepped > UI_SETTINGS_BALANCE_MAX) stepped = UI_SETTINGS_BALANCE_MAX;
     return stepped;
 }
 

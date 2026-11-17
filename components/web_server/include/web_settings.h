@@ -62,6 +62,8 @@ typedef enum {
     WEB_SETTINGS_FIELD_VOLUME_STEP,
     // FM against the other sources, dB; signed like the tone controls.
     WEB_SETTINGS_FIELD_FM_GAIN,
+    // A step left (negative) or right of the middle.
+    WEB_SETTINGS_FIELD_BALANCE,
     /* The theme, and the custom theme's seven colours as "#RRGGBB" in the
      * order the device stores them - their values follow, so the field for
      * colour N is THEME_GROUND + N. The reset puts all seven back to the
@@ -173,6 +175,8 @@ typedef struct web_settings_view {
     uint8_t volume_step;
     // The FM level, dB.
     int8_t fm_gain;
+    // DEVICE_BALANCE_MIN..MAX.
+    int8_t balance;
     /* As device_theme_t. Live, since the panel's own row changes it; the
      * custom colours are not - see the document. */
     uint8_t theme;

@@ -45,6 +45,8 @@ typedef enum {
     UI_SETTINGS_ROW_SOUND_GROUP,
     UI_SETTINGS_ROW_TONE_BASS_FIELD,
     UI_SETTINGS_ROW_TONE_TREBLE_FIELD,
+    // Left and right, a step a detent; beside the tone, a speaker's setting.
+    UI_SETTINGS_ROW_BALANCE_FIELD,
     UI_SETTINGS_ROW_LOUDNESS_FIELD,
     UI_SETTINGS_ROW_LOUDNESS_TREBLE_FIELD,
     // One station as loud as the next: a switch.
@@ -200,3 +202,7 @@ int ui_settings_tone_step(int value, int direction);
 #define UI_SETTINGS_FM_GAIN_MIN (-6)
 #define UI_SETTINGS_FM_GAIN_MAX 12
 int ui_settings_fm_gain_step(int value, int direction);
+/* The balance, a step per detent. Mirrors DEVICE_BALANCE_MIN/MAX. */
+#define UI_SETTINGS_BALANCE_MIN (-10)
+#define UI_SETTINGS_BALANCE_MAX 10
+int ui_settings_balance_step(int value, int direction);

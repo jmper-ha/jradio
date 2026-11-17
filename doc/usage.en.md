@@ -426,6 +426,10 @@ detail, the alarm, the sleep timer, the backup.
     to the sound and leaves the rest alone. Only at the very top of the
     volume, where the lift has no room left, does the radio stop getting
     louder by that much - so that it does not distort;
+  - **Balance** - L10 to R10. The channel the balance moves away from gets
+    2 dB quieter a step and is silent at the end; the other stays as it was.
+    On the device it is turned with the encoder on the row; on the web it is
+    in the tone panel on the player page;
   - **Loudness** - off, weak, medium, strong. The ear hears less bass in
     quiet sound, and loudness lifts it the more the quieter the volume: not
     at all at full volume, up to +6, +10 or +15 dB towards quiet. A click

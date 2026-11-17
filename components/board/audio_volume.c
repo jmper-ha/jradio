@@ -79,6 +79,42 @@ void audio_volume_block_gains(uint16_t previous_end, uint16_t target, uint32_t f
     *end = target;
 }
 
+void audio_balance_gains(int balance, uint16_t *left, uint16_t *right)
+{
+    // AUDIO_VOLUME_UNITY * 10^(-2k/20), rounded; the last step is silence.
+    static const uint16_t k_far[AUDIO_BALANCE_STEPS + 1] = {
+        32768U, 26029U, 20675U, 16423U, 13045U, 10362U, 8231U, 6538U, 5193U, 4125U, 0U,
+    };
+    if (balance < -AUDIO_BALANCE_STEPS) balance = -AUDIO_BALANCE_STEPS;
+    if (balance > AUDIO_BALANCE_STEPS) balance = AUDIO_BALANCE_STEPS;
+    if (left != NULL) *left = balance > 0 ? k_far[balance] : (uint16_t)AUDIO_VOLUME_UNITY;
+    if (right != NULL) *right = balance < 0 ? k_far[-balance] : (uint16_t)AUDIO_VOLUME_UNITY;
+}
+
+static int16_t audio_balance_scale(int16_t sample, int32_t gain)
+{
+    // Rounded away from zero on both sides, like the volume.
+    int32_t scaled = (int32_t)sample * gain;
+    scaled += scaled >= 0 ? (int32_t)(AUDIO_VOLUME_UNITY / 2U) : -(int32_t)(AUDIO_VOLUME_UNITY / 2U);
+    return (int16_t)(scaled / (int32_t)AUDIO_VOLUME_UNITY);
+}
+
+void audio_balance_apply(int16_t *samples, size_t frames, uint16_t left_start,
+                         uint16_t left_end, uint16_t right_start, uint16_t right_end)
+{
+    if (samples == NULL || frames == 0U) return;
+    const int32_t left_span = (int32_t)left_end - (int32_t)left_start;
+    const int32_t right_span = (int32_t)right_end - (int32_t)right_start;
+    for (size_t frame = 0U; frame < frames; ++frame) {
+        // Gains at or below unity: the product never leaves int16.
+        const int32_t left = (int32_t)left_start + left_span * (int32_t)frame / (int32_t)frames;
+        const int32_t right =
+            (int32_t)right_start + right_span * (int32_t)frame / (int32_t)frames;
+        samples[2U * frame] = audio_balance_scale(samples[2U * frame], left);
+        samples[2U * frame + 1U] = audio_balance_scale(samples[2U * frame + 1U], right);
+    }
+}
+
 void audio_volume_apply_ramp(const uint8_t *source, uint8_t *destination, size_t length,
                              uint16_t gain_start, uint16_t gain_end)
 {

@@ -109,7 +109,8 @@ const ids = [
   'list-title', 'list-count', 'list-items', 'list-empty', 'list-offline', 'list-loading', 'list-loading-text', 'list-search',
   'player-bar', 'player-expand',
   'tone-open', 'tone-panel', 'tone-backdrop', 'tone-close', 'tone-bass', 'tone-treble',
-  'tone-bass-value', 'tone-treble-value', 'tone-loudness-treble-row', 'tone-loudness-treble',
+  'tone-bass-value', 'tone-treble-value', 'tone-balance', 'tone-balance-value',
+  'tone-loudness-treble-row', 'tone-loudness-treble',
   'tone-reset', 'tone-level', 'tone-level-status', 'tone-nudge-row', 'tone-nudge', 'tone-nudge-value',
 ];
 const buttonIds = new Set([
@@ -918,7 +919,8 @@ sendEvent(second, {
     .map((call) => JSON.parse(call.options.body));
   sendEvent(second, {
     type: 'settings.update', revision: 925,
-    settings: {volume: 30, tone_bass: 4, tone_treble: -3, loudness: 'off', loudness_treble: true},
+    settings: {volume: 30, tone_bass: 4, tone_treble: -3, balance: 2, loudness: 'off',
+               loudness_treble: true},
   });
   assert.equal(elements['#tone-open'].classList.contains('is-active'), true);
 
@@ -933,6 +935,9 @@ sendEvent(second, {
   assert.equal(elements['#tone-bass'].value, '4');
   assert.equal(elements['#tone-bass-value'].textContent, '+4 дБ');
   assert.equal(elements['#tone-treble-value'].textContent, '-3 дБ');
+  // The balance as a side and a step, the way the device shows it.
+  assert.equal(elements['#tone-balance'].value, '2');
+  assert.equal(elements['#tone-balance-value'].textContent, 'П2');
   // Loudness off: its treble switch is not offered.
   assert.equal(elements['#tone-loudness-treble-row'].hidden, true);
   assert.equal(loudnessButtons[0].attributes['aria-checked'], 'true');
@@ -968,11 +973,13 @@ sendEvent(second, {
   assert.equal(loudnessButtons[0].attributes['aria-checked'], 'false');
   assert.equal(elements['#tone-loudness-treble-row'].hidden, false);
 
-  // Reset is the three back to flat; the button goes dark.
+  // Reset is the four back to flat, the balance to the middle; the button goes dark.
   elements['#tone-reset'].emit('click');
   await settle();
-  const resetPosts = tonePosts().slice(-3);
-  assert.deepEqual(resetPosts.map((post) => post.field).sort(), ['loudness', 'tone_bass', 'tone_treble']);
+  const resetPosts = tonePosts().slice(-4);
+  assert.deepEqual(resetPosts.map((post) => post.field).sort(),
+                   ['balance', 'loudness', 'tone_bass', 'tone_treble']);
+  assert.equal(elements['#tone-balance-value'].textContent, '0');
   assert.equal(elements['#tone-open'].classList.contains('is-active'), false);
   assert.equal(elements['#tone-bass-value'].textContent, '0 дБ');
 

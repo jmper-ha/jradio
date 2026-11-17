@@ -4231,6 +4231,23 @@ static void ui_settings_row_text(const ui_settings_row_t *row, char *text, size_
                  bass ? (int)s_device_settings.tone_bass : (int)s_device_settings.tone_treble);
         break;
     }
+    case UI_SETTINGS_ROW_BALANCE_FIELD: {
+        const bool editing = ui_settings_model_is_editing(&s_settings_model) &&
+                             ui_settings_model_selected(&s_settings_model) == row->id;
+        // The side and how far, "Л3" or "П3", rather than a sign to decode.
+        const int balance = (int)s_device_settings.balance;
+        char value[8];
+        if (balance == 0) {
+            snprintf(value, sizeof(value), "0");
+        } else {
+            snprintf(value, sizeof(value), "%s%d",
+                     ui_text(balance < 0 ? DEVICE_TEXT_BALANCE_LEFT : DEVICE_TEXT_BALANCE_RIGHT),
+                     balance < 0 ? -balance : balance);
+        }
+        snprintf(text, text_size, editing ? "  %s: <%s>" : "  %s: %s",
+                 ui_text(DEVICE_TEXT_ROW_BALANCE), value);
+        break;
+    }
     case UI_SETTINGS_ROW_LOUDNESS_FIELD:
         ui_settings_field(text, text_size, DEVICE_TEXT_ROW_LOUDNESS,
                           s_device_settings.loudness == DEVICE_LOUDNESS_WEAK
@@ -4768,6 +4785,7 @@ static void ui_apply_tone(void)
     board_audio_set_tone(&tone);
     board_audio_set_levelling(s_device_settings.level_normalize);
     board_audio_set_swell(s_device_settings.soft_start);
+    board_audio_set_balance((int)s_device_settings.balance);
     player_control_set_fm_gain((int)s_device_settings.fm_gain);
 }
 
@@ -5419,6 +5437,20 @@ static void ui_fm_gain_setting_step(int direction)
     device_settings_publish(&s_device_settings);
 }
 
+/* The balance, a step a detent, written per detent like the FM level. */
+static void ui_balance_setting_step(int direction)
+{
+    const int now = (int)s_device_settings.balance;
+    const int next = ui_settings_balance_step(now, direction);
+    if (next == now) return;
+    const bool changed = device_settings_set_balance(&s_device_settings, next);
+    lv_label_set_text(s_settings_notice,
+                      changed ? "" : ui_text(DEVICE_TEXT_SETTINGS_WRITE_FAILED));
+    if (!changed) return;
+    ui_apply_tone();
+    device_settings_publish(&s_device_settings);
+}
+
 /* The number fields. Separate from ui_settings_change_selected() because a
  * click and a detent mean different things here: the click only decides who
  * the knob belongs to, and this is the turn that moves the value. */
@@ -5436,6 +5468,10 @@ static void ui_settings_change_number(int direction)
     }
     if (selected == UI_SETTINGS_ROW_FM_GAIN_FIELD) {
         ui_fm_gain_setting_step(direction);
+        return;
+    }
+    if (selected == UI_SETTINGS_ROW_BALANCE_FIELD) {
+        ui_balance_setting_step(direction);
         return;
     }
     if (selected != UI_SETTINGS_ROW_BRIGHTNESS_FIELD) {

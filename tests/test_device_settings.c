@@ -1059,6 +1059,33 @@ static void test_the_fm_level_persists(void)
     }
 }
 
+/* The balance: in the middle until set, left as a negative step, and a value
+ * out of its range refused here and left in the middle when found on the
+ * card. */
+static void test_the_balance_persists(void)
+{
+    reset_file();
+    device_settings_t settings;
+    assert(device_settings_init_at(&settings, test_path));
+    assert(settings.balance == 0);
+    assert(device_settings_set_balance(&settings, -10));
+    assert(device_settings_set_balance(&settings, 4));
+    assert(!device_settings_set_balance(&settings, 11));
+    assert(!device_settings_set_balance(&settings, -11));
+    char value[16];
+    assert(settings_csv_get(test_path, "balance", value, sizeof(value)));
+    assert(strcmp(value, "4") == 0);
+    device_settings_t reloaded;
+    assert(device_settings_init_at(&reloaded, test_path));
+    assert(reloaded.balance == 4);
+    const char *bad[] = {"11", "-11", "x", "4R"};
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i) {
+        assert(settings_csv_set(test_path, "balance", bad[i]));
+        assert(device_settings_init_at(&reloaded, test_path));
+        assert(reloaded.balance == 0);
+    }
+}
+
 /* Tone and loudness: flat and off until set, refused out of range, and back
  * from the card as they went in - a cut as a negative number. */
 static void test_tone_and_loudness_persist(void)
@@ -1122,6 +1149,7 @@ int main(void)
 {
     test_tone_and_loudness_persist();
     test_the_fm_level_persists();
+    test_the_balance_persists();
     test_the_custom_theme_colors_persist_all_or_none();
     test_the_bluetooth_output_persists_and_forgets();
     test_the_fm_frequency_persists_and_stays_in_the_band();

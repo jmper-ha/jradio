@@ -102,6 +102,21 @@ void audio_volume_fill_decay(uint8_t *destination, size_t frames, int16_t left,
 void audio_volume_apply(const uint8_t *source, uint8_t *destination, size_t length,
                         uint16_t gain);
 
+/* Balance between the channels, -AUDIO_BALANCE_STEPS (left) .. +STEPS
+ * (right). Only the far channel is turned down - 2 dB a step, silent at the
+ * end - and the near one stays where the volume put it: lifting it instead
+ * would clip what is already at full scale. Asked for on the forum, for a
+ * speaker that stands further off than the other. */
+#define AUDIO_BALANCE_STEPS 10
+void audio_balance_gains(int balance, uint16_t *left, uint16_t *right);
+
+/* Scales the two channels of interleaved 16-bit `frames` in place, each
+ * moving from its start gain to its end gain across the block - the same
+ * ramp the volume uses, for the same reason: a turn of the knob is otherwise
+ * a step in the waveform. */
+void audio_balance_apply(int16_t *samples, size_t frames, uint16_t left_start,
+                         uint16_t left_end, uint16_t right_start, uint16_t right_end);
+
 /* Clamps a setting to the allowed range after a step, without wrapping.
  *
  * `step` may be negative and larger than the current value; the encoder can

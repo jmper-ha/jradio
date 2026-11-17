@@ -74,6 +74,7 @@ static const field_descriptor_t k_fields[] = {
     {"screensaver_brightness", WEB_SETTINGS_FIELD_SCREENSAVER_BRIGHTNESS, {NULL}, true, false},
     {"volume_step", WEB_SETTINGS_FIELD_VOLUME_STEP, {NULL}, true, false},
     {"fm_gain", WEB_SETTINGS_FIELD_FM_GAIN, {NULL}, true, false},
+    {"balance", WEB_SETTINGS_FIELD_BALANCE, {NULL}, true, false},
     {"theme", WEB_SETTINGS_FIELD_THEME, {WEB_SETTINGS_THEME_NAMES}, false, false},
     {"theme_ground", WEB_SETTINGS_FIELD_THEME_GROUND, {NULL}, false, true},
     {"theme_text", WEB_SETTINGS_FIELD_THEME_TEXT, {NULL}, false, true},
@@ -194,6 +195,8 @@ static bool parse_value(const field_descriptor_t *descriptor, const cJSON *value
         if (number < DEVICE_VOLUME_STEP_MIN || number > DEVICE_VOLUME_STEP_MAX) return false;
     } else if (descriptor->field == WEB_SETTINGS_FIELD_FM_GAIN) {
         if (number < DEVICE_FM_GAIN_DB_MIN || number > DEVICE_FM_GAIN_DB_MAX) return false;
+    } else if (descriptor->field == WEB_SETTINGS_FIELD_BALANCE) {
+        if (number < DEVICE_BALANCE_MIN || number > DEVICE_BALANCE_MAX) return false;
     } else if (descriptor->field == WEB_SETTINGS_FIELD_TONE_BASS ||
                descriptor->field == WEB_SETTINGS_FIELD_TONE_TREBLE) {
         // The one signed number here: a cut is as much a setting as a lift.
@@ -304,6 +307,8 @@ bool web_settings_apply(device_settings_t *settings,
         return device_settings_set_volume_step(settings, (unsigned char)change->value);
     case WEB_SETTINGS_FIELD_FM_GAIN:
         return device_settings_set_fm_gain(settings, change->value);
+    case WEB_SETTINGS_FIELD_BALANCE:
+        return device_settings_set_balance(settings, change->value);
     case WEB_SETTINGS_FIELD_THEME:
         return device_settings_set_theme(settings, (device_theme_t)change->value);
     case WEB_SETTINGS_FIELD_THEME_GROUND:
@@ -405,6 +410,7 @@ void web_settings_make_view(web_settings_view_t *view,
         .invert_colors = settings->invert_colors,
         .volume_step = settings->volume_step,
         .fm_gain = (int8_t)settings->fm_gain,
+        .balance = (int8_t)settings->balance,
         .theme = (uint8_t)settings->theme,
         .timezone = (uint8_t)device_timezone_index_of(settings->timezone),
         .weather = (uint8_t)settings->weather_provider,
@@ -459,6 +465,7 @@ bool web_settings_view_equal(const web_settings_view_t *left,
            left->flip_horizontal == right->flip_horizontal &&
            left->invert_colors == right->invert_colors &&
            left->volume_step == right->volume_step && left->fm_gain == right->fm_gain &&
+           left->balance == right->balance &&
            left->theme == right->theme &&
            left->timezone == right->timezone && left->weather == right->weather &&
            left->screensaver == right->screensaver &&
@@ -542,6 +549,8 @@ static void write_body(web_json_writer_t *writer, const web_settings_view_t *vie
     web_json_format(writer, "%u", (unsigned)view->volume_step);
     web_json_literal(writer, ",\"fm_gain\":");
     web_json_format(writer, "%d", (int)view->fm_gain);
+    web_json_literal(writer, ",\"balance\":");
+    web_json_format(writer, "%d", (int)view->balance);
     web_json_literal(writer, ",\"theme\":");
     web_json_string(writer, view->theme < sizeof(k_theme_names) / sizeof(k_theme_names[0])
                                 ? k_theme_names[view->theme]

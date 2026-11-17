@@ -155,6 +155,9 @@ uint8_t board_audio_volume(void);
 /* Tone controls and loudness (audio_tone.h), applied from the next block on.
  * Not the Bluetooth module's sound, which reaches the DAC past this board. */
 void board_audio_set_tone(const audio_tone_settings_t *settings);
+/* -AUDIO_BALANCE_STEPS (left) .. +STEPS (right), applied from the next block
+ * on, like the tone. Out of range is ignored. */
+void board_audio_set_balance(int balance);
 
 /* The slow start (audio_volume_swell_gain): on, the player's word that the
  * station or source has changed makes the next stream start rise from

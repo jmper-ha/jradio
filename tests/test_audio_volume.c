@@ -309,8 +309,51 @@ static void test_a_volume_change_is_ramped_not_stepped(void)
     assert(out[2 * 63] < out[0]);
 }
 
+static void test_balance_turns_down_only_the_far_channel(void)
+{
+    uint16_t left = 0U;
+    uint16_t right = 0U;
+    audio_balance_gains(0, &left, &right);
+    assert(left == AUDIO_VOLUME_UNITY && right == AUDIO_VOLUME_UNITY);
+    // To the right: the left goes down, 2 dB a step, and the right stays.
+    audio_balance_gains(1, &left, &right);
+    assert(left == 26029U && right == AUDIO_VOLUME_UNITY);
+    audio_balance_gains(5, &left, &right);
+    assert(left == 10362U && right == AUDIO_VOLUME_UNITY);
+    audio_balance_gains(-3, &left, &right);
+    assert(left == AUDIO_VOLUME_UNITY && right == 16423U);
+    // The end silences the far side, and past it is the end.
+    audio_balance_gains(AUDIO_BALANCE_STEPS, &left, &right);
+    assert(left == 0U && right == AUDIO_VOLUME_UNITY);
+    audio_balance_gains(-40, &left, &right);
+    assert(left == AUDIO_VOLUME_UNITY && right == 0U);
+    for (int step = 0; step < AUDIO_BALANCE_STEPS; ++step) {
+        uint16_t nearer = 0U;
+        uint16_t further = 0U;
+        audio_balance_gains(step, &nearer, NULL);
+        audio_balance_gains(step + 1, &further, NULL);
+        assert(further < nearer);
+    }
+
+    // Flat: the left is halved and the right untouched, full scale included.
+    int16_t samples[] = {32767, 32767, -32768, -32768, 1000, -1000};
+    audio_balance_apply(samples, 3U, AUDIO_VOLUME_UNITY / 2U, AUDIO_VOLUME_UNITY / 2U,
+                        AUDIO_VOLUME_UNITY, AUDIO_VOLUME_UNITY);
+    assert(samples[0] == 16384 && samples[1] == 32767);
+    assert(samples[2] == -16384 && samples[3] == -32768);
+    assert(samples[4] == 500 && samples[5] == -1000);
+
+    // A move is ramped across the block: it starts where the last one ended.
+    int16_t ramp[8] = {10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000};
+    audio_balance_apply(ramp, 4U, AUDIO_VOLUME_UNITY, 0U, AUDIO_VOLUME_UNITY,
+                        AUDIO_VOLUME_UNITY);
+    assert(ramp[0] == 10000 && ramp[2] == 7500 && ramp[4] == 5000 && ramp[6] == 2500);
+    assert(ramp[1] == 10000 && ramp[7] == 10000);
+}
+
 int main(void)
 {
+    test_balance_turns_down_only_the_far_channel();
     test_a_volume_change_is_ramped_not_stepped();
     test_full_volume_is_bit_exact();
     test_zero_is_silence_not_the_bottom_of_the_curve();

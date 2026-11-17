@@ -254,6 +254,18 @@ static portMUX_TYPE s_tone_lock = portMUX_INITIALIZER_UNLOCKED;
 static audio_tone_settings_t s_tone_wanted;
 static audio_tone_t s_tone;
 
+/* The balance as the settings last said, and where the last block's two
+ * gains ended, for the next to ramp from. */
+static atomic_int s_balance_wanted;
+static uint16_t s_balance_left_end = AUDIO_VOLUME_UNITY;
+static uint16_t s_balance_right_end = AUDIO_VOLUME_UNITY;
+
+void board_audio_set_balance(int balance)
+{
+    if (balance < -AUDIO_BALANCE_STEPS || balance > AUDIO_BALANCE_STEPS) return;
+    atomic_store_explicit(&s_balance_wanted, balance, memory_order_relaxed);
+}
+
 void board_audio_set_tone(const audio_tone_settings_t *settings)
 {
     if (!audio_tone_settings_valid(settings)) return;
@@ -1260,7 +1272,25 @@ static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
      * through the filters, full volume included. Otherwise the path below is
      * the one it always was. */
     const bool shaped = audio_tone_active(&tone) || !audio_tone_idle(&s_tone);
-    if (!shaped && gain_start == AUDIO_VOLUME_UNITY && gain_end == AUDIO_VOLUME_UNITY) {
+    uint16_t balance_left;
+    uint16_t balance_right;
+    audio_balance_gains(atomic_load_explicit(&s_balance_wanted, memory_order_relaxed),
+                        &balance_left, &balance_right);
+    // A stream starts from silence anyway: nothing to ramp from.
+    if (stream_start) {
+        s_balance_left_end = balance_left;
+        s_balance_right_end = balance_right;
+    }
+    const uint16_t balance_left_start = s_balance_left_end;
+    const uint16_t balance_right_start = s_balance_right_end;
+    s_balance_left_end = balance_left;
+    s_balance_right_end = balance_right;
+    const bool balanced = balance_left_start != AUDIO_VOLUME_UNITY ||
+                          balance_right_start != AUDIO_VOLUME_UNITY ||
+                          balance_left != AUDIO_VOLUME_UNITY ||
+                          balance_right != AUDIO_VOLUME_UNITY;
+    if (!shaped && !balanced && gain_start == AUDIO_VOLUME_UNITY &&
+        gain_end == AUDIO_VOLUME_UNITY) {
         // Full volume, fade over: bit-exact, and no copy.
         board_audio_remember_tail(pcm, pcm_length);
         return pcm;
@@ -1291,6 +1321,10 @@ static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
                            (int16_t *)s_audio_gain_scratch, frames, gain_start, gain_end);
     } else {
         audio_volume_apply_ramp(pcm, s_audio_gain_scratch, pcm_length, gain_start, gain_end);
+    }
+    if (balanced) {
+        audio_balance_apply((int16_t *)s_audio_gain_scratch, frames, balance_left_start,
+                            balance_left, balance_right_start, balance_right);
     }
     board_audio_remember_tail(s_audio_gain_scratch, pcm_length);
     return s_audio_gain_scratch;

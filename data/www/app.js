@@ -38,6 +38,8 @@
   const toneTreble = document.querySelector('#tone-treble');
   const toneBassValue = document.querySelector('#tone-bass-value');
   const toneTrebleValue = document.querySelector('#tone-treble-value');
+  const toneBalance = document.querySelector('#tone-balance');
+  const toneBalanceValue = document.querySelector('#tone-balance-value');
   const toneLoudness = Array.from(document.querySelectorAll('[data-loudness]'));
   const toneLoudnessTrebleRow = document.querySelector('#tone-loudness-treble-row');
   const toneLoudnessTreble = document.querySelector('#tone-loudness-treble');
@@ -465,7 +467,7 @@
      is: a drag fires an input per pixel, and only the newest of those that
      arrive while a write is in the air is worth sending after it. */
   const tone = {
-    values: {tone_bass: 0, tone_treble: 0, loudness: 'off', loudness_treble: true,
+    values: {tone_bass: 0, tone_treble: 0, balance: 0, loudness: 'off', loudness_treble: true,
              level_normalize: false},
     // The levelling's reading from the position poll; null while it is off.
     level: null,
@@ -487,6 +489,13 @@
     return `${sign}${db} ${t('player.db')}`;
   }
 
+  /* "Л3" or "П3", the way the device's own row shows it, rather than a sign
+     the listener has to decode. */
+  function balanceText(step) {
+    if (step === 0) return '0';
+    return t(step < 0 ? 'player.balance_left' : 'player.balance_right') + Math.abs(step);
+  }
+
   function renderTone() {
     // A page without the panel - the tests' smaller ones - has nothing to draw.
     if (!tonePanel) return;
@@ -496,6 +505,8 @@
     if (tone.held !== 'tone_treble') toneTreble.value = String(v.tone_treble);
     toneBassValue.textContent = toneText(Number(toneBass.value));
     toneTrebleValue.textContent = toneText(Number(toneTreble.value));
+    if (tone.held !== 'balance') toneBalance.value = String(v.balance);
+    toneBalanceValue.textContent = balanceText(Number(toneBalance.value));
     for (const button of toneLoudness) {
       button.setAttribute('aria-checked', String(button.dataset.loudness === v.loudness));
     }
@@ -514,12 +525,12 @@
     }
     toneNudgeValue.textContent = toneText(Number(toneNudge.value));
     toneOpen.classList.toggle('is-active',
-      v.tone_bass !== 0 || v.tone_treble !== 0 || v.loudness !== 'off');
+      v.tone_bass !== 0 || v.tone_treble !== 0 || v.balance !== 0 || v.loudness !== 'off');
   }
 
   function applyTone(value) {
     const v = tone.values;
-    for (const field of ['tone_bass', 'tone_treble']) {
+    for (const field of ['tone_bass', 'tone_treble', 'balance']) {
       if (Number.isSafeInteger(value[field]) && !tone.busy[field]) v[field] = value[field];
     }
     if (TONE_LOUDNESS.includes(value.loudness) && !tone.busy.loudness) v.loudness = value.loudness;
@@ -669,7 +680,11 @@
     input.addEventListener('input', () => {
       tone.held = field;
       const db = Math.round(Number(input.value));
-      (field === 'tone_bass' ? toneBassValue : toneTrebleValue).textContent = toneText(db);
+      if (field === 'balance') {
+        toneBalanceValue.textContent = balanceText(db);
+      } else {
+        (field === 'tone_bass' ? toneBassValue : toneTrebleValue).textContent = toneText(db);
+      }
       // Sent while it moves: the point of the panel is hearing the change.
       sendTone(field, db);
     });
@@ -690,6 +705,7 @@
     toneBackdrop.addEventListener('click', () => closeTone());
     bindToneSlider(toneBass, 'tone_bass');
     bindToneSlider(toneTreble, 'tone_treble');
+    bindToneSlider(toneBalance, 'balance');
     for (const button of toneLoudness) {
       button.addEventListener('click', () => {
         const name = button.dataset.loudness;
@@ -722,7 +738,8 @@
     });
     toneReset.addEventListener('click', () => {
       tone.held = '';
-      for (const [field, flat] of [['tone_bass', 0], ['tone_treble', 0], ['loudness', 'off']]) {
+      for (const [field, flat] of [['tone_bass', 0], ['tone_treble', 0], ['balance', 0],
+                                   ['loudness', 'off']]) {
         tone.values[field] = flat;
         sendTone(field, flat);
       }

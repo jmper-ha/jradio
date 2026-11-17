@@ -251,6 +251,7 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         .spdif_output = false,
         .soft_start = true,
         .fm_gain = 0,
+        .balance = 0,
         .screensaver_seconds = DEVICE_SCREENSAVER_SECONDS_DEFAULT,
         .screensaver_brightness = DEVICE_SCREENSAVER_BRIGHTNESS_DEFAULT,
         .yandex_music = true,
@@ -466,6 +467,14 @@ bool device_settings_init_at(device_settings_t *settings, const char *path)
         if (end != NULL && end != value && *end == '\0' && parsed >= DEVICE_FM_GAIN_DB_MIN &&
             parsed <= DEVICE_FM_GAIN_DB_MAX) {
             settings->fm_gain = (signed char)parsed;
+        }
+    }
+    if (read_value(&csv, "balance", value, sizeof(value))) {
+        char *end = NULL;
+        const long parsed = strtol(value, &end, 10);
+        if (end != NULL && end != value && *end == '\0' && parsed >= DEVICE_BALANCE_MIN &&
+            parsed <= DEVICE_BALANCE_MAX) {
+            settings->balance = (signed char)parsed;
         }
     }
     if (read_value(&csv, "screensaver", value, sizeof(value))) {
@@ -1080,6 +1089,19 @@ bool device_settings_set_fm_gain(device_settings_t *settings, int db)
     snprintf(text, sizeof(text), "%d", db);
     if (!save_value(settings, "fm_gain", text)) return false;
     settings->fm_gain = (signed char)db;
+    return true;
+}
+
+bool device_settings_set_balance(device_settings_t *settings, int balance)
+{
+    if (settings == NULL || balance < DEVICE_BALANCE_MIN || balance > DEVICE_BALANCE_MAX) {
+        return false;
+    }
+    if (settings->balance == balance) return true;
+    char text[8];
+    snprintf(text, sizeof(text), "%d", balance);
+    if (!save_value(settings, "balance", text)) return false;
+    settings->balance = (signed char)balance;
     return true;
 }
 

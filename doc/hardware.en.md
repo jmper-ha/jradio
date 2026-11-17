@@ -358,6 +358,12 @@ On the purple PCM5102 modules this is the XMT pad, pulled to 3.3 V by a jumper
 - cut the jumper and connect the pad to the GPIO (1 kΩ in series is fine).
 Without this line the DAC simply always plays.
 
+XSMT is needed with the "Sound through the S3" wire below as well: the speaker
+gets its sound from the same data line as the DAC, and this pin is the only way
+to silence the DAC. If GPIO 15 goes to the data from the module, move XSMT to
+another pin - one pin cannot do both. GPIO 0 will do: XSMT through 1 kΩ and
+with no pull-down, or the board starts in its flashing mode at power-on.
+
 ### Sound through the S3
 
 One more wire, and the S3 always runs the bus while the phone's sound passes

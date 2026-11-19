@@ -801,6 +801,14 @@ static void radio_direct_task(void *arg)
     /* A station's background reconnect ran out of backlog and the screen was
      * told; the new stream then starts the decoder and the output afresh. */
     bool reconnect_shown = false;
+    /* The decoder can do nothing more with the backlog it has: what is left
+     * is a few bytes short of anything. Ogg holds back the last
+     * RADIO_OGG_FLAGS_END bytes as a possible page start, so after a dropped
+     * connection the backlog never reached zero, the reconnected stream that
+     * waited for zero was never taken, and the loop spun without reading or
+     * sleeping until the task watchdog fired every 5 s (bench, 2026-11-19,
+     * Fallout.FM Vorbis). */
+    bool backlog_spent = false;
     /* A decoded block that has not fully reached the I2S DMA yet. The decoder
      * writes into the same buffer, so nothing new is decoded while this is
      * set. A pass normally places the whole block - see
@@ -871,7 +879,7 @@ static void radio_direct_task(void *arg)
              * and starts the decoder over. */
             const bool splices = radio->stream_format == RADIO_STREAM_FORMAT_MP3 ||
                                  radio->stream_format == RADIO_STREAM_FORMAT_AAC;
-            if (state == RADIO_REOPEN_READY && (splices || available == 0U)) {
+            if (state == RADIO_REOPEN_READY && (splices || available == 0U || backlog_spent)) {
                 radio->http = job->client;
                 job->client = NULL;
                 radio->range_granted = false;
@@ -893,6 +901,7 @@ static void radio_direct_task(void *arg)
                 heap_caps_free(job);
                 radio->reopen = NULL;
                 reconnect_shown = false;
+                backlog_spent = false;
                 decode_error_retries = 0U;
                 last_rx_tick = xTaskGetTickCount();
             } else if (state == RADIO_REOPEN_FAILED) {
@@ -918,7 +927,7 @@ static void radio_direct_task(void *arg)
                 last_pcm_tick = xTaskGetTickCount();
                 decoder_synced = false;
                 continue;
-            } else if (available == 0U) {
+            } else if (available == 0U || backlog_spent) {
                 // The backlog is spent and the station is still not back.
                 if (!reconnect_shown) reconnect_shown = radio_show_reconnecting(radio);
                 vTaskDelay(pdMS_TO_TICKS(10));
@@ -979,7 +988,7 @@ static void radio_direct_task(void *arg)
                     ESP_LOGW(TAG, "the track would not reopen; moving to the next one");
                     track_ended = true;
                 }
-            } else if (available == 0U) {
+            } else if (available == 0U || backlog_spent) {
                 // Nothing left to play while it runs.
                 vTaskDelay(pdMS_TO_TICKS(10));
                 continue;
@@ -1081,7 +1090,10 @@ static void radio_direct_task(void *arg)
             pcm_delivered = 0U;
             track_ended = true;
         }
-        bool need_input = available == 0U;
+        /* Spent counts as empty: the Ogg path below leaves for the next pass
+         * when only its held-back bytes remain, and a pass that started by
+         * decoding them again never reached the read below. */
+        bool need_input = available == 0U || backlog_spent;
         /* A live station's sound waits for a second of backlog, briefly
          * (radio_prebuffer_start_bytes): until then the decoder is treated as
          * starved, so the loop waits on the socket for more rather than
@@ -1232,6 +1244,7 @@ static void radio_direct_task(void *arg)
                 decode_length = ogg_clean;
                 if (decode_length == 0U) {
                     need_input = true;
+                    backlog_spent = true;
                     continue;
                 }
             }
@@ -1313,6 +1326,7 @@ static void radio_direct_task(void *arg)
                 pcm_pending = pcm_bytes;
                 pcm_delivered = 0U;
                 need_input = false;
+                backlog_spent = false;
             } else if (result == RADIO_DECODER_NEED_MORE_DATA && ogg_song_tail && consumed == 0U) {
                 /* Whatever is left of the song will never be enough for it now,
                  * and more from the network would not reach it. */
@@ -1327,6 +1341,7 @@ static void radio_direct_task(void *arg)
                  * opening mid-frame take twenty seconds - see
                  * internet_radio_decoder_starved(). */
                 need_input = internet_radio_decoder_starved(consumed, available);
+                backlog_spent = need_input;
             } else {
                 if (radio->stream_format == RADIO_STREAM_FORMAT_MP3 && consumed == 0U &&
                     pcm_bytes == 0U && decode_error_retries < 100U) {
@@ -1594,6 +1609,7 @@ static void radio_direct_task(void *arg)
                     }
                     memcpy(compressed + compressed_offset + available, audio, audio_length);
                     available += audio_length;
+                    backlog_spent = false;
                 }
 
                 // Drain whatever else the socket already holds, bounded by

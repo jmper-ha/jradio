@@ -6,6 +6,32 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.13.0 — 19 November 2026
+
+New:
+- A balance between the left and right channels: on the device in the
+  settings, right after the treble; on the web in the tone panel beside
+  the bass and treble. Resetting the tone centres the balance too.
+- A press on the web page now wakes the screensaver, as a key or the
+  encoder on the radio does. Unlike theirs, what was pressed on the web is
+  carried out at once.
+
+Fixed:
+- From 1.12.0 the built-in speakers played on beside a Bluetooth speaker
+  on boards with XSMT wired to a pin. The DAC is muted again when the
+  speaker connects.
+- The wiring examples put both XSMT and the data wire from the Bluetooth
+  module on GPIO 15, leaving the DAC without its mute. GPIO 0 is now
+  offered for XSMT.
+- The radio could hang on a station switch when an Ogg station (Fallout.FM,
+  for one) dropped: the sound stopped, the web stayed up, and the board
+  needed a restart.
+- On some stations (Kultura, for one) a stretch of the broadcast was heard
+  two or three times after a start or a pause, until the buffer filled.
+  Their server sends the sound in bursts with 3-4 s gaps, and the radio
+  took a gap for a drop and reconnected. Now it waits the gap out while
+  more than a second of sound is buffered.
+
 ## v1.12.3 — 16 November 2026
 
 Fixed:

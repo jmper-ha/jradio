@@ -100,6 +100,12 @@ uint32_t internet_radio_decode_stall_limit(bool decoder_synced, uint32_t running
     return decoder_synced ? running_limit_ms : sync_limit_ms;
 }
 
+uint32_t internet_radio_live_quiet_limit(uint32_t backlog_ms, uint32_t limit_ms,
+                                         uint32_t reserve_ms)
+{
+    return backlog_ms > reserve_ms ? UINT32_MAX : limit_ms;
+}
+
 uint32_t internet_radio_reconnect_delay_ms(uint32_t attempt)
 {
     if (attempt < 10U) return 1000U;

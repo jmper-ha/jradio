@@ -126,6 +126,17 @@ static void test_the_stall_limit_leaves_room_for_a_decoder_still_finding_a_frame
         60000U, 0U, internet_radio_decode_stall_limit(true, 400U, 2000U)));
 }
 
+static void test_a_quiet_station_with_seconds_in_hand_is_not_reconnected_yet(void)
+{
+    // Down to the reserve, or of unknown length: the short limit, as before.
+    assert(internet_radio_live_quiet_limit(0U, 1500U, 1000U) == 1500U);
+    assert(internet_radio_live_quiet_limit(1000U, 1500U, 1000U) == 1500U);
+    /* Four seconds of a CDN's silence with six in hand is its rhythm, not a
+     * dead station: waited on while more than the reserve is left. */
+    assert(internet_radio_live_quiet_limit(1001U, 1500U, 1000U) == UINT32_MAX);
+    assert(internet_radio_live_quiet_limit(6000U, 1500U, 1000U) == UINT32_MAX);
+}
+
 /* Which "need more data" means the network and which means "call me again".
  *
  * The distinction is the whole reason a station that opens mid-frame used to
@@ -174,6 +185,7 @@ int main(void)
     test_full_input_buffer_is_fatal_only_when_decoder_needs_more_data();
     test_a_decoder_that_eats_input_without_producing_is_a_stall();
     test_the_stall_limit_leaves_room_for_a_decoder_still_finding_a_frame();
+    test_a_quiet_station_with_seconds_in_hand_is_not_reconnected_yet();
     test_a_resyncing_decoder_is_not_a_starved_one();
     test_a_lost_station_is_tried_ever_more_slowly();
     puts("internet_radio_state tests passed");

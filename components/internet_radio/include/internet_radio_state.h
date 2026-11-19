@@ -79,6 +79,17 @@ bool internet_radio_decoder_starved(size_t consumed, size_t remaining);
 uint32_t internet_radio_decode_stall_limit(bool decoder_synced, uint32_t running_limit_ms,
                                            uint32_t sync_limit_ms);
 
+/* How long a live station may send nothing before it is reconnected in the
+ * background: `limit_ms` once the backlog is down to `reserve_ms`, and never
+ * while there is more than that to play. A CDN relaying Kultura sends a burst
+ * every six seconds with three to four of silence between; called quiet after
+ * 1.5 s, it was reconnected with seconds still buffered, and the new burst -
+ * the same last seconds - was spliced on and heard again, two or three times
+ * over (bench, 2026-11-19). A backlog of unknown length (0 ms) keeps the
+ * short limit. */
+uint32_t internet_radio_live_quiet_limit(uint32_t backlog_ms, uint32_t limit_ms,
+                                         uint32_t reserve_ms);
+
 /* How long to wait after reconnect attempt `attempt` (from 0) fails, to a
  * station that was playing. Ten tries a second apart first: that is how long
  * a backlog of 4-8 s plays out while they run in the background, and a gap

@@ -69,6 +69,9 @@
  * backlog is: 32 KB is 2 s of a 128 kbps station, and reconnecting takes
  * about one. */
 #define RADIO_LIVE_STALL_MS 1500U
+/* A live station's quiet is waited on until this much backlog is left: a
+ * background reconnect took 0.4-0.5 s on the bench. */
+#define RADIO_LIVE_STALL_RESERVE_MS 1000U
 // An Ogg page's flags byte, the last one needed to tell what the page is.
 #define RADIO_OGG_FLAGS_END 5U
 /* A read that was meant to take only what had arrived and took this long has
@@ -1473,9 +1476,19 @@ static void radio_direct_task(void *arg)
                 // Nothing buffered yet and the decoder is not waiting: keep
                 // decoding rather than spinning on an idle socket - unless the
                 // server has gone quiet for long enough to call it.
+                uint32_t quiet_limit_ms = RADIO_TRACK_STALL_MS;
+                if (!radio->track_chain) {
+                    uint16_t bitrate;
+                    taskENTER_CRITICAL(&s_status_lock);
+                    bitrate = radio->status.bitrate_kbps;
+                    taskEXIT_CRITICAL(&s_status_lock);
+                    quiet_limit_ms = internet_radio_live_quiet_limit(
+                        radio_prebuffer_millis(available, bitrate), RADIO_LIVE_STALL_MS,
+                        RADIO_LIVE_STALL_RESERVE_MS);
+                }
                 if (radio->hls.active ||
                     (uint32_t)((xTaskGetTickCount() - last_rx_tick) * portTICK_PERIOD_MS) <
-                        (radio->track_chain ? RADIO_TRACK_STALL_MS : RADIO_LIVE_STALL_MS)) {
+                        quiet_limit_ms) {
                     continue;
                 }
                 track_stalled = true;

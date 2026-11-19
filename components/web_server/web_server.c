@@ -33,6 +33,7 @@ static void web_server_secure_zero(void *memory, size_t size)
 #include "weather.h"
 #include "ui_now_playing.h"
 #include "version_info.h"
+#include "ui.h"
 #include "file_storage.h"
 #include "fm_presets.h"
 #include "fm_tuner.h"
@@ -1993,6 +1994,7 @@ static esp_err_t web_server_settings_api_post(httpd_req_t *request)
                             "Failed to save settings");
         return ESP_FAIL;
     }
+    ui_note_web_activity();
     /* The value is on the card; making it true of the running device is the
      * UI task's job - it owns the backlight, the panel rotation, the volume
      * and the menus. The weather is the exception, told here as well: the

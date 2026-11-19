@@ -1305,6 +1305,7 @@ static esp_err_t handle_text_frame(httpd_req_t *request, uint8_t *payload,
     const char *error = device_text(DEVICE_TEXT_ERROR_BAD_COMMAND, language);
     if (parsed == WEB_PROTOCOL_OK) {
         request_id = command.request_id;
+        ui_note_web_activity();
         if (command.kind == WEB_COMMAND_PLAYER) {
             accepted = player_control_post(&command.player);
         } else if (command.kind == WEB_COMMAND_SOURCE_OPEN) {

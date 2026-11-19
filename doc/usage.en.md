@@ -509,7 +509,8 @@ detail, the alarm, the sleep timer, the backup.
   "Comes on" are set on the web: "Always" - the set time after the last
   touch, or "When nothing plays" - only once the music is stopped or paused;
   music starting wakes the screen by itself. Any action wakes the screen; in
-  the dark modes the first press only wakes.
+  the dark modes the first press only wakes. A press on the web wakes the
+  screen too, and is carried out at once.
 - **Weather** - a switch on the device; the service, the coordinates and the
   key are on the web.
 - **Language** - Russian or English, one switch for the screen and the

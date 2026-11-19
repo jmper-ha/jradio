@@ -757,6 +757,8 @@ static audio_source_t s_previous_source = AUDIO_SOURCE_NONE;
 static audio_source_t s_last_seen_source = AUDIO_SOURCE_NONE;
 /* From the web server's task - see ui_request_source(). */
 static atomic_int s_web_source_request = ATOMIC_VAR_INIT(AUDIO_SOURCE_NONE);
+// From the web server's task - see ui_note_web_activity().
+static atomic_bool s_web_activity = ATOMIC_VAR_INIT(false);
 /* The remote's Mute: the level it took the sound down from, so Mute again
  * or any volume key puts it back. Not a setting - a muted board comes back
  * from a power cut at the level it was muted at, not silent. */
@@ -10175,6 +10177,9 @@ static void ui_task(void *arg)
          * from now, and whatever the alarm started would be stopped again. */
         if (!s_sleep_fading) ui_alarm_poll(ui_tick_get_ms());
         ui_alarm_stop_poll(ui_tick_get_ms());
+        if (atomic_exchange_explicit(&s_web_activity, false, memory_order_acq_rel)) {
+            (void)ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms());
+        }
         ui_screensaver_poll(ui_tick_get_ms());
         ui_quick_poll(ui_tick_get_ms());
         ui_ota_poll(ui_tick_get_ms());
@@ -10563,6 +10568,11 @@ bool ui_request_source(audio_source_t source)
     if (source == AUDIO_SOURCE_NONE) return false;
     atomic_store_explicit(&s_web_source_request, (int)source, memory_order_release);
     return true;
+}
+
+void ui_note_web_activity(void)
+{
+    atomic_store_explicit(&s_web_activity, true, memory_order_release);
 }
 
 bool ui_post_input(board_input_action_t action)

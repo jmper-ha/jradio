@@ -1027,7 +1027,10 @@ static bool set_tone_db(device_settings_t *settings, const char *key, signed cha
     if (*field == db) return true;
     char text[8];
     snprintf(text, sizeof(text), "%d", db);
-    if (!save_value(settings, key, text)) return false;
+    /* Later: the web's slider sends every step it is dragged through, and a
+     * write to the card stalls the sound - the decoder's stack is in PSRAM,
+     * which the flash write takes away. */
+    if (!settings_csv_set_later(settings->storage_path, key, text)) return false;
     *field = (signed char)db;
     return true;
 }
@@ -1100,7 +1103,8 @@ bool device_settings_set_balance(device_settings_t *settings, int balance)
     if (settings->balance == balance) return true;
     char text[8];
     snprintf(text, sizeof(text), "%d", balance);
-    if (!save_value(settings, "balance", text)) return false;
+    // Later, like the tone above - see set_tone_db().
+    if (!settings_csv_set_later(settings->storage_path, "balance", text)) return false;
     settings->balance = (signed char)balance;
     return true;
 }

@@ -88,6 +88,10 @@ class Element {
     return 340;
   }
 
+  get offsetHeight() {
+    return 560;
+  }
+
   focus() {
     documentRef.activeElement = this;
   }
@@ -214,6 +218,7 @@ const context = {
   window: {
     location: {protocol: 'http:', host: 'radio.local', reload() { reloads += 1; }},
     innerWidth: 1200,
+    innerHeight: 900,
     listeners: {},
     addEventListener(type, callback) { (this.listeners[type] ||= []).push(callback); },
     emit(type, event = {}) { for (const callback of this.listeners[type] || []) callback(event); },
@@ -932,6 +937,14 @@ sendEvent(second, {
   // Under its button, its right edge on the button's.
   assert.equal(elements['#tone-panel'].style.top, '98px');
   assert.equal(elements['#tone-panel'].style.left, '390px');
+  // A window too short for it under its button - a 1366x768 laptop - has it
+  // raised to end 8 px above the window's bottom.
+  context.window.innerHeight = 620;
+  context.window.emit('resize');
+  assert.equal(elements['#tone-panel'].style.top, '52px');
+  context.window.innerHeight = 900;
+  context.window.emit('resize');
+  assert.equal(elements['#tone-panel'].style.top, '98px');
   assert.equal(elements['#tone-bass'].value, '4');
   assert.equal(elements['#tone-bass-value'].textContent, '+4 дБ');
   assert.equal(elements['#tone-treble-value'].textContent, '-3 дБ');

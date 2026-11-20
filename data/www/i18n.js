@@ -181,6 +181,7 @@
     'remote.f.quick': ['Быстрые настройки', 'Quick panel'],
     'remote.f.list': ['Список станций', 'Station list'],
     'remote.f.sleep': ['Таймер сна', 'Sleep timer'],
+    'remote.f.peek': ['Инфо', 'Info'],
     'remote.f.like': ['Нравится (ЯМузыка)', 'Like (Ya.Music)'],
     'remote.f.dislike': ['Не нравится (ЯМузыка)', 'Dislike (Ya.Music)'],
     'remote.f.digit_0': ['0', '0'], 'remote.f.digit_1': ['1', '1'], 'remote.f.digit_2': ['2', '2'],

@@ -1075,6 +1075,8 @@ static void test_the_balance_persists(void)
     char value[16];
     assert(settings_csv_get(test_path, "balance", value, sizeof(value)));
     assert(strcmp(value, "4") == 0);
+    // Written later, the two steps as one - and then from the file.
+    assert(settings_csv_flush_pending() == 1U);
     device_settings_t reloaded;
     assert(device_settings_init_at(&reloaded, test_path));
     assert(reloaded.balance == 4);

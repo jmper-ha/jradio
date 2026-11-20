@@ -6,6 +6,29 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.13.1 — 20 November 2026
+
+New:
+- An Info key on the remote: the first press shows the clock, large, for
+  5 seconds, the second the weather, the third goes back. It does not wake
+  the screensaver: over a dark screen the clock and the weather are lit at
+  the screensaver's brightness, and the screen goes dark again after.
+  Learn the key on the Remote page.
+
+Fixed:
+- Moving the tone or balance sliders on the web made the sound stutter.
+  The setting is now saved a second and a half after the slider stops.
+- On a 1366x768 screen the web tone panel did not fit and the page had to
+  be zoomed out. The panel now moves up, and scrolls inside if it still
+  does not fit.
+- A phone that disconnected and reconnected on the same track got its
+  cover back only on the next track.
+- With a Bluetooth speaker chosen, a radio restart (an update, say)
+  dropped the phone playing through the radio.
+
+For the Bluetooth covers, update the module to jradio-bt 1.2.7 as well:
+https://jmper-ha.github.io/jradio-bt/
+
 ## v1.13.0 — 19 November 2026
 
 New:

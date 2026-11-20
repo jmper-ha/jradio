@@ -48,6 +48,14 @@ static uint32_t bt_link_apply_status(bt_link_state_t *state, const jbt_frame_t *
         ++state->track_revision;
         changed |= BT_LINK_CHANGED_TRACK;
     }
+    /* Its picture goes with it too, so the same cover announced when the
+     * phone comes back is fetched again: remembered, it was taken for one
+     * already up, and the screen stayed bare until the next track
+     * (2026-11-20). */
+    if (status.connection != JBT_CONN_CONNECTED) {
+        state->cover_received = 0U;
+        state->cover_done_hash = 0U;
+    }
     return changed;
 }
 

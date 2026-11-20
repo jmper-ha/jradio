@@ -64,6 +64,7 @@
 #include "ui_vu_meter.h"
 #include "ui_fm_tune.h"
 #include "ui_remote_keys.h"
+#include "ui_peek.h"
 #include "ui_screensaver.h"
 #include "ui_weather_icon_bitmaps.h"
 #include "ui_weather_saver.h"
@@ -1270,6 +1271,12 @@ static void ui_status_strip_update_weather(ui_status_strip_t *strip)
  * slow on this core. Written straight, a frame is the bus and nothing else. */
 static ui_screensaver_t s_saver;
 static ui_screensaver_view_t s_saver_view;
+/* The remote's look at the clock and the weather, and what the panel shows
+ * with it laid over the saver's view - the saver's own stays the saver's,
+ * so a look that ends goes back to it. */
+static ui_peek_t s_peek;
+static ui_screensaver_view_t s_shown_view;
+static bool s_have_shown_view;
 static lv_obj_t *s_saver_cover;
 static lv_obj_t *s_saver_block;
 static lv_obj_t *s_saver_time;
@@ -2355,35 +2362,45 @@ static void ui_screensaver_poll(uint32_t now_ms)
                          playback == PLAYER_PLAYBACK_CONNECTING ||
                          playback == PLAYER_PLAYBACK_RECONNECTING;
     ui_screensaver_note_playing(&s_saver, &s_device_settings, playing, now_ms);
-    const bool changed =
-        ui_screensaver_step(&s_saver, &s_device_settings, now_ms, TFT_WIDTH, TFT_HEIGHT,
-                            s_saver_block_w, s_saver_block_h, &s_saver_view);
-    ui_backlight_apply(s_saver_view.backlight);
+    (void)ui_screensaver_step(&s_saver, &s_device_settings, now_ms, TFT_WIDTH, TFT_HEIGHT,
+                              s_saver_block_w, s_saver_block_h, &s_saver_view);
+    ui_screensaver_view_t next = s_saver_view;
+    ui_peek_apply(ui_peek_face(&s_peek, now_ms), &s_device_settings, TFT_WIDTH, TFT_HEIGHT,
+                  s_saver_block_w, s_saver_block_h, &next);
+    const bool changed = !s_have_shown_view || next.active != s_shown_view.active ||
+                         next.backlight != s_shown_view.backlight ||
+                         next.cover != s_shown_view.cover || next.clock != s_shown_view.clock ||
+                         next.weather != s_shown_view.weather || next.x != s_shown_view.x ||
+                         next.y != s_shown_view.y;
+    s_shown_view = next;
+    s_have_shown_view = true;
+    const ui_screensaver_view_t *view = &s_shown_view;
+    ui_backlight_apply(view->backlight);
     /* Logged on the way in and out: the one question the log has to answer
      * is whether the panel went dark on its own. */
     static bool s_logged_active;
-    if (s_saver_view.active != s_logged_active) {
-        s_logged_active = s_saver_view.active;
+    if (view->active != s_logged_active) {
+        s_logged_active = view->active;
         ESP_LOGI(TAG, "screensaver %s (mode=%d backlight=%u)",
-                 s_saver_view.active ? "on" : "off", (int)s_device_settings.screensaver,
-                 (unsigned)s_saver_view.backlight);
+                 view->active ? "on" : "off", (int)s_device_settings.screensaver,
+                 (unsigned)view->backlight);
     }
     static bool s_clock_up;
     static bool s_cover_up;
     static uint32_t s_cover_up_ms;
     if (changed) {
-        if (s_saver_view.cover && !s_cover_up) {
+        if (view->cover && !s_cover_up) {
             s_cover_up = true;
             s_cover_up_ms = now_ms;
             lv_obj_clear_flag(s_saver_cover, LV_OBJ_FLAG_HIDDEN);
-        } else if (!s_saver_view.cover && s_cover_up) {
+        } else if (!view->cover && s_cover_up) {
             s_cover_up = false;
             /* Invalidation back on first, or the cover coming down would
              * mark nothing and the screen under it would stay black. */
             lv_display_enable_invalidation(s_display, true);
             lv_obj_add_flag(s_saver_cover, LV_OBJ_FLAG_HIDDEN);
         } else if (s_cover_up &&
-                   (s_saver_view.clock != s_clock_up || s_saver_view.weather != s_wx_up)) {
+                   (view->clock != s_clock_up || view->weather != s_wx_up)) {
             /* The mode changed under a cover already up - from the web page,
              * while the panel rests. What the old mode wrote went to the panel
              * past LVGL, which still takes the cover for painted, so it is
@@ -2394,18 +2411,18 @@ static void ui_screensaver_poll(uint32_t now_ms)
             lv_display_enable_invalidation(s_display, true);
             lv_obj_invalidate(s_saver_cover);
         }
-        if (s_saver_view.clock && !s_clock_up) {
+        if (view->clock && !s_clock_up) {
             s_clock_up = true;
             s_saver_text_ms = now_ms;
             s_saver_draw_after_ms = now_ms + UI_SAVER_FIRST_DRAW_MS;
             s_saver_drawn = false;
             /* At the near end of the scroll axis, and across it wherever the
              * pure part put the block this time. */
-            s_saver_x = ui_saver_scroll_axis_x() ? 0 : s_saver_view.x;
-            s_saver_y = ui_saver_scroll_axis_x() ? s_saver_view.y : 0;
+            s_saver_x = ui_saver_scroll_axis_x() ? 0 : view->x;
+            s_saver_y = ui_saver_scroll_axis_x() ? view->y : 0;
             ui_screensaver_refresh_text(true);
             ui_saver_drift_start();
-        } else if (!s_saver_view.clock && s_clock_up) {
+        } else if (!view->clock && s_clock_up) {
             s_clock_up = false;
             ui_saver_drift_stop();
             s_saver_drawn = false;
@@ -2437,7 +2454,7 @@ static void ui_screensaver_poll(uint32_t now_ms)
         (uint32_t)(now_ms - s_cover_up_ms) >= UI_SAVER_FIRST_DRAW_MS) {
         lv_display_enable_invalidation(s_display, false);
     }
-    ui_wx_poll(s_cover_up && s_saver_view.weather, now_ms);
+    ui_wx_poll(s_cover_up && view->weather, now_ms);
     if (!s_clock_up) return;
     if ((uint32_t)(now_ms - s_saver_text_ms) >= UI_SAVER_TEXT_MS) {
         s_saver_text_ms = now_ms;
@@ -7869,6 +7886,14 @@ static void ui_handle_input(board_input_action_t action)
         ui_enter_deep_sleep();
         return;
     }
+    /* The look at the clock wakes nothing and counts as nobody at the
+     * controls; anything else pressed while it is up only takes it down. */
+    if (action == BOARD_INPUT_ACTION_PEEK) {
+        weather_report_t report;
+        ui_peek_press(&s_peek, &s_saver_view, weather_current(&report), ui_tick_get_ms());
+        return;
+    }
+    const bool peeked = ui_peek_cancel(&s_peek);
     ui_sleep_fade_cancel();
     /* Somebody is up before the alarm is: the panel is theirs again. Before
      * the screensaver's own wake, so the level this puts back is the one the
@@ -7879,7 +7904,8 @@ static void ui_handle_input(board_input_action_t action)
     }
     /* A press that only wakes the screensaver goes no further: with the panel
      * dark nobody could see what it would have done. */
-    if (ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms())) {
+    if (ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms()) ||
+        peeked) {
         return;
     }
     action = ui_remote_keys_apply(action);
@@ -10009,8 +10035,10 @@ static void ui_touch_poll(void)
         /* A finger is somebody at the controls on any screen, and a press that
          * only brings a resting screen back goes no further - as a key's does,
          * which is the same two questions asked in ui_handle_input(). */
+        const bool peeked = ui_peek_cancel(&s_peek);
         if (s_alarm_boot_dark ||
-            ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms())) {
+            ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms()) ||
+            peeked) {
             ui_touch_gesture_ignore(&s_touch);
         } else if (settings && !ui_settings_model_is_editing(&s_settings_model)) {
             s_touch_arrow = ui_touch_settings_arrow(point.x, point.y);
@@ -10178,6 +10206,7 @@ static void ui_task(void *arg)
         if (!s_sleep_fading) ui_alarm_poll(ui_tick_get_ms());
         ui_alarm_stop_poll(ui_tick_get_ms());
         if (atomic_exchange_explicit(&s_web_activity, false, memory_order_acq_rel)) {
+            (void)ui_peek_cancel(&s_peek);
             (void)ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms());
         }
         ui_screensaver_poll(ui_tick_get_ms());
@@ -10485,6 +10514,7 @@ esp_err_t ui_init(void)
      * settings screen at all. The Bluetooth row is added by the poll. */
     ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_BRIGHTNESS, true);
     ui_screensaver_init(&s_saver, ui_tick_get_ms());
+    ui_peek_init(&s_peek);
     alarm_guard_init(&s_alarm_guard);
     /* Taken once, and it decides two things further down: the panel stays dark
      * until the alarm rings, and autoplay does not resume last night's source

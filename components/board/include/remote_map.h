@@ -57,6 +57,8 @@ typedef enum {
     REMOTE_SOURCE_DLNA,
     // Last, so remote.csv and the page keep every older name where it was.
     REMOTE_SOURCE_FM,
+    // The clock, then the weather, for a few seconds (ui_peek.h).
+    REMOTE_PEEK,
     REMOTE_FUNCTION_COUNT,
 } remote_function_t;
 

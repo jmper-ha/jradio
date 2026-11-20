@@ -245,6 +245,26 @@ static void test_a_cover_is_fetched_piece_by_piece_and_only_once(void)
     }
     assert(complete && state.cover_done_hash == 0xABCD1234U);
 
+    /* The phone gone and back: the same cover is fetched again, since the
+     * screen dropped it with the connection. */
+    jbt_status_t gone_status = {0};
+    gone_status.mode = JBT_MODE_SINK;
+    gone_status.connection = JBT_CONN_NONE;
+    uint8_t gone_buf[64];
+    jbt_writer_t gone_writer;
+    jbt_writer_init(&gone_writer, gone_buf, sizeof(gone_buf));
+    jbt_put_status(&gone_writer, &gone_status);
+    const jbt_frame_t gone = frame_of(JBT_MSG_STATUS, gone_buf, gone_writer.length);
+    assert(bt_link_model_apply(&state, &gone) & BT_LINK_CHANGED_STATUS);
+    assert(bt_link_model_apply(&state, &announce) == BT_LINK_CHANGED_COVER_INFO);
+    assert(bt_link_model_cover_wanted(&state, &offset, &length) && offset == 0U);
+    while (bt_link_model_cover_wanted(&state, &offset, &length)) {
+        memcpy(piece, &offset, 4U);
+        frame = frame_of(JBT_MSG_COVER_DATA, piece, 4U + length);
+        assert(bt_link_model_cover_data(&state, &frame, &offset, &bytes, &n, &complete));
+    }
+    assert(complete && state.cover_done_hash == 0xABCD1234U);
+
     /* The phone's player closed: the picture is not wanted, and once the
      * phone plays again it is fetched back; a pause holds it. */
     const uint8_t stopped[1] = {JBT_PLAY_STOPPED};

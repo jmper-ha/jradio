@@ -85,6 +85,7 @@ its code.
 | Quick panel | As Quick_menu |
 | Station list | Open the station or file list |
 | Sleep timer | The next step of the timer, round-robin (if the board can sleep - below) |
+| Info | The clock, large, for 5 seconds; a second press - the weather, a third - back. It does not wake the screensaver: over a dark screen the clock and the weather are lit at the screensaver's brightness and it goes dark again after; over the Clock screensaver the first press shows the weather straight away |
 | Like / Dislike | Rate the Yandex Music track |
 | 0-9 | An internet-radio station number |
 | Radio, USB, SD, Bluetooth, Yandex, Media server | Switch the source and carry on where it was left |

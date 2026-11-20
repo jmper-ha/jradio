@@ -73,6 +73,10 @@ typedef struct {
 
 static pending_t s_pending[PENDING_MAX];
 static uint32_t s_pending_serial;
+#ifdef ESP_PLATFORM
+// When the table last took a value - see settings_writer().
+static TickType_t s_pending_put_tick;
+#endif
 
 #ifdef ESP_PLATFORM
 /* A spinlock, not the file mutex: a reader asks the table before it takes
@@ -368,6 +372,9 @@ static bool pending_put(const char *path, const char *key, const char *value)
         memcpy(slot->key, key, strlen(key) + 1U);
         memcpy(slot->value, value, strlen(value) + 1U);
         queued = true;
+#ifdef ESP_PLATFORM
+        s_pending_put_tick = xTaskGetTickCount();
+#endif
     }
     PENDING_EXIT();
     return queued;
@@ -386,6 +393,12 @@ static bool pending_put(const char *path, const char *key, const char *value)
  * bytes of 4 KB, and the next write overflowed it - into the heap, which
  * the next allocation found broken. */
 #define SETTINGS_WRITER_STACK 6144
+/* How long the values must stop changing before they are written. A write
+ * is flash being erased and programmed, and the sound stalls for it: a web
+ * slider dragged across the tone or the balance wrote on every step, and
+ * the radio and the USB player crackled for as long as the hand moved (a
+ * user's report; 97% of realtime on the bench, 100% with this). */
+#define SETTINGS_WRITE_SETTLE_MS 1500U
 
 static bool s_writer_running;
 
@@ -393,6 +406,13 @@ static void settings_writer(void *arg)
 {
     (void)arg;
     for (;;) {
+        PENDING_ENTER();
+        const TickType_t since = xTaskGetTickCount() - s_pending_put_tick;
+        PENDING_EXIT();
+        if (since < pdMS_TO_TICKS(SETTINGS_WRITE_SETTLE_MS)) {
+            vTaskDelay(pdMS_TO_TICKS(SETTINGS_WRITE_SETTLE_MS) - since);
+            continue;
+        }
         (void)settings_csv_flush_pending();
         bool more = false;
         PENDING_ENTER();

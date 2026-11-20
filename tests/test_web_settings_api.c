@@ -12,6 +12,8 @@ static const char *test_path = "/tmp/jradio-web-settings.csv";
 
 static void reset_file(void)
 {
+    // A value still waiting for the writer belongs to the file before.
+    (void)settings_csv_flush_pending();
     (void)unlink(test_path);
     FILE *file = fopen(test_path, "w");
     assert(file != NULL);

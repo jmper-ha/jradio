@@ -263,6 +263,9 @@ static void test_pull_ups_off_in_an_old_file_are_read_past(void)
  * with its own format - the UDA1334A's stop - still wants its own build. */
 static void test_which_dacs_a_binary_takes(void)
 {
+    assert(board_config_dac_fits(DAC_MAX98357A, DAC_PCM5102));
+    assert(board_config_dac_fits(DAC_PCM5102, DAC_MAX98357A));
+    assert(!board_config_dac_fits(DAC_MAX98357A, DAC_UDA1334A));
     assert(board_config_dac_fits(DAC_PCM5102, DAC_PCM5102));
     assert(board_config_dac_fits(DAC_SSM3582, DAC_PCM5102));
     assert(board_config_dac_fits(DAC_PCM5102, DAC_SSM3582));

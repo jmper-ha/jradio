@@ -118,7 +118,8 @@ static const field_t k_fields[] = {
     {"ir_receiver", KIND_OPT_PIN, DEV_IR, AT(ir_receiver), false, NULL, {{NULL, 0}}},
     {"dac", KIND_CHOICE, DEV_DAC, AT(dac), false, NULL,
      // The UDA1334A has a driver but has not been tried on a board yet.
-     {{"pcm5102", DAC_PCM5102}, {"ssm3582", DAC_SSM3582}, {"none", DAC_NONE}, {NULL, 0}}},
+     {{"pcm5102", DAC_PCM5102}, {"ssm3582", DAC_SSM3582},
+      {"max98357a", DAC_MAX98357A}, {"none", DAC_NONE}, {NULL, 0}}},
     {"dac_i2s", KIND_CHOICE, DEV_DAC, AT(dac_i2s), false, NULL, {{"0", 0}, {NULL, 0}}},
     {"dac_mute", KIND_OPT_PIN, DEV_DAC, AT(dac_mute), false, NULL, {{NULL, 0}}},
     {"spdif_out", KIND_OPT_PIN, DEV_DAC, AT(spdif_out), false, NULL, {{NULL, 0}}},
@@ -365,8 +366,8 @@ bool board_config_dac_fits(uint8_t wired, uint8_t built)
 {
     if (wired == built) return true;
     // No DAC is S/PDIF alone, which any of these builds makes.
-    const bool wired_pcm = wired == DAC_PCM5102 || wired == DAC_SSM3582 || wired == DAC_NONE;
-    const bool built_pcm = built == DAC_PCM5102 || built == DAC_SSM3582;
+    const bool wired_pcm = wired == DAC_PCM5102 || wired == DAC_SSM3582 || wired == DAC_MAX98357A || wired == DAC_NONE;
+    const bool built_pcm = built == DAC_PCM5102 || built == DAC_SSM3582 || built == DAC_MAX98357A;
     return wired_pcm && built_pcm;
 }
 

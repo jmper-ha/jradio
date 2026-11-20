@@ -554,3 +554,11 @@ Internet radio and Settings are always there. If nothing but those two is left
 in a build, the home screen is not shown at all: the device boots straight
 into the station list, and a long press of the encoder switches between the
 list and the settings.
+
+
+## MAX98357A
+
+Select `DAC_MAX98357A` / `dac,max98357a` for Philips I2S. The MAX98357B
+left-justified variant is not interchangeable. GAIN and mono selection are
+hardware straps, not I2C settings. See [MAX98357A configuration](max98357a.uk.md)
+for supported rates, shutdown polarity, the compiled output ceiling and tests.

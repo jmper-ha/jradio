@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "audio_decimate.c" "audio_pcm_convert.c" "audio_spdif.c" "audio_volume.c" "board.c" "board_amplifier.c"
+    SRCS "max98357a.c" "audio_decimate.c" "audio_pcm_convert.c" "audio_spdif.c" "audio_volume.c" "board.c" "board_amplifier.c"
          "board_config.c" "board_config_compiled.c" "board_config_load.c"
          "board_audio_health.c"
          "audio_tone.c" "audio_level.c" "board_audio_startup.c" "board_input.c" "board_i2c.c" "board_rtc.c" "rtc_chip.c" "board_touch.c" "touch_chip.c"

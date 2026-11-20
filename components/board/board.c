@@ -28,6 +28,7 @@
 #include "board_amplifier.h"
 #include "audio_pcm_convert.h"
 #include "audio_decimate.h"
+#include "max98357a.h"
 #include "audio_spdif.h"
 #include "board_ssm3582.h"
 #include "ssm3582.h"
@@ -94,11 +95,31 @@ static bool board_dac_is_ssm3582(void)
     return wiring()->dac == DAC_SSM3582;
 }
 
+static bool board_dac_is_max98357a(void)
+{
+    return wiring()->dac == DAC_MAX98357A;
+}
+static max98357a_output_t s_max_output;
+static uint8_t *s_max_buffer;
+static size_t s_max_capacity;
+static bool s_max_user_muted, s_max_fault;
+static const uint8_t *s_shaped_rest_source;
+static const uint8_t *s_shaped_rest;
+static size_t s_shaped_rest_length;
+static esp_err_t board_max_write(const void *pcm, size_t length, size_t *written,
+                                  TickType_t wait);
+
 // For the log: the chip the wiring names, which the build's name may not be.
 static const char *board_dac_name(void)
 {
     if (!board_has_dac()) return "I2S bus";
-    return board_dac_is_ssm3582() ? "SSM3582" : BOARD_DAC_NAME;
+    switch (wiring()->dac) {
+    case DAC_MAX98357A: return "MAX98357A";
+    case DAC_PCM5102: return "PCM5102";
+    case DAC_SSM3582: return "SSM3582";
+    case DAC_UDA1334A: return "UDA1334A";
+    default: return BOARD_DAC_NAME;
+    }
 }
 
 static bool s_spdif_on;
@@ -821,6 +842,13 @@ static void board_audio_park_pin(int8_t pin)
 
 static esp_err_t board_audio_create_channel(uint32_t sample_rate)
 {
+    if (board_dac_is_max98357a()) {
+        max98357a_rate_t rate;
+        if (!max98357a_rate_plan(sample_rate, &rate)) return ESP_ERR_NOT_SUPPORTED;
+        max98357a_output_reset(&s_max_output, rate,
+                                max98357a_ceiling_gain(AUDIO_MAX98357A_CEILING_DBFS));
+        sample_rate = rate.bus_hz;
+    }
     i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     channel_config.dma_frame_num = I2S_DMA_FRAME_NUM;
     /* Full duplex while the input is in use: one controller, one pair of
@@ -1040,6 +1068,7 @@ static void board_amp_drive(bool play)
     s_amp_playing = play;
     const int on = wiring()->amp_on_level;
     (void)gpio_set_level(pin, play ? on : !on);
+    if (play && board_dac_is_max98357a()) vTaskDelay(pdMS_TO_TICKS(10) + 1U);
     ESP_LOGI(TAG, "amplifier %s", play ? "unmuted" : "muted");
 }
 
@@ -1052,7 +1081,8 @@ static bool board_dac_silenced(void)
 static void board_amp_apply(void)
 {
     board_amp_drive(
-        board_amplifier_should_play(s_audio_enabled, s_bus_released, board_dac_silenced()));
+        board_amplifier_should_play(s_audio_enabled, s_bus_released, board_dac_silenced()) &&
+        (!board_dac_is_max98357a() || (!s_max_user_muted && !s_max_fault && s_tx_running)));
 }
 
 static void board_dac_mute_apply(void)
@@ -1093,6 +1123,7 @@ static esp_err_t board_audio_init(void)
             .pull_down_en = GPIO_PULLDOWN_DISABLE,
             .intr_type = GPIO_INTR_DISABLE,
         };
+        (void)gpio_set_level(wiring()->amp_enable, !wiring()->amp_on_level);
         ESP_RETURN_ON_ERROR(gpio_config(&amp), TAG, "configure amplifier mute");
         (void)gpio_set_level(wiring()->amp_enable, !wiring()->amp_on_level);
         s_amp_playing = false;
@@ -1119,6 +1150,9 @@ static esp_err_t board_audio_init(void)
 
 esp_err_t board_audio_release_bus(void)
 {
+    /* An external bus master would bypass the compiled ceiling. */
+    if (board_dac_is_max98357a() && AUDIO_MAX98357A_CEILING_DBFS < 0)
+        return ESP_ERR_NOT_SUPPORTED;
     if (s_audio_mutex == NULL) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
     esp_err_t result = ESP_OK;
@@ -1215,6 +1249,8 @@ static esp_err_t board_tx_off(void)
 {
     // A stopped channel drops what it held; what waited behind it goes too.
     s_bus_pending_length = 0U;
+    s_shaped_rest_length = 0U;
+    max98357a_output_reset(&s_max_output, s_max_output.rate, s_max_output.gain);
     if (!s_tx_running) return ESP_OK;
     const esp_err_t result = i2s_channel_disable(s_i2s_tx);
     if (result == ESP_OK) s_tx_running = false;
@@ -1292,7 +1328,7 @@ static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
     if (!shaped && !balanced && gain_start == AUDIO_VOLUME_UNITY &&
         gain_end == AUDIO_VOLUME_UNITY) {
         // Full volume, fade over: bit-exact, and no copy.
-        board_audio_remember_tail(pcm, pcm_length);
+        if (!board_dac_is_max98357a()) board_audio_remember_tail(pcm, pcm_length);
         return pcm;
     }
     if (s_audio_gain_scratch == NULL || s_audio_gain_scratch_size < pcm_length) {
@@ -1313,7 +1349,8 @@ static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
      * volume is wrong but recoverable; refusing to write would starve the
      * DAC. */
     if (s_audio_gain_scratch == NULL) {
-        board_audio_remember_tail(pcm, pcm_length);
+        if (board_dac_is_max98357a()) return NULL;
+        if (!board_dac_is_max98357a()) board_audio_remember_tail(pcm, pcm_length);
         return pcm;
     }
     if (shaped) {
@@ -1326,7 +1363,8 @@ static const void *board_audio_shaped_block(const void *pcm, size_t pcm_length)
         audio_balance_apply((int16_t *)s_audio_gain_scratch, frames, balance_left_start,
                             balance_left, balance_right_start, balance_right);
     }
-    board_audio_remember_tail(s_audio_gain_scratch, pcm_length);
+    if (!board_dac_is_max98357a())
+        board_audio_remember_tail(s_audio_gain_scratch, pcm_length);
     return s_audio_gain_scratch;
 }
 
@@ -1356,7 +1394,7 @@ static void board_audio_flush_tail(void)
     /* S/PDIF whatever this board's DAC does: what is at the far end of the
      * cable may not mute itself, and the line goes on after the stop. */
 #if !AUDIO_DAC_STOP_DECAY
-    if (!s_spdif_on) return;
+    if (!s_spdif_on && !board_dac_is_max98357a()) return;
 #endif
     if (s_audio_tail == NULL) {
         /* PSRAM first like every other buffer here; a board without it falls
@@ -1377,6 +1415,15 @@ static void board_audio_flush_tail(void)
         if (s_spdif_on) {
             (void)board_spdif_write(s_audio_tail, BOARD_AUDIO_TAIL_BYTES, &written,
                                     pdMS_TO_TICKS(200));
+        } else if (board_dac_is_max98357a()) {
+            /* Finish the owned block before adding a decay; never lose its tail. */
+            esp_err_t err = board_max_write(NULL, 0, &written, pdMS_TO_TICKS(200));
+            if (err == ESP_OK)
+                err = board_max_write(s_audio_tail, BOARD_AUDIO_TAIL_BYTES, &written,
+                                        pdMS_TO_TICKS(200));
+            if (err == ESP_OK || err == ESP_ERR_TIMEOUT)
+                err = board_max_write(NULL, 0, &written, pdMS_TO_TICKS(200));
+            if (err != ESP_OK) s_max_fault = true;
         } else {
             (void)i2s_channel_write(s_i2s_tx, s_audio_tail, BOARD_AUDIO_TAIL_BYTES, &written,
                                     pdMS_TO_TICKS(200));
@@ -1389,11 +1436,12 @@ static void board_audio_flush_tail(void)
     s_output_previous[1] = 0;
     /* The write above only queues: this is the wait for the queue - the tail
      * included - to reach the pins. */
+    const uint32_t drain_rate = board_dac_is_max98357a() ? s_max_output.rate.bus_hz : rate;
     const uint32_t queued_ms = s_spdif_on
                                    ? SPDIF_RING_MS + (s_dma_desc_num * SPDIF_BUFFER_FRAMES * 1000U) /
                                                          s_spdif_rate
-                                   : (s_dma_desc_num * I2S_DMA_FRAME_NUM * 1000U) / rate;
-    vTaskDelay(pdMS_TO_TICKS(queued_ms + 2U));
+                                   : (s_dma_desc_num * I2S_DMA_FRAME_NUM * 1000U) / drain_rate;
+    vTaskDelay(pdMS_TO_TICKS(queued_ms + 2U) + (board_dac_is_max98357a() ? 2U : 0U));
 }
 
 /* What is left of the last block written in part: where its source resumes,
@@ -1489,6 +1537,51 @@ static esp_err_t board_audio_bus_write_down(const void *shaped, size_t length,
     return result == ESP_ERR_TIMEOUT ? ESP_OK : result;
 }
 
+/* One owned converted block. Input bytes are accepted only once their entire
+ * converted form is retained here; later calls drain it before accepting more. */
+static esp_err_t board_max_write(const void *pcm, size_t length, size_t *written,
+                                  TickType_t wait)
+{
+    *written = 0;
+    if (s_max_output.pending_bytes) {
+        size_t sent = 0;
+        esp_err_t err = i2s_channel_write(s_i2s_tx,
+            s_max_buffer + s_max_output.pending_at, s_max_output.pending_bytes, &sent, wait);
+        if (!max98357a_output_advance(&s_max_output, sent)) return ESP_FAIL;
+        if (err != ESP_OK && err != ESP_ERR_TIMEOUT) return err;
+        if (s_max_output.pending_bytes) return ESP_ERR_TIMEOUT;
+    }
+    if (length == 0) return ESP_OK;
+    const size_t need = max98357a_output_capacity(length, s_max_output.rate.up);
+    if (!need) return ESP_ERR_INVALID_SIZE;
+    if (need > s_max_capacity) {
+        uint8_t *grown = heap_caps_realloc(s_max_buffer, need, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (grown == NULL)
+            grown = heap_caps_realloc(s_max_buffer, need, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (grown == NULL) return ESP_ERR_NO_MEM;
+        s_max_buffer = grown;
+        s_max_capacity = need;
+    }
+    if (!max98357a_output_prepare(&s_max_output, pcm, length, s_max_buffer, s_max_capacity))
+        return ESP_ERR_INVALID_ARG;
+    *written = length;
+    if (s_max_user_muted) memset(s_max_buffer, 0, s_max_output.pending_bytes);
+    if (!s_max_output.pending_bytes) return ESP_OK;
+    size_t sent = 0;
+    esp_err_t err = i2s_channel_write(s_i2s_tx, s_max_buffer, s_max_output.pending_bytes, &sent, wait);
+    if (!max98357a_output_advance(&s_max_output, sent)) return ESP_FAIL;
+    /* All input is now owned, even when the DMA accepted only part of it. */
+    return err == ESP_ERR_TIMEOUT ? ESP_OK : err;
+}
+
+static void board_max_fail(void)
+{
+    s_max_fault = true;
+    board_amp_drive(false);
+    (void)board_tx_off();
+    s_audio_enabled = false;
+}
+
 /* Writes a shaped block through the output stage; `written` is in the
  * block's own bytes. */
 static esp_err_t board_audio_bus_write(const void *shaped, size_t length, size_t *written,
@@ -1496,6 +1589,7 @@ static esp_err_t board_audio_bus_write(const void *shaped, size_t length, size_t
 {
     *written = 0U;
     if (s_spdif_on) return board_spdif_write(shaped, length, written, wait);
+    if (board_dac_is_max98357a()) return board_max_write(shaped, length, written, wait);
     if (s_bus_down > 1U) return board_audio_bus_write_down(shaped, length, written, wait);
     size_t bus_length = 0U;
     const void *bus = board_audio_output_block(shaped, length, &bus_length);
@@ -1506,9 +1600,7 @@ static esp_err_t board_audio_bus_write(const void *shaped, size_t length, size_t
     return result;
 }
 
-static const uint8_t *s_shaped_rest_source;
-static const uint8_t *s_shaped_rest;
-static size_t s_shaped_rest_length;
+
 
 esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
                             uint32_t timeout_ms)
@@ -1544,7 +1636,19 @@ esp_err_t board_audio_write(const void *pcm, size_t pcm_length, size_t *written,
                           pcm_length == s_shaped_rest_length;
         const void *out = rest ? s_shaped_rest : board_audio_shaped_block(pcm, pcm_length);
         s_shaped_rest_length = 0U;
+        if (out == NULL) {
+            board_max_fail();
+            xSemaphoreGive(s_audio_mutex);
+            return ESP_ERR_NO_MEM;
+        }
         result = board_audio_bus_write(out, pcm_length, written, pdMS_TO_TICKS(timeout_ms));
+        if (board_dac_is_max98357a() && result != ESP_OK && result != ESP_ERR_TIMEOUT) {
+            board_max_fail();
+            xSemaphoreGive(s_audio_mutex);
+            return result;
+        }
+        if (board_dac_is_max98357a() && *written > 0U)
+            board_audio_remember_tail(out, *written);
         // A timeout is a short write, not a lost one: what went is counted.
         if ((result == ESP_OK || result == ESP_ERR_TIMEOUT) && *written < pcm_length) {
             s_shaped_rest_source = (const uint8_t *)pcm + *written;
@@ -1666,8 +1770,15 @@ esp_err_t board_audio_start(const void *pcm, size_t pcm_length, size_t *preloade
             s_shaped_rest_length = 0U;
             s_output_previous[0] = 0;
             s_output_previous[1] = 0;
+            s_max_fault = false;
+            max98357a_output_reset(&s_max_output, s_max_output.rate, s_max_output.gain);
+            if (board_dac_is_max98357a()) board_amp_apply(); // clocks + zeros, 10ms wake
             const void *out = board_audio_shaped_block(pcm, pcm_length);
-            result = board_audio_bus_write(out, pcm_length, preloaded, pdMS_TO_TICKS(1000));
+            result = out != NULL
+                ? board_audio_bus_write(out, pcm_length, preloaded, pdMS_TO_TICKS(1000))
+                : ESP_ERR_NO_MEM;
+            if (board_dac_is_max98357a() && result == ESP_OK && *preloaded > 0U)
+                board_audio_remember_tail(out, *preloaded);
         }
         if (result == ESP_OK && *preloaded == pcm_length) {
             ESP_LOGI(TAG, "%s output enabled after %u-byte silent clock pre-roll",
@@ -1738,6 +1849,7 @@ static board_audio_rate_listener_t s_rate_listener;
 static uint32_t board_audio_line_rate(void)
 {
     if (s_spdif_on) return s_audio_sample_rate;
+    if (board_dac_is_max98357a()) return s_max_output.rate.bus_hz;
     return s_audio_sample_rate * s_output_factor / s_bus_down;
 }
 
@@ -1767,18 +1879,27 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
     const bool was_enabled = s_audio_enabled;
     const bool was_running = s_tx_running;
     const bool was_capturing = s_capture_enabled;
+    max98357a_rate_t max_rate = {0};
+    if (board_dac_is_max98357a() &&
+        (!max98357a_rate_plan(sample_rate, &max_rate) ||
+         (was_capturing && board_fm_chip_i2s() && sample_rate != 44100U))) {
+        xSemaphoreGive(s_audio_mutex);
+        ESP_LOGE(TAG, "MAX98357A refuses source rate %lu Hz", (unsigned long)sample_rate);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     /* Not with the input made: it shares the clock, and the tuner's ADC runs
      * at the rate it sends, which is never one of the low ones. */
     const uint32_t factor = board_dac_is_ssm3582() && !was_capturing && !s_spdif_on
                                 ? ssm3582_rate_factor(sample_rate)
                                 : 1U;
     const unsigned down =
-        !s_spdif_on && s_dac_muted && board_audio_decimator() != NULL
+        !board_dac_is_max98357a() && !s_spdif_on && s_dac_muted && board_audio_decimator() != NULL
             ? audio_decimate_factor(sample_rate)
             : 1U;
     const uint32_t bus_rate = s_spdif_on
                                   ? 2U * (sample_rate / audio_decimate_factor(sample_rate))
-                                  : sample_rate * factor / down;
+                                  : board_dac_is_max98357a() ? max_rate.bus_hz
+                                                                           : sample_rate * factor / down;
     const i2s_std_clk_config_t clock_config = I2S_STD_CLK_DEFAULT_CONFIG(bus_rate);
     esp_err_t result = ESP_OK;
     if (was_enabled) {
@@ -1786,6 +1907,7 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
         // Down before the clock stops, as at every stop.
         if (board_dac_is_ssm3582()) board_ssm3582_set_powered(false);
     }
+    if (board_dac_is_max98357a()) board_amp_drive(false);
     result = board_tx_off();
     if (result == ESP_OK) s_audio_enabled = false;
     // Its rate band, while no clock runs.
@@ -1811,6 +1933,14 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
         // The health window measures bytes against real time, so it is only
         // meaningful against the rate those bytes are actually clocked at.
         s_audio_sample_rate = sample_rate;
+        if (board_dac_is_max98357a()) {
+            max98357a_output_reset(&s_max_output, max_rate,
+                                    max98357a_ceiling_gain(AUDIO_MAX98357A_CEILING_DBFS));
+            s_max_fault = false;
+            ESP_LOGI(TAG, "MAX98357A source=%lu bus=%lu ceiling=%d dBFS",
+                     (unsigned long)sample_rate, (unsigned long)max_rate.bus_hz,
+                     AUDIO_MAX98357A_CEILING_DBFS);
+        }
         if (factor != s_output_factor || factor > 1U || down > 1U) {
             ESP_LOGI(TAG, "%lu Hz goes out at %lu Hz", (unsigned long)sample_rate,
                      (unsigned long)bus_rate);
@@ -1830,11 +1960,16 @@ esp_err_t board_audio_set_sample_rate(uint32_t sample_rate)
         board_audio_health_rearm();
     }
     // The DAC's ring starts again from what was in it, as it always has.
-    if (result == ESP_OK && was_running) result = board_tx_on(s_spdif_on);
+    if (result == ESP_OK && was_running)
+        result = board_tx_on(s_spdif_on || board_dac_is_max98357a());
     if (result == ESP_OK && was_enabled) s_audio_enabled = true;
     // And up again after it starts, if the amplifier was meant to be playing.
     if (board_dac_is_ssm3582() && s_audio_enabled && s_amp_playing) {
         board_ssm3582_set_powered(true);
+    }
+    if (board_dac_is_max98357a()) {
+        if (result != ESP_OK) board_max_fail();
+        else board_amp_apply();
     }
     xSemaphoreGive(s_audio_mutex);
     if (result != ESP_OK) {
@@ -1957,6 +2092,27 @@ bool board_audio_spdif_active(void)
     return s_spdif_on;
 }
 
+bool board_audio_has_amplifier_mute(void)
+{
+    return board_dac_is_max98357a() && wiring()->amp_enable >= 0;
+}
+
+void board_audio_set_amplifier_muted(bool muted)
+{
+    if (s_audio_mutex == NULL || !board_dac_is_max98357a()) return;
+    xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
+    if (muted != s_max_user_muted) {
+        if (muted) board_audio_flush_tail();
+        s_max_user_muted = muted;
+        if (!muted) {
+            s_audio_fade_frames = 0;
+            s_audio_gain_end = 0;
+        }
+        board_amp_apply();
+    }
+    xSemaphoreGive(s_audio_mutex);
+}
+
 void board_audio_set_dac_muted(bool muted)
 {
     if (s_audio_mutex == NULL) return;
@@ -1966,7 +2122,7 @@ void board_audio_set_dac_muted(bool muted)
     board_dac_mute_apply();
     /* A speaker coming or going under a track over 48 kHz moves the bus's
      * rate: the made channel has the stream's, and s_bus_down the old one. */
-    const unsigned down = !s_spdif_on && s_dac_muted ? audio_decimate_factor(s_audio_sample_rate)
+    const unsigned down = !board_dac_is_max98357a() && !s_spdif_on && s_dac_muted ? audio_decimate_factor(s_audio_sample_rate)
                                                      : 1U;
     const bool retime = down != s_bus_down;
     const uint32_t rate = s_audio_sample_rate;
@@ -1980,7 +2136,9 @@ esp_err_t board_audio_capture_set_enabled(bool enabled)
     if (!board_audio_capture_available()) return ESP_ERR_NOT_SUPPORTED;
     xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
     esp_err_t result = ESP_OK;
-    if (enabled && s_i2s_rx == NULL) result = board_audio_rebuild_channel(true);
+    if (enabled && board_dac_is_max98357a() && board_fm_chip_i2s() &&
+        s_audio_sample_rate != 44100U) result = ESP_ERR_NOT_SUPPORTED;
+    if (result == ESP_OK && enabled && s_i2s_rx == NULL) result = board_audio_rebuild_channel(true);
     if (result == ESP_OK && s_i2s_rx != NULL && enabled != s_capture_enabled) {
         result = enabled ? i2s_channel_enable(s_i2s_rx) : i2s_channel_disable(s_i2s_rx);
         if (result == ESP_OK) {

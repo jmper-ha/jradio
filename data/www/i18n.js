@@ -403,6 +403,7 @@
 
     'hw.opt.none': ['нет', 'none'],
     'hw.opt.pcm5102': ['PCM5102', 'PCM5102'],
+    'hw.opt.max98357a': ['MAX98357A (усилитель I2S)', 'MAX98357A (I2S amplifier)'],
     'hw.opt.dac.none': ['нет, только S/PDIF', 'none, S/PDIF only'],
     'hw.opt.ssm3582': ['SSM3582 (усилитель класса D)', 'SSM3582 (class-D amplifier)'],
     /* The SSM3582's gain, with the peak it swings: more than the supply is clipping. */

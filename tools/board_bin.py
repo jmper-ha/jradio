@@ -41,7 +41,7 @@ DISPLAYS = [
     "ili9341_320_240", "ili9341_240_320", "st7789_320_240", "st7789_240_320",
     "st7789_320_170", "nv3007_428_142",
 ]
-DACS = ["pcm5102", "ssm3582", "none"]
+DACS = ["pcm5102", "ssm3582", "max98357a", "none"]
 
 
 def read_macros(cc, include_dirs):

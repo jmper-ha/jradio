@@ -168,7 +168,7 @@
        up over I2C0 - its bus, the address its ADDR0/ADDR1 strap and the
        analogue gain (13 dB already swings 6.3 V peak) are its rows alone.
        "none" is S/PDIF alone, for a board that goes to a receiver. */
-    {key: 'dac', kind: 'choice', device: 'dac', options: ['pcm5102', 'ssm3582', 'none'], dflt: 'pcm5102', define: 'AUDIO_DAC'},
+    {key: 'dac', kind: 'choice', device: 'dac', options: ['pcm5102', 'ssm3582', 'max98357a', 'none'], dflt: 'pcm5102', define: 'AUDIO_DAC'},
     {key: 'dac_i2s', kind: 'choice', device: 'dac', options: ['0'], dflt: '0', bus: 'i2s',
      when: (values) => values.dac !== 'none'},
     /* The SSM3582 is powered down over I2C and has no such pin. */

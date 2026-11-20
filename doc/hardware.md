@@ -540,3 +540,11 @@ PCM1808»; при АЦП к DIN добавляется вывод MCLK.
 кроме них, главный экран не показывается вовсе: устройство включается сразу в
 список станций, а долгое нажатие энкодера переключает между списком и
 настройками.
+
+
+## MAX98357A
+
+Select `DAC_MAX98357A` / `dac,max98357a` for Philips I2S. The MAX98357B
+left-justified variant is not interchangeable. GAIN and mono selection are
+hardware straps, not I2C settings. See [MAX98357A configuration](max98357a.uk.md)
+for supported rates, shutdown polarity, the compiled output ceiling and tests.

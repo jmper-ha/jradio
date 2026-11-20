@@ -14,7 +14,7 @@
 /* DAC_NONE is a board with S/PDIF alone: the same 16-bit stereo, the same
  * I2S0, only nothing on the DAC's pins. */
 #if AUDIO_DAC == DAC_PCM5102 || AUDIO_DAC == DAC_UDA1334A || AUDIO_DAC == DAC_SSM3582 || \
-    AUDIO_DAC == DAC_NONE
+    AUDIO_DAC == DAC_NONE || AUDIO_DAC == DAC_MAX98357A
 
 /* The slots are fixed 16-bit stereo: mono sources are duplicated into both
  * channels by the players rather than reconfigured, and the sample width has
@@ -44,7 +44,10 @@
  * detect and would engage its analog mute. */
 #define I2S_PRELOAD_SILENCE 1
 
-#if AUDIO_DAC == DAC_PCM5102
+#if AUDIO_DAC == DAC_MAX98357A
+#define BOARD_DAC_NAME "MAX98357A"
+#define AUDIO_DAC_STOP_DECAY 0
+#elif AUDIO_DAC == DAC_PCM5102
 #define BOARD_DAC_NAME "PCM5102"
 /* This DAC mutes itself when the clock errs or stops, so output may be
  * stopped by disabling the channel: whatever step the dropped DMA tail would
@@ -74,4 +77,12 @@
 
 #else
 #error "unsupported AUDIO_DAC - see board_parts.h for the parts with drivers"
+#endif
+
+/* Compiled policy: runtime board configuration cannot raise this ceiling. */
+#ifndef AUDIO_MAX98357A_CEILING_DBFS
+#define AUDIO_MAX98357A_CEILING_DBFS 0
+#endif
+#if AUDIO_MAX98357A_CEILING_DBFS < -60 || AUDIO_MAX98357A_CEILING_DBFS > 0
+#error "AUDIO_MAX98357A_CEILING_DBFS must be an integer from -60 to 0"
 #endif

@@ -99,6 +99,7 @@
  * the samples', as for the other DACs. Selected at run time from board.csv;
  * see board_ssm3582.c. */
 #define DAC_SSM3582 3
+#define DAC_MAX98357A 4
 
 #define FM_TUNER_NONE 0
 /* RDA5807 receiver: FM band, I2C control (components/fm_tuner). The M module

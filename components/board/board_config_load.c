@@ -7,6 +7,7 @@
 #include "esp_partition.h"
 
 #include "board_parts.h"
+#include "board_audio_format.h"
 
 static const char *TAG = "board_config";
 
@@ -93,7 +94,8 @@ void board_config_load(void)
     board_config_t compiled;
     board_config_compiled(&compiled);
     const bool display_matches = candidate.display == compiled.display;
-    const bool dac_matches = board_config_dac_fits(candidate.dac, compiled.dac);
+    const bool dac_matches = board_config_dac_fits(candidate.dac, compiled.dac) &&
+        (AUDIO_MAX98357A_CEILING_DBFS == 0 || candidate.dac == DAC_MAX98357A);
     if (report.error_count > 0U || !display_matches || !dac_matches) {
         ESP_LOGE(TAG, "board.csv refused (%u error%s%s%s); the compiled board",
                  (unsigned)report.error_count, report.error_count == 1U ? "" : "s",

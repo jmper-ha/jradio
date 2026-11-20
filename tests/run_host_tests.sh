@@ -103,7 +103,7 @@ run_test() {
     shift
     "${host_cc}" "${common_flags[@]}" "${include_flags[@]}" "$@" \
         -o "${test_build_dir}/${name}"
-    ASAN_OPTIONS=detect_leaks=1 "${test_build_dir}/${name}"
+    ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1}" "${test_build_dir}/${name}"
 }
 
 cd "${project_dir}"
@@ -120,6 +120,8 @@ if grep -Ein '0x(101820|1E2C3A|18242E|26343F|334454|F2A33C|FFFFFF|B0BEC5|78909C|
     exit 1
 fi
 run_test audio_pcm_convert tests/test_audio_pcm_convert.c components/board/audio_pcm_convert.c
+run_test max98357a tests/test_max98357a.c components/board/max98357a.c \
+    components/board/audio_pcm_convert.c components/board/audio_decimate.c components/board/audio_volume.c -lm
 run_test audio_spdif tests/test_audio_spdif.c components/board/audio_spdif.c
 run_test audio_decimate tests/test_audio_decimate.c components/board/audio_decimate.c -lm
 run_test audio_volume tests/test_audio_volume.c components/board/audio_volume.c
@@ -167,7 +169,7 @@ run_test board_config -I"${cjson_include}" tests/test_board_config.c \
 "${host_cc}" "${common_flags[@]}" "${include_flags[@]}" tests/print_compiled_board.c \
     components/board/board_config.c components/board/board_config_compiled.c \
     -o "${test_build_dir}/print_compiled_board"
-diff <(ASAN_OPTIONS=detect_leaks=1 "${test_build_dir}/print_compiled_board") \
+diff <(ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1}" "${test_build_dir}/print_compiled_board") \
     <(python3 tools/board_bin.py --cc "${host_cc}" -I "${project_dir}" \
           -I "${project_dir}/components/board/include" --csv)
 echo "board_bin.py matches board_config_compiled()"

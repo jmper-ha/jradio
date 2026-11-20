@@ -1088,6 +1088,11 @@ static void test_snapshot_equality_notices_the_frequency(void)
 
 int main(void)
 {
+    assert(player_fm_pipe_should_run(true, false, false, false));
+    assert(!player_fm_pipe_should_run(true, true, false, false));
+    assert(player_fm_pipe_should_run(true, true, false, true));
+    assert(!player_fm_pipe_should_run(true, true, true, true));
+    assert(!player_fm_pipe_should_run(false, true, false, true));
     test_a_change_of_station_swells_and_a_track_does_not();
     test_the_tuner_is_a_source_while_it_answers_and_seeks_on_the_keys();
     test_a_frequency_reads_with_one_decimal();

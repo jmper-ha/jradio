@@ -547,6 +547,14 @@
       "warnings": [],
       "unknown_keys": 0,
       "bad_lines": 0
+    },
+    {
+      "name": "MAX98357A needs no I2C control",
+      "csv": "dac,max98357a",
+      "errors": [],
+      "warnings": [],
+      "unknown_keys": 0,
+      "bad_lines": 0
     }
   ]
 }

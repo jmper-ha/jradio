@@ -988,6 +988,7 @@ static bool player_fm_open(void)
         // The scan puts the tuner here when it is done.
         atomic_store_explicit(&s_fm_khz, khz, memory_order_release);
         atomic_store_explicit(&s_fm_muted, false, memory_order_release);
+        board_audio_set_amplifier_muted(false);
         atomic_store_explicit(&s_fm_failed, false, memory_order_release);
         atomic_store_explicit(&s_fm_on, true, memory_order_release);
         return true;
@@ -1006,6 +1007,7 @@ static bool player_fm_open(void)
     player_fm_sync_volume();
     atomic_store_explicit(&s_fm_khz, khz, memory_order_release);
     atomic_store_explicit(&s_fm_muted, false, memory_order_release);
+    board_audio_set_amplifier_muted(false);
     atomic_store_explicit(&s_fm_seeking, false, memory_order_release);
     atomic_store_explicit(&s_fm_failed, false, memory_order_release);
     atomic_store_explicit(&s_fm_on, true, memory_order_release);
@@ -1018,6 +1020,7 @@ static void player_fm_close(void)
 {
     // The output is let go before anything else may start on it.
     player_fm_pipe_run(false);
+    board_audio_set_amplifier_muted(false);
     atomic_store_explicit(&s_fm_on, false, memory_order_release);
     atomic_store_explicit(&s_fm_seeking, false, memory_order_release);
     // A scan in progress powers the chip down itself when it ends.
@@ -1028,6 +1031,7 @@ static void player_fm_mute(bool muted)
 {
     if (player_fm_scanning() || fm_tuner_set_muted(muted) == ESP_OK) {
         atomic_store_explicit(&s_fm_muted, muted, memory_order_release);
+        board_audio_set_amplifier_muted(muted);
     }
 }
 
@@ -1043,6 +1047,7 @@ static void player_fm_tune(uint32_t khz)
     }
     if (player_fm_scanning()) {
         atomic_store_explicit(&s_fm_muted, false, memory_order_release);
+        board_audio_set_amplifier_muted(false);
         return;
     }
     player_fm_rds_reset();
@@ -1096,9 +1101,10 @@ static void player_fm_pipe_task(void *arg)
     const bool adc = board_has_adc();
     size_t silent_bytes = 0U;
     for (;;) {
-        const bool play = atomic_load_explicit(&s_fm_pipe_wanted, memory_order_acquire) &&
-                          !atomic_load_explicit(&s_fm_muted, memory_order_acquire) &&
-                          !player_fm_scanning();
+        const bool play = player_fm_pipe_should_run(
+            atomic_load_explicit(&s_fm_pipe_wanted, memory_order_acquire),
+            atomic_load_explicit(&s_fm_muted, memory_order_acquire),
+            player_fm_scanning(), board_audio_has_amplifier_mute());
         const bool playing = atomic_load_explicit(&s_fm_pipe_playing, memory_order_acquire);
         if (!play) {
             if (playing) player_fm_pipe_stop_output();
@@ -1132,7 +1138,7 @@ static void player_fm_pipe_task(void *arg)
              * before the ADC's gain, which the level was chosen without. */
             int16_t *samples = (int16_t *)block;
             const size_t count = read / sizeof(int16_t);
-            bool silent = true;
+            bool silent = !atomic_load_explicit(&s_fm_muted, memory_order_acquire);
             for (size_t i = 0U; i < count && silent; ++i) {
                 silent = samples[i] <= PLAYER_FM_PIPE_DEAD_LEVEL &&
                          samples[i] >= -PLAYER_FM_PIPE_DEAD_LEVEL;
@@ -1141,8 +1147,21 @@ static void player_fm_pipe_task(void *arg)
                 samples, count,
                 player_fm_gain_q12(atomic_load_explicit(&s_fm_gain_db, memory_order_relaxed),
                                    adc));
-            size_t written = 0U;
-            (void)board_audio_write(block, read, &written, PLAYER_FM_PIPE_IO_MS);
+            size_t offset = 0U;
+            while (offset < read &&
+                   atomic_load_explicit(&s_fm_pipe_wanted, memory_order_acquire) &&
+                   !player_fm_scanning()) {
+                size_t written = 0U;
+                const esp_err_t err = board_audio_write(block + offset, read - offset,
+                                                         &written, PLAYER_FM_PIPE_IO_MS);
+                offset += written;
+                if (err != ESP_OK && err != ESP_ERR_TIMEOUT) {
+                    ESP_LOGW(TAG, "fm: output write failed: %s", esp_err_to_name(err));
+                    player_fm_pipe_stop_output();
+                    break;
+                }
+                if (written == 0U) vTaskDelay(1);
+            }
             silent_bytes = silent ? silent_bytes + read : 0U;
             if (silent_bytes >= PLAYER_FM_PIPE_DEAD_BYTES) {
                 silent_bytes = 0U;

@@ -13,6 +13,9 @@ player_playback_state_t player_playback_from_radio(internet_radio_state_t state)
 player_playback_state_t player_playback_from_file(file_player_state_t state);
 bool player_snapshot_equal(const player_snapshot_t *left,
                            const player_snapshot_t *right);
+/* A hardware-muted FM pipe must keep clocking the digital tuner. */
+bool player_fm_pipe_should_run(bool wanted, bool muted, bool scanning, bool hardware_mute);
+
 bool player_rssi_refresh_due(bool seen, uint32_t last_update_ms,
                              uint32_t now_ms);
 /* True when `path` is the file the drive is already running, so choosing it

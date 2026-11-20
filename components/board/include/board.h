@@ -93,6 +93,9 @@ esp_err_t board_audio_capture_read(void *pcm, size_t length, size_t *read, uint3
  * elsewhere. The stream keeps going either way - only the analogue output
  * is silenced, which is what a Bluetooth speaker taking the sound wants. */
 void board_audio_set_dac_muted(bool muted);
+/* MAX98357A speaker shutdown without stopping the shared FM clocks. */
+bool board_audio_has_amplifier_mute(void);
+void board_audio_set_amplifier_muted(bool muted);
 /* The sound on the S/PDIF output instead of the DAC, on a board that wires
  * one (board_has_spdif()); switched over while playing. The DAC keeps it
  * while the input is in use and while a Bluetooth speaker has the sound. */

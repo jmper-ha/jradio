@@ -8,6 +8,11 @@
 
 #define PLAYER_RSSI_REFRESH_MS 1000U
 
+bool player_fm_pipe_should_run(bool wanted, bool muted, bool scanning, bool hardware_mute)
+{
+    return wanted && !scanning && (!muted || hardware_mute);
+}
+
 bool player_rssi_refresh_due(bool seen, uint32_t last_update_ms,
                              uint32_t now_ms)
 {

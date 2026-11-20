@@ -31,7 +31,7 @@ jradio_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # sourced export.sh built on 5.5.5. That mix does not stay quiet for long -
 # a build on the other version rewrites dependencies.lock and turns up in the
 # diff - but by then it has already produced firmware nobody meant to make.
-jradio_want="5.5.5"
+jradio_want="5.5.6"
 # What main/idf_component.yml actually allows, >=5.5,<5.6. The fallback when
 # the pinned version is not installed, so a machine carrying only 5.5.6 builds
 # instead of being told no.

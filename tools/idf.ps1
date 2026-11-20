@@ -23,7 +23,7 @@ $root = Split-Path -Parent $PSScriptRoot
 # globs below find both, and taking whichever came first meant the VS Code
 # tasks quietly built on the older one while an activated terminal built on the
 # newer. See tools/idf.sh, which this mirrors.
-$want = '5.5.5'
+$want = '5.5.6'
 # What main/idf_component.yml actually allows, >=5.5,<5.6. The fallback when
 # the pinned version is not installed.
 $wantFamily = '5.5'

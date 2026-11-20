@@ -56,3 +56,4 @@ release/
 # One board's own pins, and any copy of that file
 board_options.local.h
 board_options.local.h.*
+.cache/

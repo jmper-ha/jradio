@@ -39,6 +39,7 @@ static const char *const k_names[REMOTE_FUNCTION_COUNT] = {
     [REMOTE_SOURCE_YANDEX] = "source_yandex",
     [REMOTE_SOURCE_DLNA] = "source_dlna",
     [REMOTE_SOURCE_FM] = "source_fm",
+    [REMOTE_PEEK] = "peek",
 };
 
 /* The 21-key NEC remote of the starter kits - "CAR MP3" on its face - with
@@ -150,6 +151,7 @@ board_input_action_t remote_function_action(remote_function_t function)
     case REMOTE_SOURCE_YANDEX: return BOARD_INPUT_ACTION_SOURCE_YANDEX;
     case REMOTE_SOURCE_DLNA: return BOARD_INPUT_ACTION_SOURCE_DLNA;
     case REMOTE_SOURCE_FM: return BOARD_INPUT_ACTION_SOURCE_FM;
+    case REMOTE_PEEK: return BOARD_INPUT_ACTION_PEEK;
     default: break;
     }
     const int digit = remote_function_digit(function);

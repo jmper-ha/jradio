@@ -98,6 +98,9 @@ typedef enum {
     BOARD_INPUT_ACTION_REMOTE_PREV,
     BOARD_INPUT_ACTION_REMOTE_NEXT,
     BOARD_INPUT_ACTION_REMOTE_OK,
+    /* The remote's look at the time and the weather (ui_peek.h): not a
+     * press at the screen, so it wakes nothing. */
+    BOARD_INPUT_ACTION_PEEK,
 } board_input_action_t;
 
 typedef struct {

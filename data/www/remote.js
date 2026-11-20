@@ -13,7 +13,7 @@
   const GROUPS = [
     ['sound', ['volume_up', 'volume_down', 'mute', 'play_pause', 'prev', 'next']],
     ['navigate', ['up', 'down', 'ok', 'back', 'menu', 'quick', 'list']],
-    ['extras', ['power', 'sleep', 'like', 'dislike']],
+    ['extras', ['power', 'sleep', 'peek', 'like', 'dislike']],
     ['digits', ['digit_0', 'digit_1', 'digit_2', 'digit_3', 'digit_4',
                 'digit_5', 'digit_6', 'digit_7', 'digit_8', 'digit_9']],
     ['sources', ['source_radio', 'source_usb', 'source_sd', 'source_bluetooth',

@@ -963,6 +963,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   z-index: 41;
   width: 340px;
   max-width: calc(100vw - 16px);
+  /* Taller than the window it scrolls inside rather than off the bottom. */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   padding: .9rem 1rem 1rem;
   display: flex;
   flex-direction: column;
@@ -1027,6 +1030,11 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .tone-switch[hidden] { display: none; }
 .tone-note { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.35; }
 .tone-reset { align-self: flex-start; }
+/* A laptop's 768 lines leave some 640 to the page: closer rows let the panel
+   fit whole there, without its scroll. */
+@media (min-width: 721px) and (max-height: 820px) {
+  .tone-panel { gap: .6rem; padding: .7rem 1rem .8rem; }
+}
 
 @media (max-width: 720px) {
   .tone-backdrop { background: rgba(0, 0, 0, .45); }

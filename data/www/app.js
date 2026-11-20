@@ -631,7 +631,9 @@
   }
 
   /* Under its button on a wide screen; on a phone the stylesheet makes it a
-     sheet from the bottom and these are left alone. */
+     sheet from the bottom and these are left alone. Raised when its bottom
+     would pass the window's: on a 1366x768 laptop it ran off the screen and
+     had to be zoomed out to reach (2026-11-20). */
   function placeTonePanel() {
     if (window.matchMedia && window.matchMedia('(max-width: 720px)').matches) {
       tonePanel.style.top = '';
@@ -641,7 +643,11 @@
     const button = toneOpen.getBoundingClientRect();
     const width = tonePanel.offsetWidth || 340;
     const left = Math.max(8, Math.min(button.right - width, window.innerWidth - width - 8));
-    tonePanel.style.top = `${Math.round(button.bottom + 8)}px`;
+    const height = tonePanel.offsetHeight || 0;
+    const room = window.innerHeight || 0;
+    let top = button.bottom + 8;
+    if (room > 0 && top + height > room - 8) top = Math.max(8, room - height - 8);
+    tonePanel.style.top = `${Math.round(top)}px`;
     tonePanel.style.left = `${Math.round(left)}px`;
   }
 

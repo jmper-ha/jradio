@@ -648,7 +648,17 @@ esp_err_t bt_link_set_output(bool enabled, const char *address)
     /* The tick does the rest; here only what has to happen now: a speaker
      * that changed is dropped, and an output switched off lets the module
      * go - unless the player has it as a sink, which is its own business. */
-    if (s_alive && s_wanted_mode != JBT_MODE_SINK) {
+    /* Nor while the module is a sink by its own account. At boot the
+     * settings are applied before the player has asked for the phone
+     * again, and a speaker output switched on dropped the phone that was
+     * playing through a radio restarted under it (2026-11-20). */
+    bool module_sink = false;
+    if (s_state_lock != NULL) {
+        xSemaphoreTake(s_state_lock, portMAX_DELAY);
+        module_sink = s_state.status.mode == JBT_MODE_SINK;
+        xSemaphoreGive(s_state_lock);
+    }
+    if (s_alive && s_wanted_mode != JBT_MODE_SINK && !module_sink) {
         if (!enabled) {
             s_wanted_mode = JBT_MODE_OFF;
             (void)bt_link_ask_mode(JBT_MODE_OFF);

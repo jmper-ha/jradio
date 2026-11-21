@@ -6,6 +6,27 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.13.2 — 21 November 2026
+
+Fixed:
+- HTTPS stations (radiorecord.hostingradio.ru, say) dropped their
+  connection every minute or two, and after the reconnect the last second
+  or two played again. The connection now holds, and when one does
+  reconnect, what was already played is cut out.
+- A station's bitrate showed the size of one frame (88 instead of 96, for
+  example). It is now the average over 10 seconds of sound.
+- A pause on a file from a USB drive or a card sometimes showed "could not
+  play" instead of the pause mark.
+- The remote's USB key with no drive in took away the buffer strip on the
+  radio and Yandex, and it stayed gone while the sound played on.
+- Building from source: `idf.py flash` in a fresh build directory failed
+  on `board.bin`; `tools/idf.sh` and `tools/idf.ps1` put the project back
+  on the ESP32-S3 when the target was switched.
+
+If you build it yourself: delete `sdkconfig` (or turn
+`CONFIG_MBEDTLS_DYNAMIC_BUFFER` off in menuconfig), or the build stops with
+an error saying so. That option is what dropped the HTTPS stations.
+
 ## v1.13.1 — 20 November 2026
 
 New:

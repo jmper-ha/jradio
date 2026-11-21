@@ -165,6 +165,9 @@
 #define RADIO_DIRECT_PCM_SIZE 16384U
 #define RADIO_DIRECT_STOP_TIMEOUT_MS 12000U
 #define RADIO_STARVATION_REPORT_MS 10000U
+/* Seconds of sound between updates of the bitrate on screen. The first comes
+ * after as many: until then the decoder's one-frame figure stands. */
+#define RADIO_BITRATE_AVERAGE_S 10U
 /* How long the decoder may consume input without producing a single sample
  * before the stream is treated as unplayable rather than slow.
  *
@@ -810,6 +813,11 @@ static void radio_direct_task(void *arg)
      * has some 13 KB of it to spare, and internal SRAM has no 512 B to give. */
     radio_overlap_t overlap;
     radio_overlap_init(&overlap);
+    // What the decoder was fed and what came out, for the bitrate on screen.
+    uint64_t rate_bytes = 0U;
+    uint64_t rate_frames = 0U;
+    uint64_t rate_shown_frames = 0U;
+    uint32_t rate_hz = 0U;
     /* The decoder can do nothing more with the backlog it has: what is left
      * is a few bytes short of anything. Ogg holds back the last
      * RADIO_OGG_FLAGS_END bytes as a possible page start, so after a dropped
@@ -1147,6 +1155,10 @@ static void radio_direct_task(void *arg)
                 break;
             }
             track_ended = false;
+            // Each track of a chain is its own file, at its own bitrate.
+            rate_bytes = 0U;
+            rate_frames = 0U;
+            rate_shown_frames = 0U;
             track_drop_resumes = 0U;
             track_resumed_at = SIZE_MAX;
             track_started_tick = xTaskGetTickCount();
@@ -1282,6 +1294,7 @@ static void radio_direct_task(void *arg)
                 fatal = true;
                 break;
             }
+            rate_bytes += consumed;
             ogg_clean = ogg_clean > consumed ? ogg_clean - consumed : 0U;
             if (consumed > 0U) {
                 available -= consumed;
@@ -1329,6 +1342,23 @@ static void radio_direct_task(void *arg)
                     break;
                 }
                 radio_log_decoder_info(radio->stream_format, &info, &logged_info);
+                if (info.sample_rate != rate_hz) {
+                    rate_hz = info.sample_rate;
+                    rate_bytes = consumed;
+                    rate_frames = 0U;
+                    rate_shown_frames = 0U;
+                }
+                rate_frames += pcm_bytes / (AUDIO_CHANNEL_COUNT * (AUDIO_BITS_PER_SAMPLE / 8U));
+                if (rate_frames - rate_shown_frames >= (uint64_t)rate_hz * RADIO_BITRATE_AVERAGE_S) {
+                    rate_shown_frames = rate_frames;
+                    const uint32_t kbps =
+                        internet_radio_average_kbps(rate_bytes, rate_frames, rate_hz);
+                    if (kbps > 0U && kbps <= UINT16_MAX) {
+                        taskENTER_CRITICAL(&s_status_lock);
+                        radio->status.bitrate_kbps = (uint16_t)kbps;
+                        taskEXIT_CRITICAL(&s_status_lock);
+                    }
+                }
                 /* Queued rather than written here so that one place owns the
                  * write: the delivery step at the top of the loop, which can
                  * resume a block that went out short instead of dropping its

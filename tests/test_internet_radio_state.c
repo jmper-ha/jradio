@@ -157,6 +157,20 @@ static void test_a_resyncing_decoder_is_not_a_starved_one(void)
     assert(internet_radio_decoder_starved(0U, 0U));
 }
 
+static void test_the_bitrate_is_what_the_stream_sent(void)
+{
+    // Ten seconds of a 96 kbps stream at 44.1 kHz: 120000 bytes.
+    assert(internet_radio_average_kbps(120000U, 441000U, 44100U) == 96U);
+    // Record 1980 as the PC measured it: 11978 bytes a second.
+    assert(internet_radio_average_kbps(119780U, 441000U, 44100U) == 96U);
+    assert(internet_radio_average_kbps(119300U, 441000U, 44100U) == 95U);
+    // A 320 kbps MP3 at 48 kHz, an hour of it, does not overflow.
+    assert(internet_radio_average_kbps(144000000ULL, 172800000ULL, 48000U) == 320U);
+    // Nothing decoded yet, or no rate: no answer rather than a wrong one.
+    assert(internet_radio_average_kbps(4000U, 0U, 44100U) == 0U);
+    assert(internet_radio_average_kbps(4000U, 1152U, 0U) == 0U);
+}
+
 static void test_a_lost_station_is_tried_ever_more_slowly(void)
 {
     // Ten seconds of tries while a backlog plays out.
@@ -188,6 +202,7 @@ int main(void)
     test_a_quiet_station_with_seconds_in_hand_is_not_reconnected_yet();
     test_a_resyncing_decoder_is_not_a_starved_one();
     test_a_lost_station_is_tried_ever_more_slowly();
+    test_the_bitrate_is_what_the_stream_sent();
     puts("internet_radio_state tests passed");
     return 0;
 }

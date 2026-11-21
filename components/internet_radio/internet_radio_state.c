@@ -106,6 +106,14 @@ uint32_t internet_radio_live_quiet_limit(uint32_t backlog_ms, uint32_t limit_ms,
     return backlog_ms > reserve_ms ? UINT32_MAX : limit_ms;
 }
 
+uint32_t internet_radio_average_kbps(uint64_t compressed_bytes, uint64_t pcm_frames,
+                                     uint32_t sample_rate)
+{
+    if (pcm_frames == 0U || sample_rate == 0U) return 0U;
+    const uint64_t bits_per_second_x_frames = compressed_bytes * 8U * sample_rate;
+    return (uint32_t)((bits_per_second_x_frames + pcm_frames * 500U) / (pcm_frames * 1000U));
+}
+
 uint32_t internet_radio_reconnect_delay_ms(uint32_t attempt)
 {
     if (attempt < 10U) return 1000U;

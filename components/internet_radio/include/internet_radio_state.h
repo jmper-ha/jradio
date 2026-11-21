@@ -90,6 +90,15 @@ uint32_t internet_radio_decode_stall_limit(bool decoder_synced, uint32_t running
 uint32_t internet_radio_live_quiet_limit(uint32_t backlog_ms, uint32_t limit_ms,
                                          uint32_t reserve_ms);
 
+/* The bitrate a stream has actually been sending: `compressed_bytes` fed to
+ * the decoder for `pcm_frames` of sound at `sample_rate`, rounded, 0 when
+ * there is nothing to go on. The decoder's own figure is one frame's size,
+ * and an AAC frame grows and shrinks with the music: Record 1980, 96 kbps by
+ * its address and 95.8 kbps measured over four minutes, read 81 on one
+ * connection and 88 on the next. */
+uint32_t internet_radio_average_kbps(uint64_t compressed_bytes, uint64_t pcm_frames,
+                                     uint32_t sample_rate);
+
 /* How long to wait after reconnect attempt `attempt` (from 0) fails, to a
  * station that was playing. Ten tries a second apart first: that is how long
  * a backlog of 4-8 s plays out while they run in the background, and a gap

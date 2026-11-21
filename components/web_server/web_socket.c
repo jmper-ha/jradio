@@ -1139,9 +1139,17 @@ static void adopt_new_clients(void)
     }
 }
 
+/* Set while an adopt_work is waiting in the server's queue. A long handler -
+ * a www.tar upload holds the worker for twenty seconds - left the broadcaster
+ * queueing one every cycle until the control socket filled, and every cycle
+ * after that logged "ctrl socket queue full": ninety lines in one upload. */
+static atomic_bool s_adopt_queued = ATOMIC_VAR_INIT(false);
+
 static void adopt_work(void *context)
 {
     (void)context;
+    // Cleared first: a client that connects during the pass gets the next one.
+    atomic_store_explicit(&s_adopt_queued, false, memory_order_release);
     adopt_new_clients();
 }
 
@@ -1155,8 +1163,10 @@ static void broadcaster_task(void *context)
          * control socket, and the alternative - waiting for something to
          * broadcast - would leave a page blank for as long as the device had
          * nothing to say, which on a stopped player is forever. */
-        if (s_server != NULL) {
-            (void)httpd_queue_work(s_server, adopt_work, NULL);
+        if (s_server != NULL &&
+            !atomic_exchange_explicit(&s_adopt_queued, true, memory_order_acq_rel) &&
+            httpd_queue_work(s_server, adopt_work, NULL) != ESP_OK) {
+            atomic_store_explicit(&s_adopt_queued, false, memory_order_release);
         }
         player_snapshot_t player;
         web_socket_wifi_state_t wifi;
@@ -1557,6 +1567,8 @@ esp_err_t web_socket_start(httpd_handle_t server)
         return ESP_ERR_NO_MEM;
     }
 
+    // A work item the previous server was stopped with never ran to clear it.
+    atomic_store_explicit(&s_adopt_queued, false, memory_order_release);
     atomic_store_explicit(&s_running, true, memory_order_release);
     if (xTaskCreate(wifi_worker_task, "web_wifi",
                     WEB_SOCKET_WIFI_TASK_STACK_SIZE, NULL,

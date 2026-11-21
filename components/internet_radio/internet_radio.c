@@ -33,6 +33,7 @@
 #include "icy_metadata.h"
 #include "pcm_diagnostics.h"
 #include "radio_http_status.h"
+#include "radio_overlap.h"
 #include "radio_prebuffer.h"
 #include "radio_decoder.h"
 #include "radio_stream_format.h"
@@ -804,6 +805,11 @@ static void radio_direct_task(void *arg)
     /* A station's background reconnect ran out of backlog and the screen was
      * told; the new stream then starts the decoder and the output afresh. */
     bool reconnect_shown = false;
+    /* The old stream's last bytes, looked for in a station's reconnected one
+     * so that its opening burst is not heard twice. On the stack: the task
+     * has some 13 KB of it to spare, and internal SRAM has no 512 B to give. */
+    radio_overlap_t overlap;
+    radio_overlap_init(&overlap);
     /* The decoder can do nothing more with the backlog it has: what is left
      * is a few bytes short of anything. Ogg holds back the last
      * RADIO_OGG_FLAGS_END bytes as a possible page start, so after a dropped
@@ -899,6 +905,7 @@ static void radio_direct_task(void *arg)
                     decoder_synced = false;
                     last_pcm_tick = xTaskGetTickCount();
                 }
+                radio_overlap_begin(&overlap, compressed + compressed_offset, available);
                 ESP_LOGI(TAG, "station reconnected in the background with %u buffered",
                          (unsigned int)available);
                 heap_caps_free(job);
@@ -1623,6 +1630,17 @@ static void radio_direct_task(void *arg)
                     memcpy(compressed + compressed_offset + available, audio, audio_length);
                     available += audio_length;
                     backlog_spent = false;
+                    const size_t repeated = radio_overlap_take(
+                        &overlap, compressed + compressed_offset, &available, audio_length);
+                    if (repeated > 0U) {
+                        uint16_t bitrate;
+                        taskENTER_CRITICAL(&s_status_lock);
+                        bitrate = radio->status.bitrate_kbps;
+                        taskEXIT_CRITICAL(&s_status_lock);
+                        ESP_LOGI(TAG, "reconnect burst: dropped %u bytes (%u ms) already buffered",
+                                 (unsigned int)repeated,
+                                 (unsigned int)radio_prebuffer_millis(repeated, bitrate));
+                    }
                 }
 
                 // Drain whatever else the socket already holds, bounded by

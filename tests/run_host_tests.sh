@@ -216,6 +216,7 @@ run_test ts_demux tests/test_ts_demux.c components/internet_radio/ts_demux.c
 run_test icy_metadata tests/test_icy_metadata.c components/internet_radio/icy_metadata.c
 run_test internet_radio_state tests/test_internet_radio_state.c \
     components/internet_radio/internet_radio_state.c
+run_test radio_overlap tests/test_radio_overlap.c components/internet_radio/radio_overlap.c
 run_test mp3_stream_info tests/test_mp3_stream_info.c components/internet_radio/mp3_stream_info.c
 run_test pcm_diagnostics tests/test_pcm_diagnostics.c components/board/pcm_diagnostics.c
 run_test player_control_logic tests/test_player_control_logic.c \

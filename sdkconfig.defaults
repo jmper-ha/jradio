@@ -76,7 +76,15 @@ CONFIG_LWIP_TCP_WND_DEFAULT=32768
 # Has to cover the window in MSS-sized segments: 32768/1440 is 22.8.
 CONFIG_LWIP_TCP_RECVMBOX_SIZE=24
 CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
-CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+# Off, not on: with the dynamic buffer ESP-IDF reads each record's 5-byte
+# header into an array on the stack of esp_mbedtls_add_rx_buffer, and the
+# radio's stream socket is non-blocking. A TCP segment that ended inside a
+# header returned WANT_READ with part of it read, the next call started from a
+# fresh array, and the record came out garbled: "read error -0x7200"
+# (INVALID_RECORD) and a reconnect every minute or two on
+# radiorecord.hostingradio.ru (forum, v1.13.1). The buffers it saved are in
+# PSRAM anyway (EXTERNAL_MEM_ALLOC below): about 20 KB of it per connection.
+# CONFIG_MBEDTLS_DYNAMIC_BUFFER is not set
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 # CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC is not set
 CONFIG_HTTPD_WS_SUPPORT=y

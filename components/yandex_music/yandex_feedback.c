@@ -198,6 +198,7 @@ size_t yandex_feedback_path(const yandex_feedback_event_t *event, char *out, siz
 
 #include <time.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -217,9 +218,12 @@ static const char *TAG = "yandex_fb";
 /* Measured on the device: 6144 left only 804 bytes free through two POSTs,
  * which is less than the auth task's 1356 on the same size - this path adds
  * the response buffer and the two built strings below to the same TLS
- * handshake. 7168 puts the margin back near 1800; the task logs its own
- * high-water mark, so this is trimmed on evidence rather than on nerve. */
-#define YANDEX_FEEDBACK_TASK_STACK 7168
+ * handshake. 7168 was meant to put the margin back near 1800 and left 1440
+ * (2026-11-21), the thinnest of any task. 8192 now that it is PSRAM: the task
+ * never writes flash, so its stack may live where the cache does, and the
+ * internal heap no longer pays seven kilobytes for every send. The task logs
+ * its own high-water mark, so this is trimmed on evidence rather than nerve. */
+#define YANDEX_FEEDBACK_TASK_STACK 8192
 /* Below the decoder and the catalog fetch: nothing here is heard or seen. */
 #define YANDEX_FEEDBACK_TASK_PRIORITY 3
 /* A track change already costs about 1.7 s of silence while the decode task
@@ -298,7 +302,7 @@ static void yandex_feedback_task(void *context)
         s_stack_low_water = headroom;
         ESP_LOGI(TAG, "feedback task stack headroom %u", (unsigned int)headroom);
     }
-    vTaskDelete(NULL);
+    vTaskDeleteWithCaps(NULL);
 }
 
 esp_err_t yandex_feedback_init(void)
@@ -343,11 +347,12 @@ esp_err_t yandex_feedback_post(const yandex_feedback_event_t *event)
          * it would take cycles from a stream that is playing.
          *
          * Transient like the catalog task: it drains what is queued and ends,
-         * so its 6 KB of stack is held for a second every few minutes rather
-         * than for as long as the firmware runs. */
-        if (xTaskCreatePinnedToCore(yandex_feedback_task, "yandex_fb",
-                                    YANDEX_FEEDBACK_TASK_STACK, NULL,
-                                    YANDEX_FEEDBACK_TASK_PRIORITY, &task, 0) != pdPASS) {
+         * so its stack is held for a second every few minutes rather than for
+         * as long as the firmware runs. */
+        if (xTaskCreatePinnedToCoreWithCaps(yandex_feedback_task, "yandex_fb",
+                                            YANDEX_FEEDBACK_TASK_STACK, NULL,
+                                            YANDEX_FEEDBACK_TASK_PRIORITY, &task, 0,
+                                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
             ESP_LOGW(TAG, "no room for the feedback task");
             result = ESP_ERR_NO_MEM;
         } else {

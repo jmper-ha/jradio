@@ -127,6 +127,11 @@ add_custom_target(board_bin ALL
 )
 partition_table_get_partition_info(board_offset "--partition-name board" "offset")
 esptool_py_flash_target_image(flash board "${board_offset}" "${board_bin}")
+# Being in ALL is not enough: `flash` waits for the app, not for ALL, so on a
+# fresh build directory esptool was handed board.bin before anything had
+# written it - "No such file or directory: 'board.bin'" on a user's first
+# flash of 1.13.1 (2026-11-21).
+add_dependencies(flash board_bin)
 
 # LVGL's heap moves to PSRAM - see components/lvgl_pool/include/lvgl_pool.h for
 # why, and for what it costs. Only the pool's *address* changes; LVGL keeps its

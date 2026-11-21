@@ -40,6 +40,14 @@
 #include "station_levels.h"
 #include "station_resume.h"
 
+/* sdkconfig.defaults turns it off, but defaults only fill in missing keys: a
+ * source tree updated over an existing sdkconfig keeps it on, and with it the
+ * "-0x7200" reconnect every minute or two on HTTPS stations (see the comment
+ * there). A build error is the only notice such a builder is sure to read. */
+#if CONFIG_MBEDTLS_DYNAMIC_BUFFER
+#error "CONFIG_MBEDTLS_DYNAMIC_BUFFER garbles TLS records on the stream's non-blocking socket: delete sdkconfig, or turn it off in menuconfig (Component config > mbedTLS)"
+#endif
+
 #define RADIO_HTTP_BUFFER_SIZE 2048
 /* esp_http_client builds the whole request line and its headers inside this
  * buffer, and its default is 512 bytes. A station URL never comes close, but a

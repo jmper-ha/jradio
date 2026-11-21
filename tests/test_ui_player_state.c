@@ -356,6 +356,13 @@ static void test_close_station_list_returns_to_source(void)
     assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
     ui_player_state_close_station_list(&state);
     assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+
+    /* The screen driven to a drive that is not there, its list left: the
+     * player is the radio's again, which never stopped playing. */
+    state.source = AUDIO_SOURCE_USB;
+    assert(ui_player_state_show_station_list(&state));
+    ui_player_state_close_station_list(&state);
+    assert(ui_player_state_source(&state) == AUDIO_SOURCE_INTERNET_RADIO);
 }
 
 static void test_close_station_list_redirects_pending_timeout_to_source(void)

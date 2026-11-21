@@ -273,6 +273,9 @@ static void ui_list_decor_update(ui_list_decor_t *decor, const bool *shown, size
  * together, which is what it is waiting out. */
 #define UI_DLNA_RESUME_GIVE_UP_MS 20000U
 #define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
+/* The "no drive" notice over a source that plays on: a line to read, not a
+ * list to scroll, so it gives the player back sooner (Ден, 2026-11-21). */
+#define UI_FILES_NOTICE_TIMEOUT_MS 3000U
 
 static const char *TAG = "ui";
 static QueueHandle_t s_input_queue;
@@ -6285,6 +6288,10 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
         lv_obj_add_flag(s_station_list_rule, LV_OBJ_FLAG_HIDDEN);
         s_browser_has_parent_row = false;
         station_list_init(&s_station_list, 0U, 0U, PLAYER_ITEM_NONE);
+        /* Its idle wait starts now, as a list's does below: left at the last
+         * list's, it had long run out while the radio played, and the remote's
+         * USB key closed the notice the moment it opened (2026-11-21). */
+        station_list_note_activity(&s_station_list, ui_tick_get_ms());
         ui_update_station_list();
         return;
     }
@@ -6419,6 +6426,8 @@ static void ui_show_station_list(void)
 static void ui_leave_station_list(void)
 {
     s_files_list_open_requested = false;
+    s_files_unavailable = false;
+    s_files_unavailable_source = AUDIO_SOURCE_NONE;
     ui_player_state_close_station_list(&s_player_ui);
 }
 
@@ -8759,7 +8768,9 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
         }
         if (ui_playback_running(snapshot) &&
             station_list_idle_timeout_elapsed(&s_station_list, ui_tick_get_ms(),
-                                              UI_STATION_LIST_IDLE_TIMEOUT_MS)) {
+                                              s_files_unavailable
+                                                  ? UI_FILES_NOTICE_TIMEOUT_MS
+                                                  : UI_STATION_LIST_IDLE_TIMEOUT_MS)) {
             ui_close_station_list_to_source();
         }
     }

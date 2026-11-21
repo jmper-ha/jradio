@@ -356,6 +356,13 @@ void ui_player_state_close_station_list(ui_player_state_t *state)
 {
     if (state == NULL || state->view != UI_PLAYER_VIEW_STATION_LIST) return;
     state->view = UI_PLAYER_VIEW_SOURCE;
+    /* Back to the source that plays. The screen can have been driven to a
+     * source that never started - a drive's "no drive" list - and kept it
+     * after: the radio played on under a player that took it for the drive,
+     * with no buffer strip (forum, 2026-11-21). */
+    if (!state->pending && state->have_snapshot && state->confirmed_source != AUDIO_SOURCE_NONE) {
+        state->source = state->confirmed_source;
+    }
     if (state->pending) {
         // Mirror ui_player_state_show_station_list: if a pending command times
         // out later, it should revert to the source screen the idle timeout

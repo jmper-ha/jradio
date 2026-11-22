@@ -402,6 +402,8 @@ typedef struct {
     lv_obj_t *context;
     lv_obj_t *clock;
     lv_obj_t *rssi;
+    // The reading's width the bars were last placed for.
+    int32_t rssi_w;
     /* The weather, at the left edge: a picture and a reading. Both hidden
      * while there is nothing to show, and the screen's name is shown in
      * their place - see ui_status_strip_update_weather(). */
@@ -1227,7 +1229,11 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     /* On the clock's line, as the temperature is: a pixel lower, the two
      * figures at that end of the strip did not line up (2026-11-06). */
     strip->rssi = lv_label_create(screen);
-    lv_obj_set_pos(strip->rssi, UI_STRIP_RSSI_X, 5);
+    /* Against the right margin, so the strip's two ends sit the same distance
+     * in: from a fixed left edge a two-digit reading stopped 13 px short on
+     * the 480 px panel while the weather began 11 in (Ден, 2026-11-22). */
+    lv_obj_align(strip->rssi, LV_ALIGN_TOP_RIGHT, -UI_CONTENT_X, 5);
+    strip->rssi_w = -1;
     lv_obj_set_style_text_font(strip->rssi, UI_FONT_BODY, 0);
     ui_paint(strip->rssi, UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
     lv_label_set_text(strip->rssi, "");
@@ -2595,6 +2601,15 @@ static void ui_status_strip_update(ui_status_strip_t *strip,
         snprintf(rssi_text, sizeof(rssi_text), "--");
     }
     ui_set_label_text_if_changed(strip->rssi, rssi_text);
+    lv_point_t rssi_size;
+    lv_text_get_size(&rssi_size, rssi_text, UI_FONT_BODY, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    if (rssi_size.x != strip->rssi_w) {
+        strip->rssi_w = rssi_size.x;
+        const int32_t bars_x = TFT_WIDTH - UI_CONTENT_X - rssi_size.x - 23;
+        for (int bar = 0; bar < UI_WIFI_BARS; ++bar) {
+            lv_obj_set_x(strip->bars[bar], bars_x + bar * 5);
+        }
+    }
 }
 
 /* Draws the bars, called by LVGL once the strip's own background is down.

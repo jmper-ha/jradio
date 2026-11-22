@@ -74,9 +74,11 @@
 #define UI_STRIP_CONTEXT_X 10
 #define UI_STRIP_CLOCK_W 60
 #define UI_STRIP_CLOCK_X ((TFT_WIDTH - UI_STRIP_CLOCK_W) / 2)
-/* Room for three digits of RSSI and a minus, clear of the right edge. */
+/* Room for three digits of RSSI and a minus. The reading itself ends at the
+ * right margin, as the weather starts at the left one, and the bars follow its
+ * width - these are only how far left the pair can reach. */
 #define UI_STRIP_RSSI_X (TFT_WIDTH - 45)
-/* Four bars at a pitch of 5, ending just before the reading. */
+/* Four bars at a pitch of 5, ending 5 px before the reading. */
 #define UI_STRIP_BARS_X (UI_STRIP_RSSI_X - 23)
 /* Stops short of the clock instead of running under it - which is what a
  * fixed 116 would do once the panel is only 240 wide. */

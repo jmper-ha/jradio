@@ -41,6 +41,11 @@ function test_the_cases_shared_with_the_firmware() {
     assert.strictEqual(parsed.unknown.length, item.unknown_keys, item.name);
     assert.strictEqual(parsed.bad.length, item.bad_lines, item.name);
   }
+  const dualEncoder = hw.parseCsv(fixture.base + fixture.cases[0].csv).values;
+  assert.deepStrictEqual(hw.parseHeader(hw.toHeader(dualEncoder)).values, dualEncoder);
+  const old = fixture.base.replace(/^(controls|volume_encoder_[abe]\w*|encoder_edges|button_menu),.*\n/gm, '');
+  assert.strictEqual(hw.parseCsv(old).values.controls, 'legacy');
+  assert.strictEqual(hw.parseCsv(old).values.volume_encoder_a, hw.NONE);
 }
 
 function test_the_readme_board_is_clean() {

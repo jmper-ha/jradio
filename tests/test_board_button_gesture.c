@@ -58,6 +58,25 @@ static void test_each_button_reports_its_own_actions(void)
     assert(sleep_button(&gesture, false, 5) == BOARD_INPUT_ACTION_SLEEP_BUTTON);
 }
 
+static void test_panel_buttons_can_overlap(void)
+{
+    board_button_gesture_t ok = {0};
+    board_button_gesture_t menu = {0};
+    const board_input_action_t select = BOARD_INPUT_ACTION_PANEL_OK;
+    const board_input_action_t mute = BOARD_INPUT_ACTION_PANEL_MUTE;
+    const board_input_action_t back = BOARD_INPUT_ACTION_PANEL_MENU_BACK;
+    const board_input_action_t quick = BOARD_INPUT_ACTION_PANEL_QUICK_TOGGLE;
+    assert(board_button_gesture_update(&menu, true, 5, back, quick) == BOARD_INPUT_ACTION_NONE);
+    assert(board_button_gesture_update(&menu, true, 795, back, quick) == BOARD_INPUT_ACTION_NONE);
+    assert(board_button_gesture_update(&ok, true, 5, select, mute) == BOARD_INPUT_ACTION_NONE);
+    assert(board_button_gesture_update(&menu, true, 5, back, quick) == quick);
+    assert(board_button_gesture_update(&ok, false, 5, select, mute) == select);
+    assert(board_button_gesture_update(&menu, false, 5, back, quick) == BOARD_INPUT_ACTION_NONE);
+    assert(board_button_gesture_update(&ok, true, 5, select, mute) == BOARD_INPUT_ACTION_NONE);
+    assert(board_button_gesture_update(&ok, true, 800, select, mute) == mute);
+    assert(board_button_gesture_update(&ok, false, 5, select, mute) == BOARD_INPUT_ACTION_NONE);
+}
+
 /* A step on the press, nothing more until the delay, then a slow repeat, then
    a fast one; a release starts it over. Called every 5 ms, as the task does. */
 static void test_a_held_button_repeats_faster_the_longer_it_is_held(void)
@@ -89,6 +108,7 @@ static void test_a_held_button_repeats_faster_the_longer_it_is_held(void)
 
 int main(void)
 {
+    test_panel_buttons_can_overlap();
     test_a_held_button_repeats_faster_the_longer_it_is_held();
     test_a_hold_reports_once_and_swallows_the_click();
     test_a_short_press_reports_on_release();

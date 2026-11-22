@@ -153,6 +153,15 @@
     /* Three buttons on the encoder's three lines: + on Right, - on Left, OK on
        Push. One or the other - the lines are the same. */
     {key: 'encoder_buttons', kind: 'bool', device: 'encoder', dflt: 0, define: 'ENCODER_AS_BUTTONS'},
+    {key: 'controls', kind: 'choice', device: 'encoder', options: ['legacy', 'dual_encoder'], dflt: 'legacy', define: 'CONTROLS'},
+    {key: 'volume_encoder_a', kind: 'opt_pin', device: 'encoder', dflt: NONE, define: 'VOLUME_ENCODER_A_GPIO'},
+    {key: 'volume_encoder_b', kind: 'opt_pin', device: 'encoder', dflt: NONE, define: 'VOLUME_ENCODER_B_GPIO'},
+    {key: 'encoder_edges', kind: 'choice', device: 'encoder', options: ['2', '4'], dflt: '4', define: 'ENCODER_EDGES_PER_DETENT',
+      when: (v) => v.controls === 'dual_encoder'},
+    {key: 'volume_encoder_edges', kind: 'choice', device: 'encoder', options: ['2', '4'], dflt: '4', define: 'VOLUME_ENCODER_EDGES_PER_DETENT',
+      when: (v) => v.controls === 'dual_encoder' || !isNone(v.volume_encoder_a) || !isNone(v.volume_encoder_b)},
+    {key: 'button_menu', kind: 'opt_pin', device: 'buttons', dflt: NONE, define: 'BUTTON_MENU_GPIO',
+      when: (v) => v.controls === 'dual_encoder'},
 
     {key: 'button_sleep', kind: 'opt_pin', device: 'buttons', dflt: 21, define: 'BUTTON_SLEEP_GPIO'},
     {key: 'button_quick_menu', kind: 'opt_pin', device: 'buttons', dflt: 45, define: 'BUTTON_QUICK_MENU_GPIO'},
@@ -473,6 +482,15 @@
     const warnings = [];
     const moduleName = values.module;
     const onHeader = new Set(headerGpios());
+    const dualEncoder = values.controls === 'dual_encoder';
+    const a = pinValue(values.volume_encoder_a);
+    const b = pinValue(values.volume_encoder_b);
+    if (dualEncoder && String(values.encoder_buttons) === '1') {
+      errors.push({code: 'bad_value', key: 'encoder_buttons'});
+    }
+    if (a === null && (dualEncoder || b !== null)) errors.push({code: 'pin_missing', key: 'volume_encoder_a'});
+    if (b === null && (dualEncoder || a !== null)) errors.push({code: 'pin_missing', key: 'volume_encoder_b'});
+    if (dualEncoder && pinValue(values.button_menu) === null) errors.push({code: 'pin_missing', key: 'button_menu'});
 
     /* Bus pins are one signal even when three devices share them, so a shared
        bus is never a conflict - and a bus pin reused as a chip select is. */
@@ -646,6 +664,12 @@
       ...gpio('BUTTON_PREV_GPIO', 'button_prev'),
       ...gpio('BUTTON_NEXT_GPIO', 'button_next'),
       `#define ENCODER_AS_BUTTONS ${on('encoder_buttons')}`,
+      `#define CONTROLS CONTROLS_${String(values.controls).toUpperCase()}`,
+      ...gpio('VOLUME_ENCODER_A_GPIO', 'volume_encoder_a'),
+      ...gpio('VOLUME_ENCODER_B_GPIO', 'volume_encoder_b'),
+      `#define ENCODER_EDGES_PER_DETENT ${values.encoder_edges}`,
+      `#define VOLUME_ENCODER_EDGES_PER_DETENT ${values.volume_encoder_edges}`,
+      ...gpio('BUTTON_MENU_GPIO', 'button_menu'),
       '',
       ...(deviceEnabled(values, 'ir')
         ? ['/* The infrared receiver, for the remote. */', ...gpio('IR_RECEIVER_GPIO', 'ir_receiver')]
@@ -788,6 +812,22 @@
     // Read past: the pull-ups are always on now, whatever an old header said.
     take('ENCODER_USE_INTERNAL_PULLUPS');
     asBool('encoder_buttons', 'ENCODER_AS_BUTTONS');
+    const controls = take('CONTROLS');
+    if (controls !== undefined) {
+      const id = controls.replace(/^CONTROLS_/, '').toLowerCase();
+      if (FIELD_BY_KEY.controls.options.includes(id)) values.controls = id;
+      else unknown.push({key: 'CONTROLS', value: controls});
+    }
+    asPin('volume_encoder_a', 'VOLUME_ENCODER_A_GPIO');
+    asPin('volume_encoder_b', 'VOLUME_ENCODER_B_GPIO');
+    asPin('button_menu', 'BUTTON_MENU_GPIO');
+    for (const key of ['encoder_edges', 'volume_encoder_edges']) {
+      const field = FIELD_BY_KEY[key];
+      const value = take(field.define);
+      if (value === undefined) continue;
+      if (field.options.includes(value)) values[key] = value;
+      else unknown.push({key: field.define, value});
+    }
     take('BUTTONS_USE_INTERNAL_PULLUPS');
     asPin('ir_receiver', 'IR_RECEIVER_GPIO');
     const dac = take('AUDIO_DAC');

@@ -40,6 +40,24 @@ void board_config_compiled(board_config_t *config)
     // Always on (board_options.h); kept in the record for the files' sake.
     config->encoder_pullups = 1U;
     config->encoder_buttons = ENCODER_AS_BUTTONS ? 1U : 0U;
+#ifdef CONTROLS
+    config->controls = CONTROLS;
+#endif
+#ifdef VOLUME_ENCODER_A_GPIO
+    config->volume_encoder_a = PIN(VOLUME_ENCODER_A_GPIO);
+#endif
+#ifdef VOLUME_ENCODER_B_GPIO
+    config->volume_encoder_b = PIN(VOLUME_ENCODER_B_GPIO);
+#endif
+#ifdef ENCODER_EDGES_PER_DETENT
+    config->encoder_edges = ENCODER_EDGES_PER_DETENT;
+#endif
+#ifdef VOLUME_ENCODER_EDGES_PER_DETENT
+    config->volume_encoder_edges = VOLUME_ENCODER_EDGES_PER_DETENT;
+#endif
+#ifdef BUTTON_MENU_GPIO
+    config->button_menu = PIN(BUTTON_MENU_GPIO);
+#endif
 #ifdef BUTTON_SLEEP_GPIO
     config->button_sleep = PIN(BUTTON_SLEEP_GPIO);
 #endif

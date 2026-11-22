@@ -556,6 +556,8 @@ static const char *ui_text(device_text_id_t id)
 
 static lv_obj_t *s_settings_title;
 static bool s_settings_open;
+// This menu covers the player view without replacing its source or view state.
+static bool s_playback_menu_open;
 /* Set when the radio could not be opened at once on a device with no home
  * screen - see ui_open_radio_home(). Retried from the poll loop, which is
  * where the pending command it is waiting on gets resolved. */
@@ -4702,12 +4704,14 @@ static void ui_apply_display_rotation(void)
 
 static void ui_show_settings(void)
 {
+    const uint8_t volume = s_device_settings.volume;
     s_settings_open = true;
     ui_hide_qr();
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
     if (!device_settings_init(&s_device_settings)) {
         lv_label_set_text(s_settings_notice, ui_text(DEVICE_TEXT_SETTINGS_READ_FAILED));
     } else {
+        if (s_volume_save_pending) s_device_settings.volume = volume;
         lv_label_set_text(s_settings_notice, "");
         ui_apply_display_rotation();
         ui_backlight_apply(s_device_settings.brightness);
@@ -6099,9 +6103,15 @@ static void ui_show_source(void)
 {
     const audio_source_t selected_source = ui_menu_activate(&s_menu);
     if (selected_source == AUDIO_SOURCE_NONE) return;
+    if (s_playback_menu_open && selected_source == ui_player_state_source(&s_player_ui)) {
+        s_playback_menu_open = false;
+        ui_render_player_state();
+        return;
+    }
     /* Yandex has its own list screen rather than the shared one: it is fetched
      * from the account, not read from the catalog file. */
     if (selected_source == AUDIO_SOURCE_YANDEX) {
+        s_playback_menu_open = false;
         ui_show_yandex();
         return;
     }
@@ -6125,6 +6135,7 @@ static void ui_show_source(void)
         .item_index = PLAYER_ITEM_NONE,
     };
     if (s_files_unavailable) {
+        s_playback_menu_open = false;
         // No source to select, so drive the screen directly.
         s_player_ui.source = selected_source;
         ui_show_station_list();
@@ -6140,6 +6151,7 @@ static void ui_show_source(void)
         s_files_list_open_requested = true;
     }
     if (!ui_submit_player_command(&command)) return;
+    s_playback_menu_open = false;
     /* The phone is not a list to choose from: the player screen is the whole
      * of this source, and while no phone is on it the screen says where to
      * look for the device. */
@@ -6181,6 +6193,11 @@ static bool ui_open_radio_home(void)
 
 static void ui_load_menu_screen(void)
 {
+    if (s_playback_menu_open) {
+        ui_update_menu_highlight();
+        lv_screen_load(s_menu_screen);
+        return;
+    }
     s_waiting_for_source_item = false;
     if (!ui_home_screen_exists()) {
         /* Not while autoplay waits to resume: this select goes out at boot,
@@ -6210,6 +6227,7 @@ static void ui_load_menu_screen(void)
 
 static void ui_show_menu(void)
 {
+    s_playback_menu_open = false;
     ui_end_seek();
     ui_end_fm_tune(false);
     s_files_unavailable = false;
@@ -6397,6 +6415,7 @@ static void ui_request_files_reveal(void)
 
 static void ui_show_station_list(void)
 {
+    if (s_playback_menu_open) return;
     // Reachable from the poll loop as well as from a press, so the mode is
     // closed here rather than at each caller.
     ui_end_seek();
@@ -6430,6 +6449,10 @@ static void ui_close_station_list_to_source(void)
 
 static void ui_render_player_state(void)
 {
+    if (s_playback_menu_open) {
+        ui_load_menu_screen();
+        return;
+    }
     switch (ui_player_state_view(&s_player_ui)) {
     case UI_PLAYER_VIEW_MENU:
         ui_load_menu_screen();
@@ -6499,7 +6522,7 @@ static void ui_end_seek(void)
 /* Straight to the queue, past ui_submit_player_command(): its gate refuses a
  * second command while one is unconfirmed, and a knob turned quickly is a
  * stream of them that no snapshot confirms one by one. */
-static void ui_fm_tune_post(player_command_kind_t kind, uint32_t khz)
+static bool ui_fm_tune_post(player_command_kind_t kind, uint32_t khz)
 {
     const player_command_t command = {
         .kind = kind,
@@ -6507,7 +6530,9 @@ static void ui_fm_tune_post(player_command_kind_t kind, uint32_t khz)
         .item_index = PLAYER_ITEM_NONE,
         .frequency_khz = khz,
     };
-    (void)player_control_post(&command);
+    if (player_control_post(&command)) return true;
+    ESP_LOGW(TAG, "FM command %d: player queue full", (int)kind);
+    return false;
 }
 
 static void ui_fm_tune_paint(bool tuning)
@@ -6547,10 +6572,8 @@ static void ui_end_fm_tune(bool keep)
  * keeps it, and goes into the presets as well - the way to a station the
  * scan did not find, or one found later, without scanning the list away.
  * The list is read here only to say what happened; the player adds it. */
-static void ui_fm_tune_keep_as_preset(void)
+static void ui_fm_save_preset(uint32_t khz)
 {
-    const uint32_t khz = ui_fm_tune_khz(&s_fm_tune);
-    ui_end_fm_tune(true);
     if (khz == 0U) return;
     const size_t count = player_control_fm_preset_count();
     bool already = false;
@@ -6563,10 +6586,17 @@ static void ui_fm_tune_keep_as_preset(void)
     } else if (count >= FM_PRESETS_MAX) {
         s_fm_saved_note = DEVICE_TEXT_FM_PRESET_FULL;
     } else {
-        ui_fm_tune_post(PLAYER_COMMAND_FM_PRESET_ADD, khz);
+        if (!ui_fm_tune_post(PLAYER_COMMAND_FM_PRESET_ADD, khz)) return;
         s_fm_saved_note = DEVICE_TEXT_FM_PRESET_ADDED;
     }
     s_fm_saved_note_ms = ui_tick_get_ms();
+}
+
+static void ui_fm_tune_keep_as_preset(void)
+{
+    const uint32_t khz = ui_fm_tune_khz(&s_fm_tune);
+    ui_end_fm_tune(true);
+    ui_fm_save_preset(khz);
 }
 
 /* Every pass: the frequency the knob has reached goes out at a measured pace,
@@ -6574,9 +6604,22 @@ static void ui_fm_tune_keep_as_preset(void)
 static void ui_fm_tune_tick(void)
 {
     if (!ui_fm_tune_is_active(&s_fm_tune)) return;
+    if (board_config_get()->controls == CONTROLS_DUAL_ENCODER &&
+        player_control_fm_scan_status(NULL, NULL, 0, NULL)) {
+        ui_fm_tune_reset(&s_fm_tune);
+        s_fm_tune_following = false;
+        ui_fm_tune_paint(false);
+        return;
+    }
     const uint32_t now = ui_tick_get_ms();
     uint32_t khz = 0U;
-    if (ui_fm_tune_due(&s_fm_tune, now, &khz)) ui_fm_tune_post(PLAYER_COMMAND_FM_TUNE, khz);
+    const uint32_t last_sent = s_fm_tune.sent_khz;
+    if (ui_fm_tune_due(&s_fm_tune, now, &khz) &&
+        !ui_fm_tune_post(PLAYER_COMMAND_FM_TUNE, khz)) {
+        s_fm_tune.sent_khz = last_sent;
+        return;
+    }
+    if (s_fm_tune.khz != s_fm_tune.sent_khz) return;
     if (ui_fm_tune_idle(&s_fm_tune, now)) ui_end_fm_tune(true);
 }
 
@@ -7548,6 +7591,42 @@ static void ui_quick_sync_rows(void)
                            ui_player_state_source(&s_player_ui) != AUDIO_SOURCE_BLUETOOTH;
     ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_BT_OUTPUT, bluetooth);
     ui_quick_menu_set_visible(&s_quick, UI_QUICK_ITEM_LEVEL_NUDGE, board_audio_level_nudge(NULL));
+    const bool fm = board_config_get()->controls == CONTROLS_DUAL_ENCODER &&
+                    ui_player_state_source(&s_player_ui) == AUDIO_SOURCE_FM;
+    for (ui_quick_item_t item = UI_QUICK_ITEM_FM_SEEK_UP; item <= UI_QUICK_ITEM_FM_SAVE; ++item) {
+        if (ui_quick_menu_item_visible(&s_quick, item) != fm) {
+            ui_quick_menu_set_visible(&s_quick, item, fm);
+        }
+    }
+}
+
+static void ui_quick_fm_action(ui_quick_item_t item)
+{
+    player_snapshot_t snapshot;
+    player_control_get_snapshot(&snapshot);
+    if (snapshot.active_source != AUDIO_SOURCE_FM || snapshot.fm_scanning) return;
+    ui_quick_menu_close(&s_quick);
+    ui_quick_hide();
+    switch (item) {
+    case UI_QUICK_ITEM_FM_SEEK_UP:
+    case UI_QUICK_ITEM_FM_SEEK_DOWN:
+        ui_end_fm_tune(true);
+        ui_fm_tune_post(item == UI_QUICK_ITEM_FM_SEEK_UP ? PLAYER_COMMAND_FM_SEEK_UP
+                                                       : PLAYER_COMMAND_FM_SEEK_DOWN, 0U);
+        break;
+    case UI_QUICK_ITEM_FM_SCAN:
+        ui_fm_tune_reset(&s_fm_tune);
+        s_fm_tune_following = false;
+        ui_fm_tune_paint(false);
+        if (!player_control_fm_scan_start()) ESP_LOGW(TAG, "could not start FM scan");
+        break;
+    case UI_QUICK_ITEM_FM_SAVE:
+        if (ui_fm_tune_is_active(&s_fm_tune)) ui_fm_tune_keep_as_preset();
+        else ui_fm_save_preset(snapshot.fm_khz);
+        break;
+    default:
+        break;
+    }
 }
 
 static void ui_quick_poll(uint32_t now_ms)
@@ -7690,6 +7769,7 @@ static bool ui_volume_resume_file(audio_source_t source, char *out, size_t size)
 
 static void ui_remote_open_source(audio_source_t source)
 {
+    s_playback_menu_open = false;
     /* A newer key replaces a resume still under way: left armed, the drive's
      * resume finished after the card's key and the drive came up instead
      * (reported on the forum 2026-10-31). */
@@ -7876,6 +7956,65 @@ static bool ui_network_wait_input(board_input_action_t action)
     return true;
 }
 
+static void ui_panel_menu_back(void)
+{
+    if (s_qr_open) {
+        ui_hide_qr();
+    } else if (s_about_open) {
+        ui_hide_about();
+    } else if (s_settings_open) {
+        if (ui_settings_model_is_editing(&s_settings_model)) {
+            (void)ui_settings_model_toggle_edit(&s_settings_model);
+            ui_update_settings();
+        } else if (s_settings_model.expanded_group >= 0) {
+            while (ui_settings_model_row_at(&s_settings_model, s_settings_model.cursor).kind !=
+                       UI_SETTINGS_ROW_GROUP &&
+                   ui_settings_model_move(&s_settings_model, -1) == UI_SETTINGS_MODEL_CHANGED) {
+            }
+            (void)ui_settings_model_activate(&s_settings_model);
+            ui_update_settings();
+        } else {
+            ui_close_settings();
+        }
+    } else if (s_yandex_open) {
+        ui_close_yandex();
+    } else if (s_playback_menu_open) {
+        s_playback_menu_open = false;
+        if (ui_player_state_view(&s_player_ui) != UI_PLAYER_VIEW_MENU) ui_render_player_state();
+    } else if (ui_network_wait_input(BOARD_INPUT_ACTION_ENCODER_LONG)) {
+        return;
+    } else if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
+        ui_close_station_list_to_source();
+    } else if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_SOURCE) {
+        ui_end_seek();
+        ui_end_fm_tune(true);
+        ui_click_gesture_cancel(&s_player_click);
+        ui_click_gesture_cancel(&s_like_click);
+        s_playback_menu_open = true;
+        ui_load_menu_screen();
+    }
+}
+
+static void ui_station_encoder_turn(audio_source_t source, bool forward)
+{
+    if (source == AUDIO_SOURCE_FM) {
+        player_snapshot_t snapshot;
+        player_control_get_snapshot(&snapshot);
+        if (snapshot.fm_scanning) return;
+        if (!ui_fm_tune_is_active(&s_fm_tune)) ui_begin_fm_tune();
+        s_fm_tune_following = false;
+        (void)ui_fm_tune_move(&s_fm_tune, forward ? 1 : -1, ui_tick_get_ms());
+    } else if (source == AUDIO_SOURCE_INTERNET_RADIO) {
+        const player_command_t command = {
+            .kind = forward ? PLAYER_COMMAND_NEXT_ITEM : PLAYER_COMMAND_PREVIOUS_ITEM,
+            .source = AUDIO_SOURCE_INTERNET_RADIO,
+            .item_index = PLAYER_ITEM_NONE,
+        };
+        // Relative steps are applied in queue order by the player task.
+        if (!player_control_post(&command)) ESP_LOGW(TAG, "station step queue full");
+    }
+}
+
 static void ui_handle_input(board_input_action_t action)
 {
     /* Before the screensaver, and from every screen: holding F1 means sleep
@@ -7902,12 +8041,36 @@ static void ui_handle_input(board_input_action_t action)
         s_alarm_boot_dark = false;
         ui_backlight_apply(s_device_settings.brightness);
     }
-    /* A press that only wakes the screensaver goes no further: with the panel
-     * dark nobody could see what it would have done. */
-    if (ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms()) ||
-        peeked) {
+    const bool volume_knob = action == BOARD_INPUT_ACTION_VOLUME_ENCODER_UP ||
+                             action == BOARD_INPUT_ACTION_VOLUME_ENCODER_DOWN;
+    const bool panel_mute = action == BOARD_INPUT_ACTION_PANEL_MUTE;
+    const bool panel_quick_toggle = action == BOARD_INPUT_ACTION_PANEL_QUICK_TOGGLE;
+    const bool woke = ui_screensaver_wake(&s_saver, s_device_settings.screensaver, ui_tick_get_ms()) || peeked;
+    if (volume_knob) {
+        const int step = ui_encoder_volume_step();
+        ui_volume_step(action == BOARD_INPUT_ACTION_VOLUME_ENCODER_UP ? step : -step);
         return;
     }
+    if (panel_mute) {
+        ui_mute_toggle();
+        return;
+    }
+    if (woke && !panel_quick_toggle) return;
+
+    const bool station_turn = action == BOARD_INPUT_ACTION_STATION_ENCODER_LEFT ||
+                            action == BOARD_INPUT_ACTION_STATION_ENCODER_RIGHT;
+    const bool panel_ok = action == BOARD_INPUT_ACTION_PANEL_OK;
+    const bool panel_back = action == BOARD_INPUT_ACTION_PANEL_MENU_BACK;
+    if (station_turn) {
+        action = action == BOARD_INPUT_ACTION_STATION_ENCODER_RIGHT ? BOARD_INPUT_ACTION_ENCODER_RIGHT
+                                                        : BOARD_INPUT_ACTION_ENCODER_LEFT;
+    } else if (panel_ok) {
+        action = BOARD_INPUT_ACTION_ENCODER_BUTTON;
+    } else if (panel_quick_toggle) {
+        if (s_ota_visible) return;
+        action = BOARD_INPUT_ACTION_QUICK_MENU;
+    }
+
     action = ui_remote_keys_apply(action);
     if (action == BOARD_INPUT_ACTION_NONE) return;
     if (ui_ota_handle_input(action)) return;
@@ -7918,8 +8081,13 @@ static void ui_handle_input(board_input_action_t action)
      * screen's own handler. The settings screen is the exception: there the
      * knob is already spoken for row by row, and a window over that list would
      * cover the very rows it duplicates. */
-    if (!s_settings_open) {
+    if (!s_settings_open || s_quick.open || panel_quick_toggle) {
         const bool quick_was_open = s_quick.open;
+        if (panel_back && quick_was_open) {
+            ui_quick_menu_close(&s_quick);
+            ui_quick_hide();
+            return;
+        }
         switch (ui_quick_menu_handle(&s_quick, action, ui_tick_get_ms())) {
         case UI_QUICK_RESULT_OPENED:
             ui_quick_show();
@@ -7943,6 +8111,9 @@ static void ui_handle_input(board_input_action_t action)
             ui_quick_apply_step(1);
             ui_quick_refresh();
             return;
+        case UI_QUICK_RESULT_ACTIVATE:
+            ui_quick_fm_action(s_quick.item);
+            return;
         default:
             break;
         }
@@ -7956,6 +8127,10 @@ static void ui_handle_input(board_input_action_t action)
      * opening under their hands a second later is not something they asked
      * for. */
     s_dlna_resume_waiting = false;
+    if (panel_back) {
+        ui_panel_menu_back();
+        return;
+    }
 
     // Settings sits outside the player's view state: it shows no source and
     // starts nothing, so making it a fourth view would put an entry in every
@@ -8041,7 +8216,7 @@ static void ui_handle_input(board_input_action_t action)
         return;
     }
     if (ui_network_wait_input(action)) return;
-    if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
+    if (!s_playback_menu_open && ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_STATION_LIST) {
         station_list_note_activity(&s_station_list, ui_tick_get_ms());
         if (action == BOARD_INPUT_ACTION_ENCODER_LONG) {
             // Same gesture as on the player screen: hold to leave and stop.
@@ -8184,11 +8359,20 @@ static void ui_handle_input(board_input_action_t action)
         }
         return;
     }
-    if (ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_SOURCE) {
+    if (!s_playback_menu_open && ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_SOURCE) {
         const audio_source_t source = ui_player_state_source(&s_player_ui);
         const bool has_list = audio_source_is_stations(source) ||
                               audio_source_is_files(source) ||
                               source == AUDIO_SOURCE_DLNA || source == AUDIO_SOURCE_FM;
+        if (panel_ok && !ui_seek_is_active(&s_player_seek)) {
+            ui_end_fm_tune(true);
+            if (has_list) ui_open_source_list(source);
+            return;
+        }
+        if (station_turn && !ui_seek_is_active(&s_player_seek)) {
+            ui_station_encoder_turn(source, action == BOARD_INPUT_ACTION_ENCODER_RIGHT);
+            return;
+        }
         if (ui_fm_tune_input(action)) return;
         if (ui_seek_is_active(&s_player_seek)) {
             // Scrubbing owns the knob and the press while it is open, so the
@@ -8565,7 +8749,7 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     const bool wifi_changed = snapshot->wifi_connected != s_last_wifi_connected;
     s_last_wifi_connected = snapshot->wifi_connected;
     if (wifi_changed) ui_refresh_home_screen();
-    if (ui_network_lost_for_good(snapshot)) {
+    if (ui_network_lost_for_good(snapshot) && !s_playback_menu_open) {
         ui_wait_for_network_on_player(snapshot->active_source);
         return;
     }
@@ -8605,7 +8789,7 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     }
     if (snapshot->active_source != AUDIO_SOURCE_FM) {
         s_fm_tune_entry_pending = true;
-    } else if (s_fm_tune_entry_pending) {
+    } else if (s_fm_tune_entry_pending && board_config_get()->controls != CONTROLS_DUAL_ENCODER) {
         /* Once per time FM is chosen: the mode can be left and the source
          * stay, and it must not come back by itself. Kept until the tuner has
          * a frequency to begin from. */
@@ -8633,7 +8817,7 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
         ui_render_player_state();
     }
 
-    if (s_files_list_open_requested &&
+    if (!s_playback_menu_open && s_files_list_open_requested &&
         (audio_source_is_files(ui_player_state_source(&s_player_ui)) ||
          ui_list_shows_dlna()) &&
         ui_player_state_view(&s_player_ui) == UI_PLAYER_VIEW_SOURCE &&
@@ -8676,7 +8860,7 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
     if (s_waiting_for_source_item && snapshot->active_item_index != PLAYER_ITEM_NONE) {
         s_waiting_for_source_item = false;
     }
-    if (s_waiting_for_source_item &&
+    if (!s_playback_menu_open && s_waiting_for_source_item &&
         ui_player_state_list_is_the_only_screen(snapshot->active_source,
                                                 snapshot->active_item_index,
                                                 snapshot->playback_state,
@@ -9732,7 +9916,8 @@ static void ui_touch_drag_quick(const ui_touch_event_t *event)
         return;
     }
     if (event->axis == UI_TOUCH_AXIS_HORIZONTAL) {
-        if (!s_quick.editing && !ui_quick_item_is_switch(s_quick.item)) {
+        if (!s_quick.editing && !ui_quick_item_is_switch(s_quick.item) &&
+            !ui_quick_item_is_action(s_quick.item)) {
             ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
         }
         if (s_quick.editing) {
@@ -10172,7 +10357,8 @@ static void ui_task(void *arg)
         if (ui_volume_commit_due(s_volume_save_pending, s_volume_changed_ms,
                                  ui_tick_get_ms(), UI_VOLUME_SETTLE_MS)) {
             s_volume_save_pending = false;
-            (void)device_settings_save_volume_later(&s_device_settings, board_audio_volume());
+            const uint8_t volume = s_muted ? s_muted_level : board_audio_volume();
+            (void)device_settings_save_volume_later(&s_device_settings, volume);
         }
         if (ui_volume_commit_due(s_brightness_save_pending, s_brightness_changed_ms,
                                  ui_tick_get_ms(), UI_BRIGHTNESS_SETTLE_MS)) {

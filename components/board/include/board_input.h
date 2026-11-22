@@ -101,6 +101,14 @@ typedef enum {
     /* The remote's look at the time and the weather (ui_peek.h): not a
      * press at the screen, so it wakes nothing. */
     BOARD_INPUT_ACTION_PEEK,
+    BOARD_INPUT_ACTION_VOLUME_ENCODER_UP,
+    BOARD_INPUT_ACTION_VOLUME_ENCODER_DOWN,
+    BOARD_INPUT_ACTION_STATION_ENCODER_LEFT,
+    BOARD_INPUT_ACTION_STATION_ENCODER_RIGHT,
+    BOARD_INPUT_ACTION_PANEL_OK,
+    BOARD_INPUT_ACTION_PANEL_MUTE,
+    BOARD_INPUT_ACTION_PANEL_MENU_BACK,
+    BOARD_INPUT_ACTION_PANEL_QUICK_TOGGLE,
 } board_input_action_t;
 
 typedef struct {
@@ -113,6 +121,7 @@ typedef struct {
 typedef struct {
     uint8_t last_state;
     int8_t transition_sum;
+    uint8_t edges;
 } board_encoder_decoder_t;
 
 typedef struct {
@@ -142,6 +151,8 @@ void board_input_debouncer_init_from_level(board_input_debouncer_t *debouncer, i
                                            uint8_t required_samples);
 bool board_input_debouncer_update(board_input_debouncer_t *debouncer, bool sampled_pressed);
 void board_encoder_decoder_init(board_encoder_decoder_t *decoder, int left_level, int right_level);
+void board_encoder_decoder_init_edges(board_encoder_decoder_t *decoder, int left_level,
+                                      int right_level, uint8_t edges);
 board_input_action_t board_encoder_decoder_update(board_encoder_decoder_t *decoder, int left_level,
                                                   int right_level);
 /* The hardware counter's side: `counted` is how far the quadrature count moved
@@ -150,6 +161,8 @@ board_input_action_t board_encoder_decoder_update(board_encoder_decoder_t *decod
  * the remainder in `pending` for the next call, so a detent split across two
  * reads is still one detent. */
 int32_t board_encoder_detents_take(int32_t *pending, int32_t counted);
+int32_t board_encoder_detents_take_edges(int32_t *pending, int32_t counted, uint8_t edges);
+int32_t board_encoder_count_delta(int32_t previous, int32_t current);
 void board_button_gesture_init(board_button_gesture_t *gesture);
 void board_button_repeat_init(board_button_repeat_t *repeat);
 /* True when the button, debounced `pressed`, owes a step now; `elapsed_ms`

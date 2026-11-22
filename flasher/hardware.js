@@ -29,7 +29,8 @@
   const ENCODER_LINES = ['encoder_right', 'encoder_left', 'encoder_button'];
   const asButtons = () => String(values.encoder_buttons) === '1';
   const FIELD_LABEL = (key) =>
-    t(ENCODER_LINES.includes(key) && asButtons() ? `hw.f.${key}.buttons` : `hw.f.${key}`);
+    t(ENCODER_LINES.includes(key) && values.controls === 'dual_encoder' ? `hw.f.${key}.dual_encoder` :
+      ENCODER_LINES.includes(key) && asButtons() ? `hw.f.${key}.buttons` : `hw.f.${key}`);
   const OPTION_LABEL = (value) => {
     const key = `hw.opt.${value}`;
     const text = t(key);
@@ -67,7 +68,7 @@
   function setValue(key, value) {
     values = hw.changeValue(values, key, value);
     // The encoder's rows and pins are renamed with it.
-    if (key === 'encoder_buttons') {
+    if (key === 'encoder_buttons' || key === 'controls') {
       build();
       saveDraft();
       return;
@@ -394,7 +395,8 @@
      has one ("TFT CS" rather than "Выбор кристалла экрана"), the row's label
      otherwise. */
   function shortSignal(key) {
-    const name = ENCODER_LINES.includes(key) && asButtons() ? `hw.s.${key}.buttons` : `hw.s.${key}`;
+    const name = ENCODER_LINES.includes(key) && values.controls === 'dual_encoder' ? `hw.s.${key}.dual_encoder` :
+      ENCODER_LINES.includes(key) && asButtons() ? `hw.s.${key}.buttons` : `hw.s.${key}`;
     const short = t(name);
     return short === name ? FIELD_LABEL(key) : short;
   }

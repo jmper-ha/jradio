@@ -109,6 +109,15 @@ static const field_t k_fields[] = {
      * before that says 0 still loads - and gets them. */
     {"encoder_pullups", KIND_IGNORED, DEV_ENCODER, AT(encoder_pullups), false, "1", {{NULL, 0}}},
     {"encoder_buttons", KIND_BOOL, DEV_ENCODER, AT(encoder_buttons), false, NULL, {{NULL, 0}}},
+    {"controls", KIND_CHOICE, DEV_ENCODER, AT(controls), false, NULL,
+     {{"legacy", CONTROLS_LEGACY}, {"dual_encoder", CONTROLS_DUAL_ENCODER}, {NULL, 0}}},
+    {"volume_encoder_a", KIND_OPT_PIN, DEV_ENCODER, AT(volume_encoder_a), false, NULL, {{NULL, 0}}},
+    {"volume_encoder_b", KIND_OPT_PIN, DEV_ENCODER, AT(volume_encoder_b), false, NULL, {{NULL, 0}}},
+    {"encoder_edges", KIND_CHOICE, DEV_ENCODER, AT(encoder_edges), false, NULL,
+     {{"2", 2}, {"4", 4}, {NULL, 0}}},
+    {"volume_encoder_edges", KIND_CHOICE, DEV_ENCODER, AT(volume_encoder_edges), false, NULL,
+     {{"2", 2}, {"4", 4}, {NULL, 0}}},
+    {"button_menu", KIND_OPT_PIN, DEV_BUTTONS, AT(button_menu), false, NULL, {{NULL, 0}}},
     {"button_sleep", KIND_OPT_PIN, DEV_BUTTONS, AT(button_sleep), false, NULL, {{NULL, 0}}},
     {"button_quick_menu", KIND_OPT_PIN, DEV_BUTTONS, AT(button_quick_menu), false, NULL,
      {{NULL, 0}}},
@@ -205,6 +214,16 @@ static bool is_pin_kind(field_kind_t kind)
     return kind == KIND_PIN || kind == KIND_OPT_PIN || kind == KIND_FIXED_PIN;
 }
 
+void board_config_clear_control_extensions(board_config_t *config)
+{
+    config->controls = CONTROLS_LEGACY;
+    config->volume_encoder_a = BOARD_PIN_NONE;
+    config->volume_encoder_b = BOARD_PIN_NONE;
+    config->encoder_edges = 4;
+    config->volume_encoder_edges = 4;
+    config->button_menu = BOARD_PIN_NONE;
+}
+
 void board_config_clear(board_config_t *config)
 {
     if (config == NULL) return;
@@ -212,6 +231,7 @@ void board_config_clear(board_config_t *config)
     for (size_t i = 0U; i < FIELD_COUNT; ++i) {
         if (is_pin_kind(k_fields[i].kind)) *pin_at(config, &k_fields[i]) = BOARD_PIN_NONE;
     }
+    board_config_clear_control_extensions(config);
     config->spi2_sclk = 12;
     config->spi2_mosi = 11;
     config->encoder_pullups = 1U;
@@ -425,6 +445,7 @@ static bool is_bus(device_t device)
 static bool signal_live(const board_config_t *config, const field_t *field)
 {
     if (!is_pin_kind(field->kind)) return false;
+    if (field->offset == AT(button_menu) && config->controls != CONTROLS_DUAL_ENCODER) return false;
     if (!device_enabled(config, field->device)) return false;
     if (is_bus(field->device) && !bus_used(config, field->device)) return false;
     /* The two lines only the tuner's sound needs are not on the bus until it
@@ -468,8 +489,12 @@ static size_t collect_signals(const board_config_t *config, signal_t *signals)
         const field_t *field = &k_fields[i];
         if (!signal_live(config, field)) continue;
         const int8_t value = *pin_at(config, field);
-        signals[count++] = (signal_t){field->key, field->device, value >= 0 ? value : -1,
-                                      field->kind == KIND_PIN};
+        const bool dual_encoder = config->controls == CONTROLS_DUAL_ENCODER;
+        const bool required = field->kind == KIND_PIN ||
+            (field->offset == AT(volume_encoder_a) && (dual_encoder || config->volume_encoder_b >= 0)) ||
+            (field->offset == AT(volume_encoder_b) && (dual_encoder || config->volume_encoder_a >= 0)) ||
+            (field->offset == AT(button_menu) && dual_encoder);
+        signals[count++] = (signal_t){field->key, field->device, value >= 0 ? value : -1, required};
     }
     return count;
 }
@@ -507,6 +532,10 @@ void board_config_validate(const board_config_t *config, board_config_report_t *
     if (report == NULL) return;
     memset(report, 0, sizeof(*report));
     if (config == NULL) return;
+
+    if (config->controls == CONTROLS_DUAL_ENCODER && config->encoder_buttons == 1) {
+        add_issue(report, false, BOARD_ISSUE_BAD_VALUE, "encoder_buttons", NULL, -1);
+    }
 
     signal_t signals[SIGNALS_MAX];
     const size_t count = collect_signals(config, signals);

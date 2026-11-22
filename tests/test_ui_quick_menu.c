@@ -459,8 +459,25 @@ static void test_null_is_survivable(void)
     ui_quick_menu_set_visible(NULL, UI_QUICK_ITEM_SLEEP, true);
 }
 
+static void test_fm_action_activates_without_entering_edit_mode(void)
+{
+    ui_quick_menu_t state;
+    ui_quick_menu_init(&state);
+    assert(!ui_quick_menu_item_visible(&state, UI_QUICK_ITEM_FM_SCAN));
+    ui_quick_menu_set_visible(&state, UI_QUICK_ITEM_FM_SCAN, true);
+    assert(ui_quick_menu_open(&state, 0));
+    while (ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_RIGHT, 1) ==
+           UI_QUICK_RESULT_MOVED) {
+    }
+    assert(state.item == UI_QUICK_ITEM_FM_SCAN);
+    assert(ui_quick_menu_handle(&state, BOARD_INPUT_ACTION_ENCODER_BUTTON, 2) ==
+           UI_QUICK_RESULT_ACTIVATE);
+    assert(!state.editing);
+}
+
 int main(void)
 {
+    test_fm_action_activates_without_entering_edit_mode();
     test_the_button_opens_and_closes();
     test_the_knob_walks_the_rows_and_stops_at_the_ends();
     test_the_click_hands_the_knob_to_the_value();

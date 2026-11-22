@@ -43,6 +43,10 @@ typedef enum {
      * number per station means something for. */
     UI_QUICK_ITEM_LEVEL_NUDGE,
     UI_QUICK_ITEM_BT_OUTPUT,
+    UI_QUICK_ITEM_FM_SEEK_UP,
+    UI_QUICK_ITEM_FM_SEEK_DOWN,
+    UI_QUICK_ITEM_FM_SCAN,
+    UI_QUICK_ITEM_FM_SAVE,
     UI_QUICK_ITEM_COUNT,
 } ui_quick_item_t;
 
@@ -93,6 +97,7 @@ typedef enum {
     /* The click on a switch row: flip it. A switch has two states, so taking
      * the knob for it first and turning it after was a step too many. */
     UI_QUICK_RESULT_TOGGLE,
+    UI_QUICK_RESULT_ACTIVATE,
 } ui_quick_result_t;
 
 /* How long an untouched panel stays up.
@@ -118,6 +123,7 @@ bool ui_quick_menu_up_closes(const ui_quick_menu_t *state);
 
 void ui_quick_menu_set_visible(ui_quick_menu_t *state, ui_quick_item_t item, bool visible);
 bool ui_quick_menu_item_visible(const ui_quick_menu_t *state, ui_quick_item_t item);
+bool ui_quick_item_is_action(ui_quick_item_t item);
 uint8_t ui_quick_menu_visible_count(const ui_quick_menu_t *state);
 
 bool ui_quick_menu_open(ui_quick_menu_t *state, uint32_t now_ms);

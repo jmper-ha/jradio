@@ -14,6 +14,9 @@
  * something the board wiring can tell us.
  */
 
+#define CONTROLS_LEGACY 0
+#define CONTROLS_DUAL_ENCODER 1
+
 #define DISPLAY_NONE 0
 /* ILI9341 controller over SPI, in the two ways this firmware can drive it.
  *

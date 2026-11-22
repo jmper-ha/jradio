@@ -188,6 +188,7 @@ ui_quick_result_t ui_quick_menu_handle(ui_quick_menu_t *state,
         ui_quick_menu_close(state);
         return UI_QUICK_RESULT_CLOSED;
     case BOARD_INPUT_ACTION_ENCODER_BUTTON:
+        if (ui_quick_item_is_action(state->item)) return UI_QUICK_RESULT_ACTIVATE;
         if (!state->editing && ui_quick_item_is_switch(state->item)) {
             return UI_QUICK_RESULT_TOGGLE;
         }
@@ -265,6 +266,11 @@ bool ui_quick_item_is_switch(ui_quick_item_t item)
            item == UI_QUICK_ITEM_BT_OUTPUT;
 }
 
+bool ui_quick_item_is_action(ui_quick_item_t item)
+{
+    return item >= UI_QUICK_ITEM_FM_SEEK_UP && item <= UI_QUICK_ITEM_FM_SAVE;
+}
+
 const char *ui_quick_item_label(ui_quick_item_t item, device_language_t language)
 {
     switch (item) {
@@ -279,6 +285,10 @@ const char *ui_quick_item_label(ui_quick_item_t item, device_language_t language
     case UI_QUICK_ITEM_TREBLE: return device_text(DEVICE_TEXT_ROW_TONE_TREBLE, language);
     case UI_QUICK_ITEM_LOUDNESS: return device_text(DEVICE_TEXT_QUICK_LOUDNESS, language);
     case UI_QUICK_ITEM_LEVEL_NUDGE: return device_text(DEVICE_TEXT_QUICK_LEVEL_NUDGE, language);
+    case UI_QUICK_ITEM_FM_SEEK_UP: return device_text(DEVICE_TEXT_FM_SEEK_UP, language);
+    case UI_QUICK_ITEM_FM_SEEK_DOWN: return device_text(DEVICE_TEXT_FM_SEEK_DOWN, language);
+    case UI_QUICK_ITEM_FM_SCAN: return device_text(DEVICE_TEXT_FM_SCAN, language);
+    case UI_QUICK_ITEM_FM_SAVE: return device_text(DEVICE_TEXT_FM_SAVE, language);
     default: break;
     }
     return "";

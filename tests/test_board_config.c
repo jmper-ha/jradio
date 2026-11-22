@@ -274,8 +274,27 @@ static void test_which_dacs_a_binary_takes(void)
     assert(!board_config_dac_fits(DAC_SSM3582, DAC_UDA1334A));
 }
 
+static void test_old_partition_does_not_inherit_the_dual_encoder_wiring(void)
+{
+    board_config_t config;
+    board_config_compiled(&config);
+    config.controls = CONTROLS_DUAL_ENCODER;
+    config.volume_encoder_a = 13;
+    config.volume_encoder_b = 14;
+    config.volume_encoder_edges = 2;
+    config.button_menu = 21;
+    board_config_clear_control_extensions(&config);
+    static const char old[] = "encoder_left,7\nencoder_right,5\nbutton_sleep,21\n";
+    board_config_parse_csv(old, sizeof(old) - 1, &config, NULL);
+    assert(config.controls == CONTROLS_LEGACY);
+    assert(config.volume_encoder_a == BOARD_PIN_NONE && config.volume_encoder_b == BOARD_PIN_NONE);
+    assert(config.button_menu == BOARD_PIN_NONE && config.button_sleep == 21);
+    assert(config.volume_encoder_edges == 4);
+}
+
 int main(void)
 {
+    test_old_partition_does_not_inherit_the_dual_encoder_wiring();
     test_which_dacs_a_binary_takes();
     test_pull_ups_off_in_an_old_file_are_read_past();
     test_the_cases_shared_with_the_editor();

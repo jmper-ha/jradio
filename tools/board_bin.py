@@ -153,6 +153,12 @@ def board_csv(macros):
         # Always on since 2026-10-20 (board_options.h); the key stays for old readers.
         ("encoder_pullups", "1"),
         ("encoder_buttons", switch(macros, "ENCODER_AS_BUTTONS", 0)),
+        ("controls", choice(macros, "CONTROLS", "CONTROLS_", ["legacy", "dual_encoder"]) if defined("CONTROLS") else "legacy"),
+        ("volume_encoder_a", pin(macros, "VOLUME_ENCODER_A_GPIO")),
+        ("volume_encoder_b", pin(macros, "VOLUME_ENCODER_B_GPIO")),
+        ("encoder_edges", str(value(macros, "ENCODER_EDGES_PER_DETENT") if defined("ENCODER_EDGES_PER_DETENT") else 4)),
+        ("volume_encoder_edges", str(value(macros, "VOLUME_ENCODER_EDGES_PER_DETENT") if defined("VOLUME_ENCODER_EDGES_PER_DETENT") else 4)),
+        ("button_menu", pin(macros, "BUTTON_MENU_GPIO")),
         ("button_sleep", pin(macros, "BUTTON_SLEEP_GPIO")),
         ("button_quick_menu", pin(macros, "BUTTON_QUICK_MENU_GPIO")),
         ("button_prev", pin(macros, "BUTTON_PREV_GPIO")),

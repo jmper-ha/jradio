@@ -74,6 +74,8 @@ void board_config_load(void)
 
     board_config_t candidate;
     board_config_compiled(&candidate);
+    // Older partitions must not turn on the compiled board's extra controls.
+    board_config_clear_control_extensions(&candidate);
     board_config_parse_result_t parsed;
     board_config_parse_csv(text, length, &candidate, &parsed);
     free(blob);

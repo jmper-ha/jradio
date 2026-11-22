@@ -88,6 +88,12 @@ typedef struct {
     uint8_t encoder_pullups;
     // Three buttons on the encoder's lines instead of the encoder; see board_options.h.
     uint8_t encoder_buttons;
+    uint8_t controls;
+    int8_t volume_encoder_a;
+    int8_t volume_encoder_b;
+    uint8_t encoder_edges;
+    uint8_t volume_encoder_edges;
+    int8_t button_menu;
     int8_t button_sleep;
     int8_t button_quick_menu;
     int8_t button_prev;
@@ -206,6 +212,7 @@ typedef struct {
 /* Every pin none, every switch off, the fixed buses at their one value. What
  * a parse starts from when nothing else is given. */
 void board_config_clear(board_config_t *config);
+void board_config_clear_control_extensions(board_config_t *config);
 
 /* The board this firmware was built for, out of board_options.h: what a key
  * the file leaves out falls back to. */

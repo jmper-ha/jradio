@@ -72,6 +72,25 @@ int main(void)
     assert(board_encoder_detents_take(&pending, 3) == 0 && pending == 0);
     assert(board_encoder_detents_take(NULL, 4) == 0);
 
+    board_encoder_decoder_t volume;
+    board_encoder_decoder_init_edges(&volume, 1, 1, 2);
+    assert(board_encoder_decoder_update(&volume, 1, 0) == BOARD_INPUT_ACTION_NONE);
+    assert(board_encoder_decoder_update(&encoder, 0, 1) == BOARD_INPUT_ACTION_NONE);
+    assert(board_encoder_decoder_update(&volume, 0, 0) == BOARD_INPUT_ACTION_ENCODER_RIGHT);
+    assert(board_encoder_decoder_update(&encoder, 0, 0) == BOARD_INPUT_ACTION_NONE);
+    assert(board_encoder_decoder_update(&volume, 1, 0) == BOARD_INPUT_ACTION_NONE);
+    assert(board_encoder_decoder_update(&encoder, 1, 0) == BOARD_INPUT_ACTION_NONE);
+    assert(board_encoder_decoder_update(&volume, 1, 1) == BOARD_INPUT_ACTION_ENCODER_LEFT);
+    assert(board_encoder_decoder_update(&encoder, 1, 1) == BOARD_INPUT_ACTION_ENCODER_LEFT);
+
+    int32_t volume_pending = 0;
+    assert(board_encoder_detents_take_edges(&volume_pending, 1, 2) == 0);
+    assert(board_encoder_detents_take(&pending, -3) == 0);
+    assert(board_encoder_detents_take_edges(&volume_pending, -1, 2) == 0 && volume_pending == 0);
+    assert(board_encoder_detents_take(&pending, -1) == -1 && pending == 0);
+    assert(board_encoder_count_delta(INT32_MAX - 1, INT32_MIN + 2) == 4);
+    assert(board_encoder_count_delta(INT32_MIN + 2, INT32_MAX - 1) == -4);
+
     puts("board_input tests passed");
     return 0;
 }

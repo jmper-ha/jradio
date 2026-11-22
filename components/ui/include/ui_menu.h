@@ -95,6 +95,9 @@ bool ui_menu_select_source(ui_menu_state_t *state, audio_source_t source);
 bool ui_menu_select_item(ui_menu_state_t *state, ui_menu_item_t item);
 uint8_t ui_menu_selected_index(const ui_menu_state_t *state);
 const char *ui_menu_item_label(ui_menu_item_t item, device_language_t language);
+/* The item shown rank-th from the top, visible or not - the screens' order,
+ * which is not the enum's. */
+ui_menu_item_t ui_menu_item_in_order(uint8_t rank);
 audio_source_t ui_menu_activate(const ui_menu_state_t *state);
 
 /* True when the highlighted row opens the settings screen instead of starting

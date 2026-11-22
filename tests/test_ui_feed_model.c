@@ -135,6 +135,7 @@ static void test_the_carousel_skips_a_hidden_item(void)
     /* Whichever icon sits before Yandex Music on this board: naming one would
      * tie the test to a part the board may not carry. */
     const uint8_t before = (uint8_t)ui_menu_item_step(UI_MENU_ITEM_YANDEX_MUSIC, -1, ALL);
+    const uint8_t after = (uint8_t)ui_menu_item_step(UI_MENU_ITEM_YANDEX_MUSIC, 1, ALL);
 
     ui_feed_model_init(&model, before);
     assert(ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC,
@@ -142,14 +143,14 @@ static void test_the_carousel_skips_a_hidden_item(void)
     ui_feed_model_move(&model, 1);
     assert(ui_feed_model_selected(&model) == UI_FEED_YANDEX);
 
-    /* Same step, with the item switched off: straight past it to Settings,
+    /* Same step, with the item switched off: straight past it to the one after,
      * which is what the list home screen does with the same rule. */
     ui_feed_model_init(&model, before);
     ui_feed_model_set_source_visible(&model, UI_MENU_ITEM_YANDEX_MUSIC, false);
     assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC,
                                     ui_feed_model_visible_mask(&model)));
     ui_feed_model_move(&model, 1);
-    assert(ui_feed_model_selected(&model) == UI_FEED_SETTINGS);
+    assert(ui_feed_model_selected(&model) == (ui_feed_item_t)after);
     ui_feed_model_move(&model, -1);
     assert(ui_feed_model_selected(&model) == (ui_feed_item_t)before);
 

@@ -28,6 +28,29 @@ static const ui_menu_item_config_t s_items[UI_MENU_ITEM_COUNT] = {
     [UI_MENU_ITEM_SETTINGS] = {.label = DEVICE_TEXT_SETTINGS, .source = AUDIO_SOURCE_NONE},
 };
 
+/* The order the home screen, the carousel and the player's row of sources show
+ * the items in, which is not the enum's: the network's sources first, then the
+ * drives, then what is wired to the board (Ден, 2026-11-22). A table rather than
+ * renumbered items, so nothing that names an item by number moves with it. */
+static const ui_menu_item_t s_order[UI_MENU_ITEM_COUNT] = {
+    UI_MENU_ITEM_INTERNET_RADIO, UI_MENU_ITEM_YANDEX_MUSIC, UI_MENU_ITEM_DLNA,
+    UI_MENU_ITEM_USB_FILES,      UI_MENU_ITEM_SD_CARD,      UI_MENU_ITEM_BLUETOOTH,
+    UI_MENU_ITEM_FM_RADIO,       UI_MENU_ITEM_SETTINGS,
+};
+
+ui_menu_item_t ui_menu_item_in_order(uint8_t rank)
+{
+    return rank < UI_MENU_ITEM_COUNT ? s_order[rank] : UI_MENU_ITEM_SETTINGS;
+}
+
+static uint8_t ui_menu_rank(ui_menu_item_t item)
+{
+    for (uint8_t rank = 0U; rank < UI_MENU_ITEM_COUNT; ++rank) {
+        if (s_order[rank] == item) return rank;
+    }
+    return 0U;
+}
+
 /* What this firmware was built with. Internet radio and Settings answer yes
  * unconditionally: the radio needs no part beyond the Wi-Fi that is on the
  * chip, and a device with no way into Settings could not be configured. The
@@ -97,8 +120,8 @@ uint8_t ui_menu_visible_position(ui_menu_item_t item, ui_menu_visible_mask_t vis
 {
     if (!ui_menu_item_is_visible(item, visible)) return 0U;
     uint8_t position = 0U;
-    for (uint8_t index = 0U; index < (uint8_t)item; ++index) {
-        if (ui_menu_item_is_visible((ui_menu_item_t)index, visible)) position++;
+    for (uint8_t rank = 0U; rank < ui_menu_rank(item); ++rank) {
+        if (ui_menu_item_is_visible(s_order[rank], visible)) position++;
     }
     return position;
 }
@@ -106,9 +129,9 @@ uint8_t ui_menu_visible_position(ui_menu_item_t item, ui_menu_visible_mask_t vis
 ui_menu_item_t ui_menu_visible_item_at(uint8_t position, ui_menu_visible_mask_t visible)
 {
     uint8_t seen = 0U;
-    for (uint8_t index = 0U; index < UI_MENU_ITEM_COUNT; ++index) {
-        if (!ui_menu_item_is_visible((ui_menu_item_t)index, visible)) continue;
-        if (seen == position) return (ui_menu_item_t)index;
+    for (uint8_t rank = 0U; rank < UI_MENU_ITEM_COUNT; ++rank) {
+        if (!ui_menu_item_is_visible(s_order[rank], visible)) continue;
+        if (seen == position) return s_order[rank];
         seen++;
     }
     return UI_MENU_ITEM_INTERNET_RADIO;
@@ -128,15 +151,15 @@ ui_menu_item_t ui_menu_item_step(ui_menu_item_t item, int direction,
                                  ui_menu_visible_mask_t visible)
 {
     if (direction == 0 || item >= UI_MENU_ITEM_COUNT) return item;
-    uint8_t index = (uint8_t)item;
+    uint8_t rank = ui_menu_rank(item);
     /* Bounded rather than "until a visible one turns up": one always does
      * today, and a loop that trusts that is a hang on the day it does not. */
     for (uint8_t guard = 0U; guard < UI_MENU_ITEM_COUNT; ++guard) {
-        index = direction < 0 ? (index == 0U ? UI_MENU_ITEM_COUNT - 1U : (uint8_t)(index - 1U))
-                              : (uint8_t)((index + 1U) % UI_MENU_ITEM_COUNT);
-        if (ui_menu_item_is_visible((ui_menu_item_t)index, visible)) break;
+        rank = direction < 0 ? (rank == 0U ? UI_MENU_ITEM_COUNT - 1U : (uint8_t)(rank - 1U))
+                             : (uint8_t)((rank + 1U) % UI_MENU_ITEM_COUNT);
+        if (ui_menu_item_is_visible(s_order[rank], visible)) break;
     }
-    return (ui_menu_item_t)index;
+    return s_order[rank];
 }
 
 void ui_menu_init(ui_menu_state_t *state)

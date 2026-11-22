@@ -162,6 +162,7 @@ static void test_hiding_yandex_takes_its_row_out_of_the_run(void)
      * them. */
     const uint8_t row = ui_menu_visible_position(UI_MENU_ITEM_YANDEX_MUSIC, ALL);
     const ui_menu_item_t above = ui_menu_item_step(UI_MENU_ITEM_YANDEX_MUSIC, -1, ALL);
+    const ui_menu_item_t below = ui_menu_item_step(UI_MENU_ITEM_YANDEX_MUSIC, 1, ALL);
 
     ui_menu_set_source_visible(&state, UI_MENU_ITEM_YANDEX_MUSIC, false);
     assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC,
@@ -169,10 +170,11 @@ static void test_hiding_yandex_takes_its_row_out_of_the_run(void)
     assert(ui_menu_visible_count(WITHOUT(UI_MENU_ITEM_YANDEX_MUSIC)) == shown - 1U);
     assert(!ui_menu_item_is_visible(UI_MENU_ITEM_YANDEX_MUSIC, WITHOUT(UI_MENU_ITEM_YANDEX_MUSIC)));
 
-    /* Settings moves up into the row, and nothing above it moves. The rows are
-     * what the screen draws, so this is the whole of "the item disappeared". */
-    assert(ui_menu_visible_item_at(row, WITHOUT(UI_MENU_ITEM_YANDEX_MUSIC)) == UI_MENU_ITEM_SETTINGS);
-    assert(ui_menu_visible_position(UI_MENU_ITEM_SETTINGS, WITHOUT(UI_MENU_ITEM_YANDEX_MUSIC)) == row);
+    /* The next item moves up into the row, and nothing above it moves. The rows
+     * are what the screen draws, so this is the whole of "the item
+     * disappeared". */
+    assert(ui_menu_visible_item_at(row, WITHOUT(UI_MENU_ITEM_YANDEX_MUSIC)) == below);
+    assert(ui_menu_visible_position(below, WITHOUT(UI_MENU_ITEM_YANDEX_MUSIC)) == row);
     assert(ui_menu_visible_position(above, WITHOUT(UI_MENU_ITEM_YANDEX_MUSIC)) == row - 1U);
 
     /* The encoder steps over the gap rather than into it, in both directions. */
@@ -304,8 +306,31 @@ static void test_select_item_takes_only_a_row_on_screen(void)
     assert(!ui_menu_select_item(NULL, UI_MENU_ITEM_SETTINGS));
 }
 
+/* The network's sources, the drives, what is wired to the board, Settings -
+ * the screens' order, whatever the enum's is. */
+static void test_the_screens_order_groups_the_sources(void)
+{
+    const ui_menu_item_t expected[UI_MENU_ITEM_COUNT] = {
+        UI_MENU_ITEM_INTERNET_RADIO, UI_MENU_ITEM_YANDEX_MUSIC, UI_MENU_ITEM_DLNA,
+        UI_MENU_ITEM_USB_FILES,      UI_MENU_ITEM_SD_CARD,      UI_MENU_ITEM_BLUETOOTH,
+        UI_MENU_ITEM_FM_RADIO,       UI_MENU_ITEM_SETTINGS,
+    };
+    for (uint8_t rank = 0U; rank < UI_MENU_ITEM_COUNT; ++rank) {
+        assert(ui_menu_item_in_order(rank) == expected[rank]);
+    }
+    // What a build shows keeps that order, and stepping walks it.
+    ui_menu_item_t item = ui_menu_visible_item_at(0U, ALL);
+    for (uint8_t row = 0U; row < ui_menu_visible_count(ALL); ++row) {
+        assert(ui_menu_visible_item_at(row, ALL) == item);
+        assert(ui_menu_visible_position(item, ALL) == row);
+        item = ui_menu_item_step(item, 1, ALL);
+    }
+    assert(item == ui_menu_visible_item_at(0U, ALL));
+}
+
 int main(void)
 {
+    test_the_screens_order_groups_the_sources();
     test_encoder_navigation_wraps();
     test_activate_maps_current_source();
     test_select_source_moves_menu_cursor();

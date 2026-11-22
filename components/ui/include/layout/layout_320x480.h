@@ -74,6 +74,22 @@
 #define UI_SRC_ROW_ARTIST 300
 #define UI_SRC_RULE_TOP 348
 #define UI_SRC_VU_Y 360
+/* The row of sources in the 24 px between the performer (to 324) and the rule:
+ * the landscape shape's 36 px frames on its pitch of 42, a line lower at 22,
+ * centred under the centred rows. On FM the radiotext has this place, so the
+ * row goes under it and the meter moves down to make room, its gaps 6 px
+ * rather than 11: the bottom rule then ends at 415, short of the levelling
+ * reading at 421 (Ден's idea, 2026-11-22). */
+#define UI_SRC_SOURCE_ROW 1
+#define UI_SRC_SOURCE_X UI_SRC_TEXT_X
+#define UI_SRC_SOURCE_Y 325
+#define UI_SRC_SOURCE_W 36
+#define UI_SRC_SOURCE_H 22
+#define UI_SRC_SOURCE_PITCH 42
+#define UI_SRC_SOURCE_CENTRED 1
+#define UI_SRC_SOURCE_FM_Y 350
+#define UI_SRC_FM_RULE_TOP 373
+#define UI_SRC_FM_VU_Y 380
 
 /* The footer, left to right: the buffer or the time on the left margin, the
  * like mark in the gap neither reading reaches, then the volume. "01:24 /

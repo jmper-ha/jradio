@@ -353,6 +353,34 @@ static ui_scroller_t s_source_title;
 static ui_scroller_t s_fm_text;
 #endif
 static lv_obj_t *s_source_stream;
+#if UI_SRC_SOURCE_ROW
+/* The row of sources, left to right in the carousel's order, the ones it does
+ * not show left out. Slot by slot: the frame, its mark, and the source it
+ * stands for. What was last drawn - the carousel's mask and the lit source -
+ * so a pass that changes neither touches nothing. */
+static lv_obj_t *s_source_row_box[UI_SRC_SOURCE_MAX];
+static lv_obj_t *s_source_row_mark[UI_SRC_SOURCE_MAX];
+static audio_source_t s_source_row_source[UI_SRC_SOURCE_MAX];
+static ui_menu_visible_mask_t s_source_row_mask;
+static audio_source_t s_source_row_lit;
+static bool s_source_row_drawn;
+// Where each frame stands, for a tap to be found in.
+static int32_t s_source_row_px[UI_SRC_SOURCE_MAX];
+static int32_t s_source_row_py[UI_SRC_SOURCE_MAX];
+#if UI_SRC_SOURCE_FM_MOVES
+/* The meter's frame and its two letters, kept to be moved on FM: the blocks
+ * are s_source_vu already. */
+static lv_obj_t *s_source_rule_top;
+static lv_obj_t *s_source_rule_bottom;
+static lv_obj_t *s_source_vu_mark[2];
+#define UI_SRC_FM_RULE_BOTTOM \
+    (UI_SRC_FM_VU_Y + UI_SRC_VU_PITCH + UI_SRC_VU_BLOCK_H + (UI_SRC_FM_VU_Y - UI_SRC_FM_RULE_TOP - 1))
+_Static_assert(UI_SRC_FM_RULE_BOTTOM < UI_SRC_LEVEL_Y,
+               "on FM the meter's bottom rule runs into the levelling reading");
+#endif
+_Static_assert(UI_SRC_SOURCE_MAX == UI_FEED_ITEM_COUNT - 1,
+               "the row of sources is not one frame per carousel source");
+#endif
 static lv_obj_t *s_source_buffer;
 /* The same reading as a strip: one object, whose bars are drawn into it from
  * the model below rather than being objects of their own. Both faces exist for
@@ -3041,6 +3069,122 @@ static void ui_set_hidden(lv_obj_t *object, bool hidden)
         lv_obj_clear_flag(object, LV_OBJ_FLAG_HIDDEN);
     }
 }
+
+#if UI_SRC_SOURCE_ROW
+/* The lit frame is the source the player screen is drawing, not the
+ * snapshot's: while a select is confirmed the rest of the screen is already
+ * the new source's, and the row should not be the one thing still showing the
+ * old one. The row follows the carousel, so a source switched off in Settings
+ * leaves it at once - and with one source left there is no row: a lamp that
+ * is always lit says nothing. The frames line up with the rows above them,
+ * from the column's left edge or about its middle, however many there are. */
+#if UI_SRC_SOURCE_FM_MOVES
+/* The meter under the row on FM, which stands under the radiotext there, or
+ * back where every other source has it. */
+static void ui_place_meter(bool fm)
+{
+    static bool s_placed_fm;
+    if (fm == s_placed_fm) return;
+    s_placed_fm = fm;
+    const int32_t vu_y = fm ? UI_SRC_FM_VU_Y : UI_SRC_VU_Y;
+    lv_obj_set_y(s_source_rule_top, fm ? UI_SRC_FM_RULE_TOP : UI_SRC_RULE_TOP);
+    lv_obj_set_y(s_source_rule_bottom, fm ? UI_SRC_FM_RULE_BOTTOM : UI_SRC_RULE_BOTTOM);
+    for (size_t channel = 0; channel < 2U; ++channel) {
+        for (size_t segment = 0; segment < UI_VU_SEGMENTS; ++segment) {
+            lv_obj_set_y(s_source_vu[channel][segment], vu_y + (int32_t)channel * UI_SRC_VU_PITCH);
+        }
+        lv_obj_set_y(s_source_vu_mark[channel],
+                     vu_y + (channel == 0U ? UI_SRC_VU_MARK_L_DY : UI_SRC_VU_MARK_R_DY));
+    }
+}
+#endif
+
+/* Where a frame stands: along the row - from the column's left edge, or about
+ * its middle - or, on FM where the shape has no row's room, in a block of
+ * short rows in the footer's empty left slot. */
+static void ui_place_source_frame(unsigned slot, unsigned shown, bool fm)
+{
+#if UI_SRC_SOURCE_FM_GRID
+    if (fm) {
+        s_source_row_px[slot] =
+            UI_SRC_SOURCE_FM_GRID_X + (int32_t)(slot % UI_SRC_SOURCE_FM_PER_ROW) * UI_SRC_SOURCE_PITCH;
+        s_source_row_py[slot] =
+            UI_SRC_SOURCE_FM_GRID_Y +
+            (int32_t)(slot / UI_SRC_SOURCE_FM_PER_ROW) * (UI_SRC_SOURCE_H + UI_SRC_SOURCE_FM_ROW_GAP);
+        lv_obj_set_pos(s_source_row_box[slot], s_source_row_px[slot], s_source_row_py[slot]);
+        return;
+    }
+#endif
+    int32_t first = UI_SRC_SOURCE_X;
+#if UI_SRC_SOURCE_CENTRED
+    first += (UI_SRC_TEXT_W - ((int32_t)(shown - 1U) * UI_SRC_SOURCE_PITCH + UI_SRC_SOURCE_W)) / 2;
+#else
+    (void)shown;
+#endif
+    s_source_row_px[slot] = UI_SRC_SOURCE_LONE ? first : first + (int32_t)slot * UI_SRC_SOURCE_PITCH;
+    s_source_row_py[slot] = fm ? UI_SRC_SOURCE_FM_Y : UI_SRC_SOURCE_Y;
+    lv_obj_set_pos(s_source_row_box[slot], s_source_row_px[slot], s_source_row_py[slot]);
+}
+
+static void ui_update_source_row(void)
+{
+    if (lv_screen_active() != s_source_screen) return;
+    const ui_menu_visible_mask_t mask = ui_feed_model_visible_mask(&s_feed_model);
+    const audio_source_t lit = ui_player_state_source(&s_player_ui);
+    if (s_source_row_drawn && mask == s_source_row_mask && lit == s_source_row_lit) return;
+    s_source_row_drawn = true;
+    s_source_row_mask = mask;
+    s_source_row_lit = lit;
+    unsigned shown = 0U;
+    for (unsigned rank = 0U; rank < UI_FEED_ITEM_COUNT && shown < UI_SRC_SOURCE_MAX; ++rank) {
+        const unsigned item = (unsigned)ui_menu_item_in_order((uint8_t)rank);
+        if (!ui_menu_item_is_visible((ui_menu_item_t)item, mask)) continue;
+        /* Yandex by name: activation leaves it out, because on the carousel
+         * it opens a list rather than a source - and asked through it, the
+         * row had no Yandex frame, so a wave lit nothing at all. */
+        audio_source_t source = AUDIO_SOURCE_NONE;
+        if (item == UI_FEED_YANDEX) {
+            source = AUDIO_SOURCE_YANDEX;
+        } else if (!ui_feed_model_activate((ui_feed_item_t)item, &source)) {
+            continue;
+        }
+        s_source_row_source[shown] = source;
+        lv_image_set_src(s_source_row_mark[shown], ui_feed_icon_row((ui_feed_item_t)item));
+        if (source == lit) {
+            lv_obj_add_state(s_source_row_box[shown], LV_STATE_CHECKED);
+            lv_obj_add_state(s_source_row_mark[shown], LV_STATE_CHECKED);
+        } else {
+            lv_obj_remove_state(s_source_row_box[shown], LV_STATE_CHECKED);
+            lv_obj_remove_state(s_source_row_mark[shown], LV_STATE_CHECKED);
+        }
+        ++shown;
+    }
+    const bool fm = lit == AUDIO_SOURCE_FM;
+#if UI_SRC_SOURCE_FM_MOVES
+    ui_place_meter(fm);
+#endif
+    for (unsigned slot = 0U; slot < UI_SRC_SOURCE_MAX; ++slot) {
+        const bool on = slot < shown && shown >= 2U &&
+                        (!UI_SRC_SOURCE_LONE || s_source_row_source[slot] == lit);
+        if (!on) s_source_row_source[slot] = AUDIO_SOURCE_NONE;
+        if (on) ui_place_source_frame(slot, shown, fm);
+        ui_set_hidden(s_source_row_box[slot], !on);
+    }
+}
+
+// The source under a tap, or none: the frames only, not the air between them.
+static audio_source_t ui_source_row_at(int x, int y)
+{
+    for (unsigned slot = 0U; !UI_SRC_SOURCE_LONE && slot < UI_SRC_SOURCE_MAX; ++slot) {
+        if (s_source_row_source[slot] == AUDIO_SOURCE_NONE) continue;
+        if (x >= s_source_row_px[slot] && x < s_source_row_px[slot] + UI_SRC_SOURCE_W &&
+            y >= s_source_row_py[slot] && y < s_source_row_py[slot] + UI_SRC_SOURCE_H) {
+            return s_source_row_source[slot];
+        }
+    }
+    return AUDIO_SOURCE_NONE;
+}
+#endif
 
 /* The digits over the title and the track and the marks over the readings,
  * or the four of them back. */
@@ -5762,7 +5906,7 @@ static void ui_create_source_screen(void)
     // it LV_LABEL_LONG_DOT wraps to a second line before it considers
     // shortening, and a long station name grew downwards over the codec row.
     s_source_title = ui_scroller_create(s_source_screen, UI_SRC_TEXT_X, UI_SRC_ROW_TITLE,
-                                        UI_SRC_TEXT_W, UI_SRC_LINE_H);
+                                        UI_SRC_TITLE_W, UI_SRC_LINE_H);
     ui_paint(s_source_title.box, UI_PAINT_TEXT, UI_ROLE_ACCENT, 0);
     ui_scroller_set_scrolling(&s_source_title, true);
 
@@ -5818,6 +5962,35 @@ static void ui_create_source_screen(void)
     lv_label_set_long_mode(s_source_stream, LV_LABEL_LONG_DOT);
     ui_paint(s_source_stream, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
 
+#if UI_SRC_SOURCE_ROW
+    /* Grey frames and marks, the lit one's frame and mark in the accent with
+     * nothing filled in between. The colour is the state's, so lighting a
+     * frame swaps no style. Filled in, and shown, by ui_update_source_row(). */
+    for (unsigned slot = 0U; slot < UI_SRC_SOURCE_MAX; ++slot) {
+        lv_obj_t *box = lv_obj_create(s_source_screen);
+        lv_obj_set_pos(box, UI_SRC_SOURCE_X + (int32_t)slot * UI_SRC_SOURCE_PITCH,
+                       UI_SRC_SOURCE_Y);
+        lv_obj_set_size(box, UI_SRC_SOURCE_W, UI_SRC_SOURCE_H);
+        lv_obj_set_style_bg_opa(box, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(box, UI_SRC_SOURCE_QUIET ? 0 : 1, 0);
+        lv_obj_set_style_border_width(box, 1, LV_STATE_CHECKED);
+        lv_obj_set_style_radius(box, 3, 0);
+        lv_obj_set_style_pad_all(box, 0, 0);
+        ui_paint(box, UI_PAINT_BORDER, UI_ROLE_DIM, 0);
+        ui_paint(box, UI_PAINT_BORDER, UI_ROLE_ACCENT, LV_STATE_CHECKED);
+        lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_flag(box, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_t *mark = lv_image_create(box);
+        ui_paint(mark, UI_PAINT_RECOLOR, UI_SRC_SOURCE_QUIET ? UI_ROLE_FEED_FAR : UI_ROLE_DIM, 0);
+        ui_paint(mark, UI_PAINT_RECOLOR, UI_ROLE_ACCENT, LV_STATE_CHECKED);
+        lv_obj_set_style_image_recolor_opa(mark, LV_OPA_COVER, 0);
+        lv_obj_center(mark);
+        s_source_row_box[slot] = box;
+        s_source_row_mark[slot] = mark;
+        s_source_row_source[slot] = AUDIO_SOURCE_NONE;
+    }
+#endif
+
     ui_create_fm_marks();
 
     /* Brighter than the meter's own unlit blocks, which looks backwards for a
@@ -5856,6 +6029,9 @@ static void ui_create_source_screen(void)
         lv_obj_set_pos(mark, UI_SRC_BODY_X + 2,
                        UI_SRC_VU_Y + (channel == 0U ? UI_SRC_VU_MARK_L_DY : UI_SRC_VU_MARK_R_DY));
         ui_paint(mark, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
+#if UI_SRC_SOURCE_FM_MOVES
+        s_source_vu_mark[channel] = mark;
+#endif
     }
 
     lv_obj_t *rule_bottom = lv_obj_create(s_source_screen);
@@ -5865,6 +6041,10 @@ static void ui_create_source_screen(void)
     lv_obj_set_style_border_width(rule_bottom, 0, 0);
     lv_obj_set_style_pad_all(rule_bottom, 0, 0);
     lv_obj_clear_flag(rule_bottom, LV_OBJ_FLAG_SCROLLABLE);
+#if UI_SRC_SOURCE_FM_MOVES
+    s_source_rule_top = rule_top;
+    s_source_rule_bottom = rule_bottom;
+#endif
 
     /* Track position. Sits under the bottom rule rather than in the footer
      * row: it belongs to what is playing, not to the system readouts beside
@@ -10135,6 +10315,12 @@ static void ui_touch_poll(void)
                 ui_touch_tap_fm_tune(event.x);
             } else if (ui_touch_player_in_mode()) {
                 ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+#if UI_SRC_SOURCE_ROW
+            } else if (ui_source_row_at(event.x, event.y) != AUDIO_SOURCE_NONE) {
+                /* A frame is the remote's key for its source: the same queue,
+                 * so it resumes what that source last played the same way. */
+                s_remote_source_waiting = ui_source_row_at(event.x, event.y);
+#endif
             } else if (ui_touch_player_tap_toggles(event.x, event.y, TFT_WIDTH, TFT_HEIGHT)) {
                 ui_toggle_playback();
             }
@@ -10285,6 +10471,9 @@ static void ui_task(void *arg)
         }
         ui_update_vu();
         ui_update_footer();
+#if UI_SRC_SOURCE_ROW
+        ui_update_source_row();
+#endif
         ui_update_cover();
         if (s_settings_open) {
             /* Wrap-safe, the same subtraction the station list's idle close

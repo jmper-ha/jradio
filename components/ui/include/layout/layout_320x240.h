@@ -56,8 +56,23 @@
 #define UI_SRC_STREAM_W UI_SRC_TEXT_W
 #define UI_SRC_STREAM_H UI_SRC_LINE_H
 #define UI_SRC_STREAM_Y 108
-#define UI_SRC_RULE_TOP 144
-#define UI_SRC_VU_Y 155
+/* The meter's frame came up 6 px for the row of sources (2026-11-22): the
+ * rule from 144 to 150 and the blocks from 155 to 156, so its gaps are 5 px
+ * rather than 10 and the bottom rule ends at 189 instead of 193. */
+#define UI_SRC_RULE_TOP 150
+#define UI_SRC_VU_Y 156
+/* The row of sources in the 23 px between the readings (to 127) and the rule:
+ * 24x20 frames round 16 px marks on a pitch of 27, seven of them 186 of the
+ * column's 192. Nearer square than the large panels' - there is no width
+ * for more - and so close that seven frames made a grid: only the lit one
+ * has its frame here. */
+#define UI_SRC_SOURCE_ROW 1
+#define UI_SRC_SOURCE_X UI_SRC_TEXT_X
+#define UI_SRC_SOURCE_Y 128
+#define UI_SRC_SOURCE_W 24
+#define UI_SRC_SOURCE_H 20
+#define UI_SRC_SOURCE_PITCH 27
+#define UI_SRC_SOURCE_QUIET 1
 
 /* The footer, left to right: the buffer or the time on the left margin, the
  * like mark in the gap neither reading reaches, then the volume.
@@ -89,14 +104,18 @@
  * has made. */
 #define UI_SRC_FM_DIGITS_PX 48
 
-/* FM: the radiotext on the row under the station's name, and the reception
- * marks under that, above the rule. */
+/* FM: the radiotext on the row under the station's name. The reception marks
+ * are in the footer's left slot, where the radio has its buffer and FM has
+ * nothing, as on the 480x320 panel: their old place under the radiotext is the
+ * row of sources'. About 153 px at this face, short of the Bluetooth rune. */
 #define UI_SRC_FM_TEXT_ROW 1
 #define UI_SRC_FM_TEXT_X UI_SRC_TEXT_X
 #define UI_SRC_FM_TEXT_Y (UI_SRC_ROW_ARTIST + UI_SRC_LINE_H)
 #define UI_SRC_FM_TEXT_W UI_SRC_TEXT_W
-#define UI_SRC_FM_MARKS_X UI_SRC_TEXT_X
-#define UI_SRC_FM_MARKS_Y (UI_SRC_FM_TEXT_Y + UI_SRC_LINE_H)
+#define UI_SRC_FM_MARKS_IN_FOOTER 1
+#define UI_SRC_FM_MARKS_X UI_SRC_BUFFER_X
+#define UI_SRC_FM_MARKS_Y UI_SRC_BUFFER_Y
+#define UI_SRC_FM_MARKS_W (UI_SRC_BT_ICON_X - UI_SRC_BUFFER_X - 4)
 
 /* The faces this shape is laid out for. Every row pitch and every line height
  * below follows from them, so a panel that wants bigger text states it here

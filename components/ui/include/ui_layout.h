@@ -465,6 +465,88 @@ _Static_assert(UI_SRC_FM_MARKS_Y + UI_SRC_FM_MARKS_H <= TFT_HEIGHT &&
                "the FM reception marks run off the panel");
 _Static_assert(!UI_SRC_FM_TEXT_ROW || UI_SRC_FM_TEXT_Y + UI_SRC_LINE_H <= UI_SRC_RULE_TOP,
                "the FM radiotext runs into the rule");
+
+/* The row of sources between the stream readings and the meter, one framed
+ * mark per source the carousel shows, the playing one lit - a tape deck's row
+ * of input lamps. Only where a shape file has the height to spare and says
+ * where it goes; elsewhere the player screen has none. */
+#ifndef UI_SRC_SOURCE_ROW
+#define UI_SRC_SOURCE_ROW 0
+#endif
+// Every source the carousel can show: the ring less Settings.
+#define UI_SRC_SOURCE_MAX 7
+/* The lit source alone, in one frame at UI_SRC_SOURCE_X/_Y, for a shape with
+ * no room for the row - the 428x142 bar's, at the end of the station's line,
+ * which is UI_SRC_TITLE_W wide to leave it the room. A tap there would only
+ * pick what is playing, so the lone frame is no button. */
+#ifndef UI_SRC_SOURCE_LONE
+#define UI_SRC_SOURCE_LONE 0
+#endif
+/* Only the lit source framed, the others bare marks in the carousel's far
+ * shade. For a panel where seven frames a pixel apart read as a grid rather
+ * than a row of lamps (Ден, 2026-11-22, on the 320x240). */
+#ifndef UI_SRC_TITLE_W
+#define UI_SRC_TITLE_W UI_SRC_TEXT_W
+#endif
+#ifndef UI_SRC_SOURCE_QUIET
+#define UI_SRC_SOURCE_QUIET 0
+#endif
+/* Centred in the text column where the rows above it are centred, so the
+ * frames line up with what they stand under either way. */
+#ifndef UI_SRC_SOURCE_CENTRED
+#define UI_SRC_SOURCE_CENTRED 0
+#endif
+/* A shape whose FM radiotext is where the row would go says where the row and
+ * the meter stand on FM instead: UI_SRC_SOURCE_FM_Y for the row, and the
+ * meter's top rule and blocks lower down, framed by narrower gaps. */
+#ifndef UI_SRC_SOURCE_FM_Y
+#define UI_SRC_SOURCE_FM_Y UI_SRC_SOURCE_Y
+#define UI_SRC_FM_RULE_TOP UI_SRC_RULE_TOP
+#define UI_SRC_FM_VU_Y UI_SRC_VU_Y
+#endif
+#define UI_SRC_SOURCE_FM_MOVES (UI_SRC_SOURCE_FM_Y != UI_SRC_SOURCE_Y)
+/* Or, where there is no room lower down either, the frames go on FM to the
+ * footer's left slot - FM has no buffer and no position to show there - in
+ * short rows of UI_SRC_SOURCE_FM_PER_ROW from UI_SRC_SOURCE_FM_GRID_X/_Y, so a
+ * finger still has its sources on a small touch panel. */
+#ifndef UI_SRC_SOURCE_FM_GRID
+#define UI_SRC_SOURCE_FM_GRID 0
+#endif
+#if UI_SRC_SOURCE_ROW && UI_SRC_SOURCE_LONE
+_Static_assert(UI_SRC_SOURCE_X >= UI_SRC_TEXT_X + UI_SRC_TITLE_W &&
+                   UI_SRC_SOURCE_X + UI_SRC_SOURCE_W <= TFT_WIDTH - UI_CONTENT_X &&
+                   UI_SRC_SOURCE_Y >= UI_STRIP_H &&
+                   UI_SRC_SOURCE_Y + UI_SRC_SOURCE_H <= UI_SRC_ROW_TRACK,
+               "the lone source frame is not at the end of the station's line");
+#elif UI_SRC_SOURCE_ROW
+_Static_assert(UI_SRC_SOURCE_X + (UI_SRC_SOURCE_MAX - 1) * UI_SRC_SOURCE_PITCH + UI_SRC_SOURCE_W <=
+                   UI_SRC_TEXT_X + UI_SRC_TEXT_W,
+               "the row of sources runs past the text column");
+_Static_assert(UI_SRC_SOURCE_Y >= UI_SRC_STREAM_Y + UI_SRC_STREAM_H &&
+                   UI_SRC_SOURCE_Y >= UI_SRC_ROW_ARTIST + UI_SRC_LINE_H &&
+                   UI_SRC_SOURCE_Y + UI_SRC_SOURCE_H <= UI_SRC_RULE_TOP,
+               "the row of sources does not fit between the rows above it and the rule");
+#endif
+#if UI_SRC_SOURCE_ROW
+_Static_assert(UI_SRC_SOURCE_FM_GRID || !UI_SRC_FM_TEXT_ROW ||
+                   UI_SRC_FM_TEXT_Y + UI_SRC_LINE_H <= UI_SRC_SOURCE_FM_Y ||
+                   UI_SRC_FM_TEXT_Y >= UI_SRC_SOURCE_FM_Y + UI_SRC_SOURCE_H,
+               "the FM radiotext stands on the row of sources");
+_Static_assert(UI_SRC_SOURCE_FM_Y + UI_SRC_SOURCE_H < UI_SRC_FM_RULE_TOP &&
+                   UI_SRC_FM_RULE_TOP < UI_SRC_FM_VU_Y,
+               "on FM the row of sources runs into the meter");
+#if UI_SRC_SOURCE_FM_GRID
+_Static_assert(UI_SRC_SOURCE_FM_GRID_X + (UI_SRC_SOURCE_FM_PER_ROW - 1) * UI_SRC_SOURCE_PITCH +
+                       UI_SRC_SOURCE_W <= UI_SRC_VOLUME_ICON_X - 4 &&
+                   UI_SRC_SOURCE_FM_GRID_Y + ((UI_SRC_SOURCE_MAX + UI_SRC_SOURCE_FM_PER_ROW - 1) /
+                                         UI_SRC_SOURCE_FM_PER_ROW) *
+                                            (UI_SRC_SOURCE_H + UI_SRC_SOURCE_FM_ROW_GAP) <=
+                       TFT_HEIGHT,
+               "on FM the block of sources does not fit the footer's left slot");
+_Static_assert(UI_SRC_SOURCE_FM_GRID_Y > UI_SRC_VU_Y + UI_SRC_VU_PITCH + UI_SRC_VU_BLOCK_H,
+               "on FM the block of sources runs into the meter");
+#endif
+#endif
 _Static_assert(!UI_SRC_FM_TEXT_ROW ||
                    UI_SRC_FM_TEXT_Y + UI_SRC_LINE_H <= UI_SRC_FM_MARKS_Y ||
                    UI_SRC_FM_MARKS_Y + UI_SRC_FM_MARKS_H <= UI_SRC_FM_TEXT_Y ||

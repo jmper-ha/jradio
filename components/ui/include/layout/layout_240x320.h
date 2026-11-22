@@ -60,8 +60,30 @@
 #define UI_SRC_ROW_TITLE 138
 #define UI_SRC_ROW_TRACK 162
 #define UI_SRC_ROW_ARTIST 192
-#define UI_SRC_RULE_TOP 226
-#define UI_SRC_VU_Y 234
+/* The meter came down 7 px for the row of sources (2026-11-22), its gaps 4 px
+ * rather than 7, so the bottom rule still ends at 270 - above the levelling
+ * reading, which starts at 271. */
+#define UI_SRC_RULE_TOP 233
+#define UI_SRC_VU_Y 238
+/* The row of sources between the performer (to 211) and the rule, centred
+ * under the centred rows: 24x19 frames round 16 px marks on a pitch of 27,
+ * only the lit one framed, as on the 320x240. On FM the radiotext stands on
+ * this line and the meter has nowhere lower to go, so there the frames move
+ * to the footer's left slot, four and three in two rows from 274 to 314,
+ * clear of the speaker icon at 136 (Ден's idea, 2026-11-22). */
+#define UI_SRC_SOURCE_ROW 1
+#define UI_SRC_SOURCE_X UI_SRC_TEXT_X
+#define UI_SRC_SOURCE_Y 212
+#define UI_SRC_SOURCE_W 24
+#define UI_SRC_SOURCE_H 19
+#define UI_SRC_SOURCE_PITCH 27
+#define UI_SRC_SOURCE_CENTRED 1
+#define UI_SRC_SOURCE_QUIET 1
+#define UI_SRC_SOURCE_FM_GRID 1
+#define UI_SRC_SOURCE_FM_GRID_X UI_SRC_BUFFER_X
+#define UI_SRC_SOURCE_FM_GRID_Y 274
+#define UI_SRC_SOURCE_FM_PER_ROW 4
+#define UI_SRC_SOURCE_FM_ROW_GAP 2
 
 /* The same five things as the wider panel in 80 px less. Four of them are as
  * short as they can be - "01:24 / 03:52" is the longest reading the left slot
@@ -98,11 +120,11 @@
  * and the three marks in a line did not fit it. */
 #define UI_SRC_FM_TEXT_ROW 1
 #define UI_SRC_FM_TEXT_X UI_SRC_TEXT_X
-/* Standing on the rule's line, not on the name's row end: the two rows are a
- * line of 19 px each, 38 together, and there are 34 between the artist row and
- * the rule, so the radiotext's box starts four pixels into the name's. The
- * glyphs of 14 px text are nowhere near that - the room is the line's own
- * leading above and below them. */
+/* Standing on the rule's line, not on the name's row end. There were 34 px
+ * between the artist row and the rule for two lines of 19, and the box started
+ * four pixels into the name's - harmless, the room being the lines' own
+ * leading. With the meter moved down for the row of sources there are 41, and
+ * it clears the name by three. */
 #define UI_SRC_FM_TEXT_Y (UI_SRC_RULE_TOP - UI_SRC_LINE_H)
 #define UI_SRC_FM_TEXT_W UI_SRC_TEXT_W
 #define UI_SRC_FM_TEXT_CENTRED 1

@@ -85,6 +85,16 @@
 #define UI_SRC_STREAM_Y 148
 #define UI_SRC_RULE_TOP 202
 #define UI_SRC_VU_Y 217
+/* The row of sources in the 30 px between the readings (to 172) and the rule:
+ * 36x24 frames round 16 px marks, centred in the gap, on a pitch of 42 - seven
+ * of them are the column's 288 exactly. Wider than tall, like a row of lamps;
+ * square ones bunched up at the left of the column (Ден, 2026-11-22). */
+#define UI_SRC_SOURCE_ROW 1
+#define UI_SRC_SOURCE_X UI_SRC_TEXT_X
+#define UI_SRC_SOURCE_Y 175
+#define UI_SRC_SOURCE_W 36
+#define UI_SRC_SOURCE_H 24
+#define UI_SRC_SOURCE_PITCH 42
 
 /* The footer, left to right: the buffer or the time on the left margin, the
  * like mark in the gap neither reading reaches, then the volume. The volume
@@ -114,14 +124,20 @@
  * has made. */
 #define UI_SRC_FM_DIGITS_PX 72
 
-/* FM: the radiotext on the row under the station's name, and the reception
- * marks under that, above the rule. */
+/* FM: the radiotext on the row under the station's name. The reception marks
+ * stood under that until the row of sources took the place (2026-11-22); they
+ * are in the footer's left slot now, where the radio has its buffer and FM has
+ * nothing. About 190 px at this face with the RDS frame, which ran past the
+ * like mark's 200 and was cut off there; the like mark is Yandex's, so the
+ * slot reaches the Bluetooth rune instead. */
 #define UI_SRC_FM_TEXT_ROW 1
 #define UI_SRC_FM_TEXT_X UI_SRC_TEXT_X
 #define UI_SRC_FM_TEXT_Y (UI_SRC_ROW_ARTIST + UI_SRC_LINE_H)
 #define UI_SRC_FM_TEXT_W UI_SRC_TEXT_W
-#define UI_SRC_FM_MARKS_X UI_SRC_TEXT_X
-#define UI_SRC_FM_MARKS_Y (UI_SRC_FM_TEXT_Y + UI_SRC_LINE_H)
+#define UI_SRC_FM_MARKS_IN_FOOTER 1
+#define UI_SRC_FM_MARKS_X UI_SRC_BUFFER_X
+#define UI_SRC_FM_MARKS_Y UI_SRC_BUFFER_Y
+#define UI_SRC_FM_MARKS_W (UI_SRC_BT_ICON_X - UI_SRC_BUFFER_X - 4)
 
 /* The faces this shape is laid out for. Every row pitch and every line height
  * below follows from them. The text sizes have to exist in ui_font_metrics.h;

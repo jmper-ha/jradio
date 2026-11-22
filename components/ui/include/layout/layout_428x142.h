@@ -59,6 +59,17 @@
 #define UI_SRC_ART_Y 27
 #define UI_SRC_TEXT_X 112
 #define UI_SRC_TEXT_W 306
+/* No room for the row of sources here - a block of them beside the text was
+ * tried and squeezed it (2026-11-22) - so only the lit one, framed, at the end
+ * of the station's line, which gives up the frame's width and a gap. */
+#define UI_SRC_TITLE_W (UI_SRC_TEXT_W - 28)
+#define UI_SRC_SOURCE_ROW 1
+#define UI_SRC_SOURCE_LONE 1
+#define UI_SRC_SOURCE_X (UI_SRC_TEXT_X + UI_SRC_TEXT_W - 24)
+#define UI_SRC_SOURCE_Y UI_SRC_ROW_TITLE
+#define UI_SRC_SOURCE_W 24
+#define UI_SRC_SOURCE_H 19
+#define UI_SRC_SOURCE_PITCH 27
 #define UI_SRC_BODY_X 112
 #define UI_SRC_ROW_TITLE 27
 #define UI_SRC_ROW_TRACK 46

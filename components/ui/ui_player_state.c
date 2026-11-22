@@ -328,6 +328,19 @@ void ui_player_state_apply_snapshot(ui_player_state_t *state,
     }
 }
 
+bool ui_player_state_refuse_select(ui_player_state_t *state, audio_source_t source)
+{
+    if (state == NULL || !state->pending ||
+        state->pending_command.kind != PLAYER_COMMAND_SELECT_SOURCE ||
+        state->pending_command.source != source) {
+        return false;
+    }
+    state->pending = false;
+    state->view = state->pending_origin_view;
+    state->source = state->pending_origin_source;
+    return true;
+}
+
 bool ui_player_state_show_station_list(ui_player_state_t *state)
 {
     /* Every source that has a list shares this view: stations for the radio,

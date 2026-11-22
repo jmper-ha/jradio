@@ -54,6 +54,10 @@ size_t ui_player_state_active_item(const ui_player_state_t *state);
  * ahead of it while a command is pending; this is what has been confirmed. */
 player_playback_state_t ui_player_state_playback(const ui_player_state_t *state);
 bool ui_player_state_is_pending(const ui_player_state_t *state);
+/* A select of this source that the player turned down without moving the
+ * snapshot - the card, tried while another source plays on. Drops it the way
+ * the timeout would, only now; false when that is not what is pending. */
+bool ui_player_state_refuse_select(ui_player_state_t *state, audio_source_t source);
 /* Whether the player has just come alive on somebody else's say-so - the web
  * pressed play, or picked a source - since the last snapshot this state saw.
  *

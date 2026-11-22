@@ -712,6 +712,9 @@ static size_t s_last_files_entry_count;
  * notice would name a USB drive while the user was asking for the card, and
  * the pick-up below would select the wrong source when a volume appeared. */
 static audio_source_t s_files_unavailable_source = AUDIO_SOURCE_NONE;
+/* The card selects player_control has turned down, as last seen here. See
+ * player_control_sd_refusals(). */
+static unsigned int s_sd_refusals_seen;
 // Autoplay runs once, and only after what it depends on has had time to
 // appear: deciding "no drive" or "no network" any earlier would be deciding it
 // before the answer exists. Both are caps and not only waits - a device that
@@ -8631,6 +8634,25 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
          snapshot->playback_state == PLAYER_PLAYBACK_STOPPED ||
          snapshot->playback_state == PLAYER_PLAYBACK_ERROR)) {
         ui_end_seek();
+    }
+    /* The card was tried and not found while another source played, and that
+     * source plays on: the drive's "unavailable" screen, as if the card's
+     * absence had been known before the press - the only difference left
+     * between the two volumes. */
+    const unsigned int sd_refusals = player_control_sd_refusals();
+    if (sd_refusals != s_sd_refusals_seen) {
+        s_sd_refusals_seen = sd_refusals;
+        if (ui_player_state_refuse_select(&s_player_ui, AUDIO_SOURCE_SD)) {
+            s_files_list_open_requested = false;
+            if (s_autoplay_target == AUDIO_SOURCE_SD) {
+                s_autoplay_pending = false;
+                s_autoplay_target = AUDIO_SOURCE_NONE;
+            }
+            s_files_unavailable = true;
+            s_files_unavailable_source = AUDIO_SOURCE_SD;
+            s_player_ui.source = AUDIO_SOURCE_SD;
+            ui_show_station_list();
+        }
     }
     ui_player_state_apply_snapshot(&s_player_ui, snapshot, ui_tick_get_ms());
     if (old_view != ui_player_state_view(&s_player_ui) ||

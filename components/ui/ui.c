@@ -832,6 +832,23 @@ static const lv_image_dsc_t *ui_source_icon(audio_source_t source)
     return ui_feed_icon_image(ui_feed_model_selected(&model), UI_FEED_ICON_LARGE);
 }
 
+/* The tuner as the screens see it: named in the wiring *and* found at boot.
+ * The wiring alone listed FM in the menu, the carousel and the remote's key on
+ * a board whose module was not plugged in, and opening it drew the frequency's
+ * empty digit boxes over the texts and the buffer while the player had refused
+ * the select (Ден, 2026-11-22). fm_tuner_init() runs before the UI starts and
+ * is not tried again, so the answer is read once. */
+static bool ui_fm_tuner_answered(void)
+{
+    static int8_t s_answered = -1;
+    if (s_answered < 0) {
+        player_snapshot_t snapshot;
+        player_control_get_snapshot(&snapshot);
+        s_answered = (snapshot.capabilities & PLAYER_CAP_FM) != 0U ? 1 : 0;
+    }
+    return s_answered == 1;
+}
+
 // Short name for the strip and the list title.
 static const char *ui_source_short_name(audio_source_t source)
 {
@@ -3331,8 +3348,8 @@ static void ui_apply_source_visibility(void)
     ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_BLUETOOTH, board_has_bluetooth());
     ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_BLUETOOTH,
                                      board_has_bluetooth());
-    ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_FM_RADIO, board_has_fm_tuner());
-    ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_FM_RADIO, board_has_fm_tuner());
+    ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_FM_RADIO, ui_fm_tuner_answered());
+    ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_FM_RADIO, ui_fm_tuner_answered());
     ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_YANDEX_MUSIC,
                                s_device_settings.yandex_music);
     ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_YANDEX_MUSIC,
@@ -7715,7 +7732,7 @@ static void ui_remote_open_source(audio_source_t source)
     const bool volume_has_file = ui_volume_resume_file(source, path, sizeof(path));
     const ui_autoplay_action_t action = ui_autoplay_decide_for(
         &s_device_settings, source, volume_has_file, snapshot.usb_media, snapshot.sd_media, true,
-        BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(), board_has_fm_tuner());
+        BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(), ui_fm_tuner_answered());
     const bool network = action == UI_AUTOPLAY_RADIO || action == UI_AUTOPLAY_YANDEX ||
                          action == UI_AUTOPLAY_DLNA;
     const bool resume = network || action == UI_AUTOPLAY_FILE;
@@ -7760,6 +7777,8 @@ static void ui_remote_source_poll(void)
     /* Through the home screen's own path, which is what knows whether the
      * source is on this board, has its network, and how it opens. A source
      * not on the menu is a key that does nothing, quietly. */
+    /* The FM key too when the tuner did not answer: see ui_fm_tuner_answered(). */
+    if (source == AUDIO_SOURCE_FM && !ui_fm_tuner_answered()) return;
     if (ui_menu_select_source(&s_menu, source)) ui_remote_open_source(source);
 }
 
@@ -8934,11 +8953,11 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
             ? ui_autoplay_decide_for(&s_device_settings, s_autoplay_target,
                                      s_autoplay_volume_has_file, snapshot->usb_media,
                                      snapshot->sd_media, false, BOARD_HAS_YANDEX_MUSIC,
-                                     BOARD_HAS_DLNA, board_has_bluetooth(), board_has_fm_tuner())
+                                     BOARD_HAS_DLNA, board_has_bluetooth(), ui_fm_tuner_answered())
             : (s_autoplay_for_alarm ? ui_autoplay_decide_resume : ui_autoplay_decide)(
                   &s_device_settings, snapshot->usb_media, snapshot->sd_media, false,
                   BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(),
-                  board_has_fm_tuner());
+                  ui_fm_tuner_answered());
     const bool waited =
         (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_WAIT_MS;
     // Hold off only while the answer could still change: a drive that has not
@@ -9183,7 +9202,7 @@ static void ui_alarm_poll(uint32_t now_ms)
     }
     const alarm_source_t source = alarm_play_source(
         &s_device_settings.alarm,
-        board_has_fm_tuner() && player_control_fm_preset_count() > 0U);
+        ui_fm_tuner_answered() && player_control_fm_preset_count() > 0U);
     const bool fm = source == ALARM_SOURCE_FM;
     if (source == ALARM_SOURCE_LAST) {
         ESP_LOGI(TAG, "alarm: %02d:%02d, the last source at volume %u", hour, minute,
@@ -9208,7 +9227,7 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
     if (!s_alarm_ring_pending) return;
     /* FM needs no network, so it rings at the minute; the radio waits for
      * one, the way autoplay does. */
-    const bool fm_present = board_has_fm_tuner() && player_control_fm_preset_count() > 0U;
+    const bool fm_present = ui_fm_tuner_answered() && player_control_fm_preset_count() > 0U;
     const alarm_source_t source = alarm_play_source(&s_device_settings.alarm, fm_present);
     const bool waited =
         (uint32_t)(ui_tick_get_ms() - s_alarm_ring_started_ms) >= UI_ALARM_NETWORK_WAIT_MS;
@@ -9221,7 +9240,7 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
                                                   FILE_BROWSER_MEDIA_READY, true,
                                                   BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA,
                                                   board_has_bluetooth(),
-                                                  board_has_fm_tuner()) != UI_AUTOPLAY_HOME;
+                                                  ui_fm_tuner_answered()) != UI_AUTOPLAY_HOME;
     if (source != ALARM_SOURCE_FM && !resume && !snapshot->wifi_connected && !waited) return;
     s_alarm_ring_pending = false;
 
@@ -10570,7 +10589,7 @@ esp_err_t ui_init(void)
      * point the answer counts a Yandex row the switch may have turned off. */
     ui_apply_source_visibility();
     ui_settings_model_set_bluetooth(board_has_bluetooth());
-    ui_settings_model_set_fm(board_has_fm_tuner());
+    ui_settings_model_set_fm(ui_fm_tuner_answered());
     ui_settings_model_set_spdif(board_has_spdif() && board_has_dac());
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
     // Before anything can play: the board defaults to full volume, and coming
@@ -10599,7 +10618,7 @@ esp_err_t ui_init(void)
                              &s_device_settings, FILE_BROWSER_MEDIA_READY,
                              FILE_BROWSER_MEDIA_READY, true, BOARD_HAS_YANDEX_MUSIC,
                              BOARD_HAS_DLNA, board_has_bluetooth(),
-                             board_has_fm_tuner()) != UI_AUTOPLAY_HOME;
+                             ui_fm_tuner_answered()) != UI_AUTOPLAY_HOME;
     s_autoplay_started_ms = ui_tick_get_ms();
     /* Through the same call the rest of the firmware uses, so a device with no
      * home screen boots straight into the radio instead of onto a screen it

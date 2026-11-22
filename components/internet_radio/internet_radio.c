@@ -33,11 +33,20 @@
 #include "icy_metadata.h"
 #include "pcm_diagnostics.h"
 #include "radio_http_status.h"
+#include "radio_overlap.h"
 #include "radio_prebuffer.h"
 #include "radio_decoder.h"
 #include "radio_stream_format.h"
 #include "station_levels.h"
 #include "station_resume.h"
+
+/* sdkconfig.defaults turns it off, but defaults only fill in missing keys: a
+ * source tree updated over an existing sdkconfig keeps it on, and with it the
+ * "-0x7200" reconnect every minute or two on HTTPS stations (see the comment
+ * there). A build error is the only notice such a builder is sure to read. */
+#if CONFIG_MBEDTLS_DYNAMIC_BUFFER
+#error "CONFIG_MBEDTLS_DYNAMIC_BUFFER garbles TLS records on the stream's non-blocking socket: delete sdkconfig, or turn it off in menuconfig (Component config > mbedTLS)"
+#endif
 
 #define RADIO_HTTP_BUFFER_SIZE 2048
 /* esp_http_client builds the whole request line and its headers inside this
@@ -164,6 +173,9 @@
 #define RADIO_DIRECT_PCM_SIZE 16384U
 #define RADIO_DIRECT_STOP_TIMEOUT_MS 12000U
 #define RADIO_STARVATION_REPORT_MS 10000U
+/* Seconds of sound between updates of the bitrate on screen. The first comes
+ * after as many: until then the decoder's one-frame figure stands. */
+#define RADIO_BITRATE_AVERAGE_S 10U
 /* How long the decoder may consume input without producing a single sample
  * before the stream is treated as unplayable rather than slow.
  *
@@ -804,6 +816,16 @@ static void radio_direct_task(void *arg)
     /* A station's background reconnect ran out of backlog and the screen was
      * told; the new stream then starts the decoder and the output afresh. */
     bool reconnect_shown = false;
+    /* The old stream's last bytes, looked for in a station's reconnected one
+     * so that its opening burst is not heard twice. On the stack: the task
+     * has some 13 KB of it to spare, and internal SRAM has no 512 B to give. */
+    radio_overlap_t overlap;
+    radio_overlap_init(&overlap);
+    // What the decoder was fed and what came out, for the bitrate on screen.
+    uint64_t rate_bytes = 0U;
+    uint64_t rate_frames = 0U;
+    uint64_t rate_shown_frames = 0U;
+    uint32_t rate_hz = 0U;
     /* The decoder can do nothing more with the backlog it has: what is left
      * is a few bytes short of anything. Ogg holds back the last
      * RADIO_OGG_FLAGS_END bytes as a possible page start, so after a dropped
@@ -899,6 +921,7 @@ static void radio_direct_task(void *arg)
                     decoder_synced = false;
                     last_pcm_tick = xTaskGetTickCount();
                 }
+                radio_overlap_begin(&overlap, compressed + compressed_offset, available);
                 ESP_LOGI(TAG, "station reconnected in the background with %u buffered",
                          (unsigned int)available);
                 heap_caps_free(job);
@@ -1140,6 +1163,10 @@ static void radio_direct_task(void *arg)
                 break;
             }
             track_ended = false;
+            // Each track of a chain is its own file, at its own bitrate.
+            rate_bytes = 0U;
+            rate_frames = 0U;
+            rate_shown_frames = 0U;
             track_drop_resumes = 0U;
             track_resumed_at = SIZE_MAX;
             track_started_tick = xTaskGetTickCount();
@@ -1275,6 +1302,7 @@ static void radio_direct_task(void *arg)
                 fatal = true;
                 break;
             }
+            rate_bytes += consumed;
             ogg_clean = ogg_clean > consumed ? ogg_clean - consumed : 0U;
             if (consumed > 0U) {
                 available -= consumed;
@@ -1322,6 +1350,23 @@ static void radio_direct_task(void *arg)
                     break;
                 }
                 radio_log_decoder_info(radio->stream_format, &info, &logged_info);
+                if (info.sample_rate != rate_hz) {
+                    rate_hz = info.sample_rate;
+                    rate_bytes = consumed;
+                    rate_frames = 0U;
+                    rate_shown_frames = 0U;
+                }
+                rate_frames += pcm_bytes / (AUDIO_CHANNEL_COUNT * (AUDIO_BITS_PER_SAMPLE / 8U));
+                if (rate_frames - rate_shown_frames >= (uint64_t)rate_hz * RADIO_BITRATE_AVERAGE_S) {
+                    rate_shown_frames = rate_frames;
+                    const uint32_t kbps =
+                        internet_radio_average_kbps(rate_bytes, rate_frames, rate_hz);
+                    if (kbps > 0U && kbps <= UINT16_MAX) {
+                        taskENTER_CRITICAL(&s_status_lock);
+                        radio->status.bitrate_kbps = (uint16_t)kbps;
+                        taskEXIT_CRITICAL(&s_status_lock);
+                    }
+                }
                 /* Queued rather than written here so that one place owns the
                  * write: the delivery step at the top of the loop, which can
                  * resume a block that went out short instead of dropping its
@@ -1623,6 +1668,17 @@ static void radio_direct_task(void *arg)
                     memcpy(compressed + compressed_offset + available, audio, audio_length);
                     available += audio_length;
                     backlog_spent = false;
+                    const size_t repeated = radio_overlap_take(
+                        &overlap, compressed + compressed_offset, &available, audio_length);
+                    if (repeated > 0U) {
+                        uint16_t bitrate;
+                        taskENTER_CRITICAL(&s_status_lock);
+                        bitrate = radio->status.bitrate_kbps;
+                        taskEXIT_CRITICAL(&s_status_lock);
+                        ESP_LOGI(TAG, "reconnect burst: dropped %u bytes (%u ms) already buffered",
+                                 (unsigned int)repeated,
+                                 (unsigned int)radio_prebuffer_millis(repeated, bitrate));
+                    }
                 }
 
                 // Drain whatever else the socket already holds, bounded by

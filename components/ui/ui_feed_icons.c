@@ -31,6 +31,24 @@ static const lv_image_dsc_t *const s_icons[UI_FEED_ITEM_COUNT][UI_FEED_ICON_SIZE
     [UI_FEED_SETTINGS] = UI_FEED_ICON_SET(settings),
 };
 
+/* One size on every panel: the frames around them are what changes. */
+#define UI_FEED_ICON_ROW(name) (&ui_feed_icon_##name##_16)
+static const lv_image_dsc_t *const s_row_icons[UI_FEED_ITEM_COUNT] = {
+    [UI_FEED_INTERNET_RADIO] = UI_FEED_ICON_ROW(podcasts),
+    [UI_FEED_USB] = UI_FEED_ICON_ROW(usb_stick),
+    [UI_FEED_SD_CARD] = UI_FEED_ICON_ROW(sd_card),
+    [UI_FEED_BLUETOOTH] = UI_FEED_ICON_ROW(bluetooth),
+    [UI_FEED_FM] = UI_FEED_ICON_ROW(radio),
+    [UI_FEED_DLNA] = UI_FEED_ICON_ROW(dlna),
+    [UI_FEED_YANDEX] = UI_FEED_ICON_ROW(spark),
+    [UI_FEED_SETTINGS] = NULL,
+};
+
+const lv_image_dsc_t *ui_feed_icon_row(ui_feed_item_t item)
+{
+    return item < UI_FEED_ITEM_COUNT ? s_row_icons[item] : NULL;
+}
+
 const lv_image_dsc_t *ui_feed_icon_image(ui_feed_item_t item, ui_feed_icon_size_t size)
 {
     if (item >= UI_FEED_ITEM_COUNT || size >= UI_FEED_ICON_SIZE_COUNT) {

@@ -328,6 +328,19 @@ void ui_player_state_apply_snapshot(ui_player_state_t *state,
     }
 }
 
+bool ui_player_state_refuse_select(ui_player_state_t *state, audio_source_t source)
+{
+    if (state == NULL || !state->pending ||
+        state->pending_command.kind != PLAYER_COMMAND_SELECT_SOURCE ||
+        state->pending_command.source != source) {
+        return false;
+    }
+    state->pending = false;
+    state->view = state->pending_origin_view;
+    state->source = state->pending_origin_source;
+    return true;
+}
+
 bool ui_player_state_show_station_list(ui_player_state_t *state)
 {
     /* Every source that has a list shares this view: stations for the radio,
@@ -356,6 +369,13 @@ void ui_player_state_close_station_list(ui_player_state_t *state)
 {
     if (state == NULL || state->view != UI_PLAYER_VIEW_STATION_LIST) return;
     state->view = UI_PLAYER_VIEW_SOURCE;
+    /* Back to the source that plays. The screen can have been driven to a
+     * source that never started - a drive's "no drive" list - and kept it
+     * after: the radio played on under a player that took it for the drive,
+     * with no buffer strip (forum, 2026-11-21). */
+    if (!state->pending && state->have_snapshot && state->confirmed_source != AUDIO_SOURCE_NONE) {
+        state->source = state->confirmed_source;
+    }
     if (state->pending) {
         // Mirror ui_player_state_show_station_list: if a pending command times
         // out later, it should revert to the source screen the idle timeout

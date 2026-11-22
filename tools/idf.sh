@@ -244,4 +244,41 @@ fi
 # idf.py is run through the framework's own interpreter rather than as a
 # command: EIM's activation puts the venv on PATH but not an idf.py.
 cd "${jradio_root}"
-exec "${IDF_PYTHON_ENV_PATH}/bin/python" "${jradio_idf}/tools/idf.py" "$@"
+jradio_idf_py=("${IDF_PYTHON_ENV_PATH}/bin/python" "${jradio_idf}/tools/idf.py")
+
+# The board is an ESP32-S3 and nothing else. The ESP-IDF extension has a chip
+# button in VS Code's status bar, and one press of it - or its own setting,
+# exported into the task's environment - leaves the project configured for a
+# plain ESP32: a build that fails far from the cause, or a mismatch error that
+# names a command nobody has heard of (forum, 2026-11). The target is put back
+# here instead, and said so; the old sdkconfig is kept beside it, because
+# set-target rebuilds it from sdkconfig.defaults and a menuconfig change would
+# otherwise go without a trace.
+jradio_target="esp32s3"
+if [ -n "${IDF_TARGET:-}" ] && [ "${IDF_TARGET}" != "${jradio_target}" ]; then
+    echo "tools/idf.sh: ignoring IDF_TARGET=${IDF_TARGET}; this board is an ${jradio_target}" >&2
+fi
+export IDF_TARGET="${jradio_target}"
+# Both records count: the button rewrites sdkconfig, and a build directory
+# configured before can still name the other chip after sdkconfig is right.
+jradio_configured=""
+if [ -f sdkconfig ]; then
+    jradio_configured="$(sed -n 's/^CONFIG_IDF_TARGET="\([^"]*\)"$/\1/p' sdkconfig)"
+fi
+if { [ -z "${jradio_configured}" ] || [ "${jradio_configured}" = "${jradio_target}" ]; } &&
+    [ -f build/CMakeCache.txt ]; then
+    jradio_configured="$(sed -n 's/^IDF_TARGET:STRING=//p' build/CMakeCache.txt)"
+fi
+case " $* " in
+    *" set-target "*) jradio_configured="" ;;  # asked for by name: theirs to decide
+esac
+if [ -n "${jradio_configured}" ] && [ "${jradio_configured}" != "${jradio_target}" ]; then
+    echo "tools/idf.sh: the project was set to ${jradio_configured}; setting it back to ${jradio_target}" >&2
+    if [ -f sdkconfig ]; then
+        cp sdkconfig "sdkconfig.${jradio_configured}.old"
+        echo "tools/idf.sh: the old sdkconfig is kept as sdkconfig.${jradio_configured}.old" >&2
+    fi
+    "${jradio_idf_py[@]}" set-target "${jradio_target}"
+fi
+
+exec "${jradio_idf_py[@]}" "$@"

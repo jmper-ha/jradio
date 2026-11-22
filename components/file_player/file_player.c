@@ -677,6 +677,20 @@ static void track_position(file_player_context_t *ctx)
     if (callback != NULL) callback((size_t)track);
 }
 
+static bool should_stop(void)
+{
+    return atomic_load_explicit(&s_stop_requested, memory_order_acquire);
+}
+
+// True while paused, after sleeping; keeps the two playback loops from each
+// growing their own copy of the pause handling.
+static bool wait_while_paused(void)
+{
+    if (!atomic_load_explicit(&s_paused, memory_order_acquire)) return false;
+    vTaskDelay(pdMS_TO_TICKS(20));
+    return true;
+}
+
 static esp_err_t write_pcm(file_player_context_t *ctx, const uint8_t *pcm, size_t length)
 {
     /* A pause that arrives between the decoder producing this block and the
@@ -723,13 +737,28 @@ static esp_err_t write_pcm(file_player_context_t *ctx, const uint8_t *pcm, size_
          * the decode on top, a buffer ran dry every few seconds. So the file
          * is read while the ring drains, and once this block is in, the next
          * one only has to be decoded. */
-        const int64_t deadline = esp_timer_get_time() + 1000000;
+        int64_t deadline = esp_timer_get_time() + 1000000;
         uint32_t wait_ms = 0U;
         for (;;) {
             size_t part = 0U;
             result = board_audio_write(pcm + written, length - written, &part, wait_ms);
             written += part;
             if (result == ESP_ERR_TIMEOUT) result = ESP_OK;
+            /* The pause turns the channel off under this very wait - at 96 kHz
+             * the task spends most of its time here - and the write answers
+             * INVALID_STATE. Taken as a broken file, that ended playback with
+             * "could not play the file" and the next press started the track
+             * over from the saved point. The rest of the block is written
+             * once the pause is lifted instead; resume turns the channel back
+             * on before it clears the flag. */
+            if (result != ESP_OK && atomic_load_explicit(&s_paused, memory_order_acquire)) {
+                while (wait_while_paused()) {
+                }
+                if (should_stop()) return ESP_OK;
+                deadline = esp_timer_get_time() + 1000000;
+                wait_ms = 0U;
+                continue;
+            }
             if (result != ESP_OK || written == length) break;
             if (esp_timer_get_time() > deadline) {
                 result = ESP_ERR_TIMEOUT;
@@ -753,20 +782,6 @@ static esp_err_t write_pcm(file_player_context_t *ctx, const uint8_t *pcm, size_
     // board's own format converts these bytes to time - not the file's.
     track_position(ctx);
     return ESP_OK;
-}
-
-static bool should_stop(void)
-{
-    return atomic_load_explicit(&s_stop_requested, memory_order_acquire);
-}
-
-// True while paused, after sleeping; keeps the two playback loops from each
-// growing their own copy of the pause handling.
-static bool wait_while_paused(void)
-{
-    if (!atomic_load_explicit(&s_paused, memory_order_acquire)) return false;
-    vTaskDelay(pdMS_TO_TICKS(20));
-    return true;
 }
 
 /* Takes the pending jump, if there is one. FILE_PLAYER_SEEK_NONE means there is

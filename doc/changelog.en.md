@@ -6,6 +6,49 @@ What each version added and fixed, briefly. The firmware files are in the
 [releases](https://github.com/jmper-ha/jradio/releases); the step-by-step
 detail is in the commit history.
 
+## v1.14.0 — 22 November 2026
+
+New:
+- The player shows which source is playing. On the larger screens a row of
+  source icons from the main menu sits between the stream readings and the
+  level meter, the playing one framed and in colour; on a touch screen a tap
+  on an icon switches to that source. On 320×240 and 240×320 only the
+  playing one has a frame; on 320×170 and 428×142 one icon of the playing
+  source stands in the station's line. With only one source there is no row.
+- The sources come in one order everywhere: internet radio, Yandex Music,
+  DLNA, USB, SD card, Bluetooth, FM - the network ones, then the drives,
+  then the rest.
+
+Fixed:
+- Choosing the SD card with no card in no longer stops the radio: as with
+  USB, a notice comes up and the sound plays on.
+- When an FM tuner is in the wiring but did not answer at power-up, FM is
+  left out of the menu and the remote's FM key does nothing. It used to open
+  an empty FM screen over the player.
+- The Wi-Fi reading at the top sits as far from the right edge as the
+  weather from the left.
+
+## v1.13.2 — 21 November 2026
+
+Fixed:
+- HTTPS stations (radiorecord.hostingradio.ru, say) dropped their
+  connection every minute or two, and after the reconnect the last second
+  or two played again. The connection now holds, and when one does
+  reconnect, what was already played is cut out.
+- A station's bitrate showed the size of one frame (88 instead of 96, for
+  example). It is now the average over 10 seconds of sound.
+- A pause on a file from a USB drive or a card sometimes showed "could not
+  play" instead of the pause mark.
+- The remote's USB key with no drive in took away the buffer strip on the
+  radio and Yandex, and it stayed gone while the sound played on.
+- Building from source: `idf.py flash` in a fresh build directory failed
+  on `board.bin`; `tools/idf.sh` and `tools/idf.ps1` put the project back
+  on the ESP32-S3 when the target was switched.
+
+If you build it yourself: delete `sdkconfig` (or turn
+`CONFIG_MBEDTLS_DYNAMIC_BUFFER` off in menuconfig), or the build stops with
+an error saying so. That option is what dropped the HTTPS stations.
+
 ## v1.13.1 — 20 November 2026
 
 New:

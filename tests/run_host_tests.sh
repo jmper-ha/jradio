@@ -108,6 +108,9 @@ run_test() {
 
 cd "${project_dir}"
 grep -qx 'CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192' sdkconfig.defaults
+# Dynamic TLS buffers lose a record header split across reads on a
+# non-blocking socket; internet_radio.c refuses to build with them.
+grep -qx '# CONFIG_MBEDTLS_DYNAMIC_BUFFER is not set' sdkconfig.defaults
 grep -Fq 'lv_display_set_buffers(s_display, buffer1, NULL,' components/ui/ui.c
 # settings.csv has two writer tasks; without this call the lock is never
 # created and every write runs unsynchronised again.
@@ -218,6 +221,7 @@ run_test ts_demux tests/test_ts_demux.c components/internet_radio/ts_demux.c
 run_test icy_metadata tests/test_icy_metadata.c components/internet_radio/icy_metadata.c
 run_test internet_radio_state tests/test_internet_radio_state.c \
     components/internet_radio/internet_radio_state.c
+run_test radio_overlap tests/test_radio_overlap.c components/internet_radio/radio_overlap.c
 run_test mp3_stream_info tests/test_mp3_stream_info.c components/internet_radio/mp3_stream_info.c
 run_test pcm_diagnostics tests/test_pcm_diagnostics.c components/board/pcm_diagnostics.c
 run_test player_control_logic tests/test_player_control_logic.c \

@@ -96,6 +96,28 @@ static void test_stale_snapshot_keeps_pending_command_then_timeout_restores(void
     assert(!ui_player_state_is_pending(&state));
 }
 
+static void test_refused_card_select_restores_without_waiting(void)
+{
+    ui_player_state_t state;
+    ui_player_state_init(&state);
+    player_snapshot_t radio = snapshot(AUDIO_SOURCE_INTERNET_RADIO, 1, 3);
+    radio.playback_state = PLAYER_PLAYBACK_PLAYING;
+    ui_player_state_apply_snapshot(&state, &radio, 0);
+
+    player_command_t select_sd = command(PLAYER_COMMAND_SELECT_SOURCE, AUDIO_SOURCE_SD, 0);
+    assert(ui_player_state_apply_post_result(&state, &select_sd, true, 100));
+    assert(ui_player_state_source(&state) == AUDIO_SOURCE_SD);
+    // Only the select it names: the drive's answer is not the card's.
+    assert(!ui_player_state_refuse_select(&state, AUDIO_SOURCE_USB));
+    assert(ui_player_state_is_pending(&state));
+
+    assert(ui_player_state_refuse_select(&state, AUDIO_SOURCE_SD));
+    assert(!ui_player_state_is_pending(&state));
+    assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+    assert(ui_player_state_source(&state) == AUDIO_SOURCE_INTERNET_RADIO);
+    assert(!ui_player_state_refuse_select(&state, AUDIO_SOURCE_SD));
+}
+
 static void test_confirmed_snapshot_clears_pending_command(void)
 {
     ui_player_state_t state;
@@ -356,6 +378,13 @@ static void test_close_station_list_returns_to_source(void)
     assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_STATION_LIST);
     ui_player_state_close_station_list(&state);
     assert(ui_player_state_view(&state) == UI_PLAYER_VIEW_SOURCE);
+
+    /* The screen driven to a drive that is not there, its list left: the
+     * player is the radio's again, which never stopped playing. */
+    state.source = AUDIO_SOURCE_USB;
+    assert(ui_player_state_show_station_list(&state));
+    ui_player_state_close_station_list(&state);
+    assert(ui_player_state_source(&state) == AUDIO_SOURCE_INTERNET_RADIO);
 }
 
 static void test_close_station_list_redirects_pending_timeout_to_source(void)
@@ -862,6 +891,7 @@ int main(void)
     test_external_item_change_closes_station_list();
     test_close_station_list_returns_to_source();
     test_close_station_list_redirects_pending_timeout_to_source();
+    test_refused_card_select_restores_without_waiting();
     test_a_start_from_the_web_is_told_from_one_of_our_own();
     puts("ui_player_state tests passed");
     return 0;

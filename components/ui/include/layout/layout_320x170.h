@@ -63,6 +63,16 @@
  * text does. */
 #define UI_SRC_TEXT_X 114
 #define UI_SRC_TEXT_W 196
+/* Only the lit source, framed, at the end of the station's line, as on the
+ * 428x142 bar: the row of them has no height here to stand in (2026-11-22). */
+#define UI_SRC_TITLE_W (UI_SRC_TEXT_W - 28)
+#define UI_SRC_SOURCE_ROW 1
+#define UI_SRC_SOURCE_LONE 1
+#define UI_SRC_SOURCE_X (UI_SRC_TEXT_X + UI_SRC_TEXT_W - 24)
+#define UI_SRC_SOURCE_Y UI_SRC_ROW_TITLE
+#define UI_SRC_SOURCE_W 24
+#define UI_SRC_SOURCE_H 19
+#define UI_SRC_SOURCE_PITCH 27
 #define UI_SRC_BODY_X 114
 #define UI_SRC_ROW_TITLE 27
 #define UI_SRC_ROW_TRACK 46

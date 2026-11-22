@@ -295,5 +295,42 @@ if (-not $env:ESPPORT) {
 }
 
 Set-Location $root
-& $python (Join-Path $idf 'tools/idf.py') @args
+$idfPy = Join-Path $idf 'tools/idf.py'
+
+# The board is an ESP32-S3 and nothing else. The ESP-IDF extension's chip
+# button in the status bar - or its setting, exported into the task's
+# environment - leaves the project configured for a plain ESP32, and the build
+# then fails far from the cause. The target is put back here instead, and the
+# old sdkconfig kept beside it. See tools/idf.sh, which this mirrors.
+$target = 'esp32s3'
+if ($env:IDF_TARGET -and $env:IDF_TARGET -ne $target) {
+    Write-Host "tools/idf.ps1: ignoring IDF_TARGET=$($env:IDF_TARGET); this board is an $target"
+}
+$env:IDF_TARGET = $target
+# Both records count: the button rewrites sdkconfig, and a build directory
+# configured before can still name the other chip after sdkconfig is right.
+$configured = ''
+if (Test-Path -LiteralPath 'sdkconfig') {
+    $line = Select-String -LiteralPath 'sdkconfig' -Pattern '^CONFIG_IDF_TARGET="([^"]*)"$' |
+            Select-Object -First 1
+    if ($line) { $configured = $line.Matches[0].Groups[1].Value }
+}
+if ((-not $configured -or $configured -eq $target) -and (Test-Path -LiteralPath 'build/CMakeCache.txt')) {
+    $line = Select-String -LiteralPath 'build/CMakeCache.txt' -Pattern '^IDF_TARGET:STRING=(.*)$' |
+            Select-Object -First 1
+    if ($line) { $configured = $line.Matches[0].Groups[1].Value.Trim() }
+}
+# Asked for by name: theirs to decide.
+if ($args -contains 'set-target') { $configured = '' }
+if ($configured -and $configured -ne $target) {
+    Write-Host "tools/idf.ps1: the project was set to $configured; setting it back to $target"
+    if (Test-Path -LiteralPath 'sdkconfig') {
+        Copy-Item -LiteralPath 'sdkconfig' -Destination "sdkconfig.$configured.old" -Force
+        Write-Host "tools/idf.ps1: the old sdkconfig is kept as sdkconfig.$configured.old"
+    }
+    & $python $idfPy set-target $target
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
+& $python $idfPy @args
 exit $LASTEXITCODE

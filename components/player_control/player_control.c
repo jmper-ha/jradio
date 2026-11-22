@@ -181,6 +181,8 @@ bool player_control_playing_file_path(char *out, size_t out_size)
 static atomic_uint s_no_resume_at_ms = ATOMIC_VAR_INIT(0U);
 // See player_control_start_failures().
 static atomic_uint s_start_failures = ATOMIC_VAR_INIT(0U);
+// See player_control_sd_refusals().
+static atomic_uint s_sd_refusals = ATOMIC_VAR_INIT(0U);
 /* And when a container on a media server refused to open, for the same reason
  * and with the same lifetime. */
 static atomic_uint s_browse_failed_at_ms = ATOMIC_VAR_INIT(0U);
@@ -1949,6 +1951,27 @@ static void player_control_task(void *arg)
         }
         switch (operation) {
         case PLAYER_OPERATION_SELECT_SOURCE: {
+            /* The card is tried before what plays is stopped, the way the
+             * drive is judged before it is chosen: the drive's presence is
+             * known all along, the card's only from a mount, and choosing an
+             * empty slot used to silence the radio under "insert a card"
+             * (Ден, 2026-11-22). Out of memory is not an answer about the
+             * slot - the mount is tried again once the source is stopped.
+             * With nothing playing there is nothing to keep, and the card
+             * stays the source, as before. */
+            bool sd_mounted_early = false;
+            if (command.source == AUDIO_SOURCE_SD &&
+                snapshot.active_source != AUDIO_SOURCE_NONE &&
+                snapshot.active_source != AUDIO_SOURCE_SD) {
+                const esp_err_t mounted = sd_storage_mount();
+                if (mounted != ESP_OK && mounted != ESP_ERR_NO_MEM) {
+                    ESP_LOGW(TAG, "sd card not available, source %d plays on: %s",
+                             (int)snapshot.active_source, esp_err_to_name(mounted));
+                    atomic_fetch_add_explicit(&s_sd_refusals, 1U, memory_order_release);
+                    break;
+                }
+                sd_mounted_early = mounted == ESP_OK;
+            }
             // Re-selecting the same source (retry after an error) also lands
             // here, so the previous source must actually be stopped before
             // the manager is told a new one is starting; otherwise the
@@ -1960,6 +1983,7 @@ static void player_control_task(void *arg)
             }
             if (!ready_to_start) {
                 ESP_LOGW(TAG, "select source deferred: previous source did not stop");
+                if (sd_mounted_early) (void)sd_storage_unmount();
                 break;
             }
             if (audio_source_manager_start(&s_manager, command.source) != AUDIO_SOURCE_OK) {
@@ -3060,6 +3084,11 @@ bool player_control_selecting(void)
 unsigned int player_control_start_failures(void)
 {
     return atomic_load_explicit(&s_start_failures, memory_order_acquire);
+}
+
+unsigned int player_control_sd_refusals(void)
+{
+    return atomic_load_explicit(&s_sd_refusals, memory_order_acquire);
 }
 
 bool player_control_file_resume_path(const char *path)

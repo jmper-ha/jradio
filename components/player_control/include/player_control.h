@@ -66,6 +66,10 @@ bool player_control_selecting(void);
  * an error state - the player only reads "stopped" - and this is how a caller
  * waiting on its own play can tell that it was refused. */
 unsigned int player_control_start_failures(void);
+/* Counts the card selects turned down while another source played: the slot
+ * was empty or unreadable, and that source plays on. The select is never
+ * confirmed, so this is how its sender learns the answer. */
+unsigned int player_control_sd_refusals(void);
 /* Says a listing this module does not own has changed - the station catalogue,
  * saved from the web, or a refreshed Yandex catalogue. The directory listing
  * bumps the counter by itself; these two are replaced elsewhere and would

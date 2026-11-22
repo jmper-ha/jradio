@@ -55,6 +55,14 @@ EXTRA_SIZES["bedtime"] = WEATHER_SIZES
 # The alarm clock sits in the same slot in the status strip as the sleep
 # timer's crescent, so it needs the same sizes.
 EXTRA_SIZES["alarm"] = WEATHER_SIZES
+# The player's row of sources, one framed mark per source the carousel shows,
+# the lit one the playing source: 16 px, inside a 24 px frame on the
+# 480x320 panel and a 22 px one on the 320x480.
+ROW_SIZE = 16
+for _name in ("podcasts", "usb_stick", "sd_card", "bluetooth", "radio", "dlna", "spark"):
+    _have = EXTRA_SIZES.get(_name, SIZES)
+    if ROW_SIZE not in _have:
+        EXTRA_SIZES[_name] = _have + (ROW_SIZE,)
 WEATHER_ICONS = ("clear_day", "clear_night", "partly_cloudy_day", "partly_cloudy_night",
                  "cloudy", "fog", "rain", "snow", "sleet", "thunderstorm")
 for _name in WEATHER_ICONS:

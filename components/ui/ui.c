@@ -273,6 +273,9 @@ static void ui_list_decor_update(ui_list_decor_t *decor, const bool *shown, size
  * together, which is what it is waiting out. */
 #define UI_DLNA_RESUME_GIVE_UP_MS 20000U
 #define UI_STATION_LIST_IDLE_TIMEOUT_MS 10000U
+/* The "no drive" notice over a source that plays on: a line to read, not a
+ * list to scroll, so it gives the player back sooner (Ден, 2026-11-21). */
+#define UI_FILES_NOTICE_TIMEOUT_MS 3000U
 
 static const char *TAG = "ui";
 static QueueHandle_t s_input_queue;
@@ -350,6 +353,34 @@ static ui_scroller_t s_source_title;
 static ui_scroller_t s_fm_text;
 #endif
 static lv_obj_t *s_source_stream;
+#if UI_SRC_SOURCE_ROW
+/* The row of sources, left to right in the carousel's order, the ones it does
+ * not show left out. Slot by slot: the frame, its mark, and the source it
+ * stands for. What was last drawn - the carousel's mask and the lit source -
+ * so a pass that changes neither touches nothing. */
+static lv_obj_t *s_source_row_box[UI_SRC_SOURCE_MAX];
+static lv_obj_t *s_source_row_mark[UI_SRC_SOURCE_MAX];
+static audio_source_t s_source_row_source[UI_SRC_SOURCE_MAX];
+static ui_menu_visible_mask_t s_source_row_mask;
+static audio_source_t s_source_row_lit;
+static bool s_source_row_drawn;
+// Where each frame stands, for a tap to be found in.
+static int32_t s_source_row_px[UI_SRC_SOURCE_MAX];
+static int32_t s_source_row_py[UI_SRC_SOURCE_MAX];
+#if UI_SRC_SOURCE_FM_MOVES
+/* The meter's frame and its two letters, kept to be moved on FM: the blocks
+ * are s_source_vu already. */
+static lv_obj_t *s_source_rule_top;
+static lv_obj_t *s_source_rule_bottom;
+static lv_obj_t *s_source_vu_mark[2];
+#define UI_SRC_FM_RULE_BOTTOM \
+    (UI_SRC_FM_VU_Y + UI_SRC_VU_PITCH + UI_SRC_VU_BLOCK_H + (UI_SRC_FM_VU_Y - UI_SRC_FM_RULE_TOP - 1))
+_Static_assert(UI_SRC_FM_RULE_BOTTOM < UI_SRC_LEVEL_Y,
+               "on FM the meter's bottom rule runs into the levelling reading");
+#endif
+_Static_assert(UI_SRC_SOURCE_MAX == UI_FEED_ITEM_COUNT - 1,
+               "the row of sources is not one frame per carousel source");
+#endif
 static lv_obj_t *s_source_buffer;
 /* The same reading as a strip: one object, whose bars are drawn into it from
  * the model below rather than being objects of their own. Both faces exist for
@@ -371,6 +402,8 @@ typedef struct {
     lv_obj_t *context;
     lv_obj_t *clock;
     lv_obj_t *rssi;
+    // The reading's width the bars were last placed for.
+    int32_t rssi_w;
     /* The weather, at the left edge: a picture and a reading. Both hidden
      * while there is nothing to show, and the screen's name is shown in
      * their place - see ui_status_strip_update_weather(). */
@@ -711,6 +744,9 @@ static size_t s_last_files_entry_count;
  * notice would name a USB drive while the user was asking for the card, and
  * the pick-up below would select the wrong source when a volume appeared. */
 static audio_source_t s_files_unavailable_source = AUDIO_SOURCE_NONE;
+/* The card selects player_control has turned down, as last seen here. See
+ * player_control_sd_refusals(). */
+static unsigned int s_sd_refusals_seen;
 // Autoplay runs once, and only after what it depends on has had time to
 // appear: deciding "no drive" or "no network" any earlier would be deciding it
 // before the answer exists. Both are caps and not only waits - a device that
@@ -826,6 +862,23 @@ static const lv_image_dsc_t *ui_source_icon(audio_source_t source)
     ui_feed_model_init(&model, 0U);
     if (!ui_feed_model_select_source(&model, source)) return NULL;
     return ui_feed_icon_image(ui_feed_model_selected(&model), UI_FEED_ICON_LARGE);
+}
+
+/* The tuner as the screens see it: named in the wiring *and* found at boot.
+ * The wiring alone listed FM in the menu, the carousel and the remote's key on
+ * a board whose module was not plugged in, and opening it drew the frequency's
+ * empty digit boxes over the texts and the buffer while the player had refused
+ * the select (Ден, 2026-11-22). fm_tuner_init() runs before the UI starts and
+ * is not tried again, so the answer is read once. */
+static bool ui_fm_tuner_answered(void)
+{
+    static int8_t s_answered = -1;
+    if (s_answered < 0) {
+        player_snapshot_t snapshot;
+        player_control_get_snapshot(&snapshot);
+        s_answered = (snapshot.capabilities & PLAYER_CAP_FM) != 0U ? 1 : 0;
+    }
+    return s_answered == 1;
 }
 
 // Short name for the strip and the list title.
@@ -1178,7 +1231,11 @@ static void ui_status_strip_create(lv_obj_t *screen, ui_status_strip_t *strip,
     /* On the clock's line, as the temperature is: a pixel lower, the two
      * figures at that end of the strip did not line up (2026-11-06). */
     strip->rssi = lv_label_create(screen);
-    lv_obj_set_pos(strip->rssi, UI_STRIP_RSSI_X, 5);
+    /* Against the right margin, so the strip's two ends sit the same distance
+     * in: from a fixed left edge a two-digit reading stopped 13 px short on
+     * the 480 px panel while the weather began 11 in (Ден, 2026-11-22). */
+    lv_obj_align(strip->rssi, LV_ALIGN_TOP_RIGHT, -UI_CONTENT_X, 5);
+    strip->rssi_w = -1;
     lv_obj_set_style_text_font(strip->rssi, UI_FONT_BODY, 0);
     ui_paint(strip->rssi, UI_PAINT_TEXT, UI_ROLE_SECONDARY, 0);
     lv_label_set_text(strip->rssi, "");
@@ -2546,6 +2603,15 @@ static void ui_status_strip_update(ui_status_strip_t *strip,
         snprintf(rssi_text, sizeof(rssi_text), "--");
     }
     ui_set_label_text_if_changed(strip->rssi, rssi_text);
+    lv_point_t rssi_size;
+    lv_text_get_size(&rssi_size, rssi_text, UI_FONT_BODY, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    if (rssi_size.x != strip->rssi_w) {
+        strip->rssi_w = rssi_size.x;
+        const int32_t bars_x = TFT_WIDTH - UI_CONTENT_X - rssi_size.x - 23;
+        for (int bar = 0; bar < UI_WIFI_BARS; ++bar) {
+            lv_obj_set_x(strip->bars[bar], bars_x + bar * 5);
+        }
+    }
 }
 
 /* Draws the bars, called by LVGL once the strip's own background is down.
@@ -3021,6 +3087,122 @@ static void ui_set_hidden(lv_obj_t *object, bool hidden)
     }
 }
 
+#if UI_SRC_SOURCE_ROW
+/* The lit frame is the source the player screen is drawing, not the
+ * snapshot's: while a select is confirmed the rest of the screen is already
+ * the new source's, and the row should not be the one thing still showing the
+ * old one. The row follows the carousel, so a source switched off in Settings
+ * leaves it at once - and with one source left there is no row: a lamp that
+ * is always lit says nothing. The frames line up with the rows above them,
+ * from the column's left edge or about its middle, however many there are. */
+#if UI_SRC_SOURCE_FM_MOVES
+/* The meter under the row on FM, which stands under the radiotext there, or
+ * back where every other source has it. */
+static void ui_place_meter(bool fm)
+{
+    static bool s_placed_fm;
+    if (fm == s_placed_fm) return;
+    s_placed_fm = fm;
+    const int32_t vu_y = fm ? UI_SRC_FM_VU_Y : UI_SRC_VU_Y;
+    lv_obj_set_y(s_source_rule_top, fm ? UI_SRC_FM_RULE_TOP : UI_SRC_RULE_TOP);
+    lv_obj_set_y(s_source_rule_bottom, fm ? UI_SRC_FM_RULE_BOTTOM : UI_SRC_RULE_BOTTOM);
+    for (size_t channel = 0; channel < 2U; ++channel) {
+        for (size_t segment = 0; segment < UI_VU_SEGMENTS; ++segment) {
+            lv_obj_set_y(s_source_vu[channel][segment], vu_y + (int32_t)channel * UI_SRC_VU_PITCH);
+        }
+        lv_obj_set_y(s_source_vu_mark[channel],
+                     vu_y + (channel == 0U ? UI_SRC_VU_MARK_L_DY : UI_SRC_VU_MARK_R_DY));
+    }
+}
+#endif
+
+/* Where a frame stands: along the row - from the column's left edge, or about
+ * its middle - or, on FM where the shape has no row's room, in a block of
+ * short rows in the footer's empty left slot. */
+static void ui_place_source_frame(unsigned slot, unsigned shown, bool fm)
+{
+#if UI_SRC_SOURCE_FM_GRID
+    if (fm) {
+        s_source_row_px[slot] =
+            UI_SRC_SOURCE_FM_GRID_X + (int32_t)(slot % UI_SRC_SOURCE_FM_PER_ROW) * UI_SRC_SOURCE_PITCH;
+        s_source_row_py[slot] =
+            UI_SRC_SOURCE_FM_GRID_Y +
+            (int32_t)(slot / UI_SRC_SOURCE_FM_PER_ROW) * (UI_SRC_SOURCE_H + UI_SRC_SOURCE_FM_ROW_GAP);
+        lv_obj_set_pos(s_source_row_box[slot], s_source_row_px[slot], s_source_row_py[slot]);
+        return;
+    }
+#endif
+    int32_t first = UI_SRC_SOURCE_X;
+#if UI_SRC_SOURCE_CENTRED
+    first += (UI_SRC_TEXT_W - ((int32_t)(shown - 1U) * UI_SRC_SOURCE_PITCH + UI_SRC_SOURCE_W)) / 2;
+#else
+    (void)shown;
+#endif
+    s_source_row_px[slot] = UI_SRC_SOURCE_LONE ? first : first + (int32_t)slot * UI_SRC_SOURCE_PITCH;
+    s_source_row_py[slot] = fm ? UI_SRC_SOURCE_FM_Y : UI_SRC_SOURCE_Y;
+    lv_obj_set_pos(s_source_row_box[slot], s_source_row_px[slot], s_source_row_py[slot]);
+}
+
+static void ui_update_source_row(void)
+{
+    if (lv_screen_active() != s_source_screen) return;
+    const ui_menu_visible_mask_t mask = ui_feed_model_visible_mask(&s_feed_model);
+    const audio_source_t lit = ui_player_state_source(&s_player_ui);
+    if (s_source_row_drawn && mask == s_source_row_mask && lit == s_source_row_lit) return;
+    s_source_row_drawn = true;
+    s_source_row_mask = mask;
+    s_source_row_lit = lit;
+    unsigned shown = 0U;
+    for (unsigned rank = 0U; rank < UI_FEED_ITEM_COUNT && shown < UI_SRC_SOURCE_MAX; ++rank) {
+        const unsigned item = (unsigned)ui_menu_item_in_order((uint8_t)rank);
+        if (!ui_menu_item_is_visible((ui_menu_item_t)item, mask)) continue;
+        /* Yandex by name: activation leaves it out, because on the carousel
+         * it opens a list rather than a source - and asked through it, the
+         * row had no Yandex frame, so a wave lit nothing at all. */
+        audio_source_t source = AUDIO_SOURCE_NONE;
+        if (item == UI_FEED_YANDEX) {
+            source = AUDIO_SOURCE_YANDEX;
+        } else if (!ui_feed_model_activate((ui_feed_item_t)item, &source)) {
+            continue;
+        }
+        s_source_row_source[shown] = source;
+        lv_image_set_src(s_source_row_mark[shown], ui_feed_icon_row((ui_feed_item_t)item));
+        if (source == lit) {
+            lv_obj_add_state(s_source_row_box[shown], LV_STATE_CHECKED);
+            lv_obj_add_state(s_source_row_mark[shown], LV_STATE_CHECKED);
+        } else {
+            lv_obj_remove_state(s_source_row_box[shown], LV_STATE_CHECKED);
+            lv_obj_remove_state(s_source_row_mark[shown], LV_STATE_CHECKED);
+        }
+        ++shown;
+    }
+    const bool fm = lit == AUDIO_SOURCE_FM;
+#if UI_SRC_SOURCE_FM_MOVES
+    ui_place_meter(fm);
+#endif
+    for (unsigned slot = 0U; slot < UI_SRC_SOURCE_MAX; ++slot) {
+        const bool on = slot < shown && shown >= 2U &&
+                        (!UI_SRC_SOURCE_LONE || s_source_row_source[slot] == lit);
+        if (!on) s_source_row_source[slot] = AUDIO_SOURCE_NONE;
+        if (on) ui_place_source_frame(slot, shown, fm);
+        ui_set_hidden(s_source_row_box[slot], !on);
+    }
+}
+
+// The source under a tap, or none: the frames only, not the air between them.
+static audio_source_t ui_source_row_at(int x, int y)
+{
+    for (unsigned slot = 0U; !UI_SRC_SOURCE_LONE && slot < UI_SRC_SOURCE_MAX; ++slot) {
+        if (s_source_row_source[slot] == AUDIO_SOURCE_NONE) continue;
+        if (x >= s_source_row_px[slot] && x < s_source_row_px[slot] + UI_SRC_SOURCE_W &&
+            y >= s_source_row_py[slot] && y < s_source_row_py[slot] + UI_SRC_SOURCE_H) {
+            return s_source_row_source[slot];
+        }
+    }
+    return AUDIO_SOURCE_NONE;
+}
+#endif
+
 /* The digits over the title and the track and the marks over the readings,
  * or the four of them back. */
 static void ui_show_fm_face(bool fm)
@@ -3327,8 +3509,8 @@ static void ui_apply_source_visibility(void)
     ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_BLUETOOTH, board_has_bluetooth());
     ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_BLUETOOTH,
                                      board_has_bluetooth());
-    ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_FM_RADIO, board_has_fm_tuner());
-    ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_FM_RADIO, board_has_fm_tuner());
+    ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_FM_RADIO, ui_fm_tuner_answered());
+    ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_FM_RADIO, ui_fm_tuner_answered());
     ui_menu_set_source_visible(&s_menu, UI_MENU_ITEM_YANDEX_MUSIC,
                                s_device_settings.yandex_music);
     ui_feed_model_set_source_visible(&s_feed_model, UI_MENU_ITEM_YANDEX_MUSIC,
@@ -5743,7 +5925,7 @@ static void ui_create_source_screen(void)
     // it LV_LABEL_LONG_DOT wraps to a second line before it considers
     // shortening, and a long station name grew downwards over the codec row.
     s_source_title = ui_scroller_create(s_source_screen, UI_SRC_TEXT_X, UI_SRC_ROW_TITLE,
-                                        UI_SRC_TEXT_W, UI_SRC_LINE_H);
+                                        UI_SRC_TITLE_W, UI_SRC_LINE_H);
     ui_paint(s_source_title.box, UI_PAINT_TEXT, UI_ROLE_ACCENT, 0);
     ui_scroller_set_scrolling(&s_source_title, true);
 
@@ -5799,6 +5981,35 @@ static void ui_create_source_screen(void)
     lv_label_set_long_mode(s_source_stream, LV_LABEL_LONG_DOT);
     ui_paint(s_source_stream, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
 
+#if UI_SRC_SOURCE_ROW
+    /* Grey frames and marks, the lit one's frame and mark in the accent with
+     * nothing filled in between. The colour is the state's, so lighting a
+     * frame swaps no style. Filled in, and shown, by ui_update_source_row(). */
+    for (unsigned slot = 0U; slot < UI_SRC_SOURCE_MAX; ++slot) {
+        lv_obj_t *box = lv_obj_create(s_source_screen);
+        lv_obj_set_pos(box, UI_SRC_SOURCE_X + (int32_t)slot * UI_SRC_SOURCE_PITCH,
+                       UI_SRC_SOURCE_Y);
+        lv_obj_set_size(box, UI_SRC_SOURCE_W, UI_SRC_SOURCE_H);
+        lv_obj_set_style_bg_opa(box, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(box, UI_SRC_SOURCE_QUIET ? 0 : 1, 0);
+        lv_obj_set_style_border_width(box, 1, LV_STATE_CHECKED);
+        lv_obj_set_style_radius(box, 3, 0);
+        lv_obj_set_style_pad_all(box, 0, 0);
+        ui_paint(box, UI_PAINT_BORDER, UI_ROLE_DIM, 0);
+        ui_paint(box, UI_PAINT_BORDER, UI_ROLE_ACCENT, LV_STATE_CHECKED);
+        lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_flag(box, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_t *mark = lv_image_create(box);
+        ui_paint(mark, UI_PAINT_RECOLOR, UI_SRC_SOURCE_QUIET ? UI_ROLE_FEED_FAR : UI_ROLE_DIM, 0);
+        ui_paint(mark, UI_PAINT_RECOLOR, UI_ROLE_ACCENT, LV_STATE_CHECKED);
+        lv_obj_set_style_image_recolor_opa(mark, LV_OPA_COVER, 0);
+        lv_obj_center(mark);
+        s_source_row_box[slot] = box;
+        s_source_row_mark[slot] = mark;
+        s_source_row_source[slot] = AUDIO_SOURCE_NONE;
+    }
+#endif
+
     ui_create_fm_marks();
 
     /* Brighter than the meter's own unlit blocks, which looks backwards for a
@@ -5837,6 +6048,9 @@ static void ui_create_source_screen(void)
         lv_obj_set_pos(mark, UI_SRC_BODY_X + 2,
                        UI_SRC_VU_Y + (channel == 0U ? UI_SRC_VU_MARK_L_DY : UI_SRC_VU_MARK_R_DY));
         ui_paint(mark, UI_PAINT_TEXT, UI_ROLE_DIM, 0);
+#if UI_SRC_SOURCE_FM_MOVES
+        s_source_vu_mark[channel] = mark;
+#endif
     }
 
     lv_obj_t *rule_bottom = lv_obj_create(s_source_screen);
@@ -5846,6 +6060,10 @@ static void ui_create_source_screen(void)
     lv_obj_set_style_border_width(rule_bottom, 0, 0);
     lv_obj_set_style_pad_all(rule_bottom, 0, 0);
     lv_obj_clear_flag(rule_bottom, LV_OBJ_FLAG_SCROLLABLE);
+#if UI_SRC_SOURCE_FM_MOVES
+    s_source_rule_top = rule_top;
+    s_source_rule_bottom = rule_bottom;
+#endif
 
     /* Track position. Sits under the bottom rule rather than in the footer
      * row: it belongs to what is playing, not to the system readouts beside
@@ -6303,6 +6521,10 @@ static void ui_reset_list_from_snapshot(const player_snapshot_t *snapshot)
         lv_obj_add_flag(s_station_list_rule, LV_OBJ_FLAG_HIDDEN);
         s_browser_has_parent_row = false;
         station_list_init(&s_station_list, 0U, 0U, PLAYER_ITEM_NONE);
+        /* Its idle wait starts now, as a list's does below: left at the last
+         * list's, it had long run out while the radio played, and the remote's
+         * USB key closed the notice the moment it opened (2026-11-21). */
+        station_list_note_activity(&s_station_list, ui_tick_get_ms());
         ui_update_station_list();
         return;
     }
@@ -6438,6 +6660,8 @@ static void ui_show_station_list(void)
 static void ui_leave_station_list(void)
 {
     s_files_list_open_requested = false;
+    s_files_unavailable = false;
+    s_files_unavailable_source = AUDIO_SOURCE_NONE;
     ui_player_state_close_station_list(&s_player_ui);
 }
 
@@ -7783,7 +8007,7 @@ static void ui_remote_open_source(audio_source_t source)
     const bool volume_has_file = ui_volume_resume_file(source, path, sizeof(path));
     const ui_autoplay_action_t action = ui_autoplay_decide_for(
         &s_device_settings, source, volume_has_file, snapshot.usb_media, snapshot.sd_media, true,
-        BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(), board_has_fm_tuner());
+        BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(), ui_fm_tuner_answered());
     const bool network = action == UI_AUTOPLAY_RADIO || action == UI_AUTOPLAY_YANDEX ||
                          action == UI_AUTOPLAY_DLNA;
     const bool resume = network || action == UI_AUTOPLAY_FILE;
@@ -7828,6 +8052,8 @@ static void ui_remote_source_poll(void)
     /* Through the home screen's own path, which is what knows whether the
      * source is on this board, has its network, and how it opens. A source
      * not on the menu is a key that does nothing, quietly. */
+    /* The FM key too when the tuner did not answer: see ui_fm_tuner_answered(). */
+    if (source == AUDIO_SOURCE_FM && !ui_fm_tuner_answered()) return;
     if (ui_menu_select_source(&s_menu, source)) ui_remote_open_source(source);
 }
 
@@ -8807,6 +9033,25 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
          snapshot->playback_state == PLAYER_PLAYBACK_ERROR)) {
         ui_end_seek();
     }
+    /* The card was tried and not found while another source played, and that
+     * source plays on: the drive's "unavailable" screen, as if the card's
+     * absence had been known before the press - the only difference left
+     * between the two volumes. */
+    const unsigned int sd_refusals = player_control_sd_refusals();
+    if (sd_refusals != s_sd_refusals_seen) {
+        s_sd_refusals_seen = sd_refusals;
+        if (ui_player_state_refuse_select(&s_player_ui, AUDIO_SOURCE_SD)) {
+            s_files_list_open_requested = false;
+            if (s_autoplay_target == AUDIO_SOURCE_SD) {
+                s_autoplay_pending = false;
+                s_autoplay_target = AUDIO_SOURCE_NONE;
+            }
+            s_files_unavailable = true;
+            s_files_unavailable_source = AUDIO_SOURCE_SD;
+            s_player_ui.source = AUDIO_SOURCE_SD;
+            ui_show_station_list();
+        }
+    }
     ui_player_state_apply_snapshot(&s_player_ui, snapshot, ui_tick_get_ms());
     if (old_view != ui_player_state_view(&s_player_ui) ||
         old_source != ui_player_state_source(&s_player_ui)) {
@@ -8943,7 +9188,9 @@ static void ui_sync_player_snapshot(const player_snapshot_t *snapshot)
         }
         if (ui_playback_running(snapshot) &&
             station_list_idle_timeout_elapsed(&s_station_list, ui_tick_get_ms(),
-                                              UI_STATION_LIST_IDLE_TIMEOUT_MS)) {
+                                              s_files_unavailable
+                                                  ? UI_FILES_NOTICE_TIMEOUT_MS
+                                                  : UI_STATION_LIST_IDLE_TIMEOUT_MS)) {
             ui_close_station_list_to_source();
         }
     }
@@ -9085,11 +9332,11 @@ static void ui_autoplay_step(const player_snapshot_t *snapshot)
             ? ui_autoplay_decide_for(&s_device_settings, s_autoplay_target,
                                      s_autoplay_volume_has_file, snapshot->usb_media,
                                      snapshot->sd_media, false, BOARD_HAS_YANDEX_MUSIC,
-                                     BOARD_HAS_DLNA, board_has_bluetooth(), board_has_fm_tuner())
+                                     BOARD_HAS_DLNA, board_has_bluetooth(), ui_fm_tuner_answered())
             : (s_autoplay_for_alarm ? ui_autoplay_decide_resume : ui_autoplay_decide)(
                   &s_device_settings, snapshot->usb_media, snapshot->sd_media, false,
                   BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA, board_has_bluetooth(),
-                  board_has_fm_tuner());
+                  ui_fm_tuner_answered());
     const bool waited =
         (uint32_t)(ui_tick_get_ms() - s_autoplay_started_ms) >= UI_AUTOPLAY_WAIT_MS;
     // Hold off only while the answer could still change: a drive that has not
@@ -9334,7 +9581,7 @@ static void ui_alarm_poll(uint32_t now_ms)
     }
     const alarm_source_t source = alarm_play_source(
         &s_device_settings.alarm,
-        board_has_fm_tuner() && player_control_fm_preset_count() > 0U);
+        ui_fm_tuner_answered() && player_control_fm_preset_count() > 0U);
     const bool fm = source == ALARM_SOURCE_FM;
     if (source == ALARM_SOURCE_LAST) {
         ESP_LOGI(TAG, "alarm: %02d:%02d, the last source at volume %u", hour, minute,
@@ -9359,7 +9606,7 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
     if (!s_alarm_ring_pending) return;
     /* FM needs no network, so it rings at the minute; the radio waits for
      * one, the way autoplay does. */
-    const bool fm_present = board_has_fm_tuner() && player_control_fm_preset_count() > 0U;
+    const bool fm_present = ui_fm_tuner_answered() && player_control_fm_preset_count() > 0U;
     const alarm_source_t source = alarm_play_source(&s_device_settings.alarm, fm_present);
     const bool waited =
         (uint32_t)(ui_tick_get_ms() - s_alarm_ring_started_ms) >= UI_ALARM_NETWORK_WAIT_MS;
@@ -9372,7 +9619,7 @@ static void ui_alarm_ring_step(const player_snapshot_t *snapshot)
                                                   FILE_BROWSER_MEDIA_READY, true,
                                                   BOARD_HAS_YANDEX_MUSIC, BOARD_HAS_DLNA,
                                                   board_has_bluetooth(),
-                                                  board_has_fm_tuner()) != UI_AUTOPLAY_HOME;
+                                                  ui_fm_tuner_answered()) != UI_AUTOPLAY_HOME;
     if (source != ALARM_SOURCE_FM && !resume && !snapshot->wifi_connected && !waited) return;
     s_alarm_ring_pending = false;
 
@@ -10268,6 +10515,12 @@ static void ui_touch_poll(void)
                 ui_touch_tap_fm_tune(event.x);
             } else if (ui_touch_player_in_mode()) {
                 ui_handle_input(BOARD_INPUT_ACTION_ENCODER_BUTTON);
+#if UI_SRC_SOURCE_ROW
+            } else if (ui_source_row_at(event.x, event.y) != AUDIO_SOURCE_NONE) {
+                /* A frame is the remote's key for its source: the same queue,
+                 * so it resumes what that source last played the same way. */
+                s_remote_source_waiting = ui_source_row_at(event.x, event.y);
+#endif
             } else if (ui_touch_player_tap_toggles(event.x, event.y, TFT_WIDTH, TFT_HEIGHT)) {
                 ui_toggle_playback();
             }
@@ -10419,6 +10672,9 @@ static void ui_task(void *arg)
         }
         ui_update_vu();
         ui_update_footer();
+#if UI_SRC_SOURCE_ROW
+        ui_update_source_row();
+#endif
         ui_update_cover();
         if (s_settings_open) {
             /* Wrap-safe, the same subtraction the station list's idle close
@@ -10723,7 +10979,7 @@ esp_err_t ui_init(void)
      * point the answer counts a Yandex row the switch may have turned off. */
     ui_apply_source_visibility();
     ui_settings_model_set_bluetooth(board_has_bluetooth());
-    ui_settings_model_set_fm(board_has_fm_tuner());
+    ui_settings_model_set_fm(ui_fm_tuner_answered());
     ui_settings_model_set_spdif(board_has_spdif() && board_has_dac());
     ui_settings_model_init(&s_settings_model, ui_home_screen_exists());
     // Before anything can play: the board defaults to full volume, and coming
@@ -10752,7 +11008,7 @@ esp_err_t ui_init(void)
                              &s_device_settings, FILE_BROWSER_MEDIA_READY,
                              FILE_BROWSER_MEDIA_READY, true, BOARD_HAS_YANDEX_MUSIC,
                              BOARD_HAS_DLNA, board_has_bluetooth(),
-                             board_has_fm_tuner()) != UI_AUTOPLAY_HOME;
+                             ui_fm_tuner_answered()) != UI_AUTOPLAY_HOME;
     s_autoplay_started_ms = ui_tick_get_ms();
     /* Through the same call the rest of the firmware uses, so a device with no
      * home screen boots straight into the radio instead of onto a screen it

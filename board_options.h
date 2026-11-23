@@ -80,6 +80,7 @@
 /* ======================================================================
  * Controls - rotary encoder with push button, plus four function buttons
  * ====================================================================== */
+#define CONTROLS CONTROLS_DUAL_ENCODER
 
 #define ENCODER_RIGHT_GPIO 5
 #define ENCODER_LEFT_GPIO 7
@@ -89,6 +90,12 @@
  * They do what a turn and a push do; held, + and - repeat, faster the longer
  * they are held. Asked for by users who would rather not fit an encoder. */
 #define ENCODER_AS_BUTTONS 0
+
+#define VOLUME_ENCODER_A_GPIO 13
+#define VOLUME_ENCODER_B_GPIO 14
+
+#define ENCODER_EDGES_PER_DETENT 4
+#define VOLUME_ENCODER_EDGES_PER_DETENT 4
 
 /* Three of the four are named for what they do rather than for the
  * silkscreen: the third and fourth buttons are the track keys everywhere they
@@ -106,7 +113,8 @@
  * the S3 has RTC_GPIO 0-21 - because only those can wake the chip. F1 and F2
  * were swapped on the bench for exactly that, 2026-09-16; anywhere else and
  * the board is simply never offered the sleep. */
-#define BUTTON_SLEEP_GPIO 21
+//#define BUTTON_SLEEP_GPIO 21
+#define BUTTON_MENU_GPIO 21
 #define BUTTON_QUICK_MENU_GPIO 45
 #define BUTTON_PREV_GPIO 46
 //#define BUTTON_NEXT_GPIO 3
